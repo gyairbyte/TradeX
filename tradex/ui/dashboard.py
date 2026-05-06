@@ -6,7 +6,7 @@ Streamlit dashboard — eight tabs:
   4. Pattern Match : compare live stocks against historical run-up/decline fingerprints
   5. Pre-Market    : gap scanner — identify gap-up/down candidates before open
   6. Options Flow  : unusual options activity — vol/OI spikes, put/call sentiment
-  7. Alerts        : configure Slack/email alert thresholds
+  7. Alerts        : configure Discord/email alert thresholds
   8. Signal Journal: historical signal outcomes (did the move happen?)
 
 Run with: streamlit run tradex/ui/dashboard.py
@@ -27,7 +27,7 @@ from tradex.patterns.config import PROFILES
 from tradex.premarket.gap_scanner import scan_gaps
 from tradex.options.flow import scan_unusual_flow, get_put_call_sentiment
 from tradex.alerts.notifier import (
-    send_alert, SLACK_WEBHOOK, EMAIL_TO,
+    send_alert, DISCORD_TOKEN, DISCORD_CHANNEL_ID, EMAIL_TO,
     COIL_ALERT_THRESHOLD, PATTERN_ALERT_THRESHOLD, CONFLUENCE_ALERT_THRESHOLD,
 )
 
@@ -525,11 +525,12 @@ with tab_alerts:
     st.markdown("### Channel Status")
     ch1, ch2 = st.columns(2)
     with ch1:
-        if SLACK_WEBHOOK:
-            st.success("Slack: **Connected**")
+        if DISCORD_TOKEN and DISCORD_CHANNEL_ID:
+            st.success("Discord: **Connected**")
         else:
-            st.error("Slack: **Not configured**")
-            st.code("ALERT_SLACK_WEBHOOK=https://hooks.slack.com/services/...")
+            st.error("Discord: **Not configured**")
+            st.code("ALERT_DISCORD_TOKEN=your-bot-token\nALERT_DISCORD_CHANNEL_ID=your-channel-id")
+            st.caption("Setup: discord.com/developers/applications → New App → Bot → copy Token")
     with ch2:
         if EMAIL_TO:
             st.success(f"Email: **Connected** → {EMAIL_TO}")
@@ -576,10 +577,10 @@ ALERT_CONFLUENCE_THRESHOLD=70""")
     st.markdown("""
 | Alert type | When it fires | Channel |
 |---|---|---|
-| **Coil detected** | Coil strength ≥ threshold after a scan | Slack + Email |
-| **Pattern match** | Similarity ≥ threshold vs run-up/decline fingerprint | Slack + Email |
-| **Confluence** | Cross-timeframe confluence score ≥ threshold | Slack + Email |
-| **Pre-market gap** | Gap ≥ 4% before market open (8am ET) | Slack + Email |
+| **Coil detected** | Coil strength ≥ threshold after a scan | Discord + Email |
+| **Pattern match** | Similarity ≥ threshold vs run-up/decline fingerprint | Discord + Email |
+| **Confluence** | Cross-timeframe confluence score ≥ threshold | Discord + Email |
+| **Pre-market gap** | Gap ≥ 4% before market open (8am ET) | Discord + Email |
 
 Alerts are checked automatically every scan cycle when the watcher is running:
 ```bash
