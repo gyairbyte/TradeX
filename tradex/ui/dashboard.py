@@ -1,10 +1,13 @@
 """
-Streamlit dashboard — five tabs:
+Streamlit dashboard — eight tabs:
   1. Scanner       : run screener, view ranked results, drill-down chart
   2. Coil Detector : stocks building pressure over multiple days (pre-signal)
   3. Confluence    : stocks scoring well across multiple timeframes
   4. Pattern Match : compare live stocks against historical run-up/decline fingerprints
-  5. Signal Journal: historical signal outcomes (did the move happen?)
+  5. Pre-Market    : gap scanner — identify gap-up/down candidates before open
+  6. Options Flow  : unusual options activity — vol/OI spikes, put/call sentiment
+  7. Alerts        : configure Slack/email alert thresholds
+  8. Signal Journal: historical signal outcomes (did the move happen?)
 
 Run with: streamlit run tradex/ui/dashboard.py
 """
@@ -21,6 +24,12 @@ from tradex.tracker.outcome_tracker import run_outcome_pass, get_outcome_stats
 from tradex.patterns.fingerprint import run_full_build, list_fingerprints, load_fingerprint
 from tradex.patterns.matcher import run_match_screen, match_ticker
 from tradex.patterns.config import PROFILES
+from tradex.premarket.gap_scanner import scan_gaps
+from tradex.options.flow import scan_unusual_flow, get_put_call_sentiment
+from tradex.alerts.notifier import (
+    send_alert, SLACK_WEBHOOK, EMAIL_TO,
+    COIL_ALERT_THRESHOLD, PATTERN_ALERT_THRESHOLD, CONFLUENCE_ALERT_THRESHOLD,
+)
 
 store.init()
 
@@ -43,8 +52,9 @@ with st.sidebar:
     watchlist = list(dict.fromkeys(DEFAULT_TICKERS + extra))
     st.caption(f"{len(watchlist)} tickers in watchlist")
 
-tab_scanner, tab_coil, tab_confluence, tab_pattern, tab_journal = st.tabs([
-    "Scanner", "Coil Detector", "Confluence", "Pattern Match", "Signal Journal"
+tab_scanner, tab_coil, tab_confluence, tab_pattern, tab_premarket, tab_options, tab_alerts, tab_journal = st.tabs([
+    "Scanner", "Coil Detector", "Confluence", "Pattern Match",
+    "Pre-Market", "Options Flow", "Alerts", "Signal Journal",
 ])
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -374,6 +384,212 @@ with tab_pattern:
             st.error(detail["error"])
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 5 — PRE-MARKET GAP SCANNER
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_premarket:
+    st.subheader("Pre-Market Gap Scanner")
+    st.caption(
+        "Identifies stocks with significant gaps from the previous close based on "
+        "pre-market trading. Best run between 7am–9:25am ET. "
+        "Data is ~15min delayed on Yahoo Finance — use Alpaca or Polygon for real-time."
+    )
+
+    g_col1, g_col2 = st.columns(2)
+    min_gap = g_col1.slider("Min gap %", 1.0, 15.0, 2.0, step=0.5, key="min_gap")
+    g_col2.markdown("""
+    **Gap tiers:**
+    - 🔴 **Massive** ≥ 8% — earnings / M&A / major news
+    - 🟠 **Large** ≥ 4% — analyst action / sector move
+    - 🟡 **Moderate** ≥ 2% — notable pre-market activity
+    """)
+
+    if st.button("Scan Pre-Market Gaps", type="primary", key="btn_gaps"):
+        with st.spinner(f"Scanning {len(watchlist)} tickers for pre-market gaps…"):
+            gaps = scan_gaps(watchlist, min_gap_pct=min_gap)
+
+        if gaps.empty:
+            st.info(f"No gaps above {min_gap}% found. Market may not be in pre-market session yet, or no significant gaps today.")
+        else:
+            tier_colors = {"massive": "🔴", "large": "🟠", "moderate": "🟡", "small": "⚪"}
+            gaps["tier_icon"] = gaps["tier"].map(tier_colors)
+            gaps["gap_display"] = gaps["gap_pct"].apply(lambda x: f"{x:+.2f}%")
+
+            st.success(f"{len(gaps)} gaps found")
+
+            # Headline metrics
+            gap_ups   = gaps[gaps["direction"] == "up"]
+            gap_downs = gaps[gaps["direction"] == "down"]
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Total gaps",  len(gaps))
+            m2.metric("Gap ups",     len(gap_ups),   delta=f"avg {gap_ups['gap_pct'].mean():+.1f}%" if not gap_ups.empty else None)
+            m3.metric("Gap downs",   len(gap_downs),  delta=f"avg {gap_downs['gap_pct'].mean():+.1f}%" if not gap_downs.empty else None, delta_color="inverse")
+
+            display_cols = ["tier_icon", "ticker", "gap_display", "prev_close", "pre_market", "tier", "note"]
+            st.dataframe(gaps[display_cols].rename(columns={"tier_icon": ""}), use_container_width=True)
+
+            # Bar chart
+            gap_fig = px.bar(
+                gaps, x="ticker", y="gap_pct",
+                color="direction",
+                color_discrete_map={"up": "green", "down": "red"},
+                title="Pre-Market Gaps by Ticker",
+                labels={"gap_pct": "Gap %", "ticker": ""},
+            )
+            gap_fig.add_hline(y=0, line_color="white", line_width=1)
+            gap_fig.update_layout(height=350)
+            st.plotly_chart(gap_fig, use_container_width=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 6 — OPTIONS FLOW
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_options:
+    st.subheader("Options Flow — Unusual Activity Scanner")
+    st.caption(
+        "Detects unusual options volume and put/call sentiment. "
+        "Institutional players often telegraph moves through options 1–3 days before price follows."
+    )
+
+    # Data source status
+    import os
+    uw_key     = os.getenv("UNUSUAL_WHALES_API_KEY", "")
+    tradier_key = os.getenv("TRADIER_API_KEY", "")
+    if uw_key:
+        st.success("Using Unusual Whales API — sweep detection enabled")
+    elif tradier_key:
+        st.info("Using Tradier API — real-time chains, no sweep detection")
+    else:
+        st.warning(
+            "Using yfinance (free, delayed) — volume/OI analysis only. "
+            "Add UNUSUAL_WHALES_API_KEY or TRADIER_API_KEY to .env for sweep detection."
+        )
+
+    o_col1, o_col2 = st.columns(2)
+    min_vol_oi = o_col1.slider("Min Vol/OI ratio", 1.0, 20.0, 3.0, step=0.5, key="min_vol_oi")
+    o_col2.markdown("""
+    **Vol/OI ratio guide:**
+    - **>10x** — extremely unusual, likely a sweep
+    - **3–10x** — notable activity worth watching
+    - **1–3x** — slightly elevated, may be noise
+    """)
+
+    if st.button("Scan Options Flow", type="primary", key="btn_options"):
+        with st.spinner(f"Scanning options chains for {len(watchlist)} tickers…"):
+            unusual = scan_unusual_flow(watchlist, min_vol_oi=min_vol_oi)
+
+        if unusual.empty:
+            st.info(f"No unusual options activity found above {min_vol_oi}x Vol/OI ratio.")
+        else:
+            st.success(f"{len(unusual)} unusual contracts found")
+            st.dataframe(unusual, use_container_width=True)
+            st.session_state["options_unusual"] = unusual
+
+    # Put/call sentiment for individual ticker
+    st.divider()
+    st.subheader("Put/Call Sentiment")
+    pc_ticker = st.selectbox("Select ticker", watchlist, key="sel_pc")
+    if st.button("Get Sentiment", key="btn_pc"):
+        with st.spinner(f"Fetching options data for {pc_ticker}…"):
+            sentiment = get_put_call_sentiment(pc_ticker)
+
+        s_col1, s_col2, s_col3, s_col4 = st.columns(4)
+        s_col1.metric("Put/Call Ratio", sentiment.get("put_call_ratio", "N/A"))
+        s_col2.metric("Call Volume",    sentiment.get("call_volume", 0))
+        s_col3.metric("Put Volume",     sentiment.get("put_volume", 0))
+        s_col4.metric("Sentiment",      sentiment.get("sentiment", "unknown").upper())
+
+        ratio = sentiment.get("put_call_ratio")
+        source = sentiment.get("data_source", "unknown")
+        if ratio is not None:
+            if ratio < 0.7:
+                st.success(f"Bullish options sentiment — more call buying than puts (source: {source})")
+            elif ratio > 1.2:
+                st.error(f"Bearish options sentiment — more put buying than calls (source: {source})")
+            else:
+                st.info(f"Neutral options sentiment — balanced call/put activity (source: {source})")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 7 — ALERTS CONFIGURATION
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_alerts:
+    st.subheader("Alert Configuration")
+    st.caption(
+        "Alerts fire automatically when the watcher is running and thresholds are crossed. "
+        "Configure channels and thresholds in your .env file."
+    )
+
+    # Channel status
+    st.markdown("### Channel Status")
+    ch1, ch2 = st.columns(2)
+    with ch1:
+        if SLACK_WEBHOOK:
+            st.success("Slack: **Connected**")
+        else:
+            st.error("Slack: **Not configured**")
+            st.code("ALERT_SLACK_WEBHOOK=https://hooks.slack.com/services/...")
+    with ch2:
+        if EMAIL_TO:
+            st.success(f"Email: **Connected** → {EMAIL_TO}")
+        else:
+            st.error("Email: **Not configured**")
+            st.code("ALERT_EMAIL_TO=you@example.com\nALERT_EMAIL_HOST=smtp.gmail.com\nALERT_EMAIL_USER=...\nALERT_EMAIL_PASS=...")
+
+    st.divider()
+
+    # Threshold display
+    st.markdown("### Current Thresholds")
+    st.caption("Edit these in your .env file — changes take effect on next watcher restart.")
+    t1, t2, t3 = st.columns(3)
+    t1.metric("Coil alert threshold",       f"{COIL_ALERT_THRESHOLD}",      help="Minimum coil strength score to trigger alert")
+    t2.metric("Pattern match threshold",    f"{PATTERN_ALERT_THRESHOLD}%",  help="Minimum similarity % to trigger alert")
+    t3.metric("Confluence threshold",       f"{CONFLUENCE_ALERT_THRESHOLD}", help="Minimum confluence score to trigger alert")
+
+    st.code("""# Paste into your .env file:
+ALERT_COIL_THRESHOLD=60
+ALERT_PATTERN_THRESHOLD=75
+ALERT_CONFLUENCE_THRESHOLD=70""")
+
+    st.divider()
+
+    # Test alert
+    st.markdown("### Send Test Alert")
+    st.caption("Verify your channels are working before relying on them.")
+    if st.button("Send Test Alert", key="btn_test_alert"):
+        results = send_alert(
+            subject="TradeX Test Alert",
+            body="This is a test alert from your TradeX dashboard. If you received this, alerts are configured correctly.",
+        )
+        sent = [k for k, v in results.items() if v]
+        failed = [k for k, v in results.items() if not v]
+        if sent:
+            st.success(f"Test alert sent via: {', '.join(sent)}")
+        if failed:
+            st.warning(f"Not sent (not configured): {', '.join(failed)}")
+
+    st.divider()
+
+    # Alert types reference
+    st.markdown("### What Triggers Alerts")
+    st.markdown("""
+| Alert type | When it fires | Channel |
+|---|---|---|
+| **Coil detected** | Coil strength ≥ threshold after a scan | Slack + Email |
+| **Pattern match** | Similarity ≥ threshold vs run-up/decline fingerprint | Slack + Email |
+| **Confluence** | Cross-timeframe confluence score ≥ threshold | Slack + Email |
+| **Pre-market gap** | Gap ≥ 4% before market open (8am ET) | Slack + Email |
+
+Alerts are checked automatically every scan cycle when the watcher is running:
+```bash
+.venv/bin/python -m tradex.tracker.watcher --timeframe intraday --interval 5
+```
+""")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 8 — SIGNAL JOURNAL
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 5 — SIGNAL JOURNAL
 # ══════════════════════════════════════════════════════════════════════════════

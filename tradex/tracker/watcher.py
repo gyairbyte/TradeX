@@ -22,8 +22,12 @@ from datetime import datetime, timezone
 import schedule
 
 from tradex.screener.engine import run as screener_run
-from tradex.tracker import store
+from tradex.tracker import store, analyzer
 from tradex.tracker.outcome_tracker import run_outcome_pass
+from tradex.tracker.confluence import run_confluence_screen
+from tradex.patterns.matcher import run_match_screen
+from tradex.alerts.notifier import alert_coil, alert_pattern_match, alert_confluence
+from tradex.premarket.gap_scanner import run_gap_alerts
 
 DEFAULT_WATCHLIST = [
     "AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "META", "GOOGL",
@@ -32,13 +36,51 @@ DEFAULT_WATCHLIST = [
 ]
 
 
+def _check_alerts(tickers: list[str], timeframe: str) -> None:
+    """Check coils, confluence, and pattern matches — fire alerts where thresholds are crossed."""
+    # Coil alerts
+    coils = analyzer.detect_coils(timeframe, days=7)
+    for _, row in coils.iterrows():
+        alert_coil(
+            ticker=row["ticker"],
+            coil_strength=row["coil_strength"],
+            score=row["latest_score"],
+            trend=row["trend_direction"],
+            timeframe=timeframe,
+        )
+
+    # Confluence alerts
+    conf = run_confluence_screen(tickers)
+    for _, row in conf.iterrows():
+        alert_confluence(
+            ticker=row["ticker"],
+            confluence_score=int(row["confluence_score"]),
+            active_timeframes=row["active_timeframes"].split(", ") if row["active_timeframes"] else [],
+            last_close=float(row.get("last_close") or 0),
+        )
+
+    # Pattern match alerts (only if fingerprints exist)
+    for event_type in ("runup", "decline"):
+        for profile in ("standard",):
+            matches = run_match_screen(tickers, event_type=event_type, profile=profile)
+            for _, row in matches.iterrows():
+                alert_pattern_match(
+                    ticker=row["ticker"],
+                    similarity=float(row["similarity_score"]),
+                    event_type=event_type,
+                    profile=profile,
+                    fp_events=int(row.get("fp_events", 0)),
+                    interpretation=row.get("interpretation", ""),
+                )
+
+
 def run_once(
     tickers: list[str],
     timeframe: str = "intraday",
     min_score: int = 35,
     provider: str | None = None,
 ) -> None:
-    """Run a single scan pass and persist results."""
+    """Run a single scan pass, persist results, and fire any threshold alerts."""
     store.init()
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     print(f"[{now}] Scanning {len(tickers)} tickers on {timeframe}…")
@@ -51,6 +93,8 @@ def run_once(
         print(f"[{now}] {len(results)} signals found:")
         print(results[["ticker", "score", "volume_ratio", "rsi"]].to_string(index=False))
         store.record_signals(results, timeframe)
+
+    _check_alerts(tickers, timeframe)
 
 
 def start_loop(
@@ -71,8 +115,12 @@ def start_loop(
         run_once, tickers=tickers, timeframe=timeframe,
         min_score=min_score, provider=provider,
     )
-    # Run outcome pass once after market close each day (4:30pm ET ≈ 20:30 UTC)
+    # Daily after market close: resolve outcomes
     schedule.every().day.at("20:30").do(run_outcome_pass, verbose=True)
+    # Daily pre-market: gap scan at 8am ET (12:00 UTC)
+    schedule.every().day.at("12:00").do(
+        run_gap_alerts, tickers=tickers, min_gap_pct=4.0
+    )
 
     try:
         while True:
