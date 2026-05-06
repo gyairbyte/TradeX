@@ -1,0 +1,2 @@
+# TradeX
+Stock Trading App
