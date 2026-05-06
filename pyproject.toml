@@ -1,0 +1,26 @@
+[project]
+name = "tradex"
+version = "0.1.0"
+description = "Stock market opportunity identifier — intraday, short-term, and long-term signals"
+requires-python = ">=3.11"
+dependencies = [
+    "yfinance>=0.2.50",
+    "pandas>=2.2.0",
+    "numpy>=1.26.0",
+    "ta>=0.11.0",
+    "streamlit>=1.35.0",
+    "plotly>=5.22.0",
+    "requests>=2.32.0",
+    "python-dotenv>=1.0.0",
+    "schedule>=1.2.0",
+]
+
+[project.optional-dependencies]
+dev    = ["ruff", "pytest", "pytest-cov"]
+alpaca = ["alpaca-py>=0.21.0"]
+ibkr   = ["ib_insync>=0.9.86"]
+schwab = ["schwab-py>=1.4.0"]
+all    = ["alpaca-py>=0.21.0", "ib_insync>=0.9.86", "schwab-py>=1.4.0"]
+
+[tool.ruff]
+line-length = 100

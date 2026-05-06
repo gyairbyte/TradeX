@@ -1,0 +1,22 @@
+# Virtual environment
+.venv/
+
+# Environment variables (never commit secrets)
+.env
+
+# Local databases (user-specific, regenerated at runtime)
+~/.tradex/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# OS
+.DS_Store
+
+# Streamlit
+.streamlit/
