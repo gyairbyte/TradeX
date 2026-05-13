@@ -9,21 +9,34 @@ TradeX identifies trading opportunities across three timeframes: **intraday**, *
 ```
 tradex/
 ├── tradex/
-│   ├── data/
-│   │   └── fetcher.py          # Multi-provider OHLCV fetcher (Yahoo, Alpaca, IBKR, Schwab)
+│   ├── data/fetcher.py            # Multi-provider OHLCV fetcher (Yahoo, Alpaca, IBKR, Schwab)
 │   ├── signals/
-│   │   ├── indicators.py       # Computes RSI, MACD, EMA, Bollinger Bands, ATR, volume ratios
-│   │   ├── intraday.py         # Intraday swing signal scorer (5m bars, 5-day window)
-│   │   ├── short_term.py       # Short-term momentum scorer (daily bars, 60-day window)
-│   │   └── long_term.py        # Long-term trend scorer (weekly bars, 2-year window)
-│   ├── screener/
-│   │   └── engine.py           # Runs all scorers across a watchlist, returns ranked DataFrame
-│   └── ui/
-│       └── dashboard.py        # Streamlit dashboard with candlestick charts and drill-down
-├── pyproject.toml              # Dependencies and project metadata
-├── .env.example                # API keys and provider config (Yahoo/Alpaca/IBKR/Schwab)
-├── README.md                   # This file
-└── CLAUDE.md                   # AI assistant context and build guidance
+│   │   ├── indicators.py          # RSI, MACD, EMA, Bollinger Bands, ATR, volume ratios
+│   │   ├── intraday.py            # 5m bars / 5-day window scorer
+│   │   ├── short_term.py          # Daily bars / 60-day window scorer
+│   │   └── long_term.py           # Weekly bars / 2-year window scorer
+│   ├── screener/engine.py         # Runs scorers across a watchlist, returns ranked DataFrame
+│   ├── tracker/
+│   │   ├── store.py               # SQLite signal history (~/.tradex/signals.db)
+│   │   ├── analyzer.py            # Coil detector — pre-breakout pressure detection
+│   │   ├── confluence.py          # Multi-timeframe alignment scoring
+│   │   ├── outcome_tracker.py     # 1d/3d/5d price follow-up, win rate by score bucket
+│   │   └── watcher.py             # Scheduled scan runner
+│   ├── patterns/
+│   │   ├── config.py              # PatternConfig + conservative/standard/volatile profiles
+│   │   ├── miner.py               # Mines 3yr daily history for run-up / decline events
+│   │   ├── fingerprint.py         # Averages mined windows into fingerprints
+│   │   └── matcher.py             # Weighted Pearson similarity vs. live 10-day windows
+│   ├── premarket/gap_scanner.py   # Pre-market gap-up/down detector
+│   ├── options/flow.py            # Unusual options activity, put/call sentiment
+│   ├── alerts/notifier.py         # Discord bot + email alerting
+│   ├── earnings/calendar.py       # Next-earnings lookup + 24h SQLite cache
+│   ├── watchlists/store.py        # Named watchlist persistence
+│   └── ui/dashboard.py            # Streamlit dashboard (9 tabs)
+├── pyproject.toml
+├── .env.example
+├── README.md
+└── CLAUDE.md
 ```
 
 ---
@@ -44,12 +57,28 @@ Each timeframe has its own scorer that returns a **score from 0–100** plus hum
 
 ### Intraday Setup Logic
 The intraday scorer specifically targets stocks where:
-1. **Volume is accumulating** (multi-day volume above average) — indicates institutional interest building
+1. **Volume is accumulating** — institutional interest building
 2. **Bollinger Bands are squeezing then expanding** — volatility contracting before a breakout
 3. **MACD crosses bullish** on the 5-minute chart
 4. **RSI is in momentum zone** (55–75) without being overextended
 
 These conditions together suggest a stock that has been "coiling" and is ready for a significant intraday swing.
+
+---
+
+## Dashboard Tabs
+
+| Tab | What it does |
+|---|---|
+| **Scanner** | Score every ticker in the active watchlist, drill into candlestick + volume chart |
+| **Coil Detector** | Stocks that have scored well across multiple scans without breaking out yet |
+| **Confluence** | Stocks scoring well across intraday + short + long simultaneously |
+| **Pattern Match** | Compare current 10-day windows against historical run-up/decline fingerprints |
+| **Pre-Market** | Gap-up/down detection vs. previous close using pre-market quotes |
+| **Options Flow** | Unusual options volume vs. open interest, put/call sentiment |
+| **Alerts** | Configure Discord/email push for coil, confluence, and pattern thresholds |
+| **Signal Journal** | Historical outcomes: did the move happen? Win rate by score bucket |
+| **Help** | In-app documentation for every feature |
 
 ---
 
@@ -60,7 +89,7 @@ These conditions together suggest a stock that has been "coiling" and is ready f
 pip install uv
 uv pip install -e .
 
-# Install optional provider extras (pick what you need)
+# Install optional provider extras
 uv pip install -e ".[alpaca]"   # Alpaca real-time
 uv pip install -e ".[ibkr]"     # Interactive Brokers
 uv pip install -e ".[schwab]"   # Charles Schwab
@@ -71,12 +100,21 @@ cp .env.example .env
 
 # Launch the dashboard
 streamlit run tradex/ui/dashboard.py
+```
 
-# Or run the screener from Python
+```python
+# Or run the screener programmatically
 from tradex.screener.engine import run
-results = run(["AAPL", "NVDA", "TSLA"], timeframe="intraday", min_score=40)
+results = run(
+    ["AAPL", "NVDA", "TSLA"],
+    timeframe="intraday",
+    min_score=40,
+    exclude_earnings_within=5,   # optional: skip stocks with earnings within 5 days
+)
 print(results)
 ```
+
+---
 
 ## Data Providers
 
@@ -97,11 +135,11 @@ Set `DATA_PROVIDER` in your `.env` to switch sources:
 
 The tracker module is what separates TradeX from standard screeners. Rather than showing you a snapshot, it builds a history of every signal fired and detects patterns across time.
 
-### How it works
-1. Run the **Scanner** tab (or `watcher.py` on a schedule) — each result is saved to a local SQLite database at `~/.tradex/signals.db`
-2. As history accumulates, the **Coil Detector** tab surfaces stocks that have been scoring well for multiple days *without breaking out yet* — these are pre-signal candidates
+1. Run the **Scanner** tab (or `watcher.py` on a schedule) — each result is saved to `~/.tradex/signals.db`
+2. As history accumulates, the **Coil Detector** surfaces stocks scoring well for multiple days *without breaking out yet*
 3. The **Confluence** tab shows stocks scoring well across all three timeframes simultaneously
-4. The **Signal Journal** tracks what happened after each signal fired
+4. The **Outcome Tracker** fetches prices 1d/3d/5d after each signal and writes `outcome_pct` back to the DB
+5. The **Signal Journal** rolls those outcomes up into win rate / expectancy by score bucket
 
 ### Coil detection logic
 A "coil" is a stock that:
@@ -121,19 +159,47 @@ python -m tradex.tracker.watcher --timeframe intraday --interval 5
 
 ---
 
+## Earnings Awareness
+
+A technically-clean setup that resolves *into* an earnings print is no longer a technical trade — it's a binary event bet. TradeX fetches the next earnings date per ticker via yfinance (cached 24h in `~/.tradex/earnings_cache.db`) and exposes:
+
+- **Sidebar slider** — "Exclude earnings within N days" filters Scanner + Confluence results
+- **"Earnings In" column** — always shown in result tables so you can see proximity at a glance even with the filter off
+
+---
+
+## Watchlist Persistence
+
+Save and switch between named ticker lists (e.g. "Semis", "Crypto-adjacent", "Earnings plays") from the sidebar. Persisted to `~/.tradex/watchlists.db`. The built-in **Default** list of 20 mega-cap and high-volume tickers cannot be deleted; everything else is fully editable.
+
+---
+
 ## Roadmap
 
-- [ ] Alert system (email/Slack webhook when score crosses threshold)
-- [ ] Pre-market gap scanner
-- [ ] Earnings event filter (avoid/target earnings plays)
-- [ ] Backtesting module to validate signal quality historically
+### Completed
 - [x] Multi-provider data fetcher (Yahoo, Alpaca, IBKR, Schwab)
 - [x] Signal state tracking (SQLite history, coil detection, confluence scoring)
 - [x] Automated outcome tracking (1d/3d/5d price fetch, win rate, expectancy by score bucket)
 - [x] Signal journal with quality breakdown by score range and timeframe
 - [x] Historical pattern fingerprinting (mine run-ups/declines, average pre-event windows, match live stocks)
-- [ ] Alert system (Slack/email when pattern match or coil threshold crossed)
-- [ ] Pre-market gap scanner
-- [ ] Options flow integration
-- [ ] Watchlist persistence and custom scoring weights
+- [x] Alert system (Discord bot + email when coil / confluence / pattern thresholds crossed)
+- [x] Pre-market gap scanner
+- [x] Options flow integration (unusual vol/OI, put/call sentiment)
+- [x] In-app Help tab + tooltips throughout dashboard
+- [x] Earnings awareness — filter + flag stocks with earnings within N days
+- [x] Watchlist persistence — save/load/delete named watchlists
+
+### Still on the list
+- [ ] Scoring weight customization — let the user tune per-signal weights in the UI
+- [ ] Backtesting module to validate signal quality historically
 - [ ] Portfolio-level risk view
+
+### Nice-to-have enhancements
+- [ ] Sector/industry grouping — show signals rolled up by sector to spot rotations
+- [ ] Correlation-aware confluence — penalize confluence across highly correlated tickers
+- [ ] Live alerts triggered by the watcher (currently alerts must be checked from the dashboard)
+- [ ] Mobile-friendly dashboard view
+- [ ] Export scan results to CSV / Notion
+- [ ] Walk-forward optimization for signal weights (once backtesting exists)
+- [ ] News sentiment overlay on the drill-down chart
+- [ ] Multiple Discord channels per alert type

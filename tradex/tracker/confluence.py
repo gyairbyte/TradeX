@@ -14,6 +14,7 @@ Confluence tiers:
 import pandas as pd
 from tradex.data.fetcher import fetch
 from tradex.signals import intraday, short_term, long_term
+from tradex.earnings import days_until_earnings
 
 
 # Weight by timeframe — intraday gets less weight alone since it's noisier
@@ -91,25 +92,39 @@ def run_confluence_screen(
     tickers: list[str],
     min_confluence: int = 50,
     provider: str | None = None,
+    exclude_earnings_within: int | None = None,
 ) -> pd.DataFrame:
     """
     Run confluence scoring across a watchlist.
     Returns a DataFrame ranked by confluence score.
+
+    `exclude_earnings_within`: if set, drop tickers with earnings within N days.
+    Result rows always include `days_until_earnings` (None if unknown).
     """
     rows = []
     for ticker in tickers:
         try:
+            days_to_er = days_until_earnings(ticker)
+            if (
+                exclude_earnings_within is not None
+                and days_to_er is not None
+                and 0 <= days_to_er <= exclude_earnings_within
+            ):
+                print(f"[skip] {ticker}: earnings in {days_to_er}d")
+                continue
+
             result = score_confluence(ticker, provider=provider)
             if result["confluence_score"] >= min_confluence:
                 rows.append({
-                    "ticker":            result["ticker"],
-                    "confluence_score":  result["confluence_score"],
-                    "tier":              result["tier"],
-                    "active_timeframes": ", ".join(result.get("active_timeframes", [])),
-                    "score_intraday":    result["scores"].get("intraday", "-"),
-                    "score_short":       result["scores"].get("short", "-"),
-                    "score_long":        result["scores"].get("long", "-"),
-                    "last_close":        result.get("last_close"),
+                    "ticker":              result["ticker"],
+                    "confluence_score":    result["confluence_score"],
+                    "tier":                result["tier"],
+                    "active_timeframes":   ", ".join(result.get("active_timeframes", [])),
+                    "score_intraday":      result["scores"].get("intraday", "-"),
+                    "score_short":         result["scores"].get("short", "-"),
+                    "score_long":          result["scores"].get("long", "-"),
+                    "days_until_earnings": days_to_er,
+                    "last_close":          result.get("last_close"),
                 })
         except Exception as e:
             print(f"[skip] {ticker}: {e}")

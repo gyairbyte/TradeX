@@ -31,8 +31,10 @@ from tradex.alerts.notifier import (
     send_alert, DISCORD_TOKEN, DISCORD_CHANNEL_ID, EMAIL_TO,
     COIL_ALERT_THRESHOLD, PATTERN_ALERT_THRESHOLD, CONFLUENCE_ALERT_THRESHOLD,
 )
+from tradex.watchlists import store as wl_store, DEFAULT_NAME as WL_DEFAULT_NAME
 
 store.init()
+wl_store.init()
 
 DEFAULT_TICKERS = [
     "AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "META", "GOOGL",
@@ -73,14 +75,77 @@ with st.sidebar:
         ),
     )
 
+    # ── Watchlist selector ───────────────────────────────────────────────────
+    saved_lists = wl_store.list_all()
+    saved_names = [w["name"] for w in saved_lists]
+    active_options = [WL_DEFAULT_NAME] + saved_names
+    active_name = st.selectbox(
+        "Active watchlist",
+        active_options,
+        help=(
+            "Pick which saved watchlist to scan. **Default** is the built-in 20-ticker "
+            "universe. Save your own below to create themed lists (semis, crypto-adjacent, "
+            "earnings plays, etc.)."
+        ),
+    )
+    if active_name == WL_DEFAULT_NAME:
+        base_tickers = DEFAULT_TICKERS
+    else:
+        base_tickers = wl_store.load(active_name) or DEFAULT_TICKERS
+
     custom = st.text_input(
         "Add tickers (comma-separated)",
         "",
-        help="Add any tickers not in the default watchlist. Example: COIN, HOOD, RKLB",
+        help="Append to the active watchlist for this session. Example: COIN, HOOD, RKLB",
     )
     extra = [t.strip().upper() for t in custom.split(",") if t.strip()]
-    watchlist = list(dict.fromkeys(DEFAULT_TICKERS + extra))
+    watchlist = list(dict.fromkeys(base_tickers + extra))
     st.caption(f"{len(watchlist)} tickers in watchlist")
+
+    with st.expander("💾 Save / manage watchlists", expanded=False):
+        st.caption("Persisted to ~/.tradex/watchlists.db — survives restarts.")
+        new_name = st.text_input(
+            "Name", key="wl_save_name",
+            help="Save the current ticker list (active list + comma-separated additions) under this name. Re-using an existing name overwrites it.",
+        )
+        col_save, col_del = st.columns(2)
+        if col_save.button("Save current", key="wl_save_btn", use_container_width=True):
+            try:
+                wl_store.save(new_name, watchlist)
+                st.success(f"Saved '{new_name}' ({len(watchlist)} tickers)")
+                st.rerun()
+            except ValueError as e:
+                st.error(str(e))
+        can_delete = active_name != WL_DEFAULT_NAME
+        if col_del.button(
+            "Delete active",
+            key="wl_del_btn",
+            disabled=not can_delete,
+            use_container_width=True,
+            help="Delete the currently selected watchlist. Disabled for Default (built-in)." if can_delete else "Cannot delete the built-in Default watchlist.",
+        ):
+            if wl_store.delete(active_name):
+                st.success(f"Deleted '{active_name}'")
+                st.rerun()
+        if saved_lists:
+            st.caption("Saved lists:")
+            for w in saved_lists:
+                st.caption(f"• **{w['name']}** — {w['ticker_count']} tickers")
+
+    earnings_buffer = st.slider(
+        "Exclude earnings within (days)",
+        0, 21, 0,
+        help=(
+            "Filter out stocks with earnings reports within this many calendar days.\n\n"
+            "• **0 (default)** — no earnings filter. Show everything.\n"
+            "• **3–5 days** — avoid being long into a print. Technical setups can be "
+            "wiped out by an earnings gap regardless of how clean they looked.\n"
+            "• **7–14 days** — most conservative. Filters out any setup where the move "
+            "could resolve into the earnings window.\n\n"
+            "Results still show days-until-earnings as a column even when this is 0, "
+            "so you can see the proximity at a glance."
+        ),
+    )
 
     st.divider()
     st.markdown("[📖 Help & Documentation](#help)", help="Open the Help tab for full feature explanations.")
@@ -125,22 +190,35 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
 
     if run_scan:
         with st.spinner(f"Scanning {len(watchlist)} tickers on {timeframe}…"):
-            results = run(watchlist, timeframe=timeframe, min_score=min_score)
+            results = run(
+                watchlist,
+                timeframe=timeframe,
+                min_score=min_score,
+                exclude_earnings_within=earnings_buffer if earnings_buffer > 0 else None,
+            )
         if results.empty:
             st.warning("No opportunities found. Lower the min score or add more tickers.")
         else:
-            st.success(f"Found {len(results)} opportunities")
+            if earnings_buffer > 0:
+                st.success(f"Found {len(results)} opportunities (excluded tickers with earnings within {earnings_buffer}d)")
+            else:
+                st.success(f"Found {len(results)} opportunities")
             store.record_signals(results, timeframe)
             st.dataframe(
                 results,
                 use_container_width=True,
                 column_config={
-                    "ticker":       st.column_config.TextColumn("Ticker"),
-                    "score":        st.column_config.ProgressColumn("Score", min_value=0, max_value=100),
-                    "last_close":   st.column_config.NumberColumn("Last Close", format="$%.2f"),
-                    "volume_ratio": st.column_config.NumberColumn("Vol Ratio", help="Current volume ÷ 20-bar average. >2 = unusually high volume."),
-                    "rsi":          st.column_config.NumberColumn("RSI", help="Relative Strength Index. 30=oversold, 70=overbought. Sweet spot: 50–70."),
-                    "reasons":      st.column_config.TextColumn("Reasons", width="large"),
+                    "ticker":              st.column_config.TextColumn("Ticker"),
+                    "score":               st.column_config.ProgressColumn("Score", min_value=0, max_value=100),
+                    "last_close":          st.column_config.NumberColumn("Last Close", format="$%.2f"),
+                    "volume_ratio":        st.column_config.NumberColumn("Vol Ratio", help="Current volume ÷ 20-bar average. >2 = unusually high volume."),
+                    "rsi":                 st.column_config.NumberColumn("RSI", help="Relative Strength Index. 30=oversold, 70=overbought. Sweet spot: 50–70."),
+                    "days_until_earnings": st.column_config.NumberColumn(
+                        "Earnings In",
+                        format="%d d",
+                        help="Calendar days until the next scheduled earnings report. Blank = none scheduled or unknown (e.g. ETFs).",
+                    ),
+                    "reasons":             st.column_config.TextColumn("Reasons", width="large"),
                 },
             )
             st.session_state["scan_results"] = results
@@ -340,23 +418,35 @@ A stock scoring 80+ on intraday alone is interesting. The same stock also scorin
     if st.button("Run Confluence Scan", key="btn_conf", type="primary",
                  help="Score each watchlist ticker across all three timeframes simultaneously. Takes ~3x longer than a single-timeframe scan."):
         with st.spinner(f"Scoring {len(watchlist)} tickers across all timeframes…"):
-            conf_results = run_confluence_screen(watchlist, min_confluence=min_confluence)
+            conf_results = run_confluence_screen(
+                watchlist,
+                min_confluence=min_confluence,
+                exclude_earnings_within=earnings_buffer if earnings_buffer > 0 else None,
+            )
         if conf_results.empty:
             st.warning("No confluence setups found. Lower the min confluence score.")
         else:
-            st.success(f"{len(conf_results)} multi-timeframe setups found")
+            if earnings_buffer > 0:
+                st.success(f"{len(conf_results)} multi-timeframe setups found (excluded tickers with earnings within {earnings_buffer}d)")
+            else:
+                st.success(f"{len(conf_results)} multi-timeframe setups found")
             st.dataframe(
                 conf_results,
                 use_container_width=True,
                 column_config={
-                    "ticker":            st.column_config.TextColumn("Ticker"),
-                    "confluence_score":  st.column_config.ProgressColumn("Confluence", min_value=0, max_value=100, help="Weighted average score across all three timeframes."),
-                    "tier":              st.column_config.TextColumn("Tier"),
-                    "active_timeframes": st.column_config.TextColumn("Active TFs", help="Timeframes where score ≥ 50."),
-                    "score_intraday":    st.column_config.ProgressColumn("Intraday", min_value=0, max_value=100),
-                    "score_short":       st.column_config.ProgressColumn("Short", min_value=0, max_value=100),
-                    "score_long":        st.column_config.ProgressColumn("Long", min_value=0, max_value=100),
-                    "last_close":        st.column_config.NumberColumn("Last Close", format="$%.2f"),
+                    "ticker":              st.column_config.TextColumn("Ticker"),
+                    "confluence_score":    st.column_config.ProgressColumn("Confluence", min_value=0, max_value=100, help="Weighted average score across all three timeframes."),
+                    "tier":                st.column_config.TextColumn("Tier"),
+                    "active_timeframes":   st.column_config.TextColumn("Active TFs", help="Timeframes where score ≥ 50."),
+                    "score_intraday":      st.column_config.ProgressColumn("Intraday", min_value=0, max_value=100),
+                    "score_short":         st.column_config.ProgressColumn("Short", min_value=0, max_value=100),
+                    "score_long":          st.column_config.ProgressColumn("Long", min_value=0, max_value=100),
+                    "days_until_earnings": st.column_config.NumberColumn(
+                        "Earnings In",
+                        format="%d d",
+                        help="Calendar days until the next scheduled earnings report. Blank = none scheduled or unknown.",
+                    ),
+                    "last_close":          st.column_config.NumberColumn("Last Close", format="$%.2f"),
                 },
             )
             st.session_state["conf_results"] = conf_results
@@ -509,11 +599,11 @@ using Pearson correlation across 5 series. Each series is weighted:
                         "interpretation":   st.column_config.TextColumn("Interpretation", width="large"),
                     },
                 )
-                st.session_state["match_results"] = match_results
-                st.session_state["match_etype"]   = match_etype
-                st.session_state["match_profile"]  = match_profile
+                st.session_state["match_results"]        = match_results
+                st.session_state["match_etype_saved"]    = match_etype
+                st.session_state["match_profile_saved"]  = match_profile
 
-    if "match_results" in st.session_state and not st.session_state["match_results"].empty:
+    if "match_results" in st.session_state and "match_etype_saved" in st.session_state and not st.session_state["match_results"].empty:
         st.divider()
         st.subheader("Pattern Overlay — Live vs Fingerprint")
         st.caption(
@@ -525,8 +615,8 @@ using Pearson correlation across 5 series. Each series is weighted:
         )
         detail = match_ticker(
             selected_match,
-            event_type=st.session_state["match_etype"],
-            profile=st.session_state["match_profile"],
+            event_type=st.session_state["match_etype_saved"],
+            profile=st.session_state["match_profile_saved"],
         )
         if "error" not in detail:
             s = detail["series_scores"]
@@ -544,7 +634,7 @@ using Pearson correlation across 5 series. Each series is weighted:
             n = len(detail["fp_series"].get("price_pct", []))
             x = list(range(-n + 1, 1))
             fp_mean  = detail["fp_series"].get("price_pct", [])
-            fp_data  = load_fingerprint(st.session_state["match_etype"], st.session_state["match_profile"])
+            fp_data  = load_fingerprint(st.session_state["match_etype_saved"], st.session_state["match_profile_saved"])
             fp_upper = fp_data["series"].get("price_pct", {}).get("upper", fp_mean)
             fp_lower = fp_data["series"].get("price_pct", {}).get("lower", fp_mean)
             live_price = detail["live_series"].get("price_pct", [])[-n:]
