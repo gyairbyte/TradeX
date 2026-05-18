@@ -14,7 +14,8 @@ tradex/
 │   │   ├── indicators.py          # RSI, MACD, EMA, Bollinger Bands, ATR, volume ratios
 │   │   ├── intraday.py            # 5m bars / 5-day window scorer
 │   │   ├── short_term.py          # Daily bars / 60-day window scorer
-│   │   └── long_term.py           # Weekly bars / 2-year window scorer
+│   │   ├── long_term.py           # Weekly bars / 2-year window scorer
+│   │   └── weights.py             # User-tunable per-signal weights, persisted to JSON
 │   ├── screener/engine.py         # Runs scorers across a watchlist, returns ranked DataFrame
 │   ├── tracker/
 │   │   ├── store.py               # SQLite signal history (~/.tradex/signals.db)
@@ -32,7 +33,7 @@ tradex/
 │   ├── alerts/notifier.py         # Discord bot + email alerting
 │   ├── earnings/calendar.py       # Next-earnings lookup + 24h SQLite cache
 │   ├── watchlists/store.py        # Named watchlist persistence
-│   └── ui/dashboard.py            # Streamlit dashboard (9 tabs)
+│   └── ui/dashboard.py            # Streamlit dashboard (10 tabs)
 ├── pyproject.toml
 ├── .env.example
 ├── README.md
@@ -78,6 +79,7 @@ These conditions together suggest a stock that has been "coiling" and is ready f
 | **Options Flow** | Unusual options volume vs. open interest, put/call sentiment |
 | **Alerts** | Configure Discord/email push for coil, confluence, and pattern thresholds |
 | **Signal Journal** | Historical outcomes: did the move happen? Win rate by score bucket |
+| **Weights** | Tune per-signal point values for each timeframe; persisted across restarts |
 | **Help** | In-app documentation for every feature |
 
 ---
@@ -188,9 +190,9 @@ Save and switch between named ticker lists (e.g. "Semis", "Crypto-adjacent", "Ea
 - [x] In-app Help tab + tooltips throughout dashboard
 - [x] Earnings awareness — filter + flag stocks with earnings within N days
 - [x] Watchlist persistence — save/load/delete named watchlists
+- [x] Scoring weight customization — per-signal sliders in the Weights tab, persisted to ~/.tradex/weights.json
 
 ### Still on the list
-- [ ] Scoring weight customization — let the user tune per-signal weights in the UI
 - [ ] Backtesting module to validate signal quality historically
 - [ ] Portfolio-level risk view
 
