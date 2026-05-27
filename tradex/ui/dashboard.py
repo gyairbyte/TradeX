@@ -12,6 +12,7 @@ Streamlit dashboard — eight tabs:
 Run with: streamlit run tradex/ui/dashboard.py
 """
 import os
+import re
 import streamlit as st
 import plotly.graph_objects as go
 import plotly.express as px
@@ -32,6 +33,7 @@ from tradex.alerts.notifier import (
     COIL_ALERT_THRESHOLD, PATTERN_ALERT_THRESHOLD, CONFLUENCE_ALERT_THRESHOLD,
 )
 from tradex.watchlists import store as wl_store, DEFAULT_NAME as WL_DEFAULT_NAME
+from tradex.watchlists import presets as wl_presets
 from tradex.signals import weights as signal_weights
 
 store.init()
@@ -42,6 +44,24 @@ DEFAULT_TICKERS = [
     "AMD", "PLTR", "MSTR", "SPY", "QQQ", "SOXL", "TQQQ",
     "SMCI", "ARM",  "AVGO", "MU",   "CRWD", "NET",
 ]
+
+_TICKER_SPLIT_RE = re.compile(r"[\s,;|]+")
+_TICKER_VALID_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")
+
+
+def _parse_pasted_tickers(raw: str) -> list[str]:
+    """Parse free-form pasted ticker text into a deduped uppercase list.
+
+    Accepts any combination of commas, newlines, tabs, semicolons, pipes, or
+    spaces as separators. Strips $ prefixes (e.g. "$AAPL"). Drops anything
+    that doesn't look like a plausible ticker symbol.
+    """
+    seen: list[str] = []
+    for tok in _TICKER_SPLIT_RE.split(raw or ""):
+        tok = tok.strip().lstrip("$").upper()
+        if tok and _TICKER_VALID_RE.match(tok) and tok not in seen:
+            seen.append(tok)
+    return seen
 
 st.set_page_config(page_title="TradeX", layout="wide")
 st.title("TradeX — Market Opportunity Scanner")
@@ -78,15 +98,35 @@ with st.sidebar:
 
     # ── Watchlist selector ───────────────────────────────────────────────────
     saved_lists = wl_store.list_all()
-    saved_names = [w["name"] for w in saved_lists]
-    active_options = [WL_DEFAULT_NAME] + saved_names
+    # Build a {name -> ticker_count} lookup for the dropdown formatter
+    _wl_counts = {w["name"]: w["ticker_count"] for w in saved_lists}
+    # Preset labels (what they get saved under via "Import preset") — used to
+    # tag saved watchlists as Preset vs. Custom in the dropdown.
+    _preset_labels = {p.label for p in wl_presets.PRESETS}
+
+    def _wl_format(name: str) -> str:
+        if name == WL_DEFAULT_NAME:
+            return f"🏠 {name} ({len(DEFAULT_TICKERS)})"
+        count = _wl_counts.get(name, 0)
+        icon = "📊" if name in _preset_labels else "⭐"
+        kind = "Preset" if name in _preset_labels else "Custom"
+        return f"{icon} {kind} · {name} ({count})"
+
+    # Sort: Default first, then presets, then customs — alphabetical within each group
+    preset_names  = sorted([w["name"] for w in saved_lists if w["name"] in _preset_labels])
+    custom_names  = sorted([w["name"] for w in saved_lists if w["name"] not in _preset_labels])
+    active_options = [WL_DEFAULT_NAME] + preset_names + custom_names
+
     active_name = st.selectbox(
         "Active watchlist",
         active_options,
+        format_func=_wl_format,
         help=(
-            "Pick which saved watchlist to scan. **Default** is the built-in 20-ticker "
-            "universe. Save your own below to create themed lists (semis, crypto-adjacent, "
-            "earnings plays, etc.)."
+            "Pick which saved watchlist to scan. Icons indicate the source:\n\n"
+            "• 🏠 **Default** — built-in 20-ticker starter universe\n"
+            "• 📊 **Preset** — imported from a built-in preset (S&P 500, sectors, etc.)\n"
+            "• ⭐ **Custom** — saved by you (paste-and-name, or snapshot)\n\n"
+            "Manage saved lists in the expander below."
         ),
     )
     if active_name == WL_DEFAULT_NAME:
@@ -105,33 +145,118 @@ with st.sidebar:
 
     with st.expander("💾 Save / manage watchlists", expanded=False):
         st.caption("Persisted to ~/.tradex/watchlists.db — survives restarts.")
+
+        st.markdown("**Create new from paste**")
+        create_name = st.text_input(
+            "New watchlist name", key="wl_create_name",
+            placeholder="e.g. Semis, Crypto plays, Earnings week",
+        )
+        pasted = st.text_area(
+            "Tickers",
+            key="wl_create_paste",
+            height=120,
+            placeholder="Paste tickers here — any format works:\nAAPL, MSFT, NVDA\nor one per line, or tab-separated from Sheets/Excel",
+            help="Separators auto-detected: commas, newlines, tabs, semicolons, spaces. Case insensitive. Duplicates removed.",
+        )
+        if st.button("Create watchlist", key="wl_create_btn", use_container_width=True):
+            parsed = _parse_pasted_tickers(pasted)
+            if not create_name.strip():
+                st.error("Give the watchlist a name.")
+            elif not parsed:
+                st.error("No tickers found in the paste box.")
+            else:
+                try:
+                    wl_store.save(create_name, parsed)
+                    st.success(f"Created '{create_name}' with {len(parsed)} tickers: {', '.join(parsed[:8])}{'…' if len(parsed) > 8 else ''}")
+                    st.rerun()
+                except ValueError as e:
+                    st.error(str(e))
+
+        st.divider()
+        st.markdown("**Add a preset**")
+        st.caption("One-click watchlists for common universes. Imports a snapshot into your saved lists.")
+        preset_options = {f"{p.label} ({len(p.tickers)} tickers)": p for p in wl_presets.PRESETS}
+        chosen_label = st.selectbox(
+            "Preset", list(preset_options.keys()), key="wl_preset_pick",
+            help="Imports the selected preset into your saved watchlists under its label. Re-importing overwrites.",
+        )
+        chosen_preset = preset_options[chosen_label]
+        st.caption(chosen_preset.description)
+        col_imp, col_refresh = st.columns(2)
+        if col_imp.button("Import preset", key="wl_preset_import_btn", use_container_width=True):
+            try:
+                wl_store.save(chosen_preset.label, list(chosen_preset.tickers))
+                st.success(f"Imported '{chosen_preset.label}' ({len(chosen_preset.tickers)} tickers). Select it in 'Active watchlist'.")
+                st.rerun()
+            except ValueError as e:
+                st.error(str(e))
+        if col_refresh.button(
+            "Refresh from web",
+            key="wl_preset_refresh_btn",
+            use_container_width=True,
+            help="Re-fetch S&P 500 / Dow / NDX constituents from Wikipedia and re-rank sector lists by live market cap. Overwrites previously imported presets. Takes ~30-60s.",
+        ):
+            from tradex.watchlists import refresh as wl_refresh
+            with st.spinner("Refreshing presets from Wikipedia + yfinance (this may take ~30-60s)…"):
+                try:
+                    result = wl_refresh.refresh_all()
+                    overrides = wl_refresh.result_to_preset_overrides(result)
+                    imported = 0
+                    for key, tickers in overrides.items():
+                        preset = wl_presets.PRESETS_BY_KEY.get(key)
+                        if preset and tickers:
+                            wl_store.save(preset.label, tickers)
+                            imported += 1
+                    st.success(f"Refreshed {imported} presets. Active watchlists overwritten with latest constituents.")
+                    for w in result.warnings:
+                        st.warning(w)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Refresh failed: {e}")
+
+        st.divider()
+        st.markdown("**Snapshot current selection**")
         new_name = st.text_input(
             "Name", key="wl_save_name",
-            help="Save the current ticker list (active list + comma-separated additions) under this name. Re-using an existing name overwrites it.",
+            help="Save the active list + comma-separated additions under this name. Re-using an existing name overwrites it.",
         )
-        col_save, col_del = st.columns(2)
-        if col_save.button("Save current", key="wl_save_btn", use_container_width=True):
+        if st.button("Save current", key="wl_save_btn", use_container_width=True):
             try:
                 wl_store.save(new_name, watchlist)
                 st.success(f"Saved '{new_name}' ({len(watchlist)} tickers)")
                 st.rerun()
             except ValueError as e:
                 st.error(str(e))
-        can_delete = active_name != WL_DEFAULT_NAME
-        if col_del.button(
-            "Delete active",
-            key="wl_del_btn",
-            disabled=not can_delete,
-            use_container_width=True,
-            help="Delete the currently selected watchlist. Disabled for Default (built-in)." if can_delete else "Cannot delete the built-in Default watchlist.",
-        ):
-            if wl_store.delete(active_name):
-                st.success(f"Deleted '{active_name}'")
-                st.rerun()
-        if saved_lists:
-            st.caption("Saved lists:")
-            for w in saved_lists:
-                st.caption(f"• **{w['name']}** — {w['ticker_count']} tickers")
+
+        st.divider()
+        st.markdown("**🗑️ Delete saved watchlists**")
+        if not saved_lists:
+            st.caption("No saved watchlists yet.")
+        else:
+            del_options = [w["name"] for w in saved_lists]
+            to_delete = st.multiselect(
+                "Pick one or more to delete",
+                del_options,
+                format_func=_wl_format,
+                key="wl_del_multi",
+                help="Multi-select. Presets can be re-imported later from the preset dropdown above; custom lists are gone for good.",
+            )
+            confirm = st.checkbox(
+                f"Yes, delete {len(to_delete)} watchlist{'s' if len(to_delete) != 1 else ''}",
+                key="wl_del_confirm",
+                disabled=not to_delete,
+            )
+            if st.button(
+                "Delete selected",
+                key="wl_del_btn",
+                disabled=not (to_delete and confirm),
+                use_container_width=True,
+                type="primary",
+            ):
+                deleted = [n for n in to_delete if wl_store.delete(n)]
+                if deleted:
+                    st.success(f"Deleted: {', '.join(deleted)}")
+                    st.rerun()
 
     earnings_buffer = st.slider(
         "Exclude earnings within (days)",
