@@ -1,5 +1,7 @@
 # CLAUDE.md — TradeX Project Context
 
+> **Setting up the app on this machine?** See [`SETUP.md`](SETUP.md) — it's the canonical install procedure (Mac + Windows, venv, `.env`, launchers, verification). If the user asks to "set up TradeX" or "install this", execute SETUP.md rather than improvising.
+
 ## What This Project Is
 
 TradeX is a personal stock market opportunity identifier built for Gary Yang. It scans stocks across three timeframes and scores them based on technical signals. The goal is to surface actionable trade setups — especially intraday swing opportunities that are preceded by detectable multi-day volume/volatility buildup.

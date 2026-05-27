@@ -2,6 +2,8 @@
 
 TradeX identifies trading opportunities across three timeframes: **intraday**, **short-term (days/weeks)**, and **long-term (weeks/months)**. It is especially tuned to detect intraday setups preceded by multi-day volume and volatility accumulation ("coiling" patterns that resolve into big intraday swings).
 
+> **Setting up on a new machine?** See [`SETUP.md`](SETUP.md) — a single end-to-end install guide written so an AI agent (Claude, ChatGPT, etc.) can execute it directly. Tell it "read SETUP.md and set this up" and it will handle Mac or Windows install, venv creation, `.env` setup, and the desktop launcher.
+
 ---
 
 ## Project Structure
