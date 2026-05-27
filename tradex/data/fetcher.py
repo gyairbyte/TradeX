@@ -151,60 +151,76 @@ def _fetch_ibkr(ticker: str, timeframe: str) -> pd.DataFrame:
 # Setup:
 #   1. Create a Schwab brokerage account at schwab.com
 #   2. Register an app at developer.schwab.com — get SCHWAB_APP_KEY + SCHWAB_APP_SECRET
-#   3. First run: schwab.auth.easy_client() will open a browser for OAuth login
-#      and write a token file to SCHWAB_TOKEN_PATH (default: ~/.tradex_schwab_token.json)
+#   3. Run scripts/schwab_oauth.py once to generate the OAuth token file at
+#      SCHWAB_TOKEN_PATH (default: ~/.tradex_schwab_token.json). After that,
+#      this fetcher just reads the token; schwab-py refreshes it automatically.
 # Note: TD Ameritrade API (tda-api library) is fully dead — do not use it.
-_SCHWAB_FREQ_MAP = {
-    "intraday": ("minute", 5,   "day",   5),    # 5-min bars, last 5 days
-    "short":    ("daily",  1,   "month", 2),    # daily bars, last 2 months
-    "long":     ("weekly", 1,   "year",  2),    # weekly bars, last 2 years
+from datetime import datetime, timedelta, timezone
+
+# Map each timeframe to (client method name, lookback timedelta).
+# Lookbacks roughly match what other providers return for the same timeframe.
+_SCHWAB_TIMEFRAMES = {
+    "intraday": ("get_price_history_every_five_minutes", timedelta(days=5)),
+    "short":    ("get_price_history_every_day",          timedelta(days=120)),
+    "long":     ("get_price_history_every_week",         timedelta(days=730)),
 }
+
+# Cache the authenticated client across calls — fetching a watchlist would
+# otherwise reload + decrypt the token file once per ticker.
+_SCHWAB_CLIENT = None
+
 
 def _fetch_schwab(ticker: str, timeframe: str) -> pd.DataFrame:
     try:
-        import schwab
+        from schwab.auth import client_from_token_file
     except ImportError:
         raise ImportError("Install schwab-py: pip install schwab-py")
 
-    app_key    = os.getenv("SCHWAB_APP_KEY")
-    app_secret = os.getenv("SCHWAB_APP_SECRET")
-    token_path = os.getenv("SCHWAB_TOKEN_PATH", os.path.expanduser("~/.tradex_schwab_token.json"))
+    global _SCHWAB_CLIENT
+    if _SCHWAB_CLIENT is None:
+        app_key    = os.getenv("SCHWAB_APP_KEY")
+        app_secret = os.getenv("SCHWAB_APP_SECRET")
+        token_path = os.path.expanduser(
+            os.getenv("SCHWAB_TOKEN_PATH", "~/.tradex_schwab_token.json")
+        )
 
-    if not app_key or not app_secret:
-        raise EnvironmentError("SCHWAB_APP_KEY and SCHWAB_APP_SECRET must be set in .env")
+        if not app_key or not app_secret:
+            raise EnvironmentError("SCHWAB_APP_KEY and SCHWAB_APP_SECRET must be set in .env")
+        if not os.path.exists(token_path):
+            raise FileNotFoundError(
+                f"Schwab OAuth token not found at {token_path}. "
+                "Run `python scripts/schwab_oauth.py` once to generate it."
+            )
 
-    # easy_client handles token refresh automatically after first OAuth login
-    client = schwab.auth.easy_client(app_key, app_secret, "https://127.0.0.1", token_path)
+        _SCHWAB_CLIENT = client_from_token_file(
+            token_path=token_path,
+            api_key=app_key,
+            app_secret=app_secret,
+        )
 
-    freq_type, freq, period_type, period = _SCHWAB_FREQ_MAP[timeframe]
+    client = _SCHWAB_CLIENT
 
-    freq_type_map = {
-        "minute": client.PriceHistory.FrequencyType.MINUTE,
-        "daily":  client.PriceHistory.FrequencyType.DAILY,
-        "weekly": client.PriceHistory.FrequencyType.WEEKLY,
-    }
-    period_type_map = {
-        "day":   client.PriceHistory.PeriodType.DAY,
-        "month": client.PriceHistory.PeriodType.MONTH,
-        "year":  client.PriceHistory.PeriodType.YEAR,
-    }
+    if timeframe not in _SCHWAB_TIMEFRAMES:
+        raise ValueError(f"Unsupported timeframe for schwab: {timeframe}")
+    method_name, lookback = _SCHWAB_TIMEFRAMES[timeframe]
 
-    resp = client.get_price_history(
+    end = datetime.now(timezone.utc)
+    start = end - lookback
+
+    resp = getattr(client, method_name)(
         ticker,
-        period_type=period_type_map[period_type],
-        period=period,
-        frequency_type=freq_type_map[freq_type],
-        frequency=freq,
+        start_datetime=start,
+        end_datetime=end,
         need_extended_hours_data=False,
     )
     resp.raise_for_status()
-    candles = resp.json()["candles"]
+    candles = resp.json().get("candles", [])
+    if not candles:
+        return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+
     df = pd.DataFrame(candles)
     df["datetime"] = pd.to_datetime(df["datetime"], unit="ms")
-    df = df.set_index("datetime").rename(columns={
-        "open": "open", "high": "high", "low": "low",
-        "close": "close", "volume": "volume",
-    })
+    df = df.set_index("datetime")
     return df[["open", "high", "low", "close", "volume"]].dropna()
 
 

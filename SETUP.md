@@ -75,10 +75,25 @@ Key variables:
 |---|---|---|
 | `DATA_PROVIDER` | Yes | One of `yahoo`, `alpaca`, `ibkr`, `schwab`. Default `yahoo`. |
 | `ALPACA_API_KEY` / `ALPACA_SECRET_KEY` | Only for Alpaca | From alpaca.markets dashboard |
-| `SCHWAB_APP_KEY` / `SCHWAB_APP_SECRET` | Only for Schwab | From developer.schwab.com |
+| `SCHWAB_APP_KEY` / `SCHWAB_APP_SECRET` | Only for Schwab | From developer.schwab.com — also requires OAuth bootstrap (see §3a) |
 | `IBKR_HOST` / `IBKR_PORT` | Only for IBKR | TWS or Gateway must be running locally |
 | `DISCORD_BOT_TOKEN` / `DISCORD_CHANNEL_ID` | Only for Discord alerts | Optional |
 | `SMTP_*` | Only for email alerts | Optional |
+
+### 2a. Schwab OAuth bootstrap (only if `DATA_PROVIDER=schwab`)
+
+Schwab requires a one-time browser OAuth flow to mint a token. Run from an interactive terminal (not a subprocess):
+
+```bash
+.venv/bin/python scripts/schwab_oauth.py
+```
+
+The script prints an authorization URL. Open it in any browser, log in with your **Schwab brokerage** credentials (not developer.schwab.com), complete 2FA, click **Allow**. The browser redirects to `https://127.0.0.1/?code=...` and shows a "can't connect" page — **that's expected**. Copy the entire URL from the address bar and paste it at the `Redirect URL>` prompt. Token is written to `~/.tradex_schwab_token.json` and auto-refreshes for ~90 days after that.
+
+App registration in the Schwab Developer Portal must use:
+- **Callback URL:** `https://127.0.0.1` (exact match, no trailing slash, must be https)
+- **API Products:** "Accounts and Trading Production" + "Market Data Production"
+- **Order Limit:** any non-zero value (Schwab requires this even for read-only apps; 100 is fine — TradeX never places orders)
 
 ---
 
