@@ -82,7 +82,35 @@ Key variables:
 
 ---
 
-## 3. First launch
+## 3. Point the launcher at this machine's repo (one-time)
+
+The desktop launchers need to know where the repo lives. Without this, they only work when launched from inside the repo — copying `TradeX.app` to `/Applications` or making a Windows Desktop shortcut would fail.
+
+Create `~/.tradex/config` (macOS/Linux) or `%USERPROFILE%\.tradex\config` (Windows) containing a single line:
+
+```
+TRADEX_HOME=<absolute path to this repo>
+```
+
+### macOS / Linux
+```bash
+mkdir -p ~/.tradex
+echo "TRADEX_HOME=$(pwd)" > ~/.tradex/config
+cat ~/.tradex/config   # verify
+```
+
+### Windows (PowerShell, run from the repo root)
+```powershell
+New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.tradex" | Out-Null
+"TRADEX_HOME=$(Get-Location)" | Out-File -Encoding ascii "$env:USERPROFILE\.tradex\config"
+Get-Content "$env:USERPROFILE\.tradex\config"   # verify
+```
+
+Alternative: set the `TRADEX_HOME` environment variable instead of writing the config file. Either works.
+
+---
+
+## 4. First launch
 
 ### Option A — desktop launcher (one-click going forward)
 
@@ -108,7 +136,7 @@ Key variables:
 
 ---
 
-## 4. Verify the install actually worked
+## 5. Verify the install actually worked
 
 Don't trust "it didn't error" — open the dashboard and check:
 1. The **Scanner** tab loads with the Default watchlist (20 tickers).
@@ -119,7 +147,7 @@ If the dashboard fails to start, check the log at `~/.tradex/dashboard.log` (Mac
 
 ---
 
-## 5. Optional: scheduled background scanner
+## 6. Optional: scheduled background scanner
 
 The watcher runs the screener on an interval and writes results to `~/.tradex/signals.db`. This is what powers the **Coil Detector** and **Signal Journal** tabs over time.
 
@@ -135,20 +163,21 @@ Run during market hours. The outcome-tracker pass fires daily at 4:30pm ET autom
 
 ---
 
-## 6. Known caveats and gotchas
+## 7. Known caveats and gotchas
 
 1. **macOS Gatekeeper blocks the first launch** of `TradeX.app`. Right-click → Open the first time. Subsequent double-clicks work normally.
-2. **The `.venv` must live at `<repo>/.venv`** — the launchers won't find it anywhere else. If you already have a venv at a different path, recreate it at `.venv`.
-3. **Port 8501 must be free** for the dashboard. The launchers reuse an existing server if 8501 is already listening, so double-clicking twice is safe — but if a *different* process holds 8501, change Streamlit's port: `streamlit run ... --server.port=8502`.
-4. **yfinance rate-limits** — large watchlists (100+ tickers) on the default Yahoo provider may hit transient failures. The screener prints `[skip] <ticker>: <reason>` and continues; this is expected.
-5. **TD Ameritrade is dead** — its API shut down September 2024. Use `DATA_PROVIDER=schwab` (their replacement) instead. Do not reference the old `tda-api` library.
-6. **Earnings filter caches for 24h** in `~/.tradex/earnings_cache.db`. If a user just announced earnings and the date isn't showing, delete that file to force a refresh.
-7. **Line endings are pinned by `.gitattributes`** — don't override `core.autocrlf` for this repo or the launcher scripts will break. The repo enforces CRLF for `.bat`/`.ps1` and LF for `tradex-launcher` automatically.
-8. **Streamlit prints `use_container_width` deprecation warnings** at startup. Harmless — they refer to an API the dashboard uses; will be cleaned up in a future commit.
+2. **The launcher needs `~/.tradex/config`** (or `$TRADEX_HOME`) when run from outside the repo (e.g. from `/Applications`). If you see "Could not locate the TradeX project directory," go back to step 3.
+3. **The `.venv` must live at `<repo>/.venv`** — the launchers won't find it anywhere else. If you already have a venv at a different path, recreate it at `.venv`.
+4. **Port 8501 must be free** for the dashboard. The launchers reuse an existing server if 8501 is already listening, so double-clicking twice is safe — but if a *different* process holds 8501, change Streamlit's port: `streamlit run ... --server.port=8502`.
+5. **yfinance rate-limits** — large watchlists (100+ tickers) on the default Yahoo provider may hit transient failures. The screener prints `[skip] <ticker>: <reason>` and continues; this is expected.
+6. **TD Ameritrade is dead** — its API shut down September 2024. Use `DATA_PROVIDER=schwab` (their replacement) instead. Do not reference the old `tda-api` library.
+7. **Earnings filter caches for 24h** in `~/.tradex/earnings_cache.db`. If a user just announced earnings and the date isn't showing, delete that file to force a refresh.
+8. **Line endings are pinned by `.gitattributes`** — don't override `core.autocrlf` for this repo or the launcher scripts will break. The repo enforces CRLF for `.bat`/`.ps1` and LF for `tradex-launcher` automatically.
+9. **Streamlit prints `use_container_width` deprecation warnings** at startup. Harmless — they refer to an API the dashboard uses; will be cleaned up in a future commit.
 
 ---
 
-## 7. Navigation cheat-sheet for the user
+## 8. Navigation cheat-sheet for the user
 
 Once the dashboard is running at `http://localhost:8501`:
 
@@ -167,11 +196,12 @@ Once the dashboard is running at `http://localhost:8501`:
 
 ---
 
-## 8. After-setup sanity checks (agent should run these)
+## 9. After-setup sanity checks (agent should run these)
 
 Before reporting success to the user, the agent should verify:
 - [ ] `.venv/` exists and contains `streamlit`
 - [ ] `.env` exists (even if mostly empty — at minimum `DATA_PROVIDER=yahoo`)
+- [ ] `~/.tradex/config` exists and `TRADEX_HOME` resolves to a directory containing `pyproject.toml`
 - [ ] `streamlit run tradex/ui/dashboard.py` (via the venv) starts a server on port 8501 without crashing in the first 10 seconds
 - [ ] On macOS: `launchers/macos/TradeX.app/Contents/MacOS/tradex-launcher` is executable (`-rwxr-xr-x`)
 - [ ] On Windows: `launchers\windows\TradeX.bat` has CRLF line endings (open in Notepad → no jumbled-onto-one-line text)

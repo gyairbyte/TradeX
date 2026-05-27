@@ -1,18 +1,16 @@
 # TradeX launcher (Windows / PowerShell)
 # Starts the Streamlit dashboard and opens the default browser.
+#
+# Resolves the project root in this order:
+#   1. $env:TRADEX_HOME environment variable
+#   2. %USERPROFILE%\.tradex\config  (single line: TRADEX_HOME=C:\path\to\repo)
+#   3. Walking up from the script location (works when launched in-place from the repo)
 
 $ErrorActionPreference = "Stop"
 
-# Resolve the project root by walking up from this script.
-# Script lives at: <PROJECT_ROOT>\launchers\windows\TradeX.ps1
-$ScriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Path
-$ProjectRoot = Resolve-Path (Join-Path $ScriptDir "..\..")
-
-$VenvStreamlit = Join-Path $ProjectRoot ".venv\Scripts\streamlit.exe"
-$Dashboard     = Join-Path $ProjectRoot "tradex\ui\dashboard.py"
-$LogDir        = Join-Path $env:USERPROFILE ".tradex"
-$LogFile       = Join-Path $LogDir "dashboard.log"
-$Url           = "http://localhost:8501"
+$LogDir  = Join-Path $env:USERPROFILE ".tradex"
+$LogFile = Join-Path $LogDir "dashboard.log"
+$Url     = "http://localhost:8501"
 
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
@@ -21,8 +19,46 @@ function Show-Error($message) {
     [System.Windows.MessageBox]::Show($message, "TradeX cannot start", "OK", "Error") | Out-Null
 }
 
+function Resolve-ProjectRoot {
+    # 1. Environment variable
+    if ($env:TRADEX_HOME -and (Test-Path $env:TRADEX_HOME -PathType Container)) {
+        return (Resolve-Path $env:TRADEX_HOME).Path
+    }
+
+    # 2. User config file
+    $ConfigPath = Join-Path $env:USERPROFILE ".tradex\config"
+    if (Test-Path $ConfigPath) {
+        $line = Get-Content $ConfigPath | Where-Object { $_ -match '^TRADEX_HOME=' } | Select-Object -First 1
+        if ($line) {
+            $path = ($line -replace '^TRADEX_HOME=', '').Trim().Trim('"').Trim("'")
+            if ($path -and (Test-Path $path -PathType Container)) {
+                return (Resolve-Path $path).Path
+            }
+        }
+    }
+
+    # 3. Walk up from the script location
+    $ScriptDir = Split-Path -Parent $MyInvocation.PSCommandPath
+    $Candidate = Resolve-Path (Join-Path $ScriptDir "..\..") -ErrorAction SilentlyContinue
+    if ($Candidate -and (Test-Path (Join-Path $Candidate "pyproject.toml")) -and (Test-Path (Join-Path $Candidate "tradex"))) {
+        return $Candidate.Path
+    }
+
+    return $null
+}
+
+$ProjectRoot = Resolve-ProjectRoot
+
+if (-not $ProjectRoot) {
+    Show-Error "Could not locate the TradeX project directory.`n`nFix: create %USERPROFILE%\.tradex\config with a single line:`n  TRADEX_HOME=C:\absolute\path\to\tradex`n`nOr set the TRADEX_HOME environment variable."
+    exit 1
+}
+
+$VenvStreamlit = Join-Path $ProjectRoot ".venv\Scripts\streamlit.exe"
+$Dashboard     = Join-Path $ProjectRoot "tradex\ui\dashboard.py"
+
 if (-not (Test-Path $VenvStreamlit)) {
-    Show-Error "Could not find .venv\Scripts\streamlit.exe. Run `uv sync` (or `pip install -e .`) in the project directory first."
+    Show-Error "Could not find streamlit at:`n$VenvStreamlit`n`nRun ``uv sync`` (or ``pip install -e .``) in the project directory first."
     exit 1
 }
 

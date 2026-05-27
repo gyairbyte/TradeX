@@ -1,23 +1,58 @@
 #!/bin/bash
 # TradeX launcher (macOS)
 # Starts the Streamlit dashboard and opens the browser.
+#
+# Resolves the project root in this order:
+#   1. $TRADEX_HOME environment variable
+#   2. ~/.tradex/config  (single line: TRADEX_HOME=/abs/path/to/repo)
+#   3. Walking up from the .app bundle (works when launched in-place from the repo)
+#
+# This makes the .app safe to copy anywhere — /Applications, Desktop, Dock —
+# as long as one of (1) or (2) is set, OR the .app stays inside the repo.
 
 set -e
 
-# Resolve the project root by walking up from this .app bundle.
-# Bundle layout: <PROJECT_ROOT>/launchers/macos/TradeX.app/Contents/MacOS/tradex-launcher
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../../../.." && pwd)"
+LOG_DIR="$HOME/.tradex"
+LOG_FILE="$LOG_DIR/dashboard.log"
+mkdir -p "$LOG_DIR"
+
+# --- resolve project root ---
+PROJECT_ROOT=""
+
+# 1. Environment variable
+if [ -n "$TRADEX_HOME" ] && [ -d "$TRADEX_HOME" ]; then
+    PROJECT_ROOT="$TRADEX_HOME"
+fi
+
+# 2. User config file
+if [ -z "$PROJECT_ROOT" ] && [ -f "$HOME/.tradex/config" ]; then
+    CONFIG_HOME="$(grep -E '^TRADEX_HOME=' "$HOME/.tradex/config" | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'")"
+    # Expand ~ if the user wrote a tilde-path.
+    CONFIG_HOME="${CONFIG_HOME/#\~/$HOME}"
+    if [ -n "$CONFIG_HOME" ] && [ -d "$CONFIG_HOME" ]; then
+        PROJECT_ROOT="$CONFIG_HOME"
+    fi
+fi
+
+# 3. Walk up from the .app bundle
+if [ -z "$PROJECT_ROOT" ]; then
+    SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+    CANDIDATE="$(cd "$SCRIPT_DIR/../../../../.." 2>/dev/null && pwd)" || CANDIDATE=""
+    if [ -n "$CANDIDATE" ] && [ -f "$CANDIDATE/pyproject.toml" ] && [ -d "$CANDIDATE/tradex" ]; then
+        PROJECT_ROOT="$CANDIDATE"
+    fi
+fi
+
+if [ -z "$PROJECT_ROOT" ]; then
+    osascript -e 'display alert "TradeX cannot start" message "Could not locate the TradeX project directory.\n\nFix: create ~/.tradex/config with a single line:\n  TRADEX_HOME=/absolute/path/to/tradex\n\nOr set the TRADEX_HOME environment variable." as critical'
+    exit 1
+fi
 
 VENV_STREAMLIT="$PROJECT_ROOT/.venv/bin/streamlit"
 DASHBOARD="$PROJECT_ROOT/tradex/ui/dashboard.py"
-LOG_DIR="$HOME/.tradex"
-LOG_FILE="$LOG_DIR/dashboard.log"
-
-mkdir -p "$LOG_DIR"
 
 if [ ! -x "$VENV_STREAMLIT" ]; then
-    osascript -e 'display alert "TradeX cannot start" message "Could not find .venv/bin/streamlit. Run `uv sync` (or `pip install -e .`) in the project directory first." as critical'
+    osascript -e "display alert \"TradeX cannot start\" message \"Could not find streamlit at:\n$VENV_STREAMLIT\n\nRun \`uv sync\` (or \`pip install -e .\`) in the project directory first.\" as critical"
     exit 1
 fi
 

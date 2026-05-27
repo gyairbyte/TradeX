@@ -9,6 +9,13 @@ Both launchers:
 
 Both assume the project venv lives at `<repo>/.venv` with `streamlit` installed. The venv is **not** committed (it's in `.gitignore`), so each machine needs to create it once — see the per-OS sections below.
 
+The launchers find the repo using this lookup, in order:
+1. `$TRADEX_HOME` environment variable
+2. `~/.tradex/config` (single line: `TRADEX_HOME=/abs/path/to/repo`)
+3. Walking up from the launcher's own location (only works if the launcher hasn't been copied out of the repo)
+
+You only need (1) or (2) if you copy the launcher outside the repo (e.g. drag `TradeX.app` to `/Applications`).
+
 ---
 
 ## macOS
@@ -17,6 +24,12 @@ Both assume the project venv lives at `<repo>/.venv` with `streamlit` installed.
 ```bash
 cd tradex
 uv sync                        # or: python3.11 -m venv .venv && .venv/bin/pip install -e .
+```
+
+### Point the launcher at the repo (only needed if you move the .app outside the repo)
+```bash
+mkdir -p ~/.tradex
+echo "TRADEX_HOME=$(pwd)" > ~/.tradex/config
 ```
 
 ### Install the launcher
@@ -42,6 +55,12 @@ python -m venv .venv
 ```
 
 Verify `.venv\Scripts\streamlit.exe` exists before continuing.
+
+### Point the launcher at the repo (only needed if you move the shortcut outside the repo)
+```powershell
+New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.tradex" | Out-Null
+"TRADEX_HOME=$(Get-Location)" | Out-File -Encoding ascii "$env:USERPROFILE\.tradex\config"
+```
 
 ### Install the launcher
 1. Right-click `launchers\windows\TradeX.bat` → **Create shortcut**.
