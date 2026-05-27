@@ -1,0 +1,20 @@
+# Force correct line endings regardless of contributor OS settings.
+# Without this, a Windows clone with core.autocrlf=true could corrupt the
+# macOS launcher script's shebang line, and a macOS clone could ship the
+# Windows .bat/.ps1 with LF endings that Windows tooling sometimes mishandles.
+
+*.sh            text eol=lf
+*.py            text eol=lf
+
+# macOS .app launcher — must stay LF so the shebang parses.
+launchers/macos/TradeX.app/Contents/MacOS/tradex-launcher text eol=lf
+
+# Windows launchers — must be CRLF.
+*.bat           text eol=crlf
+*.ps1           text eol=crlf
+*.cmd           text eol=crlf
+
+# Binary icons — never touch.
+*.icns          binary
+*.ico           binary
+*.png           binary

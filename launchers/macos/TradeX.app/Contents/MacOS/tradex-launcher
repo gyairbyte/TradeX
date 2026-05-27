@@ -1,0 +1,55 @@
+#!/bin/bash
+# TradeX launcher (macOS)
+# Starts the Streamlit dashboard and opens the browser.
+
+set -e
+
+# Resolve the project root by walking up from this .app bundle.
+# Bundle layout: <PROJECT_ROOT>/launchers/macos/TradeX.app/Contents/MacOS/tradex-launcher
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../../../.." && pwd)"
+
+VENV_STREAMLIT="$PROJECT_ROOT/.venv/bin/streamlit"
+DASHBOARD="$PROJECT_ROOT/tradex/ui/dashboard.py"
+LOG_DIR="$HOME/.tradex"
+LOG_FILE="$LOG_DIR/dashboard.log"
+
+mkdir -p "$LOG_DIR"
+
+if [ ! -x "$VENV_STREAMLIT" ]; then
+    osascript -e 'display alert "TradeX cannot start" message "Could not find .venv/bin/streamlit. Run `uv sync` (or `pip install -e .`) in the project directory first." as critical'
+    exit 1
+fi
+
+if [ ! -f "$DASHBOARD" ]; then
+    osascript -e "display alert \"TradeX cannot start\" message \"Dashboard not found at $DASHBOARD\" as critical"
+    exit 1
+fi
+
+# If something is already on :8501, just open the browser and exit.
+if lsof -iTCP:8501 -sTCP:LISTEN -n -P >/dev/null 2>&1; then
+    open "http://localhost:8501"
+    exit 0
+fi
+
+cd "$PROJECT_ROOT"
+
+# Launch Streamlit detached so the .app process can exit cleanly.
+# --server.headless=true tells Streamlit not to auto-open a browser;
+# we open it ourselves once the port is live.
+nohup "$VENV_STREAMLIT" run "$DASHBOARD" \
+    --server.headless=true \
+    --server.port=8501 \
+    >>"$LOG_FILE" 2>&1 &
+
+# Wait up to ~20s for the port to come up, then open the browser.
+for _ in $(seq 1 40); do
+    if lsof -iTCP:8501 -sTCP:LISTEN -n -P >/dev/null 2>&1; then
+        open "http://localhost:8501"
+        exit 0
+    fi
+    sleep 0.5
+done
+
+osascript -e "display alert \"TradeX did not start in time\" message \"Check the log at $LOG_FILE\" as critical"
+exit 1
