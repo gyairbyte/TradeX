@@ -315,13 +315,19 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
                          help="Fetch live data for all watchlist tickers and score each one.")
 
     if run_scan:
-        with st.spinner(f"Scanning {len(watchlist)} tickers on {timeframe}…"):
-            results = run(
-                watchlist,
-                timeframe=timeframe,
-                min_score=min_score,
-                exclude_earnings_within=earnings_buffer if earnings_buffer > 0 else None,
-            )
+        progress_bar = st.progress(0.0, text=f"Scanning {len(watchlist)} tickers on {timeframe}…")
+
+        def _update_progress(done: int, total: int) -> None:
+            progress_bar.progress(done / total, text=f"Scanning {done}/{total} tickers on {timeframe}…")
+
+        results = run(
+            watchlist,
+            timeframe=timeframe,
+            min_score=min_score,
+            exclude_earnings_within=earnings_buffer if earnings_buffer > 0 else None,
+            progress=_update_progress,
+        )
+        progress_bar.empty()
         if results.empty:
             st.warning("No opportunities found. Lower the min score or add more tickers.")
         else:
