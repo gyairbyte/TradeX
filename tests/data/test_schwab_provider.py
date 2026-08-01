@@ -4,6 +4,7 @@ These tests mock the Schwab authentication layer and HTTP responses. They never
 contact Schwab servers and do not use real credentials.
 """
 import json
+import traceback
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
@@ -297,7 +298,7 @@ def test_schwab_unsupported_timeframe(tmp_token, monkeypatch):
 
 
 def test_schwab_auth_failure_does_not_leak_secrets(tmp_token, monkeypatch, capsys):
-    """An authentication error containing secret text is not printed or raised."""
+    """An authentication error containing secret text is not printed, raised, or chained."""
     monkeypatch.setenv("SCHWAB_APP_KEY", "test-app-key")
     monkeypatch.setenv("SCHWAB_APP_SECRET", "test-app-secret")
     monkeypatch.setenv("SCHWAB_TOKEN_PATH", str(tmp_token))
@@ -312,7 +313,41 @@ def test_schwab_auth_failure_does_not_leak_secrets(tmp_token, monkeypatch, capsy
     ), pytest.raises(RuntimeError) as exc_info:
         fetcher.fetch("SPY", "short", provider="schwab")
 
+    assert exc_info.value.__cause__ is None
     assert sentinel not in str(exc_info.value)
+    tb_text = "".join(traceback.format_exception(exc_info.type, exc_info.value, exc_info.tb))
+    assert sentinel not in tb_text
+    captured = capsys.readouterr()
+    assert sentinel not in captured.out
+    assert sentinel not in captured.err
+
+
+def test_schwab_http_failure_does_not_leak_secrets(tmp_token, monkeypatch, capsys):
+    """An HTTP error containing secret text is not exposed in the safe message or chain."""
+    monkeypatch.setenv("SCHWAB_APP_KEY", "test-app-key")
+    monkeypatch.setenv("SCHWAB_APP_SECRET", "test-app-secret")
+    monkeypatch.setenv("SCHWAB_TOKEN_PATH", str(tmp_token))
+
+    sentinel = "SENTINEL_HTTP_ERROR_SECRET_67890"
+
+    client = MagicMock()
+    resp = MagicMock()
+    resp.status_code = 403
+    resp.raise_for_status.side_effect = RuntimeError(
+        f"Forbidden: access token contains {sentinel}"
+    )
+    client.get_price_history_every_day.return_value = resp
+
+    with patch(
+        "schwab.auth.client_from_token_file", return_value=client
+    ), pytest.raises(RuntimeError) as exc_info:
+        fetcher.fetch("SPY", "short", provider="schwab")
+
+    assert "HTTP 403" in str(exc_info.value)
+    assert sentinel not in str(exc_info.value)
+    assert exc_info.value.__cause__ is None
+    tb_text = "".join(traceback.format_exception(exc_info.type, exc_info.value, exc_info.tb))
+    assert sentinel not in tb_text
     captured = capsys.readouterr()
     assert sentinel not in captured.out
     assert sentinel not in captured.err
