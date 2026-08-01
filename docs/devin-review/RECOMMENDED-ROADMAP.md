@@ -33,21 +33,21 @@ This roadmap divides the audit recommendations into small, reviewable projects. 
 
 ## Project 2: Test coverage and CI
 
-**Objective:** Add a `tests/` tree, fixtures, and a GitHub Actions workflow.
+**Objective:** Add a GitHub Actions workflow and extend the initial `tests/` tree with provider-contract and broader unit/integration tests. The audit PR already adds `tests/`, `conftest.py`, and an initial characterization suite.
 
 **Reason:** All future work depends on being able to make changes safely.
 
 **Files likely affected:**
-- `tests/**/*.py`
 - `.github/workflows/ci.yml`
-- `pyproject.toml` (add `pytest` and dev deps if not present)
+- `tests/**/*.py`
 
 **Risks:** Low. Adds files; does not change behavior.
 
 **Acceptance criteria:**
-- `pytest` passes in CI.
-- `ruff check .` passes in CI.
+- CI installs dependencies with `uv sync --extra dev`.
+- CI runs `ruff check .` (Python files only) and `pytest`.
 - Provider-contract test exists with a mocked Yahoo/Alpaca response.
+- The 7 existing `xfail` characterization tests are individually tracked against COR/DATA/COIL items and use `strict=True`.
 
 **Tests required:**
 - `tests/data/test_fetcher.py`

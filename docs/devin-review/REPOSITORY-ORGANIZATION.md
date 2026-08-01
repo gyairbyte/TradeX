@@ -56,7 +56,7 @@ TradeX/
     │   └── store.py
 ```
 
-There is no `tests/`, `research/`, or `docs/decisions/` directory.
+There is no `research/` or `docs/decisions/` directory. This audit introduces `tests/` with an initial characterization suite.
 
 ## Recommended target structure
 

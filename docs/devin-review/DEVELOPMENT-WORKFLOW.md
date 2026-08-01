@@ -8,7 +8,7 @@ Use the `devin/` prefix for Devin-authored work, followed by a concise descripti
 
 - `devin/fix-outcome-timing`
 - `devin/redesign-signal-history`
-- `devin/add-test-foundation`
+- `devin/add-ci`
 - `devin/refactor-dashboard-boundaries`
 - `devin/add-backtest-engine`
 
@@ -71,11 +71,14 @@ uv run pytest
 ### Lint and typecheck
 
 ```bash
+# Python linting
 uv run ruff check .
-uv run mypy tradex
+
+# Type checking — add only after mypy is configured and an agreed baseline is fixed
+# uv run mypy tradex
 ```
 
-All PRs must pass `ruff` and `pytest` before being opened.
+All PRs must pass `ruff` and `pytest` before being opened. Add `mypy` to the CI workflow only after it is added as a dependency, configured, and an agreed baseline is established.
 
 ## Documentation expectations
 
@@ -155,7 +158,7 @@ A change is not complete until:
 2. **Confirm the assignment maps to one coherent project.** If it spans multiple roadmap projects, ask the user which to start with.
 3. **Open a branch** named `devin/<description>` from the latest `main`.
 4. **Add or update tests** before or alongside any code change.
-5. **Run `pytest`, `ruff`, and `mypy`** before opening a PR.
+5. **Run `pytest` and `ruff`** before opening a PR. Add `mypy` after it is configured and an agreed baseline is fixed.
 6. **Update documentation** in the canonical location.
 7. **Open a draft PR early** if the change is large or uncertain.
 8. **Stop after opening the PR** unless explicitly asked to iterate on CI or review feedback.

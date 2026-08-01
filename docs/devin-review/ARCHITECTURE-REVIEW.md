@@ -42,7 +42,7 @@ TradeX/
 │   │   ├── presets.py
 │   │   └── refresh.py
 │   └── ui/dashboard.py         # Streamlit UI (1,721 lines)
-└── tests/                      # Proposed; does not currently exist
+└── tests/                      # Introduced by this audit (characterization suite; CI still missing)
 ```
 
 ## Data-flow diagram
@@ -139,9 +139,9 @@ There is no `research/` or `notebooks/` directory. Experiments could be created 
 
 | Practice | Current state | Target |
 |---|---|---|
-| **Tests** | None | `tests/` mirroring `tradex/`; unit, integration, and provider-contract tests. |
-| **CI** | None | GitHub Actions running `pytest`, `ruff`, and `mypy` on PRs. |
-| **Lint/typecheck** | `ruff` configured in `pyproject.toml`; `mypy` not configured | Run `ruff check` and `mypy` in CI; fix type errors. |
+| **Tests** | This audit adds an initial `tests/` tree with 7 strict xfails and 1 passing test. | `tests/` mirroring `tradex/`; unit, integration, and provider-contract tests. |
+| **CI** | None | GitHub Actions running `uv sync --extra dev`, `pytest`, and `ruff check tests` on PRs. |
+| **Lint/typecheck** | `ruff` configured in `pyproject.toml`; `mypy` not configured | Run `ruff check` in CI. Add `mypy` only after it is configured and an agreed baseline is established. |
 | **Configuration** | `.env` + module-level globals | A single typed `Settings` object or `config.py`; env vars read at startup. |
 | **Logging** | `print` statements throughout | Use the `logging` module with levels; replace `print` in production paths. |
 | **Error handling** | Broad `except Exception: return None/empty` | Distinguish user-facing, retryable, and provider-specific errors; surface failures instead of silently returning empty results. |

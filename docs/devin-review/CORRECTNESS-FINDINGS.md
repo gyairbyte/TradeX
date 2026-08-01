@@ -341,14 +341,13 @@ print(df.empty)  # True
 
 **Files:** entire repository
 
-**Finding:** There is no `tests/` directory and no CI configuration. The only verification is manual launch of the Streamlit dashboard.
+**Finding:** There was no `tests/` directory and no CI configuration before this audit. The only verification was manual launch of the Streamlit dashboard. This audit introduces an initial characterization suite; CI configuration and broader coverage are still missing.
 
 **Why it matters:** Without tests, every future change risks introducing regressions in trading logic, data handling, and scheduling.
 
 **Recommended correction:**
-- Add `tests/` mirroring `tradex/`.
-- Add `pytest` and provider-contract tests.
-- Add a GitHub Actions workflow for `ruff` + `pytest`.
+- Complete the `tests/` tree with provider-contract and broader unit/integration tests.
+- Add a GitHub Actions workflow that installs dependencies, runs `ruff check tests`, and runs `pytest`.
 
 **Regression tests:** N/A (infrastructure).
 
@@ -392,5 +391,5 @@ print(df.empty)  # True
 | 11 | Empty confluence results raise `KeyError` | High | `tracker/confluence.py` |
 | 12 | Scan audit cannot distinguish scanned vs found | Medium | `tracker/store.py`, `tracker/watcher.py` |
 | 13 | Provider failures look like no opportunities | Medium | `screener/engine.py`, `ui/dashboard.py` |
-| 14 | No automated tests | High | all |
+| 14 | Test coverage was missing before the audit; CI and broader tests still needed | High | all |
 | 15 | Documentation drift | Low | `README.md`, `CLAUDE.md`, `SETUP.md` |

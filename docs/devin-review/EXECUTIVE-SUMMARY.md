@@ -29,7 +29,7 @@ The codebase is well organized at a package level and many architectural intenti
 | **Time and scheduling** | The watcher does not check market hours, and scheduled job times (`20:30`, `12:00`) assume the host is running in UTC/ET without explicit timezone handling. |
 | **Alerts** | There is no deduplication or cooldown; a coil that stays above threshold will alert on every scan cycle. |
 | **Outcome tracking** | The outcome window uses daily bars for all timeframes, waits longer than the intended holding period before fetching, and does not model slippage, stops, or transaction costs. |
-| **Test coverage** | There are no automated tests. The only verification is manual dashboard use. |
+| **Test coverage** | There were no automated tests before this audit. This audit introduces an initial characterization suite with 1 passing test and 7 strict xfails representing confirmed bugs. CI is still missing. |
 | **Documentation drift** | `README.md` and `CLAUDE.md` disagree on dashboard tabs, completed features, and next priorities; `SETUP.md` references a wrong Discord env variable name. |
 
 ## What is potentially valuable
@@ -52,7 +52,7 @@ The codebase is well organized at a package level and many architectural intenti
 ## The five most important next steps
 
 1. **Fix correctness and data-integrity bugs** (confluence empty DataFrame, outcome MultiIndex crash, watcher provider propagation, signal-history redesign). These block any serious use of the journal or coil features.
-2. **Establish a test foundation and CI** so future changes can be reviewed with confidence. Every PR that changes scoring, persistence, or scheduling must include regression tests.
+2. **Complete the test foundation and add CI** so future changes can be reviewed with confidence. The initial characterization suite exists; CI, provider-contract tests, and broader coverage are still needed. Every PR that changes scoring, persistence, or scheduling must include regression tests.
 3. **Redesign signal history** to store all scan observations (or at least all tickers scanned) with session IDs and distinct trading-day semantics, enabling the coil detector to see deterioration and removing scan-frequency bias.
 4. **Validate one trading hypothesis end-to-end** before adding new indicators. Pick one timeframe, define entry/exit rules, run a walk-forward backtest with costs and slippage, and decide whether the score has edge.
-5. **Adopt architectural decision records and a single project tracker** so that the rationale for scores, coils, confluence, and data-provider choices is recorded and future work stays reviewable and small.
+5. **Adopt architectural decision records** and continue using the project tracker so that the rationale for scores, coils, confluence, and data-provider choices is recorded and future work stays reviewable and small.
