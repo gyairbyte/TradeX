@@ -26,6 +26,21 @@ TIMEFRAMES = {
 DEFAULT_PROVIDER = os.getenv("DATA_PROVIDER", "yahoo")
 
 
+def normalize_yahoo_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Flatten yfinance MultiIndex columns and normalize names to lowercase.
+
+    yfinance >= 0.2.x can return either single-level columns ("Open", "Close",
+    ...) or a MultiIndex whose first level is the field name and whose second
+    level is the ticker symbol. This helper produces a single-level lowercase
+    column index regardless of the input shape.
+    """
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = [col[0].lower() for col in df.columns]
+    else:
+        df.columns = [c.lower() for c in df.columns]
+    return df
+
+
 # ── Yahoo Finance ─────────────────────────────────────────────────────────────
 def _fetch_yahoo(ticker: str, timeframe: str) -> pd.DataFrame:
     tf = TIMEFRAMES[timeframe]
@@ -36,12 +51,7 @@ def _fetch_yahoo(ticker: str, timeframe: str) -> pd.DataFrame:
         progress=False,
         auto_adjust=True,
     )
-    # yfinance >= 0.2.x returns MultiIndex columns when group_by is default
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = [col[0].lower() for col in df.columns]
-    else:
-        df.columns = [c.lower() for c in df.columns]
-    return df.dropna()
+    return normalize_yahoo_columns(df).dropna()
 
 
 # ── Alpaca ────────────────────────────────────────────────────────────────────
