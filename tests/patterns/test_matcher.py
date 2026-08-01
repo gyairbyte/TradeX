@@ -81,3 +81,41 @@ def test_run_match_screen_propagates_provider_to_match_ticker():
     assert len(captured) == 2
     assert all(call[1] == "alpaca" for call in captured)
     assert {call[0] for call in captured} == {"AAPL", "MSFT"}
+
+
+def test_match_ticker_uses_provider_as_fingerprint_source():
+    """match_ticker must load the fingerprint for the same source used for live data."""
+    captured = []
+
+    def fake_fetch(*args, **kwargs):
+        return _make_bars(30)
+
+    def capture_load_fingerprint(event_type, profile, source=None):
+        captured.append(source)
+        return _fake_fingerprint(10)
+
+    with (
+        patch.object(matcher, "fetch", side_effect=fake_fetch),
+        patch.object(matcher, "load_fingerprint", side_effect=capture_load_fingerprint),
+        patch.object(matcher, "_series_similarity", return_value=80.0),
+    ):
+        result = matcher.match_ticker("AAPL", provider="schwab")
+
+    assert captured == ["schwab"]
+    assert result["source"] == "schwab"
+
+
+def test_run_match_screen_returns_stable_empty_dataframe():
+    """run_match_screen must return an empty DataFrame with the expected columns
+    when no fingerprint or no matches are found, not a columnless frame."""
+    with (
+        patch.object(matcher, "fetch", return_value=_make_bars(30)),
+        patch.object(matcher, "load_fingerprint", return_value=None),
+    ):
+        df = matcher.run_match_screen(["AAPL", "MSFT"])
+
+    assert df.empty
+    assert list(df.columns) == [
+        "ticker", "similarity_score", "match_tier", "event_type", "profile",
+        "fp_events", "score_price", "score_volume", "score_rsi", "interpretation",
+    ]

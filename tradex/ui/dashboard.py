@@ -18,7 +18,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
 from tradex.screener.engine import run
-from tradex.data.fetcher import fetch
+from tradex.data.fetcher import DEFAULT_PROVIDER, ProviderCapabilityError, fetch
 from tradex.signals.indicators import add_indicators
 from tradex.tracker import store, analyzer
 from tradex.tracker.confluence import run_confluence_screen
@@ -35,6 +35,14 @@ from tradex.alerts.notifier import (
 from tradex.watchlists import store as wl_store, DEFAULT_NAME as WL_DEFAULT_NAME
 from tradex.watchlists import presets as wl_presets
 from tradex.signals import weights as signal_weights
+from tradex.ui.source_defaults import (
+    options_source_index,
+    earnings_source_index,
+    market_cap_source_index,
+    options_sources,
+    earnings_sources,
+    market_cap_sources,
+)
 
 store.init()
 wl_store.init()
@@ -101,23 +109,48 @@ with st.sidebar:
     if _default_provider not in _PROVIDER_OPTIONS:
         _default_provider = "yahoo"
     provider = st.selectbox(
-        "Data provider",
+        "OHLCV provider",
         _PROVIDER_OPTIONS,
         index=_PROVIDER_OPTIONS.index(_default_provider),
         help=(
             "Market data provider used by the scanner, confluence, pattern matching, "
-            "and chart drill-downs. The selection is passed to the central OHLCV fetcher.\n\n"
+            "chart drill-downs, and outcome tracking. The selection is passed to the central "
+            "OHLCV fetcher and the daily-history abstraction.\n\n"
             "• Yahoo requires no local setup.\n"
             "• Schwab requires a Schwab developer app (API key + secret) and a local "
             "OAuth token file; selecting Schwab here does not verify it is configured.\n"
             "• Alpaca and IBKR require their respective credentials or a local gateway.\n"
             "• There is no automatic fallback: if the selected provider is not configured, "
             "the fetch will surface a safe error rather than silently switching providers.\n\n"
-            "Features that still use Yahoo or other specialized sources directly (earnings, "
-            "options, preset refresh, market-cap ranking, outcome tracker) are not affected by this selector."
+            "Specialized sources (options, earnings, market-cap ranking, index "
+            "constituents) have their own source controls and are not affected by this selector."
         ),
     )
-    st.caption(f"Using provider: **{provider}**")
+    st.caption(f"OHLCV provider: **{provider}**")
+
+    # Options source is independent of OHLCV provider.
+    options_source = st.selectbox(
+        "Options source",
+        options_sources(),
+        index=options_source_index(),
+        help=(
+            "Options-flow data source. ``auto`` follows the priority "
+            "Unusual Whales → Tradier → Yahoo based on configured API keys. "
+            "A specific paid source will not fall back if credentials are missing."
+        ),
+    )
+    earnings_source = st.selectbox(
+        "Earnings source",
+        earnings_sources(),
+        index=earnings_source_index(),
+        help="Earnings-calendar source. Only Yahoo is supported in this release.",
+    )
+    market_cap_source = st.selectbox(
+        "Market-cap source",
+        market_cap_sources(),
+        index=market_cap_source_index(),
+        help="Source for S&P 100 market-cap ranking when refreshing presets. ``schwab`` requires Schwab credentials.",
+    )
 
     # ── Watchlist selector ───────────────────────────────────────────────────
     saved_lists = wl_store.list_all()
@@ -222,7 +255,7 @@ with st.sidebar:
             from tradex.watchlists import refresh as wl_refresh
             with st.spinner("Refreshing presets from Wikipedia + yfinance (this may take ~30-60s)…"):
                 try:
-                    result = wl_refresh.refresh_all()
+                    result = wl_refresh.refresh_all(market_cap_source=market_cap_source)
                     overrides = wl_refresh.result_to_preset_overrides(result)
                     imported = 0
                     for key, tickers in overrides.items():
@@ -350,6 +383,7 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
             exclude_earnings_within=earnings_buffer if earnings_buffer > 0 else None,
             progress=_update_progress,
             provider=provider,
+            earnings_source=earnings_source,
         )
         progress_bar.empty()
         if results.empty:
@@ -579,6 +613,7 @@ A stock scoring 80+ on intraday alone is interesting. The same stock also scorin
                 min_confluence=min_confluence,
                 exclude_earnings_within=earnings_buffer if earnings_buffer > 0 else None,
                 provider=provider,
+                earnings_source=earnings_source,
             )
         if conf_results.empty:
             st.warning("No confluence setups found. Lower the min confluence score.")
@@ -696,10 +731,14 @@ using Pearson correlation across 5 series. Each series is weighted:
         if st.button("Build Fingerprints", key="btn_build_fp",
                      help="Mine 3 years of history and compute fingerprints. Results are cached — re-run only to refresh."):
             with st.spinner("Mining historical events and building fingerprints… (~2 minutes)"):
-                built = run_full_build(profile=fp_profile, event_type=fp_etype, verbose=False)
+                try:
+                    built = run_full_build(profile=fp_profile, event_type=fp_etype, verbose=False, provider=provider)
+                except ProviderCapabilityError as e:
+                    st.error(str(e))
+                    built = None
             if built:
                 st.success(f"Built fingerprints: {', '.join(built.keys())}")
-            else:
+            elif built is not None:
                 st.error("Build failed — not enough historical events found.")
         existing = list_fingerprints()
         if not existing.empty:
@@ -729,9 +768,9 @@ using Pearson correlation across 5 series. Each series is weighted:
     )
 
     if st.button("Run Pattern Screen", key="btn_match", type="primary"):
-        fp_check = load_fingerprint(match_etype, match_profile)
+        fp_check = load_fingerprint(match_etype, match_profile, source=provider)
         if fp_check is None:
-            st.error(f"No '{match_etype}' fingerprint for profile '{match_profile}'. Build it first.")
+            st.error(f"No '{match_etype}' fingerprint for profile '{match_profile}' with source '{provider}'. Build it first.")
         else:
             with st.spinner(f"Matching {len(watchlist)} tickers against {match_etype} fingerprint…"):
                 match_results = run_match_screen(
@@ -760,6 +799,7 @@ using Pearson correlation across 5 series. Each series is weighted:
                 st.session_state["match_results"]        = match_results
                 st.session_state["match_etype_saved"]    = match_etype
                 st.session_state["match_profile_saved"]  = match_profile
+                st.session_state["match_source_saved"]   = provider
 
     if "match_results" in st.session_state and "match_etype_saved" in st.session_state and not st.session_state["match_results"].empty:
         st.divider()
@@ -771,11 +811,12 @@ using Pearson correlation across 5 series. Each series is weighted:
         selected_match = st.selectbox(
             "Select ticker", st.session_state["match_results"]["ticker"].tolist(), key="sel_match",
         )
+        match_source = st.session_state.get("match_source_saved", provider)
         detail = match_ticker(
             selected_match,
             event_type=st.session_state["match_etype_saved"],
             profile=st.session_state["match_profile_saved"],
-            provider=provider,
+            provider=match_source,
         )
         if "error" not in detail:
             s = detail["series_scores"]
@@ -793,7 +834,11 @@ using Pearson correlation across 5 series. Each series is weighted:
             n = len(detail["fp_series"].get("price_pct", []))
             x = list(range(-n + 1, 1))
             fp_mean  = detail["fp_series"].get("price_pct", [])
-            fp_data  = load_fingerprint(st.session_state["match_etype_saved"], st.session_state["match_profile_saved"])
+            fp_data  = load_fingerprint(
+                st.session_state["match_etype_saved"],
+                st.session_state["match_profile_saved"],
+                source=match_source,
+            )
             fp_upper = fp_data["series"].get("price_pct", {}).get("upper", fp_mean)
             fp_lower = fp_data["series"].get("price_pct", {}).get("lower", fp_mean)
             live_price = detail["live_series"].get("price_pct", [])[-n:]
@@ -880,9 +925,16 @@ Gaps happen overnight because news, earnings, or macro events move the price whe
 - 🟡 **Moderate** ≥ 2% — notable pre-market activity
     """)
 
+    gaps = pd.DataFrame()
+    gap_error = None
     if st.button("Scan Pre-Market Gaps", type="primary", key="btn_gaps"):
         with st.spinner(f"Scanning {len(watchlist)} tickers for pre-market gaps…"):
-            gaps = scan_gaps(watchlist, min_gap_pct=min_gap)
+            try:
+                gaps = scan_gaps(watchlist, min_gap_pct=min_gap, provider=provider)
+            except ProviderCapabilityError as e:
+                gap_error = str(e)
+                st.error(gap_error)
+    if gap_error is None:
         if gaps.empty:
             st.info(f"No gaps above {min_gap}% found. Market may not be in pre-market session, or no significant gaps today.")
         else:
@@ -960,14 +1012,15 @@ That urgency is a strong signal.
 3. **yfinance** (free, default) — delayed chains, volume/OI only. Good enough to spot anomalies.
         """)
 
-    uw_key      = os.getenv("UNUSUAL_WHALES_API_KEY", "")
-    tradier_key = os.getenv("TRADIER_API_KEY", "")
-    if uw_key:
-        st.success("Unusual Whales API — sweep detection enabled")
-    elif tradier_key:
-        st.info("Tradier API — real-time chains, no sweep detection")
+    st.caption(f"Selected options source: **{options_source}**")
+    if options_source == "auto":
+        st.info("auto follows the documented priority: Unusual Whales → Tradier → Yahoo based on configured API keys.")
+    elif options_source == "unusual_whales":
+        st.info("Using Unusual Whales API — requires UNUSUAL_WHALES_API_KEY.")
+    elif options_source == "tradier":
+        st.info("Using Tradier API — requires TRADIER_API_KEY.")
     else:
-        st.warning("yfinance (free, delayed) — volume/OI analysis only. Add UNUSUAL_WHALES_API_KEY or TRADIER_API_KEY to .env for better data.")
+        st.info("Using yfinance (free, delayed) — volume/OI analysis only.")
 
     o_col1, o_col2 = st.columns(2)
     min_vol_oi = o_col1.slider(
@@ -986,13 +1039,20 @@ That urgency is a strong signal.
 - **1–3x** — slightly elevated, may be noise
     """)
 
+    unusual = pd.DataFrame()
+    options_error = None
     if st.button("Scan Options Flow", type="primary", key="btn_options"):
         with st.spinner(f"Scanning options chains for {len(watchlist)} tickers…"):
-            unusual = scan_unusual_flow(watchlist, min_vol_oi=min_vol_oi)
+            try:
+                unusual = scan_unusual_flow(watchlist, min_vol_oi=min_vol_oi, source=options_source)
+            except ProviderCapabilityError as e:
+                options_error = str(e)
+                st.error(options_error)
+    if options_error is None:
         if unusual.empty:
-            st.info(f"No unusual options activity found above {min_vol_oi}x Vol/OI ratio.")
+            st.info(f"No unusual options activity found above {min_vol_oi}x Vol/OI ratio (source: {options_source}).")
         else:
-            st.success(f"{len(unusual)} unusual contracts found")
+            st.success(f"{len(unusual)} unusual contracts found (source: {options_source})")
             st.dataframe(unusual, use_container_width=True)
 
     st.divider()
@@ -1001,22 +1061,25 @@ That urgency is a strong signal.
     pc_ticker = st.selectbox("Select ticker", watchlist, key="sel_pc")
     if st.button("Get Sentiment", key="btn_pc", help="Fetch the options chain and compute the put/call ratio."):
         with st.spinner(f"Fetching options data for {pc_ticker}…"):
-            sentiment = get_put_call_sentiment(pc_ticker)
-        s_col1, s_col2, s_col3, s_col4 = st.columns(4)
-        s_col1.metric("Put/Call Ratio", sentiment.get("put_call_ratio", "N/A"),
-                      help="Put volume ÷ Call volume. <0.7=bullish, >1.2=bearish.")
-        s_col2.metric("Call Volume",    sentiment.get("call_volume", 0))
-        s_col3.metric("Put Volume",     sentiment.get("put_volume", 0))
-        s_col4.metric("Sentiment",      sentiment.get("sentiment", "unknown").upper())
-        ratio  = sentiment.get("put_call_ratio")
-        source = sentiment.get("data_source", "unknown")
-        if ratio is not None:
-            if ratio < 0.7:
-                st.success(f"Bullish — heavy call buying relative to puts (source: {source})")
-            elif ratio > 1.2:
-                st.error(f"Bearish — heavy put buying relative to calls (source: {source})")
-            else:
-                st.info(f"Neutral — balanced call/put activity (source: {source})")
+            sentiment = get_put_call_sentiment(pc_ticker, source=options_source)
+        if sentiment.get("error"):
+            st.error(sentiment["error"])
+        else:
+            s_col1, s_col2, s_col3, s_col4 = st.columns(4)
+            s_col1.metric("Put/Call Ratio", sentiment.get("put_call_ratio", "N/A"),
+                          help="Put volume ÷ Call volume. <0.7=bullish, >1.2=bearish.")
+            s_col2.metric("Call Volume",    sentiment.get("call_volume", 0))
+            s_col3.metric("Put Volume",     sentiment.get("put_volume", 0))
+            s_col4.metric("Sentiment",      sentiment.get("sentiment", "unknown").upper())
+            ratio  = sentiment.get("put_call_ratio")
+            source = sentiment.get("data_source", "unknown")
+            if ratio is not None:
+                if ratio < 0.7:
+                    st.success(f"Bullish — heavy call buying relative to puts (source: {source})")
+                elif ratio > 1.2:
+                    st.error(f"Bearish — heavy put buying relative to calls (source: {source})")
+                else:
+                    st.info(f"Neutral — balanced call/put activity (source: {source})")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 7 — ALERTS
@@ -1131,7 +1194,7 @@ Outcomes are refreshed automatically at 4:30pm ET when the watcher is running.
         if st.button("Refresh Outcomes Now", key="btn_outcomes",
                      help="Manually trigger outcome fetching for all unresolved signals whose window has closed."):
             with st.spinner("Fetching price outcomes for pending signals…"):
-                summary = run_outcome_pass(verbose=False)
+                summary = run_outcome_pass(verbose=False, provider=provider)
             st.success(
                 f"Resolved {summary['resolved']} — "
                 f"{summary['pending']} pending (window not closed yet) — "

@@ -70,10 +70,15 @@ copy .env.example .env    # Windows
 
 `.env` is gitignored — credentials never leave the machine. Open `.env` and fill in only what the user needs. **Do not invent values.** If the user hasn't said which provider they want, default to `DATA_PROVIDER=yahoo` (no credentials required) and ask about the others.
 
+`DATA_PROVIDER` controls **OHLCV data** only. Options flow, earnings, and market-cap ranking have their own source overrides (see `.env.example`).
+
 Key variables:
 | Variable | Required? | Notes |
 |---|---|---|
-| `DATA_PROVIDER` | Yes | One of `yahoo`, `alpaca`, `ibkr`, `schwab`. Default `yahoo`. |
+| `DATA_PROVIDER` | Yes | OHLCV provider: `yahoo`, `alpaca`, `ibkr`, `schwab`. Default `yahoo`. |
+| `OPTIONS_DATA_SOURCE` | No | `auto` (default), `unusual_whales`, `tradier`, `yahoo` |
+| `EARNINGS_DATA_SOURCE` | No | `yahoo` (default) |
+| `MARKET_CAP_DATA_SOURCE` | No | `yahoo` (default), `schwab` |
 | `ALPACA_API_KEY` / `ALPACA_SECRET_KEY` | Only for Alpaca | From alpaca.markets dashboard |
 | `SCHWAB_APP_KEY` / `SCHWAB_APP_SECRET` | Only for Schwab | From developer.schwab.com — also requires OAuth bootstrap (see §3a) |
 | `IBKR_HOST` / `IBKR_PORT` | Only for IBKR | TWS or Gateway must be running locally |

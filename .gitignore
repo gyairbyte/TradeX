@@ -25,3 +25,6 @@ build/
 *.token.json
 *schwab*token*.json
 
+# uv lockfile is not tracked in this repo
+uv.lock
+

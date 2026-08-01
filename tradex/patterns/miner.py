@@ -23,8 +23,9 @@ from datetime import datetime, timedelta, timezone
 
 import numpy as np
 import pandas as pd
-import yfinance as yf
 
+from tradex.data.fetcher import ProviderCapabilityError
+from tradex.data.history import fetch_daily_history
 from tradex.signals.indicators import add_indicators
 from tradex.patterns.config import PatternConfig, PROFILES
 
@@ -47,29 +48,24 @@ MINING_UNIVERSE = [
 ]
 
 
-def _fetch_history(ticker: str, years: int) -> pd.DataFrame | None:
+def _utc_now() -> datetime:
+    """Return the current UTC time. Patching this helper keeps tests deterministic."""
+    return datetime.now(timezone.utc)
+
+
+def _fetch_history(ticker: str, years: int, provider: str | None = None) -> pd.DataFrame | None:
     """Download daily OHLCV for `years` years and compute indicators."""
-    end = datetime.now()
+    end = _utc_now().date()
     start = end - timedelta(days=years * 365)
     try:
-        df = yf.download(
-            ticker,
-            start=start.strftime("%Y-%m-%d"),
-            end=end.strftime("%Y-%m-%d"),
-            interval="1d",
-            progress=False,
-            auto_adjust=True,
-        )
+        df = fetch_daily_history(ticker, start, end, provider=provider)
         if df.empty or len(df) < 60:
             return None
 
-        # Handle MultiIndex columns from newer yfinance
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = [col[0].lower() for col in df.columns]
-        else:
-            df.columns = [c.lower() for c in df.columns]
-
         return add_indicators(df).dropna()
+    except ProviderCapabilityError:
+        # Re-raise so callers can surface an unsupported provider clearly.
+        raise
     except Exception:
         return None
 
@@ -130,9 +126,13 @@ def mine_events(
     cfg: PatternConfig | None = None,
     event_type: str = "runup",   # "runup" | "decline" | "both"
     verbose: bool = True,
+    provider: str | None = None,
 ) -> pd.DataFrame:
     """
     Mine historical events from a universe of tickers.
+
+    ``provider`` is passed to the daily-history abstraction. When None, the
+    value of the ``DATA_PROVIDER`` environment variable is used.
 
     Returns a DataFrame where each row is one pre-event window:
       ticker, event_type, event_date, move_pct, normalized series columns...
@@ -151,7 +151,7 @@ def mine_events(
         if verbose:
             print(f"  Mining {ticker}…", end=" ", flush=True)
 
-        df = _fetch_history(ticker, cfg.history_years)
+        df = _fetch_history(ticker, cfg.history_years, provider=provider)
         if df is None:
             if verbose:
                 print("skip (no data)")

@@ -8,28 +8,60 @@ import pandas as pd
 from tradex.tracker import outcome_tracker
 
 
-def _make_multiindex_close(n: int = 5, ticker: str = "AAPL") -> pd.DataFrame:
-    """Return a yfinance-style MultiIndex-column DataFrame."""
-    dates = pd.date_range("2024-01-02", periods=n, freq="B")
-    return pd.DataFrame({("Close", ticker): [100 + i for i in range(n)]}, index=dates)
+def _make_ohlcv(
+    closes,
+    start: str = "2024-01-02",
+    ticker: str | None = None,
+    multiindex: bool = False,
+) -> pd.DataFrame:
+    """Return a yfinance-style daily DataFrame with full OHLCV columns.
 
+    If ``multiindex`` is True, columns follow yfinance's (Field, Ticker) shape.
+    NaN values in ``closes`` produce rows with a missing close but valid
+    open/high/low/volume so the outcome tracker can count the session.
+    """
+    dates = pd.date_range(start, periods=len(closes), freq="B")
+    base = [100.0 if pd.isna(c) else float(c) for c in closes]
+    opens = [b for b in base]
+    highs = [b + 1.0 for b in base]
+    lows = [b - 1.0 for b in base]
+    volumes = [1000] * len(closes)
 
-def _make_simple_close(n: int = 5, ticker: str = "AAPL") -> pd.DataFrame:
-    """Return a single-level-column DataFrame like yfinance for an ordinary ticker."""
-    _ = ticker
-    dates = pd.date_range("2024-01-02", periods=n, freq="B")
-    return pd.DataFrame({"Close": [100 + i for i in range(n)]}, index=dates)
+    if multiindex:
+        columns = pd.MultiIndex.from_tuples(
+            [(field, ticker or "AAPL") for field in ["Open", "High", "Low", "Close", "Volume"]]
+        )
+        data = np.column_stack([opens, highs, lows, closes, volumes])
+        return pd.DataFrame(data, index=dates, columns=columns)
+
+    return pd.DataFrame(
+        {"Open": opens, "High": highs, "Low": lows, "Close": closes, "Volume": volumes},
+        index=dates,
+    )
 
 
 def _make_close(values, start: str = "2024-01-02") -> pd.DataFrame:
     """Return a single-level DataFrame from a list of close values."""
-    dates = pd.date_range(start, periods=len(values), freq="B")
-    return pd.DataFrame({"Close": values}, index=dates)
+    return _make_ohlcv(values, start=start)
+
+
+def _make_history_df(closes, start: str = "2024-01-02") -> pd.DataFrame:
+    """Return a canonical, lowercase-column history DataFrame as returned by
+    ``fetch_daily_history``."""
+    dates = pd.date_range(start, periods=len(closes), freq="B")
+    base = [100.0 if pd.isna(c) else float(c) for c in closes]
+    return pd.DataFrame({
+        "open": base,
+        "high": [b + 1.0 for b in base],
+        "low": [b - 1.0 for b in base],
+        "close": closes,
+        "volume": [1000] * len(closes),
+    }, index=pd.DatetimeIndex(dates, name="datetime", tz="UTC"))
 
 
 def _fetch(close_value, *, after_date=datetime(2024, 1, 1, tzinfo=UTC), days_forward=3,
-           current=datetime(2026, 8, 1, tzinfo=UTC)):
-    """Call _fetch_close_after with a mocked yfinance download and current time."""
+           current=datetime(2026, 8, 1, tzinfo=UTC), provider=None):
+    """Call _fetch_close_after with a mocked daily-history abstraction and current time."""
     if close_value is None:
         df = pd.DataFrame()
     elif isinstance(close_value, pd.DataFrame):
@@ -38,24 +70,24 @@ def _fetch(close_value, *, after_date=datetime(2024, 1, 1, tzinfo=UTC), days_for
         df = _make_close(close_value)
 
     with (
-        patch.object(outcome_tracker.yf, "download", return_value=df),
+        patch("tradex.data.history.yf.download", return_value=df),
         patch.object(outcome_tracker, "_utc_now", return_value=current),
     ):
         return outcome_tracker._fetch_close_after(
-            "AAPL", after_date, days_forward=days_forward
+            "AAPL", after_date, days_forward=days_forward, provider=provider
         )
 
 
 def test_fetch_close_with_multiindex_columns():
     """_fetch_close_after must handle yfinance column shapes and missing/NaN closes."""
     # MultiIndex columns (Close, ticker)
-    multi_df = _make_multiindex_close(5, "AAPL")
+    multi_df = _make_ohlcv([100.0, 101.0, 102.0, 103.0, 104.0], multiindex=True, ticker="AAPL")
     close = _fetch(multi_df)
     assert isinstance(close, float)
     assert close == 102.0
 
     # Single-level columns (Close, ...)
-    single_df = _make_simple_close(5, "AAPL")
+    single_df = _make_ohlcv([100.0, 101.0, 102.0, 103.0, 104.0])
     close = _fetch(single_df)
     assert isinstance(close, float)
     assert close == 102.0
@@ -170,7 +202,11 @@ def test_holiday_or_missing_session_gaps_do_not_count():
     # Three trading sessions: Jan 2, Jan 3, Jan 5 (Jan 4 missing as a gap)
     values = [101.0, 102.0, 103.0]
     dates = pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-05"])
-    df = pd.DataFrame({"Close": values}, index=dates)
+    df = pd.DataFrame(
+        {"Open": values, "High": [v + 1 for v in values], "Low": [v - 1 for v in values],
+         "Close": values, "Volume": [1000, 1000, 1000]},
+        index=dates,
+    )
     close = _fetch(df, after_date=signal_time, days_forward=3, current=current)
     assert close == 103.0
 
@@ -181,7 +217,7 @@ def test_future_signal_returns_none_without_fetch():
     current = datetime(2026, 8, 1, tzinfo=UTC)
 
     with (
-        patch.object(outcome_tracker.yf, "download") as mock_download,
+        patch("tradex.data.history.yf.download") as mock_download,
         patch.object(outcome_tracker, "_utc_now", return_value=current),
     ):
         close = outcome_tracker._fetch_close_after(
@@ -198,7 +234,7 @@ def test_signal_today_returns_none():
     current = datetime(2024, 1, 1, tzinfo=UTC)
 
     with (
-        patch.object(outcome_tracker.yf, "download") as mock_download,
+        patch("tradex.data.history.yf.download") as mock_download,
         patch.object(outcome_tracker, "_utc_now", return_value=current),
     ):
         close = outcome_tracker._fetch_close_after(
@@ -219,13 +255,13 @@ def test_empty_response_and_too_few_rows_remain_pending():
 
 
 def test_request_boundaries_respect_available_data():
-    """yf.download should receive start one day after the signal and end bounded by availability."""
+    """The daily-history abstraction receives start one day after the signal and end bounded by availability."""
     signal_time = datetime(2024, 1, 1, tzinfo=UTC)
     current = datetime(2024, 1, 4, tzinfo=UTC)
     df = _make_close([101.0, 102.0])
 
     with (
-        patch.object(outcome_tracker.yf, "download", return_value=df) as mock_download,
+        patch("tradex.data.history.yf.download", return_value=df) as mock_download,
         patch.object(outcome_tracker, "_utc_now", return_value=current),
     ):
         outcome_tracker._fetch_close_after("AAPL", signal_time, days_forward=1)
@@ -233,7 +269,8 @@ def test_request_boundaries_respect_available_data():
     assert mock_download.call_count == 1
     _, kwargs = mock_download.call_args
     assert kwargs["start"] == "2024-01-02"
-    # Current is Jan 4, so the exclusive end is Jan 5 (available_end = current + 1 day).
+    # _fetch_close_after passes an inclusive end date of Jan 4; the abstraction
+    # adds one day because yfinance's end argument is exclusive.
     assert kwargs["end"] == "2024-01-05"
 
 
@@ -244,15 +281,15 @@ def test_request_boundaries_use_buffered_end_when_within_range():
     df = _make_close([101.0, 102.0, 103.0])
 
     with (
-        patch.object(outcome_tracker.yf, "download", return_value=df) as mock_download,
+        patch("tradex.data.history.yf.download", return_value=df) as mock_download,
         patch.object(outcome_tracker, "_utc_now", return_value=current),
     ):
         outcome_tracker._fetch_close_after("AAPL", signal_time, days_forward=3)
 
     _, kwargs = mock_download.call_args
     assert kwargs["start"] == "2024-01-02"
-    # buffer_end = 2024-01-11, available_end = 2024-01-26; request_end is the buffer.
-    assert kwargs["end"] == "2024-01-11"
+    # buffer_end = 2024-01-11 (inclusive); the abstraction passes end+1 to yfinance.
+    assert kwargs["end"] == "2024-01-12"
 
 
 def test_outcome_resolves_at_earliest_valid_date():
@@ -269,3 +306,92 @@ def test_outcome_resolves_at_earliest_valid_date():
     assert close is not None
     assert isinstance(close, float)
     assert close == 101.0
+
+
+def test_provider_reaches_daily_history_abstraction():
+    """The provider argument is forwarded to the daily-history abstraction."""
+    signal_time = datetime(2024, 1, 1, tzinfo=UTC)
+    current = datetime(2024, 1, 3, tzinfo=UTC)
+    df = _make_close([101.0])
+
+    with (
+        patch("tradex.tracker.outcome_tracker.fetch_daily_history", return_value=df) as mock_fetch,
+        patch.object(outcome_tracker, "_utc_now", return_value=current),
+    ):
+        outcome_tracker._fetch_close_after(
+            "AAPL", signal_time, days_forward=1, provider="schwab"
+        )
+
+    mock_fetch.assert_called_once()
+    args, kwargs = mock_fetch.call_args
+    assert args[0] == "AAPL"
+    assert kwargs["provider"] == "schwab"
+
+
+def test_schwab_missing_close_before_target_session_counts():
+    """A Schwab daily-history row with a missing close but other OHLCV data
+    still counts as a trading session for COR-003 timing."""
+    signal_time = datetime(2024, 1, 1, tzinfo=UTC)
+    current = datetime(2024, 1, 5, tzinfo=UTC)
+    # Three sessions; session 1 has a missing close, session 3 is the target.
+    df = _make_history_df([float("nan"), 101.0, 102.0])
+
+    with (
+        patch("tradex.tracker.outcome_tracker.fetch_daily_history", return_value=df) as mock_fetch,
+        patch.object(outcome_tracker, "_utc_now", return_value=current),
+    ):
+        close = outcome_tracker._fetch_close_after(
+            "AAPL", signal_time, days_forward=3, provider="schwab"
+        )
+
+    assert close == 102.0
+    mock_fetch.assert_called_once()
+    assert mock_fetch.call_args.kwargs["provider"] == "schwab"
+
+
+def test_schwab_missing_close_on_target_session_falls_back():
+    """A missing close on the target session for Schwab daily history falls
+    back to the next valid close within the window."""
+    signal_time = datetime(2024, 1, 1, tzinfo=UTC)
+    current = datetime(2024, 1, 5, tzinfo=UTC)
+    # Three sessions; target (session 2) is NaN, session 3 is valid.
+    df = _make_history_df([101.0, float("nan"), 103.0])
+
+    with (
+        patch("tradex.tracker.outcome_tracker.fetch_daily_history", return_value=df) as mock_fetch,
+        patch.object(outcome_tracker, "_utc_now", return_value=current),
+    ):
+        close = outcome_tracker._fetch_close_after(
+            "AAPL", signal_time, days_forward=2, provider="schwab"
+        )
+
+    assert close == 103.0
+    mock_fetch.assert_called_once()
+    assert mock_fetch.call_args.kwargs["provider"] == "schwab"
+
+
+def test_provider_failure_increments_errors(fresh_signal_db):
+    """A provider/auth/network failure from fetch_daily_history must reach the
+    existing run_outcome_pass error boundary and increment `errors`, not `pending`."""
+    from tradex.tracker import store
+
+    with store._conn() as con:
+        con.execute(
+            "INSERT INTO signal_history (ticker, timeframe, scan_time, score, last_close, volume_ratio, rsi, reasons) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            ("AAPL", "intraday", datetime(2024, 1, 1, tzinfo=UTC).isoformat(),
+             50, 100.0, 1.0, 50.0, "test"),
+        )
+
+    with (
+        patch("tradex.tracker.outcome_tracker.fetch_daily_history") as mock_fetch,
+        patch.object(outcome_tracker, "_utc_now", return_value=datetime(2024, 1, 3, tzinfo=UTC)),
+    ):
+        mock_fetch.side_effect = RuntimeError("Schwab authentication failed")
+        summary = outcome_tracker.run_outcome_pass(verbose=False, provider="schwab")
+
+    assert summary["errors"] == 1
+    assert summary["pending"] == 0
+    assert summary["resolved"] == 0
+    mock_fetch.assert_called_once()
+    assert mock_fetch.call_args.kwargs["provider"] == "schwab"

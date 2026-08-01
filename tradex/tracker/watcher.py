@@ -122,10 +122,12 @@ def start_loop(
         min_score=min_score, provider=provider,
     )
     # Daily after market close: resolve outcomes
-    schedule.every().day.at("20:30").do(run_outcome_pass, verbose=True)
+    schedule.every().day.at("20:30").do(
+        run_outcome_pass, verbose=True, provider=provider
+    )
     # Daily pre-market: gap scan at 8am ET (12:00 UTC)
     schedule.every().day.at("12:00").do(
-        run_gap_alerts, tickers=tickers, min_gap_pct=4.0
+        run_gap_alerts, tickers=tickers, min_gap_pct=4.0, provider=provider
     )
 
     try:

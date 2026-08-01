@@ -1,0 +1,68 @@
+"""Tests for earnings-calendar source policy."""
+from datetime import date
+from pathlib import Path
+from unittest.mock import Mock, patch
+
+import pandas as pd
+import pytest
+
+from tradex.data.fetcher import ProviderCapabilityError
+from tradex.earnings import calendar
+
+
+def _make_earnings_db(tmp_path: Path):
+    """Point the earnings cache at a temporary SQLite path for the test."""
+    calendar.CACHE_DIR = tmp_path
+    calendar.CACHE_DB = tmp_path / "earnings_cache.db"
+
+
+def test_resolve_earnings_source_defaults_to_yahoo(monkeypatch):
+    monkeypatch.delenv("EARNINGS_DATA_SOURCE", raising=False)
+    assert calendar._resolve_earnings_source(None) == "yahoo"
+
+
+def test_resolve_earnings_source_rejects_unsupported():
+    with pytest.raises(ProviderCapabilityError):
+        calendar._resolve_earnings_source("schwab")
+
+
+def test_get_next_earnings_yahoo_and_cache(tmp_path):
+    _make_earnings_db(tmp_path)
+    future = date(2026, 8, 15)
+    df = pd.DataFrame(
+        {"Reported EPS": [1.0]},
+        index=pd.to_datetime([future.isoformat()], utc=True),
+    )
+    fake_ticker = Mock(get_earnings_dates=Mock(return_value=df))
+
+    with patch.object(calendar.yf, "Ticker", return_value=fake_ticker):
+        result1 = calendar.get_next_earnings("AAPL", source="yahoo")
+        result2 = calendar.get_next_earnings("AAPL", source="yahoo")
+
+    assert result1 == future
+    assert result2 == future
+    # Cache should prevent a second network call.
+    fake_ticker.get_earnings_dates.assert_called_once()
+
+
+def test_get_next_earnings_unsupported_source():
+    with pytest.raises(ProviderCapabilityError):
+        calendar.get_next_earnings("AAPL", source="schwab")
+
+
+def test_days_until_earnings():
+    future = date(2099, 1, 1)
+    with patch.object(calendar, "get_next_earnings", return_value=future):
+        days = calendar.days_until_earnings("AAPL")
+    assert days is not None
+    assert days > 0
+
+
+def test_annotate_returns_source_agnostic_and_data_provider_not_relabeled():
+    """DATA_PROVIDER=schwab must not relabel Yahoo earnings."""
+    future = date(2099, 1, 1)
+    with patch.object(calendar, "get_next_earnings", return_value=future):
+        df = calendar.annotate(["AAPL"], source="yahoo")
+
+    assert df.iloc[0]["ticker"] == "AAPL"
+    assert df.iloc[0]["days_until"] is not None

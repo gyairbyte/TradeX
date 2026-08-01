@@ -19,6 +19,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+class ProviderCapabilityError(RuntimeError):
+    """Raised when a provider does not support a requested data capability."""
+
+
 # ── timeframe presets ────────────────────────────────────────────────────────
 # Each provider maps these to its own param names internally.
 TIMEFRAMES = {
@@ -214,13 +219,17 @@ _SCHWAB_CLIENT = None
 _SCHWAB_LOCK = threading.Lock()
 
 
-def _normalize_schwab_candles(candles: list[dict]) -> pd.DataFrame:
+def _normalize_schwab_candles(candles: list[dict], drop_any_null: bool = True) -> pd.DataFrame:
     """Convert Schwab price-history candles into the canonical OHLCV DataFrame.
 
     Schwab candle JSON contains: open, high, low, close, volume, datetime (epoch ms).
     Returns a sorted, de-duplicated, UTC timezone-aware DataFrame with columns
-    open, high, low, close, volume. Rows with missing or invalid OHLCV data are
-    dropped. Duplicate timestamps keep the last occurrence.
+    open, high, low, close, volume. Duplicate timestamps keep the last occurrence.
+
+    By default rows with any missing OHLCV field are dropped. For date-ranged
+    daily history callers can pass ``drop_any_null=False`` to keep rows that
+    have other OHLCV data but a missing close (needed for COR-003 session
+    counting).
     """
     if not candles:
         return pd.DataFrame(
@@ -251,21 +260,15 @@ def _normalize_schwab_candles(candles: list[dict]) -> pd.DataFrame:
     for col in _OHLCV_COLUMNS:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    # Drop rows that are missing any OHLCV field. Volume of 0 is valid; NaN is not.
-    return df.dropna(subset=_OHLCV_COLUMNS)
+    # Drop rows that are missing any OHLCV field, or -- for daily history -- only
+    # rows with no OHLCV data at all. Volume of 0 is valid; NaN is not.
+    if drop_any_null:
+        return df.dropna(subset=_OHLCV_COLUMNS)
+    return df.dropna(how="all")
 
 
-def _fetch_schwab(ticker: str, timeframe: str) -> pd.DataFrame:
-    """Fetch canonical OHLCV data from the Schwab Market Data API.
-
-    Raises:
-        ImportError:            schwab-py is not installed.
-        EnvironmentError:       SCHWAB_APP_KEY or SCHWAB_APP_SECRET missing.
-        FileNotFoundError:      The OAuth token file does not exist.
-        ValueError:             The token path is inside the repo or timeframe unsupported.
-        RuntimeError:            The Schwab API request failed.
-        ValueError:             The response was not valid JSON.
-    """
+def _get_schwab_client():
+    """Return an authenticated Schwab client, or raise a safe error."""
     try:
         from schwab.auth import client_from_token_file
     except ImportError as e:
@@ -287,7 +290,7 @@ def _fetch_schwab(ticker: str, timeframe: str) -> pd.DataFrame:
 
     if not os.path.exists(token_path):
         raise FileNotFoundError(
-            f"Schwab OAuth token not found at {token_path}. "
+            "Schwab OAuth token not found. "
             "Run `python scripts/schwab_oauth.py` once to generate it."
         )
 
@@ -306,7 +309,21 @@ def _fetch_schwab(ticker: str, timeframe: str) -> pd.DataFrame:
                     "app key, and app secret, then re-run the OAuth script."
                 ) from None
 
-    client = _SCHWAB_CLIENT
+    return _SCHWAB_CLIENT
+
+
+def _fetch_schwab(ticker: str, timeframe: str) -> pd.DataFrame:
+    """Fetch canonical OHLCV data from the Schwab Market Data API.
+
+    Raises:
+        ImportError:            schwab-py is not installed.
+        EnvironmentError:       SCHWAB_APP_KEY or SCHWAB_APP_SECRET missing.
+        FileNotFoundError:      The OAuth token file does not exist.
+        ValueError:             The token path is inside the repo or timeframe unsupported.
+        RuntimeError:            The Schwab API request failed.
+        ValueError:             The response was not valid JSON.
+    """
+    client = _get_schwab_client()
 
     if timeframe not in _SCHWAB_TIMEFRAMES:
         raise ValueError(f"Unsupported timeframe for schwab: {timeframe}")

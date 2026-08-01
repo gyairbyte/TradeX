@@ -60,6 +60,8 @@ class RefreshResult:
     warnings: list[str]
     russell1000: list[str] = None
     sector_universe_size: int = 0          # how many tickers passed the liquidity filter
+    constituent_source: str = "wikipedia"  # S&P 500 / Dow / NDX / Russell 1000 source
+    market_cap_source: str = "yahoo"     # market-cap ranking source
 
 
 def _read_tables(url: str) -> list[pd.DataFrame]:
@@ -113,7 +115,8 @@ def _fetch_russell1000() -> pd.DataFrame:
     raise RuntimeError("could not locate Russell 1000 components table on Wikipedia")
 
 
-def _fetch_market_caps(tickers: list[str], max_workers: int = 12) -> dict[str, float]:
+def _fetch_yahoo_market_caps(tickers: list[str], max_workers: int = 12) -> dict[str, float]:
+    """Fetch market caps from Yahoo Finance fast_info."""
     import yfinance as yf
 
     caps: dict[str, float] = {}
@@ -123,8 +126,8 @@ def _fetch_market_caps(tickers: list[str], max_workers: int = 12) -> dict[str, f
             info = yf.Ticker(t).fast_info
             cap = info.get("market_cap") if isinstance(info, dict) else getattr(info, "market_cap", None)
             return t, float(cap) if cap else None
-        except Exception as e:
-            log.debug("market cap fetch failed for %s: %s", t, e)
+        except Exception:
+            log.debug("market cap fetch failed for %s", t)
             return t, None
 
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
@@ -135,30 +138,69 @@ def _fetch_market_caps(tickers: list[str], max_workers: int = 12) -> dict[str, f
     return caps
 
 
-def _schwab_client_or_none():
-    """Return an authenticated Schwab client if available, else None.
+def _fetch_schwab_market_caps(tickers: list[str]) -> dict[str, float]:
+    """Fetch market caps from Schwab FUNDAMENTAL data."""
+    from tradex.data.fetcher import _get_schwab_client
 
-    The liquidity filter degrades to "no filter" if Schwab isn't configured —
-    sector presets still build, just with the full unfiltered Russell 1000.
+    caps: dict[str, float] = {}
+    client = _get_schwab_client()
+
+    batch_size = 100
+    for i in range(0, len(tickers), batch_size):
+        chunk = tickers[i:i + batch_size]
+        try:
+            r = client.get_instruments(chunk, client.Instrument.Projection.FUNDAMENTAL)
+            r.raise_for_status()
+            inst_list = r.json().get("instruments", [])
+        except Exception:
+            log.debug("Schwab market-cap batch %s failed", chunk[0] if chunk else "")
+            continue
+
+        for it in inst_list:
+            sym = it.get("symbol")
+            fundamental = it.get("fundamental", {}) if isinstance(it, dict) else {}
+            cap = fundamental.get("marketCap") or fundamental.get("marketcap")
+            if sym and cap:
+                try:
+                    caps[sym] = float(cap)
+                except (TypeError, ValueError):
+                    continue
+    return caps
+
+
+def _resolve_market_cap_source(source: str | None) -> str:
+    return (source or os.getenv("MARKET_CAP_DATA_SOURCE", "yahoo")).lower().strip()
+
+
+def fetch_market_caps(
+    tickers: list[str], source: str | None = None, max_workers: int = 12
+) -> dict[str, float]:
+    """Fetch market caps for ``tickers`` from an explicit source.
+
+    Supported sources:
+      - ``yahoo``  (default): Yahoo Finance fast_info
+      - ``schwab``: Schwab FUNDAMENTAL data (requires Schwab credentials)
+
+    ``DATA_PROVIDER`` is not used for market-cap data.
     """
-    try:
-        from schwab.auth import client_from_token_file
-    except ImportError:
-        return None
-    app_key = os.getenv("SCHWAB_APP_KEY")
-    app_secret = os.getenv("SCHWAB_APP_SECRET")
-    token_path = os.path.expanduser(
-        os.getenv("SCHWAB_TOKEN_PATH", "~/.tradex_schwab_token.json")
+    from tradex.data.fetcher import ProviderCapabilityError
+
+    s = _resolve_market_cap_source(source)
+    if s == "yahoo":
+        return _fetch_yahoo_market_caps(tickers, max_workers=max_workers)
+    if s == "schwab":
+        try:
+            return _fetch_schwab_market_caps(tickers)
+        except ProviderCapabilityError:
+            raise
+        except Exception:
+            raise ProviderCapabilityError(
+                "Schwab market-cap source unavailable; check SCHWAB_APP_KEY, "
+                "SCHWAB_APP_SECRET, and SCHWAB_TOKEN_PATH."
+            )
+    raise ProviderCapabilityError(
+        f"Market-cap source '{s}' is not supported; supported: yahoo, schwab"
     )
-    if not (app_key and app_secret and os.path.exists(token_path)):
-        return None
-    try:
-        return client_from_token_file(
-            token_path=token_path, api_key=app_key, app_secret=app_secret,
-        )
-    except Exception as e:
-        log.warning("schwab client init failed for liquidity filter: %s", e)
-        return None
 
 
 def _schwab_liquidity_filter(
@@ -170,11 +212,16 @@ def _schwab_liquidity_filter(
     """Return (set of tickers passing filter, list of warnings).
 
     Calls Schwab get_instruments (FUNDAMENTAL) for avg3MonthVolume and
-    get_quotes for current price. Both are batched.
+    get_quotes for current price. Both are batched. The shared hardened
+    client is used so a repo-local token path is rejected even when the
+    liquidity filter falls back to returning all tickers.
     """
+    from tradex.data.fetcher import _get_schwab_client
+
     warnings: list[str] = []
-    client = _schwab_client_or_none()
-    if client is None:
+    try:
+        client = _get_schwab_client()
+    except Exception:
         warnings.append(
             "Schwab not configured — skipping liquidity filter. "
             "Sector presets will include all Russell 1000 members."
@@ -192,8 +239,9 @@ def _schwab_liquidity_filter(
             r1 = client.get_instruments(chunk, client.Instrument.Projection.FUNDAMENTAL)
             r1.raise_for_status()
             inst_list = r1.json().get("instruments", [])
-        except Exception as e:
-            warnings.append(f"Schwab fundamentals batch {i}-{i + batch_size} failed: {e}")
+        except Exception:
+            warnings.append(f"Schwab fundamentals batch {i}-{i + batch_size} failed")
+            log.debug("Schwab fundamentals batch %s failed", i)
             continue
 
         vol_map = {
@@ -207,8 +255,9 @@ def _schwab_liquidity_filter(
             r2 = client.get_quotes(chunk)
             r2.raise_for_status()
             quote_map = r2.json()
-        except Exception as e:
-            warnings.append(f"Schwab quotes batch {i}-{i + batch_size} failed: {e}")
+        except Exception:
+            warnings.append(f"Schwab quotes batch {i}-{i + batch_size} failed")
+            log.debug("Schwab quotes batch %s failed", i)
             continue
 
         for sym in chunk:
@@ -229,7 +278,9 @@ def _schwab_liquidity_filter(
     return survivors, warnings
 
 
-def refresh_all(top_n_per_sector: int = SECTOR_TOP_N) -> RefreshResult:
+def refresh_all(
+    top_n_per_sector: int = SECTOR_TOP_N, market_cap_source: str | None = None
+) -> RefreshResult:
     warnings: list[str] = []
 
     # ── Index lists (still useful as their own presets) ─────────────────────
@@ -257,8 +308,13 @@ def refresh_all(top_n_per_sector: int = SECTOR_TOP_N) -> RefreshResult:
         warnings.append(f"Russell 1000 fetch failed ({e}) — falling back to S&P 500 for sectors")
         r1k_df = sp500_df.copy()
 
-    # ── Market caps for SP100 ranking (yfinance — already optimized) ────────
-    caps = _fetch_market_caps(sp500_df["ticker"].tolist())
+    # ── Market caps for SP100 ranking ───────────────────────────────────────
+    resolved_cap_source = _resolve_market_cap_source(market_cap_source)
+    try:
+        caps = fetch_market_caps(sp500_df["ticker"].tolist(), source=resolved_cap_source)
+    except Exception:
+        caps = {}
+        warnings.append(f"Market-cap fetch failed for source '{resolved_cap_source}'")
     sp500_df["market_cap"] = sp500_df["ticker"].map(caps).fillna(0)
     if (sp500_df["market_cap"] == 0).any():
         n_missing = int((sp500_df["market_cap"] == 0).sum())
@@ -292,6 +348,8 @@ def refresh_all(top_n_per_sector: int = SECTOR_TOP_N) -> RefreshResult:
         warnings=warnings,
         russell1000=r1k_df["ticker"].tolist(),
         sector_universe_size=len(survivors),
+        constituent_source="wikipedia",
+        market_cap_source=resolved_cap_source,
     )
 
 

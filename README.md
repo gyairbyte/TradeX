@@ -125,7 +125,7 @@ print(results)
 
 ## Data Providers
 
-Set `DATA_PROVIDER` in your `.env` to switch sources:
+`DATA_PROVIDER` in your `.env` controls **OHLCV data** only (the central `fetch()` and the date-ranged daily-history abstraction). It does not change options, earnings, or market-cap sources.
 
 | Provider | `DATA_PROVIDER` value | Cost | Real-time | Setup |
 |---|---|---|---|---|
@@ -136,6 +136,15 @@ Set `DATA_PROVIDER` in your `.env` to switch sources:
 
 > **Note:** TD Ameritrade's API was shut down in September 2024. Use `schwab` instead.
 > Schwab output is normalized to a canonical OHLCV DataFrame (sorted, de-duplicated, UTC-indexed). Validate a local token with `scripts/schwab_smoke_test.py`.
+
+### Specialized sources
+
+These are independent of `DATA_PROVIDER` and use their own env vars / dashboard selectors:
+
+- **Options flow**: `OPTIONS_DATA_SOURCE` (`auto`, `unusual_whales`, `tradier`, `yahoo`)
+- **Earnings calendar**: `EARNINGS_DATA_SOURCE` (`yahoo` only in this release)
+- **Market-cap ranking**: `MARKET_CAP_DATA_SOURCE` (`yahoo`, `schwab`)
+- **Index constituents**: Wikipedia (no env var required)
 
 ---
 
@@ -200,8 +209,8 @@ Save and switch between named ticker lists (e.g. "Semis", "Crypto-adjacent", "Ea
 - [x] Scoring weight customization — per-signal sliders in the Weights tab, persisted to ~/.tradex/weights.json
 
 ### Still on the list
-- [ ] Fix provider argument propagation through screener, watcher, and dashboard
-- [ ] Make remaining market-data consumers (outcome tracker, pre-market, options, earnings, pattern mining) provider-agnostic
+- [ ] Add provider/source provenance persistence to signal history and outcomes (PROVIDER-004)
+- [ ] Define provider failure and fallback policy (PROVIDER-005)
 - [ ] Backtesting module to validate signal quality historically
 - [ ] Portfolio-level risk view
 
