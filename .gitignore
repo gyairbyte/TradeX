@@ -20,3 +20,8 @@ build/
 
 # Streamlit
 .streamlit/
+
+# Schwab OAuth tokens and secrets — these must live outside the repository
+*.token.json
+*schwab*token*.json
+

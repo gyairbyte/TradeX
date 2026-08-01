@@ -99,6 +99,9 @@ uv pip install -e ".[ibkr]"     # Interactive Brokers
 uv pip install -e ".[schwab]"   # Charles Schwab
 uv pip install -e ".[all]"      # All providers
 
+# For development + all providers (used by CI)
+uv sync --extra dev --extra schwab
+
 # Copy and fill in your credentials
 cp .env.example .env
 
@@ -129,9 +132,10 @@ Set `DATA_PROVIDER` in your `.env` to switch sources:
 | Yahoo Finance | `yahoo` (default) | Free | No (15-min delay) | None |
 | Alpaca | `alpaca` | Free tier | Yes (IEX feed) | API key at alpaca.markets |
 | Interactive Brokers | `ibkr` | Free (need IB account) | Yes | TWS/Gateway running locally |
-| Charles Schwab | `schwab` | Free (need Schwab account) | Yes | OAuth app at developer.schwab.com |
+| Charles Schwab | `schwab` | Free (need Schwab account) | Yes | OAuth app at developer.schwab.com; see `scripts/schwab_oauth.py` |
 
 > **Note:** TD Ameritrade's API was shut down in September 2024. Use `schwab` instead.
+> Schwab output is normalized to a canonical OHLCV DataFrame (sorted, de-duplicated, UTC-indexed). Validate a local token with `scripts/schwab_smoke_test.py`.
 
 ---
 
@@ -182,6 +186,7 @@ Save and switch between named ticker lists (e.g. "Semis", "Crypto-adjacent", "Ea
 
 ### Completed
 - [x] Multi-provider data fetcher (Yahoo, Alpaca, IBKR, Schwab)
+- [x] Validated and hardened Schwab provider with credential-free contract tests
 - [x] Signal state tracking (SQLite history, coil detection, confluence scoring)
 - [x] Automated outcome tracking (1d/3d/5d price fetch, win rate, expectancy by score bucket)
 - [x] Signal journal with quality breakdown by score range and timeframe
@@ -195,6 +200,8 @@ Save and switch between named ticker lists (e.g. "Semis", "Crypto-adjacent", "Ea
 - [x] Scoring weight customization — per-signal sliders in the Weights tab, persisted to ~/.tradex/weights.json
 
 ### Still on the list
+- [ ] Fix provider argument propagation through screener, watcher, and dashboard
+- [ ] Make remaining market-data consumers (outcome tracker, pre-market, options, earnings, pattern mining) provider-agnostic
 - [ ] Backtesting module to validate signal quality historically
 - [ ] Portfolio-level risk view
 

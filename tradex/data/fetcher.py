@@ -8,7 +8,11 @@ OHLCV data fetcher supporting four providers:
 
 Set the provider via the DATA_PROVIDER env var or pass it explicitly to fetch().
 """
+import json
 import os
+import threading
+from pathlib import Path
+
 import pandas as pd
 import yfinance as yf
 from dotenv import load_dotenv
@@ -167,6 +171,32 @@ def _fetch_ibkr(ticker: str, timeframe: str) -> pd.DataFrame:
 # Note: TD Ameritrade API (tda-api library) is fully dead — do not use it.
 from datetime import datetime, timedelta, timezone
 
+def _repo_root() -> Path | None:
+    """Return the repository root if this file is inside a git checkout, else None."""
+    p = Path(__file__).resolve()
+    for parent in p.parents:
+        if (parent / ".git").is_dir():
+            return parent
+    return None
+
+
+def _assert_token_path_outside_repo(token_path: str) -> None:
+    """Refuse to read or write a Schwab token file that lives inside the repo."""
+    repo_root = _repo_root()
+    if repo_root is None:
+        return
+    resolved = Path(token_path).expanduser().resolve()
+    try:
+        if resolved.is_relative_to(repo_root):
+            raise ValueError(
+                f"Schwab token path must not be inside the repository: {resolved}\n"
+                f"Set SCHWAB_TOKEN_PATH to a location outside {repo_root}, "
+                "e.g. ~/.tradex_schwab_token.json"
+            )
+    except ValueError:
+        raise
+
+
 # Map each timeframe to (client method name, lookback timedelta).
 # Lookbacks roughly match what other providers return for the same timeframe.
 _SCHWAB_TIMEFRAMES = {
@@ -175,38 +205,106 @@ _SCHWAB_TIMEFRAMES = {
     "long":     ("get_price_history_every_week",         timedelta(days=730)),
 }
 
+_OHLCV_COLUMNS = ["open", "high", "low", "close", "volume"]
+
+
 # Cache the authenticated client across calls — fetching a watchlist would
 # otherwise reload + decrypt the token file once per ticker.
 _SCHWAB_CLIENT = None
+_SCHWAB_LOCK = threading.Lock()
+
+
+def _normalize_schwab_candles(candles: list[dict]) -> pd.DataFrame:
+    """Convert Schwab price-history candles into the canonical OHLCV DataFrame.
+
+    Schwab candle JSON contains: open, high, low, close, volume, datetime (epoch ms).
+    Returns a sorted, de-duplicated, UTC timezone-aware DataFrame with columns
+    open, high, low, close, volume. Rows with missing or invalid OHLCV data are
+    dropped. Duplicate timestamps keep the last occurrence.
+    """
+    if not candles:
+        return pd.DataFrame(
+            columns=_OHLCV_COLUMNS,
+            index=pd.DatetimeIndex([], name="datetime", tz="UTC"),
+        )
+
+    df = pd.DataFrame(candles)
+    df.columns = [c.lower() for c in df.columns]
+
+    if "datetime" not in df.columns:
+        return pd.DataFrame(
+            columns=_OHLCV_COLUMNS,
+            index=pd.DatetimeIndex([], name="datetime", tz="UTC"),
+        )
+
+    # Coerce epoch-ms timestamps; invalid values become NaT and are dropped.
+    df["datetime"] = pd.to_datetime(df["datetime"], unit="ms", utc=True, errors="coerce")
+    df = df.dropna(subset=["datetime"])
+    df = df.set_index("datetime").sort_index()
+    df = df[~df.index.duplicated(keep="last")]
+
+    for col in _OHLCV_COLUMNS:
+        if col not in df.columns:
+            df[col] = pd.NA
+    df = df[_OHLCV_COLUMNS]
+
+    for col in _OHLCV_COLUMNS:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    # Drop rows that are missing any OHLCV field. Volume of 0 is valid; NaN is not.
+    return df.dropna(subset=_OHLCV_COLUMNS)
 
 
 def _fetch_schwab(ticker: str, timeframe: str) -> pd.DataFrame:
+    """Fetch canonical OHLCV data from the Schwab Market Data API.
+
+    Raises:
+        ImportError:            schwab-py is not installed.
+        EnvironmentError:       SCHWAB_APP_KEY or SCHWAB_APP_SECRET missing.
+        FileNotFoundError:      The OAuth token file does not exist.
+        ValueError:             The token path is inside the repo or timeframe unsupported.
+        RuntimeError:            The Schwab API request failed.
+        ValueError:             The response was not valid JSON.
+    """
     try:
         from schwab.auth import client_from_token_file
-    except ImportError:
-        raise ImportError("Install schwab-py: pip install schwab-py")
+    except ImportError as e:
+        raise ImportError(
+            "Install schwab-py to use the Schwab provider: "
+            "uv pip install -e \".[schwab]\""
+        ) from e
+
+    app_key = os.getenv("SCHWAB_APP_KEY", "").strip()
+    app_secret = os.getenv("SCHWAB_APP_SECRET", "").strip()
+    token_path = os.path.expanduser(
+        os.getenv("SCHWAB_TOKEN_PATH", "~/.tradex_schwab_token.json")
+    )
+
+    if not app_key or not app_secret:
+        raise EnvironmentError("SCHWAB_APP_KEY and SCHWAB_APP_SECRET must be set in .env")
+
+    _assert_token_path_outside_repo(token_path)
+
+    if not os.path.exists(token_path):
+        raise FileNotFoundError(
+            f"Schwab OAuth token not found at {token_path}. "
+            "Run `python scripts/schwab_oauth.py` once to generate it."
+        )
 
     global _SCHWAB_CLIENT
-    if _SCHWAB_CLIENT is None:
-        app_key    = os.getenv("SCHWAB_APP_KEY")
-        app_secret = os.getenv("SCHWAB_APP_SECRET")
-        token_path = os.path.expanduser(
-            os.getenv("SCHWAB_TOKEN_PATH", "~/.tradex_schwab_token.json")
-        )
-
-        if not app_key or not app_secret:
-            raise EnvironmentError("SCHWAB_APP_KEY and SCHWAB_APP_SECRET must be set in .env")
-        if not os.path.exists(token_path):
-            raise FileNotFoundError(
-                f"Schwab OAuth token not found at {token_path}. "
-                "Run `python scripts/schwab_oauth.py` once to generate it."
-            )
-
-        _SCHWAB_CLIENT = client_from_token_file(
-            token_path=token_path,
-            api_key=app_key,
-            app_secret=app_secret,
-        )
+    with _SCHWAB_LOCK:
+        if _SCHWAB_CLIENT is None:
+            try:
+                _SCHWAB_CLIENT = client_from_token_file(
+                    token_path=token_path,
+                    api_key=app_key,
+                    app_secret=app_secret,
+                )
+            except Exception:  # noqa: BLE001
+                raise RuntimeError(
+                    "Schwab authentication failed. Verify the token file, "
+                    "app key, and app secret, then re-run the OAuth script."
+                ) from None
 
     client = _SCHWAB_CLIENT
 
@@ -223,15 +321,25 @@ def _fetch_schwab(ticker: str, timeframe: str) -> pd.DataFrame:
         end_datetime=end,
         need_extended_hours_data=False,
     )
-    resp.raise_for_status()
-    candles = resp.json().get("candles", [])
-    if not candles:
-        return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
 
-    df = pd.DataFrame(candles)
-    df["datetime"] = pd.to_datetime(df["datetime"], unit="ms")
-    df = df.set_index("datetime")
-    return df[["open", "high", "low", "close", "volume"]].dropna()
+    status = getattr(resp, "status_code", "unknown")
+    try:
+        resp.raise_for_status()
+    except Exception:  # noqa: BLE001
+        raise RuntimeError(
+            f"Schwab price-history request failed for {ticker} ({timeframe}) "
+            f"(HTTP {status}). The response may contain an error from Schwab."
+        ) from None
+
+    try:
+        data = resp.json()
+    except json.JSONDecodeError:
+        raise ValueError(
+            f"Schwab returned non-JSON price-history response for {ticker}"
+        ) from None
+
+    candles = data.get("candles", []) if isinstance(data, dict) else []
+    return _normalize_schwab_candles(candles)
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -250,7 +358,7 @@ def fetch(ticker: str, timeframe: str, provider: str | None = None) -> pd.DataFr
     Args:
         ticker:    e.g. "NVDA"
         timeframe: "intraday" | "short" | "long"
-        provider:  "yahoo" | "alpaca" | "ibkr" (defaults to DATA_PROVIDER env var, then "yahoo")
+        provider:  "yahoo" | "alpaca" | "ibkr" | "schwab" (defaults to DATA_PROVIDER env var, then "yahoo")
     """
     if timeframe not in TIMEFRAMES:
         raise ValueError(f"timeframe must be one of {list(TIMEFRAMES)}")

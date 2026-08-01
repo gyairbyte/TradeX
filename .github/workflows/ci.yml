@@ -25,10 +25,10 @@ jobs:
           version: "0.5.5"
 
       - name: Install dependencies
-        run: uv sync --extra dev
+        run: uv sync --extra dev --extra schwab
 
-      - name: Lint tests
-        run: uv run ruff check tests
+      - name: Lint tests and scripts
+        run: uv run --extra dev --extra schwab ruff check tests scripts
 
       - name: Run tests
-        run: uv run pytest tests -q
+        run: uv run --extra dev --extra schwab pytest tests -q

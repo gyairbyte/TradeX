@@ -102,7 +102,10 @@ df = run(["AAPL", "NVDA", "AMD"], timeframe="intraday", min_score=40)
 
 - **yfinance as default, four providers supported** — Yahoo requires no setup and works for short/long. For real intraday scanning, Alpaca (free) or Schwab (if you have an account) are the right upgrades. IBKR is most powerful but requires running TWS locally.
 - **TD Ameritrade is dead** — shut down Sept 2024. `schwab-py` is the direct replacement using the Schwab Developer API. Do not reference `tda-api`.
+- **Schwab provider is validated and hardened** — `tradex/data/fetcher.py` normalizes Schwab candles to the canonical OHLCV contract (sorted, de-duplicated, UTC-indexed DataFrame with columns `open`, `high`, `low`, `close`, `volume`). The contract is enforced by deterministic, credential-free tests in `tests/data/test_schwab_provider.py`.
 - **Provider abstraction in fetcher.py only** — signal code receives a plain DataFrame and never knows which provider supplied it. Keep it that way.
+- **OAuth token safety** — Schwab tokens live outside the repo. `scripts/schwab_oauth.py` refuses to write a token inside the project and sets restrictive file permissions.
+- **Provider propagation is incomplete** — `screener/engine.py`, `tracker/watcher.py`, and `ui/dashboard.py` accept `provider` in places but drop it before `fetch()`. The next provider PR is `devin/fix-provider-propagation`.
 - **Streamlit for UI** — fastest to iterate on, no frontend knowledge needed. Can replace with React later if needed.
 - **Score-based not rule-based** — a pure rule-based "buy/sell" signal is brittle; scores let Gary apply judgment.
 - **Three separate scorers vs. one unified** — timeframes have fundamentally different signal logic; keeping them separate avoids messy conditionals.

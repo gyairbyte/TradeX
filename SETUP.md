@@ -88,12 +88,26 @@ Schwab requires a one-time browser OAuth flow to mint a token. Run from an inter
 .venv/bin/python scripts/schwab_oauth.py
 ```
 
-The script prints an authorization URL. Open it in any browser, log in with your **Schwab brokerage** credentials (not developer.schwab.com), complete 2FA, click **Allow**. The browser redirects to `https://127.0.0.1/?code=...` and shows a "can't connect" page — **that's expected**. Copy the entire URL from the address bar and paste it at the `Redirect URL>` prompt. Token is written to `~/.tradex_schwab_token.json` and auto-refreshes for ~90 days after that.
+The script prints an authorization URL. Open it in any browser, log in with your **Schwab brokerage** credentials (not developer.schwab.com), complete 2FA, click **Allow**. The browser redirects to `https://127.0.0.1/?code=...` and shows a "can't connect" page — **that's expected**. Copy the entire URL from the address bar and paste it at the `Redirect URL>` prompt. Token is written to `~/.tradex_schwab_token.json`.
+
+The refresh token is currently short-lived — Schwab's published guidance treats refresh credentials as roughly a 7-day window, with automatic access-token refresh inside that window. Once the refresh window expires, re-run `scripts/schwab_oauth.py` to authorize again.
 
 App registration in the Schwab Developer Portal must use:
 - **Callback URL:** `https://127.0.0.1` (exact match, no trailing slash, must be https)
 - **API Products:** "Accounts and Trading Production" + "Market Data Production"
-- **Order Limit:** any non-zero value (Schwab requires this even for read-only apps; 100 is fine — TradeX never places orders)
+- **Order Limit:** `0` is fine for TradeX — this project only reads market data and never places orders
+
+**Token-file safety:** keep `SCHWAB_TOKEN_PATH` outside the repo directory (the default `~/.tradex_schwab_token.json` is fine). The OAuth script refuses to write a token inside the project, and `.gitignore` ignores common token filenames.
+
+### 2b. Validate the Schwab provider (optional, local only)
+
+After generating the token, run the read-only smoke test to confirm Schwab market data works:
+
+```bash
+.venv/bin/python scripts/schwab_smoke_test.py
+```
+
+It fetches `SPY` (or `SCHWAB_SMOKE_SYMBOL` from `.env`) for the intraday, short, and long timeframes and verifies the canonical OHLCV contract. It never accesses account, position, balance, or order endpoints.
 
 ---
 
@@ -186,9 +200,10 @@ Run during market hours. The outcome-tracker pass fires daily at 4:30pm ET autom
 4. **Port 8501 must be free** for the dashboard. The launchers reuse an existing server if 8501 is already listening, so double-clicking twice is safe — but if a *different* process holds 8501, change Streamlit's port: `streamlit run ... --server.port=8502`.
 5. **yfinance rate-limits** — large watchlists (100+ tickers) on the default Yahoo provider may hit transient failures. The screener prints `[skip] <ticker>: <reason>` and continues; this is expected.
 6. **TD Ameritrade is dead** — its API shut down September 2024. Use `DATA_PROVIDER=schwab` (their replacement) instead. Do not reference the old `tda-api` library.
-7. **Earnings filter caches for 24h** in `~/.tradex/earnings_cache.db`. If a user just announced earnings and the date isn't showing, delete that file to force a refresh.
-8. **Line endings are pinned by `.gitattributes`** — don't override `core.autocrlf` for this repo or the launcher scripts will break. The repo enforces CRLF for `.bat`/`.ps1` and LF for `tradex-launcher` automatically.
-9. **Streamlit prints `use_container_width` deprecation warnings** at startup. Harmless — they refer to an API the dashboard uses; will be cleaned up in a future commit.
+7. **Schwab token path** — keep `SCHWAB_TOKEN_PATH` outside the repo; `scripts/schwab_oauth.py` enforces this and sets restrictive file permissions. Validate with `scripts/schwab_smoke_test.py` after OAuth.
+8. **Earnings filter caches for 24h** in `~/.tradex/earnings_cache.db`. If a user just announced earnings and the date isn't showing, delete that file to force a refresh.
+9. **Line endings are pinned by `.gitattributes`** — don't override `core.autocrlf` for this repo or the launcher scripts will break. The repo enforces CRLF for `.bat`/`.ps1` and LF for `tradex-launcher` automatically.
+10. **Streamlit prints `use_container_width` deprecation warnings** at startup. Harmless — they refer to an API the dashboard uses; will be cleaned up in a future commit.
 
 ---
 

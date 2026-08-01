@@ -190,6 +190,92 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Intended pull request:** `devin/add-ci`
 - **Affects trading behavior:** No
 
+### PROVIDER-001: Validate and harden Schwab market-data provider
+
+- **ID:** PROVIDER-001
+- **Title:** Validate and harden Schwab market-data provider
+- **Category:** Data provider
+- **Priority:** High
+- **Status:** Completed
+- **Resolved by:** `devin/validate-schwab-provider`
+- **Problem statement:** The existing Schwab provider was untested against the installed `schwab-py` version, had no canonical OHLCV contract enforcement, and lacked credential-free tests.
+- **Recommended action:** Verify `schwab-py==1.5.1` compatibility, normalize Schwab candles into the canonical OHLCV DataFrame, add deterministic mocked contract tests, tighten OAuth/token safety, and add a read-only local smoke test.
+- **Reason:** Schwab is the intended primary local market-data source for TradeX.
+- **Dependencies:** TEST-001
+- **Files likely affected:** `tradex/data/fetcher.py`, `scripts/schwab_oauth.py`, `scripts/schwab_smoke_test.py`, `.env.example`, `.gitignore`, `tests/data/test_schwab_provider.py`
+- **Testing requirements:** Credential-free mocked tests covering intraday, daily, weekly, empty/malformed responses, missing credentials, client caching, and thread-safe usage. Local smoke test requires the user's own token.
+- **Acceptance criteria:** `pytest tests -q` passes; `ruff check tests scripts` passes; CI runs with `--extra schwab`; no account or order endpoint is used.
+- **Intended pull request:** `devin/validate-schwab-provider`
+- **Affects trading behavior:** No
+
+### PROVIDER-002: Fix provider propagation
+
+- **ID:** PROVIDER-002
+- **Title:** Fix provider propagation
+- **Category:** Data provider
+- **Priority:** High
+- **Status:** Proposed
+- **Problem statement:** `screener/engine.run`, `tracker/watcher.run_once`, and `ui/dashboard.py` accept or expose `provider` but do not thread it through to `fetch()`, and `outcome_tracker` bypasses the provider abstraction entirely.
+- **Recommended action:** Pass `provider` through every `fetch()` and `run_*` call; route `outcome_tracker._fetch_close_after` through `fetch()`.
+- **Reason:** Users must be able to switch providers explicitly or via `DATA_PROVIDER` without silent fallback.
+- **Dependencies:** PROVIDER-001
+- **Files likely affected:** `tradex/screener/engine.py`, `tradex/tracker/watcher.py`, `tradex/tracker/outcome_tracker.py`, `tradex/ui/dashboard.py`
+- **Testing requirements:** Unit tests patching `fetch` and asserting the expected `provider` is passed; tests for `run_confluence_screen` and `run_match_screen` provider propagation.
+- **Acceptance criteria:** `python -m tradex.tracker.watcher --provider schwab` causes all market-data fetches to use Schwab; dashboard provider selector works.
+- **Intended pull request:** `devin/fix-provider-propagation`
+- **Affects trading behavior:** No
+
+### PROVIDER-003: Make remaining market-data consumers provider-agnostic
+
+- **ID:** PROVIDER-003
+- **Title:** Make remaining market-data consumers provider-agnostic
+- **Category:** Data provider
+- **Priority:** High
+- **Status:** Proposed
+- **Problem statement:** Pattern mining, pre-market gap scanner, options flow, earnings, and watchlist market-cap ranking still call Yahoo or other sources directly with no provider alternative.
+- **Recommended action:** Move each non-OHLCV or specialized data need behind a small abstraction or clearly document that it is out of scope for the OHLCV provider contract. Where feasible (pre-market quotes, daily history), extend the fetcher/provider-specific modules rather than inlining `yfinance` calls.
+- **Reason:** Provider independence means all market-data consumers should be explicit about source and not silently fall back to Yahoo.
+- **Dependencies:** PROVIDER-002
+- **Files likely affected:** `tradex/patterns/miner.py`, `tradex/premarket/gap_scanner.py`, `tradex/options/flow.py`, `tradex/earnings/calendar.py`, `tradex/watchlists/refresh.py`
+- **Testing requirements:** Mocked tests for each consumer showing it can operate with a mocked data source.
+- **Acceptance criteria:** No feature except documented external-only sources (e.g., index constituents from Wikipedia) calls Yahoo by default when a Schwab provider is configured.
+- **Intended pull request:** `devin/provider-agnostic-consumers`
+- **Affects trading behavior:** No
+
+### PROVIDER-004: Add provider provenance
+
+- **ID:** PROVIDER-004
+- **Title:** Add provider provenance
+- **Category:** Data provider
+- **Priority:** Medium
+- **Status:** Proposed
+- **Problem statement:** Signal history, outcomes, and scans do not record which provider produced the OHLCV data used.
+- **Recommended action:** Extend `fetch()` returns (or scan records) to include `provider` and persist it in `signal_history` / `scan_runs`. Display provenance in the signal journal and dashboard.
+- **Reason:** Provider data quality differs (delayed, real-time, adjusted); provenance is required for backtesting and for identifying data-source bugs.
+- **Dependencies:** PROVIDER-002
+- **Files likely affected:** `tradex/data/fetcher.py`, `tradex/tracker/store.py`, `tradex/screener/engine.py`, `tradex/ui/dashboard.py`
+- **Testing requirements:** DB tests verifying provider column is written and read back.
+- **Acceptance criteria:** Every recorded signal stores the provider used for its OHLCV data.
+- **Intended pull request:** `devin/add-provider-provenance`
+- **Affects trading behavior:** No
+
+### PROVIDER-005: Define provider failure and fallback policy
+
+- **ID:** PROVIDER-005
+- **Title:** Define provider failure and fallback policy
+- **Category:** Data provider
+- **Priority:** Medium
+- **Status:** Proposed
+- **Problem statement:** There is no explicit policy for what happens when a provider fails or when a requested symbol is unavailable. The current `fetch_multi` silently skips failures and the engine shows "No opportunities" rather than distinguishing data failure from zero signals.
+- **Recommended action:** Document and implement a failure/fallback policy: per-symbol retries, explicit fallback order, clear error surfacing, and no silent fallback to Yahoo when `DATA_PROVIDER` is set to another provider.
+- **Reason:** Trading decisions depend on knowing whether data is missing, stale, or from an unexpected source.
+- **Dependencies:** PROVIDER-003, PROVIDER-004
+- **Files likely affected:** `tradex/data/fetcher.py`, `tradex/screener/engine.py`, `tradex/ui/dashboard.py`
+- **Testing requirements:** Unit tests for provider failure, partial failures, and fallback behavior.
+- **Acceptance criteria:** Provider failures are visible in the UI; fallback only happens when explicitly configured; no implicit Yahoo fallback.
+- **Intended pull request:** `devin/provider-failure-policy`
+- **Affects trading behavior:** No
+
 ### VAL-001: Build a backtesting harness
 
 - **ID:** VAL-001
@@ -218,9 +304,9 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Category:** Correctness
 - **Priority:** Medium
 - **Status:** Proposed
-- **Problem statement:** `run_once` accepts a `provider` argument but does not pass it to `screener_run` or `run_confluence_screen`.
+- **Problem statement:** `run_once` accepts a `provider` argument but does not pass it to `screener_run` or `run_confluence_screen`. See also PROVIDER-002.
 - **Recommended action:** Thread `provider` through all fetch calls in `run_once` and `_check_alerts`.
-- **Reason:** Users who set `--provider alpaca` silently get the default Yahoo provider.
+- **Reason:** Users who set `--provider alpaca` or `--provider schwab` silently get the default Yahoo provider.
 - **Dependencies:** None
 - **Files likely affected:** `tradex/tracker/watcher.py`
 - **Testing requirements:** Unit test patching `screener_run`; assert `provider` is in kwargs.
@@ -459,8 +545,17 @@ This is the master backlog for recommendations from the Devin review. Items are 
 
 | Priority | Count | Representative first item |
 |---|---|---|
-| High | 11 | DATA-001: Redesign signal history |
+| High | 16 | PROVIDER-001: Validate and harden Schwab provider |
 | Medium | 10 | COR-004: Fix watcher provider propagation |
 | Low | 5 | DOC-001: Fix documentation drift |
 
-**Recommended next pull request:** `devin/fix-outcome-timing` (COR-003).
+**Recommended next pull request order:**
+1. `devin/validate-schwab-provider` (PROVIDER-001) — this PR.
+2. `devin/fix-provider-propagation` (PROVIDER-002).
+3. `devin/fix-outcome-timing` (COR-003).
+4. `devin/provider-agnostic-consumers` (PROVIDER-003).
+5. `devin/add-provider-provenance` (PROVIDER-004).
+6. `devin/provider-failure-policy` (PROVIDER-005).
+7. `devin/redesign-signal-history` (DATA-001, COIL-001, COIL-002).
+8. `devin/add-backtest-engine` (VAL-001).
+9. `devin/reevaluate-scores-with-validated-data` (new, after backtesting).
