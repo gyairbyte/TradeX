@@ -1,14 +1,21 @@
 """
 Runs all three signal scorers across a watchlist and returns ranked results.
 """
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Callable
+from collections.abc import Callable
+from dataclasses import dataclass
 
 import pandas as pd
-from tradex.data.fetcher import fetch, resolve_provider
-from tradex.signals import intraday, short_term, long_term
-from tradex.earnings import days_until_earnings
 
+from tradex.data.fetcher import (
+    FetchPolicy,
+    ProviderDataUnavailableError,
+    ProviderError,
+    ProviderResponseError,
+    fetch_multi_report,
+    resolve_provider,
+)
+from tradex.earnings import days_until_earnings
+from tradex.signals import intraday, long_term, short_term
 
 SIGNAL_MAP = {
     "intraday": (intraday.score, "intraday"),
@@ -21,6 +28,158 @@ SIGNAL_MAP = {
 DEFAULT_WORKERS = 12
 
 
+@dataclass
+class ScanReport:
+    """Structured result of a screener run, including provenance and failures."""
+
+    results: pd.DataFrame
+    requested_provider: str
+    actual_provider: str | None
+    fallback_used: bool
+    providers_attempted: tuple[str, ...]
+    failures: dict[str, ProviderError]
+    total_requested: int
+    total_fetch_attempted: int
+    total_fetched: int
+    total_scored: int
+    total_signals: int
+    total_below_threshold: int
+    total_insufficient_data: int
+    total_earnings_excluded: int
+
+
+def run_with_report(
+    tickers: list[str],
+    timeframe: str = "intraday",
+    min_score: int = 40,
+    exclude_earnings_within: int | None = None,
+    max_workers: int = DEFAULT_WORKERS,
+    progress: Callable[[int, int], None] | None = None,
+    status: Callable[[str], None] | None = None,
+    provider: str | None = None,
+    earnings_source: str | None = None,
+    policy: FetchPolicy | None = None,
+    sleeper: Callable[[float], None] | None = None,
+) -> ScanReport:
+    """Run the screener and return a structured report.
+
+    The report distinguishes valid zero-signal scans from provider failures,
+    tracks the actual provider used (including fallback), and preserves accurate
+    provenance on every result row.
+    """
+    if timeframe not in SIGNAL_MAP:
+        raise ValueError(f"timeframe must be one of {list(SIGNAL_MAP)}")
+
+    scorer, tf_key = SIGNAL_MAP[timeframe]
+    requested_provider = resolve_provider(provider)
+    effective_policy = policy or FetchPolicy.build()
+
+    total_earnings_excluded = 0
+    eligible_tickers: list[str] = []
+    failures: dict[str, ProviderError] = {}
+
+    for ticker in tickers:
+        try:
+            days_to_er = days_until_earnings(ticker, source=earnings_source)
+        except Exception:  # noqa: BLE001
+            failures[ticker] = ProviderDataUnavailableError(
+                f"Could not determine earnings for {ticker}"
+            )
+            continue
+
+        if (
+            exclude_earnings_within is not None
+            and days_to_er is not None
+            and 0 <= days_to_er <= exclude_earnings_within
+        ):
+            total_earnings_excluded += 1
+            continue
+
+        eligible_tickers.append(ticker)
+
+    fetch_report = fetch_multi_report(
+        eligible_tickers,
+        tf_key,
+        provider=requested_provider,
+        policy=effective_policy,
+        sleeper=sleeper,
+        progress=progress,
+        status=status,
+    )
+
+    actual_provider = fetch_report.actual_provider
+    fallback_used = fetch_report.fallback_used
+    providers_attempted = fetch_report.providers_attempted
+    total_fetch_attempted = fetch_report.total_fetch_attempted
+    total_fetched = fetch_report.total_fetched
+
+    rows: list[dict] = []
+    total_scored = 0
+    total_below_threshold = 0
+    total_insufficient_data = 0
+
+    for ticker, df in fetch_report.data.items():
+        if len(df) < 30:
+            total_insufficient_data += 1
+            failures[ticker] = ProviderDataUnavailableError(
+                f"Insufficient OHLCV data for {ticker} ({timeframe})"
+            )
+            continue
+
+        try:
+            result = scorer(df)
+        except Exception:  # noqa: BLE001
+            failures[ticker] = ProviderResponseError(
+                f"Scoring failed for {ticker} ({timeframe})"
+            )
+            continue
+
+        total_scored += 1
+        if result["score"] < min_score:
+            total_below_threshold += 1
+            continue
+
+        rows.append({
+            "ticker": ticker,
+            "score": result["score"],
+            "last_close": result["last_close"],
+            "volume_ratio": round(result["volume_ratio"], 2),
+            "rsi": round(result["rsi"], 1),
+            "days_until_earnings": None,
+            "reasons": " | ".join(result["reasons"]),
+            "provider": actual_provider or requested_provider,
+        })
+
+    # Carry forward any fetch failures not already classified.
+    for ticker, error in fetch_report.failures.items():
+        failures.setdefault(ticker, error)
+
+    if not rows:
+        results = pd.DataFrame(columns=[
+            "ticker", "score", "last_close", "volume_ratio", "rsi",
+            "days_until_earnings", "reasons", "provider",
+        ])
+    else:
+        results = pd.DataFrame(rows).sort_values("score", ascending=False).reset_index(drop=True)
+
+    return ScanReport(
+        results=results,
+        requested_provider=requested_provider,
+        actual_provider=actual_provider,
+        fallback_used=fallback_used,
+        providers_attempted=providers_attempted,
+        failures=failures,
+        total_requested=len(tickers),
+        total_fetch_attempted=total_fetch_attempted,
+        total_fetched=total_fetched,
+        total_scored=total_scored,
+        total_signals=len(rows),
+        total_below_threshold=total_below_threshold,
+        total_insufficient_data=total_insufficient_data,
+        total_earnings_excluded=total_earnings_excluded,
+    )
+
+
 def run(
     tickers: list[str],
     timeframe: str = "intraday",
@@ -30,66 +189,18 @@ def run(
     progress: Callable[[int, int], None] | None = None,
     provider: str | None = None,
     earnings_source: str | None = None,
+    policy: FetchPolicy | None = None,
 ) -> pd.DataFrame:
-    """
-    `exclude_earnings_within`: if set, drop tickers with earnings within N days.
-    Result rows always include `days_until_earnings` (None if unknown/unavailable).
-    `progress(done, total)` is called once per completed ticker if provided —
-    useful for driving a Streamlit progress bar on long scans.
-    `provider` is passed through to the central fetcher; when None, fetcher falls
-    back to `DATA_PROVIDER` env var and then `yahoo`.
-    `earnings_source` is passed to `days_until_earnings` and defaults to Yahoo.
-    """
-    scorer, tf_key = SIGNAL_MAP[timeframe]
-    effective_provider = resolve_provider(provider)
-
-    def _score_one(ticker: str) -> dict | None:
-        try:
-            days_to_er = days_until_earnings(ticker, source=earnings_source)
-            if (
-                exclude_earnings_within is not None
-                and days_to_er is not None
-                and 0 <= days_to_er <= exclude_earnings_within
-            ):
-                return None
-
-            df = fetch(ticker, tf_key, provider=provider)
-            if len(df) < 30:
-                return None
-            result = scorer(df)
-            if result["score"] < min_score:
-                return None
-            return {
-                "ticker": ticker,
-                "score": result["score"],
-                "last_close": result["last_close"],
-                "volume_ratio": round(result["volume_ratio"], 2),
-                "rsi": round(result["rsi"], 1),
-                "days_until_earnings": days_to_er,
-                "reasons": " | ".join(result["reasons"]),
-                "provider": effective_provider,
-            }
-        except Exception as e:
-            print(f"[skip] {ticker}: {e}")
-            return None
-
-    rows: list[dict] = []
-    total = len(tickers)
-    done = 0
-
-    with ThreadPoolExecutor(max_workers=max_workers) as ex:
-        futures = {ex.submit(_score_one, t): t for t in tickers}
-        for fut in as_completed(futures):
-            row = fut.result()
-            if row is not None:
-                rows.append(row)
-            done += 1
-            if progress is not None:
-                progress(done, total)
-
-    if not rows:
-        return pd.DataFrame(columns=[
-            "ticker", "score", "last_close", "volume_ratio", "rsi",
-            "days_until_earnings", "reasons", "provider",
-        ])
-    return pd.DataFrame(rows).sort_values("score", ascending=False).reset_index(drop=True)
+    """Compatibility wrapper that returns the signal DataFrame from ``run_with_report``."""
+    report = run_with_report(
+        tickers,
+        timeframe=timeframe,
+        min_score=min_score,
+        exclude_earnings_within=exclude_earnings_within,
+        max_workers=max_workers,
+        progress=progress,
+        provider=provider,
+        earnings_source=earnings_source,
+        policy=policy,
+    )
+    return report.results

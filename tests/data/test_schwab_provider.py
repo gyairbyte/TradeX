@@ -381,11 +381,11 @@ def test_schwab_fetch_multi_uses_cached_client(tmp_token, monkeypatch):
 
     client = _mock_client("short", candles)
     with patch("schwab.auth.client_from_token_file", return_value=client) as mock_auth:
-        results = fetcher.fetch_multi(["SPY", "QQQ"], "short", provider="schwab")
+        report = fetcher.fetch_multi(["SPY", "QQQ"], "short", provider="schwab")
 
     mock_auth.assert_called_once()
-    assert set(results.keys()) == {"SPY", "QQQ"}
-    for df in results.values():
+    assert set(report.data.keys()) == {"SPY", "QQQ"}
+    for df in report.data.values():
         _assert_contract(df)
 
 

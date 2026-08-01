@@ -4,19 +4,44 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
+from tradex.screener.engine import ScanReport
 from tradex.tracker import store, watcher
 
 
+def _scan_report(results_df, provider, total_fetched=None, fallback_used=False):
+    total_fetched = total_fetched if total_fetched is not None else len(results_df)
+    return ScanReport(
+        results=results_df,
+        requested_provider=provider,
+        actual_provider=provider,
+        fallback_used=fallback_used,
+        providers_attempted=(provider,),
+        failures={},
+        total_requested=1,
+        total_fetch_attempted=1,
+        total_fetched=total_fetched,
+        total_scored=0,
+        total_signals=len(results_df),
+        total_below_threshold=0,
+        total_insufficient_data=0,
+        total_earnings_excluded=0,
+    )
+
+
 def test_run_once_passes_provider_to_screener(fresh_signal_db):
-    """run_once must forward the provider argument to screener_run."""
+    """run_once must forward the provider argument to the structured screener report."""
     captured = {}
 
     def fake_screener_run(*args, **kwargs):
         captured["kwargs"] = kwargs
-        return MagicMock(empty=True)
+        empty = pd.DataFrame(columns=[
+            "ticker", "score", "last_close", "volume_ratio", "rsi",
+            "days_until_earnings", "reasons", "provider",
+        ])
+        return _scan_report(empty, kwargs.get("provider"), total_fetched=0)
 
     with (
-        patch.object(watcher, "screener_run", side_effect=fake_screener_run),
+        patch.object(watcher, "screener_run_with_report", side_effect=fake_screener_run),
         patch.object(watcher, "_check_alerts"),
         patch.object(watcher, "run_outcome_pass"),
     ):
@@ -27,12 +52,11 @@ def test_run_once_passes_provider_to_screener(fresh_signal_db):
             provider="alpaca",
         )
 
-    assert "provider" in captured["kwargs"]
     assert captured["kwargs"]["provider"] == "alpaca"
 
 
 def test_run_once_passes_provider_to_confluence_and_pattern(fresh_signal_db):
-    """run_once must forward the provider to downstream OHLCV workflows."""
+    """run_once must forward the actual provider to downstream OHLCV workflows."""
     confluence_captured = {}
     matcher_captured = {}
 
@@ -44,8 +68,13 @@ def test_run_once_passes_provider_to_confluence_and_pattern(fresh_signal_db):
         matcher_captured["kwargs"] = kwargs
         return MagicMock(empty=True)
 
+    empty = pd.DataFrame(columns=[
+        "ticker", "score", "last_close", "volume_ratio", "rsi",
+        "days_until_earnings", "reasons", "provider",
+    ])
+
     with (
-        patch.object(watcher, "screener_run", return_value=MagicMock(empty=True)),
+        patch.object(watcher, "screener_run_with_report", return_value=_scan_report(empty, "schwab", total_fetched=1)),
         patch.object(watcher, "run_outcome_pass"),
         patch.object(watcher, "run_confluence_screen", side_effect=fake_confluence),
         patch.object(watcher, "run_match_screen", side_effect=fake_matcher),
@@ -65,7 +94,7 @@ def test_run_once_passes_provider_to_confluence_and_pattern(fresh_signal_db):
 
 
 def test_start_loop_schedules_run_once_with_provider():
-    """start_loop must pass the provider into the scheduled run_once calls."""
+    """start_loop must pass the provider and policy args into the scheduled run_once calls."""
     mock_schedule = MagicMock()
     mock_schedule.every.return_value.minutes.do.side_effect = SystemExit
 
@@ -82,13 +111,18 @@ def test_start_loop_schedules_run_once_with_provider():
             provider="ibkr",
         )
 
-    mock_run_once.assert_called_once_with(["AAPL"], "intraday", 30, "ibkr")
+    mock_run_once.assert_called_once_with(
+        ["AAPL"], "intraday", 30, "ibkr",
+        max_retries=None, fallback_order=None, policy=None,
+    )
     mock_schedule.every.return_value.minutes.do.assert_called_once_with(
         mock_run_once,
         tickers=["AAPL"],
         timeframe="intraday",
         min_score=30,
         provider="ibkr",
+        max_retries=None,
+        fallback_order=None,
     )
 
 
@@ -109,7 +143,7 @@ def test_run_once_persists_screener_provider(fresh_signal_db):
     results = _screener_results("schwab")
 
     with (
-        patch.object(watcher, "screener_run", return_value=results),
+        patch.object(watcher, "screener_run_with_report", return_value=_scan_report(results, "schwab")),
         patch.object(watcher, "_check_alerts"),
     ):
         watcher.run_once(["AAPL"], timeframe="intraday", provider="schwab")
@@ -127,7 +161,7 @@ def test_run_once_persists_env_default_provider(fresh_signal_db, monkeypatch):
     results = _screener_results("alpaca")
 
     with (
-        patch.object(watcher, "screener_run", return_value=results),
+        patch.object(watcher, "screener_run_with_report", return_value=_scan_report(results, "alpaca")),
         patch.object(watcher, "_check_alerts"),
     ):
         watcher.run_once(["AAPL"], timeframe="intraday")
@@ -135,3 +169,32 @@ def test_run_once_persists_env_default_provider(fresh_signal_db, monkeypatch):
     with store._conn() as con:
         signal_provider = con.execute("SELECT provider FROM signal_history").fetchone()["provider"]
     assert signal_provider == "alpaca"
+
+
+def test_run_once_reports_provider_failure_without_persisting(fresh_signal_db, capsys):
+    """When every provider fails, run_once prints an error summary and writes no signals."""
+    from tradex.data.fetcher import ProviderTransientError
+
+    empty = pd.DataFrame(columns=[
+        "ticker", "score", "last_close", "volume_ratio", "rsi",
+        "days_until_earnings", "reasons", "provider",
+    ])
+    report = _scan_report(
+        empty,
+        provider="yahoo",
+        total_fetched=0,
+        fallback_used=False,
+    )
+    report.failures = {"AAPL": ProviderTransientError("network")}
+
+    with (
+        patch.object(watcher, "screener_run_with_report", return_value=report),
+        patch.object(watcher, "_check_alerts"),
+    ):
+        watcher.run_once(["AAPL"], timeframe="intraday", provider="yahoo")
+
+    captured = capsys.readouterr()
+    assert "ERROR" in captured.out
+    assert "all providers failed" in captured.out
+    with store._conn() as con:
+        assert con.execute("SELECT COUNT(*) FROM signal_history").fetchone()[0] == 0

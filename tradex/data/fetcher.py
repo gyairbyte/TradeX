@@ -11,6 +11,9 @@ Set the provider via the DATA_PROVIDER env var or pass it explicitly to fetch().
 import json
 import os
 import threading
+import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
@@ -20,8 +23,32 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-class ProviderCapabilityError(RuntimeError):
+class ProviderError(RuntimeError):
+    """Base class for OHLCV provider failures."""
+
+
+class ProviderCapabilityError(ProviderError):
     """Raised when a provider does not support a requested data capability."""
+
+
+class ProviderConfigurationError(ProviderError):
+    """Raised for missing packages, invalid configuration, or unsafe local settings."""
+
+
+class ProviderAuthenticationError(ProviderError):
+    """Raised for missing credentials, missing token files, or authentication failures."""
+
+
+class ProviderDataUnavailableError(ProviderError):
+    """Raised when a provider cannot return data for a requested symbol or date range."""
+
+
+class ProviderTransientError(ProviderError):
+    """Raised for network timeouts, connection errors, or other retryable outages."""
+
+
+class ProviderResponseError(ProviderError):
+    """Raised for malformed or unexpected provider responses that are not retryable."""
 
 
 # ── timeframe presets ────────────────────────────────────────────────────────
@@ -33,6 +60,103 @@ TIMEFRAMES = {
 }
 
 DEFAULT_PROVIDER = os.getenv("DATA_PROVIDER", "yahoo")
+
+
+_MAX_ALLOWED_RETRIES = 5
+
+
+def _default_backoff(attempt: int) -> float:
+    """Default deterministic exponential backoff with a small cap."""
+    return min(2 ** attempt, 8.0)
+
+
+@dataclass(frozen=True)
+class FetchPolicy:
+    """Retry and fallback policy for OHLCV fetches.
+
+    ``max_retries`` is the number of *extra* attempts beyond the first one.
+    ``max_retries=0`` means a single attempt. ``fallback_order`` is a tuple of
+    canonical provider names to try only when the previous provider produced
+    zero usable datasets for the requested symbols. The primary provider is
+    always removed from the fallback list.
+    """
+
+    max_retries: int = 0
+    fallback_order: tuple[str, ...] = ()
+    backoff: Callable[[int], float] | None = _default_backoff
+
+    def __post_init__(self) -> None:
+        if self.max_retries < 0:
+            raise ValueError(f"max_retries must be non-negative; got {self.max_retries}")
+        if self.max_retries > _MAX_ALLOWED_RETRIES:
+            raise ValueError(
+                f"max_retries must be at most {_MAX_ALLOWED_RETRIES}; got {self.max_retries}"
+            )
+
+    @classmethod
+    def build(
+        cls,
+        max_retries: int | str | None = None,
+        fallback_order: str | tuple[str, ...] | list[str] | None = None,
+    ) -> "FetchPolicy":
+        """Create a policy from explicit arguments and/or environment variables.
+
+        Explicit arguments override ``OHLCV_MAX_RETRIES`` and ``OHLCV_FALLBACK_ORDER``.
+        """
+        # Resolve max_retries
+        if max_retries is None:
+            env_retries = os.getenv("OHLCV_MAX_RETRIES")
+            max_retries = int(env_retries) if env_retries is not None else 0
+        try:
+            retries = int(max_retries)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"OHLCV_MAX_RETRIES must be an integer; got {max_retries!r}") from exc
+        if retries < 0:
+            raise ValueError(f"max_retries must be non-negative; got {retries}")
+        if retries > _MAX_ALLOWED_RETRIES:
+            raise ValueError(
+                f"max_retries must be at most {_MAX_ALLOWED_RETRIES}; got {retries}"
+            )
+
+        # Resolve fallback_order
+        raw_fallback = fallback_order
+        if raw_fallback is None:
+            raw_fallback = os.getenv("OHLCV_FALLBACK_ORDER", "")
+        if isinstance(raw_fallback, str):
+            parts = [p.strip() for p in raw_fallback.split(",") if p.strip()]
+            raw_fallback = parts
+
+        seen: set[str] = set()
+        normalized: list[str] = []
+        for p in raw_fallback:
+            canonical = resolve_provider(p)
+            if canonical in seen:
+                continue
+            seen.add(canonical)
+            normalized.append(canonical)
+
+        return cls(max_retries=retries, fallback_order=tuple(normalized))
+
+    def fallback_for(self, primary: str) -> tuple[str, ...]:
+        """Return the fallback order with the primary provider removed."""
+        return tuple(p for p in self.fallback_order if p != resolve_provider(primary))
+
+
+@dataclass
+class FetchReport:
+    """Structured result of a batch OHLCV fetch attempt."""
+
+    data: dict[str, pd.DataFrame]
+    requested_provider: str
+    actual_provider: str | None
+    fallback_used: bool
+    providers_attempted: tuple[str, ...]
+    failures: dict[str, ProviderError]
+    attempts: dict[str, int]
+    total_requested: int
+    total_fetched: int
+    total_fetch_attempted: int
+    retries: int
 
 
 def normalize_yahoo_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -89,7 +213,7 @@ def _fetch_alpaca(ticker: str, timeframe: str) -> pd.DataFrame:
     api_key = os.getenv("ALPACA_API_KEY")
     secret_key = os.getenv("ALPACA_SECRET_KEY")
     if not api_key or not secret_key:
-        raise EnvironmentError("ALPACA_API_KEY and ALPACA_SECRET_KEY must be set in .env")
+        raise OSError("ALPACA_API_KEY and ALPACA_SECRET_KEY must be set in .env")
 
     client = StockHistoricalDataClient(api_key, secret_key)
 
@@ -100,9 +224,9 @@ def _fetch_alpaca(ticker: str, timeframe: str) -> pd.DataFrame:
         "1Week": TimeFrame(1, TimeFrameUnit.Week),
     }
 
-    from datetime import datetime, timedelta
+    from datetime import UTC, datetime, timedelta
     lookback_days = {"intraday": 7, "short": 90, "long": 730}
-    start = datetime.now() - timedelta(days=lookback_days[timeframe])
+    start = datetime.now(UTC) - timedelta(days=lookback_days[timeframe])
 
     request = StockBarsRequest(
         symbol_or_symbols=ticker,
@@ -174,7 +298,8 @@ def _fetch_ibkr(ticker: str, timeframe: str) -> pd.DataFrame:
 #      SCHWAB_TOKEN_PATH (default: ~/.tradex_schwab_token.json). After that,
 #      this fetcher just reads the token; schwab-py refreshes it automatically.
 # Note: TD Ameritrade API (tda-api library) is fully dead — do not use it.
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+
 
 def _repo_root() -> Path | None:
     """Return the repository root if this file is inside a git checkout, else None."""
@@ -191,15 +316,12 @@ def _assert_token_path_outside_repo(token_path: str) -> None:
     if repo_root is None:
         return
     resolved = Path(token_path).expanduser().resolve()
-    try:
-        if resolved.is_relative_to(repo_root):
-            raise ValueError(
-                f"Schwab token path must not be inside the repository: {resolved}\n"
-                f"Set SCHWAB_TOKEN_PATH to a location outside {repo_root}, "
-                "e.g. ~/.tradex_schwab_token.json"
-            )
-    except ValueError:
-        raise
+    if resolved.is_relative_to(repo_root):
+        raise ValueError(
+            f"Schwab token path must not be inside the repository: {resolved}\n"
+            f"Set SCHWAB_TOKEN_PATH to a location outside {repo_root}, "
+            "e.g. ~/.tradex_schwab_token.json"
+        )
 
 
 # Map each timeframe to (client method name, lookback timedelta).
@@ -284,7 +406,7 @@ def _get_schwab_client():
     )
 
     if not app_key or not app_secret:
-        raise EnvironmentError("SCHWAB_APP_KEY and SCHWAB_APP_SECRET must be set in .env")
+        raise OSError("SCHWAB_APP_KEY and SCHWAB_APP_SECRET must be set in .env")
 
     _assert_token_path_outside_repo(token_path)
 
@@ -329,7 +451,7 @@ def _fetch_schwab(ticker: str, timeframe: str) -> pd.DataFrame:
         raise ValueError(f"Unsupported timeframe for schwab: {timeframe}")
     method_name, lookback = _SCHWAB_TIMEFRAMES[timeframe]
 
-    end = datetime.now(timezone.utc)
+    end = datetime.now(UTC)
     start = end - lookback
 
     resp = getattr(client, method_name)(
@@ -357,6 +479,184 @@ def _fetch_schwab(ticker: str, timeframe: str) -> pd.DataFrame:
 
     candles = data.get("candles", []) if isinstance(data, dict) else []
     return _normalize_schwab_candles(candles)
+
+
+def _classify_exception(exc: Exception, ticker: str, timeframe: str) -> ProviderError:
+    """Translate an unexpected provider exception into a safe, typed error.
+
+    The returned error contains no credentials, tokens, or raw response bodies.
+    """
+    if isinstance(exc, ProviderError):
+        return exc
+    if isinstance(exc, ImportError):
+        return ProviderConfigurationError(
+            f"Provider package not installed for {ticker} ({timeframe})"
+        )
+    if isinstance(exc, FileNotFoundError):
+        return ProviderAuthenticationError(
+            f"Missing token or credential file for {ticker} ({timeframe})"
+        )
+    if isinstance(exc, (ConnectionError, TimeoutError)):
+        return ProviderTransientError(
+            f"Network error fetching {ticker} ({timeframe})"
+        )
+    if isinstance(exc, OSError):
+        # OSError covers EnvironmentError; in this codebase we raise it for
+        # missing env vars. Treat missing credentials as non-retryable auth/config.
+        return ProviderAuthenticationError(
+            f"Missing environment configuration for {ticker} ({timeframe})"
+        )
+    if isinstance(exc, RuntimeError):
+        return ProviderResponseError(
+            f"Provider request failed for {ticker} ({timeframe})"
+        )
+    if isinstance(exc, ValueError):
+        return ProviderConfigurationError(
+            f"Invalid provider configuration or request for {ticker} ({timeframe})"
+        )
+    return ProviderResponseError(
+        f"Unexpected provider error for {ticker} ({timeframe})"
+    )
+
+
+def _fetch_with_retry(
+    provider_func: Callable[[], pd.DataFrame],
+    policy: FetchPolicy,
+    sleeper: Callable[[float], None] | None = None,
+) -> pd.DataFrame:
+    """Call a provider fetch function with a bounded number of retries.
+
+    Retries only occur for ``ProviderTransientError``. All other errors stop
+    immediately. ``sleeper`` is injectable for tests.
+    """
+    if sleeper is None:
+        sleeper = time.sleep
+    attempts = policy.max_retries + 1
+    last_error: ProviderError | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return provider_func()
+        except ProviderError as e:
+            last_error = e
+            if isinstance(e, ProviderTransientError) and attempt < attempts:
+                backoff = policy.backoff(attempt) if policy.backoff else _default_backoff(attempt)
+                sleeper(backoff)
+                continue
+            raise
+        except Exception as e:  # noqa: BLE001
+            classified = _classify_exception(e, "", "")
+            last_error = classified
+            if isinstance(classified, ProviderTransientError) and attempt < attempts:
+                backoff = policy.backoff(attempt) if policy.backoff else _default_backoff(attempt)
+                sleeper(backoff)
+                continue
+            raise classified
+    # Defensive: should be unreachable because the loop either returns or raises.
+    raise last_error or ProviderResponseError("Unknown fetch failure")
+
+
+def fetch_multi_report(
+    tickers: list[str],
+    timeframe: str,
+    provider: str | None = None,
+    policy: FetchPolicy | None = None,
+    sleeper: Callable[[float], None] | None = None,
+    progress: Callable[[int, int], None] | None = None,
+    status: Callable[[str], None] | None = None,
+) -> FetchReport:
+    """Fetch OHLCV data for ``tickers`` with retries and whole-batch fallback.
+
+    The function tries ``provider`` first, then each provider in the configured
+    fallback order. It stops at the first provider that produces at least one
+    usable dataset. Failures are captured in the returned ``FetchReport`` and never
+    swallowed silently.
+    """
+    if timeframe not in TIMEFRAMES:
+        raise ValueError(f"timeframe must be one of {list(TIMEFRAMES)}")
+
+    policy = policy or FetchPolicy()
+    requested_provider = resolve_provider(provider)
+    providers_to_try = (requested_provider,) + policy.fallback_for(requested_provider)
+
+    total_fetch_attempted = 0
+    all_failures: dict[str, ProviderError] = {}
+    all_attempts: dict[str, int] = {}
+    providers_attempted: list[str] = []
+
+    remaining = list(tickers)
+    data: dict[str, pd.DataFrame] = {}
+    actual_provider: str | None = None
+    fallback_used = False
+
+    for p_idx, p in enumerate(providers_to_try):
+        if not remaining:
+            break
+        providers_attempted.append(p)
+        if p_idx > 0 and status is not None:
+            status(f"Falling back to {p}")
+        elif p_idx > 0:
+            print(f"[fallback] Trying provider '{p}' for {len(remaining)} remaining tickers")
+
+        provider_func = _PROVIDERS[p]
+        remaining_next: list[str] = []
+        any_success_this_provider = False
+
+        for i, ticker in enumerate(remaining):
+            all_attempts[ticker] = all_attempts.get(ticker, 0) + 1
+            total_fetch_attempted += 1
+            try:
+                df = _fetch_with_retry(
+                    lambda t=ticker, f=timeframe, pf=provider_func: pf(t, f),
+                    policy,
+                    sleeper=sleeper,
+                )
+            except ProviderError as e:
+                all_failures[ticker] = e
+                remaining_next.append(ticker)
+                continue
+
+            if df.empty or not _has_usable_ohlcv(df):
+                # No usable data for this ticker from this provider.
+                all_failures[ticker] = ProviderDataUnavailableError(
+                    f"No usable OHLCV data for {ticker} ({timeframe}) from {p}"
+                )
+                remaining_next.append(ticker)
+                continue
+
+            data[ticker] = df
+            all_failures.pop(ticker, None)
+            any_success_this_provider = True
+
+            if p_idx == 0 and progress is not None:
+                progress(i + 1, len(tickers))
+
+        if any_success_this_provider:
+            actual_provider = p
+            fallback_used = p != requested_provider
+            # Whole-scan fallback stops at the first provider that produced any
+            # usable data. The remaining tickers are reported as unavailable.
+            break
+        else:
+            remaining = remaining_next
+
+    return FetchReport(
+        data=data,
+        requested_provider=requested_provider,
+        actual_provider=actual_provider,
+        fallback_used=fallback_used,
+        providers_attempted=tuple(providers_attempted),
+        failures=all_failures,
+        attempts=all_attempts,
+        total_requested=len(tickers),
+        total_fetched=len(data),
+        total_fetch_attempted=total_fetch_attempted,
+        retries=policy.max_retries,
+    )
+
+
+def _has_usable_ohlcv(df: pd.DataFrame) -> bool:
+    """Return True if a DataFrame contains at least one usable OHLCV row."""
+    return not df.empty and any(c in df.columns for c in ("close", "Close"))
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -405,12 +705,15 @@ def fetch(ticker: str, timeframe: str, provider: str | None = None) -> pd.DataFr
     return _PROVIDERS[p](ticker, timeframe)
 
 
-def fetch_multi(tickers: list[str], timeframe: str, provider: str | None = None) -> dict[str, pd.DataFrame]:
-    """Fetch data for multiple tickers; skips any that fail."""
-    result = {}
-    for t in tickers:
-        try:
-            result[t] = fetch(t, timeframe, provider=provider)
-        except Exception as e:
-            print(f"[skip] {t}: {e}")
-    return result
+def fetch_multi(
+    tickers: list[str],
+    timeframe: str,
+    provider: str | None = None,
+    policy: FetchPolicy | None = None,
+) -> FetchReport:
+    """Fetch data for multiple tickers with retries and whole-batch fallback.
+
+    Returns a ``FetchReport`` with successes, failures, and provenance metadata.
+    New code should prefer ``fetch_multi_report``.
+    """
+    return fetch_multi_report(tickers, timeframe, provider=provider, policy=policy)

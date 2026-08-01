@@ -78,6 +78,8 @@ Key variables:
 | Variable | Required? | Notes |
 |---|---|---|
 | `DATA_PROVIDER` | Yes | OHLCV provider: `yahoo`, `alpaca`, `ibkr`, `schwab`. Default `yahoo`. |
+| `OHLCV_MAX_RETRIES` | No | Extra retry attempts per ticker for transient failures only. Default `0`, max `3`. |
+| `OHLCV_FALLBACK_ORDER` | No | Comma-separated whole-scan fallback provider chain (e.g. `schwab,yahoo`). Empty/missing = disabled. |
 | `OPTIONS_DATA_SOURCE` | No | `auto` (default), `unusual_whales`, `tradier`, `yahoo` |
 | `EARNINGS_DATA_SOURCE` | No | `yahoo` (default) |
 | `MARKET_CAP_DATA_SOURCE` | No | `yahoo` (default), `schwab` |
@@ -205,7 +207,7 @@ Run during market hours. The outcome-tracker pass fires daily at 4:30pm ET autom
 2. **The launcher needs `~/.tradex/config`** (or `$TRADEX_HOME`) when run from outside the repo (e.g. from `/Applications`). If you see "Could not locate the TradeX project directory," go back to step 3.
 3. **The `.venv` must live at `<repo>/.venv`** — the launchers won't find it anywhere else. If you already have a venv at a different path, recreate it at `.venv`.
 4. **Port 8501 must be free** for the dashboard. The launchers reuse an existing server if 8501 is already listening, so double-clicking twice is safe — but if a *different* process holds 8501, change Streamlit's port: `streamlit run ... --server.port=8502`.
-5. **yfinance rate-limits** — large watchlists (100+ tickers) on the default Yahoo provider may hit transient failures. The screener prints `[skip] <ticker>: <reason>` and continues; this is expected.
+5. **yfinance rate-limits** — large watchlists (100+ tickers) on the default Yahoo provider may hit transient failures. The screener logs the failure category and continues. You can set `OHLCV_MAX_RETRIES` (max 3) for automatic retry of transient network errors, and `OHLCV_FALLBACK_ORDER` to enable a whole-scan fallback chain.
 6. **TD Ameritrade is dead** — its API shut down September 2024. Use `DATA_PROVIDER=schwab` (their replacement) instead. Do not reference the old `tda-api` library.
 7. **Schwab token path** — keep `SCHWAB_TOKEN_PATH` outside the repo; `scripts/schwab_oauth.py` enforces this and sets restrictive file permissions. Validate with `scripts/schwab_smoke_test.py` after OAuth.
 8. **Earnings filter caches for 24h** in `~/.tradex/earnings_cache.db`. If a user just announced earnings and the date isn't showing, delete that file to force a refresh.

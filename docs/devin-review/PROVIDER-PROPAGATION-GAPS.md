@@ -6,7 +6,11 @@ The explicit `provider` argument is now propagated through the supported OHLCV w
 
 ### `tradex/data/fetcher.py`
 
-- Added `ProviderCapabilityError` for unsupported provider/capability combinations.
+- Added a small, safe `ProviderError` hierarchy: `ProviderError`, `ProviderCapabilityError`, `ProviderConfigurationError`, `ProviderAuthenticationError`, `ProviderDataUnavailableError`, `ProviderTransientError`, `ProviderResponseError`.
+- `ProviderTransientError` is the only retryable category; configuration, authentication, capability, and response errors stop immediately.
+- `FetchPolicy(max_retries=0, fallback_order=())` configures retries and whole-scan fallback. Defaults are disabled; explicit arguments override `OHLCV_MAX_RETRIES` and `OHLCV_FALLBACK_ORDER` env vars.
+- `fetch_multi_report()` returns a `FetchReport` with per-ticker successes/failures, attempt counts, requested/actual provider, fallback flag, and providers attempted. `fetch_multi()` is now a compatibility wrapper around it.
+- `_fetch_with_retry()` enforces `max_retries`, injectable `sleeper`, and deterministic `backoff`.
 - Added `_get_schwab_client()` helper so the daily-history abstraction can reuse the same safe Schwab authentication logic without inlining token handling.
 
 ### `tradex/data/history.py`
@@ -71,6 +75,26 @@ The explicit `provider` argument is now propagated through the supported OHLCV w
 
 - `run()` and `run_confluence_screen()` now accept an optional `earnings_source` argument and pass it to `days_until_earnings()` so earnings filtering remains explicitly Yahoo-sourced independently of `DATA_PROVIDER`.
 
+### `tradex/screener/engine.py` (PROVIDER-005 / COR-013)
+
+- `run_with_report()` returns a `ScanReport` with results, requested/actual provider, fallback flag, providers attempted, per-ticker failures, and totals (requested, fetch attempted, fetched, scored, signals, below threshold, insufficient data, earnings excluded).
+- `run()` remains a DataFrame compatibility wrapper that delegates to `run_with_report()`.
+- The engine precomputes earnings exclusions once per ticker, then uses `fetch_multi_report()` for OHLCV. Fallback is whole-scan only; partial success keeps successful rows and reports failed symbols without creating a mixed-provider scan.
+
+### `tradex/ui/dashboard.py`
+
+- The Scanner tab displays the effective `FetchPolicy` (retries and fallback order) before a run.
+- A complete provider failure (`report.total_fetched == 0`) shows `st.error` with the requested provider, failed symbol count, and safe failure categories.
+- A valid zero-signal scan (`report.total_fetched > 0` and `results.empty`) shows the existing no-opportunities message.
+- Partial failure (`results` non-empty with `report.failures`) shows results plus a warning with an expandable per-ticker failure summary.
+- When fallback is used, an `st.info` notice shows requested vs actual provider. The saved drill-down provider is the actual provider used.
+
+### `tradex/tracker/watcher.py`
+
+- `run_once()` and `start_loop()` use `run_with_report()` and log requested provider, retry count, fallback order, actual provider, signal count, and failure count.
+- All-provider failure prints an error summary and does not persist misleading signal/scan-run data.
+- Added CLI flags `--max-retries` and `--fallback-order` that override env configuration.
+
 ### Provider provenance (PROVIDER-004)
 
 - `tradex/data/fetcher.py` exposes `resolve_provider()` as the single canonical OHLCV provider resolver.
@@ -88,8 +112,9 @@ The explicit `provider` argument is now propagated through the supported OHLCV w
 | ID | Work | Status |
 |---|---|---|
 | PROVIDER-004 | Persist provider/source provenance in `signal_history`, `scan_runs`, and outcomes | Completed |
-| PROVIDER-005 | Define broad provider failure/fallback policy (retries, explicit fallback chains, UI error surfacing) | Proposed |
+| PROVIDER-005 | Define broad provider failure/fallback policy (retries, explicit fallback chains, UI error surfacing) | Completed |
 | COR-005 | Add market-hours / exchange-calendar handling for pre-market and watcher scheduling | Proposed |
+| COR-012 | Fix scan audit to record tickers scanned vs. found | Proposed |
 
 ## Key takeaway
 
