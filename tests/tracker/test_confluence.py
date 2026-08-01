@@ -18,13 +18,45 @@ def _make_bars(n: int = 30) -> pd.DataFrame:
     })
 
 
-@pytest.mark.xfail(strict=True, reason="Empty rows create a column-less DataFrame (COR-001)")
+EXPECTED_COLUMNS = {
+    "ticker",
+    "confluence_score",
+    "tier",
+    "active_timeframes",
+    "score_intraday",
+    "score_short",
+    "score_long",
+    "days_until_earnings",
+    "last_close",
+}
+
+
 def test_empty_confluence_returns_empty_dataframe():
-    """run_confluence_screen must return an empty DataFrame with expected columns when nothing passes."""
-    result = confluence.run_confluence_screen([], min_confluence=50)
+    """run_confluence_screen must return an empty DataFrame with the stable output schema."""
+    low_result = {
+        "ticker": "AAPL",
+        "confluence_score": 10,
+        "tier": "weak / single timeframe",
+        "active_timeframes": [],
+        "scores": {"intraday": 10, "short": 0, "long": 0},
+        "reasons": {"intraday": ["none"]},
+        "last_close": 100.0,
+        "errors": {},
+    }
+
+    with patch.object(confluence, "days_until_earnings", return_value=None), \
+         patch.object(confluence, "score_confluence", return_value=low_result):
+        result = confluence.run_confluence_screen(["AAPL"], min_confluence=50)
+
     assert isinstance(result, pd.DataFrame)
     assert result.empty
-    assert "confluence_score" in result.columns
+    assert set(result.columns) == EXPECTED_COLUMNS
+
+    # An empty ticker list should produce the same stable schema.
+    empty = confluence.run_confluence_screen([], min_confluence=50)
+    assert isinstance(empty, pd.DataFrame)
+    assert empty.empty
+    assert set(empty.columns) == EXPECTED_COLUMNS
 
 
 @pytest.mark.xfail(strict=True, reason="Confluence mislabels missing timeframes as 'all timeframes aligned' (COR-006)")
