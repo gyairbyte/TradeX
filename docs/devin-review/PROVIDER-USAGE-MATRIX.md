@@ -14,7 +14,7 @@ This matrix inventories which TradeX features touch market-data sources, whether
 | Pre-market scanner | `tradex/premarket/gap_scanner.py` | `yfinance` directly (`yf.download` + `yf.Ticker.history`) | No | No | Add a provider-based pre/regular-hours quote path or Schwab `get_quotes` support |
 | Options flow | `tradex/options/flow.py` | Unusual Whales / Tradier / `yfinance` fallback (`yf.Ticker`) | No (not OHLCV) | No | Schwab options-chain endpoint integration; not an OHLCV provider contract |
 | Earnings | `tradex/earnings/calendar.py` | `yfinance` directly (`yf.Ticker`) | No | No | Keep Yahoo or add an alternate fundamental/calendar source; not available through Schwab market-data OHLCV |
-| Outcome tracker | `tradex/tracker/outcome_tracker.py` | `yfinance` directly (`yf.download`) | No | No | Replace `_fetch_close_after` with `fetch(ticker, 'short', provider=...)` or a provider-aware close lookup. Deferred to COR-003 |
+| Outcome tracker | `tradex/tracker/outcome_tracker.py` | `yfinance` directly (`yf.download`) | No | No | Timing/eligibility fixed in COR-003. Provider routing still deferred: replace `_fetch_close_after` with `fetch(ticker, 'short', provider=...)` or a provider-aware close lookup under PROVIDER-003 |
 | Signal journal | `tradex/ui/dashboard.py` (read-only view of DB) | SQLite signal history | N/A | N/A | None; presentation only |
 | Dashboard charts | `tradex/ui/dashboard.py` | `fetch(selected, tf, provider=provider)` | Yes | Yes | Provider selector added; selected provider passed to `fetch()` for drill-down charts |
 | Scheduled watcher | `tradex/tracker/watcher.py` | Calls `screener_run()`, `run_confluence_screen()`, and `run_match_screen()` with `provider` | Yes | Yes | `run_once()` and `_check_alerts()` now forward `provider`; CLI `--provider` accepts the four supported values |
@@ -26,4 +26,4 @@ This matrix inventories which TradeX features touch market-data sources, whether
 1. `confluence.py`, `patterns/matcher.py`, and the screener/engine now honor an explicit `provider` argument and route through `fetch()`.
 2. `tracker/watcher.py` and `ui/dashboard.py` now pass `provider` into all supported OHLCV workflows.
 3. Non-OHLCV or specialized data consumers (`patterns/miner.py`, `premarket/gap_scanner.py`, `options/flow.py`, `earnings/calendar.py`, `watchlists/refresh.py`, `outcome_tracker.py`) still bypass the OHLCV fetcher and will be addressed in later PRs.
-4. `outcome_tracker.py` is intentionally deferred to `devin/fix-outcome-timing` (COR-003) because it involves timing/eligibility logic, not just propagation.
+4. `outcome_tracker.py` timing is fixed by COR-003; making it provider-agnostic remains under PROVIDER-003.

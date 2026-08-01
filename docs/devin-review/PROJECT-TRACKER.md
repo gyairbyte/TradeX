@@ -111,14 +111,16 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Fix outcome tracker waiting too long to resolve
 - **Category:** Correctness
 - **Priority:** High
-- **Status:** Proposed
-- **Problem statement:** `_fetch_close_after` computes `end = after_date + days_forward + 7` and returns `None` until `end` has passed, delaying resolution by ~7 extra days.
-- **Recommended action:** Resolve as soon as at least `days_forward` trading days after the signal are available in historical data.
+- **Status:** Completed
+- **Resolved by:** `devin/fix-outcome-timing`
+- **Problem statement:** `_fetch_close_after` computed `end = after_date + days_forward + 7` and returned `None` until that full buffer date had passed, delaying resolution by ~7 extra calendar days even when the required trading-session close was already available.
+- **Recommended action:** Resolve as soon as at least `days_forward` trading sessions after the signal are available in historical data; keep the +7 calendar-day buffer only as a maximum search window for weekends/holidays.
 - **Reason:** The signal journal is only useful if outcomes are recorded close to the intended holding period.
 - **Dependencies:** None
-- **Files likely affected:** `tradex/tracker/outcome_tracker.py`
-- **Testing requirements:** Unit test with mocked dates and price data showing resolution at the earliest valid date.
-- **Acceptance criteria:** An intraday signal resolves after 1 trading day, a short signal after 3, a long signal after the intended number of trading days/weeks.
+- **Files affected:** `tradex/tracker/outcome_tracker.py`
+- **Testing:** Credential-free mocked tests cover 1-day/3-day/5-day resolution, weekend handling, holiday gaps, future/unavailable data, request boundaries, MultiIndex/single-level columns, and NaN close fallback.
+- **Acceptance criteria:** An intraday signal resolves after 1 trading session, a short signal after 3, a long signal after 5; the function does not refuse to fetch solely because the maximum buffer end is in the future.
+- **Deferred:** Making the outcome tracker provider-agnostic is still under PROVIDER-003 and not completed by this fix.
 - **Intended pull request:** `devin/fix-outcome-timing`
 - **Affects trading behavior:** No
 
@@ -551,10 +553,9 @@ This is the master backlog for recommendations from the Devin review. Items are 
 | Low | 5 | DOC-001: Fix documentation drift |
 
 **Recommended next pull request order:**
-1. `devin/fix-outcome-timing` (COR-003).
-2. `devin/provider-agnostic-consumers` (PROVIDER-003).
-3. `devin/add-provider-provenance` (PROVIDER-004).
-4. `devin/provider-failure-policy` (PROVIDER-005).
-5. `devin/redesign-signal-history` (DATA-001, COIL-001, COIL-002).
-6. `devin/add-backtest-engine` (VAL-001).
-7. `devin/reevaluate-scores-with-validated-data` (new, after backtesting).
+1. `devin/provider-agnostic-consumers` (PROVIDER-003).
+2. `devin/add-provider-provenance` (PROVIDER-004).
+3. `devin/provider-failure-policy` (PROVIDER-005).
+4. `devin/redesign-signal-history` (DATA-001, COIL-001, COIL-002).
+5. `devin/add-backtest-engine` (VAL-001).
+6. `devin/reevaluate-scores-with-validated-data` (new, after backtesting).

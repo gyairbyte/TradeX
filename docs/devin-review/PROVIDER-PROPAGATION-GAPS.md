@@ -37,14 +37,15 @@ The explicit `provider` argument is now propagated through the supported OHLCV w
 
 ### `tradex/tracker/outcome_tracker.py`
 
+- `COR-003` fixed the eligibility timing in `_fetch_close_after()` so outcomes resolve as soon as the Nth trading session is available; the +7 calendar-day buffer is now only a maximum search window.
 - `_fetch_close_after()` still uses `yfinance` directly (`yf.download`) and has no `provider` parameter.
-- Routing this through the central fetcher is intentionally deferred to `devin/fix-outcome-timing` (COR-003), because it involves changing the outcome eligibility/timing logic, not just propagation.
+- Routing the outcome-tracker close lookup through the central `fetch()` is intentionally left under PROVIDER-003 (`devin/provider-agnostic-consumers`), because it requires a provider-aware daily close lookup and is separate from the timing correction.
 
 ## Remaining gaps
 
 | Module | Gap | Covered by |
 |---|---|---|
-| `tradex/tracker/outcome_tracker.py` | `_fetch_close_after` bypasses `fetch()` | COR-003 / `devin/fix-outcome-timing` |
+| `tradex/tracker/outcome_tracker.py` | `_fetch_close_after` bypasses `fetch()` | PROVIDER-003 / `devin/provider-agnostic-consumers` |
 | `tradex/patterns/miner.py` | Multi-year daily fingerprint mining uses `yfinance` directly | PROVIDER-003 |
 | `tradex/premarket/gap_scanner.py` | Pre-market quotes use `yfinance` directly | PROVIDER-003 |
 | `tradex/options/flow.py` | Options-chain data is not OHLCV | PROVIDER-003 |

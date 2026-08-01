@@ -34,22 +34,47 @@ OUTCOME_WINDOWS = {
 }
 
 
+def _utc_now() -> datetime:
+    """Return the current UTC time. Patching this helper keeps tests deterministic."""
+    return datetime.now(timezone.utc)
+
+
 def _fetch_close_after(ticker: str, after_date: datetime, days_forward: int) -> float | None:
     """
-    Fetch the closing price approximately `days_forward` trading days after `after_date`.
-    Returns None if data isn't available yet (future date or market holiday gap).
-    """
-    start = after_date + timedelta(days=1)
-    # Fetch extra buffer to account for weekends and holidays
-    end = after_date + timedelta(days=days_forward + 7)
+    Fetch the closing price `days_forward` trading sessions after `after_date`.
 
-    if end > datetime.now(timezone.utc):
-        return None  # outcome window hasn't closed yet
+    `days_forward` is a count of trading sessions, not calendar days. A bounded
+    +7 calendar-day buffer is used to cover weekends and holidays, but it is
+    never treated as an eligibility gate. Outcomes resolve as soon as the Nth
+    trading-session close is available in the daily data.
+
+    Returns None if the required trading session has not occurred yet or its
+    close cannot be resolved.
+    """
+    if after_date.tzinfo is None:
+        after_date = after_date.replace(tzinfo=timezone.utc)
+    after = after_date.astimezone(timezone.utc).date()
+
+    # The first eligible session is the calendar day after the signal. Yahoo
+    # Finance returns the next trading session on/after `start`.
+    start_date = after + timedelta(days=1)
+
+    # Bounded buffer for weekends/holidays: 7 extra calendar days beyond the
+    # requested holding period. The actual fetch window is limited to data that
+    # has already had a chance to be available.
+    buffer_end_date = after + timedelta(days=days_forward + 7)
+    available_end_date = _utc_now().date() + timedelta(days=1)
+
+    end_date = min(buffer_end_date, available_end_date)
+
+    # Nothing to fetch yet.
+    if end_date <= start_date:
+        return None
 
     df = yf.download(
         ticker,
-        start=start.strftime("%Y-%m-%d"),
-        end=end.strftime("%Y-%m-%d"),
+        start=start_date.isoformat(),
+        end=end_date.isoformat(),
         interval="1d",
         progress=False,
         auto_adjust=True,
@@ -58,11 +83,20 @@ def _fetch_close_after(ticker: str, after_date: datetime, days_forward: int) -> 
         return None
 
     df = normalize_yahoo_columns(df)
-    if "close" not in df.columns or len(df) < days_forward:
+    if "close" not in df.columns:
         return None
 
-    # Return the close at the Nth trading day. If that day's close is missing,
-    # use the next available close within the fetched window.
+    # Oldest-to-newest, one row per session.
+    df = df.sort_index()
+    df = df[~df.index.duplicated(keep="last")]
+
+    # Count trading-session rows first; do not drop NaN closes before the length
+    # check, because a missing close in an earlier session is still a session.
+    if len(df) < days_forward:
+        return None
+
+    # Return the close at the Nth trading session. If that session's close is
+    # missing, use the next available close within the fetched window.
     close = df["close"].iloc[days_forward - 1 :].dropna().head(1)
     if close.empty:
         return None
