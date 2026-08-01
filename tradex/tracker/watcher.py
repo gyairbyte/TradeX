@@ -92,7 +92,7 @@ def run_once(
     requested_provider = resolve_provider(provider)
     fetch_policy = policy or FetchPolicy.build(max_retries=max_retries, fallback_order=fallback_order)
     print(f"[{now}] Scanning {len(tickers)} tickers on {timeframe} (provider={requested_provider}, "
-          f"retries={fetch_policy.max_retries}, fallback={fetch_policy.fallback_order or 'disabled'})…")
+          f"max_retries={fetch_policy.max_retries}, fallback={fetch_policy.fallback_order or 'disabled'})…")
 
     report = screener_run_with_report(
         tickers,
@@ -103,16 +103,20 @@ def run_once(
     )
 
     actual_provider = report.actual_provider or report.requested_provider
-    has_fetch_failures = bool(report.failures)
     has_earnings_failures = bool(report.earnings_failures)
+    has_fetch_failures = bool(report.fetch_failures)
+    has_scoring_failures = bool(report.scoring_failures)
 
-    if report.total_fetched == 0 and not has_fetch_failures and has_earnings_failures:
-        categories = sorted({type(e).__name__ for e in report.earnings_failures.values()})
-        print(f"[{now}] ERROR: earnings source failed for {len(tickers)} tickers. "
-              f"Failure categories: {categories or ['unknown']}.")
-    elif report.total_fetched == 0 and has_fetch_failures:
-        categories = sorted({type(e).__name__ for e in report.failures.values()})
-        print(f"[{now}] ERROR: all providers failed for {len(tickers)} tickers. "
+    all_fetch_eligible_failed = (
+        report.total_fetch_eligible > 0
+        and report.total_fetched == 0
+        and has_fetch_failures
+    )
+
+    if all_fetch_eligible_failed:
+        categories = sorted({type(e).__name__ for e in report.fetch_failures.values()})
+        print(f"[{now}] ERROR: all providers failed for {report.total_fetch_eligible} "
+              f"symbol(s) that reached OHLCV fetching. "
               f"Providers attempted: {report.providers_attempted}. "
               f"Failure categories: {categories or ['unknown']}.")
     elif report.results.empty:
@@ -120,16 +124,37 @@ def run_once(
             print(f"[{now}] No signals above {min_score}; all {report.total_earnings_excluded} tickers excluded due to earnings.")
         else:
             print(f"[{now}] No signals above {min_score}.")
-        if has_fetch_failures:
-            print(f"[{now}] Partial failures: {len(report.failures)} symbol(s) failed or had insufficient data.")
     else:
         results = report.results
         print(f"[{now}] {len(results)} signals found (actual provider={actual_provider}, "
-              f"retries={fetch_policy.max_retries}, fallback={report.fallback_used}):")
+              f"retries={report.total_retries}, fallback={report.fallback_used}):")
         print(results[["ticker", "score", "volume_ratio", "rsi", "provider"]].to_string(index=False))
-        if has_fetch_failures:
-            print(f"[{now}] Partial failures: {len(report.failures)} symbol(s) failed or had insufficient data.")
         store.record_signals(results, timeframe, provider=actual_provider)
+
+    # Surface each non-empty stage map independently.
+    if has_earnings_failures:
+        categories = sorted({type(e).__name__ for e in report.earnings_failures.values()})
+        print(f"[{now}] Earnings lookup failures: {len(report.earnings_failures)} symbol(s). "
+              f"Categories: {categories or ['unknown']}.")
+    if has_fetch_failures and not all_fetch_eligible_failed:
+        categories = sorted({type(e).__name__ for e in report.fetch_failures.values()})
+        print(f"[{now}] OHLCV fetch failures: {len(report.fetch_failures)} symbol(s). "
+              f"Categories: {categories or ['unknown']}.")
+    if has_scoring_failures:
+        categories = sorted({type(e).__name__ for e in report.scoring_failures.values()})
+        print(f"[{now}] Scoring failures: {len(report.scoring_failures)} symbol(s). "
+              f"Categories: {categories or ['unknown']}.")
+
+    if report.attempt_log:
+        print(f"[{now}] Attempt summary (providers attempted: {report.providers_attempted}, "
+              f"total attempts: {report.total_fetch_attempted}, retries: {report.total_retries}).")
+        for provider in report.providers_attempted:
+            entries = [a for a in report.attempt_log if a.provider == provider]
+            attempted = len(entries)
+            succeeded = sum(1 for e in entries if e.success)
+            failed = attempted - succeeded
+            retries = sum(e.retries for e in entries)
+            print(f"  - {provider}: {attempted} attempted, {succeeded} succeeded, {failed} failed, {retries} retries")
 
     if report.total_fetched > 0:
         _check_alerts(tickers, timeframe, provider=actual_provider)

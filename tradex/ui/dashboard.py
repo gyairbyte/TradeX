@@ -412,27 +412,40 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
         actual_provider = report.actual_provider or report.requested_provider
         progress_bar.empty()
 
+        has_fetch_failures = bool(report.fetch_failures)
+        has_scoring_failures = bool(report.scoring_failures)
+        has_earnings_failures = bool(report.earnings_failures)
+        all_earnings_excluded = report.total_earnings_excluded == len(watchlist)
+        all_fetch_eligible_failed = (
+            report.total_fetch_eligible > 0
+            and report.total_fetched == 0
+            and has_fetch_failures
+        )
+
         if report.fallback_used:
             st.info(
                 f"Fallback used: requested provider '{report.requested_provider}', "
                 f"actual provider '{actual_provider}'"
             )
 
-        has_fetch_failures = bool(report.failures)
-        has_earnings_failures = bool(report.earnings_failures)
-        all_earnings_excluded = report.total_earnings_excluded == len(watchlist)
-
-        if report.total_fetched == 0 and not has_fetch_failures and has_earnings_failures:
-            categories = {type(e).__name__ for e in report.earnings_failures.values()}
+        if all_fetch_eligible_failed:
+            categories = {type(e).__name__ for e in report.fetch_failures.values()}
             st.error(
-                f"Earnings source failed for all {report.total_requested} symbols. "
+                f"Provider '{report.requested_provider}' failed for all "
+                f"{report.total_fetch_eligible} symbol(s) that reached OHLCV fetching. "
                 f"Failure categories: {', '.join(sorted(categories)) or 'unknown'}."
             )
-        elif report.total_fetched == 0 and has_fetch_failures:
-            categories = {type(e).__name__ for e in report.failures.values()}
+        elif (
+            report.total_fetched == 0
+            and has_earnings_failures
+            and not has_fetch_failures
+            and not has_scoring_failures
+            and not all_earnings_excluded
+        ):
+            categories = {type(e).__name__ for e in report.earnings_failures.values()}
             st.error(
-                f"Provider '{report.requested_provider}' failed for all {report.total_requested} "
-                f"symbols. Failure categories: {', '.join(sorted(categories)) or 'unknown'}."
+                f"Earnings source failed for {len(report.earnings_failures)} symbol(s). "
+                f"Failure categories: {', '.join(sorted(categories)) or 'unknown'}."
             )
         elif results.empty:
             if all_earnings_excluded:
@@ -442,24 +455,12 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
                 )
             else:
                 st.warning("No opportunities found. Lower the min score or add more tickers.")
-            if has_fetch_failures:
-                st.warning(
-                    f"{len(report.failures)} symbol(s) failed or had insufficient data."
-                )
-                with st.expander("Failure summary"):
-                    for ticker, err in report.failures.items():
-                        st.caption(f"**{ticker}**: {type(err).__name__}")
-                        st.text(str(err))
         else:
             failed_count = len(report.failures)
             if failed_count:
                 st.warning(
-                    f"Found {len(results)} opportunities; {failed_count} symbol(s) failed or had insufficient data."
+                    f"Found {len(results)} opportunities; {failed_count} symbol(s) had stage failures."
                 )
-                with st.expander("Failure summary"):
-                    for ticker, err in report.failures.items():
-                        st.caption(f"**{ticker}**: {type(err).__name__}")
-                        st.text(str(err))
             else:
                 if earnings_buffer > 0:
                     st.success(f"Found {len(results)} opportunities (excluded tickers with earnings within {earnings_buffer}d)")
@@ -487,6 +488,46 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
             st.session_state["scan_results"] = results
             st.session_state["scan_timeframe"] = timeframe
             st.session_state["scan_provider"] = actual_provider
+
+        # Surface each non-empty stage failure map independently.
+        if has_earnings_failures:
+            st.warning(f"{len(report.earnings_failures)} earnings lookup(s) failed.")
+            with st.expander("Earnings failure summary"):
+                for ticker, err in report.earnings_failures.items():
+                    st.caption(f"**{ticker}**: {type(err).__name__}")
+                    st.text(str(err))
+
+        if has_fetch_failures and not all_fetch_eligible_failed:
+            st.warning(f"{len(report.fetch_failures)} OHLCV fetch/insufficient-data failure(s).")
+            with st.expander("OHLCV failure summary"):
+                for ticker, err in report.fetch_failures.items():
+                    st.caption(f"**{ticker}**: {type(err).__name__}")
+                    st.text(str(err))
+
+        if has_scoring_failures:
+            st.warning(f"{len(report.scoring_failures)} scoring failure(s).")
+            with st.expander("Scoring failure summary"):
+                for ticker, err in report.scoring_failures.items():
+                    st.caption(f"**{ticker}**: {type(err).__name__}")
+                    st.text(str(err))
+
+        if report.attempt_log:
+            with st.expander("Fetch attempt summary"):
+                st.caption(
+                    f"Providers attempted: {report.providers_attempted} | "
+                    f"total attempts: {report.total_fetch_attempted} | "
+                    f"retries: {report.total_retries}"
+                )
+                for prov in report.providers_attempted:
+                    entries = [a for a in report.attempt_log if a.provider == prov]
+                    attempted = len(entries)
+                    succeeded = sum(1 for e in entries if e.success)
+                    failed = attempted - succeeded
+                    retries = sum(e.retries for e in entries)
+                    st.text(
+                        f"{prov}: {attempted} attempted, {succeeded} succeeded, "
+                        f"{failed} failed, {retries} retries"
+                    )
 
     if "scan_results" in st.session_state and not st.session_state["scan_results"].empty:
         st.divider()

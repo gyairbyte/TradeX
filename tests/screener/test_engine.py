@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from tradex.data.fetcher import FetchReport, ProviderTransientError
+from tradex.data.fetcher import FetchAttempt, FetchReport, ProviderTransientError
 from tradex.screener import engine
 
 
@@ -25,11 +25,15 @@ def _make_fetch_report(
     fallback_used=False,
     failures=None,
     providers_attempted=None,
+    retries=0,
+    total_fetch_attempted=None,
+    attempt_log=None,
 ):
     data = data or {}
     failures = failures or {}
     actual = actual_provider or provider
     providers = providers_attempted or (actual,)
+    total_fetch_attempted = total_fetch_attempted if total_fetch_attempted is not None else len(tickers)
     return FetchReport(
         data=data,
         requested_provider=provider,
@@ -40,8 +44,9 @@ def _make_fetch_report(
         attempts={t: 1 for t in tickers},
         total_requested=len(tickers),
         total_fetched=len(data),
-        total_fetch_attempted=len(tickers),
-        retries=0,
+        total_fetch_attempted=total_fetch_attempted,
+        retries=retries,
+        attempt_log=attempt_log or [],
     )
 
 
@@ -535,3 +540,138 @@ def test_run_with_report_partial_failure_zero_signals():
     assert report.total_below_threshold == 1
     assert "MSFT" in report.failures
     assert report.failures["MSFT"] is failures["MSFT"]
+
+
+def test_run_with_report_mixed_earnings_failure_and_valid_zero_signals():
+    """An earnings lookup failure is surfaced independently of a valid zero-signal ticker."""
+
+    def fake_score(df):
+        return _make_result(30)
+
+    def fake_fetch_multi_report(tickers, tf, provider=None, **kwargs):
+        return _make_fetch_report(
+            tickers,
+            data={"MSFT": pd.DataFrame([0] * 31)},
+            provider=provider,
+            actual_provider=provider,
+        )
+
+    def earnings_days(ticker, **kwargs):
+        if ticker == "AAPL":
+            raise RuntimeError("lookup failed")
+
+    with (
+        patch.object(engine, "fetch_multi_report", side_effect=fake_fetch_multi_report),
+        patch.object(engine, "days_until_earnings", side_effect=earnings_days),
+        patch.object(engine, "SIGNAL_MAP", {"intraday": (fake_score, "intraday")}),
+    ):
+        report = engine.run_with_report(["AAPL", "MSFT"], timeframe="intraday")
+
+    assert report.results.empty
+    assert report.total_fetched == 1
+    assert "AAPL" in report.earnings_failures
+    assert "MSFT" not in report.earnings_failures
+    assert report.failures == {}
+    assert report.total_fetch_eligible == 1
+
+
+def test_run_with_report_mixed_earnings_failure_and_signal():
+    """An earnings lookup failure is surfaced alongside a successful signal."""
+
+    def fake_score(df):
+        return _make_result(70)
+
+    def fake_fetch_multi_report(tickers, tf, provider=None, **kwargs):
+        return _make_fetch_report(
+            tickers,
+            data={"MSFT": pd.DataFrame([0] * 31)},
+            provider=provider,
+            actual_provider=provider,
+        )
+
+    def earnings_days(ticker, **kwargs):
+        if ticker == "AAPL":
+            raise RuntimeError("lookup failed")
+
+    with (
+        patch.object(engine, "fetch_multi_report", side_effect=fake_fetch_multi_report),
+        patch.object(engine, "days_until_earnings", side_effect=earnings_days),
+        patch.object(engine, "SIGNAL_MAP", {"intraday": (fake_score, "intraday")}),
+    ):
+        report = engine.run_with_report(["AAPL", "MSFT"], timeframe="intraday")
+
+    assert report.total_signals == 1
+    assert report.results["ticker"].tolist() == ["MSFT"]
+    assert "AAPL" in report.earnings_failures
+    assert report.failures == {}
+    assert report.total_fetch_eligible == 1
+
+
+def test_run_with_report_earnings_exclusion_plus_fetch_failure():
+    """An excluded ticker and a fetch failure are counted in their respective stages."""
+
+    def fake_score(df):
+        return _make_result(70)
+
+    fetch_failures = {"MSFT": ProviderTransientError("network")}
+
+    def fake_fetch_multi_report(tickers, tf, provider=None, **kwargs):
+        return _make_fetch_report(
+            tickers,
+            data={},
+            provider=provider,
+            actual_provider=provider,
+            failures=fetch_failures,
+        )
+
+    with (
+        patch.object(engine, "fetch_multi_report", side_effect=fake_fetch_multi_report),
+        patch.object(engine, "days_until_earnings", side_effect=lambda t, **_: 2 if t == "AAPL" else None),
+        patch.object(engine, "SIGNAL_MAP", {"intraday": (fake_score, "intraday")}),
+    ):
+        report = engine.run_with_report(["AAPL", "MSFT"], timeframe="intraday", exclude_earnings_within=5)
+
+    assert report.results.empty
+    assert report.total_earnings_excluded == 1
+    assert report.total_fetched == 0
+    assert report.total_fetch_eligible == 1
+    assert "MSFT" in report.fetch_failures
+    assert report.failures == report.fetch_failures
+
+
+def test_run_with_report_propagates_retry_and_attempt_history():
+    """FetchReport retry/attempt/fallback history is carried through ScanReport."""
+
+    def fake_score(df):
+        return _make_result(70)
+
+    attempt_log = [
+        FetchAttempt(provider="yahoo", ticker="AAPL", attempts=1, retries=0, success=False),
+        FetchAttempt(provider="schwab", ticker="AAPL", attempts=2, retries=1, success=True),
+    ]
+
+    def fake_fetch_multi_report(tickers, tf, provider=None, **kwargs):
+        return _make_fetch_report(
+            tickers,
+            data={"AAPL": pd.DataFrame([0] * 31)},
+            provider="yahoo",
+            actual_provider="schwab",
+            fallback_used=True,
+            providers_attempted=("yahoo", "schwab"),
+            retries=1,
+            total_fetch_attempted=3,
+            attempt_log=attempt_log,
+        )
+
+    with (
+        patch.object(engine, "fetch_multi_report", side_effect=fake_fetch_multi_report),
+        patch.object(engine, "days_until_earnings", return_value=None),
+        patch.object(engine, "SIGNAL_MAP", {"intraday": (fake_score, "intraday")}),
+    ):
+        report = engine.run_with_report(["AAPL"], timeframe="intraday")
+
+    assert report.total_retries == 1
+    assert report.total_fetch_attempted == 3
+    assert report.attempt_log == attempt_log
+    assert report.fallback_used is True
+    assert report.actual_provider == "schwab"

@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 import pandas as pd
 
 from tradex.data.fetcher import (
+    FetchAttempt,
     FetchPolicy,
     ProviderDataUnavailableError,
     ProviderError,
@@ -49,6 +50,9 @@ class ScanReport:
     earnings_failures: dict[str, ProviderError] = field(default_factory=dict)
     fetch_failures: dict[str, ProviderError] = field(default_factory=dict)
     scoring_failures: dict[str, ProviderError] = field(default_factory=dict)
+    total_fetch_eligible: int = 0
+    total_retries: int = 0
+    attempt_log: list[FetchAttempt] = field(default_factory=list)
 
 
 def run_with_report(
@@ -178,7 +182,9 @@ def run_with_report(
         providers_attempted=providers_attempted,
         failures=failures,
         total_requested=len(tickers),
+        total_fetch_eligible=len(eligible_tickers),
         total_fetch_attempted=total_fetch_attempted,
+        total_retries=fetch_report.retries,
         total_fetched=total_fetched,
         total_scored=total_scored,
         total_signals=len(rows),
@@ -188,6 +194,7 @@ def run_with_report(
         earnings_failures=earnings_failures,
         fetch_failures=fetch_failures,
         scoring_failures=scoring_failures,
+        attempt_log=fetch_report.attempt_log,
     )
 
 
