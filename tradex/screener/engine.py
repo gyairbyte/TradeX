@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable
 
 import pandas as pd
-from tradex.data.fetcher import fetch
+from tradex.data.fetcher import fetch, resolve_provider
 from tradex.signals import intraday, short_term, long_term
 from tradex.earnings import days_until_earnings
 
@@ -41,6 +41,7 @@ def run(
     `earnings_source` is passed to `days_until_earnings` and defaults to Yahoo.
     """
     scorer, tf_key = SIGNAL_MAP[timeframe]
+    effective_provider = resolve_provider(provider)
 
     def _score_one(ticker: str) -> dict | None:
         try:
@@ -66,6 +67,7 @@ def run(
                 "rsi": round(result["rsi"], 1),
                 "days_until_earnings": days_to_er,
                 "reasons": " | ".join(result["reasons"]),
+                "provider": effective_provider,
             }
         except Exception as e:
             print(f"[skip] {ticker}: {e}")
@@ -88,6 +90,6 @@ def run(
     if not rows:
         return pd.DataFrame(columns=[
             "ticker", "score", "last_close", "volume_ratio", "rsi",
-            "days_until_earnings", "reasons",
+            "days_until_earnings", "reasons", "provider",
         ])
     return pd.DataFrame(rows).sort_values("score", ascending=False).reset_index(drop=True)

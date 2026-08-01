@@ -368,6 +368,27 @@ _PROVIDERS = {
 }
 
 
+def resolve_provider(provider: str | None = None) -> str:
+    """
+    Resolve and normalize an OHLCV provider name.
+
+    Args:
+        provider: Explicit provider name, or None to use ``DATA_PROVIDER`` env var.
+
+    Returns:
+        A normalized lowercase provider string from ``{"yahoo", "alpaca", "ibkr", "schwab"}``.
+
+    Raises:
+        ValueError: If the provider is missing or not a supported OHLCV provider.
+    """
+    p = (provider if provider is not None else DEFAULT_PROVIDER).strip().lower()
+    if p not in _PROVIDERS:
+        raise ValueError(
+            f"provider must be one of {sorted(_PROVIDERS)}; got {p!r}"
+        )
+    return p
+
+
 def fetch(ticker: str, timeframe: str, provider: str | None = None) -> pd.DataFrame:
     """
     Fetch OHLCV data for a ticker.
@@ -380,10 +401,7 @@ def fetch(ticker: str, timeframe: str, provider: str | None = None) -> pd.DataFr
     if timeframe not in TIMEFRAMES:
         raise ValueError(f"timeframe must be one of {list(TIMEFRAMES)}")
 
-    p = (provider or DEFAULT_PROVIDER).lower()
-    if p not in _PROVIDERS:
-        raise ValueError(f"provider must be one of {list(_PROVIDERS)}")
-
+    p = resolve_provider(provider)
     return _PROVIDERS[p](ticker, timeframe)
 
 

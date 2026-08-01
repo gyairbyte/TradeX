@@ -72,6 +72,8 @@ copy .env.example .env    # Windows
 
 `DATA_PROVIDER` controls **OHLCV data** only. Options flow, earnings, and market-cap ranking have their own source overrides (see `.env.example`).
 
+Signal history records the OHLCV provider that produced each signal (`signal_history.provider`), and resolved outcomes record `outcome_provider`. Pre-existing databases are migrated safely; rows created before this feature are labeled `unknown`.
+
 Key variables:
 | Variable | Required? | Notes |
 |---|---|---|
@@ -193,7 +195,7 @@ The watcher runs the screener on an interval and writes results to `~/.tradex/si
 .venv\Scripts\python -m tradex.tracker.watcher --timeframe intraday --interval 5
 ```
 
-Run during market hours. The outcome-tracker pass fires daily at 4:30pm ET automatically.
+Run during market hours. The outcome-tracker pass fires daily at 4:30pm ET automatically. The watcher persists the effective `provider` with each scan run and outcome pass.
 
 ---
 
@@ -225,7 +227,7 @@ Once the dashboard is running at `http://localhost:8501`:
 | **Pre-Market** | Gap-up / gap-down detection vs. previous close. Only useful between ~7am and 9:30am ET. |
 | **Options Flow** | Unusual options volume vs. open interest. Requires market hours for live data. |
 | **Alerts** | Configure Discord / email thresholds. Requires `.env` credentials. |
-| **Signal Journal** | Win rate and expectancy by score bucket — only meaningful after weeks of watcher runs. |
+| **Signal Journal** | Win rate and expectancy by score bucket, plus signal/outcome provider columns — only meaningful after weeks of watcher runs. |
 | **Weights** | Tune per-signal point values. Persists to `~/.tradex/weights.json`. |
 | **Help** | In-app docs for every feature. |
 

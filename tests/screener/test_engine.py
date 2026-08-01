@@ -95,3 +95,65 @@ def test_engine_passes_none_provider_when_not_specified():
         engine.run(["NVDA"], timeframe="intraday")
 
     assert captured == [None]
+
+
+def test_engine_result_includes_effective_provider():
+    """A successful scan row must include the resolved OHLCV provider."""
+
+    def fake_fetch(ticker, timeframe, provider=None):
+        return [0] * 31
+
+    def fake_score(df):
+        return _make_result(70)
+
+    with (
+        patch.object(engine, "fetch", side_effect=fake_fetch),
+        patch.object(engine, "days_until_earnings", return_value=None),
+        patch.object(engine, "SIGNAL_MAP", {"intraday": (fake_score, "intraday")}),
+    ):
+        result = engine.run(["AAPL"], timeframe="intraday", provider="schwab")
+
+    assert "provider" in result.columns
+    assert result["provider"].tolist() == ["schwab"]
+
+
+def test_engine_empty_result_schema_includes_provider():
+    """Even an empty result must expose the provider column."""
+
+    def fake_fetch(ticker, timeframe, provider=None):
+        return [0] * 5
+
+    def fake_score(df):
+        return _make_result(20)
+
+    with (
+        patch.object(engine, "fetch", side_effect=fake_fetch),
+        patch.object(engine, "days_until_earnings", return_value=None),
+        patch.object(engine, "SIGNAL_MAP", {"intraday": (fake_score, "intraday")}),
+    ):
+        result = engine.run(["AAPL"], timeframe="intraday", provider="yahoo", min_score=40)
+
+    assert result.empty
+    assert "provider" in result.columns
+
+
+def test_engine_concurrent_scan_uses_single_provider():
+    """All rows from one scan must share the same effective provider."""
+    captured = []
+
+    def fake_fetch(ticker, timeframe, provider=None):
+        captured.append(provider)
+        return [0] * 31
+
+    def fake_score(df):
+        return _make_result(60)
+
+    with (
+        patch.object(engine, "fetch", side_effect=fake_fetch),
+        patch.object(engine, "days_until_earnings", return_value=None),
+        patch.object(engine, "SIGNAL_MAP", {"intraday": (fake_score, "intraday")}),
+    ):
+        result = engine.run(["A", "B", "C"], timeframe="intraday", provider="alpaca")
+
+    assert captured == ["alpaca", "alpaca", "alpaca"]
+    assert result["provider"].unique().tolist() == ["alpaca"]

@@ -22,9 +22,9 @@ import sqlite3
 
 import pandas as pd
 
-from tradex.data.fetcher import ProviderCapabilityError
+from tradex.data.fetcher import ProviderCapabilityError, resolve_provider
 from tradex.data.history import fetch_daily_history
-from tradex.tracker.store import DB_PATH, _conn, _ensure_db_dir
+from tradex.tracker.store import DB_PATH, _conn, _ensure_db_dir, mark_outcome_by_id
 
 # Days after signal to measure outcome, keyed by timeframe
 OUTCOME_WINDOWS = {
@@ -108,14 +108,9 @@ def _get_pending_outcomes() -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def _write_outcome(signal_id: int, outcome_close: float, entry_close: float):
-    pct = ((outcome_close - entry_close) / entry_close) * 100
-    with _conn() as con:
-        con.execute("""
-            UPDATE signal_history
-            SET outcome_close = ?, outcome_pct = ?, outcome_at = datetime('now')
-            WHERE id = ?
-        """, (round(outcome_close, 4), round(pct, 2), signal_id))
+def _write_outcome(signal: dict, outcome_close: float, outcome_provider: str):
+    """Persist a resolved outcome and its provider without overwriting signal provider."""
+    mark_outcome_by_id(signal["id"], outcome_close, outcome_provider=outcome_provider)
 
 
 def run_outcome_pass(verbose: bool = True, provider: str | None = None) -> dict:
@@ -124,8 +119,10 @@ def run_outcome_pass(verbose: bool = True, provider: str | None = None) -> dict:
     Returns a summary dict of how many were resolved vs still pending.
 
     ``provider`` is passed to the daily-history abstraction for the close lookup.
+    The resolved provider is recorded as ``outcome_provider`` on successful outcomes.
     """
     _ensure_db_dir()
+    outcome_provider = resolve_provider(provider)
     pending = _get_pending_outcomes()
     resolved = 0
     still_pending = 0
@@ -140,13 +137,13 @@ def run_outcome_pass(verbose: bool = True, provider: str | None = None) -> dict:
 
         try:
             outcome_close = _fetch_close_after(
-                signal["ticker"], scan_dt, days_forward, provider=provider
+                signal["ticker"], scan_dt, days_forward, provider=outcome_provider
             )
             if outcome_close is None:
                 still_pending += 1
                 continue
 
-            _write_outcome(signal["id"], outcome_close, signal["last_close"])
+            _write_outcome(signal, outcome_close, outcome_provider)
             pct = ((outcome_close - signal["last_close"]) / signal["last_close"]) * 100
             if verbose:
                 direction = "▲" if pct > 0 else "▼"

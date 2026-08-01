@@ -5,7 +5,7 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 
-from tradex.tracker import outcome_tracker
+from tradex.tracker import outcome_tracker, store
 
 
 def _make_ohlcv(
@@ -395,3 +395,97 @@ def test_provider_failure_increments_errors(fresh_signal_db):
     assert summary["resolved"] == 0
     mock_fetch.assert_called_once()
     assert mock_fetch.call_args.kwargs["provider"] == "schwab"
+
+
+def _insert_signal(
+    ticker: str = "AAPL",
+    timeframe: str = "intraday",
+    scan_time: str = "2024-01-01T00:00:00+00:00",
+    score: int = 60,
+    last_close: float = 100.0,
+    provider: str = "yahoo",
+):
+    with store._conn() as con:
+        con.execute(
+            """
+            INSERT INTO signal_history
+              (ticker, timeframe, scan_time, score, last_close, volume_ratio, rsi, reasons, provider)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (ticker, timeframe, scan_time, score, last_close, 1.0, 50.0, "test", provider),
+        )
+
+
+def test_run_outcome_pass_writes_outcome_provider(fresh_signal_db):
+    """A resolved outcome records both the signal provider and the outcome provider."""
+    _insert_signal(provider="yahoo")
+
+    df = _make_history_df([101.0], start="2024-01-02")
+    with (
+        patch("tradex.tracker.outcome_tracker.fetch_daily_history", return_value=df),
+        patch.object(outcome_tracker, "_utc_now", return_value=datetime(2024, 1, 3, tzinfo=UTC)),
+    ):
+        summary = outcome_tracker.run_outcome_pass(verbose=False, provider="schwab")
+
+    assert summary["resolved"] == 1
+    with store._conn() as con:
+        row = con.execute("SELECT * FROM signal_history WHERE ticker = ?", ("AAPL",)).fetchone()
+    assert row["provider"] == "yahoo"
+    assert row["outcome_provider"] == "schwab"
+    assert row["outcome_close"] == 101.0
+
+
+def test_run_outcome_pass_does_not_write_outcome_provider_when_pending(fresh_signal_db):
+    """A pending outcome leaves outcome_provider unset."""
+    _insert_signal(provider="yahoo")
+
+    with (
+        patch("tradex.tracker.outcome_tracker.fetch_daily_history", return_value=pd.DataFrame()),
+        patch.object(outcome_tracker, "_utc_now", return_value=datetime(2024, 1, 2, tzinfo=UTC)),
+    ):
+        summary = outcome_tracker.run_outcome_pass(verbose=False, provider="schwab")
+
+    assert summary["pending"] == 1
+    assert summary["resolved"] == 0
+    with store._conn() as con:
+        row = con.execute("SELECT outcome_provider FROM signal_history WHERE ticker = ?", ("AAPL",)).fetchone()
+    assert row["outcome_provider"] is None
+
+
+def test_run_outcome_pass_does_not_write_outcome_provider_on_failure(fresh_signal_db):
+    """A provider failure leaves outcome_provider unset."""
+    _insert_signal(provider="yahoo")
+
+    with (
+        patch("tradex.tracker.outcome_tracker.fetch_daily_history", side_effect=RuntimeError("network")),
+        patch.object(outcome_tracker, "_utc_now", return_value=datetime(2024, 1, 3, tzinfo=UTC)),
+    ):
+        summary = outcome_tracker.run_outcome_pass(verbose=False, provider="schwab")
+
+    assert summary["errors"] == 1
+    with store._conn() as con:
+        row = con.execute("SELECT outcome_provider FROM signal_history WHERE ticker = ?", ("AAPL",)).fetchone()
+    assert row["outcome_provider"] is None
+
+
+def test_run_outcome_pass_resolves_duplicate_rows_independently(fresh_signal_db):
+    """Two pending rows with the same ticker/timeframe/scan_time are both updated by id."""
+    scan_time = "2024-01-01T00:00:00+00:00"
+    _insert_signal(provider="yahoo", scan_time=scan_time)
+    _insert_signal(provider="yahoo", scan_time=scan_time)
+
+    df = _make_history_df([101.0, 102.0], start="2024-01-02")
+    with (
+        patch("tradex.tracker.outcome_tracker.fetch_daily_history", return_value=df),
+        patch.object(outcome_tracker, "_utc_now", return_value=datetime(2024, 1, 5, tzinfo=UTC)),
+    ):
+        summary = outcome_tracker.run_outcome_pass(verbose=False, provider="schwab")
+
+    assert summary["resolved"] == 2
+    with store._conn() as con:
+        rows = con.execute("SELECT provider, outcome_provider, outcome_close FROM signal_history WHERE ticker = ?", ("AAPL",)).fetchall()
+    assert len(rows) == 2
+    for row in rows:
+        assert row["provider"] == "yahoo"
+        assert row["outcome_provider"] == "schwab"
+        assert row["outcome_close"] is not None
