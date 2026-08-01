@@ -29,6 +29,7 @@ def run(
     max_workers: int = DEFAULT_WORKERS,
     progress: Callable[[int, int], None] | None = None,
     provider: str | None = None,
+    earnings_source: str | None = None,
 ) -> pd.DataFrame:
     """
     `exclude_earnings_within`: if set, drop tickers with earnings within N days.
@@ -37,12 +38,13 @@ def run(
     useful for driving a Streamlit progress bar on long scans.
     `provider` is passed through to the central fetcher; when None, fetcher falls
     back to `DATA_PROVIDER` env var and then `yahoo`.
+    `earnings_source` is passed to `days_until_earnings` and defaults to Yahoo.
     """
     scorer, tf_key = SIGNAL_MAP[timeframe]
 
     def _score_one(ticker: str) -> dict | None:
         try:
-            days_to_er = days_until_earnings(ticker)
+            days_to_er = days_until_earnings(ticker, source=earnings_source)
             if (
                 exclude_earnings_within is not None
                 and days_to_er is not None

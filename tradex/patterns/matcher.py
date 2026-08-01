@@ -22,7 +22,7 @@ import json
 import numpy as np
 import pandas as pd
 
-from tradex.data.fetcher import fetch
+from tradex.data.fetcher import DEFAULT_PROVIDER, fetch
 from tradex.signals.indicators import add_indicators
 from tradex.patterns.fingerprint import load_fingerprint
 from tradex.patterns.config import PatternConfig, PROFILES
@@ -102,11 +102,14 @@ def match_ticker(
         match_tier       : "strong" | "moderate" | "weak"
         interpretation   : plain-English description
     """
-    fp = load_fingerprint(event_type, profile)
+    effective_source = (provider or DEFAULT_PROVIDER).lower()
+    fp = load_fingerprint(event_type, profile, source=provider)
     if fp is None:
         return {
             "ticker": ticker, "event_type": event_type, "profile": profile,
-            "similarity_score": 0, "error": "No fingerprint found — run build first",
+            "source": effective_source,
+            "similarity_score": 0,
+            "error": f"No {event_type} fingerprint for profile '{profile}' and source '{effective_source}' — run build first",
         }
 
     lookback = fp["lookback_days"]
@@ -114,6 +117,7 @@ def match_ticker(
     if live is None:
         return {
             "ticker": ticker, "event_type": event_type, "profile": profile,
+            "source": effective_source,
             "similarity_score": 0, "error": "Could not extract live window",
         }
 
@@ -149,6 +153,7 @@ def match_ticker(
         "ticker":           ticker,
         "event_type":       event_type,
         "profile":          profile,
+        "source":           fp.get("source", effective_source),
         "similarity_score": similarity,
         "match_tier":       tier,
         "series_scores":    series_scores,

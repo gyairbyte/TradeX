@@ -19,6 +19,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+class ProviderCapabilityError(RuntimeError):
+    """Raised when a provider does not support a requested data capability."""
+
+
 # ── timeframe presets ────────────────────────────────────────────────────────
 # Each provider maps these to its own param names internally.
 TIMEFRAMES = {
@@ -255,17 +260,8 @@ def _normalize_schwab_candles(candles: list[dict]) -> pd.DataFrame:
     return df.dropna(subset=_OHLCV_COLUMNS)
 
 
-def _fetch_schwab(ticker: str, timeframe: str) -> pd.DataFrame:
-    """Fetch canonical OHLCV data from the Schwab Market Data API.
-
-    Raises:
-        ImportError:            schwab-py is not installed.
-        EnvironmentError:       SCHWAB_APP_KEY or SCHWAB_APP_SECRET missing.
-        FileNotFoundError:      The OAuth token file does not exist.
-        ValueError:             The token path is inside the repo or timeframe unsupported.
-        RuntimeError:            The Schwab API request failed.
-        ValueError:             The response was not valid JSON.
-    """
+def _get_schwab_client():
+    """Return an authenticated Schwab client, or raise a safe error."""
     try:
         from schwab.auth import client_from_token_file
     except ImportError as e:
@@ -287,7 +283,7 @@ def _fetch_schwab(ticker: str, timeframe: str) -> pd.DataFrame:
 
     if not os.path.exists(token_path):
         raise FileNotFoundError(
-            f"Schwab OAuth token not found at {token_path}. "
+            "Schwab OAuth token not found. "
             "Run `python scripts/schwab_oauth.py` once to generate it."
         )
 
@@ -306,7 +302,21 @@ def _fetch_schwab(ticker: str, timeframe: str) -> pd.DataFrame:
                     "app key, and app secret, then re-run the OAuth script."
                 ) from None
 
-    client = _SCHWAB_CLIENT
+    return _SCHWAB_CLIENT
+
+
+def _fetch_schwab(ticker: str, timeframe: str) -> pd.DataFrame:
+    """Fetch canonical OHLCV data from the Schwab Market Data API.
+
+    Raises:
+        ImportError:            schwab-py is not installed.
+        EnvironmentError:       SCHWAB_APP_KEY or SCHWAB_APP_SECRET missing.
+        FileNotFoundError:      The OAuth token file does not exist.
+        ValueError:             The token path is inside the repo or timeframe unsupported.
+        RuntimeError:            The Schwab API request failed.
+        ValueError:             The response was not valid JSON.
+    """
+    client = _get_schwab_client()
 
     if timeframe not in _SCHWAB_TIMEFRAMES:
         raise ValueError(f"Unsupported timeframe for schwab: {timeframe}")

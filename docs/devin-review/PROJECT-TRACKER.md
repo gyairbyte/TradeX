@@ -231,17 +231,18 @@ This is the master backlog for recommendations from the Devin review. Items are 
 ### PROVIDER-003: Make remaining market-data consumers provider-agnostic
 
 - **ID:** PROVIDER-003
-- **Title:** Make remaining market-data consumers provider-agnostic
+- **Title:** Make remaining market-data consumers source-aware
 - **Category:** Data provider
 - **Priority:** High
-- **Status:** Proposed
-- **Problem statement:** Pattern mining, pre-market gap scanner, options flow, earnings, and watchlist market-cap ranking still call Yahoo or other sources directly with no provider alternative.
-- **Recommended action:** Move each non-OHLCV or specialized data need behind a small abstraction or clearly document that it is out of scope for the OHLCV provider contract. Where feasible (pre-market quotes, daily history), extend the fetcher/provider-specific modules rather than inlining `yfinance` calls.
-- **Reason:** Provider independence means all market-data consumers should be explicit about source and not silently fall back to Yahoo.
-- **Dependencies:** PROVIDER-002
-- **Files likely affected:** `tradex/patterns/miner.py`, `tradex/premarket/gap_scanner.py`, `tradex/options/flow.py`, `tradex/earnings/calendar.py`, `tradex/watchlists/refresh.py`
-- **Testing requirements:** Mocked tests for each consumer showing it can operate with a mocked data source.
-- **Acceptance criteria:** No feature except documented external-only sources (e.g., index constituents from Wikipedia) calls Yahoo by default when a Schwab provider is configured.
+- **Status:** Completed
+- **Resolved by:** `devin/provider-agnostic-consumers`
+- **Problem statement:** Pattern mining, pre-market gap scanner, options flow, earnings, and watchlist market-cap ranking still called Yahoo or other sources directly with no provider alternative.
+- **Recommended action:** Move each non-OHLCV or specialized data need behind a small abstraction or clearly document that it is a specialized source. Add `tradex/data/history.py` for date-ranged daily OHLCV (used by outcome tracker and pattern mining) and `ProviderCapabilityError` for unsupported combinations. Add explicit source parameters/options for options, earnings, and market-cap ranking. Update dashboard selector labels and help text to show which source drives each feature.
+- **Reason:** Provider independence means market-data consumers must be explicit about source and not silently fall back to Yahoo. `DATA_PROVIDER` should only control compatible OHLCV workflows.
+- **Dependencies:** PROVIDER-002, COR-003
+- **Files affected:** `tradex/data/fetcher.py` (shared Schwab helper, `ProviderCapabilityError`), `tradex/data/history.py` (new daily-history abstraction), `tradex/patterns/miner.py`, `tradex/patterns/fingerprint.py`, `tradex/tracker/outcome_tracker.py`, `tradex/tracker/watcher.py`, `tradex/premarket/gap_scanner.py`, `tradex/options/flow.py`, `tradex/earnings/calendar.py`, `tradex/watchlists/refresh.py`, `tradex/ui/dashboard.py`, `tradex/screener/engine.py`, `tradex/tracker/confluence.py`
+- **Testing:** Credential-free mocked tests for `fetch_daily_history` (Yahoo + Schwab), outcome-tracker provider propagation, pattern-mining provider/source propagation, pre-market source separation, options source policy, earnings source policy, watchlist refresh market-cap source, and gap-scanner provider propagation.
+- **Acceptance criteria:** No remaining feature module calls Yahoo directly except inside approved source adapters. `DATA_PROVIDER=schwab` does not silently relabel options, earnings, or market-cap data as Schwab. Unsupported provider/capability combinations raise `ProviderCapabilityError`. Existing `51 passed, 3 xfailed` baseline remains green.
 - **Intended pull request:** `devin/provider-agnostic-consumers`
 - **Affects trading behavior:** No
 
@@ -553,9 +554,9 @@ This is the master backlog for recommendations from the Devin review. Items are 
 | Low | 5 | DOC-001: Fix documentation drift |
 
 **Recommended next pull request order:**
-1. `devin/provider-agnostic-consumers` (PROVIDER-003).
-2. `devin/add-provider-provenance` (PROVIDER-004).
-3. `devin/provider-failure-policy` (PROVIDER-005).
-4. `devin/redesign-signal-history` (DATA-001, COIL-001, COIL-002).
-5. `devin/add-backtest-engine` (VAL-001).
-6. `devin/reevaluate-scores-with-validated-data` (new, after backtesting).
+1. `devin/add-provider-provenance` (PROVIDER-004).
+2. `devin/provider-failure-policy` (PROVIDER-005).
+3. `devin/redesign-signal-history` (DATA-001, COIL-001, COIL-002).
+4. `devin/add-backtest-engine` (VAL-001).
+5. `devin/reevaluate-scores-with-validated-data` (new, after backtesting).
+

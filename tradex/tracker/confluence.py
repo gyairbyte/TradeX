@@ -93,6 +93,7 @@ def run_confluence_screen(
     min_confluence: int = 50,
     provider: str | None = None,
     exclude_earnings_within: int | None = None,
+    earnings_source: str | None = None,
 ) -> pd.DataFrame:
     """
     Run confluence scoring across a watchlist.
@@ -100,11 +101,12 @@ def run_confluence_screen(
 
     `exclude_earnings_within`: if set, drop tickers with earnings within N days.
     Result rows always include `days_until_earnings` (None if unknown).
+    `earnings_source` is passed to `days_until_earnings` and defaults to Yahoo.
     """
     rows = []
     for ticker in tickers:
         try:
-            days_to_er = days_until_earnings(ticker)
+            days_to_er = days_until_earnings(ticker, source=earnings_source)
             if (
                 exclude_earnings_within is not None
                 and days_to_er is not None

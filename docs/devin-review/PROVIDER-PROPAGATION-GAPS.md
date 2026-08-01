@@ -1,57 +1,84 @@
-# Provider-Propagation Gaps (COR-004 / PROVIDER-002)
+# Provider-Propagation Gaps (COR-004 / PROVIDER-002 / PROVIDER-003)
 
-## Status after `devin/fix-provider-propagation`
+## Status after `devin/provider-agnostic-consumers`
 
-The explicit `provider` argument is now propagated through the supported OHLCV workflows.
+The explicit `provider` argument is now propagated through the supported OHLCV workflows, and each specialized market-data consumer has an explicit source policy.
 
-### `tradex/screener/engine.py`
+### `tradex/data/fetcher.py`
 
-- `run(..., provider=...)` accepts `provider` and passes it to `fetch(ticker, tf_key, provider=provider)` inside `_score_one()`.
-- Concurrent worker calls all receive the same requested provider.
+- Added `ProviderCapabilityError` for unsupported provider/capability combinations.
+- Added `_get_schwab_client()` helper so the daily-history abstraction can reuse the same safe Schwab authentication logic without inlining token handling.
 
-### `tradex/tracker/watcher.py`
+### `tradex/data/history.py`
 
-- `run_once(..., provider=...)` passes `provider` to `screener_run()` and `_check_alerts()`.
-- `_check_alerts(tickers, timeframe, provider=...)` passes `provider` to `run_confluence_screen()` and `run_match_screen()`.
-- `start_loop(..., provider=...)` continues passing `provider` into scheduled `run_once` calls.
-- The CLI `--provider` argument accepts `yahoo`, `schwab`, `alpaca`, or `ibkr`.
-
-### `tradex/tracker/confluence.py`
-
-- `run_confluence_screen(..., provider=...)` and `score_confluence(..., provider=...)` already forwarded `provider` to `fetch()`.
-- `score_confluence()` was not changed; it simply received `provider` from the watcher and dashboard.
-
-### `tradex/patterns/matcher.py` (not modified)
-
-- `match_ticker(..., provider=...)` and `run_match_screen(..., provider=...)` already accepted `provider` and routed it to `fetch()`.
-- This PR did not modify `matcher.py`; the watcher and dashboard now pass `provider` into those existing provider-aware interfaces.
-- Pattern *mining* (`tradex/patterns/miner.py`) still uses `yfinance` directly for multi-year daily history and is covered by PROVIDER-003.
-
-### `tradex/ui/dashboard.py`
-
-- A "Data provider" selector was added to the sidebar with options `yahoo`, `schwab`, `alpaca`, and `ibkr`.
-- The default selection reflects the `DATA_PROVIDER` environment variable or `yahoo`.
-- The selected provider is passed to `run()`, `fetch()`, `run_confluence_screen()`, `run_match_screen()`, and `match_ticker()`.
-- The current provider is displayed near the scan controls.
-- Provider selection does **not** affect features that bypass the OHLCV fetcher (earnings, options, preset refresh, market-cap ranking, outcome tracker); those are documented as unchanged.
+- New `fetch_daily_history(ticker, start, end, provider=None)` abstraction for date-ranged daily OHLCV.
+- Provider resolution: explicit argument → `DATA_PROVIDER` → `yahoo`.
+- Yahoo implementation uses `yf.download` with inclusive start/end semantics and normalizes columns.
+- Schwab implementation uses `get_price_history_every_day` with `start_datetime` / `end_datetime`.
+- Alpaca and IBKR raise `ProviderCapabilityError`.
 
 ### `tradex/tracker/outcome_tracker.py`
 
-- `COR-003` fixed the eligibility timing in `_fetch_close_after()` so outcomes resolve as soon as the Nth trading session is available; the +7 calendar-day buffer is now only a maximum search window.
-- `_fetch_close_after()` still uses `yfinance` directly (`yf.download`) and has no `provider` parameter.
-- Routing the outcome-tracker close lookup through the central `fetch()` is intentionally left under PROVIDER-003 (`devin/provider-agnostic-consumers`), because it requires a provider-aware daily close lookup and is separate from the timing correction.
+- `_fetch_close_after(..., provider=None)` uses `fetch_daily_history()`.
+- All COR-003 timing behavior preserved (signal date excluded, `days_forward` counts trading-session rows, bounded +7 calendar-day buffer, NaN close fallback).
+- `run_outcome_pass(..., provider=None)` propagates provider from the watcher/dashboard.
 
-## Remaining gaps
+### `tradex/patterns/miner.py` and `tradex/patterns/fingerprint.py`
 
-| Module | Gap | Covered by |
+- `_fetch_history()` and `mine_events()` accept `provider` and use `fetch_daily_history()`.
+- `run_full_build()` resolves the provider early and passes `source=resolved_provider` to `build_fingerprint()`.
+- Fingerprint cache includes a `source` column and unique index so Yahoo and Schwab fingerprints cannot mix.
+- `match_ticker()` loads the fingerprint for the same `source` as the live-data provider.
+
+### `tradex/premarket/gap_scanner.py`
+
+- Previous close now comes from `fetch_daily_history()` (provider-aware).
+- `get_premarket_price(ticker, provider=None)` is the explicit pre-market/extended-hours quote interface.
+- Currently only Yahoo supports pre-market quotes; other providers raise `ProviderCapabilityError`.
+- `scan_gaps()` and `run_gap_alerts()` accept and propagate `provider`.
+
+### `tradex/options/flow.py`
+
+- `get_flow(ticker, source=None)` with explicit source values: `auto`, `unusual_whales`, `tradier`, `yahoo`.
+- `OPTIONS_DATA_SOURCE` env var sets the default.
+- `auto` follows documented priority (Unusual Whales → Tradier → Yahoo); explicit paid sources do not fall back.
+- Missing credentials for an explicit paid source raise `ProviderCapabilityError`.
+- `scan_unusual_flow()` and `get_put_call_sentiment()` accept and propagate `source`.
+
+### `tradex/earnings/calendar.py`
+
+- `get_next_earnings(ticker, source=None)` and `days_until_earnings()` accept an explicit source.
+- `EARNINGS_DATA_SOURCE` env var sets the default.
+- Only `yahoo` is supported; other sources raise `ProviderCapabilityError`.
+- 24-hour SQLite cache now includes `source`.
+
+### `tradex/watchlists/refresh.py`
+
+- `fetch_market_caps(tickers, source=None)` separates market-cap fetching with explicit source (`yahoo` or `schwab`).
+- `MARKET_CAP_DATA_SOURCE` env var sets the default.
+- `refresh_all(top_n_per_sector, market_cap_source=None)` accepts `market_cap_source`.
+- `RefreshResult` exposes `constituent_source` (`wikipedia`) and `market_cap_source`.
+- Schwab liquidity filter remains optional and safe (no credentials exposure).
+
+### `tradex/ui/dashboard.py`
+
+- The global provider selector is now labeled **"OHLCV provider"**.
+- Added independent source selectors: **Options source**, **Earnings source**, **Market-cap source**.
+- All relevant call sites pass `provider`/`source`/`market_cap_source` to their consumers.
+- Help text clarifies that selecting Schwab does not change options or earnings data.
+
+### `tradex/screener/engine.py` and `tradex/tracker/confluence.py`
+
+- `run()` and `run_confluence_screen()` now accept an optional `earnings_source` argument and pass it to `days_until_earnings()` so earnings filtering remains explicitly Yahoo-sourced independently of `DATA_PROVIDER`.
+
+## Remaining intentionally deferred work
+
+| ID | Work | Status |
 |---|---|---|
-| `tradex/tracker/outcome_tracker.py` | `_fetch_close_after` bypasses `fetch()` | PROVIDER-003 / `devin/provider-agnostic-consumers` |
-| `tradex/patterns/miner.py` | Multi-year daily fingerprint mining uses `yfinance` directly | PROVIDER-003 |
-| `tradex/premarket/gap_scanner.py` | Pre-market quotes use `yfinance` directly | PROVIDER-003 |
-| `tradex/options/flow.py` | Options-chain data is not OHLCV | PROVIDER-003 |
-| `tradex/earnings/calendar.py` | Earnings dates use `yfinance` directly | PROVIDER-003 |
-| `tradex/watchlists/refresh.py` | Market-cap ranking uses `yfinance` directly | PROVIDER-003 |
+| PROVIDER-004 | Persist provider/source provenance in `signal_history`, `scan_runs`, and outcomes | Proposed |
+| PROVIDER-005 | Define broad provider failure/fallback policy (retries, explicit fallback chains, UI error surfacing) | Proposed |
+| COR-005 | Add market-hours / exchange-calendar handling for pre-market and watcher scheduling | Proposed |
 
 ## Key takeaway
 
-Explicit provider selection now reaches every central-OHLCV consumer that already supported it. Non-OHLCV or specialized data consumers remain direct-Yahoo/direct-source and will be addressed in `devin/provider-agnostic-consumers` (PROVIDER-003) and `devin/fix-outcome-timing` (COR-003) as separate, reviewable PRs.
+Explicit provider selection reaches every OHLCV and date-ranged daily-history consumer. Specialized data sources (options, earnings, market-cap ranking) have their own explicit source controls and never silently inherit `DATA_PROVIDER` or fall back to Yahoo.

@@ -1,5 +1,4 @@
-"""
-Options flow scanner.
+"""Options flow scanner.
 
 Detects unusual options activity that often precedes large price moves.
 Institutional traders frequently telegraph their positioning through the
@@ -11,17 +10,19 @@ What we look for:
   - Volume spikes: options volume >> 20-day average options volume
   - Unusual put/call ratio skew (heavy call buying = bullish, heavy puts = bearish)
 
-Data sources (in priority order):
-  1. Unusual Whales API ($50/mo) — best retail-accessible options flow
-     Set UNUSUAL_WHALES_API_KEY in .env
-  2. Tradier API (free with brokerage account) — real-time options chains
-     Set TRADIER_API_KEY in .env
-  3. yfinance options chains — free, delayed, no flow data but good for
-     volume/OI ratio analysis
+Data source policy:
+  Options data is independent of the OHLCV provider. Use ``source`` to choose:
+    - ``auto``          : documented priority (Unusual Whales → Tradier → Yahoo)
+    - ``unusual_whales``: Unusual Whales API only (requires UNUSUAL_WHALES_API_KEY)
+    - ``tradier``       : Tradier API only (requires TRADIER_API_KEY)
+    - ``yahoo``         : yfinance options chains only
 
-The scanner degrades gracefully: if no paid API is configured it falls
-back to yfinance chain analysis which catches volume anomalies but
-misses sweep detection.
+  When a specific source is selected, the scanner does NOT fall back to another
+  source. Missing credentials for an explicitly selected paid source produce a
+  clear ProviderCapabilityError / structured unavailable result.
+
+  The default source is controlled by ``OPTIONS_DATA_SOURCE``; if unset, it is
+  ``auto``. ``DATA_PROVIDER`` is never used for options data.
 """
 from __future__ import annotations
 
@@ -33,15 +34,48 @@ import requests
 import yfinance as yf
 from dotenv import load_dotenv
 
+from tradex.data.fetcher import ProviderCapabilityError
+
 load_dotenv()
 
 UNUSUAL_WHALES_KEY = os.getenv("UNUSUAL_WHALES_API_KEY", "")
 TRADIER_KEY        = os.getenv("TRADIER_API_KEY", "")
 
+OPTIONS_DATA_SOURCE = os.getenv("OPTIONS_DATA_SOURCE", "auto").lower().strip()
+
+_OPTIONS_SOURCES = {"auto", "unusual_whales", "tradier", "yahoo"}
+
 # Volume/OI ratio above this = unusual activity worth flagging
 VOL_OI_THRESHOLD = 3.0
 # Options volume vs 20-day avg above this = volume spike
 VOL_SPIKE_THRESHOLD = 2.5
+
+_FLOW_COLUMNS = [
+    "ticker", "source", "type", "side", "strike", "expiry", "premium",
+    "volume", "open_interest", "vol_oi_ratio", "is_sweep", "sentiment",
+    "timestamp", "last", "bid", "ask",
+]
+
+
+def _resolve_options_source(source: str | None) -> str:
+    """Return a validated options source string."""
+    s = (source or OPTIONS_DATA_SOURCE).lower().strip()
+    if s not in _OPTIONS_SOURCES:
+        raise ProviderCapabilityError(
+            f"Unknown options source '{source}'; supported: {', '.join(sorted(_OPTIONS_SOURCES))}"
+        )
+    return s
+
+
+def _empty_flow(ticker: str, source: str) -> pd.DataFrame:
+    """Return an empty flow DataFrame that still carries the requested source."""
+    df = pd.DataFrame(columns=_FLOW_COLUMNS)
+    df["ticker"] = pd.Series(dtype="object")
+    df["source"] = pd.Series(dtype="object")
+    if not df.empty:
+        df["ticker"] = ticker
+        df["source"] = source
+    return df
 
 
 # ── Unusual Whales ────────────────────────────────────────────────────────────
@@ -67,7 +101,7 @@ def _fetch_unusual_whales_flow(ticker: str, limit: int = 20) -> list[dict]:
 
 def _parse_whales_flow(records: list[dict], ticker: str) -> pd.DataFrame:
     if not records:
-        return pd.DataFrame()
+        return _empty_flow(ticker, "unusual_whales")
     rows = []
     for r in records:
         rows.append({
@@ -86,6 +120,9 @@ def _parse_whales_flow(records: list[dict], ticker: str) -> pd.DataFrame:
             "is_sweep":    r.get("is_sweep", False),
             "sentiment":   r.get("sentiment", ""),
             "timestamp":   r.get("created_at", ""),
+            "last":        None,
+            "bid":         None,
+            "ask":         None,
         })
     return pd.DataFrame(rows)
 
@@ -98,7 +135,7 @@ def _fetch_tradier_chain(ticker: str) -> pd.DataFrame:
     Docs: https://documentation.tradier.com/brokerage-api/markets/get-options-chains
     """
     if not TRADIER_KEY:
-        return pd.DataFrame()
+        return _empty_flow(ticker, "tradier")
     try:
         # Get nearest expiration
         exp_url = "https://api.tradier.com/v1/markets/options/expirations"
@@ -109,10 +146,10 @@ def _fetch_tradier_chain(ticker: str) -> pd.DataFrame:
         exp_resp = requests.get(exp_url, headers=headers,
                                 params={"symbol": ticker, "includeAllRoots": True}, timeout=10)
         if exp_resp.status_code != 200:
-            return pd.DataFrame()
+            return _empty_flow(ticker, "tradier")
         expirations = exp_resp.json().get("expirations", {}).get("date", [])
         if not expirations:
-            return pd.DataFrame()
+            return _empty_flow(ticker, "tradier")
         nearest_exp = expirations[0] if isinstance(expirations, list) else expirations
 
         # Get chain for that expiry
@@ -121,24 +158,29 @@ def _fetch_tradier_chain(ticker: str) -> pd.DataFrame:
                                   params={"symbol": ticker, "expiration": nearest_exp,
                                           "greeks": False}, timeout=10)
         if chain_resp.status_code != 200:
-            return pd.DataFrame()
+            return _empty_flow(ticker, "tradier")
         options = chain_resp.json().get("options", {}).get("option", [])
         if not options:
-            return pd.DataFrame()
+            return _empty_flow(ticker, "tradier")
 
         df = pd.DataFrame(options)
         df["ticker"] = ticker
         df["source"] = "tradier"
         df["vol_oi_ratio"] = (df["volume"] / df["open_interest"].clip(lower=1)).round(2)
+        df["is_sweep"] = False
+        df["sentiment"] = ""
+        df["timestamp"] = ""
+        df["premium"] = None
         return df[["ticker", "source", "option_type", "strike", "expiration_date",
-                   "volume", "open_interest", "vol_oi_ratio", "last", "bid", "ask"]].rename(
+                   "premium", "volume", "open_interest", "vol_oi_ratio", "is_sweep",
+                   "sentiment", "timestamp", "last", "bid", "ask"]].rename(
             columns={"option_type": "type", "expiration_date": "expiry"}
         )
     except Exception:
-        return pd.DataFrame()
+        return _empty_flow(ticker, "tradier")
 
 
-# ── yfinance fallback ─────────────────────────────────────────────────────────
+# ── yfinance ──────────────────────────────────────────────────────────────────
 def _fetch_yf_chain(ticker: str) -> pd.DataFrame:
     """
     yfinance options chain — free but delayed, no sweep/flow data.
@@ -148,7 +190,7 @@ def _fetch_yf_chain(ticker: str) -> pd.DataFrame:
         tk = yf.Ticker(ticker)
         exps = tk.options
         if not exps:
-            return pd.DataFrame()
+            return _empty_flow(ticker, "yahoo")
         chain = tk.option_chain(exps[0])  # nearest expiry
         calls = chain.calls.copy()
         calls["type"] = "CALL"
@@ -156,53 +198,102 @@ def _fetch_yf_chain(ticker: str) -> pd.DataFrame:
         puts["type"]  = "PUT"
         df = pd.concat([calls, puts], ignore_index=True)
         df["ticker"] = ticker
-        df["source"] = "yfinance"
+        df["source"] = "yahoo"
         df["vol_oi_ratio"] = (df["volume"].fillna(0) / df["openInterest"].clip(lower=1)).round(2)
-        return df[["ticker", "source", "type", "strike", "volume",
-                   "openInterest", "vol_oi_ratio", "lastPrice"]].rename(
-            columns={"openInterest": "open_interest", "lastPrice": "last"}
+        df["is_sweep"] = False
+        df["sentiment"] = ""
+        df["timestamp"] = ""
+        df["premium"] = None
+        df["side"] = ""
+        df["bid"] = None
+        df["ask"] = None
+        return df[["ticker", "source", "type", "side", "strike",
+                   "expiration", "premium", "volume", "openInterest",
+                   "vol_oi_ratio", "is_sweep", "sentiment", "timestamp",
+                   "lastPrice", "bid", "ask"]].rename(
+            columns={"openInterest": "open_interest", "expiration": "expiry", "lastPrice": "last"}
         )
     except Exception:
-        return pd.DataFrame()
+        return _empty_flow(ticker, "yahoo")
 
 
 # ── public API ────────────────────────────────────────────────────────────────
-def get_flow(ticker: str) -> pd.DataFrame:
+def get_flow(ticker: str, source: str | None = None) -> pd.DataFrame:
     """
-    Get options flow / chain data using the best available source.
-    Priority: Unusual Whales > Tradier > yfinance
+    Get options flow / chain data for ``ticker`` from an explicit source.
+
+    Args:
+        source: ``auto`` | ``unusual_whales`` | ``tradier`` | ``yahoo``.
+                Defaults to ``OPTIONS_DATA_SOURCE`` or ``auto``.
+
+    ``auto`` follows the documented priority: Unusual Whales (if configured),
+    then Tradier (if configured), then yfinance.
+
+    An explicit paid source does not fall back when credentials are missing or
+    the request fails. Missing credentials raise ProviderCapabilityError so the
+    caller can surface a clear message instead of silently switching sources.
     """
-    if UNUSUAL_WHALES_KEY:
+    src = _resolve_options_source(source)
+
+    if src == "unusual_whales":
+        if not UNUSUAL_WHALES_KEY:
+            raise ProviderCapabilityError(
+                "Unusual Whales source selected but UNUSUAL_WHALES_API_KEY is not configured"
+            )
         records = _fetch_unusual_whales_flow(ticker)
-        df = _parse_whales_flow(records, ticker)
-        if not df.empty:
-            return df
+        return _parse_whales_flow(records, ticker)
 
-    if TRADIER_KEY:
-        df = _fetch_tradier_chain(ticker)
-        if not df.empty:
-            return df
+    if src == "tradier":
+        if not TRADIER_KEY:
+            raise ProviderCapabilityError(
+                "Tradier source selected but TRADIER_API_KEY is not configured"
+            )
+        return _fetch_tradier_chain(ticker)
 
-    return _fetch_yf_chain(ticker)
+    if src == "yahoo":
+        return _fetch_yf_chain(ticker)
+
+    if src == "auto":
+        if UNUSUAL_WHALES_KEY:
+            records = _fetch_unusual_whales_flow(ticker)
+            df = _parse_whales_flow(records, ticker)
+            if not df.empty:
+                return df
+
+        if TRADIER_KEY:
+            df = _fetch_tradier_chain(ticker)
+            if not df.empty:
+                return df
+
+        return _fetch_yf_chain(ticker)
+
+    # Should be unreachable due to _resolve_options_source validation.
+    raise ProviderCapabilityError(f"Unsupported options source '{src}'")
 
 
 def scan_unusual_flow(
     tickers: list[str],
     min_vol_oi: float = VOL_OI_THRESHOLD,
+    source: str | None = None,
 ) -> pd.DataFrame:
     """
     Scan a watchlist for unusual options activity.
     Returns contracts where volume/OI ratio exceeds threshold, ranked by ratio.
+
+    ``source`` is passed to ``get_flow`` for every ticker.
     """
     all_rows = []
     for ticker in tickers:
         try:
-            df = get_flow(ticker)
+            df = get_flow(ticker, source=source)
             if df.empty:
                 continue
             unusual = df[df["vol_oi_ratio"] >= min_vol_oi].copy()
             if not unusual.empty:
                 all_rows.append(unusual)
+        except ProviderCapabilityError as e:
+            # Surface a clear source/capability error without falling back.
+            print(f"[options] {ticker}: {e}")
         except Exception as e:
             print(f"[options] {ticker}: {e}")
 
@@ -213,14 +304,36 @@ def scan_unusual_flow(
     return combined.sort_values("vol_oi_ratio", ascending=False).reset_index(drop=True)
 
 
-def get_put_call_sentiment(ticker: str) -> dict:
+def get_put_call_sentiment(ticker: str, source: str | None = None) -> dict:
     """
     Compute put/call ratio and overall options sentiment for a ticker.
     >1.0 ratio = more puts = bearish, <0.7 = more calls = bullish.
+
+    ``source`` is passed to ``get_flow``. If the source is unavailable or
+    credentials are missing, a structured unavailable result is returned.
     """
-    df = get_flow(ticker)
+    try:
+        df = get_flow(ticker, source=source)
+    except ProviderCapabilityError as e:
+        return {
+            "ticker": ticker,
+            "put_call_ratio": None,
+            "call_volume": 0,
+            "put_volume": 0,
+            "sentiment": "unavailable",
+            "data_source": _resolve_options_source(source),
+            "error": str(e),
+        }
+
     if df.empty:
-        return {"ticker": ticker, "sentiment": "unknown", "put_call_ratio": None}
+        return {
+            "ticker": ticker,
+            "put_call_ratio": None,
+            "call_volume": 0,
+            "put_volume": 0,
+            "sentiment": "unknown",
+            "data_source": _resolve_options_source(source),
+        }
 
     call_vol = df[df["type"].str.upper() == "CALL"]["volume"].sum()
     put_vol  = df[df["type"].str.upper() == "PUT"]["volume"].sum()

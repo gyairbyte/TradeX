@@ -21,9 +21,9 @@ from contextlib import contextmanager
 import sqlite3
 
 import pandas as pd
-import yfinance as yf
 
-from tradex.data.fetcher import normalize_yahoo_columns
+from tradex.data.fetcher import ProviderCapabilityError
+from tradex.data.history import fetch_daily_history
 from tradex.tracker.store import DB_PATH, _conn, _ensure_db_dir
 
 # Days after signal to measure outcome, keyed by timeframe
@@ -39,7 +39,9 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _fetch_close_after(ticker: str, after_date: datetime, days_forward: int) -> float | None:
+def _fetch_close_after(
+    ticker: str, after_date: datetime, days_forward: int, provider: str | None = None
+) -> float | None:
     """
     Fetch the closing price `days_forward` trading sessions after `after_date`.
 
@@ -48,6 +50,9 @@ def _fetch_close_after(ticker: str, after_date: datetime, days_forward: int) -> 
     never treated as an eligibility gate. Outcomes resolve as soon as the Nth
     trading-session close is available in the daily data.
 
+    ``provider`` is passed to the daily-history abstraction. When None, the value
+    of the ``DATA_PROVIDER`` environment variable is used.
+
     Returns None if the required trading session has not occurred yet or its
     close cannot be resolved.
     """
@@ -55,41 +60,35 @@ def _fetch_close_after(ticker: str, after_date: datetime, days_forward: int) -> 
         after_date = after_date.replace(tzinfo=timezone.utc)
     after = after_date.astimezone(timezone.utc).date()
 
-    # The first eligible session is the calendar day after the signal. Yahoo
-    # Finance returns the next trading session on/after `start`.
+    # The first eligible session is the calendar day after the signal.
     start_date = after + timedelta(days=1)
 
     # Bounded buffer for weekends/holidays: 7 extra calendar days beyond the
     # requested holding period. The actual fetch window is limited to data that
-    # has already had a chance to be available.
+    # has already had a chance to be available (inclusive end date).
     buffer_end_date = after + timedelta(days=days_forward + 7)
-    available_end_date = _utc_now().date() + timedelta(days=1)
+    available_end_date = _utc_now().date()
 
     end_date = min(buffer_end_date, available_end_date)
 
     # Nothing to fetch yet.
-    if end_date <= start_date:
+    if end_date < start_date:
         return None
 
-    df = yf.download(
-        ticker,
-        start=start_date.isoformat(),
-        end=end_date.isoformat(),
-        interval="1d",
-        progress=False,
-        auto_adjust=True,
-    )
+    try:
+        df = fetch_daily_history(ticker, start_date, end_date, provider=provider)
+    except ProviderCapabilityError:
+        # Re-raise so the caller can report an unsupported provider clearly.
+        raise
+    except Exception:
+        return None
+
     if df.empty:
         return None
-
-    df = normalize_yahoo_columns(df)
     if "close" not in df.columns:
         return None
 
-    # Oldest-to-newest, one row per session.
-    df = df.sort_index()
-    df = df[~df.index.duplicated(keep="last")]
-
+    # fetch_daily_history returns sorted, de-duplicated, canonical columns.
     # Count trading-session rows first; do not drop NaN closes before the length
     # check, because a missing close in an earlier session is still a session.
     if len(df) < days_forward:
@@ -125,10 +124,12 @@ def _write_outcome(signal_id: int, outcome_close: float, entry_close: float):
         """, (round(outcome_close, 4), round(pct, 2), signal_id))
 
 
-def run_outcome_pass(verbose: bool = True) -> dict:
+def run_outcome_pass(verbose: bool = True, provider: str | None = None) -> dict:
     """
     Check all unresolved signals and mark outcomes for those whose window has closed.
     Returns a summary dict of how many were resolved vs still pending.
+
+    ``provider`` is passed to the daily-history abstraction for the close lookup.
     """
     _ensure_db_dir()
     pending = _get_pending_outcomes()
@@ -144,7 +145,9 @@ def run_outcome_pass(verbose: bool = True) -> dict:
             scan_dt = scan_dt.replace(tzinfo=timezone.utc)
 
         try:
-            outcome_close = _fetch_close_after(signal["ticker"], scan_dt, days_forward)
+            outcome_close = _fetch_close_after(
+                signal["ticker"], scan_dt, days_forward, provider=provider
+            )
             if outcome_close is None:
                 still_pending += 1
                 continue
