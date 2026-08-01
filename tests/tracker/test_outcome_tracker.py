@@ -466,3 +466,26 @@ def test_run_outcome_pass_does_not_write_outcome_provider_on_failure(fresh_signa
     with store._conn() as con:
         row = con.execute("SELECT outcome_provider FROM signal_history WHERE ticker = ?", ("AAPL",)).fetchone()
     assert row["outcome_provider"] is None
+
+
+def test_run_outcome_pass_resolves_duplicate_rows_independently(fresh_signal_db):
+    """Two pending rows with the same ticker/timeframe/scan_time are both updated by id."""
+    scan_time = "2024-01-01T00:00:00+00:00"
+    _insert_signal(provider="yahoo", scan_time=scan_time)
+    _insert_signal(provider="yahoo", scan_time=scan_time)
+
+    df = _make_history_df([101.0, 102.0], start="2024-01-02")
+    with (
+        patch("tradex.tracker.outcome_tracker.fetch_daily_history", return_value=df),
+        patch.object(outcome_tracker, "_utc_now", return_value=datetime(2024, 1, 5, tzinfo=UTC)),
+    ):
+        summary = outcome_tracker.run_outcome_pass(verbose=False, provider="schwab")
+
+    assert summary["resolved"] == 2
+    with store._conn() as con:
+        rows = con.execute("SELECT provider, outcome_provider, outcome_close FROM signal_history WHERE ticker = ?", ("AAPL",)).fetchall()
+    assert len(rows) == 2
+    for row in rows:
+        assert row["provider"] == "yahoo"
+        assert row["outcome_provider"] == "schwab"
+        assert row["outcome_close"] is not None

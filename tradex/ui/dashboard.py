@@ -372,6 +372,7 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
 
     if run_scan:
         progress_bar = st.progress(0.0, text=f"Scanning {len(watchlist)} tickers on {timeframe}…")
+        scan_provider = resolve_provider(provider)
 
         def _update_progress(done: int, total: int) -> None:
             progress_bar.progress(done / total, text=f"Scanning {done}/{total} tickers on {timeframe}…")
@@ -382,7 +383,7 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
             min_score=min_score,
             exclude_earnings_within=earnings_buffer if earnings_buffer > 0 else None,
             progress=_update_progress,
-            provider=provider,
+            provider=scan_provider,
             earnings_source=earnings_source,
         )
         progress_bar.empty()
@@ -393,7 +394,7 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
                 st.success(f"Found {len(results)} opportunities (excluded tickers with earnings within {earnings_buffer}d)")
             else:
                 st.success(f"Found {len(results)} opportunities")
-            store.record_signals(results, timeframe, provider=provider)
+            store.record_signals(results, timeframe, provider=scan_provider)
             st.dataframe(
                 results,
                 use_container_width=True,
@@ -414,7 +415,7 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
             )
             st.session_state["scan_results"] = results
             st.session_state["scan_timeframe"] = timeframe
-            st.session_state["scan_provider"] = provider
+            st.session_state["scan_provider"] = scan_provider
 
     if "scan_results" in st.session_state and not st.session_state["scan_results"].empty:
         st.divider()

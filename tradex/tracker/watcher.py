@@ -90,7 +90,7 @@ def run_once(
     print(f"[{now}] Scanning {len(tickers)} tickers on {timeframe} (provider={effective_provider})…")
 
     results = screener_run(
-        tickers, timeframe=timeframe, min_score=min_score, provider=provider
+        tickers, timeframe=timeframe, min_score=min_score, provider=effective_provider
     )
 
     if results.empty:
@@ -124,7 +124,7 @@ def start_loop(
     )
     # Daily after market close: resolve outcomes
     schedule.every().day.at("20:30").do(
-        run_outcome_pass, verbose=True, provider=provider
+        run_outcome_pass, verbose=True, provider=effective_provider
     )
     # Daily pre-market: gap scan at 8am ET (12:00 UTC)
     schedule.every().day.at("12:00").do(

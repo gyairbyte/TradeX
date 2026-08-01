@@ -80,38 +80,57 @@ def init():
             con.execute("ALTER TABLE signal_history ADD COLUMN provider TEXT NOT NULL DEFAULT 'unknown'")
         if "outcome_provider" not in sh_cols:
             con.execute("ALTER TABLE signal_history ADD COLUMN outcome_provider TEXT")
+            # Pre-existing resolved outcomes did not record provenance; show them as unknown.
+            con.execute("""
+                UPDATE signal_history
+                SET outcome_provider = 'unknown'
+                WHERE outcome_provider IS NULL AND outcome_close IS NOT NULL
+            """)
 
         sr_cols = {c[1] for c in con.execute("PRAGMA table_info(scan_runs)")}
         if "provider" not in sr_cols:
             con.execute("ALTER TABLE scan_runs ADD COLUMN provider TEXT NOT NULL DEFAULT 'unknown'")
 
 
+_MISSING_PROVIDERS = {"", "unknown", "nan", "<na>", "none"}
+
+
+def _is_missing_provider(value) -> bool:
+    """Treat null/empty/unknown/na-like strings as missing provenance."""
+    if pd.isna(value):
+        return True
+    return str(value).strip().lower() in _MISSING_PROVIDERS
+
+
 def _resolve_signal_provider(results: pd.DataFrame, provider: str | None = None) -> str:
-    """Return the single OHLCV provider to persist for a scan run.
+    """Return the single canonical OHLCV provider to persist for a scan run.
 
     Precedence:
-      1. ``results`` DataFrame ``provider`` column (if uniform).
-      2. Explicit ``provider`` argument (resolved/normalized).
+      1. Explicit ``provider`` argument (resolved/normalized).
+      2. ``results`` DataFrame ``provider`` column (if it contains exactly one
+         valid, resolvable provider; blank/unknown/NaN values are ignored).
       3. ``unknown`` for legacy frames with no provenance.
 
-    Raises ``ValueError`` if the DataFrame contains multiple providers or
-    disagrees with the explicit provider.
+    Raises ``ValueError`` if the DataFrame contains multiple valid providers or
+    a value that cannot be resolved to a canonical provider.
     """
     from tradex.data.fetcher import resolve_provider
 
-    df_providers = set()
+    explicit = resolve_provider(provider) if provider is not None else None
+
+    df_providers: set[str] = set()
     if "provider" in results.columns:
-        df_providers = {
-            str(p).strip().lower()
-            for p in results["provider"].dropna().unique()
-            if str(p).strip().lower() not in ("", "unknown")
-        }
+        for raw in results["provider"]:
+            if _is_missing_provider(raw):
+                continue
+            try:
+                resolved = resolve_provider(str(raw))
+            except ValueError as e:
+                raise ValueError(f"DataFrame contains invalid provider {raw!r}: {e}") from e
+            df_providers.add(resolved)
+
     if len(df_providers) > 1:
         raise ValueError(f"Mixed providers in results: {sorted(df_providers)}")
-
-    explicit = None
-    if provider is not None:
-        explicit = resolve_provider(provider)
 
     df_provider = next(iter(df_providers)) if df_providers else None
 
@@ -131,11 +150,6 @@ def record_signals(results: pd.DataFrame, timeframe: str, provider: str | None =
     now = datetime.now(timezone.utc).isoformat()
     with _conn() as con:
         for _, row in results.iterrows():
-            row_provider = (
-                str(row.get("provider", scan_provider)).strip().lower()
-                if "provider" in results.columns
-                else scan_provider
-            )
             con.execute("""
                 INSERT INTO signal_history
                   (ticker, timeframe, scan_time, score, last_close,
@@ -146,7 +160,7 @@ def record_signals(results: pd.DataFrame, timeframe: str, provider: str | None =
                 int(row["score"]), float(row["last_close"]),
                 float(row["volume_ratio"]), float(row["rsi"]),
                 row.get("reasons", ""),
-                row_provider,
+                scan_provider,
             ))
         con.execute("""
             INSERT INTO scan_runs (run_time, timeframe, tickers_n, hits_n, provider)
@@ -190,6 +204,34 @@ def get_recent_appearances(timeframe: str, days: int = 7) -> pd.DataFrame:
     return pd.DataFrame([dict(r) for r in rows])
 
 
+def _normalize_outcome_provider(outcome_provider: str | None) -> str:
+    """Return a canonical provider name or 'unknown' for a resolved outcome.
+
+    Raises ``ValueError`` if the supplied value is not a valid OHLCV provider.
+    """
+    if outcome_provider is None or str(outcome_provider).strip().lower() == "unknown":
+        return "unknown"
+    from tradex.data.fetcher import resolve_provider
+    return resolve_provider(outcome_provider)
+
+
+def mark_outcome_by_id(signal_id: int, outcome_close: float, outcome_provider: str | None = None):
+    """Record an outcome for the exact signal_history row by id."""
+    with _conn() as con:
+        row = con.execute("""
+            SELECT last_close FROM signal_history WHERE id = ?
+        """, (signal_id,)).fetchone()
+        if not row:
+            return
+        pct = ((outcome_close - row["last_close"]) / row["last_close"]) * 100
+        norm_provider = _normalize_outcome_provider(outcome_provider)
+        con.execute("""
+            UPDATE signal_history
+            SET outcome_close = ?, outcome_pct = ?, outcome_at = datetime('now'), outcome_provider = ?
+            WHERE id = ?
+        """, (round(outcome_close, 4), round(pct, 2), norm_provider, signal_id))
+
+
 def mark_outcome(
     ticker: str,
     timeframe: str,
@@ -200,7 +242,7 @@ def mark_outcome(
     """
     Record what the price did after a signal fired.
     outcome_pct is computed automatically from last_close at signal time.
-    outcome_provider is recorded only when a valid close is resolved.
+    outcome_provider is normalized to a canonical provider or 'unknown'.
     """
     with _conn() as con:
         row = con.execute("""
@@ -210,18 +252,7 @@ def mark_outcome(
         """, (ticker, timeframe, scan_time)).fetchone()
         if not row:
             return
-        pct = ((outcome_close - row["last_close"]) / row["last_close"]) * 100
-        fields = ["outcome_close = ?", "outcome_pct = ?", "outcome_at = datetime('now')"]
-        params = [round(outcome_close, 4), round(pct, 2)]
-        if outcome_provider is not None:
-            fields.append("outcome_provider = ?")
-            params.append(outcome_provider)
-        params.append(row["id"])
-        con.execute(f"""
-            UPDATE signal_history
-            SET {', '.join(fields)}
-            WHERE id = ?
-        """, params)
+    mark_outcome_by_id(row["id"], outcome_close, outcome_provider=outcome_provider)
 
 
 def get_signal_journal(timeframe: str | None = None, min_score: int = 0) -> pd.DataFrame:
@@ -240,8 +271,8 @@ def get_signal_journal(timeframe: str | None = None, min_score: int = 0) -> pd.D
                 outcome_pct,
                 outcome_at,
                 reasons,
-                provider              AS signal_provider,
-                outcome_provider
+                COALESCE(provider, 'unknown')         AS signal_provider,
+                COALESCE(outcome_provider, 'unknown') AS outcome_provider
             FROM signal_history
             WHERE outcome_close IS NOT NULL
               {tf_filter}

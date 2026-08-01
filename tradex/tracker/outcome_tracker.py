@@ -24,7 +24,7 @@ import pandas as pd
 
 from tradex.data.fetcher import ProviderCapabilityError, resolve_provider
 from tradex.data.history import fetch_daily_history
-from tradex.tracker.store import DB_PATH, _conn, _ensure_db_dir, mark_outcome
+from tradex.tracker.store import DB_PATH, _conn, _ensure_db_dir, mark_outcome_by_id
 
 # Days after signal to measure outcome, keyed by timeframe
 OUTCOME_WINDOWS = {
@@ -110,13 +110,7 @@ def _get_pending_outcomes() -> list[dict]:
 
 def _write_outcome(signal: dict, outcome_close: float, outcome_provider: str):
     """Persist a resolved outcome and its provider without overwriting signal provider."""
-    mark_outcome(
-        signal["ticker"],
-        signal["timeframe"],
-        signal["scan_time"],
-        outcome_close,
-        outcome_provider=outcome_provider,
-    )
+    mark_outcome_by_id(signal["id"], outcome_close, outcome_provider=outcome_provider)
 
 
 def run_outcome_pass(verbose: bool = True, provider: str | None = None) -> dict:
@@ -143,7 +137,7 @@ def run_outcome_pass(verbose: bool = True, provider: str | None = None) -> dict:
 
         try:
             outcome_close = _fetch_close_after(
-                signal["ticker"], scan_dt, days_forward, provider=provider
+                signal["ticker"], scan_dt, days_forward, provider=outcome_provider
             )
             if outcome_close is None:
                 still_pending += 1
