@@ -78,7 +78,21 @@ uv run ruff check .
 # uv run mypy tradex
 ```
 
-All PRs must pass `ruff` and `pytest` before being opened. Add `mypy` to the CI workflow only after it is added as a dependency, configured, and an agreed baseline is established.
+All PRs must pass `ruff check tests` and `pytest tests -q` before being opened. Add `mypy` to the CI workflow only after it is added as a dependency, configured, and an agreed baseline is established.
+
+### CI checks
+
+The GitHub Actions workflow (`.github/workflows/ci.yml`) runs on every pull request and push to `main`:
+
+```bash
+uv sync --extra dev
+uv run ruff check tests
+uv run pytest tests -q
+```
+
+- The seven known bugs continue to be reported as `xfail`.
+- An unexpected `XPASS` from a `strict=True` xfail fails the build.
+- The workflow does not require external credentials or live market-data services.
 
 ## Documentation expectations
 
