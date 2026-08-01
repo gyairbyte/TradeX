@@ -161,13 +161,13 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Category:** Testing
 - **Priority:** High
 - **Status:** In progress
-- **Problem statement:** There were no automated tests before this audit. This audit introduces an initial characterization suite (`1` passing test and `7` strict `xfail`s tied to COR/DATA/COIL items), but CI, provider-contract tests, and broader coverage are still missing.
+- **Problem statement:** The initial local and CI test foundation is now established (`1` passing test, `7` strict `xfail`s tied to COR/DATA/COIL items, GitHub Actions running `ruff check tests` and `pytest tests -q`). Provider-contract tests and broader unit/integration coverage remain to be added.
 - **Recommended action:** Add provider-contract tests for each data provider, expand unit/integration tests, and document how to run the suite. Ensure every existing `xfail` test references a specific tracker/correctness item and uses `strict=True`.
 - **Reason:** Tests are a prerequisite for safely fixing correctness and redesigning trading logic.
 - **Dependencies:** None
 - **Files likely affected:** `tests/conftest.py`, `tests/**/*.py`
 - **Testing requirements:** Local `pytest` passes; all `xfail` tests are tracked against COR/DATA/COIL IDs and use `strict=True`.
-- **Acceptance criteria:** `pytest` passes locally; a provider-contract test exists; DB tests use temp files; no `xfail` test can XPASS for an unrelated reason.
+- **Acceptance criteria:** `pytest` passes locally and in CI; a provider-contract test exists; DB tests use temp files; no `xfail` test can XPASS for an unrelated reason.
 - **Intended pull request:** `devin/add-ci`
 - **Affects trading behavior:** No
 
@@ -177,14 +177,14 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Add CI workflow
 - **Category:** Testing
 - **Priority:** High
-- **Status:** Proposed
+- **Status:** Completed
 - **Problem statement:** No automated CI means tests and lint are not enforced on PRs.
-- **Recommended action:** Add `.github/workflows/ci.yml` that installs dependencies with `uv sync --extra dev`, runs `ruff check .` (Python files only), and runs `pytest`. Add `mypy` only after it is added as a dependency, configured, and an agreed baseline is established.
+- **Recommended action:** Add `.github/workflows/ci.yml` that installs dependencies with `uv sync --extra dev`, runs `ruff check tests`, and runs `pytest tests -q`. Add `mypy` only after it is added as a dependency, configured, and an agreed baseline is established.
 - **Reason:** Prevents regressions and ensures a consistent review process.
 - **Dependencies:** TEST-001
 - **Files likely affected:** `.github/workflows/ci.yml`
 - **Testing requirements:** N/A
-- **Acceptance criteria:** CI runs on PRs and fails on test or lint failure.
+- **Acceptance criteria:** CI runs on PRs and pushes to `main`, fails on test or lint failure, and unexpected `XPASS` from `strict=True` xfails fails the build.
 - **Intended pull request:** `devin/add-ci`
 - **Affects trading behavior:** No
 
@@ -461,4 +461,4 @@ This is the master backlog for recommendations from the Devin review. Items are 
 | Medium | 10 | COR-004: Fix watcher provider propagation |
 | Low | 5 | DOC-001: Fix documentation drift |
 
-**Recommended next pull request:** `devin/fix-confluence-empty-result` (COR-001) or `devin/add-ci` (TEST-001 / TEST-002), depending on whether the user wants a quick correctness fix or CI first.
+**Recommended next pull request:** `devin/fix-confluence-empty-result` (COR-001).
