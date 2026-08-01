@@ -30,3 +30,172 @@ def test_coil_counts_distinct_sessions_not_scan_rows(fresh_signal_db):
 
     coils = analyzer.detect_coils("intraday", days=7, min_appearances=2)
     assert coils.empty, "three scans in one session should not satisfy min_appearances=2"
+
+
+def _signal_row_with_provider(ticker: str = "COIL", score: int = 60, provider: str = "yahoo") -> pd.DataFrame:
+    return pd.DataFrame([{
+        "ticker": ticker,
+        "score": score,
+        "last_close": 100.0,
+        "volume_ratio": 2.0,
+        "rsi": 60.0,
+        "reasons": "volume surge",
+        "provider": provider,
+    }])
+
+
+def test_init_creates_provenance_columns(fresh_signal_db):
+    """The store must include provider and outcome_provider columns."""
+    with store._conn() as con:
+        sh_cols = {c[1] for c in con.execute("PRAGMA table_info(signal_history)")}
+        sr_cols = {c[1] for c in con.execute("PRAGMA table_info(scan_runs)")}
+    assert "provider" in sh_cols
+    assert "outcome_provider" in sh_cols
+    assert "provider" in sr_cols
+
+
+def test_record_signals_persists_provider(fresh_signal_db):
+    """The signal provider and scan-run provider are both persisted."""
+    results = _signal_row_with_provider("AAPL", provider="schwab")
+    store.record_signals(results, "intraday")
+
+    with store._conn() as con:
+        row = con.execute("SELECT provider FROM signal_history LIMIT 1").fetchone()
+        run = con.execute("SELECT provider FROM scan_runs LIMIT 1").fetchone()
+    assert row["provider"] == "schwab"
+    assert run["provider"] == "schwab"
+
+
+def test_record_signals_uses_unknown_for_legacy_frame(fresh_signal_db):
+    """A result frame without a provider column stores 'unknown' rather than guessing."""
+    store.record_signals(_signal_row("AAPL"), "intraday")
+
+    with store._conn() as con:
+        row = con.execute("SELECT provider FROM signal_history LIMIT 1").fetchone()
+    assert row["provider"] == "unknown"
+
+
+def test_record_signals_explicit_provider_overrides_missing_column(fresh_signal_db):
+    """An explicit provider argument is used when the DataFrame has no provider column."""
+    store.record_signals(_signal_row("AAPL"), "intraday", provider="alpaca")
+
+    with store._conn() as con:
+        row = con.execute("SELECT provider FROM signal_history LIMIT 1").fetchone()
+    assert row["provider"] == "alpaca"
+
+
+def test_record_signals_rejects_mixed_providers(fresh_signal_db):
+    """A scan run cannot mix providers in the same result frame."""
+    results = pd.concat([
+        _signal_row_with_provider("AAPL", provider="yahoo"),
+        _signal_row_with_provider("MSFT", provider="schwab"),
+    ], ignore_index=True)
+
+    with pytest.raises(ValueError, match="Mixed providers"):
+        store.record_signals(results, "intraday")
+
+
+def test_record_signals_explicit_provider_must_agree_with_frame(fresh_signal_db):
+    """An explicit provider that disagrees with the result frame is rejected."""
+    results = _signal_row_with_provider("AAPL", provider="schwab")
+
+    with pytest.raises(ValueError, match="mismatch"):
+        store.record_signals(results, "intraday", provider="yahoo")
+
+
+def test_mark_outcome_persists_outcome_provider(fresh_signal_db):
+    """The outcome provider is stored separately from the signal provider."""
+    store.record_signals(_signal_row_with_provider("AAPL", provider="yahoo"), "intraday")
+    store.mark_outcome("AAPL", "intraday", _scan_time_from_ticker("AAPL"), 110.0, outcome_provider="schwab")
+
+    journal = store.get_signal_journal()
+    assert journal.iloc[0]["signal_provider"] == "yahoo"
+    assert journal.iloc[0]["outcome_provider"] == "schwab"
+
+
+def _scan_time_from_ticker(ticker: str) -> str:
+    with store._conn() as con:
+        row = con.execute("SELECT scan_time FROM signal_history WHERE ticker = ?", (ticker,)).fetchone()
+    return row["scan_time"]
+
+
+def test_get_signal_journal_exposes_signal_and_outcome_provider(fresh_signal_db):
+    """The journal DataFrame exposes clear signal and outcome provider columns."""
+    store.record_signals(_signal_row_with_provider("AAPL", provider="yahoo"), "intraday")
+    store.mark_outcome("AAPL", "intraday", _scan_time_from_ticker("AAPL"), 110.0, outcome_provider="schwab")
+
+    journal = store.get_signal_journal()
+    assert "signal_provider" in journal.columns
+    assert "outcome_provider" in journal.columns
+    assert journal["signal_provider"].iloc[0] == "yahoo"
+    assert journal["outcome_provider"].iloc[0] == "schwab"
+
+
+def test_init_migrates_old_database(tmp_path, monkeypatch):
+    """An existing database without provenance columns is migrated safely."""
+    db_path = str(tmp_path / "legacy.db")
+    monkeypatch.setattr(store, "DB_PATH", db_path)
+
+    # Create a pre-PROVIDER-004 schema manually
+    import sqlite3
+    con = sqlite3.connect(db_path)
+    con.execute("""
+        CREATE TABLE signal_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL,
+            timeframe TEXT NOT NULL,
+            scan_time TEXT NOT NULL,
+            score INTEGER NOT NULL,
+            last_close REAL,
+            volume_ratio REAL,
+            rsi REAL,
+            reasons TEXT,
+            outcome_close REAL,
+            outcome_pct REAL,
+            outcome_at TEXT
+        )
+    """)
+    con.execute("""
+        CREATE TABLE scan_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_time TEXT NOT NULL,
+            timeframe TEXT NOT NULL,
+            tickers_n INTEGER,
+            hits_n INTEGER
+        )
+    """)
+    con.execute("INSERT INTO signal_history (ticker, timeframe, scan_time, score) VALUES (?, ?, ?, ?)",
+                ("AAPL", "intraday", "2024-01-01T00:00:00+00:00", 60))
+    con.commit()
+    con.close()
+
+    store.init()
+
+    with store._conn() as con:
+        sh_cols = {c[1] for c in con.execute("PRAGMA table_info(signal_history)")}
+        sr_cols = {c[1] for c in con.execute("PRAGMA table_info(scan_runs)")}
+        provider = con.execute("SELECT provider FROM signal_history WHERE ticker = ?", ("AAPL",)).fetchone()["provider"]
+
+    assert "provider" in sh_cols
+    assert "outcome_provider" in sh_cols
+    assert "provider" in sr_cols
+    assert provider == "unknown"
+
+
+def test_init_is_idempotent(fresh_signal_db):
+    """Calling init repeatedly on the same database must not fail."""
+    store.init()
+    store.init()
+
+    with store._conn() as con:
+        sh_cols = {c[1] for c in con.execute("PRAGMA table_info(signal_history)")}
+    assert "provider" in sh_cols
+
+
+def test_get_recent_scan_runs_includes_provider(fresh_signal_db):
+    """scan_runs rows expose the provider used for the scan."""
+    store.record_signals(_signal_row_with_provider("AAPL", provider="schwab"), "intraday")
+
+    runs = store.get_recent_scan_runs()
+    assert "provider" in runs.columns
+    assert runs.iloc[0]["provider"] == "schwab"

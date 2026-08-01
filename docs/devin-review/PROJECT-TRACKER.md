@@ -252,16 +252,18 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Add provider provenance
 - **Category:** Data provider
 - **Priority:** Medium
-- **Status:** Proposed
-- **Problem statement:** Signal history, outcomes, and scans do not record which provider produced the OHLCV data used.
-- **Recommended action:** Extend `fetch()` returns (or scan records) to include `provider` and persist it in `signal_history` / `scan_runs`. Display provenance in the signal journal and dashboard.
-- **Reason:** Provider data quality differs (delayed, real-time, adjusted); provenance is required for backtesting and for identifying data-source bugs.
-- **Dependencies:** PROVIDER-002
-- **Files likely affected:** `tradex/data/fetcher.py`, `tradex/tracker/store.py`, `tradex/screener/engine.py`, `tradex/ui/dashboard.py`
-- **Testing requirements:** DB tests verifying provider column is written and read back.
-- **Acceptance criteria:** Every recorded signal stores the provider used for its OHLCV data.
+- **Status:** Completed
+- **Resolved by:** `devin/add-provider-provenance`
+- **Problem statement:** Signal history, outcomes, and scans did not record which OHLCV provider produced the prices used for signals and outcomes.
+- **Recommended action:** Add a canonical `resolve_provider()` helper in `tradex/data/fetcher.py`. Thread the resolved provider through `screener/engine.py` results and persist `provider` on `signal_history` and `scan_runs`. Add `outcome_provider` to `signal_history` and write it only when an outcome resolves successfully. Migrate existing databases safely, labeling pre-existing rows as `unknown`. Expose `signal_provider` and `outcome_provider` in the signal journal and dashboard.
+- **Reason:** Provider data quality differs (delayed, real-time, adjusted); provenance is required for backtesting and for identifying data-source bugs. Outcomes may legitimately be fetched with a different provider than the original signal.
+- **Dependencies:** PROVIDER-002, PROVIDER-003
+- **Files affected:** `tradex/data/fetcher.py`, `tradex/data/history.py`, `tradex/screener/engine.py`, `tradex/tracker/store.py`, `tradex/tracker/outcome_tracker.py`, `tradex/tracker/watcher.py`, `tradex/ui/dashboard.py`
+- **Testing:** Credential-free mocked/DB tests for `resolve_provider`, screener result provenance, SQLite schema migration, signal and scan-run persistence, outcome-provider persistence, watcher provenance, and journal column exposure.
+- **Acceptance criteria:** Every recorded signal stores the provider used for its OHLCV data. Successful outcomes store `outcome_provider` separately and leave `signal_history.provider` unchanged. Pre-migration rows are `unknown`. No trading logic changed.
 - **Intended pull request:** `devin/add-provider-provenance`
 - **Affects trading behavior:** No
+- **Next recommended PR:** `devin/provider-failure-policy` (PROVIDER-005)
 
 ### PROVIDER-005: Define provider failure and fallback policy
 

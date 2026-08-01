@@ -71,11 +71,23 @@ The explicit `provider` argument is now propagated through the supported OHLCV w
 
 - `run()` and `run_confluence_screen()` now accept an optional `earnings_source` argument and pass it to `days_until_earnings()` so earnings filtering remains explicitly Yahoo-sourced independently of `DATA_PROVIDER`.
 
+### Provider provenance (PROVIDER-004)
+
+- `tradex/data/fetcher.py` exposes `resolve_provider()` as the single canonical OHLCV provider resolver.
+- `signal_history` now has `provider` (signal OHLCV source) and `outcome_provider` (outcome OHLCV source).
+- `scan_runs` now has `provider`.
+- Existing databases are migrated safely; pre-PROVIDER-004 rows are labeled `unknown` and are not backfilled as Yahoo.
+- `record_signals()` rejects mixed-provider result frames and explicit/DataFrame provider mismatches.
+- `mark_outcome()` writes `outcome_provider` only when a valid close is resolved.
+- `run_outcome_pass()` resolves the outcome provider once and passes it to `fetch_daily_history()`.
+- `get_signal_journal()` exposes `signal_provider` and `outcome_provider`.
+- The dashboard Scanner shows the **OHLCV Provider** column, drill-down charts use the saved scan provider, and the Signal Journal displays **Signal Provider** and **Outcome Provider** with a mismatch warning.
+
 ## Remaining intentionally deferred work
 
 | ID | Work | Status |
 |---|---|---|
-| PROVIDER-004 | Persist provider/source provenance in `signal_history`, `scan_runs`, and outcomes | Proposed |
+| PROVIDER-004 | Persist provider/source provenance in `signal_history`, `scan_runs`, and outcomes | Completed |
 | PROVIDER-005 | Define broad provider failure/fallback policy (retries, explicit fallback chains, UI error surfacing) | Proposed |
 | COR-005 | Add market-hours / exchange-calendar handling for pre-market and watcher scheduling | Proposed |
 

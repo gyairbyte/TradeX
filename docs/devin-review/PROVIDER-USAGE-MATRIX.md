@@ -29,10 +29,10 @@ This matrix inventories which TradeX features touch market-data sources, which a
 | Pre-market scanner | `tradex/premarket/gap_scanner.py` | Previous close via `fetch_daily_history`; pre-market quote via `get_premarket_price` | No | Yes (previous close only) | Previous close yes; pre-market quote no | `DATA_PROVIDER` / explicit `provider`; unsupported pre-market quote raises `ProviderCapabilityError` |
 | Options flow | `tradex/options/flow.py` | Unusual Whales / Tradier / Yahoo options chains | No | No | No | `OPTIONS_DATA_SOURCE` env var or `source` argument |
 | Earnings | `tradex/earnings/calendar.py` | Yahoo earnings dates | No | No | No | `EARNINGS_DATA_SOURCE` env var or `source` argument |
-| Signal journal | `tradex/ui/dashboard.py` (read-only DB view) | SQLite signal history | N/A | N/A | N/A | None; presentation only |
-| Dashboard charts | `tradex/ui/dashboard.py` | `fetch(selected, tf, provider=provider)` | Yes | No | Yes | Sidebar OHLCV provider selector |
+| Signal journal | `tradex/ui/dashboard.py` (read-only DB view) | SQLite signal history | N/A | N/A | N/A | Displays `signal_provider` and `outcome_provider`; filters/ metrics respect selected timeframe |
+| Dashboard charts | `tradex/ui/dashboard.py` | `fetch(selected, tf, provider=provider)` | Yes | No | Yes | Sidebar OHLCV provider selector; drill-down uses saved scan provider |
 | Watchlist refresh | `tradex/watchlists/refresh.py` | Wikipedia for constituents; Schwab for liquidity filter (optional); `fetch_market_caps` for S&P 100 ranking | No | No | Liquidity filter and market-cap source if configured | `MARKET_CAP_DATA_SOURCE` env var or `market_cap_source` argument |
-| Scheduled watcher | `tradex/tracker/watcher.py` | Calls `screener_run()`, `run_confluence_screen()`, `run_outcome_pass()`, `run_gap_alerts()` with provider | Yes for scanner/confluence; `fetch_daily_history` for outcomes/pre-market | Yes | Yes for OHLCV; pre-market still Yahoo-only | `--provider` CLI flag, `DATA_PROVIDER` |
+| Scheduled watcher | `tradex/tracker/watcher.py` | Calls `screener_run()`, `run_confluence_screen()`, `run_outcome_pass()`, `run_gap_alerts()` with provider | Yes for scanner/confluence; `fetch_daily_history` for outcomes/pre-market | Yes | Yes for OHLCV; pre-market still Yahoo-only | `--provider` CLI flag, `DATA_PROVIDER`; persisted to `signal_history.provider` and `scan_runs.provider` |
 
 ## Key takeaways
 
@@ -44,3 +44,4 @@ This matrix inventories which TradeX features touch market-data sources, which a
 3. No feature silently falls back to Yahoo when an unsupported provider is selected. Unsupported combinations raise `ProviderCapabilityError`.
 4. Fingerprint cache includes a `source` column so Yahoo-built and Schwab-built fingerprints do not mix.
 5. Index constituents remain explicitly sourced from Wikipedia and are not routed through any market-data provider.
+6. Signal and outcome provenance is stored in `signal_history` (`provider`, `outcome_provider`) and `scan_runs` (`provider`). Pre-PROVIDER-004 rows are labeled `unknown` and are not backfilled as Yahoo.

@@ -20,12 +20,12 @@ import pandas as pd
 import yfinance as yf
 
 from tradex.data.fetcher import (
-    DEFAULT_PROVIDER,
     ProviderCapabilityError,
     _OHLCV_COLUMNS,
     _get_schwab_client,
     _normalize_schwab_candles,
     normalize_yahoo_columns,
+    resolve_provider,
 )
 
 
@@ -33,9 +33,7 @@ _HISTORY_PROVIDERS = {"yahoo", "schwab"}
 
 
 def _resolve_history_provider(provider: str | None) -> str:
-    p = (provider or DEFAULT_PROVIDER).lower()
-    if p not in {"yahoo", "schwab", "alpaca", "ibkr"}:
-        raise ValueError(f"provider must be one of yahoo, schwab, alpaca, ibkr; got {p}")
+    p = resolve_provider(provider)
     if p not in _HISTORY_PROVIDERS:
         raise ProviderCapabilityError(
             f"Provider '{p}' does not support date-ranged daily OHLCV history"

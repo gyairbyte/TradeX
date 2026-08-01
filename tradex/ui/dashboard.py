@@ -18,7 +18,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
 from tradex.screener.engine import run
-from tradex.data.fetcher import DEFAULT_PROVIDER, ProviderCapabilityError, fetch
+from tradex.data.fetcher import DEFAULT_PROVIDER, ProviderCapabilityError, fetch, resolve_provider
 from tradex.signals.indicators import add_indicators
 from tradex.tracker import store, analyzer
 from tradex.tracker.confluence import run_confluence_screen
@@ -393,7 +393,7 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
                 st.success(f"Found {len(results)} opportunities (excluded tickers with earnings within {earnings_buffer}d)")
             else:
                 st.success(f"Found {len(results)} opportunities")
-            store.record_signals(results, timeframe)
+            store.record_signals(results, timeframe, provider=provider)
             st.dataframe(
                 results,
                 use_container_width=True,
@@ -409,21 +409,24 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
                         help="Calendar days until the next scheduled earnings report. Blank = none scheduled or unknown (e.g. ETFs).",
                     ),
                     "reasons":             st.column_config.TextColumn("Reasons", width="large"),
+                    "provider":            st.column_config.TextColumn("OHLCV Provider", help="Market-data provider used to score this ticker."),
                 },
             )
             st.session_state["scan_results"] = results
             st.session_state["scan_timeframe"] = timeframe
+            st.session_state["scan_provider"] = provider
 
     if "scan_results" in st.session_state and not st.session_state["scan_results"].empty:
         st.divider()
         st.subheader("Drill-down Chart")
-        st.caption("Candlestick chart with EMA20 (orange), EMA50 (blue), and Bollinger Bands (gray shaded). Volume bars below.")
+        st.caption("Candlestick chart with EMA20 (orange), EMA50 (blue), and Bollinger Bands (gray shaded). Volume bars below. Uses the provider from the saved scan.")
         tickers_with_signals = st.session_state["scan_results"]["ticker"].tolist()
         selected = st.selectbox("Select ticker", tickers_with_signals, key="sel_scanner",
                                 help="Pick any stock from the scan results to view its chart.")
         tf = st.session_state["scan_timeframe"]
+        scan_provider = st.session_state.get("scan_provider", provider)
 
-        df = fetch(selected, tf, provider=provider)
+        df = fetch(selected, tf, provider=scan_provider)
         df = add_indicators(df)
 
         fig = go.Figure()
@@ -1189,6 +1192,7 @@ you should raise your min score to 80. Use the data to tune your thresholds — 
 Outcomes are refreshed automatically at 4:30pm ET when the watcher is running.
         """)
 
+    outcome_provider = resolve_provider(provider)
     col_refresh, col_info = st.columns([1, 4])
     with col_refresh:
         if st.button("Refresh Outcomes Now", key="btn_outcomes",
@@ -1201,7 +1205,7 @@ Outcomes are refreshed automatically at 4:30pm ET when the watcher is running.
                 f"{summary['errors']} errors."
             )
     with col_info:
-        st.caption("Also refreshes automatically at 4:30pm ET when the watcher is running.")
+        st.caption(f"Outcome provider: **{outcome_provider}**  ·  Refreshes automatically at 4:30pm ET when the watcher is running.")
 
     journal = store.get_signal_journal(timeframe=timeframe if timeframe else None)
 
@@ -1213,6 +1217,18 @@ Outcomes are refreshed automatically at 4:30pm ET when the watcher is running.
         avg_win  = wins["outcome_pct"].mean()   if not wins.empty   else 0
         avg_loss = losses["outcome_pct"].mean() if not losses.empty else 0
         expectancy = (len(wins) / len(journal)) * avg_win + (len(losses) / len(journal)) * avg_loss
+
+        known = journal[
+            (journal["signal_provider"].notna()) &
+            (journal["outcome_provider"].notna()) &
+            (journal["signal_provider"] != "unknown") &
+            (journal["outcome_provider"] != "unknown")
+        ]
+        mismatched = known[known["signal_provider"] != known["outcome_provider"]]
+        if not mismatched.empty:
+            st.caption(
+                f"{len(mismatched)} signals were resolved with a different OHLCV provider than they were scanned with."
+            )
 
         m1, m2, m3, m4, m5 = st.columns(5)
         m1.metric("Total Signals", len(journal))
@@ -1226,7 +1242,14 @@ Outcomes are refreshed automatically at 4:30pm ET when the watcher is running.
                   delta_color="normal" if expectancy >= 0 else "inverse",
                   help="(Win rate × Avg win) + (Loss rate × Avg loss). Positive = mathematical edge.")
 
-        st.dataframe(journal, use_container_width=True)
+        st.dataframe(
+            journal,
+            use_container_width=True,
+            column_config={
+                "signal_provider":  st.column_config.TextColumn("Signal Provider"),
+                "outcome_provider": st.column_config.TextColumn("Outcome Provider"),
+            },
+        )
 
         outcome_fig = px.histogram(journal, x="outcome_pct", nbins=30,
                                    title="Distribution of Outcome Returns",

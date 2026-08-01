@@ -125,7 +125,7 @@ print(results)
 
 ## Data Providers
 
-`DATA_PROVIDER` in your `.env` controls **OHLCV data** only (the central `fetch()` and the date-ranged daily-history abstraction). It does not change options, earnings, or market-cap sources.
+`DATA_PROVIDER` in your `.env` controls **OHLCV data** only (the central `fetch()` and the date-ranged daily-history abstraction). It does not change options, earnings, or market-cap sources. Every recorded signal stores the OHLCV provider that produced it in `signal_history.provider`, and every resolved outcome stores `outcome_provider`. Pre-existing rows are labeled `unknown`.
 
 | Provider | `DATA_PROVIDER` value | Cost | Real-time | Setup |
 |---|---|---|---|---|
@@ -155,8 +155,8 @@ The tracker module is what separates TradeX from standard screeners. Rather than
 1. Run the **Scanner** tab (or `watcher.py` on a schedule) — each result is saved to `~/.tradex/signals.db`
 2. As history accumulates, the **Coil Detector** surfaces stocks scoring well for multiple days *without breaking out yet*
 3. The **Confluence** tab shows stocks scoring well across all three timeframes simultaneously
-4. The **Outcome Tracker** fetches prices 1d/3d/5d after each signal and writes `outcome_pct` back to the DB
-5. The **Signal Journal** rolls those outcomes up into win rate / expectancy by score bucket
+4. The **Outcome Tracker** fetches prices 1d/3d/5d after each signal and writes `outcome_pct` and `outcome_provider` back to the DB
+5. The **Signal Journal** rolls those outcomes up into win rate / expectancy by score bucket and shows both the signal and outcome provider
 
 ### Coil detection logic
 A "coil" is a stock that:
@@ -209,7 +209,7 @@ Save and switch between named ticker lists (e.g. "Semis", "Crypto-adjacent", "Ea
 - [x] Scoring weight customization — per-signal sliders in the Weights tab, persisted to ~/.tradex/weights.json
 
 ### Still on the list
-- [ ] Add provider/source provenance persistence to signal history and outcomes (PROVIDER-004)
+- [x] Add provider/source provenance persistence to signal history and outcomes (PROVIDER-004)
 - [ ] Define provider failure and fallback policy (PROVIDER-005)
 - [ ] Backtesting module to validate signal quality historically
 - [ ] Portfolio-level risk view

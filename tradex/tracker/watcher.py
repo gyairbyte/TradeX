@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 
 import schedule
 
+from tradex.data.fetcher import resolve_provider
 from tradex.screener.engine import run as screener_run
 from tradex.tracker import store, analyzer
 from tradex.tracker.outcome_tracker import run_outcome_pass
@@ -85,8 +86,8 @@ def run_once(
     """Run a single scan pass, persist results, and fire any threshold alerts."""
     store.init()
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    provider_label = provider if provider else "env default"
-    print(f"[{now}] Scanning {len(tickers)} tickers on {timeframe} (provider={provider_label})…")
+    effective_provider = resolve_provider(provider)
+    print(f"[{now}] Scanning {len(tickers)} tickers on {timeframe} (provider={effective_provider})…")
 
     results = screener_run(
         tickers, timeframe=timeframe, min_score=min_score, provider=provider
@@ -96,8 +97,8 @@ def run_once(
         print(f"[{now}] No signals above {min_score}.")
     else:
         print(f"[{now}] {len(results)} signals found:")
-        print(results[["ticker", "score", "volume_ratio", "rsi"]].to_string(index=False))
-        store.record_signals(results, timeframe)
+        print(results[["ticker", "score", "volume_ratio", "rsi", "provider"]].to_string(index=False))
+        store.record_signals(results, timeframe, provider=effective_provider)
 
     _check_alerts(tickers, timeframe, provider=provider)
 
@@ -113,7 +114,7 @@ def start_loop(
     Block and run scans every interval_minutes.
     Designed to run during market hours (9:30am–4pm ET).
     """
-    effective_provider = provider if provider else "env default"
+    effective_provider = resolve_provider(provider)
     print(f"Starting watcher: {timeframe} every {interval_minutes}m (provider={effective_provider}) — Ctrl+C to stop")
     run_once(tickers, timeframe, min_score, provider)
 

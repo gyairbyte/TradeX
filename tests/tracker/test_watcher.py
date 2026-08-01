@@ -1,9 +1,10 @@
 """Tests for provider propagation through the scheduled watcher."""
 from unittest.mock import MagicMock, patch
 
+import pandas as pd
 import pytest
 
-from tradex.tracker import watcher
+from tradex.tracker import store, watcher
 
 
 def test_run_once_passes_provider_to_screener(fresh_signal_db):
@@ -89,3 +90,48 @@ def test_start_loop_schedules_run_once_with_provider():
         min_score=30,
         provider="ibkr",
     )
+
+
+def _screener_results(provider: str = "schwab") -> pd.DataFrame:
+    return pd.DataFrame([{
+        "ticker": "AAPL",
+        "score": 80,
+        "last_close": 100.0,
+        "volume_ratio": 2.0,
+        "rsi": 60.0,
+        "reasons": "test",
+        "provider": provider,
+    }])
+
+
+def test_run_once_persists_screener_provider(fresh_signal_db):
+    """run_once must write the resolved provider to both signals and scan_runs."""
+    results = _screener_results("schwab")
+
+    with (
+        patch.object(watcher, "screener_run", return_value=results),
+        patch.object(watcher, "_check_alerts"),
+    ):
+        watcher.run_once(["AAPL"], timeframe="intraday", provider="schwab")
+
+    with store._conn() as con:
+        signal_provider = con.execute("SELECT provider FROM signal_history").fetchone()["provider"]
+        run_provider = con.execute("SELECT provider FROM scan_runs").fetchone()["provider"]
+    assert signal_provider == "schwab"
+    assert run_provider == "schwab"
+
+
+def test_run_once_persists_env_default_provider(fresh_signal_db, monkeypatch):
+    """When no provider is supplied, the resolved default provider is persisted."""
+    monkeypatch.setattr("tradex.data.fetcher.DEFAULT_PROVIDER", "alpaca")
+    results = _screener_results("alpaca")
+
+    with (
+        patch.object(watcher, "screener_run", return_value=results),
+        patch.object(watcher, "_check_alerts"),
+    ):
+        watcher.run_once(["AAPL"], timeframe="intraday")
+
+    with store._conn() as con:
+        signal_provider = con.execute("SELECT provider FROM signal_history").fetchone()["provider"]
+    assert signal_provider == "alpaca"
