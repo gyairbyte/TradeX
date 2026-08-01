@@ -95,6 +95,18 @@ App registration in the Schwab Developer Portal must use:
 - **API Products:** "Accounts and Trading Production" + "Market Data Production"
 - **Order Limit:** any non-zero value (Schwab requires this even for read-only apps; 100 is fine — TradeX never places orders)
 
+**Token-file safety:** keep `SCHWAB_TOKEN_PATH` outside the repo directory (the default `~/.tradex_schwab_token.json` is fine). The OAuth script refuses to write a token inside the project, and `.gitignore` ignores common token filenames.
+
+### 2b. Validate the Schwab provider (optional, local only)
+
+After generating the token, run the read-only smoke test to confirm Schwab market data works:
+
+```bash
+.venv/bin/python scripts/schwab_smoke_test.py
+```
+
+It fetches `SPY` (or `SCHWAB_SMOKE_SYMBOL` from `.env`) for the intraday, short, and long timeframes and verifies the canonical OHLCV contract. It never accesses account, position, balance, or order endpoints.
+
 ---
 
 ## 3. Point the launcher at this machine's repo (one-time)
@@ -186,6 +198,7 @@ Run during market hours. The outcome-tracker pass fires daily at 4:30pm ET autom
 4. **Port 8501 must be free** for the dashboard. The launchers reuse an existing server if 8501 is already listening, so double-clicking twice is safe — but if a *different* process holds 8501, change Streamlit's port: `streamlit run ... --server.port=8502`.
 5. **yfinance rate-limits** — large watchlists (100+ tickers) on the default Yahoo provider may hit transient failures. The screener prints `[skip] <ticker>: <reason>` and continues; this is expected.
 6. **TD Ameritrade is dead** — its API shut down September 2024. Use `DATA_PROVIDER=schwab` (their replacement) instead. Do not reference the old `tda-api` library.
+7. **Schwab token path** — keep `SCHWAB_TOKEN_PATH` outside the repo; `scripts/schwab_oauth.py` enforces this and sets restrictive file permissions. Validate with `scripts/schwab_smoke_test.py` after OAuth.
 7. **Earnings filter caches for 24h** in `~/.tradex/earnings_cache.db`. If a user just announced earnings and the date isn't showing, delete that file to force a refresh.
 8. **Line endings are pinned by `.gitattributes`** — don't override `core.autocrlf` for this repo or the launcher scripts will break. The repo enforces CRLF for `.bat`/`.ps1` and LF for `tradex-launcher` automatically.
 9. **Streamlit prints `use_container_width` deprecation warnings** at startup. Harmless — they refer to an API the dashboard uses; will be cleaned up in a future commit.
