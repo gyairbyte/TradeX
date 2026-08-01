@@ -96,6 +96,29 @@ with st.sidebar:
         ),
     )
 
+    _PROVIDER_OPTIONS = ["yahoo", "schwab", "alpaca", "ibkr"]
+    _default_provider = os.getenv("DATA_PROVIDER", "yahoo").lower()
+    if _default_provider not in _PROVIDER_OPTIONS:
+        _default_provider = "yahoo"
+    provider = st.selectbox(
+        "Data provider",
+        _PROVIDER_OPTIONS,
+        index=_PROVIDER_OPTIONS.index(_default_provider),
+        help=(
+            "Market data provider used by the scanner, confluence, pattern matching, "
+            "and chart drill-downs. The selection is passed to the central OHLCV fetcher.\n\n"
+            "• Yahoo requires no local setup.\n"
+            "• Schwab requires a Schwab developer app (API key + secret) and a local "
+            "OAuth token file; selecting Schwab here does not verify it is configured.\n"
+            "• Alpaca and IBKR require their respective credentials or a local gateway.\n"
+            "• There is no automatic fallback: if the selected provider is not configured, "
+            "the fetch will surface a safe error rather than silently switching providers.\n\n"
+            "Features that still use Yahoo or other specialized sources directly (earnings, "
+            "options, preset refresh, market-cap ranking, outcome tracker) are not affected by this selector."
+        ),
+    )
+    st.caption(f"Using provider: **{provider}**")
+
     # ── Watchlist selector ───────────────────────────────────────────────────
     saved_lists = wl_store.list_all()
     # Build a {name -> ticker_count} lookup for the dropdown formatter
@@ -326,6 +349,7 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
             min_score=min_score,
             exclude_earnings_within=earnings_buffer if earnings_buffer > 0 else None,
             progress=_update_progress,
+            provider=provider,
         )
         progress_bar.empty()
         if results.empty:
@@ -365,7 +389,7 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
                                 help="Pick any stock from the scan results to view its chart.")
         tf = st.session_state["scan_timeframe"]
 
-        df = fetch(selected, tf)
+        df = fetch(selected, tf, provider=provider)
         df = add_indicators(df)
 
         fig = go.Figure()
@@ -554,6 +578,7 @@ A stock scoring 80+ on intraday alone is interesting. The same stock also scorin
                 watchlist,
                 min_confluence=min_confluence,
                 exclude_earnings_within=earnings_buffer if earnings_buffer > 0 else None,
+                provider=provider,
             )
         if conf_results.empty:
             st.warning("No confluence setups found. Lower the min confluence score.")
@@ -712,6 +737,7 @@ using Pearson correlation across 5 series. Each series is weighted:
                 match_results = run_match_screen(
                     watchlist, event_type=match_etype,
                     profile=match_profile, min_similarity=match_threshold,
+                    provider=provider,
                 )
             if match_results.empty:
                 st.warning(f"No tickers matched above {match_threshold}% similarity.")
@@ -749,6 +775,7 @@ using Pearson correlation across 5 series. Each series is weighted:
             selected_match,
             event_type=st.session_state["match_etype_saved"],
             profile=st.session_state["match_profile_saved"],
+            provider=provider,
         )
         if "error" not in detail:
             s = detail["series_scores"]

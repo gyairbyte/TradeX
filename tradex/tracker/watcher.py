@@ -36,7 +36,7 @@ DEFAULT_WATCHLIST = [
 ]
 
 
-def _check_alerts(tickers: list[str], timeframe: str) -> None:
+def _check_alerts(tickers: list[str], timeframe: str, provider: str | None = None) -> None:
     """Check coils, confluence, and pattern matches — fire alerts where thresholds are crossed."""
     # Coil alerts
     coils = analyzer.detect_coils(timeframe, days=7)
@@ -50,7 +50,7 @@ def _check_alerts(tickers: list[str], timeframe: str) -> None:
         )
 
     # Confluence alerts
-    conf = run_confluence_screen(tickers)
+    conf = run_confluence_screen(tickers, provider=provider)
     for _, row in conf.iterrows():
         alert_confluence(
             ticker=row["ticker"],
@@ -62,7 +62,9 @@ def _check_alerts(tickers: list[str], timeframe: str) -> None:
     # Pattern match alerts (only if fingerprints exist)
     for event_type in ("runup", "decline"):
         for profile in ("standard",):
-            matches = run_match_screen(tickers, event_type=event_type, profile=profile)
+            matches = run_match_screen(
+                tickers, event_type=event_type, profile=profile, provider=provider
+            )
             for _, row in matches.iterrows():
                 alert_pattern_match(
                     ticker=row["ticker"],
@@ -83,9 +85,12 @@ def run_once(
     """Run a single scan pass, persist results, and fire any threshold alerts."""
     store.init()
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    print(f"[{now}] Scanning {len(tickers)} tickers on {timeframe}…")
+    provider_label = provider if provider else "env default"
+    print(f"[{now}] Scanning {len(tickers)} tickers on {timeframe} (provider={provider_label})…")
 
-    results = screener_run(tickers, timeframe=timeframe, min_score=min_score)
+    results = screener_run(
+        tickers, timeframe=timeframe, min_score=min_score, provider=provider
+    )
 
     if results.empty:
         print(f"[{now}] No signals above {min_score}.")
@@ -94,7 +99,7 @@ def run_once(
         print(results[["ticker", "score", "volume_ratio", "rsi"]].to_string(index=False))
         store.record_signals(results, timeframe)
 
-    _check_alerts(tickers, timeframe)
+    _check_alerts(tickers, timeframe, provider=provider)
 
 
 def start_loop(
@@ -108,7 +113,8 @@ def start_loop(
     Block and run scans every interval_minutes.
     Designed to run during market hours (9:30am–4pm ET).
     """
-    print(f"Starting watcher: {timeframe} every {interval_minutes}m — Ctrl+C to stop")
+    effective_provider = provider if provider else "env default"
+    print(f"Starting watcher: {timeframe} every {interval_minutes}m (provider={effective_provider}) — Ctrl+C to stop")
     run_once(tickers, timeframe, min_score, provider)
 
     schedule.every(interval_minutes).minutes.do(
@@ -136,7 +142,12 @@ if __name__ == "__main__":
     parser.add_argument("--interval",  type=int, default=0,
                         help="Poll interval in minutes. 0 = run once and exit.")
     parser.add_argument("--min-score", type=int, default=35)
-    parser.add_argument("--provider",  default=None)
+    parser.add_argument(
+        "--provider",
+        default=None,
+        choices=["yahoo", "schwab", "alpaca", "ibkr"],
+        help="Market data provider to use for supported OHLCV workflows. Defaults to DATA_PROVIDER env var or yahoo.",
+    )
     args = parser.parse_args()
 
     if args.interval > 0:
