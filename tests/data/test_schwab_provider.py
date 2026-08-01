@@ -296,6 +296,28 @@ def test_schwab_unsupported_timeframe(tmp_token, monkeypatch):
         fetcher._fetch_schwab("SPY", "unsupported")
 
 
+def test_schwab_auth_failure_does_not_leak_secrets(tmp_token, monkeypatch, capsys):
+    """An authentication error containing secret text is not printed or raised."""
+    monkeypatch.setenv("SCHWAB_APP_KEY", "test-app-key")
+    monkeypatch.setenv("SCHWAB_APP_SECRET", "test-app-secret")
+    monkeypatch.setenv("SCHWAB_TOKEN_PATH", str(tmp_token))
+
+    sentinel = "SENTINEL_REFRESH_SECRET_TOKEN_67890"
+
+    def fake_client(*args, **kwargs):
+        raise RuntimeError(f"invalid refresh token: {sentinel}")
+
+    with patch(
+        "schwab.auth.client_from_token_file", side_effect=fake_client
+    ), pytest.raises(RuntimeError) as exc_info:
+        fetcher.fetch("SPY", "short", provider="schwab")
+
+    assert sentinel not in str(exc_info.value)
+    captured = capsys.readouterr()
+    assert sentinel not in captured.out
+    assert sentinel not in captured.err
+
+
 def test_schwab_client_cached(tmp_token, monkeypatch):
     """The authenticated client is created once and reused across calls."""
     t1 = datetime(2024, 1, 2, 14, 30, tzinfo=UTC)

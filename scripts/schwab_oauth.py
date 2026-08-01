@@ -12,8 +12,9 @@ Steps:
    the address bar and paste it at the prompt.
 5. Token is written to SCHWAB_TOKEN_PATH (default ~/.tradex_schwab_token.json).
 
-Token is good for ~7 days; refresh happens automatically for ~90 days; after
-that, re-run this script.
+Tokens are short-lived: Schwab refresh credentials typically last about
+7 days, with automatic access-token refresh during that window. Once the
+refresh window expires you must re-run this script to authorize again.
 
 Safety notes:
 - Never commit .env or the token file.
@@ -117,8 +118,12 @@ def main() -> int:
             callback_url="https://127.0.0.1",
             token_path=token_path,
         )
-    except Exception as e:  # noqa: BLE001
-        print(f"error: OAuth flow failed: {e}", file=sys.stderr)
+    except Exception:  # noqa: BLE001
+        print(
+            "error: OAuth authorization failed. Check your app key/secret, "
+            "callback URL, and network connection, then try again.",
+            file=sys.stderr,
+        )
         return 1
 
     _set_secure_permissions(token_path)

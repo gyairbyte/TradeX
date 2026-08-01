@@ -294,11 +294,17 @@ def _fetch_schwab(ticker: str, timeframe: str) -> pd.DataFrame:
     global _SCHWAB_CLIENT
     with _SCHWAB_LOCK:
         if _SCHWAB_CLIENT is None:
-            _SCHWAB_CLIENT = client_from_token_file(
-                token_path=token_path,
-                api_key=app_key,
-                app_secret=app_secret,
-            )
+            try:
+                _SCHWAB_CLIENT = client_from_token_file(
+                    token_path=token_path,
+                    api_key=app_key,
+                    app_secret=app_secret,
+                )
+            except Exception as e:  # noqa: BLE001
+                raise RuntimeError(
+                    "Schwab authentication failed. Verify the token file, "
+                    "app key, and app secret, then re-run the OAuth script."
+                ) from e
 
     client = _SCHWAB_CLIENT
 
@@ -318,16 +324,18 @@ def _fetch_schwab(ticker: str, timeframe: str) -> pd.DataFrame:
 
     try:
         resp.raise_for_status()
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
+        status = getattr(resp, "status_code", "unknown")
         raise RuntimeError(
-            f"Schwab price-history request failed for {ticker} ({timeframe}): {e}"
+            f"Schwab price-history request failed for {ticker} ({timeframe}) "
+            f"(HTTP {status}). The response may contain an error from Schwab."
         ) from e
 
     try:
         data = resp.json()
     except json.JSONDecodeError as e:
         raise ValueError(
-            f"Schwab returned non-JSON price-history response for {ticker}: {e}"
+            f"Schwab returned non-JSON price-history response for {ticker}"
         ) from e
 
     candles = data.get("candles", []) if isinstance(data, dict) else []
