@@ -1,0 +1,464 @@
+# TradeX Project Tracker
+
+This is the master backlog for recommendations from the Devin review. Items are grouped by priority (High, Medium, Low) and then by category. Update this tracker as work is accepted, started, blocked, completed, or rejected.
+
+---
+
+## Legend
+
+| Field | Meaning |
+|---|---|
+| **ID** | Unique short identifier. |
+| **Category** | One of: Architecture, Correctness, Data integrity, Intraday trading, Short-term trading, Long-term trading, Backtesting, Testing, Scheduling, Alerts, User interface, Documentation, Cleanup, Security. |
+| **Priority** | High / Medium / Low based on risk to correctness or trading decisions. |
+| **Status** | Proposed / Accepted / In progress / Blocked / Completed / Rejected / Deferred. |
+| **Affects trading behavior** | Yes if the change changes how signals, scores, or coils are produced; No for tests, docs, or internal refactoring. |
+
+---
+
+## High priority
+
+### DATA-001: Redesign signal history to record all scan observations
+
+- **ID:** DATA-001
+- **Title:** Redesign signal history to record all scan observations
+- **Category:** Data integrity
+- **Priority:** High
+- **Status:** Proposed
+- **Problem statement:** The store only records signals that pass `min_score`. A stock whose score deteriorates disappears from history, so the coil detector cannot see fading setups, and the signal journal is incomplete.
+- **Recommended action:** Add a `scan_observations` table (or widen `signal_history`) to record one row per ticker per scan session, including failures to pass `min_score`. Add a `session_id`/`trading_date` concept.
+- **Reason:** Correct downstream analysis (coils, journal, outcome) depends on an accurate, complete history.
+- **Dependencies:** None
+- **Files likely affected:** `tradex/tracker/store.py`, `tradex/screener/engine.py`, `tradex/tracker/watcher.py`, `tradex/tracker/analyzer.py`
+- **Testing requirements:** Unit and DB tests; verify all scanned tickers are recorded; verify schema migration/versioning.
+- **Acceptance criteria:** `store.record_scan` accepts `(session, tickers_scanned, results)` and writes both audit and observations. Coil detector can identify fading setups.
+- **Intended pull request:** `devin/redesign-signal-history`
+- **Affects trading behavior:** Yes (coil detection and journal data improve)
+
+### COIL-001: Count distinct trading sessions, not scan executions
+
+- **ID:** COIL-001
+- **Title:** Count distinct trading sessions, not scan executions
+- **Category:** Data integrity
+- **Priority:** High
+- **Status:** Proposed
+- **Problem statement:** The coil detector uses `COUNT(*)` on `signal_history` rows. If the watcher runs multiple times per day, the same trading day contributes multiple appearances.
+- **Recommended action:** Group coil appearances by `session_id` or `trading_date` once signal history records sessions.
+- **Reason:** A coil is a multi-day market phenomenon, not a function of scan frequency.
+- **Dependencies:** DATA-001
+- **Files likely affected:** `tradex/tracker/analyzer.py`, `tradex/tracker/store.py`
+- **Testing requirements:** DB test with three scans in one day; verify `appearances` = 1.
+- **Acceptance criteria:** Coil `appearances` reflects distinct trading sessions, not scan rows.
+- **Intended pull request:** `devin/redesign-signal-history` or follow-up
+- **Affects trading behavior:** Yes
+
+### COIL-002: Remove scan-frequency bias from coil strength
+
+- **ID:** COIL-002
+- **Title:** Remove scan-frequency bias from coil strength
+- **Category:** Correctness
+- **Priority:** High
+- **Status:** Proposed
+- **Problem statement:** `coil_strength` includes `appearances * 5`, so running the watcher more often mechanically increases strength.
+- **Recommended action:** Replace the linear appearances term with a capped fraction of recent sessions, or remove it and rely on score/trend.
+- **Reason:** Coil strength must be independent of how often the user runs the watcher.
+- **Dependencies:** DATA-001, COIL-001
+- **Files likely affected:** `tradex/tracker/analyzer.py`
+- **Testing requirements:** Unit test with two different scan frequencies producing the same market history.
+- **Acceptance criteria:** Coil strength is invariant to scan frequency for the same set of sessions.
+- **Intended pull request:** `devin/fix-coil-frequency-bias`
+- **Affects trading behavior:** Yes
+
+### COR-001: Fix empty confluence result crash
+
+- **ID:** COR-001
+- **Title:** Fix empty confluence result crash
+- **Category:** Correctness
+- **Priority:** High
+- **Status:** Proposed
+- **Problem statement:** `run_confluence_screen` raises `KeyError: 'confluence_score'` when no tickers meet the threshold because it sorts a column-less DataFrame.
+- **Recommended action:** Build the result DataFrame with explicit columns when `rows` is empty.
+- **Reason:** A zero-result scan is normal and must not crash the dashboard.
+- **Dependencies:** None
+- **Files likely affected:** `tradex/tracker/confluence.py`
+- **Testing requirements:** Unit test with `run_confluence_screen([], min_confluence=50)` and `run_confluence_screen(['AAPL'], min_confluence=99)`.
+- **Acceptance criteria:** Empty confluence input returns an empty DataFrame with the expected columns.
+- **Intended pull request:** `devin/fix-confluence-empty-result`
+- **Affects trading behavior:** No
+
+### COR-002: Fix outcome tracker MultiIndex column crash
+
+- **ID:** COR-002
+- **Title:** Fix outcome tracker MultiIndex column crash
+- **Category:** Correctness
+- **Priority:** High
+- **Status:** Proposed
+- **Problem statement:** `outcome_tracker._fetch_close_after` does `float(df["Close"].iloc[...])` without normalizing MultiIndex columns, causing `TypeError`.
+- **Recommended action:** Apply the same normalization used in `data/fetcher.py` and use `df["close"].iloc[...]`.
+- **Reason:** yfinance can return MultiIndex columns; outcome fetching must be robust.
+- **Dependencies:** None
+- **Files likely affected:** `tradex/tracker/outcome_tracker.py`
+- **Testing requirements:** Unit test with a mocked yfinance response that has MultiIndex columns.
+- **Acceptance criteria:** `_fetch_close_after` returns the correct close for both single-level and MultiIndex responses.
+- **Intended pull request:** `devin/fix-outcome-multiindex`
+- **Affects trading behavior:** No
+
+### COR-003: Fix outcome tracker waiting too long to resolve
+
+- **ID:** COR-003
+- **Title:** Fix outcome tracker waiting too long to resolve
+- **Category:** Correctness
+- **Priority:** High
+- **Status:** Proposed
+- **Problem statement:** `_fetch_close_after` computes `end = after_date + days_forward + 7` and returns `None` until `end` has passed, delaying resolution by ~7 extra days.
+- **Recommended action:** Resolve as soon as at least `days_forward` trading days after the signal are available in historical data.
+- **Reason:** The signal journal is only useful if outcomes are recorded close to the intended holding period.
+- **Dependencies:** None
+- **Files likely affected:** `tradex/tracker/outcome_tracker.py`
+- **Testing requirements:** Unit test with mocked dates and price data showing resolution at the earliest valid date.
+- **Acceptance criteria:** An intraday signal resolves after 1 trading day, a short signal after 3, a long signal after the intended number of trading days/weeks.
+- **Intended pull request:** `devin/fix-outcome-timing`
+- **Affects trading behavior:** No
+
+### COR-006: Fix confluence "all timeframes aligned" mislabel
+
+- **ID:** COR-006
+- **Title:** Fix confluence "all timeframes aligned" mislabel
+- **Category:** Correctness
+- **Priority:** High
+- **Status:** Proposed
+- **Problem statement:** Confluence renormalizes weights over available timeframes and can report `"all timeframes aligned"` when only one timeframe is present.
+- **Recommended action:** Require all three timeframes for a confluence score, or add a missing-timeframe penalty. Never report "all timeframes aligned" unless all three timeframes contributed.
+- **Reason:** The label implies multi-timeframe agreement, which is not true when data is missing.
+- **Dependencies:** None
+- **Files likely affected:** `tradex/tracker/confluence.py`
+- **Testing requirements:** Unit test with only intraday data available; verify tier does not claim alignment.
+- **Acceptance criteria:** Confluence score and tier accurately reflect which timeframes contributed.
+- **Intended pull request:** `devin/fix-confluence-missing-timeframe`
+- **Affects trading behavior:** Yes (confluence output changes)
+
+### ALERT-001: Add alert deduplication and cooldown
+
+- **ID:** ALERT-001
+- **Title:** Add alert deduplication and cooldown
+- **Category:** Alerts
+- **Priority:** High
+- **Status:** Proposed
+- **Problem statement:** The watcher fires alerts on every scan cycle for every ticker above threshold, with no persistence or cooldown.
+- **Recommended action:** Introduce an alert state store keyed by `(ticker, alert_type, timeframe)` and enforce a configurable cooldown (e.g., 1 hour for coils).
+- **Reason:** Prevents alert spam and respects user attention.
+- **Dependencies:** None
+- **Files likely affected:** `tradex/alerts/notifier.py`, `tradex/tracker/watcher.py`, new `tradex/alerts/policy.py`
+- **Testing requirements:** Unit tests mocking `send_alert`; verify it is only called once per cooldown window.
+- **Acceptance criteria:** Repeated checks for the same coil produce only one Discord/email message per cooldown window.
+- **Intended pull request:** `devin/add-alert-cooldown`
+- **Affects trading behavior:** No
+
+### TEST-001: Complete test foundation and fixtures
+
+- **ID:** TEST-001
+- **Title:** Complete test foundation and fixtures
+- **Category:** Testing
+- **Priority:** High
+- **Status:** In progress
+- **Problem statement:** There were no automated tests before this audit. This audit introduces an initial characterization suite (`1` passing test and `7` strict `xfail`s tied to COR/DATA/COIL items), but CI, provider-contract tests, and broader coverage are still missing.
+- **Recommended action:** Add provider-contract tests for each data provider, expand unit/integration tests, and document how to run the suite. Ensure every existing `xfail` test references a specific tracker/correctness item and uses `strict=True`.
+- **Reason:** Tests are a prerequisite for safely fixing correctness and redesigning trading logic.
+- **Dependencies:** None
+- **Files likely affected:** `tests/conftest.py`, `tests/**/*.py`
+- **Testing requirements:** Local `pytest` passes; all `xfail` tests are tracked against COR/DATA/COIL IDs and use `strict=True`.
+- **Acceptance criteria:** `pytest` passes locally; a provider-contract test exists; DB tests use temp files; no `xfail` test can XPASS for an unrelated reason.
+- **Intended pull request:** `devin/add-ci`
+- **Affects trading behavior:** No
+
+### TEST-002: Add CI workflow
+
+- **ID:** TEST-002
+- **Title:** Add CI workflow
+- **Category:** Testing
+- **Priority:** High
+- **Status:** Proposed
+- **Problem statement:** No automated CI means tests and lint are not enforced on PRs.
+- **Recommended action:** Add `.github/workflows/ci.yml` that installs dependencies with `uv sync --extra dev`, runs `ruff check .` (Python files only), and runs `pytest`. Add `mypy` only after it is added as a dependency, configured, and an agreed baseline is established.
+- **Reason:** Prevents regressions and ensures a consistent review process.
+- **Dependencies:** TEST-001
+- **Files likely affected:** `.github/workflows/ci.yml`
+- **Testing requirements:** N/A
+- **Acceptance criteria:** CI runs on PRs and fails on test or lint failure.
+- **Intended pull request:** `devin/add-ci`
+- **Affects trading behavior:** No
+
+### VAL-001: Build a backtesting harness
+
+- **ID:** VAL-001
+- **Title:** Build a backtesting harness
+- **Category:** Backtesting
+- **Priority:** High
+- **Status:** Proposed
+- **Problem statement:** There is no way to validate whether any signal has a tradable edge.
+- **Recommended action:** Create `tradex/backtest/` with point-in-time data, explicit entry/stop/target/costs, and metrics (win rate, expectancy, Sharpe, drawdown).
+- **Reason:** Needed to validate every trading feature before trusting it.
+- **Dependencies:** TEST-001
+- **Files likely affected:** New `tradex/backtest/` package
+- **Testing requirements:** Unit tests with deterministic synthetic data; test against a known benchmark.
+- **Acceptance criteria:** A backtest can be run for the short-term scorer and produce a report.
+- **Intended pull request:** `devin/add-backtest-engine`
+- **Affects trading behavior:** No
+
+---
+
+## Medium priority
+
+### COR-004: Fix watcher provider argument propagation
+
+- **ID:** COR-004
+- **Title:** Fix watcher provider argument propagation
+- **Category:** Correctness
+- **Priority:** Medium
+- **Status:** Proposed
+- **Problem statement:** `run_once` accepts a `provider` argument but does not pass it to `screener_run` or `run_confluence_screen`.
+- **Recommended action:** Thread `provider` through all fetch calls in `run_once` and `_check_alerts`.
+- **Reason:** Users who set `--provider alpaca` silently get the default Yahoo provider.
+- **Dependencies:** None
+- **Files likely affected:** `tradex/tracker/watcher.py`
+- **Testing requirements:** Unit test patching `screener_run`; assert `provider` is in kwargs.
+- **Acceptance criteria:** `python -m tradex.tracker.watcher --provider alpaca` causes `fetch` to be called with `provider='alpaca'`.
+- **Intended pull request:** `devin/fix-watcher-provider-propagation`
+- **Affects trading behavior:** No
+
+### COR-005: Add market-hours and timezone handling
+
+- **ID:** COR-005
+- **Title:** Add market-hours and timezone handling
+- **Category:** Scheduling
+- **Priority:** Medium
+- **Status:** Proposed
+- **Problem statement:** The watcher runs at any time and `schedule` job times are interpreted in host-local time.
+- **Recommended action:** Add `tradex/market/hours.py` with US/Eastern market-open checks and schedule in the market timezone.
+- **Reason:** Avoids wasted scans, stale data, and alerts at wrong times.
+- **Dependencies:** None
+- **Files likely affected:** `tradex/tracker/watcher.py`, new `tradex/market/hours.py`
+- **Testing requirements:** Unit tests at different times and timezones; verify scans skip weekends/holidays.
+- **Acceptance criteria:** Watcher can optionally skip outside market hours; scheduled jobs run at the intended US/Eastern time.
+- **Intended pull request:** `devin/add-market-hours`
+- **Affects trading behavior:** No
+
+### COR-012: Fix scan audit to record tickers scanned vs. found
+
+- **ID:** COR-012
+- **Title:** Fix scan audit to record tickers scanned vs. found
+- **Category:** Data integrity
+- **Priority:** Medium
+- **Status:** Proposed
+- **Problem statement:** `scan_runs` records `tickers_n = len(results)` and `hits_n = len(results)`, so it cannot distinguish how many tickers were scanned.
+- **Recommended action:** Update `record_signals` to accept `tickers_scanned` and write accurate counts.
+- **Reason:** Audit data is needed to detect provider failures and understand coverage.
+- **Dependencies:** DATA-001
+- **Files likely affected:** `tradex/tracker/store.py`, `tradex/tracker/watcher.py`
+- **Testing requirements:** DB test verifying `tickers_n` and `hits_n` differ when some tickers fail/are filtered.
+- **Acceptance criteria:** `scan_runs` row has correct `tickers_scanned` and `hits_found`.
+- **Intended pull request:** `devin/fix-scan-audit`
+- **Affects trading behavior:** No
+
+### COR-013: Distinguish provider failures from zero results
+
+- **ID:** COR-013
+- **Title:** Distinguish provider failures from zero results
+- **Category:** Correctness
+- **Priority:** Medium
+- **Status:** Proposed
+- **Problem statement:** When all fetches fail, the engine returns an empty DataFrame and the dashboard says "No opportunities."
+- **Recommended action:** Return a `summary` or `errors` dict from `engine.run` and display it in the dashboard.
+- **Reason:** Users need to know when data is broken, not just when no signals fired.
+- **Dependencies:** None
+- **Files likely affected:** `tradex/screener/engine.py`, `tradex/ui/dashboard.py`
+- **Testing requirements:** Unit test where all fetches fail; assert summary contains error count.
+- **Acceptance criteria:** Dashboard shows "X fetch errors" separately from "0 signals."
+- **Intended pull request:** `devin/distinguish-fetch-failures`
+- **Affects trading behavior:** No
+
+### SHORT-001: Add market regime and relative strength to short-term scorer
+
+- **ID:** SHORT-001
+- **Title:** Add market regime and relative strength to short-term scorer
+- **Category:** Short-term trading
+- **Priority:** Medium
+- **Status:** Proposed
+- **Problem statement:** The short-term score does not account for whether SPY/QQQ or the sector is trending.
+- **Recommended action:** Add inputs for SPY trend and sector relative strength; either as filters or as score modifiers.
+- **Reason:** Buying pullbacks in a bear market or weak sector is a different proposition than in a strong bull market.
+- **Dependencies:** VAL-001 (backtesting harness)
+- **Files likely affected:** `tradex/signals/short_term.py`, `tradex/data/fetcher.py`, new `tradex/market/context.py`
+- **Testing requirements:** Backtest comparing current score vs. regime-aware score on hold-out data.
+- **Acceptance criteria:** Regime-aware score has higher net expectancy in backtest.
+- **Intended pull request:** `devin/improve-short-term-context`
+- **Affects trading behavior:** Yes
+
+### INTRA-001: Redesign intraday scorer around a specific setup
+
+- **ID:** INTRA-001
+- **Title:** Redesign intraday scorer around a specific setup
+- **Category:** Intraday trading
+- **Priority:** Medium
+- **Status:** Proposed
+- **Problem statement:** The intraday score is a loose bundle of indicators without VWAP, time-of-day, or liquidity context.
+- **Recommended action:** Define a concrete setup (e.g., "VWAP-based open-drive pullback") and rebuild the scorer around it.
+- **Reason:** A generic score is not actionable for intraday trading.
+- **Dependencies:** VAL-001
+- **Files likely affected:** `tradex/signals/intraday.py`, `tradex/signals/indicators.py`, `tradex/data/fetcher.py`
+- **Testing requirements:** Backtest; unit tests for VWAP/time-of-day indicators.
+- **Acceptance criteria:** New score outperforms the current score on a hold-out period with explicit entry/exit rules.
+- **Intended pull request:** `devin/redesign-intraday-score`
+- **Affects trading behavior:** Yes
+
+### PATTERN-001: Validate pattern matcher before dashboard promotion
+
+- **ID:** PATTERN-001
+- **Title:** Validate pattern matcher before dashboard promotion
+- **Category:** Backtesting
+- **Priority:** Medium
+- **Status:** Proposed
+- **Problem statement:** Pattern matcher uses Pearson correlation vs. a fingerprint but has not been validated for predictive value.
+- **Recommended action:** Run an out-of-sample backtest; if it fails to add value, move pattern match to a research/experiment tab.
+- **Reason:** Correlation to a historical average is not a trade signal without empirical support.
+- **Dependencies:** VAL-001
+- **Files likely affected:** `tradex/patterns/matcher.py`, `tradex/ui/dashboard.py`
+- **Testing requirements:** Out-of-sample backtest on a point-in-time universe with delisted-bias controls.
+- **Acceptance criteria:** Pattern-match-based trades have statistically significant positive expectancy, or the feature is quarantined.
+- **Intended pull request:** `devin/validate-pattern-matcher`
+- **Affects trading behavior:** Possibly Yes
+
+### OPT-001: Gate options flow behind real data source
+
+- **ID:** OPT-001
+- **Title:** Gate options flow behind real data source
+- **Category:** Cleanup
+- **Priority:** Medium
+- **Status:** Proposed
+- **Problem statement:** Without Unusual Whales/Tradier credentials, options flow degrades to delayed yfinance chain data that is not "flow."
+- **Recommended action:** Show a warning and disable "unusual activity" scanning unless a real flow provider is configured; or move the feature to `research/`.
+- **Reason:** Prevents users from making decisions on misleading data.
+- **Dependencies:** None
+- **Files likely affected:** `tradex/options/flow.py`, `tradex/ui/dashboard.py`
+- **Testing requirements:** Unit test verifying degraded state is detected.
+- **Acceptance criteria:** Options flow tab clearly states data source limitations and does not present chain volume as flow.
+- **Intended pull request:** `devin/gate-options-flow`
+- **Affects trading behavior:** Yes
+
+### UI-001: Split `dashboard.py` into tab and component modules
+
+- **ID:** UI-001
+- **Title:** Split dashboard.py into tab and component modules
+- **Category:** User interface
+- **Priority:** Medium
+- **Status:** Proposed
+- **Problem statement:** `tradex/ui/dashboard.py` is 1,721 lines and imports every backend module.
+- **Recommended action:** Move each tab into `tradex/ui/tabs/` and reusable widgets into `tradex/ui/components/`; keep `dashboard.py` as a router.
+- **Reason:** Improves reviewability and makes the UI testable.
+- **Dependencies:** TEST-001
+- **Files likely affected:** `tradex/ui/dashboard.py`, new `tradex/ui/tabs/*.py`, new `tradex/ui/components/*.py`
+- **Testing requirements:** Component unit tests; smoke test that the dashboard module loads.
+- **Acceptance criteria:** No single UI file exceeds ~300 lines of logic; dashboard still renders all tabs.
+- **Intended pull request:** `devin/refactor-dashboard-boundaries`
+- **Affects trading behavior:** No
+
+### ARCH-001: Centralize configuration and remove import-time env loading
+
+- **ID:** ARCH-001
+- **Title:** Centralize configuration and remove import-time env loading
+- **Category:** Architecture
+- **Priority:** Medium
+- **Status:** Proposed
+- **Problem statement:** Several modules call `load_dotenv()` and read `os.getenv` at import time, making tests dependent on the environment.
+- **Recommended action:** Add a typed `tradex.config` module and pass settings explicitly.
+- **Reason:** Makes the codebase testable and avoids accidental coupling to a specific `.env` at import time.
+- **Dependencies:** None
+- **Files likely affected:** `tradex/data/fetcher.py`, `tradex/options/flow.py`, `tradex/alerts/notifier.py`, new `tradex/config.py`
+- **Testing requirements:** Unit tests verify behavior changes when config changes.
+- **Acceptance criteria:** No `os.getenv` at module level except in `config.py`.
+- **Intended pull request:** `devin/centralize-config`
+- **Affects trading behavior:** No
+
+---
+
+## Low priority
+
+### DOC-001: Fix documentation drift
+
+- **ID:** DOC-001
+- **Title:** Fix documentation drift
+- **Category:** Documentation
+- **Priority:** Low
+- **Status:** Proposed
+- **Problem statement:** `README.md` and `CLAUDE.md` disagree on tabs/completed features; `SETUP.md` has a wrong Discord env variable name.
+- **Recommended action:** Sync docs; fix env variable; establish one canonical source per topic.
+- **Reason:** New users and future agents should not get conflicting instructions.
+- **Dependencies:** None
+- **Files likely affected:** `README.md`, `CLAUDE.md`, `SETUP.md`
+- **Testing requirements:** Doc review checklist.
+- **Acceptance criteria:** Tab counts and feature statuses are consistent; `SETUP.md` uses `ALERT_DISCORD_TOKEN`.
+- **Intended pull request:** `devin/fix-doc-drift`
+- **Affects trading behavior:** No
+
+### LONG-001: Redesign or deprioritize long-term scorer
+
+- **ID:** LONG-001
+- **Title:** Redesign or deprioritize long-term scorer
+- **Category:** Long-term trading
+- **Priority:** Low
+- **Status:** Proposed
+- **Problem statement:** The long-term score is a weekly-bar version of the short-term score and lacks fundamental or relative-strength context.
+- **Recommended action:** Either define a clear long-term trend-following setup (price > 40-week MA, relative strength, sector) or remove the long-term tab.
+- **Reason:** A "long-term" screen should not simply be a slower momentum score.
+- **Dependencies:** VAL-001
+- **Files likely affected:** `tradex/signals/long_term.py`, `tradex/ui/dashboard.py`
+- **Testing requirements:** Backtest comparing long-term score to a simple 40-week MA rule.
+- **Acceptance criteria:** Long-term score adds value beyond the simple benchmark, or is deprioritized.
+- **Intended pull request:** `devin/improve-long-term-score`
+- **Affects trading behavior:** Yes
+
+### GAP-001: Improve pre-market gap scanner
+
+- **ID:** GAP-001
+- **Title:** Improve pre-market gap scanner
+- **Category:** Intraday trading
+- **Priority:** Low
+- **Status:** Proposed
+- **Problem statement:** The gap scanner uses delayed yfinance pre-market bars and does not filter by liquidity, spread, or catalyst.
+- **Recommended action:** Add liquidity/spread filters; link to earnings/news context; restrict to pre-market hours unless explicitly enabled.
+- **Reason:** Gaps without liquidity or catalyst context are not tradable.
+- **Dependencies:** COR-005
+- **Files likely affected:** `tradex/premarket/gap_scanner.py`, `tradex/ui/dashboard.py`
+- **Testing requirements:** Unit tests with mocked pre-market data.
+- **Acceptance criteria:** Scanner shows liquidity metrics and catalyst context.
+- **Intended pull request:** `devin/improve-gap-scanner`
+- **Affects trading behavior:** Yes
+
+### DEC-001: Adopt Architectural Decision Records
+
+- **ID:** DEC-001
+- **Title:** Adopt Architectural Decision Records
+- **Category:** Documentation
+- **Priority:** Low
+- **Status:** Proposed
+- **Problem statement:** Major decisions (what is a coil, confluence weights, provider contract) are not recorded.
+- **Recommended action:** Create `docs/decisions/` and seed it with ADRs for the most important current decisions.
+- **Reason:** Future developers and agents need to understand why key choices were made.
+- **Dependencies:** None
+- **Files likely affected:** `docs/decisions/*.md`
+- **Testing requirements:** N/A
+- **Acceptance criteria:** ADRs exist for coil definition, confluence requirements, provider contract, and market timezone.
+- **Intended pull request:** `devin/add-initial-adrs`
+- **Affects trading behavior:** No
+
+---
+
+## Summary by priority
+
+| Priority | Count | Representative first item |
+|---|---|---|
+| High | 11 | DATA-001: Redesign signal history |
+| Medium | 10 | COR-004: Fix watcher provider propagation |
+| Low | 5 | DOC-001: Fix documentation drift |
+
+**Recommended next pull request:** `devin/fix-confluence-empty-result` (COR-001) or `devin/add-ci` (TEST-001 / TEST-002), depending on whether the user wants a quick correctness fix or CI first.
