@@ -288,10 +288,12 @@ def test_schwab_unsupported_timeframe(tmp_token, monkeypatch):
     monkeypatch.setenv("SCHWAB_APP_KEY", "test-app-key")
     monkeypatch.setenv("SCHWAB_APP_SECRET", "test-app-secret")
     monkeypatch.setenv("SCHWAB_TOKEN_PATH", str(tmp_token))
-    with patch("schwab.auth.client_from_token_file", return_value=MagicMock()):
-        with pytest.raises(ValueError, match="Unsupported timeframe for schwab"):
-            # bypass the public fetch() timeframe validation
-            fetcher._fetch_schwab("SPY", "unsupported")
+    with (
+        patch("schwab.auth.client_from_token_file", return_value=MagicMock()),
+        pytest.raises(ValueError, match="Unsupported timeframe for schwab"),
+    ):
+        # bypass the public fetch() timeframe validation
+        fetcher._fetch_schwab("SPY", "unsupported")
 
 
 def test_schwab_client_cached(tmp_token, monkeypatch):
