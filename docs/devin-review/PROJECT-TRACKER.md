@@ -75,13 +75,14 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Fix empty confluence result crash
 - **Category:** Correctness
 - **Priority:** High
-- **Status:** Proposed
-- **Problem statement:** `run_confluence_screen` raises `KeyError: 'confluence_score'` when no tickers meet the threshold because it sorts a column-less DataFrame.
+- **Status:** Completed
+- **Resolved by:** `devin/fix-confluence-empty-result`
+- **Problem statement:** `run_confluence_screen` raised `KeyError: 'confluence_score'` when no tickers met the threshold because it sorted a column-less DataFrame.
 - **Recommended action:** Build the result DataFrame with explicit columns when `rows` is empty.
 - **Reason:** A zero-result scan is normal and must not crash the dashboard.
 - **Dependencies:** None
 - **Files likely affected:** `tradex/tracker/confluence.py`
-- **Testing requirements:** Unit test with `run_confluence_screen([], min_confluence=50)` and `run_confluence_screen(['AAPL'], min_confluence=99)`.
+- **Testing requirements:** Unit test with `run_confluence_screen([], min_confluence=50)` and mocked tickers that do not reach the threshold.
 - **Acceptance criteria:** Empty confluence input returns an empty DataFrame with the expected columns.
 - **Intended pull request:** `devin/fix-confluence-empty-result`
 - **Affects trading behavior:** No
@@ -461,4 +462,4 @@ This is the master backlog for recommendations from the Devin review. Items are 
 | Medium | 10 | COR-004: Fix watcher provider propagation |
 | Low | 5 | DOC-001: Fix documentation drift |
 
-**Recommended next pull request:** `devin/fix-confluence-empty-result` (COR-001).
+**Recommended next pull request:** `devin/fix-outcome-multiindex` (COR-002) or `devin/fix-watcher-provider-propagation` (COR-004).

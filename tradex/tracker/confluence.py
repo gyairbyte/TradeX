@@ -129,4 +129,19 @@ def run_confluence_screen(
         except Exception as e:
             print(f"[skip] {ticker}: {e}")
 
-    return pd.DataFrame(rows).sort_values("confluence_score", ascending=False).reset_index(drop=True)
+    columns = [
+        "ticker",
+        "confluence_score",
+        "tier",
+        "active_timeframes",
+        "score_intraday",
+        "score_short",
+        "score_long",
+        "days_until_earnings",
+        "last_close",
+    ]
+    return (
+        pd.DataFrame(rows, columns=columns)
+        .sort_values("confluence_score", ascending=False)
+        .reset_index(drop=True)
+    )
