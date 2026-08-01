@@ -7,7 +7,7 @@ import pytest
 from tradex.tracker import confluence
 
 
-def _make_bars(n: int = 30) -> pd.DataFrame:
+def _make_bars(n: int = 31) -> pd.DataFrame:
     """Return a minimal OHLCV DataFrame that satisfies the 30-bar minimum."""
     return pd.DataFrame({
         "open": [1.0] * n,
@@ -57,6 +57,59 @@ def test_empty_confluence_returns_empty_dataframe():
     assert isinstance(empty, pd.DataFrame)
     assert empty.empty
     assert set(empty.columns) == EXPECTED_COLUMNS
+
+
+def test_confluence_propagates_provider_to_all_timeframes():
+    """score_confluence must pass the provider to fetch for intraday, short, and long."""
+    captured = []
+
+    def fake_fetch(ticker, timeframe, provider=None):
+        captured.append((ticker, timeframe, provider))
+        return _make_bars(31)
+
+    def fake_score(df):
+        return {"score": 60, "reasons": ["momentum"], "last_close": 100.0, "volume_ratio": 2.0, "rsi": 60.0}
+
+    with (
+        patch.object(confluence, "fetch", side_effect=fake_fetch),
+        patch.object(confluence.intraday, "score", side_effect=fake_score),
+        patch.object(confluence.short_term, "score", side_effect=fake_score),
+        patch.object(confluence.long_term, "score", side_effect=fake_score),
+        patch.object(confluence, "days_until_earnings", return_value=None),
+    ):
+        confluence.score_confluence("AAPL", provider="schwab")
+
+    assert len(captured) == 3
+    timeframes = {call[1] for call in captured}
+    assert timeframes == {"intraday", "short", "long"}
+    assert all(call[2] == "schwab" for call in captured)
+
+
+def test_run_confluence_screen_propagates_provider():
+    """run_confluence_screen must pass provider to score_confluence."""
+    captured = []
+
+    def fake_score_confluence(ticker, provider=None):
+        captured.append(provider)
+        return {
+            "ticker": ticker,
+            "confluence_score": 0,
+            "tier": "no data",
+            "active_timeframes": [],
+            "scores": {},
+            "reasons": {},
+            "last_close": 100.0,
+            "errors": {},
+        }
+
+    with (
+        patch.object(confluence, "score_confluence", side_effect=fake_score_confluence),
+        patch.object(confluence, "days_until_earnings", return_value=None),
+    ):
+        result = confluence.run_confluence_screen(["AAPL"], provider="alpaca")
+
+    assert captured == ["alpaca"]
+    assert isinstance(result, pd.DataFrame)
 
 
 @pytest.mark.xfail(strict=True, reason="Confluence mislabels missing timeframes as 'all timeframes aligned' (COR-006)")
