@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 import pandas as pd
 import pytest
 
+from tradex.data import fetcher
 from tradex.data.fetcher import ProviderCapabilityError
 from tradex.watchlists import refresh
 
@@ -106,9 +107,9 @@ def test_yahoo_market_cap_logs_do_not_leak_provider_exception(caplog):
     assert "AAPL" in caplog.text
 
 
-def test_schwab_client_init_log_does_not_leak_exception_text(caplog, monkeypatch, tmp_path):
-    """A failing Schwab client init must not write the raw exception text to logs."""
-    sentinel = "SCHWAB_SECRET_LEAK_67890"
+def test_schwab_market_caps_uses_shared_hardened_client_and_rejects_repo_local_token(monkeypatch, tmp_path):
+    """The explicit Schwab market-cap path uses the shared _get_schwab_client and
+    refuses a repo-local token file without leaking raw exception text."""
     token_file = tmp_path / "token.json"
     token_file.write_text("{}")
 
@@ -116,21 +117,17 @@ def test_schwab_client_init_log_does_not_leak_exception_text(caplog, monkeypatch
     monkeypatch.setenv("SCHWAB_APP_SECRET", "app_secret")
     monkeypatch.setenv("SCHWAB_TOKEN_PATH", str(token_file))
 
-    def _raise(*args, **kwargs):
-        raise RuntimeError(sentinel)
+    with (
+        patch.object(fetcher, "_repo_root", return_value=tmp_path),
+        pytest.raises(ValueError) as exc_info,
+    ):
+        refresh._fetch_schwab_market_caps(["AAPL"])
 
-    with patch("schwab.auth.client_from_token_file", side_effect=_raise):
-        caplog.set_level(logging.WARNING, logger="tradex.watchlists.refresh")
-        client = refresh._schwab_client_or_none()
-
-    assert client is None
-    assert sentinel not in caplog.text
-    assert "schwab client init failed" in caplog.text.lower()
+    assert "token path must not be inside the repository" in str(exc_info.value).lower()
 
 
-def test_schwab_liquidity_filter_debug_logs_do_not_leak_exception_text(caplog, monkeypatch, tmp_path):
-    """A failing Schwab quotes batch must not write traceback text to logs."""
-    sentinel = "SCHWAB_BATCH_SECRET_LEAK_99999"
+def test_schwab_market_caps_uses_shared_client(monkeypatch, tmp_path):
+    """The explicit Schwab market-cap path calls the shared _get_schwab_client."""
     token_file = tmp_path / "token.json"
     token_file.write_text("{}")
 
@@ -143,12 +140,31 @@ def test_schwab_liquidity_filter_debug_logs_do_not_leak_exception_text(caplog, m
         status_code=200,
         raise_for_status=Mock(),
         json=Mock(return_value={
+            "instruments": [{"symbol": "AAPL", "fundamental": {"marketCap": 2_500_000_000_000}}]
+        }),
+    )
+
+    with patch("schwab.auth.client_from_token_file", return_value=fake_client):
+        caps = refresh._fetch_schwab_market_caps(["AAPL"])
+
+    assert caps == {"AAPL": 2_500_000_000_000.0}
+
+
+def test_schwab_liquidity_filter_debug_logs_do_not_leak_exception_text(caplog):
+    """A failing Schwab quotes batch must not write traceback text to logs."""
+    sentinel = "SCHWAB_BATCH_SECRET_LEAK_99999"
+
+    fake_client = Mock()
+    fake_client.get_instruments.return_value = Mock(
+        status_code=200,
+        raise_for_status=Mock(),
+        json=Mock(return_value={
             "instruments": [{"symbol": "AAPL", "fundamental": {"avg3MonthVolume": 1000000}}]
         }),
     )
     fake_client.get_quotes.side_effect = RuntimeError(sentinel)
 
-    with patch("schwab.auth.client_from_token_file", return_value=fake_client):
+    with patch.object(fetcher, "_get_schwab_client", return_value=fake_client):
         caplog.set_level(logging.DEBUG, logger="tradex.watchlists.refresh")
         _survivors, warnings = refresh._schwab_liquidity_filter(["AAPL"])
 

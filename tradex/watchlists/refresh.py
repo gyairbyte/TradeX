@@ -140,14 +140,10 @@ def _fetch_yahoo_market_caps(tickers: list[str], max_workers: int = 12) -> dict[
 
 def _fetch_schwab_market_caps(tickers: list[str]) -> dict[str, float]:
     """Fetch market caps from Schwab FUNDAMENTAL data."""
-    from tradex.data.fetcher import ProviderCapabilityError
+    from tradex.data.fetcher import _get_schwab_client
 
     caps: dict[str, float] = {}
-    client = _schwab_client_or_none()
-    if client is None:
-        raise ProviderCapabilityError(
-            "Schwab market-cap source selected but Schwab is not configured"
-        )
+    client = _get_schwab_client()
 
     batch_size = 100
     for i in range(0, len(tickers), batch_size):
@@ -193,36 +189,18 @@ def fetch_market_caps(
     if s == "yahoo":
         return _fetch_yahoo_market_caps(tickers, max_workers=max_workers)
     if s == "schwab":
-        return _fetch_schwab_market_caps(tickers)
+        try:
+            return _fetch_schwab_market_caps(tickers)
+        except ProviderCapabilityError:
+            raise
+        except Exception:
+            raise ProviderCapabilityError(
+                "Schwab market-cap source unavailable; check SCHWAB_APP_KEY, "
+                "SCHWAB_APP_SECRET, and SCHWAB_TOKEN_PATH."
+            )
     raise ProviderCapabilityError(
         f"Market-cap source '{s}' is not supported; supported: yahoo, schwab"
     )
-
-
-def _schwab_client_or_none():
-    """Return an authenticated Schwab client if available, else None.
-
-    The liquidity filter degrades to "no filter" if Schwab isn't configured —
-    sector presets still build, just with the full unfiltered Russell 1000.
-    """
-    try:
-        from schwab.auth import client_from_token_file
-    except ImportError:
-        return None
-    app_key = os.getenv("SCHWAB_APP_KEY")
-    app_secret = os.getenv("SCHWAB_APP_SECRET")
-    token_path = os.path.expanduser(
-        os.getenv("SCHWAB_TOKEN_PATH", "~/.tradex_schwab_token.json")
-    )
-    if not (app_key and app_secret and os.path.exists(token_path)):
-        return None
-    try:
-        return client_from_token_file(
-            token_path=token_path, api_key=app_key, app_secret=app_secret,
-        )
-    except Exception:
-        log.warning("schwab client init failed for liquidity filter")
-        return None
 
 
 def _schwab_liquidity_filter(
@@ -234,11 +212,16 @@ def _schwab_liquidity_filter(
     """Return (set of tickers passing filter, list of warnings).
 
     Calls Schwab get_instruments (FUNDAMENTAL) for avg3MonthVolume and
-    get_quotes for current price. Both are batched.
+    get_quotes for current price. Both are batched. The shared hardened
+    client is used so a repo-local token path is rejected even when the
+    liquidity filter falls back to returning all tickers.
     """
+    from tradex.data.fetcher import _get_schwab_client
+
     warnings: list[str] = []
-    client = _schwab_client_or_none()
-    if client is None:
+    try:
+        client = _get_schwab_client()
+    except Exception:
         warnings.append(
             "Schwab not configured — skipping liquidity filter. "
             "Sector presets will include all Russell 1000 members."

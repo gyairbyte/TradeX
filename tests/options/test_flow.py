@@ -131,3 +131,22 @@ def test_get_put_call_sentiment_unavailable_source_is_structured():
     assert result["sentiment"] == "unavailable"
     assert result["data_source"] == "unusual_whales"
     assert "UNUSUAL_WHALES_API_KEY" in result["error"]
+
+
+def test_scan_unusual_flow_propagates_explicit_source_error():
+    """An explicit paid-source credential failure must propagate, not be swallowed as an empty result."""
+    with (
+        patch.object(flow, "UNUSUAL_WHALES_KEY", ""),
+        pytest.raises(ProviderCapabilityError),
+    ):
+        flow.scan_unusual_flow(["AAPL"], source="unusual_whales")
+
+
+def test_get_put_call_sentiment_shows_selected_source_on_error():
+    """When an explicit source is unavailable, the returned metadata reflects the selected source."""
+    with patch.object(flow, "UNUSUAL_WHALES_KEY", ""):
+        result = flow.get_put_call_sentiment("AAPL", source="unusual_whales")
+
+    assert result["data_source"] == "unusual_whales"
+    assert result["sentiment"] == "unavailable"
+    assert result["error"]  # safe, no secret

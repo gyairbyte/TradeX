@@ -768,9 +768,9 @@ using Pearson correlation across 5 series. Each series is weighted:
     )
 
     if st.button("Run Pattern Screen", key="btn_match", type="primary"):
-        fp_check = load_fingerprint(match_etype, match_profile)
+        fp_check = load_fingerprint(match_etype, match_profile, source=provider)
         if fp_check is None:
-            st.error(f"No '{match_etype}' fingerprint for profile '{match_profile}'. Build it first.")
+            st.error(f"No '{match_etype}' fingerprint for profile '{match_profile}' with source '{provider}'. Build it first.")
         else:
             with st.spinner(f"Matching {len(watchlist)} tickers against {match_etype} fingerprint…"):
                 match_results = run_match_screen(
@@ -799,6 +799,7 @@ using Pearson correlation across 5 series. Each series is weighted:
                 st.session_state["match_results"]        = match_results
                 st.session_state["match_etype_saved"]    = match_etype
                 st.session_state["match_profile_saved"]  = match_profile
+                st.session_state["match_source_saved"]   = provider
 
     if "match_results" in st.session_state and "match_etype_saved" in st.session_state and not st.session_state["match_results"].empty:
         st.divider()
@@ -810,11 +811,12 @@ using Pearson correlation across 5 series. Each series is weighted:
         selected_match = st.selectbox(
             "Select ticker", st.session_state["match_results"]["ticker"].tolist(), key="sel_match",
         )
+        match_source = st.session_state.get("match_source_saved", provider)
         detail = match_ticker(
             selected_match,
             event_type=st.session_state["match_etype_saved"],
             profile=st.session_state["match_profile_saved"],
-            provider=provider,
+            provider=match_source,
         )
         if "error" not in detail:
             s = detail["series_scores"]
@@ -832,7 +834,11 @@ using Pearson correlation across 5 series. Each series is weighted:
             n = len(detail["fp_series"].get("price_pct", []))
             x = list(range(-n + 1, 1))
             fp_mean  = detail["fp_series"].get("price_pct", [])
-            fp_data  = load_fingerprint(st.session_state["match_etype_saved"], st.session_state["match_profile_saved"])
+            fp_data  = load_fingerprint(
+                st.session_state["match_etype_saved"],
+                st.session_state["match_profile_saved"],
+                source=match_source,
+            )
             fp_upper = fp_data["series"].get("price_pct", {}).get("upper", fp_mean)
             fp_lower = fp_data["series"].get("price_pct", {}).get("lower", fp_mean)
             live_price = detail["live_series"].get("price_pct", [])[-n:]
@@ -919,13 +925,16 @@ Gaps happen overnight because news, earnings, or macro events move the price whe
 - 🟡 **Moderate** ≥ 2% — notable pre-market activity
     """)
 
+    gaps = pd.DataFrame()
+    gap_error = None
     if st.button("Scan Pre-Market Gaps", type="primary", key="btn_gaps"):
         with st.spinner(f"Scanning {len(watchlist)} tickers for pre-market gaps…"):
             try:
                 gaps = scan_gaps(watchlist, min_gap_pct=min_gap, provider=provider)
             except ProviderCapabilityError as e:
-                st.error(str(e))
-                gaps = pd.DataFrame()
+                gap_error = str(e)
+                st.error(gap_error)
+    if gap_error is None:
         if gaps.empty:
             st.info(f"No gaps above {min_gap}% found. Market may not be in pre-market session, or no significant gaps today.")
         else:
@@ -1003,14 +1012,15 @@ That urgency is a strong signal.
 3. **yfinance** (free, default) — delayed chains, volume/OI only. Good enough to spot anomalies.
         """)
 
-    uw_key      = os.getenv("UNUSUAL_WHALES_API_KEY", "")
-    tradier_key = os.getenv("TRADIER_API_KEY", "")
-    if uw_key:
-        st.success("Unusual Whales API — sweep detection enabled")
-    elif tradier_key:
-        st.info("Tradier API — real-time chains, no sweep detection")
+    st.caption(f"Selected options source: **{options_source}**")
+    if options_source == "auto":
+        st.info("auto follows the documented priority: Unusual Whales → Tradier → Yahoo based on configured API keys.")
+    elif options_source == "unusual_whales":
+        st.info("Using Unusual Whales API — requires UNUSUAL_WHALES_API_KEY.")
+    elif options_source == "tradier":
+        st.info("Using Tradier API — requires TRADIER_API_KEY.")
     else:
-        st.warning("yfinance (free, delayed) — volume/OI analysis only. Add UNUSUAL_WHALES_API_KEY or TRADIER_API_KEY to .env for better data.")
+        st.info("Using yfinance (free, delayed) — volume/OI analysis only.")
 
     o_col1, o_col2 = st.columns(2)
     min_vol_oi = o_col1.slider(
@@ -1029,13 +1039,20 @@ That urgency is a strong signal.
 - **1–3x** — slightly elevated, may be noise
     """)
 
+    unusual = pd.DataFrame()
+    options_error = None
     if st.button("Scan Options Flow", type="primary", key="btn_options"):
         with st.spinner(f"Scanning options chains for {len(watchlist)} tickers…"):
-            unusual = scan_unusual_flow(watchlist, min_vol_oi=min_vol_oi, source=options_source)
+            try:
+                unusual = scan_unusual_flow(watchlist, min_vol_oi=min_vol_oi, source=options_source)
+            except ProviderCapabilityError as e:
+                options_error = str(e)
+                st.error(options_error)
+    if options_error is None:
         if unusual.empty:
-            st.info(f"No unusual options activity found above {min_vol_oi}x Vol/OI ratio.")
+            st.info(f"No unusual options activity found above {min_vol_oi}x Vol/OI ratio (source: {options_source}).")
         else:
-            st.success(f"{len(unusual)} unusual contracts found")
+            st.success(f"{len(unusual)} unusual contracts found (source: {options_source})")
             st.dataframe(unusual, use_container_width=True)
 
     st.divider()
@@ -1045,21 +1062,24 @@ That urgency is a strong signal.
     if st.button("Get Sentiment", key="btn_pc", help="Fetch the options chain and compute the put/call ratio."):
         with st.spinner(f"Fetching options data for {pc_ticker}…"):
             sentiment = get_put_call_sentiment(pc_ticker, source=options_source)
-        s_col1, s_col2, s_col3, s_col4 = st.columns(4)
-        s_col1.metric("Put/Call Ratio", sentiment.get("put_call_ratio", "N/A"),
-                      help="Put volume ÷ Call volume. <0.7=bullish, >1.2=bearish.")
-        s_col2.metric("Call Volume",    sentiment.get("call_volume", 0))
-        s_col3.metric("Put Volume",     sentiment.get("put_volume", 0))
-        s_col4.metric("Sentiment",      sentiment.get("sentiment", "unknown").upper())
-        ratio  = sentiment.get("put_call_ratio")
-        source = sentiment.get("data_source", "unknown")
-        if ratio is not None:
-            if ratio < 0.7:
-                st.success(f"Bullish — heavy call buying relative to puts (source: {source})")
-            elif ratio > 1.2:
-                st.error(f"Bearish — heavy put buying relative to calls (source: {source})")
-            else:
-                st.info(f"Neutral — balanced call/put activity (source: {source})")
+        if sentiment.get("error"):
+            st.error(sentiment["error"])
+        else:
+            s_col1, s_col2, s_col3, s_col4 = st.columns(4)
+            s_col1.metric("Put/Call Ratio", sentiment.get("put_call_ratio", "N/A"),
+                          help="Put volume ÷ Call volume. <0.7=bullish, >1.2=bearish.")
+            s_col2.metric("Call Volume",    sentiment.get("call_volume", 0))
+            s_col3.metric("Put Volume",     sentiment.get("put_volume", 0))
+            s_col4.metric("Sentiment",      sentiment.get("sentiment", "unknown").upper())
+            ratio  = sentiment.get("put_call_ratio")
+            source = sentiment.get("data_source", "unknown")
+            if ratio is not None:
+                if ratio < 0.7:
+                    st.success(f"Bullish — heavy call buying relative to puts (source: {source})")
+                elif ratio > 1.2:
+                    st.error(f"Bearish — heavy put buying relative to calls (source: {source})")
+                else:
+                    st.info(f"Neutral — balanced call/put activity (source: {source})")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 7 — ALERTS

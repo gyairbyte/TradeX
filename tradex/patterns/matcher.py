@@ -178,6 +178,10 @@ def run_match_screen(
     cfg = PROFILES[profile]
     threshold = min_similarity if min_similarity is not None else cfg.alert_threshold
 
+    columns = [
+        "ticker", "similarity_score", "match_tier", "event_type", "profile",
+        "fp_events", "score_price", "score_volume", "score_rsi", "interpretation",
+    ]
     rows = []
     for ticker in tickers:
         result = match_ticker(ticker, event_type=event_type, profile=profile, provider=provider)
@@ -197,8 +201,11 @@ def run_match_screen(
         elif "error" in result:
             print(f"[skip] {ticker}: {result['error']}")
 
+    if not rows:
+        return pd.DataFrame(columns=columns)
+
     return (
-        pd.DataFrame(rows)
+        pd.DataFrame(rows, columns=columns)
         .sort_values("similarity_score", ascending=False)
         .reset_index(drop=True)
     )

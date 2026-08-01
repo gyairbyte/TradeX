@@ -281,8 +281,13 @@ def scan_unusual_flow(
     Scan a watchlist for unusual options activity.
     Returns contracts where volume/OI ratio exceeds threshold, ranked by ratio.
 
-    ``source`` is passed to ``get_flow`` for every ticker.
+    ``source`` is passed to ``get_flow`` for every ticker. Explicit paid sources
+    that are not configured raise ``ProviderCapabilityError`` so the caller can
+    surface a clear error instead of silently returning an empty result. ``auto``
+    still follows the documented priority order internally.
     """
+    _resolve_options_source(source)
+
     all_rows = []
     for ticker in tickers:
         try:
@@ -292,14 +297,15 @@ def scan_unusual_flow(
             unusual = df[df["vol_oi_ratio"] >= min_vol_oi].copy()
             if not unusual.empty:
                 all_rows.append(unusual)
-        except ProviderCapabilityError as e:
-            # Surface a clear source/capability error without falling back.
-            print(f"[options] {ticker}: {e}")
-        except Exception as e:
-            print(f"[options] {ticker}: {e}")
+        except ProviderCapabilityError:
+            # Let explicit source/credential failures propagate to the caller.
+            raise
+        except Exception:
+            # Unexpected per-ticker errors are logged without traceback and skipped.
+            print(f"[options] {ticker}: unexpected error")
 
     if not all_rows:
-        return pd.DataFrame()
+        return _empty_flow("", _resolve_options_source(source))
 
     combined = pd.concat(all_rows, ignore_index=True)
     return combined.sort_values("vol_oi_ratio", ascending=False).reset_index(drop=True)
