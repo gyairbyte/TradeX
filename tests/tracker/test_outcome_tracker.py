@@ -48,8 +48,9 @@ def test_outcome_resolves_at_earliest_valid_date():
     signal_time = now - timedelta(days=2)  # two calendar days ago, enough for 1 trading day
     df = _make_simple_close(5, "AAPL")
 
-    with patch.object(outcome_tracker.datetime, "now", return_value=now), \
+    with patch("tradex.tracker.outcome_tracker.datetime") as mock_datetime, \
          patch.object(outcome_tracker.yf, "download", return_value=df):
+        mock_datetime.now.return_value = now
         close = outcome_tracker._fetch_close_after(
             "AAPL",
             signal_time,

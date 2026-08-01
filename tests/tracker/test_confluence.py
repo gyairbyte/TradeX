@@ -46,6 +46,7 @@ def test_confluence_does_not_claim_all_timeframes_when_one_is_missing():
          patch.object(confluence, "days_until_earnings", return_value=None):
         result = confluence.score_confluence("TEST")
 
-    assert result["confluence_score"] == 95
-    assert result["tier"] != "all timeframes aligned"
-    assert set(result["scores"].keys()) != {"intraday"} or result["tier"] == "weak / single timeframe"
+    assert result.get("tier") != "all timeframes aligned"
+    # Missing timeframes must remain visible in the result or error metadata.
+    assert "short" in result.get("errors", {})
+    assert "long" in result.get("errors", {})
