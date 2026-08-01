@@ -46,7 +46,10 @@ def _conn():
 
 def _init_db():
     with _conn() as con:
-        con.executescript("""
+        # Create the table if it does not exist. Do NOT create the new
+        # source-dependent index here -- on an old schema the `source` column
+        # may be missing and the index creation would fail before migration runs.
+        con.execute("""
             CREATE TABLE IF NOT EXISTS fingerprints (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 event_type  TEXT NOT NULL,   -- "runup" | "decline"
@@ -57,22 +60,25 @@ def _init_db():
                 lookback_days INTEGER NOT NULL,
                 config_json TEXT NOT NULL,   -- full PatternConfig as JSON
                 data_json   TEXT NOT NULL    -- the actual fingerprint series
-            );
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_fp_type_profile_source
-                ON fingerprints(event_type, profile, source);
+            )
         """)
 
-        # Migration: older tables did not have a `source` column. Add it and
-        # rebuild the unique index so fingerprints from different providers do
-        # not silently overwrite each other.
+        # Migration: older tables did not have a `source` column. Add it first,
+        # then drop the old unique index and create the new source-aware one so
+        # fingerprints from different providers do not silently overwrite each
+        # other.
         existing_cols = [row[1] for row in con.execute("PRAGMA table_info(fingerprints)")]
         if "source" not in existing_cols:
-            con.execute("ALTER TABLE fingerprints ADD COLUMN source TEXT NOT NULL DEFAULT 'yahoo'")
-            con.execute("DROP INDEX IF EXISTS idx_fp_type_profile")
             con.execute(
-                "CREATE UNIQUE INDEX IF NOT EXISTS idx_fp_type_profile_source "
-                "ON fingerprints(event_type, profile, source)"
+                "ALTER TABLE fingerprints "
+                "ADD COLUMN source TEXT NOT NULL DEFAULT 'yahoo'"
             )
+
+        con.execute("DROP INDEX IF EXISTS idx_fp_type_profile")
+        con.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_fp_type_profile_source "
+            "ON fingerprints(event_type, profile, source)"
+        )
 
 
 def build_fingerprint(

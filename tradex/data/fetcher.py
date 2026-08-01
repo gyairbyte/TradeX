@@ -219,13 +219,17 @@ _SCHWAB_CLIENT = None
 _SCHWAB_LOCK = threading.Lock()
 
 
-def _normalize_schwab_candles(candles: list[dict]) -> pd.DataFrame:
+def _normalize_schwab_candles(candles: list[dict], drop_any_null: bool = True) -> pd.DataFrame:
     """Convert Schwab price-history candles into the canonical OHLCV DataFrame.
 
     Schwab candle JSON contains: open, high, low, close, volume, datetime (epoch ms).
     Returns a sorted, de-duplicated, UTC timezone-aware DataFrame with columns
-    open, high, low, close, volume. Rows with missing or invalid OHLCV data are
-    dropped. Duplicate timestamps keep the last occurrence.
+    open, high, low, close, volume. Duplicate timestamps keep the last occurrence.
+
+    By default rows with any missing OHLCV field are dropped. For date-ranged
+    daily history callers can pass ``drop_any_null=False`` to keep rows that
+    have other OHLCV data but a missing close (needed for COR-003 session
+    counting).
     """
     if not candles:
         return pd.DataFrame(
@@ -256,8 +260,11 @@ def _normalize_schwab_candles(candles: list[dict]) -> pd.DataFrame:
     for col in _OHLCV_COLUMNS:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    # Drop rows that are missing any OHLCV field. Volume of 0 is valid; NaN is not.
-    return df.dropna(subset=_OHLCV_COLUMNS)
+    # Drop rows that are missing any OHLCV field, or -- for daily history -- only
+    # rows with no OHLCV data at all. Volume of 0 is valid; NaN is not.
+    if drop_any_null:
+        return df.dropna(subset=_OHLCV_COLUMNS)
+    return df.dropna(how="all")
 
 
 def _get_schwab_client():

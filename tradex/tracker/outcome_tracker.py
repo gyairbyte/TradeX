@@ -75,13 +75,7 @@ def _fetch_close_after(
     if end_date < start_date:
         return None
 
-    try:
-        df = fetch_daily_history(ticker, start_date, end_date, provider=provider)
-    except ProviderCapabilityError:
-        # Re-raise so the caller can report an unsupported provider clearly.
-        raise
-    except Exception:
-        return None
+    df = fetch_daily_history(ticker, start_date, end_date, provider=provider)
 
     if df.empty:
         return None

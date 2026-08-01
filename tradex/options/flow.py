@@ -191,7 +191,8 @@ def _fetch_yf_chain(ticker: str) -> pd.DataFrame:
         exps = tk.options
         if not exps:
             return _empty_flow(ticker, "yahoo")
-        chain = tk.option_chain(exps[0])  # nearest expiry
+        expiry = exps[0]
+        chain = tk.option_chain(expiry)  # nearest expiry
         calls = chain.calls.copy()
         calls["type"] = "CALL"
         puts  = chain.puts.copy()
@@ -199,19 +200,19 @@ def _fetch_yf_chain(ticker: str) -> pd.DataFrame:
         df = pd.concat([calls, puts], ignore_index=True)
         df["ticker"] = ticker
         df["source"] = "yahoo"
+        df["expiry"] = expiry
         df["vol_oi_ratio"] = (df["volume"].fillna(0) / df["openInterest"].clip(lower=1)).round(2)
         df["is_sweep"] = False
         df["sentiment"] = ""
         df["timestamp"] = ""
         df["premium"] = None
         df["side"] = ""
-        df["bid"] = None
-        df["ask"] = None
+        df["last"] = df["lastPrice"]
         return df[["ticker", "source", "type", "side", "strike",
-                   "expiration", "premium", "volume", "openInterest",
+                   "expiry", "premium", "volume", "openInterest",
                    "vol_oi_ratio", "is_sweep", "sentiment", "timestamp",
-                   "lastPrice", "bid", "ask"]].rename(
-            columns={"openInterest": "open_interest", "expiration": "expiry", "lastPrice": "last"}
+                   "last", "bid", "ask"]].rename(
+            columns={"openInterest": "open_interest"}
         )
     except Exception:
         return _empty_flow(ticker, "yahoo")

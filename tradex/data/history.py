@@ -132,7 +132,7 @@ def _fetch_schwab_daily(ticker: str, start_date: date, end_date: date) -> pd.Dat
         raise ValueError(f"Schwab returned non-JSON daily history for {ticker}") from None
 
     candles = data.get("candles", []) if isinstance(data, dict) else []
-    return _normalize_schwab_candles(candles)
+    return _normalize_schwab_candles(candles, drop_any_null=False)
 
 
 def fetch_daily_history(

@@ -8,21 +8,23 @@ from tradex.data.fetcher import ProviderCapabilityError
 from tradex.options import flow
 
 
-def _make_yahoo_chain(ticker: str = "AAPL") -> pd.DataFrame:
-    """Return a mock yfinance-style options chain DataFrame."""
+def _make_yahoo_chain(ticker: str = "AAPL") -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Return mock yfinance calls/puts DataFrames with a realistic schema."""
     calls = pd.DataFrame({
         "strike": [150.0],
-        "expiration": ["2024-02-16"],
         "volume": [1000.0],
         "openInterest": [100.0],
         "lastPrice": [5.0],
+        "bid": [4.9],
+        "ask": [5.1],
     })
     puts = pd.DataFrame({
         "strike": [150.0],
-        "expiration": ["2024-02-16"],
         "volume": [500.0],
         "openInterest": [50.0],
         "lastPrice": [4.0],
+        "bid": [3.9],
+        "ask": [4.1],
     })
     return calls, puts
 

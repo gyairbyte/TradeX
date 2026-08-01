@@ -142,6 +142,30 @@ def test_fetch_daily_history_schwab_path():
     assert call.kwargs["end_datetime"].date() == date(2024, 1, 3)
 
 
+def test_fetch_daily_history_schwab_retains_session_with_missing_close():
+    """Daily history should keep a session that has other data but a missing close
+    so COR-003 outcome counting does not shift."""
+    fake_client = Mock()
+    fake_client.get_price_history_every_day.return_value = Mock(
+        status_code=200,
+        raise_for_status=Mock(),
+        json=Mock(return_value={
+            "candles": [
+                {"datetime": 1704153600000, "open": 100.0, "high": 101.0, "low": 99.0, "close": None, "volume": 1000},
+                {"datetime": 1704240000000, "open": 101.0, "high": 102.0, "low": 100.0, "close": 102.0, "volume": 1100},
+            ]
+        }),
+    )
+
+    with patch("tradex.data.history._get_schwab_client", return_value=fake_client):
+        df = history.fetch_daily_history("AAPL", date(2024, 1, 2), date(2024, 1, 3), provider="schwab")
+
+    assert len(df) == 2
+    assert pd.isna(df["close"].iloc[0])
+    assert df["close"].iloc[1] == 102.0
+    assert df["volume"].iloc[0] == 1000
+
+
 def test_fetch_daily_history_schwab_bad_response():
     fake_client = Mock()
     fake_client.get_price_history_every_day.return_value = Mock(

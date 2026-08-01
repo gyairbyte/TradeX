@@ -126,8 +126,8 @@ def _fetch_yahoo_market_caps(tickers: list[str], max_workers: int = 12) -> dict[
             info = yf.Ticker(t).fast_info
             cap = info.get("market_cap") if isinstance(info, dict) else getattr(info, "market_cap", None)
             return t, float(cap) if cap else None
-        except Exception as e:
-            log.debug("market cap fetch failed for %s", t, exc_info=e)
+        except Exception:
+            log.debug("market cap fetch failed for %s", t)
             return t, None
 
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
@@ -220,8 +220,8 @@ def _schwab_client_or_none():
         return client_from_token_file(
             token_path=token_path, api_key=app_key, app_secret=app_secret,
         )
-    except Exception as e:
-        log.warning("schwab client init failed for liquidity filter: %s", e)
+    except Exception:
+        log.warning("schwab client init failed for liquidity filter")
         return None
 
 
@@ -258,7 +258,7 @@ def _schwab_liquidity_filter(
             inst_list = r1.json().get("instruments", [])
         except Exception:
             warnings.append(f"Schwab fundamentals batch {i}-{i + batch_size} failed")
-            log.debug("Schwab fundamentals batch %s failed", i, exc_info=True)
+            log.debug("Schwab fundamentals batch %s failed", i)
             continue
 
         vol_map = {
@@ -274,7 +274,7 @@ def _schwab_liquidity_filter(
             quote_map = r2.json()
         except Exception:
             warnings.append(f"Schwab quotes batch {i}-{i + batch_size} failed")
-            log.debug("Schwab quotes batch %s failed", i, exc_info=True)
+            log.debug("Schwab quotes batch %s failed", i)
             continue
 
         for sym in chunk:
@@ -329,9 +329,9 @@ def refresh_all(
     resolved_cap_source = _resolve_market_cap_source(market_cap_source)
     try:
         caps = fetch_market_caps(sp500_df["ticker"].tolist(), source=resolved_cap_source)
-    except Exception as e:
+    except Exception:
         caps = {}
-        warnings.append(f"Market-cap fetch failed for source '{resolved_cap_source}': {e}")
+        warnings.append(f"Market-cap fetch failed for source '{resolved_cap_source}'")
     sp500_df["market_cap"] = sp500_df["ticker"].map(caps).fillna(0)
     if (sp500_df["market_cap"] == 0).any():
         n_missing = int((sp500_df["market_cap"] == 0).sum())

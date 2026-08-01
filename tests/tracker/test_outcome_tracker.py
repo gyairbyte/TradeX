@@ -45,6 +45,20 @@ def _make_close(values, start: str = "2024-01-02") -> pd.DataFrame:
     return _make_ohlcv(values, start=start)
 
 
+def _make_history_df(closes, start: str = "2024-01-02") -> pd.DataFrame:
+    """Return a canonical, lowercase-column history DataFrame as returned by
+    ``fetch_daily_history``."""
+    dates = pd.date_range(start, periods=len(closes), freq="B")
+    base = [100.0 if pd.isna(c) else float(c) for c in closes]
+    return pd.DataFrame({
+        "open": base,
+        "high": [b + 1.0 for b in base],
+        "low": [b - 1.0 for b in base],
+        "close": closes,
+        "volume": [1000] * len(closes),
+    }, index=pd.DatetimeIndex(dates, name="datetime", tz="UTC"))
+
+
 def _fetch(close_value, *, after_date=datetime(2024, 1, 1, tzinfo=UTC), days_forward=3,
            current=datetime(2026, 8, 1, tzinfo=UTC), provider=None):
     """Call _fetch_close_after with a mocked daily-history abstraction and current time."""
@@ -301,15 +315,83 @@ def test_provider_reaches_daily_history_abstraction():
     df = _make_close([101.0])
 
     with (
-        patch("tradex.data.history.yf.download", return_value=df) as mock_download,
+        patch("tradex.tracker.outcome_tracker.fetch_daily_history", return_value=df) as mock_fetch,
         patch.object(outcome_tracker, "_utc_now", return_value=current),
     ):
         outcome_tracker._fetch_close_after(
             "AAPL", signal_time, days_forward=1, provider="schwab"
         )
 
-    # Schwab uses the Schwab client, not yf.download, so Yahoo should not be called
-    # when a Schwab provider is explicitly selected (the abstraction would raise).
-    # Here we just verify that provider is propagated by checking the abstraction is
-    # invoked with the correct ticker.
-    assert mock_download.call_count == 0
+    mock_fetch.assert_called_once()
+    args, kwargs = mock_fetch.call_args
+    assert args[0] == "AAPL"
+    assert kwargs["provider"] == "schwab"
+
+
+def test_schwab_missing_close_before_target_session_counts():
+    """A Schwab daily-history row with a missing close but other OHLCV data
+    still counts as a trading session for COR-003 timing."""
+    signal_time = datetime(2024, 1, 1, tzinfo=UTC)
+    current = datetime(2024, 1, 5, tzinfo=UTC)
+    # Three sessions; session 1 has a missing close, session 3 is the target.
+    df = _make_history_df([float("nan"), 101.0, 102.0])
+
+    with (
+        patch("tradex.tracker.outcome_tracker.fetch_daily_history", return_value=df) as mock_fetch,
+        patch.object(outcome_tracker, "_utc_now", return_value=current),
+    ):
+        close = outcome_tracker._fetch_close_after(
+            "AAPL", signal_time, days_forward=3, provider="schwab"
+        )
+
+    assert close == 102.0
+    mock_fetch.assert_called_once()
+    assert mock_fetch.call_args.kwargs["provider"] == "schwab"
+
+
+def test_schwab_missing_close_on_target_session_falls_back():
+    """A missing close on the target session for Schwab daily history falls
+    back to the next valid close within the window."""
+    signal_time = datetime(2024, 1, 1, tzinfo=UTC)
+    current = datetime(2024, 1, 5, tzinfo=UTC)
+    # Three sessions; target (session 2) is NaN, session 3 is valid.
+    df = _make_history_df([101.0, float("nan"), 103.0])
+
+    with (
+        patch("tradex.tracker.outcome_tracker.fetch_daily_history", return_value=df) as mock_fetch,
+        patch.object(outcome_tracker, "_utc_now", return_value=current),
+    ):
+        close = outcome_tracker._fetch_close_after(
+            "AAPL", signal_time, days_forward=2, provider="schwab"
+        )
+
+    assert close == 103.0
+    mock_fetch.assert_called_once()
+    assert mock_fetch.call_args.kwargs["provider"] == "schwab"
+
+
+def test_provider_failure_increments_errors(fresh_signal_db):
+    """A provider/auth/network failure from fetch_daily_history must reach the
+    existing run_outcome_pass error boundary and increment `errors`, not `pending`."""
+    from tradex.tracker import store
+
+    with store._conn() as con:
+        con.execute(
+            "INSERT INTO signal_history (ticker, timeframe, scan_time, score, last_close, volume_ratio, rsi, reasons) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            ("AAPL", "intraday", datetime(2024, 1, 1, tzinfo=UTC).isoformat(),
+             50, 100.0, 1.0, 50.0, "test"),
+        )
+
+    with (
+        patch("tradex.tracker.outcome_tracker.fetch_daily_history") as mock_fetch,
+        patch.object(outcome_tracker, "_utc_now", return_value=datetime(2024, 1, 3, tzinfo=UTC)),
+    ):
+        mock_fetch.side_effect = RuntimeError("Schwab authentication failed")
+        summary = outcome_tracker.run_outcome_pass(verbose=False, provider="schwab")
+
+    assert summary["errors"] == 1
+    assert summary["pending"] == 0
+    assert summary["resolved"] == 0
+    mock_fetch.assert_called_once()
+    assert mock_fetch.call_args.kwargs["provider"] == "schwab"

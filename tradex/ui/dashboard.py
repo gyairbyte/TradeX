@@ -35,6 +35,14 @@ from tradex.alerts.notifier import (
 from tradex.watchlists import store as wl_store, DEFAULT_NAME as WL_DEFAULT_NAME
 from tradex.watchlists import presets as wl_presets
 from tradex.signals import weights as signal_weights
+from tradex.ui.source_defaults import (
+    options_source_index,
+    earnings_source_index,
+    market_cap_source_index,
+    options_sources,
+    earnings_sources,
+    market_cap_sources,
+)
 
 store.init()
 wl_store.init()
@@ -123,8 +131,8 @@ with st.sidebar:
     # Options source is independent of OHLCV provider.
     options_source = st.selectbox(
         "Options source",
-        ["auto", "unusual_whales", "tradier", "yahoo"],
-        index=0,
+        options_sources(),
+        index=options_source_index(),
         help=(
             "Options-flow data source. ``auto`` follows the priority "
             "Unusual Whales → Tradier → Yahoo based on configured API keys. "
@@ -133,14 +141,14 @@ with st.sidebar:
     )
     earnings_source = st.selectbox(
         "Earnings source",
-        ["yahoo"],
-        index=0,
+        earnings_sources(),
+        index=earnings_source_index(),
         help="Earnings-calendar source. Only Yahoo is supported in this release.",
     )
     market_cap_source = st.selectbox(
         "Market-cap source",
-        ["yahoo", "schwab"],
-        index=0,
+        market_cap_sources(),
+        index=market_cap_source_index(),
         help="Source for S&P 100 market-cap ranking when refreshing presets. ``schwab`` requires Schwab credentials.",
     )
 
@@ -723,10 +731,14 @@ using Pearson correlation across 5 series. Each series is weighted:
         if st.button("Build Fingerprints", key="btn_build_fp",
                      help="Mine 3 years of history and compute fingerprints. Results are cached — re-run only to refresh."):
             with st.spinner("Mining historical events and building fingerprints… (~2 minutes)"):
-                built = run_full_build(profile=fp_profile, event_type=fp_etype, verbose=False, provider=provider)
+                try:
+                    built = run_full_build(profile=fp_profile, event_type=fp_etype, verbose=False, provider=provider)
+                except ProviderCapabilityError as e:
+                    st.error(str(e))
+                    built = None
             if built:
                 st.success(f"Built fingerprints: {', '.join(built.keys())}")
-            else:
+            elif built is not None:
                 st.error("Build failed — not enough historical events found.")
         existing = list_fingerprints()
         if not existing.empty:
@@ -909,7 +921,11 @@ Gaps happen overnight because news, earnings, or macro events move the price whe
 
     if st.button("Scan Pre-Market Gaps", type="primary", key="btn_gaps"):
         with st.spinner(f"Scanning {len(watchlist)} tickers for pre-market gaps…"):
-            gaps = scan_gaps(watchlist, min_gap_pct=min_gap, provider=provider)
+            try:
+                gaps = scan_gaps(watchlist, min_gap_pct=min_gap, provider=provider)
+            except ProviderCapabilityError as e:
+                st.error(str(e))
+                gaps = pd.DataFrame()
         if gaps.empty:
             st.info(f"No gaps above {min_gap}% found. Market may not be in pre-market session, or no significant gaps today.")
         else:
