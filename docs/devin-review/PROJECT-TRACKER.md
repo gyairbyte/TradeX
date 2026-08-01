@@ -93,14 +93,15 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Fix outcome tracker MultiIndex column crash
 - **Category:** Correctness
 - **Priority:** High
-- **Status:** Proposed
-- **Problem statement:** `outcome_tracker._fetch_close_after` does `float(df["Close"].iloc[...])` without normalizing MultiIndex columns, causing `TypeError`.
+- **Status:** Completed
+- **Resolved by:** `devin/fix-outcome-multiindex`
+- **Problem statement:** `outcome_tracker._fetch_close_after` did `float(df["Close"].iloc[...])` without normalizing MultiIndex columns, causing `TypeError`.
 - **Recommended action:** Apply the same normalization used in `data/fetcher.py` and use `df["close"].iloc[...]`.
 - **Reason:** yfinance can return MultiIndex columns; outcome fetching must be robust.
 - **Dependencies:** None
-- **Files likely affected:** `tradex/tracker/outcome_tracker.py`
-- **Testing requirements:** Unit test with a mocked yfinance response that has MultiIndex columns.
-- **Acceptance criteria:** `_fetch_close_after` returns the correct close for both single-level and MultiIndex responses.
+- **Files likely affected:** `tradex/tracker/outcome_tracker.py`, `tradex/data/fetcher.py`
+- **Testing requirements:** Unit test with mocked yfinance responses covering single-level and MultiIndex columns, empty responses, missing close columns, and NaN close values.
+- **Acceptance criteria:** `_fetch_close_after` returns the correct close for both single-level and MultiIndex responses and returns `None` for empty or unusable data.
 - **Intended pull request:** `devin/fix-outcome-multiindex`
 - **Affects trading behavior:** No
 
@@ -462,4 +463,4 @@ This is the master backlog for recommendations from the Devin review. Items are 
 | Medium | 10 | COR-004: Fix watcher provider propagation |
 | Low | 5 | DOC-001: Fix documentation drift |
 
-**Recommended next pull request:** `devin/fix-outcome-multiindex` (COR-002) or `devin/fix-watcher-provider-propagation` (COR-004).
+**Recommended next pull request:** `devin/fix-outcome-timing` (COR-003).

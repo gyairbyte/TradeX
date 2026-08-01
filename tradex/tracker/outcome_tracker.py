@@ -23,6 +23,7 @@ import sqlite3
 import pandas as pd
 import yfinance as yf
 
+from tradex.data.fetcher import normalize_yahoo_columns
 from tradex.tracker.store import DB_PATH, _conn, _ensure_db_dir
 
 # Days after signal to measure outcome, keyed by timeframe
@@ -53,11 +54,19 @@ def _fetch_close_after(ticker: str, after_date: datetime, days_forward: int) -> 
         progress=False,
         auto_adjust=True,
     )
-    if df.empty or len(df) < days_forward:
+    if df.empty:
         return None
 
-    # Return the close at the Nth trading day
-    return float(df["Close"].iloc[days_forward - 1])
+    df = normalize_yahoo_columns(df)
+    if "close" not in df.columns or len(df) < days_forward:
+        return None
+
+    # Return the close at the Nth trading day. If that day's close is missing,
+    # use the next available close within the fetched window.
+    close = df["close"].iloc[days_forward - 1 :].dropna().head(1)
+    if close.empty:
+        return None
+    return float(close.iloc[0])
 
 
 def _get_pending_outcomes() -> list[dict]:
