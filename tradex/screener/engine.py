@@ -2,7 +2,7 @@
 Runs all three signal scorers across a watchlist and returns ranked results.
 """
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import pandas as pd
 
@@ -46,6 +46,9 @@ class ScanReport:
     total_below_threshold: int
     total_insufficient_data: int
     total_earnings_excluded: int
+    earnings_failures: dict[str, ProviderError] = field(default_factory=dict)
+    fetch_failures: dict[str, ProviderError] = field(default_factory=dict)
+    scoring_failures: dict[str, ProviderError] = field(default_factory=dict)
 
 
 def run_with_report(
@@ -63,9 +66,9 @@ def run_with_report(
 ) -> ScanReport:
     """Run the screener and return a structured report.
 
-    The report distinguishes valid zero-signal scans from provider failures,
-    tracks the actual provider used (including fallback), and preserves accurate
-    provenance on every result row.
+    The report distinguishes valid zero-signal scans, earnings-source failures,
+    OHLCV provider failures, and scoring failures; tracks the actual provider used
+    (including fallback); and preserves accurate provenance on every result row.
     """
     if timeframe not in SIGNAL_MAP:
         raise ValueError(f"timeframe must be one of {list(SIGNAL_MAP)}")
@@ -76,14 +79,16 @@ def run_with_report(
 
     total_earnings_excluded = 0
     eligible_tickers: list[str] = []
-    failures: dict[str, ProviderError] = {}
+    earnings_failures: dict[str, ProviderError] = {}
+    days_map: dict[str, int | None] = {}
 
     for ticker in tickers:
         try:
             days_to_er = days_until_earnings(ticker, source=earnings_source)
+            days_map[ticker] = days_to_er
         except Exception:  # noqa: BLE001
-            failures[ticker] = ProviderDataUnavailableError(
-                f"Could not determine earnings for {ticker}"
+            earnings_failures[ticker] = ProviderDataUnavailableError(
+                f"Earnings lookup failed for {ticker}"
             )
             continue
 
@@ -105,6 +110,7 @@ def run_with_report(
         sleeper=sleeper,
         progress=progress,
         status=status,
+        max_workers=max_workers,
     )
 
     actual_provider = fetch_report.actual_provider
@@ -117,11 +123,13 @@ def run_with_report(
     total_scored = 0
     total_below_threshold = 0
     total_insufficient_data = 0
+    fetch_failures: dict[str, ProviderError] = {}
+    scoring_failures: dict[str, ProviderError] = {}
 
     for ticker, df in fetch_report.data.items():
         if len(df) < 30:
             total_insufficient_data += 1
-            failures[ticker] = ProviderDataUnavailableError(
+            fetch_failures[ticker] = ProviderDataUnavailableError(
                 f"Insufficient OHLCV data for {ticker} ({timeframe})"
             )
             continue
@@ -129,7 +137,7 @@ def run_with_report(
         try:
             result = scorer(df)
         except Exception:  # noqa: BLE001
-            failures[ticker] = ProviderResponseError(
+            scoring_failures[ticker] = ProviderResponseError(
                 f"Scoring failed for {ticker} ({timeframe})"
             )
             continue
@@ -145,14 +153,14 @@ def run_with_report(
             "last_close": result["last_close"],
             "volume_ratio": round(result["volume_ratio"], 2),
             "rsi": round(result["rsi"], 1),
-            "days_until_earnings": None,
+            "days_until_earnings": days_map.get(ticker),
             "reasons": " | ".join(result["reasons"]),
             "provider": actual_provider or requested_provider,
         })
 
-    # Carry forward any fetch failures not already classified.
-    for ticker, error in fetch_report.failures.items():
-        failures.setdefault(ticker, error)
+    # Carry forward any fetch failures reported by the batch fetcher.
+    fetch_failures.update(fetch_report.failures)
+    failures = {**fetch_failures, **scoring_failures}
 
     if not rows:
         results = pd.DataFrame(columns=[
@@ -177,6 +185,9 @@ def run_with_report(
         total_below_threshold=total_below_threshold,
         total_insufficient_data=total_insufficient_data,
         total_earnings_excluded=total_earnings_excluded,
+        earnings_failures=earnings_failures,
+        fetch_failures=fetch_failures,
+        scoring_failures=scoring_failures,
     )
 
 

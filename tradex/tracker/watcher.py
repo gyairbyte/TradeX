@@ -103,18 +103,32 @@ def run_once(
     )
 
     actual_provider = report.actual_provider or report.requested_provider
+    has_fetch_failures = bool(report.failures)
+    has_earnings_failures = bool(report.earnings_failures)
 
-    if report.total_fetched == 0:
+    if report.total_fetched == 0 and not has_fetch_failures and has_earnings_failures:
+        categories = sorted({type(e).__name__ for e in report.earnings_failures.values()})
+        print(f"[{now}] ERROR: earnings source failed for {len(tickers)} tickers. "
+              f"Failure categories: {categories or ['unknown']}.")
+    elif report.total_fetched == 0 and has_fetch_failures:
         categories = sorted({type(e).__name__ for e in report.failures.values()})
         print(f"[{now}] ERROR: all providers failed for {len(tickers)} tickers. "
               f"Providers attempted: {report.providers_attempted}. "
               f"Failure categories: {categories or ['unknown']}.")
     elif report.results.empty:
-        print(f"[{now}] No signals above {min_score}.")
+        if report.total_earnings_excluded == len(tickers):
+            print(f"[{now}] No signals above {min_score}; all {report.total_earnings_excluded} tickers excluded due to earnings.")
+        else:
+            print(f"[{now}] No signals above {min_score}.")
+        if has_fetch_failures:
+            print(f"[{now}] Partial failures: {len(report.failures)} symbol(s) failed or had insufficient data.")
     else:
         results = report.results
-        print(f"[{now}] {len(results)} signals found (actual provider={actual_provider}):")
+        print(f"[{now}] {len(results)} signals found (actual provider={actual_provider}, "
+              f"retries={fetch_policy.max_retries}, fallback={report.fallback_used}):")
         print(results[["ticker", "score", "volume_ratio", "rsi", "provider"]].to_string(index=False))
+        if has_fetch_failures:
+            print(f"[{now}] Partial failures: {len(report.failures)} symbol(s) failed or had insufficient data.")
         store.record_signals(results, timeframe, provider=actual_provider)
 
     if report.total_fetched > 0:

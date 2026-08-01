@@ -434,3 +434,104 @@ def test_run_with_report_no_mixed_provider_results():
         report = engine.run_with_report(["A", "B"], timeframe="intraday", provider="schwab")
 
     assert report.results["provider"].unique().tolist() == ["yahoo"]
+
+
+def test_run_with_report_preserves_days_until_earnings():
+    """Successful rows retain the per-ticker days_until_earnings value."""
+
+    def fake_score(df):
+        return _make_result(70)
+
+    def fake_fetch_multi_report(tickers, tf, provider=None, **kwargs):
+        return _make_fetch_report(
+            tickers,
+            data={t: pd.DataFrame([0] * 31) for t in tickers},
+            provider=provider,
+            actual_provider=provider,
+        )
+
+    with (
+        patch.object(engine, "fetch_multi_report", side_effect=fake_fetch_multi_report),
+        patch.object(engine, "days_until_earnings", return_value=7),
+        patch.object(engine, "SIGNAL_MAP", {"intraday": (fake_score, "intraday")}),
+    ):
+        report = engine.run_with_report(["AAPL"], timeframe="intraday")
+
+    assert report.results["days_until_earnings"].tolist() == [7]
+
+
+def test_run_with_report_earnings_source_failure_not_provider_outage():
+    """Earnings lookup failures are tracked separately, not as OHLCV provider failures."""
+
+    def fake_score(df):
+        return _make_result(70)
+
+    def fake_fetch_multi_report(*args, **kwargs):
+        return _make_fetch_report(["AAPL"], provider="yahoo")
+
+    with (
+        patch.object(engine, "fetch_multi_report", side_effect=fake_fetch_multi_report),
+        patch.object(engine, "days_until_earnings", side_effect=RuntimeError("earnings lookup failed")),
+        patch.object(engine, "SIGNAL_MAP", {"intraday": (fake_score, "intraday")}),
+    ):
+        report = engine.run_with_report(["AAPL"], timeframe="intraday")
+
+    assert report.results.empty
+    assert report.total_fetched == 0
+    assert report.failures == {}
+    assert "AAPL" in report.earnings_failures
+    assert "Earnings lookup failed" in str(report.earnings_failures["AAPL"])
+
+
+def test_run_with_report_all_earnings_excluded_is_normal_zero_result():
+    """When all tickers are validly earnings-excluded, report a normal zero-result state."""
+
+    def fake_score(df):
+        return _make_result(70)
+
+    def fake_fetch_multi_report(*args, **kwargs):
+        return _make_fetch_report(["AAPL"], provider="yahoo")
+
+    with (
+        patch.object(engine, "fetch_multi_report", side_effect=fake_fetch_multi_report),
+        patch.object(engine, "days_until_earnings", return_value=2),
+        patch.object(engine, "SIGNAL_MAP", {"intraday": (fake_score, "intraday")}),
+    ):
+        report = engine.run_with_report(["AAPL"], timeframe="intraday", exclude_earnings_within=5)
+
+    assert report.results.empty
+    assert report.total_earnings_excluded == 1
+    assert report.total_fetched == 0
+    assert report.failures == {}
+    assert report.earnings_failures == {}
+
+
+def test_run_with_report_partial_failure_zero_signals():
+    """Partial fetch failure is surfaced even when no ticker meets the score threshold."""
+
+    def fake_score(df):
+        return _make_result(30)
+
+    failures = {"MSFT": ProviderTransientError("network")}
+
+    def fake_fetch_multi_report(tickers, tf, provider=None, **kwargs):
+        return _make_fetch_report(
+            tickers,
+            data={"AAPL": pd.DataFrame([0] * 31)},
+            provider=provider,
+            actual_provider=provider,
+            failures=failures,
+        )
+
+    with (
+        patch.object(engine, "fetch_multi_report", side_effect=fake_fetch_multi_report),
+        patch.object(engine, "days_until_earnings", return_value=None),
+        patch.object(engine, "SIGNAL_MAP", {"intraday": (fake_score, "intraday")}),
+    ):
+        report = engine.run_with_report(["AAPL", "MSFT"], timeframe="intraday")
+
+    assert report.results.empty
+    assert report.total_fetched == 1
+    assert report.total_below_threshold == 1
+    assert "MSFT" in report.failures
+    assert report.failures["MSFT"] is failures["MSFT"]

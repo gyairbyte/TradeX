@@ -7,6 +7,7 @@ import pytest
 
 from tradex.data.fetcher import (
     FetchPolicy,
+    FetchResult,
     ProviderAuthenticationError,
     ProviderConfigurationError,
     ProviderDataUnavailableError,
@@ -14,6 +15,7 @@ from tradex.data.fetcher import (
     ProviderTransientError,
     _classify_exception,
     _fetch_with_retry,
+    fetch_multi,
     fetch_multi_report,
 )
 
@@ -93,8 +95,12 @@ def test_zero_retries_means_one_attempt():
         calls.append(1)
         raise ProviderTransientError("network")
 
-    with pytest.raises(ProviderTransientError):
-        _fetch_with_retry(provider, policy)
+    result = _fetch_with_retry(provider, policy)
+    assert isinstance(result, FetchResult)
+    assert result.error is not None
+    assert isinstance(result.error, ProviderTransientError)
+    assert result.attempts == 1
+    assert result.retries == 0
     assert len(calls) == 1
 
 
@@ -108,9 +114,12 @@ def test_one_retry_means_at_most_two_attempts():
             raise ProviderTransientError("network")
         return _make_df()
 
-    df = _fetch_with_retry(provider, policy, sleeper=lambda _: None)
+    result = _fetch_with_retry(provider, policy, sleeper=lambda _: None)
+    assert result.error is None
+    assert result.attempts == 2
+    assert result.retries == 1
+    assert len(result.df) == 30
     assert len(calls) == 2
-    assert len(df) == 30
 
 
 def test_transient_success_after_retry():
@@ -123,9 +132,11 @@ def test_transient_success_after_retry():
             raise ProviderTransientError("network")
         return _make_df()
 
-    df = _fetch_with_retry(provider, policy, sleeper=lambda _: None)
-    assert len(calls) == 3
-    assert len(df) == 30
+    result = _fetch_with_retry(provider, policy, sleeper=lambda _: None)
+    assert result.error is None
+    assert result.attempts == 3
+    assert result.retries == 2
+    assert len(result.df) == 30
 
 
 def test_retry_exhaustion_raises_last_error():
@@ -136,9 +147,11 @@ def test_retry_exhaustion_raises_last_error():
         calls.append(1)
         raise ProviderTransientError("network")
 
-    with pytest.raises(ProviderTransientError, match="network"):
-        _fetch_with_retry(provider, policy, sleeper=lambda _: None)
-    assert len(calls) == 3
+    result = _fetch_with_retry(provider, policy, sleeper=lambda _: None)
+    assert isinstance(result.error, ProviderTransientError)
+    assert "network" in str(result.error)
+    assert result.attempts == 3
+    assert result.retries == 2
 
 
 def test_non_retryable_failure_attempted_once():
@@ -149,8 +162,10 @@ def test_non_retryable_failure_attempted_once():
         calls.append(1)
         raise ProviderAuthenticationError("bad creds")
 
-    with pytest.raises(ProviderAuthenticationError):
-        _fetch_with_retry(provider, policy)
+    result = _fetch_with_retry(provider, policy)
+    assert isinstance(result.error, ProviderAuthenticationError)
+    assert result.attempts == 1
+    assert result.retries == 0
     assert len(calls) == 1
 
 
@@ -164,14 +179,21 @@ def test_backoff_is_injectable():
     def sleeper(seconds):
         sleeps.append(seconds)
 
-    with pytest.raises(ProviderTransientError):
-        _fetch_with_retry(provider, policy, sleeper=sleeper)
+    result = _fetch_with_retry(provider, policy, sleeper=sleeper)
+    assert isinstance(result.error, ProviderTransientError)
     assert sleeps == [0.05, 0.1]
 
 
 def test_retry_count_does_not_exceed_maximum():
-    with pytest.raises(ValueError, match="at most 5"):
+    with pytest.raises(ValueError, match="at most 3"):
         FetchPolicy(max_retries=10)
+
+
+def test_retry_count_zero_means_one_attempt():
+    result = _fetch_with_retry(lambda: _make_df(), FetchPolicy(max_retries=0))
+    assert result.error is None
+    assert result.attempts == 1
+    assert result.retries == 0
 
 
 # ─── Policy parsing ───────────────────────────────────────────────────────
@@ -219,6 +241,21 @@ def test_yahoo_is_never_added_automatically():
     assert "yahoo" not in policy.fallback_order
 
 
+def test_fetch_policy_direct_construction_validates_and_normalizes():
+    policy = FetchPolicy(fallback_order="  Yahoo , yahoo, alpaca ")
+    assert policy.fallback_order == ("yahoo", "alpaca")
+
+
+def test_fetch_policy_direct_construction_rejects_invalid_provider():
+    with pytest.raises(ValueError):
+        FetchPolicy(fallback_order=("badprovider",))
+
+
+def test_fetch_policy_direct_construction_rejects_excessive_retries():
+    with pytest.raises(ValueError, match="at most 3"):
+        FetchPolicy(max_retries=5)
+
+
 # ─── Batch fetch report ───────────────────────────────────────────────────
 
 def test_fetch_multi_report_complete_success():
@@ -226,7 +263,9 @@ def test_fetch_multi_report_complete_success():
         report = fetch_multi_report(["AAPL", "MSFT"], "intraday", provider="yahoo")
     assert report.total_fetched == 2
     assert report.failures == {}
+    assert report.retries == 0
     assert report.actual_provider == "yahoo"
+    assert all(a.success for a in report.attempt_log)
 
 
 def test_fetch_multi_report_complete_failure():
@@ -238,6 +277,8 @@ def test_fetch_multi_report_complete_failure():
     assert report.total_fetched == 0
     assert set(report.failures.keys()) == {"AAPL", "MSFT"}
     assert report.actual_provider is None
+    assert report.retries == 0
+    assert len(report.attempt_log) == 2
 
 
 def test_fetch_multi_report_partial_failure():
@@ -255,6 +296,7 @@ def test_fetch_multi_report_partial_failure():
     assert report.data.keys() == {"AAPL"}
     assert "MSFT" in report.failures
     assert report.actual_provider == "yahoo"
+    assert len(report.attempt_log) == 2
 
 
 def test_fetch_multi_report_empty_data_counts_as_unavailable():
@@ -275,6 +317,80 @@ def test_fetch_multi_report_no_silent_skipping():
     with patch("tradex.data.fetcher._PROVIDERS", _fake_providers(yahoo=fail)):
         report = fetch_multi_report(["AAPL", "MSFT"], "intraday", provider="yahoo")
     assert len(report.failures) == 2
+
+
+def test_fetch_multi_reports_actual_attempt_and_retry_counts():
+    calls = []
+
+    def flaky(t, f):
+        calls.append(t)
+        if len(calls) == 1:
+            raise ProviderTransientError("network")
+        return _make_df()
+
+    with patch("tradex.data.fetcher._PROVIDERS", _fake_providers(yahoo=flaky)):
+        report = fetch_multi_report(["AAPL"], "intraday", provider="yahoo", policy=FetchPolicy(max_retries=2))
+
+    assert report.total_fetched == 1
+    assert report.total_fetch_attempted == 2
+    assert report.retries == 1
+    assert report.attempts["AAPL"] == 2
+    assert report.attempt_log[0].retries == 1
+
+
+def test_fetch_multi_reports_progress_only_for_primary_provider():
+    progress_calls = []
+    status_calls = []
+
+    def progress(done, total):
+        progress_calls.append((done, total))
+
+    def status(msg):
+        status_calls.append(msg)
+
+    def fail(t, f):
+        raise ProviderTransientError("network")
+
+    policy = FetchPolicy(fallback_order=("schwab",), max_retries=0)
+    with patch("tradex.data.fetcher._PROVIDERS", _fake_providers(yahoo=fail, schwab=lambda t, f: _make_df())):
+        report = fetch_multi_report(
+            ["AAPL", "MSFT"], "intraday", provider="yahoo",
+            policy=policy, progress=progress, status=status,
+        )
+
+    assert report.actual_provider == "schwab"
+    assert sorted(progress_calls) == [(1, 2), (2, 2)]
+    assert len(status_calls) == 1
+    assert "schwab" in status_calls[0]
+
+
+def test_fetch_multi_report_partial_failure_progress_zero_signals():
+    progress_calls = []
+
+    def progress(done, total):
+        progress_calls.append((done, total))
+
+    def mixed(t, f):
+        if t == "AAPL":
+            return _make_df()
+        raise ProviderTransientError("network")
+
+    with patch("tradex.data.fetcher._PROVIDERS", _fake_providers(yahoo=mixed)):
+        report = fetch_multi_report(
+            ["AAPL", "MSFT"], "intraday", provider="yahoo", progress=progress,
+        )
+
+    assert report.total_fetched == 1
+    assert sorted(progress_calls) == [(1, 2), (2, 2)]
+    assert "MSFT" in report.failures
+
+
+def test_fetch_multi_compat_returns_data_dict():
+    with patch("tradex.data.fetcher._PROVIDERS", _fake_providers()):
+        data = fetch_multi(["AAPL", "MSFT"], "intraday", provider="yahoo")
+    assert isinstance(data, dict)
+    assert set(data.keys()) == {"AAPL", "MSFT"}
+    assert all(isinstance(df, pd.DataFrame) for df in data.values())
 
 
 # ─── Fallback orchestration ──────────────────────────────────────────────
@@ -359,10 +475,34 @@ def test_all_provider_failures_visible():
     assert report.actual_provider is None
     assert report.failures
     assert "AAPL" in report.failures
+    assert len(report.attempt_log) == 2
+
+
+def test_fallback_preserves_attempt_history():
+    def yahoo_fail(t, f):
+        raise ProviderTransientError("network")
+
+    def schwab_partial(t, f):
+        if t == "AAPL":
+            return _make_df()
+        raise ProviderTransientError("network")
+
+    policy = FetchPolicy(fallback_order=("schwab",), max_retries=1)
+    providers = _fake_providers(yahoo=yahoo_fail, schwab=schwab_partial)
+    with patch("tradex.data.fetcher._PROVIDERS", providers):
+        report = fetch_multi_report(["AAPL", "MSFT"], "intraday", provider="yahoo", policy=policy)
+
+    assert report.actual_provider == "schwab"
+    by_ticker_provider = {(a.ticker, a.provider): a for a in report.attempt_log}
+    assert ("AAPL", "yahoo") in by_ticker_provider
+    assert ("MSFT", "yahoo") in by_ticker_provider
+    assert ("AAPL", "schwab") in by_ticker_provider
+    assert ("MSFT", "schwab") in by_ticker_provider
+    assert by_ticker_provider[("AAPL", "schwab")].success is True
+    assert by_ticker_provider[("MSFT", "schwab")].success is False
 
 
 def test_no_implicit_yahoo_fallback():
-    """With no fallback configured, a failing primary does not automatically try Yahoo."""
     def fail(t, f):
         raise ProviderTransientError("network")
 
@@ -374,7 +514,6 @@ def test_no_implicit_yahoo_fallback():
 
 
 def test_explicit_yahoo_fallback_allowed():
-    """An explicitly configured Yahoo fallback is allowed and recorded."""
     def fail(t, f):
         raise ProviderTransientError("network")
 

@@ -418,14 +418,38 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
                 f"actual provider '{actual_provider}'"
             )
 
-        if report.total_fetched == 0:
+        has_fetch_failures = bool(report.failures)
+        has_earnings_failures = bool(report.earnings_failures)
+        all_earnings_excluded = report.total_earnings_excluded == len(watchlist)
+
+        if report.total_fetched == 0 and not has_fetch_failures and has_earnings_failures:
+            categories = {type(e).__name__ for e in report.earnings_failures.values()}
+            st.error(
+                f"Earnings source failed for all {report.total_requested} symbols. "
+                f"Failure categories: {', '.join(sorted(categories)) or 'unknown'}."
+            )
+        elif report.total_fetched == 0 and has_fetch_failures:
             categories = {type(e).__name__ for e in report.failures.values()}
             st.error(
                 f"Provider '{report.requested_provider}' failed for all {report.total_requested} "
                 f"symbols. Failure categories: {', '.join(sorted(categories)) or 'unknown'}."
             )
         elif results.empty:
-            st.warning("No opportunities found. Lower the min score or add more tickers.")
+            if all_earnings_excluded:
+                st.warning(
+                    f"No opportunities found. All {report.total_earnings_excluded} tickers "
+                    f"were excluded due to upcoming earnings."
+                )
+            else:
+                st.warning("No opportunities found. Lower the min score or add more tickers.")
+            if has_fetch_failures:
+                st.warning(
+                    f"{len(report.failures)} symbol(s) failed or had insufficient data."
+                )
+                with st.expander("Failure summary"):
+                    for ticker, err in report.failures.items():
+                        st.caption(f"**{ticker}**: {type(err).__name__}")
+                        st.text(str(err))
         else:
             failed_count = len(report.failures)
             if failed_count:

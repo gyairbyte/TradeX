@@ -13,7 +13,8 @@ import os
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pandas as pd
@@ -62,7 +63,7 @@ TIMEFRAMES = {
 DEFAULT_PROVIDER = os.getenv("DATA_PROVIDER", "yahoo")
 
 
-_MAX_ALLOWED_RETRIES = 5
+_MAX_ALLOWED_RETRIES = 3
 
 
 def _default_backoff(attempt: int) -> float:
@@ -79,6 +80,9 @@ class FetchPolicy:
     canonical provider names to try only when the previous provider produced
     zero usable datasets for the requested symbols. The primary provider is
     always removed from the fallback list.
+
+    The constructor validates ``max_retries`` and normalizes ``fallback_order``
+    to canonical provider names, so direct ``FetchPolicy(...)`` usage is safe.
     """
 
     max_retries: int = 0
@@ -92,6 +96,24 @@ class FetchPolicy:
             raise ValueError(
                 f"max_retries must be at most {_MAX_ALLOWED_RETRIES}; got {self.max_retries}"
             )
+
+        # Normalize fallback_order: accept comma-separated string or iterable.
+        raw = self.fallback_order
+        if isinstance(raw, str):
+            parts = [p.strip() for p in raw.split(",") if p.strip()]
+        else:
+            parts = list(raw)
+
+        seen: set[str] = set()
+        normalized: list[str] = []
+        for p in parts:
+            canonical = resolve_provider(p)
+            if canonical in seen:
+                continue
+            seen.add(canonical)
+            normalized.append(canonical)
+
+        object.__setattr__(self, "fallback_order", tuple(normalized))
 
     @classmethod
     def build(
@@ -111,35 +133,39 @@ class FetchPolicy:
             retries = int(max_retries)
         except (TypeError, ValueError) as exc:
             raise ValueError(f"OHLCV_MAX_RETRIES must be an integer; got {max_retries!r}") from exc
-        if retries < 0:
-            raise ValueError(f"max_retries must be non-negative; got {retries}")
-        if retries > _MAX_ALLOWED_RETRIES:
-            raise ValueError(
-                f"max_retries must be at most {_MAX_ALLOWED_RETRIES}; got {retries}"
-            )
 
         # Resolve fallback_order
         raw_fallback = fallback_order
         if raw_fallback is None:
             raw_fallback = os.getenv("OHLCV_FALLBACK_ORDER", "")
-        if isinstance(raw_fallback, str):
-            parts = [p.strip() for p in raw_fallback.split(",") if p.strip()]
-            raw_fallback = parts
 
-        seen: set[str] = set()
-        normalized: list[str] = []
-        for p in raw_fallback:
-            canonical = resolve_provider(p)
-            if canonical in seen:
-                continue
-            seen.add(canonical)
-            normalized.append(canonical)
-
-        return cls(max_retries=retries, fallback_order=tuple(normalized))
+        return cls(max_retries=retries, fallback_order=raw_fallback)
 
     def fallback_for(self, primary: str) -> tuple[str, ...]:
         """Return the fallback order with the primary provider removed."""
         return tuple(p for p in self.fallback_order if p != resolve_provider(primary))
+
+
+@dataclass
+class FetchResult:
+    """Result of a single ticker fetch attempt, including retry accounting."""
+
+    df: pd.DataFrame | None = None
+    attempts: int = 0
+    retries: int = 0
+    error: ProviderError | None = None
+
+
+@dataclass
+class FetchAttempt:
+    """One provider/ticker attempt recorded in a batch fetch report."""
+
+    provider: str
+    ticker: str
+    attempts: int
+    retries: int
+    error: ProviderError | None = None
+    success: bool = False
 
 
 @dataclass
@@ -157,6 +183,7 @@ class FetchReport:
     total_fetched: int
     total_fetch_attempted: int
     retries: int
+    attempt_log: list[FetchAttempt] = field(default_factory=list)
 
 
 def normalize_yahoo_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -426,7 +453,7 @@ def _get_schwab_client():
                     app_secret=app_secret,
                 )
             except Exception:  # noqa: BLE001
-                raise RuntimeError(
+                raise ProviderAuthenticationError(
                     "Schwab authentication failed. Verify the token file, "
                     "app key, and app secret, then re-run the OAuth script."
                 ) from None
@@ -438,12 +465,13 @@ def _fetch_schwab(ticker: str, timeframe: str) -> pd.DataFrame:
     """Fetch canonical OHLCV data from the Schwab Market Data API.
 
     Raises:
-        ImportError:            schwab-py is not installed.
-        EnvironmentError:       SCHWAB_APP_KEY or SCHWAB_APP_SECRET missing.
-        FileNotFoundError:      The OAuth token file does not exist.
-        ValueError:             The token path is inside the repo or timeframe unsupported.
-        RuntimeError:            The Schwab API request failed.
-        ValueError:             The response was not valid JSON.
+        ImportError:                schwab-py is not installed.
+        OSError:                    SCHWAB_APP_KEY or SCHWAB_APP_SECRET missing.
+        FileNotFoundError:          The OAuth token file does not exist.
+        ValueError:                 The token path is inside the repo or timeframe unsupported.
+        ProviderAuthenticationError: Schwab authentication or authorization failed.
+        ProviderTransientError:     Schwab returned a retryable HTTP error (5xx / 429).
+        ProviderResponseError:      Schwab returned a non-retryable HTTP error or malformed data.
     """
     client = _get_schwab_client()
 
@@ -465,7 +493,15 @@ def _fetch_schwab(ticker: str, timeframe: str) -> pd.DataFrame:
     try:
         resp.raise_for_status()
     except Exception:  # noqa: BLE001
-        raise RuntimeError(
+        if status in (401, 403):
+            raise ProviderAuthenticationError(
+                f"Schwab authentication failed for {ticker} ({timeframe}) (HTTP {status})"
+            ) from None
+        if status == 429 or (isinstance(status, int) and status >= 500):
+            raise ProviderTransientError(
+                f"Schwab transient error for {ticker} ({timeframe}) (HTTP {status})"
+            ) from None
+        raise ProviderResponseError(
             f"Schwab price-history request failed for {ticker} ({timeframe}) "
             f"(HTTP {status}). The response may contain an error from Schwab."
         ) from None
@@ -473,8 +509,8 @@ def _fetch_schwab(ticker: str, timeframe: str) -> pd.DataFrame:
     try:
         data = resp.json()
     except json.JSONDecodeError:
-        raise ValueError(
-            f"Schwab returned non-JSON price-history response for {ticker}"
+        raise ProviderResponseError(
+            f"Schwab returned non-JSON price-history response for {ticker} ({timeframe})"
         ) from None
 
     candles = data.get("candles", []) if isinstance(data, dict) else []
@@ -523,36 +559,57 @@ def _fetch_with_retry(
     provider_func: Callable[[], pd.DataFrame],
     policy: FetchPolicy,
     sleeper: Callable[[float], None] | None = None,
-) -> pd.DataFrame:
+    ticker: str = "",
+    timeframe: str = "",
+) -> FetchResult:
     """Call a provider fetch function with a bounded number of retries.
 
     Retries only occur for ``ProviderTransientError``. All other errors stop
     immediately. ``sleeper`` is injectable for tests.
+
+    Returns a ``FetchResult`` with the resulting DataFrame (or ``None`` on
+    failure), the actual number of attempts made, the actual number of retries
+    used, and the final error (``None`` on success).
+
+    ``ticker`` and ``timeframe`` are used only to contextualize any generic
+    exception that must be classified into a safe, typed ``ProviderError``.
     """
     if sleeper is None:
         sleeper = time.sleep
-    attempts = policy.max_retries + 1
+
+    max_attempts = policy.max_retries + 1
     last_error: ProviderError | None = None
-    for attempt in range(1, attempts + 1):
+    attempts = 0
+    retries = 0
+
+    while attempts < max_attempts:
+        attempts += 1
         try:
-            return provider_func()
+            df = provider_func()
+            return FetchResult(df=df, attempts=attempts, retries=retries)
         except ProviderError as e:
             last_error = e
-            if isinstance(e, ProviderTransientError) and attempt < attempts:
-                backoff = policy.backoff(attempt) if policy.backoff else _default_backoff(attempt)
+            if isinstance(e, ProviderTransientError) and attempts < max_attempts:
+                retries += 1
+                backoff = policy.backoff(retries) if policy.backoff else _default_backoff(retries)
                 sleeper(backoff)
                 continue
-            raise
+            break
         except Exception as e:  # noqa: BLE001
-            classified = _classify_exception(e, "", "")
+            classified = _classify_exception(e, ticker, timeframe)
             last_error = classified
-            if isinstance(classified, ProviderTransientError) and attempt < attempts:
-                backoff = policy.backoff(attempt) if policy.backoff else _default_backoff(attempt)
+            if isinstance(classified, ProviderTransientError) and attempts < max_attempts:
+                retries += 1
+                backoff = policy.backoff(retries) if policy.backoff else _default_backoff(retries)
                 sleeper(backoff)
                 continue
-            raise classified
-    # Defensive: should be unreachable because the loop either returns or raises.
-    raise last_error or ProviderResponseError("Unknown fetch failure")
+            break
+
+    return FetchResult(
+        error=last_error or ProviderResponseError("Unknown fetch failure"),
+        attempts=attempts,
+        retries=retries,
+    )
 
 
 def fetch_multi_report(
@@ -563,6 +620,7 @@ def fetch_multi_report(
     sleeper: Callable[[float], None] | None = None,
     progress: Callable[[int, int], None] | None = None,
     status: Callable[[str], None] | None = None,
+    max_workers: int = 12,
 ) -> FetchReport:
     """Fetch OHLCV data for ``tickers`` with retries and whole-batch fallback.
 
@@ -570,6 +628,10 @@ def fetch_multi_report(
     fallback order. It stops at the first provider that produces at least one
     usable dataset. Failures are captured in the returned ``FetchReport`` and never
     swallowed silently.
+
+    Ticker fetches within a single provider attempt run concurrently up to
+    ``max_workers``. ``progress`` is called only for the first provider attempt so
+    fallback rounds do not produce ``done > total`` or duplicate ticker counts.
     """
     if timeframe not in TIMEFRAMES:
         raise ValueError(f"timeframe must be one of {list(TIMEFRAMES)}")
@@ -579,8 +641,10 @@ def fetch_multi_report(
     providers_to_try = (requested_provider,) + policy.fallback_for(requested_provider)
 
     total_fetch_attempted = 0
+    total_retries = 0
     all_failures: dict[str, ProviderError] = {}
     all_attempts: dict[str, int] = {}
+    attempt_log: list[FetchAttempt] = []
     providers_attempted: list[str] = []
 
     remaining = list(tickers)
@@ -601,34 +665,79 @@ def fetch_multi_report(
         remaining_next: list[str] = []
         any_success_this_provider = False
 
-        for i, ticker in enumerate(remaining):
-            all_attempts[ticker] = all_attempts.get(ticker, 0) + 1
-            total_fetch_attempted += 1
-            try:
-                df = _fetch_with_retry(
-                    lambda t=ticker, f=timeframe, pf=provider_func: pf(t, f),
-                    policy,
-                    sleeper=sleeper,
+        def _fetch_one(ticker: str) -> tuple[str, FetchResult]:
+            result = _fetch_with_retry(
+                lambda: provider_func(ticker, timeframe),
+                policy,
+                sleeper=sleeper,
+                ticker=ticker,
+                timeframe=timeframe,
+            )
+            return ticker, result
+
+        completed = 0
+        total = len(tickers)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_ticker = {
+                executor.submit(_fetch_one, t): t for t in remaining
+            }
+            for future in as_completed(future_to_ticker):
+                ticker, result = future.result()
+                completed += 1
+
+                total_fetch_attempted += result.attempts
+                total_retries += result.retries
+                all_attempts[ticker] = all_attempts.get(ticker, 0) + result.attempts
+
+                if p_idx == 0 and progress is not None:
+                    progress(completed, total)
+
+                if result.error:
+                    all_failures[ticker] = result.error
+                    remaining_next.append(ticker)
+                    attempt_log.append(
+                        FetchAttempt(
+                            provider=p,
+                            ticker=ticker,
+                            attempts=result.attempts,
+                            retries=result.retries,
+                            error=result.error,
+                            success=False,
+                        )
+                    )
+                    continue
+
+                df = result.df
+                if df is None or df.empty or not _has_usable_ohlcv(df):
+                    err = ProviderDataUnavailableError(
+                        f"No usable OHLCV data for {ticker} ({timeframe}) from {p}"
+                    )
+                    all_failures[ticker] = err
+                    remaining_next.append(ticker)
+                    attempt_log.append(
+                        FetchAttempt(
+                            provider=p,
+                            ticker=ticker,
+                            attempts=result.attempts,
+                            retries=result.retries,
+                            error=err,
+                            success=False,
+                        )
+                    )
+                    continue
+
+                data[ticker] = df
+                all_failures.pop(ticker, None)
+                any_success_this_provider = True
+                attempt_log.append(
+                    FetchAttempt(
+                        provider=p,
+                        ticker=ticker,
+                        attempts=result.attempts,
+                        retries=result.retries,
+                        success=True,
+                    )
                 )
-            except ProviderError as e:
-                all_failures[ticker] = e
-                remaining_next.append(ticker)
-                continue
-
-            if df.empty or not _has_usable_ohlcv(df):
-                # No usable data for this ticker from this provider.
-                all_failures[ticker] = ProviderDataUnavailableError(
-                    f"No usable OHLCV data for {ticker} ({timeframe}) from {p}"
-                )
-                remaining_next.append(ticker)
-                continue
-
-            data[ticker] = df
-            all_failures.pop(ticker, None)
-            any_success_this_provider = True
-
-            if p_idx == 0 and progress is not None:
-                progress(i + 1, len(tickers))
 
         if any_success_this_provider:
             actual_provider = p
@@ -650,7 +759,8 @@ def fetch_multi_report(
         total_requested=len(tickers),
         total_fetched=len(data),
         total_fetch_attempted=total_fetch_attempted,
-        retries=policy.max_retries,
+        retries=total_retries,
+        attempt_log=attempt_log,
     )
 
 
@@ -710,10 +820,12 @@ def fetch_multi(
     timeframe: str,
     provider: str | None = None,
     policy: FetchPolicy | None = None,
-) -> FetchReport:
-    """Fetch data for multiple tickers with retries and whole-batch fallback.
+) -> dict[str, pd.DataFrame]:
+    """Fetch data for multiple tickers.
 
-    Returns a ``FetchReport`` with successes, failures, and provenance metadata.
-    New code should prefer ``fetch_multi_report``.
+    This is the legacy compatibility API: it returns a mapping from ticker to
+    successful OHLCV DataFrame, silently omitting failures. New code that needs
+    failure details, provenance, or fallback metadata should use
+    ``fetch_multi_report`` instead.
     """
-    return fetch_multi_report(tickers, timeframe, provider=provider, policy=policy)
+    return fetch_multi_report(tickers, timeframe, provider=provider, policy=policy).data
