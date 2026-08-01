@@ -174,16 +174,23 @@ A "coil" is a stock that:
 
 ### Running the watcher
 ```bash
-# Run once
+# Run once — manual scans are allowed regardless of market status
 python -m tradex.tracker.watcher --timeframe intraday
 
-# Poll every 5 minutes (run during market hours)
-python -m tradex.tracker.watcher --timeframe intraday --interval 5
+# Poll every 5 minutes and only scan during the NYSE regular session
+python -m tradex.tracker.watcher --timeframe intraday --interval 5 --market-hours-only
 
 # With retries and an explicit whole-scan fallback chain
 python -m tradex.tracker.watcher --timeframe intraday --interval 5 \
-  --max-retries 2 --fallback-order "schwab,yahoo"
+  --max-retries 2 --fallback-order "schwab,yahoo" --market-hours-only
 ```
+
+**Market-hours behavior**
+- TradeX models the NYSE regular session in the `America/New_York` timezone using the `exchange-calendars` XNYS calendar.
+- Scheduled interval scans can be gated with `--market-hours-only` so they skip weekends, NYSE holidays (including Good Friday), early closes, and pre/post-market hours.
+- Manual one-off scans (`--interval 0`, the default) still run at any time unless `--market-hours-only` is also supplied.
+- The daily pre-market gap scan is scheduled for `08:00 America/New_York`; the outcome resolution pass is scheduled for `16:30 America/New_York`. Both remain at the same New York wall-clock time across DST changes and skip non-trading days.
+- Pre-market gap filtering uses the actual regular-session open from the exchange calendar and keeps only bars from `04:00` ET up to (but not including) the open on the intended session date.
 
 ---
 
@@ -222,7 +229,8 @@ Save and switch between named ticker lists (e.g. "Semis", "Crypto-adjacent", "Ea
 ### Still on the list
 - [x] Add provider/source provenance persistence to signal history and outcomes (PROVIDER-004)
 - [x] Define provider failure and fallback policy (PROVIDER-005)
-- [ ] Add market-hours and timezone handling (COR-005)
+- [x] Add market-hours and timezone handling (COR-005)
+- [ ] Redesign signal-history storage and access patterns (DATA-001)
 - [ ] Backtesting module to validate signal quality historically
 - [ ] Portfolio-level risk view
 
