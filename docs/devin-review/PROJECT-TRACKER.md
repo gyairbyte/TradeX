@@ -271,16 +271,28 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Define provider failure and fallback policy
 - **Category:** Data provider
 - **Priority:** Medium
-- **Status:** Proposed
+- **Status:** Completed
+- **Resolved by:** `devin/provider-failure-policy`
 - **Problem statement:** There is no explicit policy for what happens when a provider fails or when a requested symbol is unavailable. The current `fetch_multi` silently skips failures and the engine shows "No opportunities" rather than distinguishing data failure from zero signals.
 - **Recommended action:** Document and implement a failure/fallback policy: per-symbol retries, explicit fallback order, clear error surfacing, and no silent fallback to Yahoo when `DATA_PROVIDER` is set to another provider.
 - **Reason:** Trading decisions depend on knowing whether data is missing, stale, or from an unexpected source.
 - **Dependencies:** PROVIDER-003, PROVIDER-004
-- **Files likely affected:** `tradex/data/fetcher.py`, `tradex/screener/engine.py`, `tradex/ui/dashboard.py`
-- **Testing requirements:** Unit tests for provider failure, partial failures, and fallback behavior.
-- **Acceptance criteria:** Provider failures are visible in the UI; fallback only happens when explicitly configured; no implicit Yahoo fallback.
+- **Files likely affected:** `tradex/data/fetcher.py`, `tradex/screener/engine.py`, `tradex/ui/dashboard.py`, `tradex/tracker/watcher.py`
+- **Testing requirements:** Unit tests for provider error classification, retry behavior, policy parsing, batch fetch reporting, screener report, fallback behavior, watcher and dashboard helpers.
+- **Acceptance criteria:**
+  - Provider errors are classified as retryable (`ProviderTransientError`) or non-retryable (configuration, authentication, capability, data unavailable, response) and never expose credentials or raw response bodies.
+  - Retries are disabled by default (`max_retries=0`); retries are capped at 3 and use deterministic injectable backoff.
+  - Fallback is disabled unless explicitly configured via `OHLCV_FALLBACK_ORDER` or the `fallback_order` argument.
+  - Fallback operates at whole-scan level: only tried when the current provider produces zero usable OHLCV data for all symbols that reached the fetch stage, and the chain stops at the first provider with any usable data.
+  - Partial provider success keeps successful results, reports failed symbols, and does not create a mixed-provider scan.
+  - `fetch_multi` returns a `FetchReport` with per-ticker failures, attempt counts, requested/actual provider, fallback flag, and providers attempted.
+  - `engine.run_with_report()` returns a `ScanReport` with results, requested/actual provider, fallback flag, failure details, and totals (requested, fetched, scored, signals, below threshold, insufficient data, earnings excluded).
+  - The dashboard Scanner tab distinguishes valid zero-signal scans, complete provider failures, partial failures, and fallback use.
+  - The watcher logs requested/retry/fallback/actual provider, signal counts, and failure counts.
+  - No Yahoo fallback is inserted automatically.
 - **Intended pull request:** `devin/provider-failure-policy`
 - **Affects trading behavior:** No
+- **Next recommended PR:** `devin/add-market-hours` (COR-005)
 
 ### VAL-001: Build a backtesting harness
 
@@ -360,15 +372,20 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Distinguish provider failures from zero results
 - **Category:** Correctness
 - **Priority:** Medium
-- **Status:** Proposed
+- **Status:** Completed
+- **Resolved by:** `devin/provider-failure-policy` (same PR as PROVIDER-005)
 - **Problem statement:** When all fetches fail, the engine returns an empty DataFrame and the dashboard says "No opportunities."
-- **Recommended action:** Return a `summary` or `errors` dict from `engine.run` and display it in the dashboard.
+- **Recommended action:** Return a structured `ScanReport` from `engine.run_with_report()` and display it in the dashboard and watcher.
 - **Reason:** Users need to know when data is broken, not just when no signals fired.
 - **Dependencies:** None
-- **Files likely affected:** `tradex/screener/engine.py`, `tradex/ui/dashboard.py`
-- **Testing requirements:** Unit test where all fetches fail; assert summary contains error count.
-- **Acceptance criteria:** Dashboard shows "X fetch errors" separately from "0 signals."
-- **Intended pull request:** `devin/distinguish-fetch-failures`
+- **Files likely affected:** `tradex/screener/engine.py`, `tradex/ui/dashboard.py`, `tradex/tracker/watcher.py`
+- **Testing requirements:** Regression test where all fetches fail: zero signals, visible failures, selected provider present, distinguishable from a valid zero-signal scan.
+- **Acceptance criteria:**
+  - `tests/screener/test_engine.py::test_engine_reports_provider_failures` is a passing regression against `run_with_report`.
+  - The dashboard Scanner tab shows `st.error` for complete provider failure and `st.warning` for partial failure.
+  - The watcher prints an error summary when all providers fail instead of only "No signals above threshold."
+  - A valid zero-signal scan continues to show the existing no-opportunities message.
+- **Intended pull request:** `devin/provider-failure-policy`
 - **Affects trading behavior:** No
 
 ### SHORT-001: Add market regime and relative strength to short-term scorer
@@ -556,9 +573,9 @@ This is the master backlog for recommendations from the Devin review. Items are 
 | Low | 5 | DOC-001: Fix documentation drift |
 
 **Recommended next pull request order:**
-1. `devin/add-provider-provenance` (PROVIDER-004).
-2. `devin/provider-failure-policy` (PROVIDER-005).
-3. `devin/redesign-signal-history` (DATA-001, COIL-001, COIL-002).
+1. `devin/add-market-hours` (COR-005).
+2. `devin/redesign-signal-history` (DATA-001, COIL-001, COIL-002).
+3. `devin/fix-scan-audit` (COR-012).
 4. `devin/add-backtest-engine` (VAL-001).
 5. `devin/reevaluate-scores-with-validated-data` (new, after backtesting).
 

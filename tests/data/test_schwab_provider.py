@@ -13,6 +13,7 @@ import pandas as pd
 import pytest
 
 from tradex.data import fetcher
+from tradex.data.fetcher import ProviderAuthenticationError, ProviderResponseError
 
 pytest.importorskip("schwab")
 
@@ -137,8 +138,8 @@ def test_schwab_missing_candles_key(tmp_token, monkeypatch):
     assert df.empty
 
 
-def test_schwab_http_error_raises_runtimeerror(tmp_token, monkeypatch):
-    """Non-2xx responses are surfaced as safe, non-secret-bearing errors."""
+def test_schwab_http_auth_error_raises_provider_authentication_error(tmp_token, monkeypatch):
+    """401/403 responses are surfaced as safe, non-secret-bearing authentication errors."""
     resp = MagicMock()
     resp.status_code = 401
     resp.raise_for_status.side_effect = RuntimeError("HTTP 401")
@@ -151,13 +152,13 @@ def test_schwab_http_error_raises_runtimeerror(tmp_token, monkeypatch):
 
     with (
         patch("schwab.auth.client_from_token_file", return_value=client),
-        pytest.raises(RuntimeError, match="Schwab price-history request failed"),
+        pytest.raises(ProviderAuthenticationError, match="HTTP 401"),
     ):
         fetcher.fetch("SPY", "short", provider="schwab")
 
 
-def test_schwab_malformed_json_raises_valueerror(tmp_token, monkeypatch):
-    """A non-JSON response is surfaced as a clear ValueError."""
+def test_schwab_malformed_json_raises_provider_response_error(tmp_token, monkeypatch):
+    """A non-JSON response is surfaced as a safe, typed response error."""
     resp = MagicMock()
     resp.status_code = 200
     resp.raise_for_status.return_value = None
@@ -171,7 +172,7 @@ def test_schwab_malformed_json_raises_valueerror(tmp_token, monkeypatch):
 
     with (
         patch("schwab.auth.client_from_token_file", return_value=client),
-        pytest.raises(ValueError, match="non-JSON"),
+        pytest.raises(ProviderResponseError, match="non-JSON"),
     ):
         fetcher.fetch("SPY", "short", provider="schwab")
 
@@ -310,7 +311,7 @@ def test_schwab_auth_failure_does_not_leak_secrets(tmp_token, monkeypatch, capsy
 
     with patch(
         "schwab.auth.client_from_token_file", side_effect=fake_client
-    ), pytest.raises(RuntimeError) as exc_info:
+    ), pytest.raises(ProviderAuthenticationError) as exc_info:
         fetcher.fetch("SPY", "short", provider="schwab")
 
     assert exc_info.value.__cause__ is None
@@ -340,7 +341,7 @@ def test_schwab_http_failure_does_not_leak_secrets(tmp_token, monkeypatch, capsy
 
     with patch(
         "schwab.auth.client_from_token_file", return_value=client
-    ), pytest.raises(RuntimeError) as exc_info:
+    ), pytest.raises(ProviderAuthenticationError) as exc_info:
         fetcher.fetch("SPY", "short", provider="schwab")
 
     assert "HTTP 403" in str(exc_info.value)
@@ -371,7 +372,7 @@ def test_schwab_client_cached(tmp_token, monkeypatch):
 
 
 def test_schwab_fetch_multi_uses_cached_client(tmp_token, monkeypatch):
-    """fetch_multi reuses one authenticated client for all tickers."""
+    """fetch_multi_report reuses one authenticated client for all tickers."""
     t1 = datetime(2024, 1, 2, 14, 30, tzinfo=UTC)
     candles = [_make_candle(t1, 100.0, 101.0, 99.0, 100.5, 1000)]
 
@@ -381,11 +382,11 @@ def test_schwab_fetch_multi_uses_cached_client(tmp_token, monkeypatch):
 
     client = _mock_client("short", candles)
     with patch("schwab.auth.client_from_token_file", return_value=client) as mock_auth:
-        results = fetcher.fetch_multi(["SPY", "QQQ"], "short", provider="schwab")
+        report = fetcher.fetch_multi_report(["SPY", "QQQ"], "short", provider="schwab")
 
     mock_auth.assert_called_once()
-    assert set(results.keys()) == {"SPY", "QQQ"}
-    for df in results.values():
+    assert set(report.data.keys()) == {"SPY", "QQQ"}
+    for df in report.data.values():
         _assert_contract(df)
 
 

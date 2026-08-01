@@ -13,36 +13,49 @@ Run with: streamlit run tradex/ui/dashboard.py
 """
 import os
 import re
-import streamlit as st
-import plotly.graph_objects as go
-import plotly.express as px
+
 import pandas as pd
-from tradex.screener.engine import run
-from tradex.data.fetcher import DEFAULT_PROVIDER, ProviderCapabilityError, fetch, resolve_provider
-from tradex.signals.indicators import add_indicators
-from tradex.tracker import store, analyzer
-from tradex.tracker.confluence import run_confluence_screen
-from tradex.tracker.outcome_tracker import run_outcome_pass, get_outcome_stats
-from tradex.patterns.fingerprint import run_full_build, list_fingerprints, load_fingerprint
-from tradex.patterns.matcher import run_match_screen, match_ticker
-from tradex.patterns.config import PROFILES
-from tradex.premarket.gap_scanner import scan_gaps
-from tradex.options.flow import scan_unusual_flow, get_put_call_sentiment
+import plotly.express as px
+import plotly.graph_objects as go
+import streamlit as st
+
 from tradex.alerts.notifier import (
-    send_alert, DISCORD_TOKEN, DISCORD_CHANNEL_ID, EMAIL_TO,
-    COIL_ALERT_THRESHOLD, PATTERN_ALERT_THRESHOLD, CONFLUENCE_ALERT_THRESHOLD,
+    COIL_ALERT_THRESHOLD,
+    CONFLUENCE_ALERT_THRESHOLD,
+    DISCORD_CHANNEL_ID,
+    DISCORD_TOKEN,
+    EMAIL_TO,
+    PATTERN_ALERT_THRESHOLD,
+    send_alert,
 )
-from tradex.watchlists import store as wl_store, DEFAULT_NAME as WL_DEFAULT_NAME
-from tradex.watchlists import presets as wl_presets
+from tradex.data.fetcher import (
+    FetchPolicy,
+    ProviderCapabilityError,
+    fetch,
+    resolve_provider,
+)
+from tradex.options.flow import get_put_call_sentiment, scan_unusual_flow
+from tradex.patterns.config import PROFILES
+from tradex.patterns.fingerprint import list_fingerprints, load_fingerprint, run_full_build
+from tradex.patterns.matcher import match_ticker, run_match_screen
+from tradex.premarket.gap_scanner import scan_gaps
+from tradex.screener.engine import run_with_report
 from tradex.signals import weights as signal_weights
+from tradex.signals.indicators import add_indicators
+from tradex.tracker import analyzer, store
+from tradex.tracker.confluence import run_confluence_screen
+from tradex.tracker.outcome_tracker import get_outcome_stats, run_outcome_pass
 from tradex.ui.source_defaults import (
-    options_source_index,
     earnings_source_index,
-    market_cap_source_index,
-    options_sources,
     earnings_sources,
+    market_cap_source_index,
     market_cap_sources,
+    options_source_index,
+    options_sources,
 )
+from tradex.watchlists import DEFAULT_NAME as WL_DEFAULT_NAME
+from tradex.watchlists import presets as wl_presets
+from tradex.watchlists import store as wl_store
 
 store.init()
 wl_store.init()
@@ -267,7 +280,7 @@ with st.sidebar:
                     for w in result.warnings:
                         st.warning(w)
                     st.rerun()
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     st.error(f"Refresh failed: {e}")
 
         st.divider()
@@ -373,11 +386,19 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
     if run_scan:
         progress_bar = st.progress(0.0, text=f"Scanning {len(watchlist)} tickers on {timeframe}…")
         scan_provider = resolve_provider(provider)
+        scan_policy = FetchPolicy.build()
+
+        retry_label = f"{scan_policy.max_retries} retry" + ("" if scan_policy.max_retries == 1 else "ies")
+        if scan_policy.fallback_order:
+            fb_label = "Fallback: " + " → ".join(scan_policy.fallback_order)
+        else:
+            fb_label = "Fallback disabled"
+        st.caption(f"Retries: {retry_label} | {fb_label}")
 
         def _update_progress(done: int, total: int) -> None:
             progress_bar.progress(done / total, text=f"Scanning {done}/{total} tickers on {timeframe}…")
 
-        results = run(
+        report = run_with_report(
             watchlist,
             timeframe=timeframe,
             min_score=min_score,
@@ -385,16 +406,67 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
             progress=_update_progress,
             provider=scan_provider,
             earnings_source=earnings_source,
+            policy=scan_policy,
         )
+        results = report.results
+        actual_provider = report.actual_provider or report.requested_provider
         progress_bar.empty()
-        if results.empty:
-            st.warning("No opportunities found. Lower the min score or add more tickers.")
-        else:
-            if earnings_buffer > 0:
-                st.success(f"Found {len(results)} opportunities (excluded tickers with earnings within {earnings_buffer}d)")
+
+        has_fetch_failures = bool(report.fetch_failures)
+        has_scoring_failures = bool(report.scoring_failures)
+        has_earnings_failures = bool(report.earnings_failures)
+        all_earnings_excluded = report.total_earnings_excluded == len(watchlist)
+        all_fetch_eligible_failed = (
+            report.total_fetch_eligible > 0
+            and report.total_fetched == 0
+            and has_fetch_failures
+        )
+
+        if report.fallback_used:
+            st.info(
+                f"Fallback used: requested provider '{report.requested_provider}', "
+                f"actual provider '{actual_provider}'"
+            )
+
+        if all_fetch_eligible_failed:
+            categories = {type(e).__name__ for e in report.fetch_failures.values()}
+            st.error(
+                f"Provider '{report.requested_provider}' failed for all "
+                f"{report.total_fetch_eligible} symbol(s) that reached OHLCV fetching. "
+                f"Failure categories: {', '.join(sorted(categories)) or 'unknown'}."
+            )
+        elif (
+            report.total_fetched == 0
+            and has_earnings_failures
+            and not has_fetch_failures
+            and not has_scoring_failures
+            and not all_earnings_excluded
+        ):
+            categories = {type(e).__name__ for e in report.earnings_failures.values()}
+            st.error(
+                f"Earnings source failed for {len(report.earnings_failures)} symbol(s). "
+                f"Failure categories: {', '.join(sorted(categories)) or 'unknown'}."
+            )
+        elif results.empty:
+            if all_earnings_excluded:
+                st.warning(
+                    f"No opportunities found. All {report.total_earnings_excluded} tickers "
+                    f"were excluded due to upcoming earnings."
+                )
             else:
-                st.success(f"Found {len(results)} opportunities")
-            store.record_signals(results, timeframe, provider=scan_provider)
+                st.warning("No opportunities found. Lower the min score or add more tickers.")
+        else:
+            failed_count = len(report.failures)
+            if failed_count:
+                st.warning(
+                    f"Found {len(results)} opportunities; {failed_count} symbol(s) had stage failures."
+                )
+            else:
+                if earnings_buffer > 0:
+                    st.success(f"Found {len(results)} opportunities (excluded tickers with earnings within {earnings_buffer}d)")
+                else:
+                    st.success(f"Found {len(results)} opportunities")
+            store.record_signals(results, timeframe, provider=actual_provider)
             st.dataframe(
                 results,
                 use_container_width=True,
@@ -415,7 +487,47 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
             )
             st.session_state["scan_results"] = results
             st.session_state["scan_timeframe"] = timeframe
-            st.session_state["scan_provider"] = scan_provider
+            st.session_state["scan_provider"] = actual_provider
+
+        # Surface each non-empty stage failure map independently.
+        if has_earnings_failures:
+            st.warning(f"{len(report.earnings_failures)} earnings lookup(s) failed.")
+            with st.expander("Earnings failure summary"):
+                for ticker, err in report.earnings_failures.items():
+                    st.caption(f"**{ticker}**: {type(err).__name__}")
+                    st.text(str(err))
+
+        if has_fetch_failures and not all_fetch_eligible_failed:
+            st.warning(f"{len(report.fetch_failures)} OHLCV fetch/insufficient-data failure(s).")
+            with st.expander("OHLCV failure summary"):
+                for ticker, err in report.fetch_failures.items():
+                    st.caption(f"**{ticker}**: {type(err).__name__}")
+                    st.text(str(err))
+
+        if has_scoring_failures:
+            st.warning(f"{len(report.scoring_failures)} scoring failure(s).")
+            with st.expander("Scoring failure summary"):
+                for ticker, err in report.scoring_failures.items():
+                    st.caption(f"**{ticker}**: {type(err).__name__}")
+                    st.text(str(err))
+
+        if report.attempt_log:
+            with st.expander("Fetch attempt summary"):
+                st.caption(
+                    f"Providers attempted: {report.providers_attempted} | "
+                    f"total attempts: {report.total_fetch_attempted} | "
+                    f"retries: {report.total_retries}"
+                )
+                for prov in report.providers_attempted:
+                    entries = [a for a in report.attempt_log if a.provider == prov]
+                    attempted = len(entries)
+                    succeeded = sum(1 for e in entries if e.success)
+                    failed = attempted - succeeded
+                    retries = sum(e.retries for e in entries)
+                    st.text(
+                        f"{prov}: {attempted} attempted, {succeeded} succeeded, "
+                        f"{failed} failed, {retries} retries"
+                    )
 
     if "scan_results" in st.session_state and not st.session_state["scan_results"].empty:
         st.divider()
@@ -436,13 +548,13 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
             low=df["low"], close=df["close"], name="Price",
         ))
         fig.add_trace(go.Scatter(x=df.index, y=df["ema_20"], name="EMA20",
-                                 line=dict(color="orange", width=1)))
+                                 line={"color": "orange", "width": 1}))
         fig.add_trace(go.Scatter(x=df.index, y=df["ema_50"], name="EMA50",
-                                 line=dict(color="blue", width=1)))
+                                 line={"color": "blue", "width": 1}))
         fig.add_trace(go.Scatter(x=df.index, y=df["bb_upper"], name="BB Upper",
-                                 line=dict(color="gray", dash="dot", width=1)))
+                                 line={"color": "gray", "dash": "dot", "width": 1}))
         fig.add_trace(go.Scatter(x=df.index, y=df["bb_lower"], name="BB Lower",
-                                 line=dict(color="gray", dash="dot", width=1),
+                                 line={"color": "gray", "dash": "dot", "width": 1},
                                  fill="tonexty", fillcolor="rgba(200,200,200,0.1)"))
         fig.update_layout(xaxis_rangeslider_visible=False, height=500)
         st.plotly_chart(fig, use_container_width=True)
@@ -451,7 +563,7 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
         colors = ["green" if c >= o else "red" for c, o in zip(df["close"], df["open"])]
         vol_fig.add_trace(go.Bar(x=df.index, y=df["volume"], marker_color=colors, name="Volume"))
         vol_fig.add_trace(go.Scatter(x=df.index, y=df["volume_sma20"], name="Vol SMA20",
-                                     line=dict(color="white", width=1.5)))
+                                     line={"color": "white", "width": 1.5}))
         vol_fig.update_layout(height=200)
         st.plotly_chart(vol_fig, use_container_width=True)
 
@@ -849,14 +961,14 @@ using Pearson correlation across 5 series. Each series is weighted:
 
             price_fig = go.Figure()
             price_fig.add_trace(go.Scatter(x=x, y=fp_upper, mode="lines",
-                                           line=dict(width=0), showlegend=False))
+                                           line={"width": 0}, showlegend=False))
             price_fig.add_trace(go.Scatter(x=x, y=fp_lower, mode="lines",
-                                           line=dict(width=0), fill="tonexty",
+                                           line={"width": 0}, fill="tonexty",
                                            fillcolor="rgba(255,165,0,0.15)", name="Historical range ±1σ"))
             price_fig.add_trace(go.Scatter(x=x, y=fp_mean, mode="lines",
-                                           line=dict(color="orange", dash="dash", width=2), name="Historical avg"))
+                                           line={"color": "orange", "dash": "dash", "width": 2}, name="Historical avg"))
             price_fig.add_trace(go.Scatter(x=x, y=live_price, mode="lines+markers",
-                                           line=dict(color="white", width=2), name=f"{selected_match} (live)"))
+                                           line={"color": "white", "width": 2}, name=f"{selected_match} (live)"))
             price_fig.update_layout(title="Price % — Live vs Historical Fingerprint",
                                     xaxis_title="Days before move", yaxis_title="% from window start", height=400)
             st.plotly_chart(price_fig, use_container_width=True)
@@ -866,7 +978,7 @@ using Pearson correlation across 5 series. Each series is weighted:
             if fp_vol and live_vol:
                 vol_fig = go.Figure()
                 vol_fig.add_trace(go.Scatter(x=x, y=fp_vol, mode="lines",
-                                             line=dict(color="orange", dash="dash", width=2),
+                                             line={"color": "orange", "dash": "dash", "width": 2},
                                              name="Historical avg volume ratio"))
                 vol_fig.add_trace(go.Bar(x=x, y=live_vol, name=f"{selected_match} volume ratio",
                                          marker_color="steelblue", opacity=0.7))

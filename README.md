@@ -125,7 +125,7 @@ print(results)
 
 ## Data Providers
 
-`DATA_PROVIDER` in your `.env` controls **OHLCV data** only (the central `fetch()` and the date-ranged daily-history abstraction). It does not change options, earnings, or market-cap sources. Every recorded signal stores the OHLCV provider that produced it in `signal_history.provider`, and every resolved outcome stores `outcome_provider`. Pre-existing rows are labeled `unknown`.
+`DATA_PROVIDER` in your `.env` controls **OHLCV data** only (the central `fetch()` / `fetch_multi_report()` and the date-ranged daily-history abstraction). It does not change options, earnings, or market-cap sources. Every recorded signal stores the OHLCV provider that produced it in `signal_history.provider`, and every resolved outcome stores `outcome_provider`. Pre-existing rows are labeled `unknown`.
 
 | Provider | `DATA_PROVIDER` value | Cost | Real-time | Setup |
 |---|---|---|---|---|
@@ -133,6 +133,13 @@ print(results)
 | Alpaca | `alpaca` | Free tier | Yes (IEX feed) | API key at alpaca.markets |
 | Interactive Brokers | `ibkr` | Free (need IB account) | Yes | TWS/Gateway running locally |
 | Charles Schwab | `schwab` | Free (need Schwab account) | Yes | OAuth app at developer.schwab.com; see `scripts/schwab_oauth.py` |
+
+Optional retry/fallback configuration (all disabled by default):
+
+- `OHLCV_MAX_RETRIES` — extra retry attempts per ticker for transient failures only (default `0`, max `3`).
+- `OHLCV_FALLBACK_ORDER` — comma-separated whole-scan fallback provider chain (e.g. `schwab,yahoo`). No provider is inserted automatically; an empty/missing value means fallback is disabled.
+
+These settings may also be passed programmatically as `FetchPolicy(max_retries=..., fallback_order=...)` or via `engine.run_with_report(..., policy=...)`.
 
 > **Note:** TD Ameritrade's API was shut down in September 2024. Use `schwab` instead.
 > Schwab output is normalized to a canonical OHLCV DataFrame (sorted, de-duplicated, UTC-indexed). Validate a local token with `scripts/schwab_smoke_test.py`.
@@ -172,6 +179,10 @@ python -m tradex.tracker.watcher --timeframe intraday
 
 # Poll every 5 minutes (run during market hours)
 python -m tradex.tracker.watcher --timeframe intraday --interval 5
+
+# With retries and an explicit whole-scan fallback chain
+python -m tradex.tracker.watcher --timeframe intraday --interval 5 \
+  --max-retries 2 --fallback-order "schwab,yahoo"
 ```
 
 ---
@@ -210,7 +221,8 @@ Save and switch between named ticker lists (e.g. "Semis", "Crypto-adjacent", "Ea
 
 ### Still on the list
 - [x] Add provider/source provenance persistence to signal history and outcomes (PROVIDER-004)
-- [ ] Define provider failure and fallback policy (PROVIDER-005)
+- [x] Define provider failure and fallback policy (PROVIDER-005)
+- [ ] Add market-hours and timezone handling (COR-005)
 - [ ] Backtesting module to validate signal quality historically
 - [ ] Portfolio-level risk view
 
