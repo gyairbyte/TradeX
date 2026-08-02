@@ -551,7 +551,7 @@ def test_init_migration_is_atomic_and_idempotent(tmp_path, monkeypatch):
 
     with store._conn() as con:
         version = con.execute("PRAGMA user_version").fetchone()[0]
-        assert version == 2
+        assert version == 3
         sessions = con.execute("SELECT COUNT(*) FROM scan_sessions").fetchone()[0]
         observations = con.execute("SELECT COUNT(*) FROM scan_observations").fetchone()[0]
         assert sessions == 1
@@ -666,8 +666,8 @@ def test_scan_report_validate_rejects_mismatched_counters():
         report.validate(expected_tickers=["AAPL"])
 
 
-def test_record_scan_preserves_legacy_scan_runs_signal_only_semantics(fresh_signal_db):
-    """Legacy scan_runs rows are written only for scans with qualifying signals, with tickers_n = hits_n = signals."""
+def test_record_scan_writes_audit_row_for_every_native_scan(fresh_signal_db):
+    """Every native scan produces one linked scan_runs audit row with accurate requested/hit counts."""
     no_signal = _make_report([_below_threshold_obs_row("AAPL")])
     with_signal = _make_report([_signal_obs_row("MSFT", 70)])
 
@@ -676,7 +676,12 @@ def test_record_scan_preserves_legacy_scan_runs_signal_only_semantics(fresh_sign
 
     with store._conn() as con:
         rows = con.execute("SELECT * FROM scan_runs ORDER BY run_time").fetchall()
-    assert len(rows) == 1
+    assert len(rows) == 2
     assert rows[0]["tickers_n"] == 1
-    assert rows[0]["hits_n"] == 1
-    assert rows[0]["provider"] == "yahoo"
+    assert rows[0]["hits_n"] == 0
+    assert rows[0]["counts_complete"] == 1
+    assert rows[0]["source"] == "native"
+    assert rows[1]["tickers_n"] == 1
+    assert rows[1]["hits_n"] == 1
+    assert rows[1]["counts_complete"] == 1
+    assert rows[1]["source"] == "native"

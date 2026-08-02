@@ -367,17 +367,22 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Fix scan audit to record tickers scanned vs. found
 - **Category:** Data integrity
 - **Priority:** Medium
-- **Status:** Proposed
-- **Intended pull request:** `devin/fix-scan-audit`
-- **Problem statement:** `scan_runs` records `tickers_n = len(results)` and `hits_n = len(results)`, so it cannot distinguish how many tickers were scanned.
-- **Recommended action:** Update `record_signals` to accept `tickers_scanned` and write accurate counts.
-- **Reason:** Audit data is needed to detect provider failures and understand coverage.
+- **Status:** Completed
+- **Resolved by:** `devin/fix-scan-audit`
+- **Problem statement:** `scan_runs` recorded `tickers_n = hits_n = len(results)`, so it could not distinguish how many tickers were requested, how many were observed, how many qualified as signals, or whether a scan failed entirely. Legacy `scan_runs` rows also lacked any link to canonical `scan_sessions`.
+- **Recommended action:** Bump the SQLite schema to version 3, extend `scan_runs` with `session_id`, `status`, `requested_provider`, `actual_provider`, `counts_complete`, and `source`; migrate legacy rows honestly (`counts_complete=0`, `status='unknown'`, `source='legacy'`); write one native `scan_runs` audit row for every `scan_sessions` row in the same transaction; update `record_scan()` and `record_signals()` to supply accurate counts; and improve `get_recent_scan_runs()` to expose the new columns and a `complete_only` filter.
+- **Reason:** Audit data is needed to detect provider failures, understand coverage, and support downstream dashboards/journals without relying on `signal_history` for counts.
 - **Dependencies:** DATA-001
-- **Files likely affected:** `tradex/tracker/store.py`, `tradex/tracker/watcher.py`
-- **Testing requirements:** DB test verifying `tickers_n` and `hits_n` differ when some tickers fail/are filtered.
-- **Acceptance criteria:** `scan_runs` row has correct `tickers_scanned` and `hits_found`.
-- **Intended pull request:** `devin/fix-scan-audit`
+- **Files likely affected:** `tradex/tracker/store.py`, `tradex/tracker/watcher.py`, `tradex/ui/dashboard.py`, `tests/tracker/test_scan_audit.py`, `tests/tracker/test_watcher.py`, `tests/ui/test_dashboard.py`
+- **Testing requirements:** DB tests for schema v3, native persistence, transaction rollback on audit/observation failure, migration/backfill of legacy rows, compatibility wrapper semantics, query API ordering and `complete_only`, and watcher/dashboard integration.
+- **Acceptance criteria:**
+  - `scan_sessions` remains the canonical source of truth.
+  - `record_scan()` writes exactly one `scan_runs` row per native scan with `tickers_n = report.total_requested`, `hits_n = signals_n`, `status` derived from observations, `source='native'`, `counts_complete=1`, and `session_id` populated.
+  - `record_signals()` backward-compatible 3-arg calls still work; explicit `tickers_scanned` sets complete counts; omitted `tickers_scanned` writes `counts_complete=0` and `tickers_n=NULL`.
+  - Legacy databases are migrated to v3, preserving legacy row IDs and marking unmatched rows `source='legacy'`/`counts_complete=0`/`status='unknown'`.
+  - `get_recent_scan_runs()` returns stable empty-schema, new columns, `hit_rate_pct`, and supports `complete_only`.
 - **Affects trading behavior:** No
+- **Next recommended PR:** `devin/add-backtest-engine` (VAL-001)
 
 ### COR-013: Distinguish provider failures from zero results
 

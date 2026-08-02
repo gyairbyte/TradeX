@@ -25,7 +25,7 @@ from tradex.market.hours import is_trading_day, normalize_market_datetime
 DB_PATH = os.getenv("TRADEX_DB_PATH", os.path.expanduser("~/.tradex/signals.db"))
 
 # DB schema version managed by PRAGMA user_version.
-_SCHEMA_VERSION = 2
+_SCHEMA_VERSION = 3
 
 
 class StoreError(Exception):
@@ -124,13 +124,24 @@ _SCHEMA_SCRIPT = """
     CREATE INDEX IF NOT EXISTS idx_sh_trading_date     ON signal_history(trading_date);
 
     CREATE TABLE IF NOT EXISTS scan_runs (
-        id          INTEGER PRIMARY KEY AUTOINCREMENT,
-        run_time    TEXT NOT NULL,
-        timeframe   TEXT NOT NULL,
-        tickers_n   INTEGER,
-        hits_n      INTEGER,
-        provider    TEXT    NOT NULL DEFAULT 'unknown'
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_time            TEXT NOT NULL,
+        timeframe           TEXT NOT NULL,
+        tickers_n           INTEGER,
+        hits_n              INTEGER,
+        provider            TEXT    NOT NULL DEFAULT 'unknown',
+        session_id          TEXT    UNIQUE,
+        status              TEXT,
+        requested_provider  TEXT,
+        actual_provider     TEXT,
+        counts_complete     INTEGER NOT NULL DEFAULT 0,
+        source              TEXT    NOT NULL DEFAULT 'legacy'
     );
+
+    CREATE INDEX IF NOT EXISTS idx_sr_run_time             ON scan_runs(run_time);
+    CREATE INDEX IF NOT EXISTS idx_sr_timeframe_run_time   ON scan_runs(timeframe, run_time);
+    CREATE INDEX IF NOT EXISTS idx_sr_session_id           ON scan_runs(session_id);
+    CREATE INDEX IF NOT EXISTS idx_sr_status               ON scan_runs(status);
 
     CREATE TABLE IF NOT EXISTS scan_sessions (
         session_id            TEXT PRIMARY KEY,
@@ -214,8 +225,20 @@ def _migrate_v0(con: sqlite3.Connection) -> None:
     sr_cols = _column_names(con, "scan_runs")
     if "provider" not in sr_cols:
         con.execute("ALTER TABLE scan_runs ADD COLUMN provider TEXT NOT NULL DEFAULT 'unknown'")
+    if "session_id" not in sr_cols:
+        con.execute("ALTER TABLE scan_runs ADD COLUMN session_id TEXT")
+    if "status" not in sr_cols:
+        con.execute("ALTER TABLE scan_runs ADD COLUMN status TEXT")
+    if "requested_provider" not in sr_cols:
+        con.execute("ALTER TABLE scan_runs ADD COLUMN requested_provider TEXT")
+    if "actual_provider" not in sr_cols:
+        con.execute("ALTER TABLE scan_runs ADD COLUMN actual_provider TEXT")
+    if "counts_complete" not in sr_cols:
+        con.execute("ALTER TABLE scan_runs ADD COLUMN counts_complete INTEGER NOT NULL DEFAULT 0")
+    if "source" not in sr_cols:
+        con.execute("ALTER TABLE scan_runs ADD COLUMN source TEXT NOT NULL DEFAULT 'legacy'")
 
-    # Create the new canonical tables.
+    # Create the new canonical tables and indexes.
     _create_schema_v1(con)
 
     # Build deterministic synthetic sessions for legacy signal rows.
@@ -349,6 +372,130 @@ def _migrate_v1_to_v2(con: sqlite3.Connection) -> None:
     """)
 
 
+def _migrate_v2_to_v3(con: sqlite3.Connection) -> None:
+    """Upgrade the scan_runs audit surface with session linkage and count completeness."""
+    sr_cols = _column_names(con, "scan_runs")
+    new_columns = [
+        ("session_id", "TEXT"),
+        ("status", "TEXT"),
+        ("requested_provider", "TEXT"),
+        ("actual_provider", "TEXT"),
+        ("counts_complete", "INTEGER NOT NULL DEFAULT 0"),
+        ("source", "TEXT NOT NULL DEFAULT 'legacy'"),
+    ]
+    for col, dtype in new_columns:
+        if col not in sr_cols:
+            con.execute(f"ALTER TABLE scan_runs ADD COLUMN {col} {dtype}")
+
+    _execute_schema_statements(
+        con,
+        """
+        CREATE INDEX IF NOT EXISTS idx_sr_run_time           ON scan_runs(run_time);
+        CREATE INDEX IF NOT EXISTS idx_sr_timeframe_run_time ON scan_runs(timeframe, run_time);
+        CREATE INDEX IF NOT EXISTS idx_sr_session_id         ON scan_runs(session_id);
+        CREATE INDEX IF NOT EXISTS idx_sr_status             ON scan_runs(status);
+        """,
+    )
+
+    # Existing rows without a source are legacy audit rows whose true requested
+    # universe cannot be reconstructed.
+    con.execute(
+        """
+        UPDATE scan_runs
+        SET source = 'legacy',
+            counts_complete = 0,
+            status = COALESCE(status, 'unknown')
+        WHERE source IS NULL OR source = 'legacy'
+        """
+    )
+
+    # Backfill canonical audit rows for complete native scan sessions. Where a
+    # legacy scan_runs row matches the session by run_time/timeframe/provider,
+    # reuse that row to preserve its id; otherwise insert a new row.
+    sessions = con.execute(
+        """
+        SELECT *
+        FROM scan_sessions
+        WHERE observations_complete = 1
+        ORDER BY scan_time, timeframe, session_id
+        """
+    ).fetchall()
+
+    for session in sessions:
+        session_id = session["session_id"]
+        run_time = session["scan_time"]
+        timeframe = session["timeframe"]
+        requested_n = session["requested_n"]
+        signals_n = session["signals_n"]
+        status = session["status"]
+        requested_provider = session["requested_provider"]
+        actual_provider = session["actual_provider"]
+        provider = actual_provider or requested_provider or "unknown"
+
+        candidates = con.execute(
+            """
+            SELECT id FROM scan_runs
+            WHERE session_id IS NULL
+              AND run_time = ?
+              AND timeframe = ?
+              AND (provider = ? OR provider = 'unknown')
+            ORDER BY id
+            """,
+            (run_time, timeframe, provider),
+        ).fetchall()
+
+        if len(candidates) == 1:
+            sr_id = candidates[0]["id"]
+            con.execute(
+                """
+                UPDATE scan_runs
+                SET tickers_n = ?,
+                    hits_n = ?,
+                    provider = ?,
+                    session_id = ?,
+                    status = ?,
+                    requested_provider = ?,
+                    actual_provider = ?,
+                    counts_complete = 1,
+                    source = 'native'
+                WHERE id = ?
+                """,
+                (
+                    requested_n,
+                    signals_n,
+                    provider,
+                    session_id,
+                    status,
+                    requested_provider,
+                    actual_provider,
+                    sr_id,
+                ),
+            )
+        else:
+            con.execute(
+                """
+                INSERT INTO scan_runs
+                  (run_time, timeframe, tickers_n, hits_n, provider,
+                   session_id, status, requested_provider, actual_provider,
+                   counts_complete, source)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_time,
+                    timeframe,
+                    requested_n,
+                    signals_n,
+                    provider,
+                    session_id,
+                    status,
+                    requested_provider,
+                    actual_provider,
+                    1,
+                    "native",
+                ),
+            )
+
+
 def init():
     """Create tables if they don't exist and migrate older schemas atomically."""
     with _transaction() as con:
@@ -357,8 +504,12 @@ def init():
             if version == 0 and _table_exists(con, "signal_history"):
                 _migrate_v0(con)
                 _migrate_v1_to_v2(con)
+                _migrate_v2_to_v3(con)
             elif version == 1 and _table_exists(con, "signal_history"):
                 _migrate_v1_to_v2(con)
+                _migrate_v2_to_v3(con)
+            elif version == 2 and _table_exists(con, "signal_history"):
+                _migrate_v2_to_v3(con)
             else:
                 _create_schema_v1(con)
         else:
@@ -485,6 +636,160 @@ def _status_for_observations(obs: pd.DataFrame) -> str:
     return "failed"
 
 
+def _observation_counts(obs: pd.DataFrame) -> dict[str, int]:
+    """Return status-derived counts from an observation DataFrame."""
+    from tradex.screener.engine import ObservationStatus
+
+    empty = obs.empty
+    return {
+        "observations_n": 0 if empty else len(obs),
+        "signals_n": int((obs["status"] == ObservationStatus.SIGNAL.value).sum()) if not empty else 0,
+        "below_threshold_n": int((obs["status"] == ObservationStatus.BELOW_THRESHOLD.value).sum()) if not empty else 0,
+        "earnings_excluded_n": int((obs["status"] == ObservationStatus.EARNINGS_EXCLUDED.value).sum()) if not empty else 0,
+        "earnings_failure_n": int((obs["status"] == ObservationStatus.EARNINGS_FAILURE.value).sum()) if not empty else 0,
+        "fetch_failure_n": int((obs["status"] == ObservationStatus.FETCH_FAILURE.value).sum()) if not empty else 0,
+        "insufficient_data_n": int((obs["status"] == ObservationStatus.INSUFFICIENT_DATA.value).sum()) if not empty else 0,
+        "scoring_failure_n": int((obs["status"] == ObservationStatus.SCORING_FAILURE.value).sum()) if not empty else 0,
+    }
+
+
+def _persist_scan(
+    con: sqlite3.Connection,
+    session_id: str,
+    report_time: str,
+    trading_date: str | None,
+    timeframe: str,
+    report,
+    requested_n: int,
+    audit_tickers_n: int | None,
+    observations_complete: int,
+    counts_complete: int,
+    source: str,
+    status: str,
+    min_score: int,
+) -> None:
+    """Persist the canonical session, observations, signals, and audit row.
+
+    This is the internal atomic write path shared by ``record_scan`` and the
+    ``record_signals`` compatibility wrapper. It does not validate the report;
+    callers are responsible for ensuring counts and structure are correct.
+
+    ``requested_n`` is stored on the canonical ``scan_sessions`` row and may be a
+    lower-bound for compatibility calls. ``audit_tickers_n`` is stored on the
+    ``scan_runs`` audit surface and should be ``None`` when the true requested
+    universe is unknown.
+    """
+    from tradex.screener.engine import ObservationStatus
+
+    requested_provider = report.requested_provider
+    actual_provider = report.actual_provider
+    fallback_used = 1 if report.fallback_used else 0
+    providers_attempted = ",".join(report.providers_attempted) if report.providers_attempted else None
+
+    obs = report.observations
+    counts = _observation_counts(obs)
+
+    existing = con.execute(
+        "SELECT 1 FROM scan_sessions WHERE session_id = ?", (session_id,)
+    ).fetchone()
+    if existing is not None:
+        raise StoreError(f"scan session id already exists: {session_id}")
+
+    con.execute(
+        """
+        INSERT INTO scan_sessions
+          (session_id, scan_time, trading_date, timeframe, requested_provider,
+           actual_provider, fallback_used, providers_attempted, status, source,
+           observations_complete, requested_n, observations_n, signals_n,
+           below_threshold_n, earnings_excluded_n, earnings_failure_n,
+           fetch_failure_n, insufficient_data_n, scoring_failure_n, min_score)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            session_id,
+            report_time,
+            trading_date,
+            timeframe,
+            requested_provider,
+            actual_provider,
+            fallback_used,
+            providers_attempted,
+            status,
+            source,
+            observations_complete,
+            requested_n,
+            counts["observations_n"],
+            counts["signals_n"],
+            counts["below_threshold_n"],
+            counts["earnings_excluded_n"],
+            counts["earnings_failure_n"],
+            counts["fetch_failure_n"],
+            counts["insufficient_data_n"],
+            counts["scoring_failure_n"],
+            min_score,
+        ),
+    )
+
+    for _, row in obs.iterrows():
+        params = _observation_to_params(row, session_id)
+        con.execute(
+            """
+            INSERT INTO scan_observations
+              (session_id, ticker, status, score, last_close, volume_ratio, rsi,
+               days_until_earnings, reasons, provider, error_category, error_message)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            params,
+        )
+
+    signal_mask = obs["status"] == ObservationStatus.SIGNAL.value
+    for _, row in obs[signal_mask].iterrows():
+        con.execute(
+            """
+            INSERT INTO signal_history
+              (ticker, timeframe, scan_time, score, last_close, volume_ratio, rsi,
+               reasons, provider, scan_session_id, trading_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(row["ticker"]).strip().upper(),
+                timeframe,
+                report_time,
+                int(row["score"]),
+                float(row["last_close"]) if pd.notna(row["last_close"]) else None,
+                float(row["volume_ratio"]) if pd.notna(row["volume_ratio"]) else None,
+                float(row["rsi"]) if pd.notna(row["rsi"]) else None,
+                _safe_str_or_none(row.get("reasons")),
+                _safe_str_or_none(row.get("provider")),
+                session_id,
+                trading_date,
+            ),
+        )
+
+    con.execute(
+        """
+        INSERT INTO scan_runs
+          (run_time, timeframe, tickers_n, hits_n, provider,
+           session_id, status, requested_provider, actual_provider,
+           counts_complete, source)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            report_time,
+            timeframe,
+            audit_tickers_n,
+            counts["signals_n"],
+            actual_provider or requested_provider or "unknown",
+            session_id,
+            status,
+            requested_provider,
+            actual_provider,
+            counts_complete,
+            source,
+        ),
+    )
+
+
 def record_scan(
     report,
     timeframe: str,
@@ -496,8 +801,8 @@ def record_scan(
 ) -> str:
     """Persist a complete scan report, observations, and qualifying signals.
 
-    The operation is atomic: either the session, observations, and signal rows
-    are all written, or nothing is written.
+    The operation is atomic: either the session, observations, signal rows, and
+    audit row are all written, or nothing is written.
     """
     from tradex.screener.engine import ObservationStatus
 
@@ -514,147 +819,132 @@ def record_scan(
     report_time = scan_time.astimezone(UTC).isoformat()
     trading_date = _derive_trading_date(scan_time)
 
-    requested_provider = report.requested_provider
-    actual_provider = report.actual_provider
-    fallback_used = 1 if report.fallback_used else 0
-    providers_attempted = ",".join(report.providers_attempted) if report.providers_attempted else None
-    status = _status_for_observations(report.observations)
-
     obs = report.observations
-    counts = {
-        "observations_n": len(obs),
-        "signals_n": int((obs["status"] == ObservationStatus.SIGNAL.value).sum()) if not obs.empty else 0,
-        "below_threshold_n": int((obs["status"] == ObservationStatus.BELOW_THRESHOLD.value).sum()) if not obs.empty else 0,
-        "earnings_excluded_n": int((obs["status"] == ObservationStatus.EARNINGS_EXCLUDED.value).sum()) if not obs.empty else 0,
-        "earnings_failure_n": int((obs["status"] == ObservationStatus.EARNINGS_FAILURE.value).sum()) if not obs.empty else 0,
-        "fetch_failure_n": int((obs["status"] == ObservationStatus.FETCH_FAILURE.value).sum()) if not obs.empty else 0,
-        "insufficient_data_n": int((obs["status"] == ObservationStatus.INSUFFICIENT_DATA.value).sum()) if not obs.empty else 0,
-        "scoring_failure_n": int((obs["status"] == ObservationStatus.SCORING_FAILURE.value).sum()) if not obs.empty else 0,
-    }
+    counts = _observation_counts(obs)
+    requested_n = report.total_requested
+    signals_n = counts["signals_n"]
+    observations_n = counts["observations_n"]
 
-    source = "live"
-    observations_complete = 1 if len(obs) == report.total_requested and not obs.empty else 0
+    # Audit-count invariants for a native complete scan.
+    if requested_n < 0 or signals_n < 0 or signals_n > requested_n:
+        raise StoreError(f"inconsistent audit counts: requested={requested_n}, signals={signals_n}")
+    if requested_n != observations_n:
+        raise StoreError(f"requested count {requested_n} does not match observation count {observations_n}")
+    if requested_n != report.total_requested:
+        raise StoreError(f"requested count {requested_n} does not match report.total_requested {report.total_requested}")
+    if signals_n != counts["signals_n"]:
+        raise StoreError(f"signal count mismatch: {signals_n} vs {counts['signals_n']}")
+
+    status = _status_for_observations(obs)
+    observations_complete = 1 if observations_n == requested_n and observations_n > 0 else 0
 
     with _transaction() as con:
-        # Verify uniqueness of the generated session id.
-        existing = con.execute(
-            "SELECT 1 FROM scan_sessions WHERE session_id = ?", (session_id,)
-        ).fetchone()
-        if existing is not None:
-            raise StoreError(f"scan session id already exists: {session_id}")
-
-        con.execute(
-            """
-            INSERT INTO scan_sessions
-              (session_id, scan_time, trading_date, timeframe, requested_provider,
-               actual_provider, fallback_used, providers_attempted, status, source,
-               observations_complete, requested_n, observations_n, signals_n,
-               below_threshold_n, earnings_excluded_n, earnings_failure_n,
-               fetch_failure_n, insufficient_data_n, scoring_failure_n, min_score)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                session_id,
-                report_time,
-                trading_date,
-                timeframe,
-                requested_provider,
-                actual_provider,
-                fallback_used,
-                providers_attempted,
-                status,
-                source,
-                observations_complete,
-                report.total_requested,
-                counts["observations_n"],
-                counts["signals_n"],
-                counts["below_threshold_n"],
-                counts["earnings_excluded_n"],
-                counts["earnings_failure_n"],
-                counts["fetch_failure_n"],
-                counts["insufficient_data_n"],
-                counts["scoring_failure_n"],
-                min_score,
-            ),
+        _persist_scan(
+            con,
+            session_id=session_id,
+            report_time=report_time,
+            trading_date=trading_date,
+            timeframe=timeframe,
+            report=report,
+            requested_n=requested_n,
+            audit_tickers_n=requested_n,
+            observations_complete=observations_complete,
+            counts_complete=1,
+            source="native",
+            status=status,
+            min_score=min_score,
         )
-
-        for _, row in obs.iterrows():
-            params = _observation_to_params(row, session_id)
-            con.execute(
-                """
-                INSERT INTO scan_observations
-                  (session_id, ticker, status, score, last_close, volume_ratio, rsi,
-                   days_until_earnings, reasons, provider, error_category, error_message)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                params,
-            )
-
-        signal_mask = obs["status"] == ObservationStatus.SIGNAL.value
-        for _, row in obs[signal_mask].iterrows():
-            con.execute(
-                """
-                INSERT INTO signal_history
-                  (ticker, timeframe, scan_time, score, last_close, volume_ratio, rsi,
-                   reasons, provider, scan_session_id, trading_date)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    str(row["ticker"]).strip().upper(),
-                    timeframe,
-                    report_time,
-                    int(row["score"]),
-                    float(row["last_close"]) if pd.notna(row["last_close"]) else None,
-                    float(row["volume_ratio"]) if pd.notna(row["volume_ratio"]) else None,
-                    float(row["rsi"]) if pd.notna(row["rsi"]) else None,
-                    _safe_str_or_none(row.get("reasons")),
-                    _safe_str_or_none(row.get("provider")),
-                    session_id,
-                    trading_date,
-                ),
-            )
-
-        # Preserve legacy scan_runs audit only for scans that produced qualifying signals.
-        # Mirror the prior record_signals behavior: both tickers_n and hits_n equal the signal count.
-        if counts["signals_n"] > 0:
-            con.execute(
-                """
-                INSERT INTO scan_runs (run_time, timeframe, tickers_n, hits_n, provider)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (
-                    report_time,
-                    timeframe,
-                    counts["signals_n"],
-                    counts["signals_n"],
-                    actual_provider or "unknown",
-                ),
-            )
 
     return session_id
 
 
-def record_signals(results: pd.DataFrame, timeframe: str, provider: str | None = None):
-    """Persist a screener result DataFrame. Call after every scan.
+def record_signals(
+    results: pd.DataFrame,
+    timeframe: str,
+    provider: str | None = None,
+    *,
+    tickers_scanned: Sequence[str] | int | None = None,
+    scan_time: datetime | None = None,
+    session_id: str | None = None,
+) -> None:
+    """Persist a screener result DataFrame as a compatibility scan session.
 
-    This is a backward-compatibility wrapper that creates a minimal complete
-    ScanReport and records it as a scan session.
+    ``record_scan`` is the canonical production API; this wrapper remains for
+    callers that only have qualifying results. When the original requested
+    universe is known, pass ``tickers_scanned`` so the audit row can be marked
+    complete. Otherwise the audit row is marked incomplete and the requested
+    count is recorded as a lower-bound only.
     """
-    from tradex.screener.engine import ObservationStatus, ScanReport
+    from tradex.screener.engine import ObservationStatus, ScanReport, _normalize_ticker
 
-    if results.empty:
+    if results.empty and tickers_scanned is None:
+        # Preserve legacy no-op for empty calls without a known universe.
         return
 
     scan_provider = _resolve_signal_provider(results, provider=provider)
-    scan_time = datetime.now(UTC)
-    session_id = uuid.uuid4().hex
+    if scan_time is None:
+        scan_time = datetime.now(UTC)
+    if scan_time.tzinfo is None:
+        raise ValueError("scan_time must be timezone-aware; naive datetimes are not accepted")
+    if session_id is None:
+        session_id = uuid.uuid4().hex
+
+    report_time = scan_time.astimezone(UTC).isoformat()
+    trading_date = _derive_trading_date(scan_time)
 
     # Normalize legacy result frames to the stable signal column contract.
-    # A single scan has one resolved provider, so all result rows share it.
-    results = results.copy()
-    if "days_until_earnings" not in results.columns:
-        results["days_until_earnings"] = None
-    results["provider"] = scan_provider
+    if not results.empty:
+        results = results.copy()
+        if "days_until_earnings" not in results.columns:
+            results["days_until_earnings"] = None
+        results["provider"] = scan_provider
+
+    requested_n: int | None = None
+    audit_tickers_n: int | None = None
+    observations_complete = 0
+    counts_complete = 0
+    status = "unknown"
+    source = "compatibility"
+
+    if isinstance(tickers_scanned, int):
+        if tickers_scanned < 0:
+            raise ValueError("tickers_scanned must be non-negative")
+        if not results.empty and tickers_scanned < results["ticker"].nunique():
+            raise ValueError("tickers_scanned cannot be smaller than the number of result tickers")
+        requested_n = tickers_scanned
+        audit_tickers_n = tickers_scanned
+        counts_complete = 1
+        # With an integer count we know the requested universe size but not
+        # per-ticker outcomes, so observations remain incomplete.
+        observations_complete = 0
+        status = "unknown"
+    elif isinstance(tickers_scanned, Sequence) and not isinstance(tickers_scanned, (str, bytes)):
+        normalized_requested = list(dict.fromkeys(_normalize_ticker(t) for t in tickers_scanned))
+        if not results.empty:
+            result_tickers = set(results["ticker"].apply(_normalize_ticker))
+            if not result_tickers.issubset(set(normalized_requested)):
+                raise ValueError("tickers_scanned must include every ticker present in results")
+            if result_tickers == set(normalized_requested):
+                observations_complete = 1
+                status = "completed"
+        else:
+            # An explicit empty universe with zero results is a completed zero-signal scan.
+            observations_complete = 1
+            status = "completed"
+        requested_n = len(normalized_requested)
+        audit_tickers_n = requested_n
+        counts_complete = 1
+    else:
+        # tickers_scanned omitted: requested universe is unknowable.
+        if results.empty:
+            return
+        # Use the known result count as a lower-bound for the session; the audit
+        # row records an unknown requested count as NULL.
+        requested_n = len(results)
+        audit_tickers_n = None
+        observations_complete = 0
+        counts_complete = 0
+        status = "unknown"
 
     observations = []
     for _, row in results.iterrows():
@@ -671,8 +961,9 @@ def record_signals(results: pd.DataFrame, timeframe: str, provider: str | None =
             "error_category": None,
             "error_message": None,
         })
-    observations_df = pd.DataFrame(observations)
+    observations_df = pd.DataFrame(observations) if observations else pd.DataFrame()
 
+    total_requested = requested_n if requested_n is not None else len(results)
     report = ScanReport(
         results=results,
         requested_provider=scan_provider,
@@ -680,10 +971,10 @@ def record_signals(results: pd.DataFrame, timeframe: str, provider: str | None =
         fallback_used=False,
         providers_attempted=(scan_provider,),
         failures={},
-        total_requested=len(results),
-        total_fetch_attempted=len(results),
-        total_fetched=len(results),
-        total_scored=len(results),
+        total_requested=total_requested,
+        total_fetch_attempted=total_requested,
+        total_fetched=len(results) if not results.empty else 0,
+        total_scored=len(results) if not results.empty else 0,
         total_signals=len(results),
         total_below_threshold=0,
         total_insufficient_data=0,
@@ -691,15 +982,29 @@ def record_signals(results: pd.DataFrame, timeframe: str, provider: str | None =
         earnings_failures={},
         fetch_failures={},
         scoring_failures={},
-        total_fetch_eligible=len(results),
+        total_fetch_eligible=total_requested,
         total_retries=0,
         attempt_log=[],
         observations=observations_df,
         min_score=0,
     )
 
-    record_scan(report, timeframe, min_score=0, tickers_scanned=results["ticker"].tolist(),
-                scan_time=scan_time, session_id=session_id)
+    with _transaction() as con:
+        _persist_scan(
+            con,
+            session_id=session_id,
+            report_time=report_time,
+            trading_date=trading_date,
+            timeframe=timeframe,
+            report=report,
+            requested_n=requested_n if requested_n is not None else len(results),
+            audit_tickers_n=audit_tickers_n,
+            observations_complete=observations_complete,
+            counts_complete=counts_complete,
+            source=source,
+            status=status,
+            min_score=0,
+        )
 
 
 def get_history(ticker: str, timeframe: str, days: int = 14) -> pd.DataFrame:
@@ -835,22 +1140,51 @@ def get_signal_journal(timeframe: str | None = None, min_score: int = 0) -> pd.D
     return pd.DataFrame([dict(r) for r in rows])
 
 
-def get_recent_scan_runs(timeframe: str | None = None, limit: int = 20) -> pd.DataFrame:
-    """Return recent scan-run rows with provenance."""
+def get_recent_scan_runs(
+    timeframe: str | None = None,
+    limit: int = 20,
+    *,
+    complete_only: bool = False,
+) -> pd.DataFrame:
+    """Return recent scan-run rows with provenance and completeness metadata."""
     tf_filter = "AND timeframe = ?" if timeframe else ""
+    complete_filter = "AND counts_complete = 1" if complete_only else ""
     params = ([timeframe] if timeframe else []) + [limit]
     with _conn() as con:
         rows = con.execute(
             f"""
-            SELECT run_time, timeframe, tickers_n, hits_n, provider
+            SELECT
+                run_time,
+                timeframe,
+                tickers_n,
+                hits_n,
+                provider,
+                session_id,
+                status,
+                requested_provider,
+                actual_provider,
+                counts_complete,
+                source,
+                CASE
+                    WHEN counts_complete = 1 AND COALESCE(tickers_n, 0) > 0
+                        THEN CAST(100.0 * hits_n / tickers_n AS REAL)
+                    ELSE NULL
+                END AS hit_rate_pct
             FROM scan_runs
-            WHERE 1=1 {tf_filter}
-            ORDER BY run_time DESC
+            WHERE 1=1 {tf_filter} {complete_filter}
+            ORDER BY run_time DESC, id DESC
             LIMIT ?
             """,
             params,
         ).fetchall()
-    return pd.DataFrame([dict(r) for r in rows])
+    df = pd.DataFrame([dict(r) for r in rows])
+    if df.empty:
+        df = pd.DataFrame(columns=[
+            "run_time", "timeframe", "tickers_n", "hits_n", "provider",
+            "session_id", "status", "requested_provider", "actual_provider",
+            "counts_complete", "source", "hit_rate_pct",
+        ])
+    return df
 
 
 # ── DATA-001 scan session / observation queries ──────────────────────────────
