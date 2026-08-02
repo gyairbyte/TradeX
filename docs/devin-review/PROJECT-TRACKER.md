@@ -338,16 +338,25 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Add market-hours and timezone handling
 - **Category:** Scheduling
 - **Priority:** Medium
-- **Status:** Proposed
-- **Problem statement:** The watcher runs at any time and `schedule` job times are interpreted in host-local time.
-- **Recommended action:** Add `tradex/market/hours.py` with US/Eastern market-open checks and schedule in the market timezone.
+- **Status:** Completed
+- **Resolved by:** `devin/add-market-hours`
+- **Problem statement:** The watcher ran at any time and `schedule` job times were interpreted in host-local time, so scans fired outside US equity hours and daily jobs drifted with DST.
+- **Recommended action:** Add `tradex/market/hours.py` with NYSE/XNYS market-open checks and schedule in the `America/New_York` timezone.
 - **Reason:** Avoids wasted scans, stale data, and alerts at wrong times.
 - **Dependencies:** None
-- **Files likely affected:** `tradex/tracker/watcher.py`, new `tradex/market/hours.py`
-- **Testing requirements:** Unit tests at different times and timezones; verify scans skip weekends/holidays.
-- **Acceptance criteria:** Watcher can optionally skip outside market hours; scheduled jobs run at the intended US/Eastern time.
+- **Files likely affected:** `tradex/market/hours.py`, `tradex/market/__init__.py`, `tradex/tracker/watcher.py`, `tradex/premarket/gap_scanner.py`, `README.md`, `SETUP.md`, `docs/devin-review/PROJECT-TRACKER.md`
+- **Testing requirements:** Unit tests for open/close/early-close/holiday/DST boundaries, naive-datetime rejection, timezone conversion, watcher gating, daily-job registration in `America/New_York`, pre-market filtering, and previous-close date handling.
+- **Acceptance criteria:**
+  - `tradex/market/hours.py` exposes `MarketSession`, `MarketStatus`, `get_market_session`, `is_regular_market_open`, `market_status`, `previous_trading_session`, `next_trading_session` against the XNYS calendar in `America/New_York`.
+  - Watcher `run_once` accepts `market_hours_only` (default `False`) and skips scans before open, after close, on weekends, and on NYSE holidays.
+  - CLI adds `--market-hours-only` and startup log shows gating status.
+  - Daily pre-market job registered at `08:00 America/New_York`; daily outcome pass at `16:30 America/New_York`.
+  - Trading-day guards wrap scheduled pre-market and outcome jobs so they skip non-session dates without fake persistence.
+  - Pre-market filtering in `gap_scanner.py` uses `04:00 America/New_York` through (but not including) the actual regular-session open and excludes prior-day after-hours, regular-session, and post-market bars.
+  - `_get_prev_close()` uses the centralized calendar, accepts injectable `as_of`, and selects the most recent completed NYSE session before the intended session.
 - **Intended pull request:** `devin/add-market-hours`
 - **Affects trading behavior:** No
+- **Next recommended PR:** `devin/redesign-signal-history` (DATA-001)
 
 ### COR-012: Fix scan audit to record tickers scanned vs. found
 
@@ -568,14 +577,14 @@ This is the master backlog for recommendations from the Devin review. Items are 
 
 | Priority | Count | Representative first item |
 |---|---|---|
-| High | 16 | PROVIDER-001: Validate and harden Schwab provider |
-| Medium | 9 | COR-005: Add market-hours and timezone handling |
+| High | 16 | DATA-001: Redesign signal history to record all scan observations |
+| Medium | 8 | SHORT-001: Add market regime and relative strength to short-term scorer |
 | Low | 5 | DOC-001: Fix documentation drift |
 
 **Recommended next pull request order:**
-1. `devin/add-market-hours` (COR-005).
-2. `devin/redesign-signal-history` (DATA-001, COIL-001, COIL-002).
-3. `devin/fix-scan-audit` (COR-012).
-4. `devin/add-backtest-engine` (VAL-001).
-5. `devin/reevaluate-scores-with-validated-data` (new, after backtesting).
+1. `devin/redesign-signal-history` (DATA-001, COIL-001, COIL-002).
+2. `devin/fix-scan-audit` (COR-012).
+3. `devin/add-backtest-engine` (VAL-001).
+4. `devin/reevaluate-scores-with-validated-data` (new, after backtesting).
+5. `devin/improve-gap-scanner` (INTRA-002, after COR-005 and DATA-001).
 

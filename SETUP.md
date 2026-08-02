@@ -191,13 +191,13 @@ The watcher runs the screener on an interval and writes results to `~/.tradex/si
 
 ```bash
 # macOS / Linux
-.venv/bin/python -m tradex.tracker.watcher --timeframe intraday --interval 5
+.venv/bin/python -m tradex.tracker.watcher --timeframe intraday --interval 5 --market-hours-only
 
 # Windows
-.venv\Scripts\python -m tradex.tracker.watcher --timeframe intraday --interval 5
+.venv\Scripts\python -m tradex.tracker.watcher --timeframe intraday --interval 5 --market-hours-only
 ```
 
-Run during market hours. The outcome-tracker pass fires daily at 4:30pm ET automatically. The watcher persists the effective `provider` with each scan run and outcome pass.
+Run during market hours. With `--market-hours-only`, scans are skipped outside the NYSE regular session (weekends, NYSE holidays including Good Friday, and early-close days are handled automatically via the `exchange-calendars` XNYS calendar). Manual one-off scans omit the flag. The daily pre-market gap scan fires at `08:00 America/New_York` and the outcome pass at `16:30 America/New_York`; both stay at the same New York wall-clock time across DST changes and skip non-trading days. The watcher persists the effective `provider` with each scan run and outcome pass.
 
 ---
 

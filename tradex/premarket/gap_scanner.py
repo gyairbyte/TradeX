@@ -27,13 +27,21 @@ Data source policy:
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime, time, timezone
 
 import pandas as pd
 import yfinance as yf
 
 from tradex.data.fetcher import DEFAULT_PROVIDER, ProviderCapabilityError
 from tradex.data.history import fetch_daily_history
+from tradex.market import (
+    MARKET_TIMEZONE,
+    get_market_session,
+    is_trading_day,
+    next_trading_session,
+    normalize_market_datetime,
+    previous_trading_session,
+)
 
 
 GAP_TIERS = {
@@ -45,37 +53,90 @@ GAP_TIERS = {
 DEFAULT_MIN_GAP = 2.0  # % — filter out noise below this
 
 
-def _get_prev_close(ticker: str, provider: str | None = None) -> float | None:
-    """Fetch the most recent regular-session closing price from the selected provider."""
+def _get_prev_close(
+    ticker: str,
+    provider: str | None = None,
+    as_of: datetime | None = None,
+) -> float | None:
+    """Fetch the most recent regular-session closing price before ``as_of``.
+
+    The previous session is resolved through the NYSE calendar so weekends,
+    holidays, and early closes are handled correctly regardless of the host
+    timezone.
+    """
+    as_of = as_of or datetime.now(UTC)
+    # ``normalize_market_datetime`` raises ValueError for naive datetimes before
+    # any provider call or broad exception handler can swallow it.
+    ny_as_of = normalize_market_datetime(as_of)
     try:
-        end = date.today()
-        start = end - pd.Timedelta(days=7)
-        df = fetch_daily_history(ticker, start, end, provider=provider)
-        if df.empty:
+        current_day = next_trading_session(ny_as_of).session_date
+        prev = previous_trading_session(current_day)
+        df = fetch_daily_history(
+            ticker,
+            prev.session_date,
+            prev.session_date,
+            provider=provider,
+        )
+        if df.empty or "close" not in df.columns:
             return None
-        return float(df["close"].iloc[-1])
+        idx = df.index
+        if idx.tz is None:
+            idx = idx.tz_localize("UTC")
+        # Daily history bars represent a session date by their UTC calendar date.
+        mask = idx.date == prev.session_date
+        closes = df.loc[mask, "close"].dropna()
+        if closes.empty:
+            return None
+        return float(closes.iloc[-1])
     except ProviderCapabilityError:
         raise
     except Exception:
         return None
 
 
-def get_premarket_price(ticker: str, provider: str | None = None) -> float | None:
-    """Fetch the latest pre-market/extended-hours price.
+def get_premarket_price(
+    ticker: str,
+    provider: str | None = None,
+    as_of: datetime | None = None,
+) -> float | None:
+    """Fetch the latest pre-market/extended-hours price before the session open.
 
-    Yahoo uses 1-minute bars with pre/post-market data enabled and returns the
-    last bar before 9:30am ET (13:30 UTC). Other providers raise a clear
-    capability error rather than silently falling back to Yahoo.
+    Uses the NYSE calendar to identify the intended session date, then selects
+    1-minute Yahoo bars from 04:00 AM ET through (but not including) the actual
+    regular-session open on that date. Bars from the previous day's after-hours,
+    regular-session, or post-market periods are excluded, as are bars after ``as_of``.
     """
+    as_of = as_of or datetime.now(UTC)
+    # ``normalize_market_datetime`` raises ValueError for naive datetimes.
+    ny_as_of = normalize_market_datetime(as_of)
+
     p = (provider or DEFAULT_PROVIDER).lower()
     if p != "yahoo":
         raise ProviderCapabilityError(
             f"Provider '{p}' does not yet support pre-market/extended-hours quotes"
         )
 
+    session_date = ny_as_of.date()
+    if not is_trading_day(session_date):
+        return None
+
+    session = get_market_session(session_date)
+    if session is None:
+        return None
+
+    premarket_start = datetime.combine(
+        session_date, time(4, 0), tzinfo=MARKET_TIMEZONE
+    )
+
+    # The pre-market window ends at the earlier of ``as_of`` and the regular open.
+    window_end = min(ny_as_of, session.opens_at)
+    if window_end <= premarket_start:
+        return None
+
     try:
         tk = yf.Ticker(ticker)
-        df = tk.history(period="1d", interval="1m", prepost=True)
+        # Request enough 1-minute history to cover a weekend gap.
+        df = tk.history(period="5d", interval="1m", prepost=True)
         if df.empty:
             return None
         if isinstance(df.columns, pd.MultiIndex):
@@ -84,9 +145,14 @@ def get_premarket_price(ticker: str, provider: str | None = None) -> float | Non
             df.columns = [c.lower() for c in df.columns]
 
         df.index = pd.to_datetime(df.index, utc=True)
-        # Approximate pre-market before 9:30am ET (13:30 UTC).
-        # Full exchange-calendar handling belongs under COR-005.
-        premarket = df[df.index.hour < 13]
+        ny_index = df.index.tz_convert(MARKET_TIMEZONE)
+        mask = (
+            (ny_index.date == session_date)
+            & (ny_index >= premarket_start)
+            & (ny_index < session.opens_at)
+            & (ny_index <= ny_as_of)
+        )
+        premarket = df.loc[mask]
         if premarket.empty:
             return None
         return float(premarket["close"].iloc[-1])
@@ -126,12 +192,14 @@ def scan_gaps(
     tickers: list[str],
     min_gap_pct: float = DEFAULT_MIN_GAP,
     provider: str | None = None,
+    as_of: datetime | None = None,
 ) -> pd.DataFrame:
     """Scan a watchlist for pre-market gaps above the threshold.
 
     ``provider`` is passed to the daily-history abstraction for the previous
     close and to the pre-market quote source. When None, ``DATA_PROVIDER`` is
-    used.
+    used. ``as_of`` defaults to the current UTC time and anchors the calendar
+    calculations to the intended NYSE session date.
 
     Returns a DataFrame sorted by absolute gap size, largest first.
     Best run between 7am–9:25am ET before market open.
@@ -139,11 +207,11 @@ def scan_gaps(
     rows = []
     for ticker in tickers:
         try:
-            prev_close = _get_prev_close(ticker, provider=provider)
+            prev_close = _get_prev_close(ticker, provider=provider, as_of=as_of)
             if prev_close is None or prev_close == 0:
                 continue
 
-            pre_price = get_premarket_price(ticker, provider=provider)
+            pre_price = get_premarket_price(ticker, provider=provider, as_of=as_of)
             if pre_price is None:
                 continue
 
@@ -178,6 +246,7 @@ def run_gap_alerts(
     tickers: list[str],
     min_gap_pct: float = 4.0,
     provider: str | None = None,
+    as_of: datetime | None = None,
 ) -> pd.DataFrame:
     """Scan gaps and fire alerts for large/massive ones.
 
@@ -187,7 +256,7 @@ def run_gap_alerts(
     from tradex.alerts.notifier import alert_gap
 
     try:
-        gaps = scan_gaps(tickers, min_gap_pct=min_gap_pct, provider=provider)
+        gaps = scan_gaps(tickers, min_gap_pct=min_gap_pct, provider=provider, as_of=as_of)
     except ProviderCapabilityError as e:
         print(f"[gap alert] {e}")
         return pd.DataFrame()

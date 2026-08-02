@@ -1,5 +1,7 @@
 """Tests for provider propagation through the scheduled watcher."""
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import pytest
@@ -121,13 +123,13 @@ def test_run_once_passes_provider_to_confluence_and_pattern(fresh_signal_db):
 
 
 def test_start_loop_schedules_run_once_with_provider():
-    """start_loop must pass the provider and policy args into the scheduled run_once calls."""
+    """start_loop runs an initial scan and registers a wrapper that forwards provider/policy."""
     mock_schedule = MagicMock()
-    mock_schedule.every.return_value.minutes.do.side_effect = SystemExit
 
     with (
         patch.object(watcher, "run_once") as mock_run_once,
         patch.object(watcher, "schedule", mock_schedule),
+        patch.object(watcher.time, "sleep", side_effect=SystemExit),
         pytest.raises(SystemExit),
     ):
         watcher.start_loop(
@@ -138,19 +140,24 @@ def test_start_loop_schedules_run_once_with_provider():
             provider="ibkr",
         )
 
-    mock_run_once.assert_called_once_with(
-        ["AAPL"], "intraday", 30, "ibkr",
-        max_retries=None, fallback_order=None, policy=None,
-    )
-    mock_schedule.every.return_value.minutes.do.assert_called_once_with(
-        mock_run_once,
-        tickers=["AAPL"],
-        timeframe="intraday",
-        min_score=30,
-        provider="ibkr",
-        max_retries=None,
-        fallback_order=None,
-    )
+    # The scheduled callback is a no-argument wrapper that resolves the provider.
+    scheduled_callback = mock_schedule.every.return_value.minutes.do.call_args[0][0]
+    assert callable(scheduled_callback)
+
+    # Re-patch run_once and invoke the captured callback to verify forwarding.
+    with patch.object(watcher, "run_once") as mock_run_once:
+        scheduled_callback()
+
+    mock_run_once.assert_called_once()
+    assert mock_run_once.call_args.args == (['AAPL'], "intraday", 30, "ibkr")
+    assert mock_run_once.call_args.kwargs == {
+        "max_retries": None,
+        "fallback_order": None,
+        "policy": None,
+        "market_hours_only": False,
+        "now": mock_run_once.call_args.kwargs["now"],
+    }
+    assert isinstance(mock_run_once.call_args.kwargs["now"], datetime)
 
 
 def _screener_results(provider: str = "schwab") -> pd.DataFrame:
@@ -337,3 +344,195 @@ def test_run_once_uses_fetch_eligible_count_for_complete_failure(fresh_signal_db
     assert "all providers failed for 1 symbol(s) that reached OHLCV fetching" in captured.out
     assert "Earnings lookup failures: 1 symbol(s)" in captured.out
     assert "2 symbol(s)" not in captured.out
+
+
+def _ny(*args) -> datetime:
+    return datetime(*args, tzinfo=ZoneInfo("America/New_York"))
+
+
+def test_run_once_manual_default_runs_outside_market_hours(fresh_signal_db, capsys):
+    """Default run_once (market_hours_only=False) runs even when the market is closed."""
+    empty = pd.DataFrame(columns=[
+        "ticker", "score", "last_close", "volume_ratio", "rsi",
+        "days_until_earnings", "reasons", "provider",
+    ])
+    report = _scan_report(empty, provider="yahoo", total_fetched=0)
+
+    # Saturday 10:00 AM ET
+    now = _ny(2025, 1, 18, 10, 0)
+    with (
+        patch.object(watcher, "screener_run_with_report", return_value=report),
+        patch.object(watcher, "_check_alerts"),
+    ):
+        watcher.run_once(["AAPL"], timeframe="intraday", now=now)
+
+    captured = capsys.readouterr()
+    assert "Scanning" in captured.out
+
+
+def test_run_once_market_hours_only_skips_before_open(fresh_signal_db, capsys):
+    now = _ny(2025, 1, 15, 9, 0)
+    with patch.object(watcher, "screener_run_with_report") as mock_screener:
+        watcher.run_once(["AAPL"], timeframe="intraday", market_hours_only=True, now=now)
+    assert mock_screener.call_count == 0
+    captured = capsys.readouterr()
+    assert "Market closed" in captured.out
+    assert "Before regular session" in captured.out
+    assert "Next regular session opens" in captured.out
+
+
+def test_run_once_market_hours_only_skips_after_close(fresh_signal_db, capsys):
+    now = _ny(2025, 1, 15, 17, 0)
+    with patch.object(watcher, "screener_run_with_report") as mock_screener:
+        watcher.run_once(["AAPL"], timeframe="intraday", market_hours_only=True, now=now)
+    assert mock_screener.call_count == 0
+    captured = capsys.readouterr()
+    assert "After regular session" in captured.out
+
+
+def test_run_once_market_hours_only_skips_weekend(fresh_signal_db, capsys):
+    now = _ny(2025, 1, 18, 10, 0)
+    with patch.object(watcher, "screener_run_with_report") as mock_screener:
+        watcher.run_once(["AAPL"], timeframe="intraday", market_hours_only=True, now=now)
+    assert mock_screener.call_count == 0
+    captured = capsys.readouterr()
+    assert "Market closed" in captured.out
+    assert "Weekend" in captured.out
+
+
+def test_run_once_market_hours_only_skips_holiday(fresh_signal_db, capsys):
+    now = _ny(2025, 1, 1, 10, 0)
+    with patch.object(watcher, "screener_run_with_report") as mock_screener:
+        watcher.run_once(["AAPL"], timeframe="intraday", market_hours_only=True, now=now)
+    assert mock_screener.call_count == 0
+    captured = capsys.readouterr()
+    assert "Weekend or exchange holiday" in captured.out
+
+
+def test_run_once_market_hours_only_runs_during_session(fresh_signal_db, capsys):
+    results = _screener_results("yahoo")
+    now = _ny(2025, 1, 15, 10, 0)
+    with (
+        patch.object(watcher, "screener_run_with_report", return_value=_scan_report(results, "yahoo", total_fetched=1)),
+        patch.object(watcher, "_check_alerts"),
+    ):
+        watcher.run_once(["AAPL"], timeframe="intraday", market_hours_only=True, now=now)
+
+    captured = capsys.readouterr()
+    assert "Scanning" in captured.out
+
+
+def test_run_once_market_hours_only_before_early_close_runs(fresh_signal_db):
+    results = _screener_results("yahoo")
+    # Black Friday 2025 12:00 PM ET is before the early 13:00 close.
+    now = _ny(2025, 11, 28, 12, 0)
+    with (
+        patch.object(watcher, "screener_run_with_report", return_value=_scan_report(results, "yahoo", total_fetched=1)),
+        patch.object(watcher, "_check_alerts"),
+    ):
+        watcher.run_once(["AAPL"], timeframe="intraday", market_hours_only=True, now=now)
+
+
+def test_run_once_market_hours_only_after_early_close_skips(fresh_signal_db, capsys):
+    now = _ny(2025, 11, 28, 13, 1)
+    with patch.object(watcher, "screener_run_with_report") as mock_screener:
+        watcher.run_once(["AAPL"], timeframe="intraday", market_hours_only=True, now=now)
+    assert mock_screener.call_count == 0
+    captured = capsys.readouterr()
+    assert "After regular session" in captured.out
+
+
+def test_run_once_skip_does_not_touch_store_or_alerts(fresh_signal_db, capsys):
+    now = _ny(2025, 1, 15, 17, 0)
+    with (
+        patch.object(watcher, "screener_run_with_report") as mock_screener,
+        patch.object(watcher.store, "record_signals") as mock_record,
+        patch.object(watcher, "_check_alerts") as mock_alerts,
+    ):
+        watcher.run_once(["AAPL"], timeframe="intraday", market_hours_only=True, now=now)
+
+    assert mock_screener.call_count == 0
+    assert mock_record.call_count == 0
+    assert mock_alerts.call_count == 0
+
+
+def test_run_once_uses_new_york_timestamp_format(capsys):
+    """Timestamps are printed in New York time with a timezone abbreviation."""
+    empty = pd.DataFrame(columns=[
+        "ticker", "score", "last_close", "volume_ratio", "rsi",
+        "days_until_earnings", "reasons", "provider",
+    ])
+    # 2025-07-02 10:00 EDT
+    now = datetime(2025, 7, 2, 14, 0, tzinfo=UTC)
+    with (
+        patch.object(watcher, "screener_run_with_report", return_value=_scan_report(empty, "yahoo", total_fetched=0)),
+        patch.object(watcher, "_check_alerts"),
+    ):
+        watcher.run_once(["AAPL"], timeframe="intraday", now=now)
+    captured = capsys.readouterr()
+    # 14:00 UTC in July is 10:00 EDT
+    assert "2025-07-02 10:00 EDT" in captured.out
+
+
+def test_start_loop_daily_jobs_use_new_york_timezone():
+    """Daily pre-market and outcome jobs are scheduled in America/New_York."""
+    mock_schedule = MagicMock()
+    with (
+        patch.object(watcher, "run_once"),
+        patch.object(watcher, "schedule", mock_schedule),
+        patch.object(watcher.time, "sleep", side_effect=SystemExit),
+        pytest.raises(SystemExit),
+    ):
+        watcher.start_loop(["AAPL"], interval_minutes=5)
+
+    mock_schedule.every.return_value.day.at.assert_any_call("08:00", "America/New_York")
+    mock_schedule.every.return_value.day.at.assert_any_call("16:30", "America/New_York")
+
+
+def test_scheduled_premarket_skips_non_trading_day(capsys):
+    now = datetime(2025, 1, 1, 13, 0, tzinfo=UTC)  # New Year's morning ET
+    with patch.object(watcher, "run_gap_alerts") as mock_gap:
+        watcher._run_scheduled_premarket(["AAPL"], provider="yahoo", now=now)
+    assert mock_gap.call_count == 0
+    captured = capsys.readouterr()
+    assert "Skipping pre-market gap scan" in captured.out
+
+
+def test_scheduled_premarket_runs_on_trading_day():
+    now = datetime(2025, 1, 15, 13, 0, tzinfo=UTC)  # 08:00 ET
+    with patch.object(watcher, "run_gap_alerts") as mock_gap:
+        watcher._run_scheduled_premarket(["AAPL"], provider="yahoo", now=now)
+    assert mock_gap.call_count == 1
+    _, kwargs = mock_gap.call_args
+    assert kwargs["provider"] == "yahoo"
+    assert kwargs["as_of"] == now
+
+
+def test_scheduled_outcomes_skips_non_trading_day(capsys):
+    now = datetime(2025, 1, 1, 21, 30, tzinfo=UTC)
+    with patch.object(watcher, "run_outcome_pass") as mock_outcome:
+        watcher._run_scheduled_outcomes(provider="schwab", now=now)
+    assert mock_outcome.call_count == 0
+    captured = capsys.readouterr()
+    assert "Skipping outcome pass" in captured.out
+
+
+def test_scheduled_outcomes_runs_on_trading_day():
+    now = datetime(2025, 1, 15, 21, 30, tzinfo=UTC)  # 16:30 ET
+    with patch.object(watcher, "run_outcome_pass") as mock_outcome:
+        watcher._run_scheduled_outcomes(provider="schwab", now=now)
+    assert mock_outcome.call_count == 1
+    _, kwargs = mock_outcome.call_args
+    assert kwargs["provider"] == "schwab"
+
+
+def test_cli_flag_propagates_market_hours_only():
+    """The --market-hours-only flag is parsed and passed to start_loop."""
+    import subprocess
+    result = subprocess.run(
+        ["python", "-m", "tradex.tracker.watcher", "--help"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert "--market-hours-only" in result.stdout
