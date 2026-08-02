@@ -413,7 +413,9 @@ def _build_equity_curve(
 
     df = pd.DataFrame(rows).set_index("timestamp")
     df.index.name = "datetime"
-    df["daily_return"] = df["equity"].pct_change().fillna(0.0)
+    # Leave the first row as NaN; it has no preceding observation. Genuine flat
+    # bars later in the curve naturally produce 0.0 returns.
+    df["daily_return"] = df["equity"].pct_change()
     df["running_peak"] = df["equity"].cummax()
     df["drawdown_pct"] = (df["equity"] / df["running_peak"] - 1) * 100
     return df

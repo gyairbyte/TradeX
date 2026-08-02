@@ -1,6 +1,9 @@
 """Tests for backtest performance metrics."""
 from __future__ import annotations
 
+import json
+import math
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -199,6 +202,83 @@ def test_sharpe_insufficient_history():
     config = BacktestConfig(min_score=1, warmup_bars=50, max_holding_bars=3)
     result = run_backtest("TEST", bars, _fn, config=config, strategy_name="test", data_source="test")
     assert result.metrics.sharpe_ratio is None
+
+
+def _make_sharpe_bars(n: int, changes: list[float]) -> pd.DataFrame:
+    """Return bars with the open set to the previous close and a controlled close jump.
+
+    changes[i] is the fractional close change at warmup+i relative to the previous
+    close. The first close is always 100.0, so each entry open equals the prior
+    close and the realized return equals the requested close change.
+    """
+    idx = pd.date_range("2020-01-01", periods=n, freq="D", tz="UTC")
+    close = np.full(n, 100.0)
+    for i, change in enumerate(changes, start=50):
+        close[i] = close[i - 1] * (1 + change)
+    open_ = np.empty_like(close)
+    open_[0] = close[0]
+    open_[1:] = close[:-1]
+    return pd.DataFrame(
+        {
+            "open": open_,
+            "high": np.maximum(open_, close) + 1.0,
+            "low": np.minimum(open_, close) - 1.0,
+            "close": close,
+            "volume": np.ones(n) * 1e6,
+        },
+        index=idx,
+    )
+
+
+def test_sharpe_one_change_two_rows_is_none():
+    # warmup=50, first_idx=49, equity rows at i=49 (initial) and i=50 (after trade).
+    # Only one actual equity change exists, so Sharpe is undefined.
+    bars = _make_sharpe_bars(51, [0.10])
+    config = BacktestConfig(min_score=40, warmup_bars=50, max_holding_bars=1)
+    result = run_backtest("TEST", bars, _score_at({49}), config=config, strategy_name="test", data_source="test")
+    assert len(result.equity_curve) == 2
+    assert result.metrics.sharpe_ratio is None
+
+
+def test_sharpe_two_known_changes_exact():
+    # Equity: 100k -> 110k -> 110k. Returns: 0.1, 0.0.
+    bars = _make_sharpe_bars(52, [0.10, 0.0])
+    config = BacktestConfig(min_score=40, warmup_bars=50, max_holding_bars=1)
+    result = run_backtest("TEST", bars, _score_at({49, 50}), config=config, strategy_name="test", data_source="test")
+    assert len(result.equity_curve) == 3
+    returns = result.equity_curve["daily_return"].dropna().to_numpy(dtype=float)
+    np.testing.assert_allclose(returns, [0.10, 0.0])
+    mean = 0.05
+    std = math.sqrt(0.005)
+    expected = math.sqrt(252) * mean / std
+    assert result.metrics.sharpe_ratio == pytest.approx(expected)
+
+
+def test_later_flat_bars_contribute_zero_returns():
+    # Equity: 100k -> 110k -> 110k -> 110k. Returns: 0.1, 0.0, 0.0.
+    bars = _make_sharpe_bars(53, [0.10, 0.0, 0.0])
+    config = BacktestConfig(min_score=40, warmup_bars=50, max_holding_bars=1)
+    result = run_backtest("TEST", bars, _score_at({49, 50, 51}), config=config, strategy_name="test", data_source="test")
+    assert len(result.equity_curve) == 4
+    returns = result.equity_curve["daily_return"].dropna().to_numpy(dtype=float)
+    assert len(returns) == 3
+    np.testing.assert_allclose(returns, [0.10, 0.0, 0.0])
+    assert result.metrics.sharpe_ratio is not None
+    assert math.isfinite(result.metrics.sharpe_ratio)
+
+
+def test_first_undefined_daily_return_serializes_as_null():
+    bars = _make_sharpe_bars(51, [0.10])
+    config = BacktestConfig(min_score=40, warmup_bars=50, max_holding_bars=1)
+    result = run_backtest("TEST", bars, _score_at({49}), config=config, strategy_name="test", data_source="test")
+    data = json.loads(result.to_json())
+    assert data["equity_curve"][0]["daily_return"] is None
+    # No NaN or Infinity may appear in the JSON output.
+    for curve_row in data["equity_curve"]:
+        for v in curve_row.values():
+            assert v is None or isinstance(v, (str, int, float, bool))
+            if isinstance(v, float):
+                assert math.isfinite(v)
 
 
 def test_known_drawdown():
