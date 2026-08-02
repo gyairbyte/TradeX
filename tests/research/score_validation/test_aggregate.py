@@ -161,18 +161,25 @@ def test_sparse_group_marked(tmp_path: Path):
 def test_median_ticker_event_return_is_median_of_ticker_means():
     """median_ticker_event_return_pct must be the median of per-ticker means."""
     config = _simple_config()
+    # At least two observations per ticker, all in the same bucket.
+    # Ticker means and ticker medians differ, so the median-of-means and the
+    # median-of-medians would not be the same.
     rows = [
-        {"ticker": "A", "split": "development", "score": 50, "1_bar_outcome_status": "complete", "1_bar_net_return_pct_0bps": 10.0},
-        {"ticker": "A", "split": "development", "score": 60, "1_bar_outcome_status": "complete", "1_bar_net_return_pct_0bps": 20.0},
-        {"ticker": "B", "split": "development", "score": 70, "1_bar_outcome_status": "complete", "1_bar_net_return_pct_0bps": -5.0},
-        {"ticker": "B", "split": "development", "score": 80, "1_bar_outcome_status": "complete", "1_bar_net_return_pct_0bps": 15.0},
+        {"ticker": "A", "split": "development", "score": 45, "1_bar_outcome_status": "complete", "1_bar_net_return_pct_0bps": 0.0},
+        {"ticker": "A", "split": "development", "score": 55, "1_bar_outcome_status": "complete", "1_bar_net_return_pct_0bps": 20.0},
+        {"ticker": "B", "split": "development", "score": 45, "1_bar_outcome_status": "complete", "1_bar_net_return_pct_0bps": 0.0},
+        {"ticker": "B", "split": "development", "score": 55, "1_bar_outcome_status": "complete", "1_bar_net_return_pct_0bps": 0.0},
+        {"ticker": "B", "split": "development", "score": 50, "1_bar_outcome_status": "complete", "1_bar_net_return_pct_0bps": 60.0},
+        {"ticker": "C", "split": "development", "score": 45, "1_bar_outcome_status": "complete", "1_bar_net_return_pct_0bps": 40.0},
+        {"ticker": "C", "split": "development", "score": 55, "1_bar_outcome_status": "complete", "1_bar_net_return_pct_0bps": 80.0},
     ]
     df = pd.DataFrame(rows)
     # Add component columns so the component filter does not drop rows.
     for col in ["component_ema_structure", "component_volume_confirmation", "component_rsi_momentum", "component_macd_positive", "component_pullback_ema"]:
         df[col] = True
     buckets = build_score_buckets(df, config)
-    row = buckets[buckets["score_bucket"] == "40-59"].iloc[0]
-    # A mean = 15, B mean = 5 -> median of [15, 5] = 10.
-    assert row["median_ticker_event_return_pct"] == 10.0
-    assert row["mean_ticker_event_return_pct"] == 10.0
+    result = buckets[buckets["score_bucket"] == "40-59"].iloc[0]
+    # Per-ticker means: A 10, B 20, C 60 -> mean = 30, median = 20.
+    # Per-ticker medians: A 10, B 0, C 60 -> median would be 10, mean = 70/3.
+    assert result["mean_ticker_event_return_pct"] == 30.0
+    assert result["median_ticker_event_return_pct"] == 20.0

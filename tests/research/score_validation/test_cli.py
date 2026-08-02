@@ -133,6 +133,58 @@ def test_invalid_comma_arguments_exit_nonzero(tmp_path: Path):
     assert exc_info.value.code != 0
 
 
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--horizons", "1,,5"],
+        ["--thresholds", "20,"],
+        ["--slippage-bps", "0,,2.5"],
+        ["--score-buckets", ",0,20,40"],
+    ],
+)
+def test_empty_comma_segments_rejected(tmp_path: Path, args: list[str]):
+    """Leading, trailing, and doubled commas must be rejected."""
+    manifest_path, _, _ = write_bars_and_manifest(tmp_path / "data")
+    result_dir = tmp_path / "results"
+    with pytest.raises(SystemExit) as exc_info:
+        main(
+            [
+                "evaluate",
+                "--manifest",
+                str(manifest_path),
+                "--output-dir",
+                str(result_dir),
+            ]
+            + args
+        )
+    assert exc_info.value.code != 0
+
+
+def test_snapshot_empty_ticker_segment_rejected(tmp_path: Path):
+    """A nonempty ticker list with an empty segment must not silently discard it."""
+    result_dir = tmp_path / "results"
+    ret = main(
+        [
+            "snapshot",
+            "--tickers",
+            "AAPL,,MSFT",
+            "--start",
+            "2020-01-01",
+            "--end",
+            "2020-12-31",
+            "--output-dir",
+            str(result_dir),
+            "--development-split",
+            "2020-01-01,2020-04-30",
+            "--validation-split",
+            "2020-05-01,2020-08-31",
+            "--holdout-split",
+            "2020-09-01,2020-12-31",
+        ]
+    )
+    assert ret != 0
+
+
 def test_no_network_in_evaluation(tmp_path: Path):
     manifest_path, _, _ = write_bars_and_manifest(tmp_path / "data")
     result_dir = tmp_path / "results"

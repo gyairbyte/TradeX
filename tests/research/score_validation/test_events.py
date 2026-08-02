@@ -196,11 +196,16 @@ def test_cross_split_outcome_is_incomplete(tmp_path: Path):
     study = run_study(manifest_path, ScoreValidationConfig(warmup_bars=50))
     cross = study.events[
         (study.events["split"] == "development")
-        & (study.events["signal_time"] >= "2021-12-29")
-        & (study.events["signal_time"] <= "2021-12-31")
+        & (study.events["signal_time"].str[:10] >= "2021-12-29")
+        & (study.events["signal_time"].str[:10] <= "2021-12-31")
     ]
     assert not cross.empty
     assert (cross["3_bar_outcome_status"] == "insufficient_future_bars").all()
+    # The final development signal's entry would fall in the validation split,
+    # so no next-split price should be recorded.
+    final = cross[cross["signal_time"] == cross["signal_time"].max()].iloc[0]
+    assert pd.isna(final["entry_time"])
+    assert pd.isna(final["raw_entry_price"])
 
 
 def test_warmup_bars_before_split_start_not_events(tmp_path: Path):

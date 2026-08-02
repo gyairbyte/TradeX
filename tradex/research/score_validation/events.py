@@ -101,17 +101,14 @@ def _generate_ticker_events(
 
         entry_time: datetime | None = None
         raw_entry_price: float | None = None
-        entry_in_split = False
         if i + 1 < len(df):
-            entry_time = df.index[i + 1].to_pydatetime()
-            raw_entry_price = float(df["open"].iloc[i + 1])
-            entry_in_split = _within_split(entry_time, splits[split_name])
-
-        if entry_time is None or not entry_in_split:
-            # The next bar either does not exist or belongs to a later split.
-            # Do not expose its time/price and mark all horizons incomplete.
-            entry_time = None
-            raw_entry_price = None
+            candidate_entry_time = df.index[i + 1].to_pydatetime()
+            # Only read the next bar's open when the entry timestamp belongs to
+            # the same split as the signal; this prevents exposing a later
+            # split's price for an event that cannot actually trade there.
+            if _within_split(candidate_entry_time, splits[split_name]):
+                entry_time = candidate_entry_time
+                raw_entry_price = float(df["open"].iloc[i + 1])
 
         outcomes: dict[int, EventOutcome] = {}
         for horizon in config.horizons:

@@ -13,7 +13,10 @@ from .snapshot import create_snapshot
 
 
 def _comma_ints(value: str) -> tuple[int, ...]:
-    parts = [p.strip() for p in value.split(",") if p.strip()]
+    raw_parts = value.split(",")
+    if any(p == "" for p in raw_parts):
+        raise argparse.ArgumentTypeError(f"Expected nonempty comma-separated integers; got {value!r}")
+    parts = [p.strip() for p in raw_parts]
     if not parts:
         raise argparse.ArgumentTypeError("Expected nonempty comma-separated integers")
     try:
@@ -23,7 +26,10 @@ def _comma_ints(value: str) -> tuple[int, ...]:
 
 
 def _comma_floats(value: str) -> tuple[float, ...]:
-    parts = [p.strip() for p in value.split(",") if p.strip()]
+    raw_parts = value.split(",")
+    if any(p == "" for p in raw_parts):
+        raise argparse.ArgumentTypeError(f"Expected nonempty comma-separated numbers; got {value!r}")
+    parts = [p.strip() for p in raw_parts]
     if not parts:
         raise argparse.ArgumentTypeError("Expected nonempty comma-separated numbers")
     try:
@@ -105,7 +111,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _handle_snapshot(args: argparse.Namespace) -> int:
-    tickers = [t.strip().upper() for t in args.tickers.split(",") if t.strip()]
+    raw_ticker_parts = args.tickers.split(",")
+    if any(t == "" for t in raw_ticker_parts):
+        print("error: --tickers contains an empty segment", file=sys.stderr)
+        return 1
+    tickers = [t.strip().upper() for t in raw_ticker_parts]
     if not tickers:
         print("error: --tickers must contain at least one ticker", file=sys.stderr)
         return 1
