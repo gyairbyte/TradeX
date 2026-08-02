@@ -264,7 +264,45 @@ uv run python -m tradex.backtest --help
 
 ---
 
-## 8. Known caveats and gotchas
+## 8. Score-validation study (optional)
+
+TradeX includes a reproducible event-study package in `tradex/research/score_validation` for evaluating whether the short-term scorer is calibrated to forward returns. It is research-only and does not alter the production score.
+
+```bash
+# Build an offline snapshot (network allowed; credentials optional)
+uv run python -m tradex.research.score_validation snapshot \
+  --tickers AAPL,MSFT,SPY \
+  --start 2020-01-01 \
+  --end 2023-12-31 \
+  --provider yahoo \
+  --output-dir data/score_validation_snapshot \
+  --development-split 2018-01-01,2022-12-31 \
+  --validation-split 2023-01-01,2024-12-31 \
+  --holdout-split 2025-01-01,2025-12-31
+
+# Evaluate offline (no network, no credentials, no saved weights)
+uv run python -m tradex.research.score_validation evaluate \
+  --manifest data/score_validation_snapshot/manifest.json \
+  --output-dir results/score_validation \
+  --warmup-bars 60 \
+  --horizons 1,3,5 \
+  --slippage-bps 0.0,5.0,10.0
+```
+
+The `evaluate` command produces deterministic CSV, JSON, and Markdown outputs. It always uses a fresh `ShortWeights()` instance and separates the event study from the executable backtest engine in `tradex/backtest`.
+
+Verify the package:
+
+```bash
+uv run pytest tests/research/score_validation -q
+uv run python -m tradex.research.score_validation --help
+uv run python -m tradex.research.score_validation snapshot --help
+uv run python -m tradex.research.score_validation evaluate --help
+```
+
+---
+
+## 9. Known caveats and gotchas
 
 1. **macOS Gatekeeper blocks the first launch** of `TradeX.app`. Right-click → Open the first time. Subsequent double-clicks work normally.
 2. **The launcher needs `~/.tradex/config`** (or `$TRADEX_HOME`) when run from outside the repo (e.g. from `/Applications`). If you see "Could not locate the TradeX project directory," go back to step 3.
@@ -279,7 +317,7 @@ uv run python -m tradex.backtest --help
 
 ---
 
-## 9. Navigation cheat-sheet for the user
+## 10. Navigation cheat-sheet for the user
 
 Once the dashboard is running at `http://localhost:8501`:
 
@@ -298,7 +336,7 @@ Once the dashboard is running at `http://localhost:8501`:
 
 ---
 
-## 10. After-setup sanity checks (agent should run these)
+## 11. After-setup sanity checks (agent should run these)
 
 Before reporting success to the user, the agent should verify:
 - [ ] `.venv/` exists and contains `streamlit`
