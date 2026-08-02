@@ -303,16 +303,18 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Build a backtesting harness
 - **Category:** Backtesting
 - **Priority:** High
-- **Status:** Proposed
+- **Status:** Completed
+- **Resolved by:** `devin/add-backtest-engine`
 - **Problem statement:** There is no way to validate whether any signal has a tradable edge.
 - **Recommended action:** Create `tradex/backtest/` with point-in-time data, explicit entry/stop/target/costs, and metrics (win rate, expectancy, Sharpe, drawdown).
 - **Reason:** Needed to validate every trading feature before trusting it.
 - **Dependencies:** TEST-001
-- **Files likely affected:** New `tradex/backtest/` package
-- **Testing requirements:** Unit tests with deterministic synthetic data; test against a known benchmark.
-- **Acceptance criteria:** A backtest can be run for the short-term scorer and produce a report.
+- **Files affected:** `tradex/backtest/models.py`, `tradex/backtest/validation.py`, `tradex/backtest/engine.py`, `tradex/backtest/metrics.py`, `tradex/backtest/io.py`, `tradex/backtest/cli.py`, `tests/backtest/*.py`
+- **Testing requirements:** Unit tests with deterministic synthetic data; test against a known benchmark; credential-free CLI and provider-mock tests.
+- **Acceptance criteria:** A point-in-time backtest can be run for the short-term scorer via `python -m tradex.backtest --csv ...` and produces a deterministic JSON/report with no `NaN` or `inf` values.
 - **Intended pull request:** `devin/add-backtest-engine`
 - **Affects trading behavior:** No
+- **Next recommended PR:** `devin/fix-confluence-missing-timeframe` (COR-006)
 
 ---
 
@@ -382,7 +384,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
   - Legacy databases are migrated to v3, preserving legacy row IDs and marking unmatched rows `source='legacy'`/`counts_complete=0`/`status='unknown'`.
   - `get_recent_scan_runs()` returns stable empty-schema, new columns, `hit_rate_pct`, and supports `complete_only`.
 - **Affects trading behavior:** No
-- **Next recommended PR:** `devin/add-backtest-engine` (VAL-001)
+- **Next recommended PR:** `devin/fix-confluence-missing-timeframe` (COR-006)
 
 ### COR-013: Distinguish provider failures from zero results
 
@@ -594,6 +596,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 1. `devin/redesign-signal-history` (DATA-001, COIL-001, COIL-002).
 2. `devin/fix-scan-audit` (COR-012).
 3. `devin/add-backtest-engine` (VAL-001).
-4. `devin/reevaluate-scores-with-validated-data` (new, after backtesting).
-5. `devin/improve-gap-scanner` (INTRA-002, after COR-005 and DATA-001).
+4. `devin/fix-confluence-missing-timeframe` (COR-006).
+5. `devin/reevaluate-scores-with-validated-data` (new, after backtesting).
+6. `devin/improve-gap-scanner` (INTRA-002, after COR-005 and DATA-001).
 

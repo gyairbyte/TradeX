@@ -98,6 +98,58 @@ uv run python -m tradex.tracker.watcher \
 Do not start a blocking watcher loop during automated testing.
 Patch the scheduler or inject deterministic time values instead.
 
+## Backtest CLI
+
+Inspect available backtest options with:
+
+```bash
+uv run python -m tradex.backtest --help
+```
+
+Example offline CSV backtest command (no credentials or live APIs). The `--ticker` flag identifies the security; `--csv` only supplies the price history:
+
+```bash
+uv run python -m tradex.backtest \
+  --csv data/spy_daily.csv \
+  --ticker SPY \
+  --min-score 40 \
+  --warmup-bars 60 \
+  --holding-bars 3 \
+  --stop-loss-pct 5 \
+  --take-profit-pct 10 \
+  --json-output result.json \
+  --trades-output trades.csv \
+  --equity-output equity.csv
+```
+
+Provider-backed daily history (Yahoo requires no credentials; Schwab requires OAuth):
+
+```bash
+uv run python -m tradex.backtest \
+  --ticker SPY \
+  --start 2023-01-01 \
+  --end 2023-12-31 \
+  --provider yahoo
+```
+
+Run the focused backtest suite with:
+
+```bash
+uv run pytest tests/backtest -q
+```
+
+The CSV must contain `datetime` (or `date`), `open`, `high`, `low`, `close`, `volume`.
+Use `--timezone` for naive datetimes. The JSON output must contain no `NaN` or `Infinity` values.
+
+Key execution assumptions for credential-free tests:
+
+- Long-only, one position at a time, 100% capital per trade, fractional shares.
+- Signals are point-in-time: the scorer sees only bars up to and including the current close.
+- Entry is at the next bar's open.
+- Stop and target are anchored to the entry fill, not the signal bar close.
+- Exit priority: opening gap through stop/target, then intraday stop/target (with `intrabar_policy` tie-break), then `time_exit` at `max_holding_bars`.
+- The equity curve marks a bar as exposed if a position is held at any point during that bar; the `position_ticker` column records the active ticker.
+
 ## Dashboard
 
 For explicitly requested manual UI testing:
