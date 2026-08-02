@@ -75,7 +75,7 @@ These conditions together suggest a stock that has been "coiling" and is ready f
 |---|---|
 | **Scanner** | Score every ticker in the active watchlist, drill into candlestick + volume chart |
 | **Coil Detector** | Stocks that have scored well across multiple scans without breaking out yet |
-| **Confluence** | Stocks scoring well across intraday + short + long simultaneously |
+| **Confluence** | Stocks scoring well across intraday + short + long simultaneously; coverage (0/3–3/3) is now explicit |
 | **Pattern Match** | Compare current 10-day windows against historical run-up/decline fingerprints |
 | **Pre-Market** | Gap-up/down detection vs. previous close using pre-market quotes |
 | **Options Flow** | Unusual options volume vs. open interest, put/call sentiment |
@@ -238,7 +238,7 @@ The tracker module is what separates TradeX from standard screeners. Rather than
 1. Run the **Scanner** tab (or `watcher.py` on a schedule) — every ticker requested is saved as an observation in `~/.tradex/signals.db`; qualifying signals are also written to `signal_history`
 2. As history accumulates, the **Coil Detector** surfaces stocks scoring well for multiple distinct NYSE sessions *without breaking out yet*
 3. The **Fading Setups** detector surfaces stocks that previously coiled but have started to deteriorate
-4. The **Confluence** tab shows stocks scoring well across all three timeframes simultaneously
+4. The **Confluence** tab shows stocks scoring well across all three timeframes simultaneously; missing timeframes contribute zero and are shown in coverage metadata
 5. The **Outcome Tracker** fetches prices 1d/3d/5d after each signal and writes `outcome_pct` and `outcome_provider` back to the DB
 6. The **Signal Journal** rolls those outcomes up into win rate / expectancy by score bucket and shows both the signal and outcome provider
 
@@ -250,6 +250,18 @@ A "coil" is a stock that:
 - Has a score that is stable or trending upward
 
 Coil appearances count distinct NYSE trading sessions, not scan rows, so running the watcher more often inside the same session does not mechanically create a coil.
+
+### Confluence scoring
+
+The **Confluence** tab and `run_confluence_screen()` combine the intraday (30%), short-term (40%), and long-term (30%) scores using a **fixed denominator**. Missing or failed timeframes contribute zero; the score is never renormalized across whichever timeframes happen to be available. Coverage is reported as `0/3`, `1/3`, `2/3`, or `3/3` so you can see exactly how much data contributed.
+
+Tiers use both the corrected score and the number of contributing/active timeframes:
+- `all timeframes aligned` requires **3/3** coverage, all three timeframes active (score ≥ 50), and a confluence score ≥ 90.
+- `strong confluence` requires at least two active timeframes and a score ≥ 70.
+- `moderate confluence` requires at least two active timeframes and a score ≥ 50.
+- `weak / single timeframe`, `weak / incomplete timeframes`, `weak confluence`, or `no data` describe everything else.
+
+This is a heuristic confluence model, not proof of higher returns. Confluence scores feed the existing Scanner, dashboard, and alert thresholds unchanged.
 
 ### Running the watcher
 ```bash

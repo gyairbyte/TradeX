@@ -287,7 +287,7 @@ Once the dashboard is running at `http://localhost:8501`:
 |---|---|
 | **Scanner** | Pick a watchlist in the sidebar, pick a timeframe (intraday / short / long), set `min_score` (try 40), click Scan. |
 | **Coil Detector** | Needs scan history across several NYSE trading sessions to detect coiling stocks; appears count distinct sessions, not scan rows. |
-| **Confluence** | Stocks scoring well across all three timeframes simultaneously. Fast to compute, no history needed. |
+| **Confluence** | Stocks scoring well across all three timeframes simultaneously. Missing timeframes contribute zero and are shown as `0/3`–`3/3` coverage. `all timeframes aligned` requires 3/3 coverage and all active. |
 | **Pattern Match** | Compares current 10-day windows against historical run-up / decline fingerprints. |
 | **Pre-Market** | Gap-up / gap-down detection vs. previous close. Only useful between ~7am and 9:30am ET. |
 | **Options Flow** | Unusual options volume vs. open interest. Requires market hours for live data. |
