@@ -206,7 +206,32 @@ Run during market hours. With `--market-hours-only`, scans are skipped outside t
 
 ---
 
-## 7. Known caveats and gotchas
+## 7. Backtesting (optional)
+
+TradeX includes a deterministic, point-in-time backtest engine in `tradex/backtest`.
+
+```bash
+# From an offline CSV
+uv run python -m tradex.backtest --csv data/spy_daily.csv --min-score 40 --warmup-bars 60 --holding-bars 3 --stop-loss-pct 5 --take-profit-pct 10
+
+# JSON output + trade/equity CSVs
+uv run python -m tradex.backtest --csv data/spy_daily.csv --json-output result.json --trades-output trades.csv --equity-output equity.csv
+```
+
+The CSV must contain `datetime` (or `date`), `open`, `high`, `low`, `close`, and `volume`. Datetimes can be timezone-aware or naive with `--timezone`. The engine reuses the production `tradex.signals.short_term.score` scorer unchanged, defaulting to a fresh `ShortWeights()` snapshot so results are independent of `~/.tradex/weights.json`.
+
+### Backtest verification
+
+After install, run the built-in tests and a credential-free offline example:
+
+```bash
+uv run pytest tests/backtest -q
+uv run python -m tradex.backtest --help
+```
+
+---
+
+## 9. Known caveats and gotchas
 
 1. **macOS Gatekeeper blocks the first launch** of `TradeX.app`. Right-click → Open the first time. Subsequent double-clicks work normally.
 2. **The launcher needs `~/.tradex/config`** (or `$TRADEX_HOME`) when run from outside the repo (e.g. from `/Applications`). If you see "Could not locate the TradeX project directory," go back to step 3.
@@ -221,7 +246,7 @@ Run during market hours. With `--market-hours-only`, scans are skipped outside t
 
 ---
 
-## 8. Navigation cheat-sheet for the user
+## 10. Navigation cheat-sheet for the user
 
 Once the dashboard is running at `http://localhost:8501`:
 
@@ -240,7 +265,7 @@ Once the dashboard is running at `http://localhost:8501`:
 
 ---
 
-## 9. After-setup sanity checks (agent should run these)
+## 11. After-setup sanity checks (agent should run these)
 
 Before reporting success to the user, the agent should verify:
 - [ ] `.venv/` exists and contains `streamlit`

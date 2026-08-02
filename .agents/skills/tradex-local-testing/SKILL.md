@@ -98,6 +98,38 @@ uv run python -m tradex.tracker.watcher \
 Do not start a blocking watcher loop during automated testing.
 Patch the scheduler or inject deterministic time values instead.
 
+## Backtest CLI
+
+Inspect available backtest options with:
+
+```bash
+uv run python -m tradex.backtest --help
+```
+
+Example offline CSV backtest command (no credentials or live APIs):
+
+```bash
+uv run python -m tradex.backtest \
+  --csv data/spy_daily.csv \
+  --min-score 40 \
+  --warmup-bars 60 \
+  --holding-bars 3 \
+  --stop-loss-pct 5 \
+  --take-profit-pct 10 \
+  --json-output result.json \
+  --trades-output trades.csv \
+  --equity-output equity.csv
+```
+
+Run the focused backtest suite with:
+
+```bash
+uv run pytest tests/backtest -q
+```
+
+The CSV must contain `datetime` (or `date`), `open`, `high`, `low`, `close`, `volume`.
+Use `--timezone` for naive datetimes. The JSON output must contain no `NaN` or `Infinity` values.
+
 ## Dashboard
 
 For explicitly requested manual UI testing:

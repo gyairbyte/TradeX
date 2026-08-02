@@ -121,6 +121,30 @@ results = run(
 print(results)
 ```
 
+### Backtesting (VAL-001)
+
+Run a deterministic, point-in-time backtest for the short-term scorer from an offline CSV:
+
+```bash
+uv run python -m tradex.backtest --csv data/spy_daily.csv --min-score 40 --warmup-bars 60 --holding-bars 3 --stop-loss-pct 5 --take-profit-pct 10
+```
+
+Or programmatically:
+
+```python
+from tradex.backtest.engine import run_short_term_backtest
+from tradex.backtest.io import load_csv
+from tradex.backtest.models import BacktestConfig
+
+bars = load_csv("data/spy_daily.csv", timezone="America/New_York")
+config = BacktestConfig(min_score=40, max_holding_bars=3)
+result = run_short_term_backtest("SPY", bars, config=config)
+print(result.metrics)
+print(result.to_json())
+```
+
+The harness is long-only, one-position-at-a-time, uses 100% of available capital per trade, and applies explicit stop-loss, profit-target, and time exits with optional slippage and commission. Signals are generated point-in-time using only bars available up to and including each close, and entries execute on the next bar's open.
+
 ---
 
 ## Data Providers
@@ -235,7 +259,7 @@ Save and switch between named ticker lists (e.g. "Semis", "Crypto-adjacent", "Ea
 - [x] Add market-hours and timezone handling (COR-005)
 - [x] Redesign signal-history storage and access patterns (DATA-001)
 - [x] Fix scan audit to accurately distinguish requested, observed, qualifying, and failed scans (COR-012)
-- [ ] Backtesting module to validate signal quality historically (VAL-001)
+- [x] Backtesting module to validate signal quality historically (VAL-001)
 - [ ] Portfolio-level risk view
 
 ### Nice-to-have enhancements
