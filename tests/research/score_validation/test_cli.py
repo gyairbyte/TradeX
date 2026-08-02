@@ -49,6 +49,7 @@ def test_evaluate_offline_end_to_end(tmp_path: Path):
     assert (result_dir / "study.json").is_file()
     assert (result_dir / "events.csv").is_file()
     assert (result_dir / "report.md").is_file()
+    assert (result_dir / "manifest.lock.json").is_file()
 
 
 def test_snapshot_mocked_end_to_end(tmp_path: Path):
@@ -78,10 +79,16 @@ def test_snapshot_mocked_end_to_end(tmp_path: Path):
                 "2020-01-01",
                 "--end",
                 "2020-05-31",
-                "--provider",
-                "yahoo",
                 "--output-dir",
                 str(out),
+                "--development-split",
+                "2020-01-01,2020-03-31",
+                "--validation-split",
+                "2020-04-01,2020-05-15",
+                "--holdout-split",
+                "2020-05-16,2020-05-31",
+                "--provider",
+                "yahoo",
             ]
         )
     assert ret == 0

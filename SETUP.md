@@ -275,7 +275,10 @@ uv run python -m tradex.research.score_validation snapshot \
   --start 2020-01-01 \
   --end 2023-12-31 \
   --provider yahoo \
-  --output-dir data/score_validation_snapshot
+  --output-dir data/score_validation_snapshot \
+  --development-split 2018-01-01,2022-12-31 \
+  --validation-split 2023-01-01,2024-12-31 \
+  --holdout-split 2025-01-01,2025-12-31
 
 # Evaluate offline (no network, no credentials, no saved weights)
 uv run python -m tradex.research.score_validation evaluate \
@@ -286,7 +289,7 @@ uv run python -m tradex.research.score_validation evaluate \
   --slippage-bps 0.0,5.0,10.0
 ```
 
-The `evaluate` command produces deterministic CSV and JSON outputs. It always uses a fresh `ShortWeights()` instance and separates the event study from the executable backtest engine in `tradex/backtest`.
+The `evaluate` command produces deterministic CSV, JSON, and Markdown outputs. It always uses a fresh `ShortWeights()` instance and separates the event study from the executable backtest engine in `tradex/backtest`.
 
 Verify the package:
 

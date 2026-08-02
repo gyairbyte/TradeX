@@ -26,32 +26,57 @@ def build_event_dataframe(events: list, config: ScoreValidationConfig) -> pd.Dat
 def build_score_buckets(
     df: pd.DataFrame, config: ScoreValidationConfig
 ) -> pd.DataFrame:
-    """Aggregate complete outcomes by split, horizon, cost scenario, and score bucket."""
+    """Aggregate complete outcomes by split, horizon, cost scenario, and score bucket.
+
+    Every configured bucket is emitted for every split/horizon/slippage combination.
+    Groups with no events or fewer than ``minimum_group_events`` are marked
+    ``insufficient_sample`` with null metric values.
+    """
     if df.empty:
         return _empty_bucket_df()
 
     rows: list[AggregateRow] = []
+    bucket_labels = list(config.bucket_labels())
     for split in _sorted_unique(df, "split"):
         split_df = df[df["split"] == split]
         for horizon in config.horizons:
             complete = split_df[split_df[f"{horizon}_bar_outcome_status"] == "complete"]
-            if complete.empty:
-                continue
-            complete = complete.copy()
-            complete["bucket"] = complete["score"].apply(config.bucket_for)
             for slippage in config.slippage_scenarios_bps:
-                for bucket in _sorted_unique(complete, "bucket"):
-                    bucket_df = complete[complete["bucket"] == bucket]
+                if complete.empty:
+                    for bucket in bucket_labels:
+                        group = {
+                            "split": split,
+                            "horizon_bars": horizon,
+                            "slippage_bps": slippage,
+                            "score_bucket": bucket,
+                        }
+                        rows.append(
+                            AggregateRow(
+                                group=group,
+                                metrics=_empty_metrics(),
+                                sample_status="insufficient_sample",
+                            )
+                        )
+                    continue
+
+                bucketed = complete.copy()
+                bucketed["bucket"] = bucketed["score"].apply(config.bucket_for)
+                for bucket in bucket_labels:
+                    bucket_df = bucketed[bucketed["bucket"] == bucket]
                     group = {
                         "split": split,
                         "horizon_bars": horizon,
                         "slippage_bps": slippage,
                         "score_bucket": bucket,
                     }
+                    metrics, sample_status = _group_metrics(
+                        bucket_df, horizon, slippage, config
+                    )
                     rows.append(
                         AggregateRow(
                             group=group,
-                            metrics=_group_metrics(bucket_df, horizon, slippage, config),
+                            metrics=metrics,
+                            sample_status=sample_status,
                         )
                     )
     return _aggregate_rows_to_df(rows, _empty_bucket_df())
@@ -60,7 +85,10 @@ def build_score_buckets(
 def build_thresholds(
     df: pd.DataFrame, config: ScoreValidationConfig
 ) -> pd.DataFrame:
-    """Aggregate complete outcomes at and above each configured score threshold."""
+    """Aggregate complete outcomes at and above each configured score threshold.
+
+    Every configured threshold is emitted for every split/horizon/slippage.
+    """
     if df.empty:
         return _empty_threshold_df()
 
@@ -69,14 +97,10 @@ def build_thresholds(
         split_df = df[df["split"] == split]
         for horizon in config.horizons:
             complete = split_df[split_df[f"{horizon}_bar_outcome_status"] == "complete"]
-            if complete.empty:
-                continue
-            all_tickers = set(complete["ticker"].unique())
+            all_tickers = set(complete["ticker"].unique()) if not complete.empty else set()
             for slippage in config.slippage_scenarios_bps:
                 for threshold in config.score_thresholds:
                     above = complete[complete["score"] >= threshold]
-                    if above.empty:
-                        continue
                     label = "current_default" if threshold == 40 else f"threshold_{threshold}"
                     group = {
                         "split": split,
@@ -85,7 +109,20 @@ def build_thresholds(
                         "threshold": threshold,
                         "threshold_label": label,
                     }
-                    metrics = _group_metrics(above, horizon, slippage, config)
+                    if above.empty:
+                        metrics = _empty_metrics()
+                        metrics["event_retention_pct"] = 0.0
+                        metrics["ticker_coverage_pct"] = 0.0
+                        rows.append(
+                            AggregateRow(
+                                group=group,
+                                metrics=metrics,
+                                sample_status="insufficient_sample",
+                            )
+                        )
+                        continue
+
+                    metrics, sample_status = _group_metrics(above, horizon, slippage, config)
                     metrics["event_retention_pct"] = (
                         len(above) / max(len(complete), 1) * 100.0
                     )
@@ -94,14 +131,18 @@ def build_thresholds(
                         / max(len(all_tickers), 1)
                         * 100.0
                     )
-                    rows.append(AggregateRow(group=group, metrics=metrics))
+                    rows.append(AggregateRow(group=group, metrics=metrics, sample_status=sample_status))
     return _aggregate_rows_to_df(rows, _empty_threshold_df())
 
 
 def build_components(
     df: pd.DataFrame, config: ScoreValidationConfig
 ) -> pd.DataFrame:
-    """Compare outcomes when each component is present vs absent."""
+    """Compare outcomes when each component is present vs absent.
+
+    Both ``present`` and ``absent`` rows are emitted for every component, even if
+    one side contains no complete events.
+    """
     if df.empty:
         return _empty_component_df()
 
@@ -117,8 +158,6 @@ def build_components(
         split_df = df[df["split"] == split]
         for horizon in config.horizons:
             complete = split_df[split_df[f"{horizon}_bar_outcome_status"] == "complete"]
-            if complete.empty:
-                continue
             for slippage in config.slippage_scenarios_bps:
                 for component in component_names:
                     col = f"component_{component}"
@@ -126,12 +165,16 @@ def build_components(
                         continue
                     present = complete[complete[col] == True]
                     absent = complete[complete[col] == False]
-                    present_metrics = _group_metrics(present, horizon, slippage, config)
-                    absent_metrics = _group_metrics(absent, horizon, slippage, config)
+                    present_metrics, present_status = _group_metrics(
+                        present, horizon, slippage, config
+                    )
+                    absent_metrics, absent_status = _group_metrics(
+                        absent, horizon, slippage, config
+                    )
                     delta = _delta_metrics(present_metrics, absent_metrics)
-                    for state, metrics in [
-                        ("present", present_metrics),
-                        ("absent", absent_metrics),
+                    for state, metrics, status in [
+                        ("present", present_metrics, present_status),
+                        ("absent", absent_metrics, absent_status),
                     ]:
                         group = {
                             "split": split,
@@ -147,7 +190,11 @@ def build_components(
                             "positive_rate_present_minus_absent": delta["positive_rate"],
                         }
                         rows.append(
-                            AggregateRow(group=group, metrics=row_metrics)
+                            AggregateRow(
+                                group=group,
+                                metrics=row_metrics,
+                                sample_status=status,
+                            )
                         )
     return _aggregate_rows_to_df(rows, _empty_component_df())
 
@@ -226,7 +273,7 @@ def build_ticker_summary(df: pd.DataFrame, config: ScoreValidationConfig) -> pd.
                 if subset.empty:
                     continue
                 for slippage in config.slippage_scenarios_bps:
-                    col = f"{horizon}_bar_net_return_pct_{int(slippage)}bps"
+                    col = f"{horizon}_bar_net_return_pct_{config.slippage_key(slippage)}bps"
                     values = pd.to_numeric(subset[col], errors="coerce").dropna()
                     rows.append(
                         {
@@ -267,32 +314,23 @@ def build_data_quality_df(quality_rows: list) -> pd.DataFrame:
 
 def _group_metrics(
     df: pd.DataFrame, horizon: int, slippage: float, config: ScoreValidationConfig
-) -> dict[str, Any]:
-    """Compute descriptive metrics for a group of complete events."""
-    col = f"{horizon}_bar_net_return_pct_{int(slippage)}bps"
+) -> tuple[dict[str, Any], str]:
+    """Compute descriptive metrics for a group of complete events.
+
+    Returns ``(metrics, sample_status)``.  Groups with no events or fewer than
+    ``minimum_group_events`` are marked ``insufficient_sample``.
+    """
+    col = f"{horizon}_bar_net_return_pct_{config.slippage_key(slippage)}bps"
     values = pd.to_numeric(df[col], errors="coerce").dropna()
-
-    if values.empty:
-        return {
-            "event_count": 0,
-            "unique_tickers": 0,
-            "mean_net_return_pct": None,
-            "median_net_return_pct": None,
-            "positive_return_rate_pct": None,
-            "standard_deviation_pct": None,
-            "p25_net_return_pct": None,
-            "p75_net_return_pct": None,
-            "minimum_net_return_pct": None,
-            "maximum_net_return_pct": None,
-            "mean_ticker_event_return_pct": None,
-            "median_ticker_event_return_pct": None,
-        }
-
-    mean_ticker, median_ticker = _ticker_level_aggregates(df, horizon, slippage)
 
     sample_status = (
         "sufficient_sample" if len(df) >= config.minimum_group_events else "insufficient_sample"
     )
+
+    if values.empty:
+        return _empty_metrics(), sample_status
+
+    mean_ticker, median_ticker = _ticker_level_aggregates(df, horizon, slippage, config)
 
     metrics = {
         "event_count": len(df),
@@ -310,24 +348,39 @@ def _group_metrics(
         "mean_ticker_event_return_pct": mean_ticker,
         "median_ticker_event_return_pct": median_ticker,
     }
-    # sample_status is not a metric; it is added by the caller if needed.
-    _ = sample_status
-    return metrics
+    return metrics, sample_status
 
 
-def _ticker_level_aggregates(df: pd.DataFrame, horizon: int, slippage: float) -> tuple[Any, Any]:
-    """Compute equal-weighted ticker means/medians."""
-    col = f"{horizon}_bar_net_return_pct_{int(slippage)}bps"
+def _empty_metrics() -> dict[str, Any]:
+    return {
+        "event_count": 0,
+        "unique_tickers": 0,
+        "mean_net_return_pct": None,
+        "median_net_return_pct": None,
+        "positive_return_rate_pct": None,
+        "standard_deviation_pct": None,
+        "p25_net_return_pct": None,
+        "p75_net_return_pct": None,
+        "minimum_net_return_pct": None,
+        "maximum_net_return_pct": None,
+        "mean_ticker_event_return_pct": None,
+        "median_ticker_event_return_pct": None,
+    }
+
+
+def _ticker_level_aggregates(
+    df: pd.DataFrame, horizon: int, slippage: float, config: ScoreValidationConfig
+) -> tuple[Any, Any]:
+    """Compute equal-weighted ticker means and the median of those means."""
+    col = f"{horizon}_bar_net_return_pct_{config.slippage_key(slippage)}bps"
     ticker_means = []
-    ticker_medians = []
     for ticker in _sorted_unique(df, "ticker"):
         ticker_values = pd.to_numeric(df[df["ticker"] == ticker][col], errors="coerce").dropna()
         if not ticker_values.empty:
             ticker_means.append(float(ticker_values.mean()))
-            ticker_medians.append(float(ticker_values.median()))
     if not ticker_means:
         return None, None
-    return float(np.mean(ticker_means)), float(np.median(ticker_medians))
+    return float(np.mean(ticker_means)), float(np.median(ticker_means))
 
 
 def _delta_metrics(present: dict, absent: dict) -> dict[str, Any]:
@@ -393,7 +446,7 @@ def _event_columns(config: ScoreValidationConfig) -> list[str]:
         cols.append(f"{horizon}_bar_raw_exit_price")
         cols.append(f"{horizon}_bar_gross_return_pct")
         for slippage in config.slippage_scenarios_bps:
-            cols.append(f"{horizon}_bar_net_return_pct_{int(slippage)}bps")
+            cols.append(f"{horizon}_bar_net_return_pct_{config.slippage_key(slippage)}bps")
         cols.append(f"{horizon}_bar_outcome_status")
     return cols
 

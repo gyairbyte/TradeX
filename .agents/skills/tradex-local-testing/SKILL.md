@@ -171,8 +171,20 @@ The `evaluate` command is fully offline and credential-free. It always uses a fr
 Example offline workflow with a synthetic manifest:
 
 ```bash
+# 1. Build a versioned offline snapshot (network allowed; credentials optional)
+uv run python -m tradex.research.score_validation snapshot \
+  --tickers AAPL,MSFT,SPY \
+  --start 2020-01-01 \
+  --end 2023-12-31 \
+  --provider yahoo \
+  --output-dir data/score_validation_snapshot \
+  --development-split 2018-01-01,2022-12-31 \
+  --validation-split 2023-01-01,2024-12-31 \
+  --holdout-split 2025-01-01,2025-12-31
+
+# 2. Evaluate offline (no network, no credentials, no saved weights)
 uv run python -m tradex.research.score_validation evaluate \
-  --manifest tests/fixtures/manifest.json \
+  --manifest data/score_validation_snapshot/manifest.json \
   --output-dir tmp/score_validation \
   --warmup-bars 60 \
   --horizons 1,3,5 \

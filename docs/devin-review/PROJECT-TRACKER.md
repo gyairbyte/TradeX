@@ -324,7 +324,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Reproducible short-term score validation study
 - **Category:** Backtesting
 - **Priority:** High
-- **Status:** Completed
+- **Status:** Draft PR under review; review blockers addressed
 - **Resolved by:** `devin/reevaluate-scores-with-validated-data`
 - **Problem statement:** There is no structured, reproducible way to evaluate whether the current `short_term` score is calibrated to future returns, and no separation between an event study and the executable backtest engine.
 - **Recommended action:** Add `tradex/research/score_validation` with a versioned offline dataset manifest, SHA-256 verification, point-in-time score generation, 1/3/5-bar forward-return event studies, temporal splits, score-bucket/threshold/component aggregation, per-ticker/pooled summaries, transaction-cost sensitivity, and deterministic JSON/CSV/Markdown reports.

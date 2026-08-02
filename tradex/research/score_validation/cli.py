@@ -14,6 +14,8 @@ from .snapshot import create_snapshot
 
 def _comma_ints(value: str) -> tuple[int, ...]:
     parts = [p.strip() for p in value.split(",") if p.strip()]
+    if not parts:
+        raise argparse.ArgumentTypeError("Expected nonempty comma-separated integers")
     try:
         return tuple(int(p) for p in parts)
     except ValueError as exc:
@@ -22,10 +24,27 @@ def _comma_ints(value: str) -> tuple[int, ...]:
 
 def _comma_floats(value: str) -> tuple[float, ...]:
     parts = [p.strip() for p in value.split(",") if p.strip()]
+    if not parts:
+        raise argparse.ArgumentTypeError("Expected nonempty comma-separated numbers")
     try:
         return tuple(float(p) for p in parts)
     except ValueError as exc:
         raise argparse.ArgumentTypeError(f"Expected comma-separated numbers; got {value!r}") from exc
+
+
+def _split_pair(value: str) -> tuple[date, date]:
+    """Parse 'YYYY-MM-DD,YYYY-MM-DD' into a (start, end) date pair."""
+    parts = [p.strip() for p in value.split(",")]
+    if len(parts) != 2 or not all(parts):
+        raise argparse.ArgumentTypeError(f"Expected 'YYYY-MM-DD,YYYY-MM-DD'; got {value!r}")
+    try:
+        start = date.fromisoformat(parts[0])
+        end = date.fromisoformat(parts[1])
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"Invalid split dates {value!r}: {exc}") from exc
+    if end < start:
+        raise argparse.ArgumentTypeError(f"Split end {end} must be >= start {start}")
+    return (start, end)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -48,6 +67,24 @@ def _build_parser() -> argparse.ArgumentParser:
     snapshot.add_argument("--dataset-name", default="short-term-score-study")
     snapshot.add_argument("--source-description", default="offline OHLCV snapshots")
     snapshot.add_argument("--adjustment-policy", default="provider_default")
+    snapshot.add_argument(
+        "--development-split",
+        required=True,
+        type=_split_pair,
+        help="Development split 'YYYY-MM-DD,YYYY-MM-DD'",
+    )
+    snapshot.add_argument(
+        "--validation-split",
+        required=True,
+        type=_split_pair,
+        help="Validation split 'YYYY-MM-DD,YYYY-MM-DD'",
+    )
+    snapshot.add_argument(
+        "--holdout-split",
+        required=True,
+        type=_split_pair,
+        help="Holdout split 'YYYY-MM-DD,YYYY-MM-DD'",
+    )
 
     evaluate = subparsers.add_parser(
         "evaluate",
@@ -73,12 +110,26 @@ def _handle_snapshot(args: argparse.Namespace) -> int:
         print("error: --tickers must contain at least one ticker", file=sys.stderr)
         return 1
     try:
+        start = date.fromisoformat(args.start)
+        end = date.fromisoformat(args.end)
+    except ValueError as exc:
+        print(f"error: invalid date: {exc}", file=sys.stderr)
+        return 1
+
+    splits = {
+        "development": args.development_split,
+        "validation": args.validation_split,
+        "holdout": args.holdout_split,
+    }
+
+    try:
         manifest_path = create_snapshot(
             tickers=tickers,
-            start=date.fromisoformat(args.start),
-            end=date.fromisoformat(args.end),
-            provider=args.provider,
+            start=start,
+            end=end,
             output_dir=args.output_dir,
+            splits=splits,
+            provider=args.provider,
             overwrite=args.overwrite,
             dataset_name=args.dataset_name,
             source_description=args.source_description,

@@ -208,7 +208,10 @@ uv run python -m tradex.research.score_validation snapshot \
   --start 2020-01-01 \
   --end 2023-12-31 \
   --provider yahoo \
-  --output-dir data/score_validation_snapshot
+  --output-dir data/score_validation_snapshot \
+  --development-split 2018-01-01,2022-12-31 \
+  --validation-split 2023-01-01,2024-12-31 \
+  --holdout-split 2025-01-01,2025-12-31
 
 # 2) Evaluate offline (no network, no credentials, no ~/.tradex/weights.json)
 uv run python -m tradex.research.score_validation evaluate \
@@ -234,7 +237,7 @@ Key design choices:
 - Splits (`development`, `validation`, `holdout`) are enforced so events and their forward returns do not cross boundaries.
 - Default cost model uses `entry_fill = open * (1 + slippage_bps / 10_000)`, `exit_fill = close * (1 - slippage_bps / 10_000)`, and `commission_bps` on both legs.
 - The scorer always receives a fresh `ShortWeights()` instance; no saved `~/.tradex/weights.json` is loaded silently.
-- Studies are deterministic: the same manifest and configuration produce byte-identical CSVs and JSON (modulo `generated_at`, which is the only non-deterministic field).
+- Studies are deterministic: the same manifest and configuration produce byte-identical CSVs, JSON, and Markdown reports, including `study.json`, `report.md`, and `manifest.lock.json`.
 
 **Valid outcome:** A study may conclude `insufficient evidence to change the production score`. The tool does not automatically select, promote, or mutate production thresholds.
 

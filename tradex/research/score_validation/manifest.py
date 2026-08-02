@@ -17,16 +17,40 @@ from .models import DatasetManifest, ManifestEntry, Split, ValidationError
 
 SCHEMA_VERSION = 1
 
+_ALLOWED_TOP_KEYS = {
+    "schema_version",
+    "dataset_name",
+    "created_at",
+    "source_description",
+    "entries",
+    "splits",
+}
+_ALLOWED_ENTRY_KEYS = {
+    "ticker",
+    "path",
+    "sha256",
+    "rows",
+    "start",
+    "end",
+    "data_source",
+    "adjustment_policy",
+}
+_ALLOWED_SPLIT_KEYS = {"start", "end"}
+
 
 def load_manifest(path: str | Path) -> DatasetManifest:
     """Load and validate a manifest file, returning a typed DatasetManifest."""
     path = Path(path).expanduser().resolve()
     if not path.is_file():
         raise ValidationError(f"Manifest file not found: {path}")
-    data = json.loads(path.read_text())
+    raw_bytes = path.read_bytes()
+    raw_sha256 = hashlib.sha256(raw_bytes).hexdigest()
+    data = json.loads(raw_bytes.decode("utf-8"))
     base_dir = path.parent
     manifest = _parse_manifest(data, base_dir)
     object.__setattr__(manifest, "_base_dir", base_dir.resolve())
+    object.__setattr__(manifest, "_sha256", raw_sha256)
+    object.__setattr__(manifest, "_raw", data)
     return manifest
 
 
@@ -34,6 +58,10 @@ def _parse_manifest(data: dict, base_dir: Path) -> DatasetManifest:
     """Validate and convert raw manifest JSON to a DatasetManifest."""
     if not isinstance(data, dict):
         raise ValidationError("Manifest must be a JSON object")
+
+    unknown = set(data.keys()) - _ALLOWED_TOP_KEYS
+    if unknown:
+        raise ValidationError(f"Manifest contains unknown top-level keys: {sorted(unknown)}")
 
     schema_version = data.get("schema_version")
     if schema_version != SCHEMA_VERSION:
@@ -70,7 +98,7 @@ def _parse_manifest(data: dict, base_dir: Path) -> DatasetManifest:
     splits = _parse_splits(splits_data)
 
     return DatasetManifest(
-        schema_version=schema_version,
+        schema_version=SCHEMA_VERSION,
         dataset_name=dataset_name,
         created_at=created_at,
         source_description=source_description,
@@ -83,6 +111,10 @@ def _parse_entry(raw: dict, base_dir: Path, idx: int) -> ManifestEntry:
     """Parse and validate one manifest entry."""
     if not isinstance(raw, dict):
         raise ValidationError(f"Entry {idx} must be an object")
+
+    unknown = set(raw.keys()) - _ALLOWED_ENTRY_KEYS
+    if unknown:
+        raise ValidationError(f"Entry {idx} contains unknown keys: {sorted(unknown)}")
 
     ticker = raw.get("ticker")
     if not isinstance(ticker, str) or not ticker:
@@ -174,7 +206,7 @@ def _parse_entry(raw: dict, base_dir: Path, idx: int) -> ManifestEntry:
 
 
 def _parse_splits(data: dict) -> dict[str, Split]:
-    """Validate temporal splits."""
+    """Validate temporal splits: strictly non-overlapping, chronological."""
     required = ["development", "validation", "holdout"]
     missing = [r for r in required if r not in data]
     if missing:
@@ -186,17 +218,18 @@ def _parse_splits(data: dict) -> dict[str, Split]:
         raw = data.get(name)
         if not isinstance(raw, dict):
             raise ValidationError(f"Split {name} must be an object")
+        unknown = set(raw.keys()) - _ALLOWED_SPLIT_KEYS
+        if unknown:
+            raise ValidationError(f"Split {name} contains unknown keys: {sorted(unknown)}")
         start = _parse_date(raw.get("start"), f"Split {name} start")
         end = _parse_date(raw.get("end"), f"Split {name} end")
         if end < start:
             raise ValidationError(f"Split {name}: end must be >= start")
-        if prev_end is not None and start < prev_end:
+        if prev_end is not None and start <= prev_end:
             raise ValidationError(
-                f"Split {name}: start {start} is before previous split end {prev_end}"
+                f"Split {name}: start {start} is not after previous split end {prev_end}; "
+                "splits must be strictly non-overlapping"
             )
-        if prev_end is not None and start == prev_end:
-            # Non-overlapping but contiguous is allowed.
-            pass
         prev_end = end
         splits[name] = Split(start=start, end=end)
     return splits

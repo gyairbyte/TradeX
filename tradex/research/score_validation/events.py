@@ -99,52 +99,50 @@ def _generate_ticker_events(
             k: int(v) for k, v in score_result.get("component_points", {}).items()
         }
 
-        if i + 1 >= len(df):
-            entry_time = None
-            raw_entry_price = None
-        else:
+        entry_time: datetime | None = None
+        raw_entry_price: float | None = None
+        entry_in_split = False
+        if i + 1 < len(df):
             entry_time = df.index[i + 1].to_pydatetime()
             raw_entry_price = float(df["open"].iloc[i + 1])
+            entry_in_split = _within_split(entry_time, splits[split_name])
+
+        if entry_time is None or not entry_in_split:
+            # The next bar either does not exist or belongs to a later split.
+            # Do not expose its time/price and mark all horizons incomplete.
+            entry_time = None
+            raw_entry_price = None
 
         outcomes: dict[int, EventOutcome] = {}
         for horizon in config.horizons:
-            exit_idx = i + horizon
-            if exit_idx >= len(df) or raw_entry_price is None:
-                outcome = EventOutcome(
-                    horizon=horizon,
-                    exit_time=None,
-                    raw_exit_price=None,
-                    gross_return_pct=None,
-                    net_return_pct_by_slippage={s: None for s in config.slippage_scenarios_bps},
-                    outcome_status="insufficient_future_bars",
-                )
+            if entry_time is None or raw_entry_price is None:
+                outcome = _incomplete_outcome(horizon, config)
             else:
-                exit_time = df.index[exit_idx].to_pydatetime()
-                if not _within_split(exit_time, splits[split_name]):
-                    outcome = EventOutcome(
-                        horizon=horizon,
-                        exit_time=None,
-                        raw_exit_price=None,
-                        gross_return_pct=None,
-                        net_return_pct_by_slippage={s: None for s in config.slippage_scenarios_bps},
-                        outcome_status="insufficient_future_bars",
-                    )
+                exit_idx = i + horizon
+                if exit_idx >= len(df):
+                    outcome = _incomplete_outcome(horizon, config)
                 else:
-                    raw_exit_price = float(df["close"].iloc[exit_idx])
-                    gross = raw_exit_price / raw_entry_price - 1.0
-                    net_by_slippage = {
-                        s: _net_return(raw_entry_price, raw_exit_price, s, config.commission_bps)
-                        for s in config.slippage_scenarios_bps
-                    }
-                    outcome = EventOutcome(
-                        horizon=horizon,
-                        exit_time=exit_time,
-                        raw_exit_price=raw_exit_price,
-                        gross_return_pct=gross * 100.0,
-                        net_return_pct_by_slippage=net_by_slippage,
-                        outcome_status="complete",
-                    )
-                    complete_outcomes[horizon] += 1
+                    exit_time = df.index[exit_idx].to_pydatetime()
+                    if not _within_split(exit_time, splits[split_name]):
+                        outcome = _incomplete_outcome(horizon, config)
+                    else:
+                        raw_exit_price = float(df["close"].iloc[exit_idx])
+                        gross = raw_exit_price / raw_entry_price - 1.0
+                        net_by_slippage = {
+                            config.slippage_key(s): _net_return(
+                                raw_entry_price, raw_exit_price, s, config.commission_bps
+                            )
+                            for s in config.slippage_scenarios_bps
+                        }
+                        outcome = EventOutcome(
+                            horizon=horizon,
+                            exit_time=exit_time,
+                            raw_exit_price=raw_exit_price,
+                            gross_return_pct=gross * 100.0,
+                            net_return_pct_by_slippage=net_by_slippage,
+                            outcome_status="complete",
+                        )
+                        complete_outcomes[horizon] += 1
 
             outcomes[horizon] = outcome
 
@@ -186,6 +184,20 @@ def _generate_ticker_events(
         warnings=warnings,
     )
     return ticker_events, quality
+
+
+def _incomplete_outcome(horizon: int, config: ScoreValidationConfig) -> EventOutcome:
+    """Return an incomplete outcome with no net-return values."""
+    return EventOutcome(
+        horizon=horizon,
+        exit_time=None,
+        raw_exit_price=None,
+        gross_return_pct=None,
+        net_return_pct_by_slippage={
+            config.slippage_key(s): None for s in config.slippage_scenarios_bps
+        },
+        outcome_status="insufficient_future_bars",
+    )
 
 
 def _split_for(signal_time: datetime, splits: dict) -> str | None:

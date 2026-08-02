@@ -1,9 +1,12 @@
 """Study result serialization and Markdown report generation."""
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import shutil
 import tempfile
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -21,11 +24,27 @@ from .aggregate import (
 )
 from .events import generate_events
 from .manifest import load_manifest
-from .models import ScoreValidationConfig, StudyResult, ValidationError, _config_to_dict
+from .models import (
+    DatasetManifest,
+    ScoreValidationConfig,
+    StudyResult,
+    ValidationError,
+    _config_to_dict,
+    _manifest_to_dict,
+)
 
 
-def run_study(manifest_path: str | Path, config: ScoreValidationConfig) -> StudyResult:
-    """Load a manifest, generate events, aggregate, and return a StudyResult."""
+def run_study(
+    manifest_path: str | Path,
+    config: ScoreValidationConfig,
+    *,
+    generated_at: datetime | None = None,
+) -> StudyResult:
+    """Load a manifest, generate events, aggregate, and return a StudyResult.
+
+    ``generated_at`` defaults to the manifest creation timestamp so the same
+    manifest produces a deterministic output across reruns.
+    """
     manifest = load_manifest(manifest_path)
     events, quality_rows = generate_events(manifest, config)
     events_df = build_event_dataframe(events, config)
@@ -60,6 +79,9 @@ def run_study(manifest_path: str | Path, config: ScoreValidationConfig) -> Study
         data_quality,
     )
 
+    if generated_at is None:
+        generated_at = manifest.created_at
+
     return StudyResult(
         config=config,
         manifest=manifest,
@@ -73,71 +95,153 @@ def run_study(manifest_path: str | Path, config: ScoreValidationConfig) -> Study
         ticker_summary=ticker_summary,
         data_quality=data_quality,
         report_markdown=report_md,
+        generated_at=generated_at,
     )
 
 
 def write_study(
     study: StudyResult, output_dir: str | Path, overwrite: bool = False
 ) -> dict[str, Path]:
-    """Write all study outputs atomically to ``output_dir``."""
+    """Write all study outputs atomically to ``output_dir``.
+
+    Files are written to a sibling temporary directory and then renamed into
+    place. If ``overwrite`` is true and the previous directory exists, it is
+    moved to a backup path before the rename; if the rename fails the backup
+    is restored.
+    """
     output_dir = Path(output_dir).expanduser().resolve()
-    if output_dir.exists() and any(output_dir.iterdir()):
-        if not overwrite:
-            raise ValidationError(
-                f"Output directory {output_dir} exists and is nonempty; pass --overwrite"
-            )
-        shutil.rmtree(output_dir)
-
-    tmp_dir = Path(tempfile.mkdtemp(prefix="tradex_score_result_"))
+    output_dir.parent.mkdir(parents=True, exist_ok=True)
+    tmp_dir = Path(tempfile.mkdtemp(prefix="tradex_score_result_", dir=output_dir.parent))
     try:
-        paths = {}
-        paths["events.csv"] = _write_csv(study.events, tmp_dir / "events.csv")
-        paths["score_buckets.csv"] = _write_csv(study.score_buckets, tmp_dir / "score_buckets.csv")
-        paths["thresholds.csv"] = _write_csv(study.thresholds, tmp_dir / "thresholds.csv")
-        paths["components.csv"] = _write_csv(study.components, tmp_dir / "components.csv")
-        paths["score_distribution.csv"] = _write_csv(
-            study.score_distribution, tmp_dir / "score_distribution.csv"
-        )
-        paths["component_frequency.csv"] = _write_csv(
-            study.component_frequency, tmp_dir / "component_frequency.csv"
-        )
-        paths["ticker_summary.csv"] = _write_csv(study.ticker_summary, tmp_dir / "ticker_summary.csv")
-        paths["data_quality.csv"] = _write_csv(study.data_quality, tmp_dir / "data_quality.csv")
-        paths["manifest.lock.json"] = _write_json(_manifest_lock(study), tmp_dir / "manifest.lock.json")
-        paths["study.json"] = _write_json(study.to_dict(), tmp_dir / "study.json")
-        paths["report.md"] = _write_text(study.report_markdown, tmp_dir / "report.md")
-
-        output_dir.mkdir(parents=True, exist_ok=True)
-        for name, src in paths.items():
-            dest = output_dir / name
-            shutil.move(str(src), str(dest))
-            paths[name] = dest
+        paths = _write_study_files(study, tmp_dir)
+        _atomic_publish_dir(tmp_dir, output_dir, overwrite)
+        # Update returned paths to final location.
+        for name in paths:
+            paths[name] = output_dir / name
         return paths
     except Exception:
         shutil.rmtree(tmp_dir, ignore_errors=True)
         raise
 
 
+def _write_study_files(study: StudyResult, tmp_dir: Path) -> dict[str, Path]:
+    """Write every study artifact into ``tmp_dir`` and return name -> tmp path."""
+    paths = {}
+    paths["events.csv"] = _write_csv(study.events, tmp_dir / "events.csv")
+    paths["score_buckets.csv"] = _write_csv(study.score_buckets, tmp_dir / "score_buckets.csv")
+    paths["thresholds.csv"] = _write_csv(study.thresholds, tmp_dir / "thresholds.csv")
+    paths["components.csv"] = _write_csv(study.components, tmp_dir / "components.csv")
+    paths["score_distribution.csv"] = _write_csv(
+        study.score_distribution, tmp_dir / "score_distribution.csv"
+    )
+    paths["component_frequency.csv"] = _write_csv(
+        study.component_frequency, tmp_dir / "component_frequency.csv"
+    )
+    paths["ticker_summary.csv"] = _write_csv(study.ticker_summary, tmp_dir / "ticker_summary.csv")
+    paths["data_quality.csv"] = _write_csv(study.data_quality, tmp_dir / "data_quality.csv")
+    paths["manifest.lock.json"] = _write_json(_manifest_lock(study), tmp_dir / "manifest.lock.json")
+    paths["study.json"] = _write_json(study.to_dict(), tmp_dir / "study.json")
+    paths["report.md"] = _write_text(study.report_markdown, tmp_dir / "report.md")
+    return paths
+
+
+def _atomic_publish_dir(tmp_dir: Path, output_dir: Path, overwrite: bool) -> None:
+    """Atomically replace ``output_dir`` with the contents of ``tmp_dir``.
+
+    If ``output_dir`` already exists and is nonempty, ``overwrite`` must be
+    true. The old directory is moved to a backup path, then ``tmp_dir`` is
+    renamed to ``output_dir``. If anything fails after the backup is created,
+    the backup is restored.
+    """
+    if output_dir.exists() and any(output_dir.iterdir()):
+        if not overwrite:
+            raise ValidationError(
+                f"Output directory {output_dir} exists and is nonempty; pass --overwrite"
+            )
+        backup_dir = output_dir.with_name(output_dir.name + ".tmp-rename-backup")
+        # Remove any stale backup first.
+        shutil.rmtree(backup_dir, ignore_errors=True)
+        os.replace(str(output_dir), str(backup_dir))
+        try:
+            os.replace(str(tmp_dir), str(output_dir))
+        except Exception:
+            # Restore the backup on failure.
+            _rollback(output_dir, backup_dir)
+            raise
+        # Success: remove backup.
+        shutil.rmtree(backup_dir, ignore_errors=True)
+    else:
+        if output_dir.exists():
+            # Empty directory can be removed or replaced directly.
+            os.rmdir(str(output_dir))
+        try:
+            os.replace(str(tmp_dir), str(output_dir))
+        except Exception:
+            if not output_dir.exists():
+                # Empty placeholder that was just removed; leave tmp for debugging.
+                pass
+            raise
+
+    # fsync the parent directory so the rename is durable.
+    _fsync_dir(output_dir.parent)
+
+
+def _rollback(output_dir: Path, backup_dir: Path) -> None:
+    """Move ``backup_dir`` back to ``output_dir`` if it is safe to do so."""
+    if backup_dir.exists() and not output_dir.exists():
+        try:
+            os.replace(str(backup_dir), str(output_dir))
+        except Exception:
+            pass
+
+
+def _fsync_dir(path: Path) -> None:
+    try:
+        fd = os.open(str(path), os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    except (OSError, AttributeError):
+        pass
+
+
 def _write_csv(df: pd.DataFrame, path: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(path, index=False, float_format="%.10g")
+    _fsync_file(path)
     return path
 
 
 def _write_json(data: Any, path: Path) -> Path:
-    path.write_text(json.dumps(data, indent=2, allow_nan=False, default=_json_default))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2, allow_nan=False, default=_json_default, sort_keys=True))
+    _fsync_file(path)
     return path
 
 
 def _write_text(text: str, path: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text)
+    _fsync_file(path)
     return path
 
 
-def _manifest_lock(study: StudyResult) -> dict[str, Any]:
-    from .models import _manifest_to_dict
+def _fsync_file(path: Path) -> None:
+    try:
+        with path.open("rb") as f:
+            os.fsync(f.fileno())
+    except OSError:
+        pass
 
+
+def _manifest_lock(study: StudyResult) -> dict[str, Any]:
+    """Lock the exact inputs used to produce this study."""
+    manifest_sha = getattr(study.manifest, "_sha256", None)
+    raw_manifest = getattr(study.manifest, "_raw", _manifest_to_dict(study.manifest))
     return {
-        "manifest": _manifest_to_dict(study.manifest),
+        "manifest_sha256": manifest_sha,
+        "manifest": raw_manifest,
         "config": _config_to_dict(study.config),
         "weight_snapshot": study.weight_snapshot,
     }
@@ -153,7 +257,7 @@ def _json_default(obj: Any) -> Any:
 
 def _render_report(
     config,
-    manifest,
+    manifest: DatasetManifest,
     weight_snapshot,
     events_df,
     score_buckets,
@@ -165,7 +269,7 @@ def _render_report(
     data_quality,
 ) -> str:
     """Build the human-readable Markdown report."""
-    from .models import _manifest_to_dict
+    manifest_sha = getattr(manifest, "_sha256", None)
 
     lines = []
     lines.append("# Short-Term Score Validation Study")
@@ -179,7 +283,9 @@ def _render_report(
     lines.append("The study used manifest-locked offline OHLCV snapshots. Every input CSV was verified by SHA-256 before analysis.")
     lines.append("")
     lines.append("## 3. Manifest checksum")
-    lines.append("See `manifest.lock.json` for the exact manifest, configuration, and weight snapshot used.")
+    if manifest_sha:
+        lines.append(f"- Manifest SHA-256: `{manifest_sha}`")
+    lines.append("- The exact input manifest, configuration, and weight snapshot are preserved in `manifest.lock.json`.")
     lines.append("")
     lines.append("## 4. Study configuration")
     lines.append("```json")

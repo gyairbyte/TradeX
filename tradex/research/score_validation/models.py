@@ -66,43 +66,42 @@ class ScoreValidationConfig:
     minimum_group_events: int = 20
 
     def __post_init__(self) -> None:
-        # Defensive-copy mutable input.
-        object.__setattr__(self, "horizons", tuple(int(h) for h in self.horizons))
-        object.__setattr__(
-            self, "score_bucket_edges", tuple(int(e) for e in self.score_bucket_edges)
-        )
-        object.__setattr__(
-            self, "score_thresholds", tuple(int(t) for t in self.score_thresholds)
-        )
-        object.__setattr__(
-            self,
-            "slippage_scenarios_bps",
-            tuple(float(s) for s in self.slippage_scenarios_bps),
-        )
-
+        # Validate original types before any coercion or copy.
         _require_int("warmup_bars", self.warmup_bars)
         if self.warmup_bars < 50:
             raise ValidationError(f"warmup_bars must be >= 50; got {self.warmup_bars}")
 
         _require_positive_ints("horizons", self.horizons)
+        if not self.horizons:
+            raise ValidationError("horizons must not be empty")
         if sorted(set(self.horizons)) != list(self.horizons):
             raise ValidationError(f"horizons must be unique and sorted; got {self.horizons}")
 
         _validate_bucket_edges(self.score_bucket_edges)
         _validate_thresholds(self.score_thresholds)
 
+        if not self.slippage_scenarios_bps:
+            raise ValidationError("slippage_scenarios_bps must not be empty")
         _require_finite_nonnegative(
             "slippage_scenarios_bps", self.slippage_scenarios_bps
         )
-        _require_finite_nonnegative("commission_bps", (self.commission_bps,))
-        if not math.isfinite(self.commission_bps) or self.commission_bps < 0:
-            raise ValidationError(f"commission_bps must be finite and >= 0; got {self.commission_bps}")
+
+        _require_finite_nonnegative_number("commission_bps", self.commission_bps)
 
         _require_int("minimum_group_events", self.minimum_group_events)
         if self.minimum_group_events < 1:
             raise ValidationError(
                 f"minimum_group_events must be positive; got {self.minimum_group_events}"
             )
+
+        # Defensive-copy mutable inputs without coercion.
+        object.__setattr__(self, "horizons", tuple(self.horizons))
+        object.__setattr__(self, "score_bucket_edges", tuple(self.score_bucket_edges))
+        object.__setattr__(self, "score_thresholds", tuple(self.score_thresholds))
+        object.__setattr__(
+            self, "slippage_scenarios_bps", tuple(float(s) for s in self.slippage_scenarios_bps)
+        )
+        object.__setattr__(self, "commission_bps", float(self.commission_bps))
 
     def bucket_for(self, score: float) -> str:
         """Return the label for the score bucket containing ``score``."""
@@ -116,6 +115,19 @@ class ScoreValidationConfig:
                 return f"{lo}-{hi - 1}"
         return f"{edges[-2]}-{edges[-1] - 1}"
 
+    def bucket_labels(self) -> tuple[str, ...]:
+        """Return all configured score-bucket labels in order."""
+        edges = self.score_bucket_edges
+        labels = []
+        for i in range(len(edges) - 1):
+            lo, hi = edges[i], edges[i + 1]
+            labels.append(f"{lo}-{hi - 1}")
+        return tuple(labels)
+
+    def slippage_key(self, slippage_bps: float) -> str:
+        """Return a lossless, collision-free string key for a slippage scenario."""
+        return _slippage_key(slippage_bps)
+
 
 @dataclass(frozen=True)
 class EventOutcome:
@@ -125,7 +137,7 @@ class EventOutcome:
     exit_time: datetime | None
     raw_exit_price: float | None
     gross_return_pct: float | None
-    net_return_pct_by_slippage: dict[float, float | None]
+    net_return_pct_by_slippage: dict[str, float | None]
     outcome_status: Literal["complete", "insufficient_future_bars"]
 
 
@@ -168,9 +180,8 @@ class EventRecord:
             base[f"{horizon}_bar_exit_time"] = _iso(o.exit_time)
             base[f"{horizon}_bar_raw_exit_price"] = o.raw_exit_price
             base[f"{horizon}_bar_gross_return_pct"] = o.gross_return_pct
-            for slip in sorted(o.net_return_pct_by_slippage):
-                slip_label = f"{horizon}_bar_net_return_pct_{int(slip)}bps"
-                base[slip_label] = o.net_return_pct_by_slippage[slip]
+            for key, value in o.net_return_pct_by_slippage.items():
+                base[f"{horizon}_bar_net_return_pct_{key}bps"] = value
             base[f"{horizon}_bar_outcome_status"] = o.outcome_status
         return _clean(base)
 
@@ -251,9 +262,7 @@ class StudyResult:
                 "component_frequency": _df_records(self.component_frequency)
                 if not self.component_frequency.empty
                 else [],
-                "ticker_summary": _df_records(self.ticker_summary)
-                if not self.ticker_summary.empty
-                else [],
+                "ticker_summary": _df_records(self.ticker_summary) if not self.ticker_summary.empty else [],
                 "data_quality": _df_records(self.data_quality) if not self.data_quality.empty else [],
                 "report_markdown": self.report_markdown,
                 "limitations": [
@@ -268,16 +277,24 @@ class StudyResult:
         )
 
     def to_json(self, indent: int | None = None) -> str:
-        """Serialize to a standards-compliant JSON string."""
-        return json.dumps(self.to_dict(), indent=indent, default=_json_default, allow_nan=False)
+        """Serialize to a standards-compliant, deterministic JSON string."""
+        return json.dumps(
+            self.to_dict(),
+            indent=indent,
+            default=_json_default,
+            allow_nan=False,
+            sort_keys=True,
+        )
 
 
 def _require_int(name: str, value: Any) -> None:
-    if isinstance(value, bool) or not isinstance(value, (int, np.integer)):
+    if isinstance(value, bool) or not isinstance(value, (int, np.integer)) or isinstance(value, float):
         raise ValidationError(f"{name} must be an integer; got {value!r} ({type(value).__name__})")
 
 
 def _require_positive_ints(name: str, values: tuple[int, ...]) -> None:
+    if not values:
+        raise ValidationError(f"{name} must not be empty")
     for v in values:
         _require_int(f"{name} element", v)
         if v < 1:
@@ -302,6 +319,8 @@ def _validate_bucket_edges(edges: tuple[int, ...]) -> None:
 
 
 def _validate_thresholds(thresholds: tuple[int, ...]) -> None:
+    if not thresholds:
+        raise ValidationError("score_thresholds must not be empty")
     prev = None
     for t in thresholds:
         _require_int("score_thresholds element", t)
@@ -313,13 +332,31 @@ def _validate_thresholds(thresholds: tuple[int, ...]) -> None:
 
 
 def _require_finite_nonnegative(name: str, values: tuple[float, ...]) -> None:
+    if not values:
+        raise ValidationError(f"{name} must not be empty")
     for v in values:
-        if not isinstance(v, (int, float, np.integer, np.floating)) or isinstance(v, bool):
-            raise ValidationError(f"{name} values must be finite numbers; got {v!r}")
-        if not math.isfinite(float(v)):
-            raise ValidationError(f"{name} values must be finite; got {v}")
-        if float(v) < 0:
-            raise ValidationError(f"{name} values must be nonnegative; got {v}")
+        _require_finite_nonnegative_number(f"{name} element", v)
+
+
+def _require_finite_nonnegative_number(name: str, v: Any) -> None:
+    if isinstance(v, bool):
+        raise ValidationError(f"{name} must be a finite number; got boolean")
+    if not isinstance(v, (int, float, np.integer, np.floating)):
+        raise ValidationError(f"{name} must be a finite number; got {v!r} ({type(v).__name__})")
+    f = float(v)
+    if not math.isfinite(f):
+        raise ValidationError(f"{name} must be finite; got {v}")
+    if f < 0:
+        raise ValidationError(f"{name} must be nonnegative; got {v}")
+
+
+def _slippage_key(slippage_bps: float) -> str:
+    """Return a lossless, collision-free key string for a slippage value in bps."""
+    s = float(slippage_bps)
+    if s.is_integer():
+        return f"{int(s)}"
+    # repr(s) is a round-trip-safe, deterministic string for the float value.
+    return repr(s)
 
 
 def _iso(dt: datetime | None) -> str | None:

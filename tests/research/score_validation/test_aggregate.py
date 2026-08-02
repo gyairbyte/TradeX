@@ -63,6 +63,14 @@ def test_score_bucket_boundaries():
     assert buckets["event_count"].sum() == 10
 
 
+def test_all_configured_score_buckets_emitted():
+    """Every configured bucket must appear, even with zero events."""
+    config = _simple_config()
+    df = _simple_events_df()
+    buckets = build_score_buckets(df, config)
+    assert set(buckets["score_bucket"].unique()) == set(config.bucket_labels())
+
+
 def test_current_threshold_label():
     config = _simple_config()
     df = _simple_events_df()
@@ -83,6 +91,13 @@ def test_threshold_exact_inclusion():
     assert total_retained == 7
 
 
+def test_all_configured_thresholds_emitted():
+    config = _simple_config()
+    df = _simple_events_df()
+    thresh = build_thresholds(df, config)
+    assert set(thresh["threshold"].unique()) == set(config.score_thresholds)
+
+
 def test_component_present_absent_counts():
     config = _simple_config()
     df = _simple_events_df()
@@ -101,6 +116,33 @@ def test_component_deltas_present():
     assert "mean_return_present_minus_absent" in ema.columns
 
 
+def test_component_sparse_group_marked():
+    """A component side with no events must still appear as insufficient_sample."""
+    config = _simple_config()
+    # One complete event where every component is False: every 'present' group is empty.
+    df = pd.DataFrame(
+        [
+            {
+                "ticker": "TEST",
+                "split": "development",
+                "score": 50.0,
+                "1_bar_outcome_status": "complete",
+                "1_bar_net_return_pct_0bps": 1.0,
+                "component_ema_structure": False,
+                "component_volume_confirmation": False,
+                "component_rsi_momentum": False,
+                "component_macd_positive": False,
+                "component_pullback_ema": False,
+            }
+        ]
+    )
+    comp = build_components(df, config)
+    empty = comp[comp["component_state"] == "present"]
+    assert not empty.empty
+    assert (empty["event_count"] == 0).all()
+    assert (empty["sample_status"] == "insufficient_sample").all()
+
+
 def test_empty_group_stable_schema():
     config = _simple_config()
     empty = pd.DataFrame(columns=["ticker", "split", "score"])
@@ -114,3 +156,23 @@ def test_sparse_group_marked(tmp_path: Path):
     manifest_path, _, _ = write_bars_and_manifest(tmp_path / "data")
     study = run_study(manifest_path, config)
     assert "sample_status" in study.score_buckets.columns
+
+
+def test_median_ticker_event_return_is_median_of_ticker_means():
+    """median_ticker_event_return_pct must be the median of per-ticker means."""
+    config = _simple_config()
+    rows = [
+        {"ticker": "A", "split": "development", "score": 50, "1_bar_outcome_status": "complete", "1_bar_net_return_pct_0bps": 10.0},
+        {"ticker": "A", "split": "development", "score": 60, "1_bar_outcome_status": "complete", "1_bar_net_return_pct_0bps": 20.0},
+        {"ticker": "B", "split": "development", "score": 70, "1_bar_outcome_status": "complete", "1_bar_net_return_pct_0bps": -5.0},
+        {"ticker": "B", "split": "development", "score": 80, "1_bar_outcome_status": "complete", "1_bar_net_return_pct_0bps": 15.0},
+    ]
+    df = pd.DataFrame(rows)
+    # Add component columns so the component filter does not drop rows.
+    for col in ["component_ema_structure", "component_volume_confirmation", "component_rsi_momentum", "component_macd_positive", "component_pullback_ema"]:
+        df[col] = True
+    buckets = build_score_buckets(df, config)
+    row = buckets[buckets["score_bucket"] == "40-59"].iloc[0]
+    # A mean = 15, B mean = 5 -> median of [15, 5] = 10.
+    assert row["median_ticker_event_return_pct"] == 10.0
+    assert row["mean_ticker_event_return_pct"] == 10.0

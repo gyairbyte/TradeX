@@ -137,7 +137,7 @@ def test_overlapping_splits_rejected(tmp_path: Path):
     data = json.loads(manifest_path.read_text())
     data["splits"]["validation"]["start"] = "2021-12-01"
     manifest_path.write_text(json.dumps(data, indent=2))
-    with pytest.raises(ValidationError, match="before previous split end"):
+    with pytest.raises(ValidationError, match="strictly non-overlapping"):
         load_manifest(manifest_path)
 
 
@@ -151,7 +151,7 @@ def test_out_of_order_splits_rejected(tmp_path: Path):
         "validation": {"start": "2025-01-01", "end": "2025-12-31"},
     }
     manifest_path.write_text(json.dumps(data, indent=2))
-    with pytest.raises(ValidationError, match="before previous split end"):
+    with pytest.raises(ValidationError, match="strictly non-overlapping"):
         load_manifest(manifest_path)
 
 
