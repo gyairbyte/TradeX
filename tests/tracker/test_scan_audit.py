@@ -325,15 +325,23 @@ def test_provider_field_is_backward_compatible(fresh_signal_db):
 # ── Transactionality ─────────────────────────────────────────────────────────
 
 
-def test_audit_insert_failure_rolls_back_entire_transaction(fresh_signal_db):
-    """A failure while writing the audit row must leave no session, observations, signals, or audit state."""
+def test_audit_insert_failure_rolls_back_entire_transaction(fresh_signal_db, monkeypatch):
+    """A failure during the final scan_runs insert rolls back the session, observations, and signals."""
     obs = [_obs("AAPL", ObservationStatus.SIGNAL, score=70, provider="yahoo")]
     report = _scan_report(obs, requested_provider="yahoo")
 
-    def _boom(*args, **kwargs):
-        raise RuntimeError("injected audit failure")
+    original = store._persist_scan
+    def _wrapped(*args, **kwargs):
+        con = args[0]
+        con.execute(
+            "CREATE TEMP TRIGGER IF NOT EXISTS trg_audit_fail "
+            "BEFORE INSERT ON scan_runs "
+            "BEGIN SELECT RAISE(ABORT, 'injected audit failure'); END;"
+        )
+        return original(*args, **kwargs)
 
-    with patch.object(store, "_persist_scan", side_effect=_boom), pytest.raises(RuntimeError, match="injected audit failure"):
+    monkeypatch.setattr(store, "_persist_scan", _wrapped)
+    with pytest.raises((sqlite3.IntegrityError, sqlite3.OperationalError), match="injected audit failure"):
         store.record_scan(report, "intraday", 40, ["AAPL"], scan_time=_ny(2025, 1, 15, 10, 0))
 
     with store._conn() as con:
@@ -691,24 +699,48 @@ def test_migration_idempotent_and_no_duplicate_backfill(tmp_path, monkeypatch):
         assert total == 5
 
 
-def test_migration_failure_rolls_back_to_version_two(tmp_path, monkeypatch):
+def test_migration_rollback_leaves_no_new_columns_indexes_or_backfill(tmp_path, monkeypatch):
+    """If the v2->v3 migration fails mid-backfill, no columns, indexes, or backfilled rows persist."""
     db_path = str(tmp_path / "v2.db")
     _build_v2_db(db_path)
     monkeypatch.setattr(store, "DB_PATH", db_path)
 
     original = store._migrate_v2_to_v3
-    def _failing_migrate(con):
+    def _wrapped(con):
+        con.execute(
+            "CREATE TEMP TRIGGER IF NOT EXISTS trg_migration_fail "
+            "BEFORE UPDATE OF session_id ON scan_runs "
+            "WHEN NEW.session_id IS NOT NULL "
+            "BEGIN SELECT RAISE(ABORT, 'injected migration failure'); END;"
+        )
         original(con)
-        raise RuntimeError("injected migration failure")
 
-    monkeypatch.setattr(store, "_migrate_v2_to_v3", _failing_migrate)
-    with pytest.raises(RuntimeError, match="injected migration failure"):
+    monkeypatch.setattr(store, "_migrate_v2_to_v3", _wrapped)
+    with pytest.raises((sqlite3.IntegrityError, sqlite3.OperationalError), match="injected migration failure"):
         store.init()
 
     con = sqlite3.connect(db_path)
-    version = con.execute("PRAGMA user_version").fetchone()[0]
-    con.close()
-    assert version == 2
+    try:
+        version = con.execute("PRAGMA user_version").fetchone()[0]
+        assert version == 2
+
+        # New columns and indexes added by the migration must be rolled back.
+        cols = {c[1] for c in con.execute("PRAGMA table_info(scan_runs)")}
+        assert "session_id" not in cols
+        assert "source" not in cols
+
+        indexes = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'scan_runs'")}
+        assert "idx_sr_session_id_unique" not in indexes
+
+        # No native audit rows were backfilled.
+        if "source" in cols:
+            native_count = con.execute("SELECT COUNT(*) FROM scan_runs WHERE source IN ('native', 'compatibility')").fetchone()[0]
+            assert native_count == 0
+
+        # Legacy rows remain as they were.
+        assert con.execute("SELECT COUNT(*) FROM scan_runs").fetchone()[0] == 3
+    finally:
+        con.close()
 
 
 # ── Query API ─────────────────────────────────────────────────────────────────
@@ -792,3 +824,381 @@ def test_get_recent_scan_runs_failed_scan_visible(fresh_signal_db):
     assert len(df) == 1
     assert df.iloc[0]["status"] == "failed"
     assert df.iloc[0]["hits_n"] == 0
+
+
+# ── Additional COR-012 regressions ─────────────────────────────────────────────
+
+
+def test_scan_runs_partial_unique_index_rejects_duplicate_non_null_session_id(fresh_signal_db):
+    with store._conn() as con:
+        con.execute(
+            "INSERT INTO scan_runs (run_time, timeframe, provider, session_id) VALUES (?, ?, ?, ?)",
+            ("2025-01-15T15:00:00+00:00", "intraday", "yahoo", "s1"),
+        )
+        with pytest.raises(sqlite3.IntegrityError):
+            con.execute(
+                "INSERT INTO scan_runs (run_time, timeframe, provider, session_id) VALUES (?, ?, ?, ?)",
+                ("2025-01-15T15:00:00+00:00", "intraday", "yahoo", "s1"),
+            )
+        # Multiple NULL session_id rows are allowed.
+        con.execute(
+            "INSERT INTO scan_runs (run_time, timeframe, provider) VALUES (?, ?, ?)",
+            ("2025-01-15T15:00:00+00:00", "intraday", "yahoo"),
+        )
+        con.execute(
+            "INSERT INTO scan_runs (run_time, timeframe, provider) VALUES (?, ?, ?)",
+            ("2025-01-15T15:00:00+00:00", "intraday", "yahoo"),
+        )
+
+
+def test_native_scan_session_source_is_live_and_audit_source_is_native(fresh_signal_db):
+    obs = [_obs("AAPL", ObservationStatus.SIGNAL, score=70, provider="yahoo")]
+    report = _scan_report(obs, requested_provider="yahoo")
+    store.record_scan(report, "intraday", 40, ["AAPL"], scan_time=_ny(2025, 1, 15, 10, 0))
+
+    with store._conn() as con:
+        session = con.execute("SELECT source FROM scan_sessions").fetchone()
+        run = con.execute("SELECT source FROM scan_runs").fetchone()
+    assert session["source"] == "live"
+    assert run["source"] == "native"
+
+
+def test_record_signals_compatibility_session_and_audit_source(fresh_signal_db):
+    results = pd.DataFrame([_signal_result("AAPL")])
+    store.record_signals(results, "intraday", tickers_scanned=["AAPL"])
+
+    with store._conn() as con:
+        session = con.execute("SELECT source FROM scan_sessions").fetchone()
+        run = con.execute("SELECT source FROM scan_runs").fetchone()
+    assert session["source"] == "compatibility"
+    assert run["source"] == "compatibility"
+
+
+def _empty_results_df() -> pd.DataFrame:
+    return pd.DataFrame(columns=[
+        "ticker", "score", "last_close", "volume_ratio", "rsi",
+        "days_until_earnings", "reasons", "provider",
+    ])
+
+
+def test_record_signals_non_empty_sequence_empty_results_is_incomplete(fresh_signal_db):
+    empty = _empty_results_df()
+    store.record_signals(empty, "intraday", provider="schwab", tickers_scanned=["AAPL"])
+
+    with store._conn() as con:
+        run = con.execute("SELECT * FROM scan_runs").fetchone()
+        session = con.execute("SELECT * FROM scan_sessions").fetchone()
+    assert run["tickers_n"] == 1
+    assert run["hits_n"] == 0
+    assert run["counts_complete"] == 1
+    assert run["status"] == "unknown"
+    assert run["actual_provider"] is None
+    assert run["requested_provider"] == "schwab"
+    assert run["source"] == "compatibility"
+    assert session["observations_complete"] == 0
+    assert session["status"] == "unknown"
+    assert session["requested_provider"] == "schwab"
+    assert session["actual_provider"] is None
+
+
+def test_record_signals_positive_integer_empty_results_is_incomplete(fresh_signal_db):
+    empty = _empty_results_df()
+    store.record_signals(empty, "intraday", provider="schwab", tickers_scanned=5)
+
+    with store._conn() as con:
+        run = con.execute("SELECT * FROM scan_runs").fetchone()
+        session = con.execute("SELECT * FROM scan_sessions").fetchone()
+    assert run["tickers_n"] == 5
+    assert run["hits_n"] == 0
+    assert run["counts_complete"] == 1
+    assert run["status"] == "unknown"
+    assert run["actual_provider"] is None
+    assert run["requested_provider"] == "schwab"
+    assert run["source"] == "compatibility"
+    assert session["observations_complete"] == 0
+    assert session["status"] == "unknown"
+    assert session["actual_provider"] is None
+
+
+def test_record_signals_empty_sequence_empty_results_is_complete(fresh_signal_db):
+    empty = _empty_results_df()
+    store.record_signals(empty, "intraday", provider="schwab", tickers_scanned=[])
+
+    with store._conn() as con:
+        run = con.execute("SELECT * FROM scan_runs").fetchone()
+        session = con.execute("SELECT * FROM scan_sessions").fetchone()
+    assert run["tickers_n"] == 0
+    assert run["hits_n"] == 0
+    assert run["counts_complete"] == 1
+    assert run["status"] == "completed"
+    assert run["actual_provider"] is None
+    assert run["requested_provider"] == "schwab"
+    assert run["source"] == "compatibility"
+    assert session["observations_complete"] == 1
+    assert session["status"] == "completed"
+    assert session["actual_provider"] is None
+
+
+def test_record_signals_zero_integer_empty_results_is_incomplete(fresh_signal_db):
+    empty = _empty_results_df()
+    store.record_signals(empty, "intraday", provider="schwab", tickers_scanned=0)
+
+    with store._conn() as con:
+        run = con.execute("SELECT * FROM scan_runs").fetchone()
+        session = con.execute("SELECT * FROM scan_sessions").fetchone()
+    assert run["tickers_n"] == 0
+    assert run["hits_n"] == 0
+    assert run["counts_complete"] == 1
+    assert run["status"] == "unknown"
+    assert run["actual_provider"] is None
+    assert run["source"] == "compatibility"
+    assert session["observations_complete"] == 0
+    assert session["status"] == "unknown"
+    assert session["actual_provider"] is None
+
+
+def test_migration_reuses_legacy_row_only_for_unambiguous_one_to_one_match(tmp_path, monkeypatch):
+    db_path = str(tmp_path / "v2.db")
+    _build_v2_db(db_path)
+    monkeypatch.setattr(store, "DB_PATH", db_path)
+
+    store.init()
+
+    with sqlite3.connect(db_path) as con:
+        con.row_factory = sqlite3.Row
+        sig = con.execute("SELECT * FROM scan_runs WHERE session_id = 'sig-session'").fetchone()
+        assert sig is not None
+        assert sig["id"] == 1
+        assert sig["source"] == "native"
+
+
+def _build_v2_one_row_two_sessions(db_path: str) -> None:
+    con = sqlite3.connect(db_path)
+    con.row_factory = sqlite3.Row
+    con.executescript("""
+        PRAGMA user_version = 2;
+
+        CREATE TABLE signal_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL,
+            timeframe TEXT NOT NULL,
+            scan_time TEXT NOT NULL,
+            score INTEGER,
+            last_close REAL,
+            volume_ratio REAL,
+            rsi REAL,
+            reasons TEXT,
+            provider TEXT,
+            outcome_close REAL,
+            outcome_pct REAL,
+            outcome_at TEXT,
+            outcome_provider TEXT,
+            scan_session_id TEXT,
+            trading_date TEXT
+        );
+
+        CREATE TABLE scan_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_time TEXT NOT NULL,
+            timeframe TEXT NOT NULL,
+            tickers_n INTEGER,
+            hits_n INTEGER,
+            provider TEXT NOT NULL DEFAULT 'unknown'
+        );
+
+        CREATE TABLE scan_sessions (
+            session_id TEXT PRIMARY KEY,
+            scan_time TEXT NOT NULL,
+            trading_date TEXT,
+            timeframe TEXT NOT NULL,
+            requested_provider TEXT NOT NULL,
+            actual_provider TEXT,
+            fallback_used INTEGER NOT NULL DEFAULT 0,
+            providers_attempted TEXT,
+            status TEXT NOT NULL,
+            source TEXT NOT NULL DEFAULT 'live',
+            observations_complete INTEGER NOT NULL DEFAULT 0,
+            requested_n INTEGER NOT NULL DEFAULT 0,
+            observations_n INTEGER NOT NULL DEFAULT 0,
+            signals_n INTEGER NOT NULL DEFAULT 0,
+            below_threshold_n INTEGER NOT NULL DEFAULT 0,
+            earnings_excluded_n INTEGER NOT NULL DEFAULT 0,
+            earnings_failure_n INTEGER NOT NULL DEFAULT 0,
+            fetch_failure_n INTEGER NOT NULL DEFAULT 0,
+            insufficient_data_n INTEGER NOT NULL DEFAULT 0,
+            scoring_failure_n INTEGER NOT NULL DEFAULT 0,
+            min_score INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE scan_observations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            ticker TEXT NOT NULL,
+            status TEXT NOT NULL,
+            score INTEGER,
+            last_close REAL,
+            volume_ratio REAL,
+            rsi REAL,
+            days_until_earnings INTEGER,
+            reasons TEXT,
+            provider TEXT,
+            error_category TEXT,
+            error_message TEXT
+        );
+    """)
+
+    base = ("2025-01-15T15:00:00+00:00", "intraday")
+    for sid in ("session-a", "session-b"):
+        con.execute(
+            "INSERT INTO scan_sessions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (sid, base[0], "2025-01-15", base[1], "yahoo", "yahoo", 0, "yahoo", "completed", "live", 1, 3, 3, 1, 2, 0, 0, 0, 0, 0, 40)
+        )
+        for t in ("A", "B", "C"):
+            con.execute(
+                "INSERT INTO scan_observations (session_id, ticker, status, provider) VALUES (?, ?, ?, ?)",
+                (sid, t, "signal" if t == "A" else "below_threshold", "yahoo")
+            )
+
+    con.execute(
+        "INSERT INTO scan_runs (run_time, timeframe, tickers_n, hits_n, provider) VALUES (?, ?, ?, ?, ?)",
+        (base[0], base[1], 2, 1, "yahoo")
+    )
+    con.commit()
+    con.close()
+
+
+def test_migration_does_not_reuse_legacy_row_for_one_row_multiple_sessions(tmp_path, monkeypatch):
+    db_path = str(tmp_path / "v2.db")
+    _build_v2_one_row_two_sessions(db_path)
+    monkeypatch.setattr(store, "DB_PATH", db_path)
+
+    store.init()
+
+    with sqlite3.connect(db_path) as con:
+        con.row_factory = sqlite3.Row
+        rows = con.execute("SELECT * FROM scan_runs").fetchall()
+        assert len(rows) == 3
+        legacy = [r for r in rows if r["source"] == "legacy"]
+        native = [r for r in rows if r["source"] == "native"]
+        assert len(legacy) == 1
+        assert len(native) == 2
+        assert legacy[0]["session_id"] is None
+        for r in native:
+            assert r["session_id"] in ("session-a", "session-b")
+            assert r["counts_complete"] == 1
+
+
+def _build_v2_two_rows_one_session(db_path: str) -> None:
+    con = sqlite3.connect(db_path)
+    con.row_factory = sqlite3.Row
+    con.executescript("""
+        PRAGMA user_version = 2;
+
+        CREATE TABLE signal_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL,
+            timeframe TEXT NOT NULL,
+            scan_time TEXT NOT NULL,
+            score INTEGER,
+            last_close REAL,
+            volume_ratio REAL,
+            rsi REAL,
+            reasons TEXT,
+            provider TEXT,
+            outcome_close REAL,
+            outcome_pct REAL,
+            outcome_at TEXT,
+            outcome_provider TEXT,
+            scan_session_id TEXT,
+            trading_date TEXT
+        );
+
+        CREATE TABLE scan_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_time TEXT NOT NULL,
+            timeframe TEXT NOT NULL,
+            tickers_n INTEGER,
+            hits_n INTEGER,
+            provider TEXT NOT NULL DEFAULT 'unknown'
+        );
+
+        CREATE TABLE scan_sessions (
+            session_id TEXT PRIMARY KEY,
+            scan_time TEXT NOT NULL,
+            trading_date TEXT,
+            timeframe TEXT NOT NULL,
+            requested_provider TEXT NOT NULL,
+            actual_provider TEXT,
+            fallback_used INTEGER NOT NULL DEFAULT 0,
+            providers_attempted TEXT,
+            status TEXT NOT NULL,
+            source TEXT NOT NULL DEFAULT 'live',
+            observations_complete INTEGER NOT NULL DEFAULT 0,
+            requested_n INTEGER NOT NULL DEFAULT 0,
+            observations_n INTEGER NOT NULL DEFAULT 0,
+            signals_n INTEGER NOT NULL DEFAULT 0,
+            below_threshold_n INTEGER NOT NULL DEFAULT 0,
+            earnings_excluded_n INTEGER NOT NULL DEFAULT 0,
+            earnings_failure_n INTEGER NOT NULL DEFAULT 0,
+            fetch_failure_n INTEGER NOT NULL DEFAULT 0,
+            insufficient_data_n INTEGER NOT NULL DEFAULT 0,
+            scoring_failure_n INTEGER NOT NULL DEFAULT 0,
+            min_score INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE scan_observations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            ticker TEXT NOT NULL,
+            status TEXT NOT NULL,
+            score INTEGER,
+            last_close REAL,
+            volume_ratio REAL,
+            rsi REAL,
+            days_until_earnings INTEGER,
+            reasons TEXT,
+            provider TEXT,
+            error_category TEXT,
+            error_message TEXT
+        );
+    """)
+
+    base = ("2025-01-15T15:00:00+00:00", "intraday")
+    con.execute(
+        "INSERT INTO scan_sessions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        ("session-only", base[0], "2025-01-15", base[1], "yahoo", "yahoo", 0, "yahoo", "completed", "live", 1, 3, 3, 1, 2, 0, 0, 0, 0, 0, 40)
+    )
+    for t in ("A", "B", "C"):
+        con.execute(
+            "INSERT INTO scan_observations (session_id, ticker, status, provider) VALUES (?, ?, ?, ?)",
+            ("session-only", t, "signal" if t == "A" else "below_threshold", "yahoo")
+        )
+
+    for _ in range(2):
+        con.execute(
+            "INSERT INTO scan_runs (run_time, timeframe, tickers_n, hits_n, provider) VALUES (?, ?, ?, ?, ?)",
+            (base[0], base[1], 2, 1, "yahoo")
+        )
+    con.commit()
+    con.close()
+
+
+def test_migration_does_not_reuse_legacy_rows_for_multiple_rows_one_session(tmp_path, monkeypatch):
+    db_path = str(tmp_path / "v2.db")
+    _build_v2_two_rows_one_session(db_path)
+    monkeypatch.setattr(store, "DB_PATH", db_path)
+
+    store.init()
+
+    with sqlite3.connect(db_path) as con:
+        con.row_factory = sqlite3.Row
+        rows = con.execute("SELECT * FROM scan_runs").fetchall()
+        assert len(rows) == 3
+        legacy = [r for r in rows if r["source"] == "legacy"]
+        native = [r for r in rows if r["source"] == "native"]
+        assert len(legacy) == 2
+        assert len(native) == 1
+        for r in legacy:
+            assert r["session_id"] is None
+        assert native[0]["session_id"] == "session-only"
+        assert native[0]["counts_complete"] == 1

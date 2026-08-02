@@ -130,7 +130,7 @@ _SCHEMA_SCRIPT = """
         tickers_n           INTEGER,
         hits_n              INTEGER,
         provider            TEXT    NOT NULL DEFAULT 'unknown',
-        session_id          TEXT    UNIQUE,
+        session_id          TEXT,
         status              TEXT,
         requested_provider  TEXT,
         actual_provider     TEXT,
@@ -142,6 +142,8 @@ _SCHEMA_SCRIPT = """
     CREATE INDEX IF NOT EXISTS idx_sr_timeframe_run_time   ON scan_runs(timeframe, run_time);
     CREATE INDEX IF NOT EXISTS idx_sr_session_id           ON scan_runs(session_id);
     CREATE INDEX IF NOT EXISTS idx_sr_status               ON scan_runs(status);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_sr_session_id_unique
+        ON scan_runs(session_id) WHERE session_id IS NOT NULL;
 
     CREATE TABLE IF NOT EXISTS scan_sessions (
         session_id            TEXT PRIMARY KEY,
@@ -394,6 +396,8 @@ def _migrate_v2_to_v3(con: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_sr_timeframe_run_time ON scan_runs(timeframe, run_time);
         CREATE INDEX IF NOT EXISTS idx_sr_session_id         ON scan_runs(session_id);
         CREATE INDEX IF NOT EXISTS idx_sr_status             ON scan_runs(status);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_sr_session_id_unique
+            ON scan_runs(session_id) WHERE session_id IS NOT NULL;
         """,
     )
 
@@ -409,9 +413,10 @@ def _migrate_v2_to_v3(con: sqlite3.Connection) -> None:
         """
     )
 
-    # Backfill canonical audit rows for complete native scan sessions. Where a
-    # legacy scan_runs row matches the session by run_time/timeframe/provider,
-    # reuse that row to preserve its id; otherwise insert a new row.
+    # Backfill canonical audit rows for complete native scan sessions. Reuse a
+    # legacy scan_runs row only when exactly one complete session and exactly one
+    # legacy row share the match key (run_time, timeframe, provider). Otherwise,
+    # leave legacy rows unlinked and insert a new canonical row per session.
     sessions = con.execute(
         """
         SELECT *
@@ -420,6 +425,37 @@ def _migrate_v2_to_v3(con: sqlite3.Connection) -> None:
         ORDER BY scan_time, timeframe, session_id
         """
     ).fetchall()
+
+    def _match_key(session):
+        requested_provider = session["requested_provider"]
+        actual_provider = session["actual_provider"]
+        provider = actual_provider or requested_provider or "unknown"
+        return (session["scan_time"], session["timeframe"], provider)
+
+    # Count how many complete sessions fall under each match key.
+    session_counts: dict[tuple[str, str, str], int] = {}
+    for session in sessions:
+        session_counts[_match_key(session)] = session_counts.get(_match_key(session), 0) + 1
+
+    # Count legacy (unlinked) scan_runs rows for each match key.
+    legacy_counts: dict[tuple[str, str, str], int] = {}
+    legacy_rows = con.execute(
+        """
+        SELECT run_time, timeframe, provider, id
+        FROM scan_runs
+        WHERE session_id IS NULL AND source = 'legacy'
+        ORDER BY run_time, timeframe, provider, id
+        """
+    ).fetchall()
+    for row in legacy_rows:
+        key = (row["run_time"], row["timeframe"], row["provider"])
+        legacy_counts[key] = legacy_counts.get(key, 0) + 1
+
+    reusable_keys = {
+        key for key in session_counts
+        if session_counts[key] == 1 and legacy_counts.get(key, 0) == 1
+    }
+    used_legacy_ids: set[int] = set()
 
     for session in sessions:
         session_id = session["session_id"]
@@ -431,69 +467,68 @@ def _migrate_v2_to_v3(con: sqlite3.Connection) -> None:
         requested_provider = session["requested_provider"]
         actual_provider = session["actual_provider"]
         provider = actual_provider or requested_provider or "unknown"
+        key = _match_key(session)
 
-        candidates = con.execute(
+        if key in reusable_keys:
+            legacy_id = next(
+                (row["id"] for row in legacy_rows
+                 if row["run_time"] == run_time
+                 and row["timeframe"] == timeframe
+                 and row["provider"] == provider
+                 and row["id"] not in used_legacy_ids),
+                None,
+            )
+            if legacy_id is not None:
+                used_legacy_ids.add(legacy_id)
+                con.execute(
+                    """
+                    UPDATE scan_runs
+                    SET tickers_n = ?,
+                        hits_n = ?,
+                        provider = ?,
+                        session_id = ?,
+                        status = ?,
+                        requested_provider = ?,
+                        actual_provider = ?,
+                        counts_complete = 1,
+                        source = 'native'
+                    WHERE id = ?
+                    """,
+                    (
+                        requested_n,
+                        signals_n,
+                        provider,
+                        session_id,
+                        status,
+                        requested_provider,
+                        actual_provider,
+                        legacy_id,
+                    ),
+                )
+                continue
+
+        con.execute(
             """
-            SELECT id FROM scan_runs
-            WHERE session_id IS NULL
-              AND run_time = ?
-              AND timeframe = ?
-              AND (provider = ? OR provider = 'unknown')
-            ORDER BY id
+            INSERT INTO scan_runs
+              (run_time, timeframe, tickers_n, hits_n, provider,
+               session_id, status, requested_provider, actual_provider,
+               counts_complete, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (run_time, timeframe, provider),
-        ).fetchall()
-
-        if len(candidates) == 1:
-            sr_id = candidates[0]["id"]
-            con.execute(
-                """
-                UPDATE scan_runs
-                SET tickers_n = ?,
-                    hits_n = ?,
-                    provider = ?,
-                    session_id = ?,
-                    status = ?,
-                    requested_provider = ?,
-                    actual_provider = ?,
-                    counts_complete = 1,
-                    source = 'native'
-                WHERE id = ?
-                """,
-                (
-                    requested_n,
-                    signals_n,
-                    provider,
-                    session_id,
-                    status,
-                    requested_provider,
-                    actual_provider,
-                    sr_id,
-                ),
-            )
-        else:
-            con.execute(
-                """
-                INSERT INTO scan_runs
-                  (run_time, timeframe, tickers_n, hits_n, provider,
-                   session_id, status, requested_provider, actual_provider,
-                   counts_complete, source)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    run_time,
-                    timeframe,
-                    requested_n,
-                    signals_n,
-                    provider,
-                    session_id,
-                    status,
-                    requested_provider,
-                    actual_provider,
-                    1,
-                    "native",
-                ),
-            )
+            (
+                run_time,
+                timeframe,
+                requested_n,
+                signals_n,
+                provider,
+                session_id,
+                status,
+                requested_provider,
+                actual_provider,
+                1,
+                "native",
+            ),
+        )
 
 
 def init():
@@ -664,7 +699,8 @@ def _persist_scan(
     audit_tickers_n: int | None,
     observations_complete: int,
     counts_complete: int,
-    source: str,
+    session_source: str,
+    audit_source: str,
     status: str,
     min_score: int,
 ) -> None:
@@ -678,6 +714,11 @@ def _persist_scan(
     lower-bound for compatibility calls. ``audit_tickers_n`` is stored on the
     ``scan_runs`` audit surface and should be ``None`` when the true requested
     universe is unknown.
+
+    ``session_source`` is written to ``scan_sessions.source``; ``audit_source`` is
+    written to ``scan_runs.source``. Native scans keep canonical sessions as
+    ``live`` and audit rows as ``native``; compatibility callers use
+    ``compatibility`` for both.
     """
     from tradex.screener.engine import ObservationStatus
 
@@ -715,7 +756,7 @@ def _persist_scan(
             fallback_used,
             providers_attempted,
             status,
-            source,
+            session_source,
             observations_complete,
             requested_n,
             counts["observations_n"],
@@ -742,8 +783,11 @@ def _persist_scan(
             params,
         )
 
-    signal_mask = obs["status"] == ObservationStatus.SIGNAL.value
-    for _, row in obs[signal_mask].iterrows():
+    if obs.empty or "status" not in obs.columns:
+        signal_rows = pd.DataFrame()
+    else:
+        signal_rows = obs[obs["status"] == ObservationStatus.SIGNAL.value]
+    for _, row in signal_rows.iterrows():
         con.execute(
             """
             INSERT INTO signal_history
@@ -785,7 +829,7 @@ def _persist_scan(
             requested_provider,
             actual_provider,
             counts_complete,
-            source,
+            audit_source,
         ),
     )
 
@@ -850,7 +894,8 @@ def record_scan(
             audit_tickers_n=requested_n,
             observations_complete=observations_complete,
             counts_complete=1,
-            source="native",
+            session_source="live",
+            audit_source="native",
             status=status,
             min_score=min_score,
         )
@@ -904,7 +949,11 @@ def record_signals(
     observations_complete = 0
     counts_complete = 0
     status = "unknown"
-    source = "compatibility"
+    session_source = "compatibility"
+    audit_source = "compatibility"
+
+    requested_provider = scan_provider
+    actual_provider = scan_provider if not results.empty else None
 
     if isinstance(tickers_scanned, int):
         if tickers_scanned < 0:
@@ -914,8 +963,8 @@ def record_signals(
         requested_n = tickers_scanned
         audit_tickers_n = tickers_scanned
         counts_complete = 1
-        # With an integer count we know the requested universe size but not
-        # per-ticker outcomes, so observations remain incomplete.
+        # An integer count does not prove per-ticker outcomes. A positive
+        # count with zero results means the remaining tickers are unobserved.
         observations_complete = 0
         status = "unknown"
     elif isinstance(tickers_scanned, Sequence) and not isinstance(tickers_scanned, (str, bytes)):
@@ -927,8 +976,8 @@ def record_signals(
             if result_tickers == set(normalized_requested):
                 observations_complete = 1
                 status = "completed"
-        else:
-            # An explicit empty universe with zero results is a completed zero-signal scan.
+        elif not normalized_requested:
+            # Explicitly empty requested universe with zero results.
             observations_complete = 1
             status = "completed"
         requested_n = len(normalized_requested)
@@ -957,7 +1006,7 @@ def record_signals(
             "rsi": float(row["rsi"]) if pd.notna(row.get("rsi")) else None,
             "days_until_earnings": int(row["days_until_earnings"]) if pd.notna(row.get("days_until_earnings")) else None,
             "reasons": _safe_str_or_none(row.get("reasons")),
-            "provider": scan_provider,
+            "provider": actual_provider,
             "error_category": None,
             "error_message": None,
         })
@@ -966,10 +1015,10 @@ def record_signals(
     total_requested = requested_n if requested_n is not None else len(results)
     report = ScanReport(
         results=results,
-        requested_provider=scan_provider,
-        actual_provider=scan_provider,
+        requested_provider=requested_provider,
+        actual_provider=actual_provider,
         fallback_used=False,
-        providers_attempted=(scan_provider,),
+        providers_attempted=(requested_provider,),
         failures={},
         total_requested=total_requested,
         total_fetch_attempted=total_requested,
@@ -1001,7 +1050,8 @@ def record_signals(
             audit_tickers_n=audit_tickers_n,
             observations_complete=observations_complete,
             counts_complete=counts_complete,
-            source=source,
+            session_source=session_source,
+            audit_source=audit_source,
             status=status,
             min_score=0,
         )
