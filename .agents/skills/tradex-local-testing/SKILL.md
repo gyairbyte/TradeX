@@ -150,6 +150,37 @@ Key execution assumptions for credential-free tests:
 - Exit priority: opening gap through stop/target, then intraday stop/target (with `intrabar_policy` tie-break), then `time_exit` at `max_holding_bars`.
 - The equity curve marks a bar as exposed if a position is held at any point during that bar; the `position_ticker` column records the active ticker.
 
+## Score-validation CLI
+
+Inspect score-validation commands with:
+
+```bash
+uv run python -m tradex.research.score_validation --help
+uv run python -m tradex.research.score_validation snapshot --help
+uv run python -m tradex.research.score_validation evaluate --help
+```
+
+Run the focused suite:
+
+```bash
+uv run pytest tests/research/score_validation -q
+```
+
+The `evaluate` command is fully offline and credential-free. It always uses a fresh `ShortWeights()` instance and never reads `~/.tradex/weights.json`. The `snapshot` command is the only mode that may contact a market-data provider.
+
+Example offline workflow with a synthetic manifest:
+
+```bash
+uv run python -m tradex.research.score_validation evaluate \
+  --manifest tests/fixtures/manifest.json \
+  --output-dir tmp/score_validation \
+  --warmup-bars 60 \
+  --horizons 1,3,5 \
+  --slippage-bps 0.0,5.0,10.0
+```
+
+Do not present event-study returns as portfolio equity, account returns, or proof of a tradable strategy. The executable backtest lives in `tradex/backtest`.
+
 ## Dashboard
 
 For explicitly requested manual UI testing:

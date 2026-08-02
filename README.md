@@ -197,6 +197,47 @@ print(result.to_json())
 - Execution uses daily bars; real intraday order placement, slippage timing, and partial fills are not simulated.
 - Reported metrics are research evidence, not proof of a durable edge or statistical significance.
 
+### Score validation study (VAL-002)
+
+Run a reproducible, point-in-time event study that calls the production `tradex.signals.short_term.score` with an explicit fresh `ShortWeights()` and records 1-, 3-, and 5-bar forward returns. The study separates an **event study** (overlapping observations allowed) from the **executable backtest** in `tradex/backtest`.
+
+```bash
+# 1) Build an offline, versioned dataset (network allowed; credentials optional)
+uv run python -m tradex.research.score_validation snapshot \
+  --tickers AAPL,MSFT,SPY \
+  --start 2020-01-01 \
+  --end 2023-12-31 \
+  --provider yahoo \
+  --output-dir data/score_validation_snapshot
+
+# 2) Evaluate offline (no network, no credentials, no ~/.tradex/weights.json)
+uv run python -m tradex.research.score_validation evaluate \
+  --manifest data/score_validation_snapshot/manifest.json \
+  --output-dir results/score_validation \
+  --warmup-bars 60 \
+  --horizons 1,3,5 \
+  --slippage-bps 0.0,5.0,10.0
+```
+
+Outputs (`results/score_validation/`):
+
+- `study.json` — deterministic, JSON-safe full result.
+- `events.csv` — one row per point-in-time score observation.
+- `score_buckets.csv`, `thresholds.csv`, `components.csv` — pooled and per-ticker summaries.
+- `score_distribution.csv`, `component_frequency.csv`, `ticker_summary.csv`, `data_quality.csv`.
+- `report.md` — 20-section human-readable report with a production-change disclaimer.
+- `manifest.lock.json` — locked manifest used for the run.
+
+Key design choices:
+
+- Scores are computed on `bars.iloc[:i+1]`; entry is the next bar's open; exit is the horizon-bar close.
+- Splits (`development`, `validation`, `holdout`) are enforced so events and their forward returns do not cross boundaries.
+- Default cost model uses `entry_fill = open * (1 + slippage_bps / 10_000)`, `exit_fill = close * (1 - slippage_bps / 10_000)`, and `commission_bps` on both legs.
+- The scorer always receives a fresh `ShortWeights()` instance; no saved `~/.tradex/weights.json` is loaded silently.
+- Studies are deterministic: the same manifest and configuration produce byte-identical CSVs and JSON (modulo `generated_at`, which is the only non-deterministic field).
+
+**Valid outcome:** A study may conclude `insufficient evidence to change the production score`. The tool does not automatically select, promote, or mutate production thresholds.
+
 ---
 
 ## Data Providers
@@ -324,6 +365,7 @@ Save and switch between named ticker lists (e.g. "Semis", "Crypto-adjacent", "Ea
 - [x] Redesign signal-history storage and access patterns (DATA-001)
 - [x] Fix scan audit to accurately distinguish requested, observed, qualifying, and failed scans (COR-012)
 - [x] Backtesting module to validate signal quality historically (VAL-001)
+- [x] Reproducible, point-in-time score validation study (VAL-002)
 - [ ] Portfolio-level risk view
 
 ### Nice-to-have enhancements

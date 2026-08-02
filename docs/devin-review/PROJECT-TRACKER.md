@@ -316,7 +316,29 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Acceptance criteria:** A point-in-time backtest can be run for the short-term scorer via `python -m tradex.backtest --csv ...` and produces a deterministic JSON/report with no `NaN` or `inf` values.
 - **Intended pull request:** `devin/add-backtest-engine`
 - **Affects trading behavior:** No
-- **Next recommended PR:** `devin/reevaluate-scores-with-validated-data`
+- **Next recommended PR:** `devin/reevaluate-scores-with-validated-data` (VAL-002)
+
+### VAL-002: Reproducible short-term score validation study
+
+- **ID:** VAL-002
+- **Title:** Reproducible short-term score validation study
+- **Category:** Backtesting
+- **Priority:** High
+- **Status:** Completed
+- **Resolved by:** `devin/reevaluate-scores-with-validated-data`
+- **Problem statement:** There is no structured, reproducible way to evaluate whether the current `short_term` score is calibrated to future returns, and no separation between an event study and the executable backtest engine.
+- **Recommended action:** Add `tradex/research/score_validation` with a versioned offline dataset manifest, SHA-256 verification, point-in-time score generation, 1/3/5-bar forward-return event studies, temporal splits, score-bucket/threshold/component aggregation, per-ticker/pooled summaries, transaction-cost sensitivity, and deterministic JSON/CSV/Markdown reports.
+- **Reason:** Needed before changing any production score, weights, or thresholds.
+- **Dependencies:** VAL-001
+- **Files affected:** `tradex/signals/short_term.py`, `tradex/research/score_validation/*.py`, `tests/research/score_validation/*.py`, `README.md`, `SETUP.md`, `.agents/skills/tradex-local-testing/SKILL.md`, `docs/devin-review/PROJECT-TRACKER.md`
+- **Testing requirements:** Credential-free, network-free, deterministic tests covering manifest validation, snapshot mocking, point-in-time events, temporal splits, aggregations, report output, CLI help, and rerun determinism.
+- **Acceptance criteria:**
+  - `python -m tradex.research.score_validation evaluate --manifest ...` runs offline with a fresh `ShortWeights()` and produces deterministic outputs.
+  - Event returns are not presented as portfolio/account returns or proof of a tradable strategy.
+  - A valid outcome is `insufficient evidence to change the production score`; the study does not force a recommendation.
+- **Intended pull request:** `devin/reevaluate-scores-with-validated-data`
+- **Affects trading behavior:** No
+- **Next recommended PR:** `devin/improve-short-term-context` (SHORT-001)
 
 ---
 
@@ -420,7 +442,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Problem statement:** The short-term score does not account for whether SPY/QQQ or the sector is trending.
 - **Recommended action:** Add inputs for SPY trend and sector relative strength; either as filters or as score modifiers.
 - **Reason:** Buying pullbacks in a bear market or weak sector is a different proposition than in a strong bull market.
-- **Dependencies:** VAL-001 (backtesting harness)
+- **Dependencies:** VAL-001 (backtesting harness), VAL-002 (score validation study)
 - **Files likely affected:** `tradex/signals/short_term.py`, `tradex/data/fetcher.py`, new `tradex/market/context.py`
 - **Testing requirements:** Backtest comparing current score vs. regime-aware score on hold-out data.
 - **Acceptance criteria:** Regime-aware score has higher net expectancy in backtest.
