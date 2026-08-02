@@ -25,6 +25,8 @@ def _scan_report(
     attempt_log=None,
     providers_attempted=None,
 ):
+    from tradex.screener.engine import ObservationStatus
+
     total_fetched = total_fetched if total_fetched is not None else len(results_df)
     fetch_failures = fetch_failures or {}
     earnings_failures = earnings_failures or {}
@@ -33,6 +35,73 @@ def _scan_report(
     attempt_log = attempt_log or []
     failures = {**fetch_failures, **scoring_failures}
     providers = providers_attempted or (provider,)
+
+    observations = []
+    for _, row in results_df.iterrows():
+        observations.append({
+            "ticker": str(row["ticker"]).strip().upper(),
+            "status": ObservationStatus.SIGNAL.value,
+            "score": int(row["score"]),
+            "last_close": float(row["last_close"]),
+            "volume_ratio": float(row["volume_ratio"]),
+            "rsi": float(row["rsi"]),
+            "days_until_earnings": int(row["days_until_earnings"]) if pd.notna(row.get("days_until_earnings")) else None,
+            "reasons": str(row.get("reasons", "")),
+            "provider": provider,
+            "error_category": None,
+            "error_message": None,
+        })
+    for ticker, err in fetch_failures.items():
+        observations.append({
+            "ticker": str(ticker).strip().upper(),
+            "status": ObservationStatus.FETCH_FAILURE.value,
+            "score": None,
+            "last_close": None,
+            "volume_ratio": None,
+            "rsi": None,
+            "days_until_earnings": None,
+            "reasons": None,
+            "provider": None,
+            "error_category": type(err).__name__,
+            "error_message": str(err),
+        })
+    for ticker, err in scoring_failures.items():
+        observations.append({
+            "ticker": str(ticker).strip().upper(),
+            "status": ObservationStatus.SCORING_FAILURE.value,
+            "score": None,
+            "last_close": None,
+            "volume_ratio": None,
+            "rsi": None,
+            "days_until_earnings": None,
+            "reasons": None,
+            "provider": provider,
+            "error_category": type(err).__name__,
+            "error_message": str(err),
+        })
+    for ticker, err in earnings_failures.items():
+        observations.append({
+            "ticker": str(ticker).strip().upper(),
+            "status": ObservationStatus.EARNINGS_FAILURE.value,
+            "score": None,
+            "last_close": None,
+            "volume_ratio": None,
+            "rsi": None,
+            "days_until_earnings": None,
+            "reasons": None,
+            "provider": None,
+            "error_category": type(err).__name__,
+            "error_message": str(err),
+        })
+    observations_df = pd.DataFrame(observations)
+    if observations_df.empty:
+        observations_df = pd.DataFrame(columns=[
+            "ticker", "status", "score", "last_close", "volume_ratio", "rsi",
+            "days_until_earnings", "reasons", "provider", "error_category", "error_message",
+        ])
+
+    total_requested = len(observations_df)
+
     return ScanReport(
         results=results_df,
         requested_provider=provider,
@@ -40,7 +109,7 @@ def _scan_report(
         fallback_used=fallback_used,
         providers_attempted=providers,
         failures=failures,
-        total_requested=1,
+        total_requested=total_requested,
         total_fetch_eligible=total_fetch_eligible,
         total_fetch_attempted=total_fetch_attempted,
         total_retries=total_retries,
@@ -54,6 +123,7 @@ def _scan_report(
         fetch_failures=fetch_failures,
         scoring_failures=scoring_failures,
         attempt_log=attempt_log,
+        observations=observations_df,
     )
 
 
@@ -173,7 +243,7 @@ def _screener_results(provider: str = "schwab") -> pd.DataFrame:
 
 
 def test_run_once_persists_screener_provider(fresh_signal_db):
-    """run_once must write the resolved provider to both signals and scan_runs."""
+    """run_once must write the resolved provider to signal_history and scan_sessions."""
     results = _screener_results("schwab")
 
     with (
@@ -184,7 +254,7 @@ def test_run_once_persists_screener_provider(fresh_signal_db):
 
     with store._conn() as con:
         signal_provider = con.execute("SELECT provider FROM signal_history").fetchone()["provider"]
-        run_provider = con.execute("SELECT provider FROM scan_runs").fetchone()["provider"]
+        run_provider = con.execute("SELECT actual_provider FROM scan_sessions").fetchone()["actual_provider"]
     assert signal_provider == "schwab"
     assert run_provider == "schwab"
 
@@ -446,7 +516,7 @@ def test_run_once_skip_does_not_touch_store_or_alerts(fresh_signal_db, capsys):
     now = _ny(2025, 1, 15, 17, 0)
     with (
         patch.object(watcher, "screener_run_with_report") as mock_screener,
-        patch.object(watcher.store, "record_signals") as mock_record,
+        patch.object(watcher.store, "record_scan") as mock_record,
         patch.object(watcher, "_check_alerts") as mock_alerts,
     ):
         watcher.run_once(["AAPL"], timeframe="intraday", market_hours_only=True, now=now)

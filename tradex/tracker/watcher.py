@@ -148,7 +148,15 @@ def run_once(
         print(f"[{timestamp}] {len(results)} signals found (actual provider={actual_provider}, "
               f"retries={report.total_retries}, fallback={report.fallback_used}):")
         print(results[["ticker", "score", "volume_ratio", "rsi", "provider"]].to_string(index=False))
-        store.record_signals(results, timeframe, provider=actual_provider)
+
+    # Persist the full scan report (observations, session, and signals).
+    store.record_scan(
+        report,
+        timeframe=timeframe,
+        min_score=min_score,
+        tickers_scanned=report.observations["ticker"].tolist() if not report.observations.empty else [],
+        scan_time=now,
+    )
 
     # Surface each non-empty stage map independently.
     if has_earnings_failures:
@@ -167,13 +175,13 @@ def run_once(
     if report.attempt_log:
         print(f"[{timestamp}] Attempt summary (providers attempted: {report.providers_attempted}, "
               f"total attempts: {report.total_fetch_attempted}, retries: {report.total_retries}).")
-        for provider in report.providers_attempted:
-            entries = [a for a in report.attempt_log if a.provider == provider]
+        for prov in report.providers_attempted:
+            entries = [a for a in report.attempt_log if a.provider == prov]
             attempted = len(entries)
             succeeded = sum(1 for e in entries if e.success)
             failed = attempted - succeeded
             retries = sum(e.retries for e in entries)
-            print(f"  - {provider}: {attempted} attempted, {succeeded} succeeded, {failed} failed, {retries} retries")
+            print(f"  - {prov}: {attempted} attempted, {succeeded} succeeded, {failed} failed, {retries} retries")
 
     if report.total_fetched > 0:
         _check_alerts(tickers, timeframe, provider=actual_provider)

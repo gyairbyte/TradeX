@@ -466,7 +466,12 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
                     st.success(f"Found {len(results)} opportunities (excluded tickers with earnings within {earnings_buffer}d)")
                 else:
                     st.success(f"Found {len(results)} opportunities")
-            store.record_signals(results, timeframe, provider=actual_provider)
+            store.record_scan(
+                report,
+                timeframe=timeframe,
+                min_score=min_score,
+                tickers_scanned=report.observations["ticker"].tolist() if not report.observations.empty else [],
+            )
             st.dataframe(
                 results,
                 use_container_width=True,
@@ -635,20 +640,21 @@ Coils let you get positioned before the obvious move.
                  help="Search signal history for stocks matching the coil definition."):
         coils = analyzer.detect_coils(timeframe, days=coil_days, min_appearances=min_appearances)
         if coils.empty:
-            st.info("No coiling setups found. Run the Scanner a few times over multiple days to build history.")
+            st.info("No active coiling setups found. Run the Scanner a few times over multiple days to build history.")
         else:
             st.success(f"{len(coils)} coiling setups detected")
-            display_cols = ["ticker", "coil_strength", "appearances", "latest_score",
-                            "score_trend", "trend_direction", "last_close"]
+            display_cols = ["ticker", "coil_strength", "appearances", "active_sessions",
+                            "latest_score", "score_trend", "trend_direction", "last_close"]
             st.dataframe(
                 coils[display_cols],
                 use_container_width=True,
                 column_config={
                     "ticker":          st.column_config.TextColumn("Ticker"),
                     "coil_strength":   st.column_config.ProgressColumn("Coil Strength", min_value=0, max_value=100, help="Combined score of duration, signal level, and trend acceleration."),
-                    "appearances":     st.column_config.NumberColumn("Appearances", help="How many scan sessions this stock has shown up in."),
+                    "appearances":     st.column_config.NumberColumn("Distinct Sessions", help="How many distinct trading sessions this stock has shown up in."),
+                    "active_sessions": st.column_config.NumberColumn("Active Sessions", help="Sessions where the score was at or above the coil threshold."),
                     "latest_score":    st.column_config.ProgressColumn("Latest Score", min_value=0, max_value=100),
-                    "score_trend":     st.column_config.NumberColumn("Trend Slope", help="Positive = score rising each scan. Negative = fading."),
+                    "score_trend":     st.column_config.NumberColumn("Trend Slope", help="Positive = score rising each session. Negative = fading."),
                     "trend_direction": st.column_config.TextColumn("Direction"),
                     "last_close":      st.column_config.NumberColumn("Last Close", format="$%.2f"),
                 },
@@ -656,14 +662,14 @@ Coils let you get positioned before the obvious move.
 
             st.divider()
             st.subheader("Score History")
-            st.caption("Shows how this stock's signal score has evolved across scan sessions.")
+            st.caption("Shows how this stock's signal score has evolved across distinct sessions.")
             selected_coil = st.selectbox("Select ticker to inspect", coils["ticker"].tolist(), key="sel_coil")
             state = analyzer.get_ticker_state(selected_coil, timeframe, days=coil_days)
 
             if state["score_history"]:
                 score_fig = px.line(
                     y=state["score_history"],
-                    labels={"x": "Scan #", "y": "Score"},
+                    labels={"x": "Session #", "y": "Score"},
                     title=f"{selected_coil} — Score History ({timeframe})",
                     markers=True,
                 )
@@ -673,6 +679,31 @@ Coils let you get positioned before the obvious move.
                 st.plotly_chart(score_fig, use_container_width=True)
 
             st.info(f"**{state['status'].upper()}** — {state['summary']}")
+
+    if st.button("Detect Fading Setups", key="btn_fade", type="secondary",
+                 help="Search signal history for stocks that were coiling but are now fading."):
+        fading = analyzer.detect_fading_setups(timeframe, days=coil_days, min_appearances=min_appearances)
+        if fading.empty:
+            st.info("No fading setups found.")
+        else:
+            st.warning(f"{len(fading)} fading setups detected")
+            display_cols = ["ticker", "fade_strength", "appearances", "active_sessions",
+                            "latest_score", "peak_score", "score_trend", "trend_direction", "last_close"]
+            st.dataframe(
+                fading[display_cols],
+                use_container_width=True,
+                column_config={
+                    "ticker":          st.column_config.TextColumn("Ticker"),
+                    "fade_strength":   st.column_config.ProgressColumn("Fade Strength", min_value=0, max_value=100, help="How strongly the setup is fading from its prior peak."),
+                    "appearances":     st.column_config.NumberColumn("Distinct Sessions", help="How many distinct trading sessions this stock has shown up in."),
+                    "active_sessions": st.column_config.NumberColumn("Active Sessions", help="Sessions where the score was at or above the coil threshold."),
+                    "latest_score":    st.column_config.ProgressColumn("Latest Score", min_value=0, max_value=100),
+                    "peak_score":      st.column_config.ProgressColumn("Peak Score", min_value=0, max_value=100),
+                    "score_trend":     st.column_config.NumberColumn("Trend Slope", help="Negative = score declining."),
+                    "trend_direction": st.column_config.TextColumn("Direction"),
+                    "last_close":      st.column_config.NumberColumn("Last Close", format="$%.2f"),
+                },
+            )
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 3 — CONFLUENCE

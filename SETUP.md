@@ -72,7 +72,7 @@ copy .env.example .env    # Windows
 
 `DATA_PROVIDER` controls **OHLCV data** only. Options flow, earnings, and market-cap ranking have their own source overrides (see `.env.example`).
 
-Signal history records the OHLCV provider that produced each signal (`signal_history.provider`), and resolved outcomes record `outcome_provider`. Pre-existing databases are migrated safely; rows created before this feature are labeled `unknown`.
+Signal history records the OHLCV provider that produced each signal (`signal_history.provider`), and resolved outcomes record `outcome_provider`. Every scan now writes a `scan_sessions` row and one `scan_observations` row per ticker requested, including tickers that scored below threshold or failed to fetch. Pre-existing databases are migrated safely; rows created before this feature are labeled `unknown` and assigned to synthetic legacy sessions.
 
 Key variables:
 | Variable | Required? | Notes |
@@ -223,7 +223,7 @@ Once the dashboard is running at `http://localhost:8501`:
 | Tab | First time? Start here |
 |---|---|
 | **Scanner** | Pick a watchlist in the sidebar, pick a timeframe (intraday / short / long), set `min_score` (try 40), click Scan. |
-| **Coil Detector** | Only meaningful after the watcher has been running for several days — needs scan history to detect coiling stocks. |
+| **Coil Detector** | Needs scan history across several NYSE trading sessions to detect coiling stocks; appears count distinct sessions, not scan rows. |
 | **Confluence** | Stocks scoring well across all three timeframes simultaneously. Fast to compute, no history needed. |
 | **Pattern Match** | Compares current 10-day windows against historical run-up / decline fingerprints. |
 | **Pre-Market** | Gap-up / gap-down detection vs. previous close. Only useful between ~7am and 9:30am ET. |

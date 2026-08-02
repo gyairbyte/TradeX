@@ -17,7 +17,6 @@ def _signal_row(ticker: str = "COIL", score: int = 60) -> pd.DataFrame:
     }])
 
 
-@pytest.mark.xfail(strict=True, reason="Coil appearances count scan rows, not distinct sessions (DATA-001/COIL-001)")
 def test_coil_counts_distinct_sessions_not_scan_rows(fresh_signal_db):
     """Three scans of the same ticker in one day should not qualify as a coil.
 
