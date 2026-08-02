@@ -123,13 +123,33 @@ print(results)
 
 ### Backtesting (VAL-001)
 
-Run a deterministic, point-in-time backtest for the short-term scorer from an offline CSV:
+Run a deterministic, point-in-time backtest for the short-term scorer from an offline CSV. The CSV must contain `datetime` (or `date`), `open`, `high`, `low`, `close`, and `volume`. Use `--ticker` to identify the security; `--csv` only supplies the price history.
 
 ```bash
-uv run python -m tradex.backtest --csv data/spy_daily.csv --min-score 40 --warmup-bars 60 --holding-bars 3 --stop-loss-pct 5 --take-profit-pct 10
+uv run python -m tradex.backtest \
+  --csv data/spy_daily.csv \
+  --ticker SPY \
+  --min-score 40 \
+  --warmup-bars 60 \
+  --holding-bars 3 \
+  --stop-loss-pct 5 \
+  --take-profit-pct 10 \
+  --json-output result.json \
+  --trades-output trades.csv \
+  --equity-output equity.csv
 ```
 
-Or programmatically:
+Provider-backed daily history is also supported (requires credentials for Schwab):
+
+```bash
+uv run python -m tradex.backtest \
+  --ticker SPY \
+  --start 2023-01-01 \
+  --end 2023-12-31 \
+  --provider yahoo
+```
+
+Programmatic usage:
 
 ```python
 from tradex.backtest.engine import run_short_term_backtest
@@ -143,7 +163,39 @@ print(result.metrics)
 print(result.to_json())
 ```
 
-The harness is long-only, one-position-at-a-time, uses 100% of available capital per trade, and applies explicit stop-loss, profit-target, and time exits with optional slippage and commission. Signals are generated point-in-time using only bars available up to and including each close, and entries execute on the next bar's open.
+**Execution model (research only, not trading advice)**
+
+- Long-only, one position at a time, 100% of available capital per trade, fractional shares.
+- Signals are generated point-in-time: the scorer sees only `bars.iloc[:i+1]` at bar `i`.
+- Entry is always at the next bar's open.
+- Stop and target levels are anchored to the **entry fill** (`open * (1 + slippage_bps / 10_000)`), not the signal bar close. This means entry gaps and entry slippage affect the risk levels.
+- Cost model:
+  - `entry_fill = open * (1 + slippage_bps / 10_000)`
+  - `cash_per_share = entry_fill * (1 + commission_bps / 10_000)`
+  - `quantity = capital / cash_per_share`
+  - `exit_fill = raw_exit * (1 - slippage_bps / 10_000)`
+  - `ending_cash = quantity * exit_fill * (1 - commission_bps / 10_000)`
+- Exit priority for each holding bar:
+  1. Opening gap through stop or target (`gap_stop` / `gap_target`) — exit at the open.
+  2. Intraday stop or target touch. If both are touched in the same bar and `intrabar_policy=stop_first` (the default), the stop is elected; with `target_first`, the target is elected.
+  3. `time_exit` at the close of the last allowed bar (`max_holding_bars`).
+- The equity curve marks every bar as exposed (`position_open=True`) if a position is held at any point during that bar, including the entry and exit bars. The `position_ticker` column records the active ticker.
+- Max drawdown is the largest peak-to-trough decline of the equity curve, expressed as a negative percentage.
+- The buy-and-hold benchmark uses the same cost model applied once over the evaluation window.
+
+**Output schemas**
+
+- `result.to_json()` returns a JSON-safe dict with no `NaN` or `Infinity`; `equity_curve` rows include `timestamp`, `equity`, `cash`, `position_quantity`, `position_open`, `position_ticker`, `close`, `daily_return`, `running_peak`, and `drawdown_pct`.
+- `result.to_trades_df()` always returns the stable trade ledger columns, even when no trades occur.
+- `result.to_signals_df()` always returns the stable signal ledger columns.
+
+**Known limitations and biases**
+
+- This is a research harness, not a live-trading system.
+- It does not eliminate survivorship bias, delisting bias, or point-in-time index membership.
+- Corporate actions, provider adjustments, retroactive splits, and liquidity capacity are not modeled.
+- Execution uses daily bars; real intraday order placement, slippage timing, and partial fills are not simulated.
+- Reported metrics are research evidence, not proof of a durable edge or statistical significance.
 
 ---
 

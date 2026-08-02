@@ -275,10 +275,10 @@ def _execute_trade(
     cash_per_share = entry_fill * (1 + config.commission_bps / 10_000)
     quantity = starting_cash / cash_per_share
 
-    signal_idx = bars.index.get_loc(signal_time)
-    signal_close = float(bars.iloc[signal_idx]["close"])
-    stop_price = signal_close * (1 - config.stop_loss_pct)
-    target_price = signal_close * (1 + config.take_profit_pct)
+    # Risk levels are anchored to the actual entry fill, not the signal bar close,
+    # so opening gaps and entry slippage are reflected in the trade's risk.
+    stop_price = entry_fill * (1 - config.stop_loss_pct)
+    target_price = entry_fill * (1 + config.take_profit_pct)
 
     exit_idx, raw_exit, exit_reason = _simulate_exit(
         bars=bars,
@@ -365,34 +365,48 @@ def _build_equity_curve(
     config: BacktestConfig,
     first_idx: int,
 ) -> pd.DataFrame:
-    """Produce a bar-level marked-to-market equity curve from ``first_idx`` onward."""
+    """Produce a bar-level marked-to-market equity curve from ``first_idx`` onward.
+
+    A bar is counted as exposed if a position is held at any point during it, so
+    both the entry bar and the exit bar are included in exposure accounting. The
+    ``position_ticker`` column records the active ticker (or None) for each bar.
+    """
     entries: dict[datetime, TradeRecord] = {t.entry_time: t for t in trades}
     exits: dict[datetime, TradeRecord] = {t.exit_time: t for t in trades}
 
     cash = float(config.initial_capital)
-    quantity = 0.0
+    active_trade: TradeRecord | None = None
     rows: list[dict[str, Any]] = []
 
     for i in range(first_idx, len(bars)):
         ts = bars.index[i]
+
         if ts in entries:
-            trade = entries[ts]
-            quantity = trade.quantity
+            active_trade = entries[ts]
             cash = 0.0
-        if ts in exits:
-            trade = exits[ts]
-            cash = trade.ending_cash
-            quantity = 0.0
+
+        # Capture exposure state for this bar before any same-bar exit is applied.
+        position_ticker = active_trade.ticker if active_trade is not None else None
+        position_open = position_ticker is not None
 
         close = float(bars.iloc[i]["close"])
-        equity = cash if quantity == 0 else quantity * close
+
+        # Realize the exit immediately, so the equity for this bar reflects the
+        # realized cash (or a position still held through the close).
+        if ts in exits:
+            cash = exits[ts].ending_cash
+            active_trade = None
+
+        equity = active_trade.quantity * close if active_trade is not None else cash
+
         rows.append(
             {
                 "timestamp": ts,
                 "equity": equity,
                 "cash": cash,
-                "position_quantity": quantity,
-                "position_open": quantity > 0,
+                "position_quantity": active_trade.quantity if active_trade is not None else 0.0,
+                "position_open": position_open,
+                "position_ticker": position_ticker,
                 "close": close,
             }
         )

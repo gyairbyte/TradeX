@@ -70,21 +70,36 @@ def test_stop_only_hit():
 
 
 def test_gap_through_stop():
-    bars = _entry_bars(60, 50, open=90.0, low=80.0, high=100.0)
+    # Entry at bar 50 with fill 100; the following bar gaps down below the stop.
+    bars = _base_bars(60)
+    bars.iloc[50, bars.columns.get_loc("open")] = 100.0
+    bars.iloc[51, bars.columns.get_loc("open")] = 90.0
+    bars.iloc[51, bars.columns.get_loc("high")] = 90.0
+    bars.iloc[51, bars.columns.get_loc("low")] = 90.0
+    bars.iloc[51, bars.columns.get_loc("close")] = 90.0
     config = BacktestConfig(min_score=40, warmup_bars=50, max_holding_bars=3, stop_loss_pct=0.05, take_profit_pct=0.10)
     result = run_backtest("TEST", bars, _score_at({49}), config=config, strategy_name="test", data_source="test")
     trade = result.trade_ledger[0]
     assert trade.exit_reason == "gap_stop"
     assert trade.raw_exit_price == pytest.approx(90.0)
+    # Stop level is anchored to the entry fill, not the signal close.
+    assert trade.stop_price == pytest.approx(100.0 * (1 - 0.05))
 
 
 def test_gap_through_target():
-    bars = _entry_bars(60, 50, open=120.0, low=99.0, high=120.0)
+    # Entry at bar 50 with fill 100; the following bar gaps up above the target.
+    bars = _base_bars(60)
+    bars.iloc[50, bars.columns.get_loc("open")] = 100.0
+    bars.iloc[51, bars.columns.get_loc("open")] = 120.0
+    bars.iloc[51, bars.columns.get_loc("high")] = 120.0
+    bars.iloc[51, bars.columns.get_loc("low")] = 120.0
+    bars.iloc[51, bars.columns.get_loc("close")] = 120.0
     config = BacktestConfig(min_score=40, warmup_bars=50, max_holding_bars=3, stop_loss_pct=0.05, take_profit_pct=0.10)
     result = run_backtest("TEST", bars, _score_at({49}), config=config, strategy_name="test", data_source="test")
     trade = result.trade_ledger[0]
     assert trade.exit_reason == "gap_target"
     assert trade.raw_exit_price == pytest.approx(120.0)
+    assert trade.target_price == pytest.approx(100.0 * (1 + 0.10))
 
 
 def test_both_hit_stop_first():
@@ -172,8 +187,10 @@ def test_exit_slippage():
     config = BacktestConfig(min_score=40, warmup_bars=50, max_holding_bars=3, take_profit_pct=0.10, slippage_bps=10)
     result = run_backtest("TEST", bars, _score_at({49}), config=config, strategy_name="test", data_source="test")
     trade = result.trade_ledger[0]
-    # Exit at target, apply adverse slippage (lower fill for long).
-    assert trade.exit_fill_price == pytest.approx(110 * (1 - 10 / 10_000))
+    # Target is anchored to the slippage-inflated entry fill; exit fill applies
+    # adverse slippage on top of the raw (target) exit price.
+    assert trade.target_price == pytest.approx(trade.entry_fill_price * (1 + 0.10))
+    assert trade.exit_fill_price == pytest.approx(trade.target_price * (1 - 10 / 10_000))
 
 
 def test_entry_commission():
@@ -199,5 +216,25 @@ def test_gross_return_excludes_costs():
     config = BacktestConfig(min_score=40, warmup_bars=50, max_holding_bars=3, take_profit_pct=0.10, commission_bps=10, slippage_bps=5)
     result = run_backtest("TEST", bars, _score_at({49}), config=config, strategy_name="test", data_source="test")
     trade = result.trade_ledger[0]
-    assert trade.gross_return_pct == pytest.approx(10.0, abs=1e-9)
+    expected_gross = (trade.raw_exit_price / trade.raw_entry_price - 1) * 100
+    assert trade.gross_return_pct == pytest.approx(expected_gross, abs=1e-9)
     assert trade.net_return_pct < trade.gross_return_pct
+
+
+def test_stop_and_target_anchored_to_entry_fill_with_slippage():
+    # Signal close is 100 but the entry opens at 90 with 10 bps slippage.
+    # Stop/target must be anchored to the entry fill, not the signal close.
+    bars = _base_bars(60)
+    for col in ["open", "high", "low", "close"]:
+        bars.iloc[50:53, bars.columns.get_loc(col)] = 90.0
+    config = BacktestConfig(min_score=40, warmup_bars=50, max_holding_bars=3, stop_loss_pct=0.05, take_profit_pct=0.10, slippage_bps=10)
+    result = run_backtest("TEST", bars, _score_at({49}), config=config, strategy_name="test", data_source="test")
+    trade = result.trade_ledger[0]
+    entry_fill = 90.0 * (1 + 10 / 10_000)
+    assert trade.entry_fill_price == pytest.approx(entry_fill)
+    assert trade.stop_price == pytest.approx(entry_fill * (1 - 0.05))
+    assert trade.target_price == pytest.approx(entry_fill * (1 + 0.10))
+    # The entry open (90) is above the stop, so this is not a gap exit even though
+    # the signal-close-based stop would have been 95.
+    assert trade.exit_reason != "gap_stop"
+    assert trade.exit_reason == "time_exit"

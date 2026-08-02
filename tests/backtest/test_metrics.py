@@ -235,6 +235,68 @@ def test_exposure_calculation():
     assert result.metrics.exposure_pct == pytest.approx(expected)
 
 
+def test_equity_curve_has_position_ticker():
+    bars = make_bars(80)
+    config = BacktestConfig(min_score=0, warmup_bars=50, max_holding_bars=3)
+    result = run_backtest("TEST", bars, _perfect_score_fn(), config=config, strategy_name="test", data_source="test")
+    assert "position_ticker" in result.equity_curve.columns
+    # When a position is active, the ticker is recorded; otherwise it is None/NaN.
+    open_rows = result.equity_curve[result.equity_curve["position_open"]]
+    assert (open_rows["position_ticker"] == "TEST").all()
+
+
+def test_one_bar_trade_counts_entry_bar_exposed():
+    # max_holding_bars=1 forces a time-exit on the entry bar.
+    n = 60
+    idx = pd.date_range("2020-01-01", periods=n, freq="D", tz="UTC")
+    close = np.full(n, 100.0)
+    bars = pd.DataFrame(
+        {
+            "open": close,
+            "high": close + 1.0,
+            "low": close - 1.0,
+            "close": close,
+            "volume": np.ones(n) * 1e6,
+        },
+        index=idx,
+    )
+    config = BacktestConfig(min_score=40, warmup_bars=50, max_holding_bars=1)
+    result = run_backtest("TEST", bars, _score_at({49}), config=config, strategy_name="test", data_source="test")
+    assert result.trade_ledger[0].bars_held == 1
+    entry_time = result.trade_ledger[0].entry_time
+    exit_time = result.trade_ledger[0].exit_time
+    assert entry_time == exit_time
+    row = result.equity_curve.loc[entry_time]
+    assert bool(row["position_open"]) is True
+    assert row["position_ticker"] == "TEST"
+
+
+def test_multi_bar_time_exit_counts_entry_and_exit_bars_exposed():
+    n = 70
+    idx = pd.date_range("2020-01-01", periods=n, freq="D", tz="UTC")
+    close = np.full(n, 100.0)
+    bars = pd.DataFrame(
+        {
+            "open": close,
+            "high": close + 1.0,
+            "low": close - 1.0,
+            "close": close,
+            "volume": np.ones(n) * 1e6,
+        },
+        index=idx,
+    )
+    config = BacktestConfig(min_score=40, warmup_bars=50, max_holding_bars=5)
+    result = run_backtest("TEST", bars, _score_at({49}), config=config, strategy_name="test", data_source="test")
+    trade = result.trade_ledger[0]
+    assert trade.bars_held == 5
+    held_bars = result.equity_curve.loc[trade.entry_time:trade.exit_time]
+    assert held_bars["position_open"].all()
+    assert (held_bars["position_ticker"] == "TEST").all()
+    # The bar immediately before entry has no position.
+    prev_bar = result.equity_curve.iloc[result.equity_curve.index.get_loc(trade.entry_time) - 1]
+    assert not prev_bar["position_open"]
+
+
 def test_equity_reconciles_with_trade_returns():
     bars = make_bars(80)
     config = BacktestConfig(min_score=0, warmup_bars=50, max_holding_bars=3, commission_bps=10, slippage_bps=5)

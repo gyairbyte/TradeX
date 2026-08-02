@@ -79,6 +79,32 @@ def test_config_rejects_booleans_as_numbers():
         BacktestConfig(take_profit_pct=True)  # type: ignore[arg-type]
 
 
+def test_config_rejects_nan_and_infinity():
+    for value in [float("nan"), float("inf"), float("-inf")]:
+        with pytest.raises(BacktestError):
+            BacktestConfig(stop_loss_pct=value)  # type: ignore[arg-type]
+        with pytest.raises(BacktestError):
+            BacktestConfig(take_profit_pct=value)  # type: ignore[arg-type]
+        with pytest.raises(BacktestError):
+            BacktestConfig(commission_bps=value)  # type: ignore[arg-type]
+        with pytest.raises(BacktestError):
+            BacktestConfig(slippage_bps=value)  # type: ignore[arg-type]
+        with pytest.raises(BacktestError):
+            BacktestConfig(initial_capital=value)  # type: ignore[arg-type]
+
+
+def test_config_rejects_non_numeric_strings():
+    with pytest.raises(BacktestError):
+        BacktestConfig(stop_loss_pct="5")  # type: ignore[arg-type]
+    with pytest.raises(BacktestError):
+        BacktestConfig(initial_capital="100000")  # type: ignore[arg-type]
+
+
+def test_config_rejects_numpy_bool_as_integer():
+    with pytest.raises(BacktestError):
+        BacktestConfig(min_score=np.bool_(True))  # type: ignore[arg-type]
+
+
 def test_canonicalize_valid_utc():
     df = _valid_bars()
     out = canonicalize_bars(df)

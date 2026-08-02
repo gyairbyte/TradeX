@@ -17,10 +17,8 @@ def _build_parser() -> argparse.ArgumentParser:
         description="Run a deterministic, point-in-time backtest for one ticker.",
     )
 
-    data = parser.add_mutually_exclusive_group(required=True)
-    data.add_argument("--csv", type=str, help="Path to an offline CSV OHLCV file")
-    data.add_argument("--ticker", type=str, help="Ticker symbol for provider-backed history")
-
+    parser.add_argument("--csv", type=str, help="Path to an offline CSV OHLCV file")
+    parser.add_argument("--ticker", type=str, help="Ticker symbol for the backtest output")
     parser.add_argument("--start", type=str, help="Provider start date (YYYY-MM-DD)")
     parser.add_argument("--end", type=str, help="Provider end date (YYYY-MM-DD)")
     parser.add_argument("--provider", type=str, help="OHLCV provider (e.g. yahoo, schwab)")
@@ -62,6 +60,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
+    if not args.ticker:
+        print("Error: --ticker is required to identify the security being backtested", file=sys.stderr)
+        return 1
+
+    if args.csv and (args.start or args.end):
+        print("Error: --start and --end are only used with provider mode, not --csv", file=sys.stderr)
+        return 1
+
     if args.csv:
         try:
             bars = load_csv(args.csv, timezone=args.timezone)
@@ -69,18 +75,19 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Error: {exc}", file=sys.stderr)
             return 1
         data_source = f"csv:{Path(args.csv).name}"
-        ticker = args.csv  # not a ticker symbol, but no ticker supplied
     else:
         if not args.start or not args.end:
             print("Error: --start and --end are required with --ticker", file=sys.stderr)
             return 1
         try:
-            bars = _fetch_provider_bars(args.ticker, args.start, args.end, args.provider)
+            resolved_provider = _resolve_provider(args.provider)
+            bars = _fetch_provider_bars(args.ticker, args.start, args.end, resolved_provider)
         except BacktestError as exc:
             print(f"Error: {exc}", file=sys.stderr)
             return 1
-        data_source = args.provider or "unknown"
-        ticker = args.ticker
+        data_source = resolved_provider
+
+    ticker = args.ticker
 
     try:
         result = run_short_term_backtest(ticker, bars, config=config, data_source=data_source)
@@ -99,7 +106,17 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _fetch_provider_bars(ticker: str, start: str, end: str, provider: str | None):
+def _resolve_provider(provider: str | None) -> str:
+    """Resolve a provider name through the canonical OHLCV resolver."""
+    from tradex.data.fetcher import resolve_provider
+
+    try:
+        return resolve_provider(provider)
+    except Exception as exc:  # noqa: BLE001
+        raise BacktestError(f"Failed to resolve provider: {exc}") from None
+
+
+def _fetch_provider_bars(ticker: str, start: str, end: str, provider: str):
     """Fetch daily bars through the existing date-ranged history abstraction."""
     try:
         start_date = date.fromisoformat(start)

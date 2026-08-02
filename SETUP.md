@@ -208,17 +208,50 @@ Run during market hours. With `--market-hours-only`, scans are skipped outside t
 
 ## 7. Backtesting (optional)
 
-TradeX includes a deterministic, point-in-time backtest engine in `tradex/backtest`.
+TradeX includes a deterministic, point-in-time backtest engine in `tradex/backtest`. It is a research tool, not a live-trading system.
 
 ```bash
-# From an offline CSV
-uv run python -m tradex.backtest --csv data/spy_daily.csv --min-score 40 --warmup-bars 60 --holding-bars 3 --stop-loss-pct 5 --take-profit-pct 10
+# From an offline CSV (the --ticker flag identifies the security)
+uv run python -m tradex.backtest \
+  --csv data/spy_daily.csv \
+  --ticker SPY \
+  --min-score 40 \
+  --warmup-bars 60 \
+  --holding-bars 3 \
+  --stop-loss-pct 5 \
+  --take-profit-pct 10 \
+  --json-output result.json \
+  --trades-output trades.csv \
+  --equity-output equity.csv
 
-# JSON output + trade/equity CSVs
-uv run python -m tradex.backtest --csv data/spy_daily.csv --json-output result.json --trades-output trades.csv --equity-output equity.csv
+# Provider-backed daily history (Yahoo requires no credentials; Schwab requires OAuth)
+uv run python -m tradex.backtest \
+  --ticker SPY \
+  --start 2023-01-01 \
+  --end 2023-12-31 \
+  --provider yahoo
 ```
 
-The CSV must contain `datetime` (or `date`), `open`, `high`, `low`, `close`, and `volume`. Datetimes can be timezone-aware or naive with `--timezone`. The engine reuses the production `tradex.signals.short_term.score` scorer unchanged, defaulting to a fresh `ShortWeights()` snapshot so results are independent of `~/.tradex/weights.json`.
+The CSV must contain `datetime` (or `date`), `open`, `high`, `low`, `close`, and `volume`. Naive datetimes can be localized with `--timezone` (e.g. `--timezone America/New_York`). The engine reuses the production `tradex.signals.short_term.score` scorer unchanged and defaults to a fresh `ShortWeights()` snapshot so results are independent of `~/.tradex/weights.json`.
+
+### Execution model
+
+- Long-only, one position at a time, 100% capital per trade, fractional shares.
+- The scorer sees only bars up to and including the current close (`bars.iloc[:i+1]`) at every historical bar.
+- Entry is at the next bar's open.
+- Stop and target are anchored to the **entry fill** (`open * (1 + slippage_bps / 10_000)`), not the signal bar close.
+- Cost model:
+  - `entry_fill = open * (1 + slippage_bps / 10_000)`
+  - `cash_per_share = entry_fill * (1 + commission_bps / 10_000)`
+  - `quantity = capital / cash_per_share`
+  - `exit_fill = raw_exit * (1 - slippage_bps / 10_000)`
+  - `ending_cash = quantity * exit_fill * (1 - commission_bps / 10_000)`
+- Exit priority per holding bar:
+  1. Opening gap through stop/target (`gap_stop` / `gap_target`) — exit at the open.
+  2. Intrabar stop or target touch. If both are touched in the same bar, the conservative default `intrabar_policy=stop_first` elects the stop; use `target_first` to elect the target instead.
+  3. `time_exit` at the close of the last allowed bar (`max_holding_bars`).
+- The equity curve marks a bar as exposed (`position_open=True`) if a position is held at any point during that bar, including the entry and exit bars. The `position_ticker` column records the active ticker.
+- Max drawdown is the largest peak-to-trough decline of the equity curve, expressed as a negative percentage. The buy-and-hold benchmark applies the same cost model once over the evaluation window.
 
 ### Backtest verification
 
@@ -231,7 +264,7 @@ uv run python -m tradex.backtest --help
 
 ---
 
-## 9. Known caveats and gotchas
+## 8. Known caveats and gotchas
 
 1. **macOS Gatekeeper blocks the first launch** of `TradeX.app`. Right-click → Open the first time. Subsequent double-clicks work normally.
 2. **The launcher needs `~/.tradex/config`** (or `$TRADEX_HOME`) when run from outside the repo (e.g. from `/Applications`). If you see "Could not locate the TradeX project directory," go back to step 3.
@@ -246,7 +279,7 @@ uv run python -m tradex.backtest --help
 
 ---
 
-## 10. Navigation cheat-sheet for the user
+## 9. Navigation cheat-sheet for the user
 
 Once the dashboard is running at `http://localhost:8501`:
 
@@ -265,7 +298,7 @@ Once the dashboard is running at `http://localhost:8501`:
 
 ---
 
-## 11. After-setup sanity checks (agent should run these)
+## 10. After-setup sanity checks (agent should run these)
 
 Before reporting success to the user, the agent should verify:
 - [ ] `.venv/` exists and contains `streamlit`

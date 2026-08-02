@@ -40,39 +40,39 @@ class BacktestConfig:
     intrabar_policy: Literal["stop_first", "target_first"] = "stop_first"
 
     def __post_init__(self) -> None:
-        _reject_bool("min_score", self.min_score)
+        _require_int("min_score", self.min_score)
         if not (0 <= self.min_score <= 100):
             raise BacktestError(f"min_score must be between 0 and 100; got {self.min_score}")
 
-        _reject_bool("warmup_bars", self.warmup_bars)
+        _require_int("warmup_bars", self.warmup_bars)
         if self.warmup_bars < 50:
             raise BacktestError(f"warmup_bars must be at least 50; got {self.warmup_bars}")
 
-        _reject_bool("max_holding_bars", self.max_holding_bars)
+        _require_int("max_holding_bars", self.max_holding_bars)
         if self.max_holding_bars < 1:
             raise BacktestError(f"max_holding_bars must be at least 1; got {self.max_holding_bars}")
 
-        _reject_float_bool("stop_loss_pct", self.stop_loss_pct)
+        _require_finite_number("stop_loss_pct", self.stop_loss_pct)
         if not (0 < self.stop_loss_pct < 1):
             raise BacktestError(
                 f"stop_loss_pct must be between 0 and 1 (exclusive); got {self.stop_loss_pct}"
             )
 
-        _reject_float_bool("take_profit_pct", self.take_profit_pct)
+        _require_finite_number("take_profit_pct", self.take_profit_pct)
         if not (0 < self.take_profit_pct < 1):
             raise BacktestError(
                 f"take_profit_pct must be between 0 and 1 (exclusive); got {self.take_profit_pct}"
             )
 
-        _reject_float_bool("commission_bps", self.commission_bps)
+        _require_finite_number("commission_bps", self.commission_bps)
         if self.commission_bps < 0:
             raise BacktestError(f"commission_bps must be non-negative; got {self.commission_bps}")
 
-        _reject_float_bool("slippage_bps", self.slippage_bps)
+        _require_finite_number("slippage_bps", self.slippage_bps)
         if self.slippage_bps < 0:
             raise BacktestError(f"slippage_bps must be non-negative; got {self.slippage_bps}")
 
-        _reject_float_bool("initial_capital", self.initial_capital)
+        _require_finite_number("initial_capital", self.initial_capital)
         if self.initial_capital <= 0:
             raise BacktestError(f"initial_capital must be positive; got {self.initial_capital}")
 
@@ -187,14 +187,14 @@ class BacktestResult:
         )
 
     def to_signals_df(self) -> pd.DataFrame:
-        """Return the signal ledger as a DataFrame."""
+        """Return the signal ledger as a DataFrame with a stable schema."""
         rows = [_signal_to_dict(s) for s in self.signal_ledger]
-        return pd.DataFrame(rows)
+        return pd.DataFrame(rows, columns=_SIGNAL_COLUMNS)
 
     def to_trades_df(self) -> pd.DataFrame:
-        """Return the trade ledger as a DataFrame."""
+        """Return the trade ledger as a DataFrame with a stable schema."""
         rows = [_trade_to_dict(t) for t in self.trade_ledger]
-        return pd.DataFrame(rows)
+        return pd.DataFrame(rows, columns=_TRADE_COLUMNS)
 
     def to_equity_df(self) -> pd.DataFrame:
         """Return a defensive copy of the equity curve."""
@@ -228,17 +228,33 @@ class BacktestResult:
 
     def to_json(self, indent: int | None = None) -> str:
         """Serialize the result to a JSON string with no NaN or infinity."""
-        return json.dumps(self.to_dict(), indent=indent, default=_json_default)
+        return json.dumps(self.to_dict(), indent=indent, default=_json_default, allow_nan=False)
 
 
-def _reject_bool(name: str, value: Any) -> None:
-    if isinstance(value, bool):
-        raise BacktestError(f"{name} must be an integer, not a boolean; got {value}")
+def _is_int(value: Any) -> bool:
+    return isinstance(value, (int, np.integer)) and not isinstance(value, (bool, np.bool_))
 
 
-def _reject_float_bool(name: str, value: Any) -> None:
-    if isinstance(value, bool):
-        raise BacktestError(f"{name} must be a number, not a boolean; got {value}")
+def _is_number(value: Any) -> bool:
+    return isinstance(value, (int, float, np.integer, np.floating)) and not isinstance(
+        value, (bool, np.bool_)
+    )
+
+
+def _require_int(name: str, value: Any) -> None:
+    if not _is_int(value):
+        raise BacktestError(
+            f"{name} must be a finite integer; got {value!r} ({type(value).__name__})"
+        )
+
+
+def _require_finite_number(name: str, value: Any) -> None:
+    if not _is_number(value):
+        raise BacktestError(
+            f"{name} must be a finite number; got {value!r} ({type(value).__name__})"
+        )
+    if not math.isfinite(float(value)):
+        raise BacktestError(f"{name} must be finite; got {value!r}")
 
 
 def _signal_to_dict(s: SignalRecord) -> dict[str, Any]:
@@ -252,6 +268,18 @@ def _signal_to_dict(s: SignalRecord) -> dict[str, Any]:
         "entry_time": _iso(s.entry_time) if s.entry_time else None,
         "skip_reason": s.skip_reason,
     }
+
+
+_SIGNAL_COLUMNS: list[str] = [
+    "ticker",
+    "signal_time",
+    "score",
+    "reasons",
+    "signal_close",
+    "execution_status",
+    "entry_time",
+    "skip_reason",
+]
 
 
 def _trade_to_dict(t: TradeRecord) -> dict[str, Any]:
@@ -280,6 +308,31 @@ def _trade_to_dict(t: TradeRecord) -> dict[str, Any]:
     }
 
 
+_TRADE_COLUMNS: list[str] = [
+    "ticker",
+    "signal_time",
+    "entry_time",
+    "exit_time",
+    "score",
+    "reasons",
+    "raw_entry_price",
+    "entry_fill_price",
+    "raw_exit_price",
+    "exit_fill_price",
+    "stop_price",
+    "target_price",
+    "exit_reason",
+    "bars_held",
+    "gross_return_pct",
+    "net_return_pct",
+    "commission_bps",
+    "slippage_bps",
+    "quantity",
+    "starting_cash",
+    "ending_cash",
+]
+
+
 def _metrics_to_dict(m: Metrics) -> dict[str, Any]:
     return {field.name: getattr(m, field.name) for field in fields(m)}
 
@@ -292,6 +345,10 @@ def _iso(dt: datetime | None) -> str | None:
 
 def _clean(value: Any) -> Any:
     """Recursively convert numpy/pandas scalars and replace NaN/inf with None."""
+    if value is None:
+        return None
+    if isinstance(value, (np.bool_, bool)):
+        return bool(value)
     if isinstance(value, (np.floating, float)):
         f = float(value)
         if math.isfinite(f):
@@ -299,8 +356,6 @@ def _clean(value: Any) -> Any:
         return None
     if isinstance(value, np.integer):
         return int(value)
-    if isinstance(value, (np.bool_, bool)):
-        return bool(value)
     if isinstance(value, list):
         return [_clean(v) for v in value]
     if isinstance(value, dict):
