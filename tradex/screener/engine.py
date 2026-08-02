@@ -122,7 +122,7 @@ class ScanReport:
     min_score: int = 0
 
     def validate(self, expected_tickers: list[str] | None = None) -> None:
-        """Validate that observations are internally consistent and complete."""
+        """Validate that observations, results, and report counters are consistent."""
         obs = self.observations
         if len(obs) != self.total_requested:
             raise ValueError(
@@ -170,11 +170,56 @@ class ScanReport:
                         "report.actual_provider is None but scored observations have provider set"
                     )
 
-            # results must mirror the signal observations exactly.
-            if not self.results.empty:
-                result_tickers = set(self.results["ticker"].tolist())
-                if result_tickers != set(signal_obs["ticker"].tolist()):
-                    raise ValueError("results DataFrame does not match signal observations")
+            # Report counters must match the observation statuses that produce them.
+            signal_count = int((obs["status"] == ObservationStatus.SIGNAL.value).sum())
+            below_count = int((obs["status"] == ObservationStatus.BELOW_THRESHOLD.value).sum())
+            expected_counters = {
+                "total_signals": signal_count,
+                "total_below_threshold": below_count,
+                "total_earnings_excluded": int((obs["status"] == ObservationStatus.EARNINGS_EXCLUDED.value).sum()),
+                "total_insufficient_data": int((obs["status"] == ObservationStatus.INSUFFICIENT_DATA.value).sum()),
+            }
+            for field, expected in expected_counters.items():
+                actual = getattr(self, field)
+                if actual != expected:
+                    raise ValueError(
+                        f"Report counter '{field}' is {actual} but observations imply {expected}"
+                    )
+            expected_total_scored = signal_count + below_count
+            if self.total_scored != expected_total_scored:
+                raise ValueError(
+                    f"Report counter 'total_scored' is {self.total_scored} but observations imply {expected_total_scored}"
+                )
+
+            # Results must mirror the signal observations bidirectionally and row-completely.
+            if len(self.results) != len(signal_obs):
+                raise ValueError(
+                    f"results DataFrame has {len(self.results)} rows but {len(signal_obs)} signal observations"
+                )
+            result_by_ticker = self.results.set_index("ticker")
+            signal_by_ticker = signal_obs.set_index("ticker")
+            result_tickers = set(result_by_ticker.index)
+            signal_tickers = set(signal_by_ticker.index)
+            if result_tickers != signal_tickers:
+                raise ValueError(
+                    f"results tickers {sorted(result_tickers)} do not match signal observation tickers {sorted(signal_tickers)}"
+                )
+
+            compare_cols = ("score", "last_close", "volume_ratio", "rsi", "days_until_earnings", "reasons", "provider")
+            for ticker in result_tickers:
+                result_row = result_by_ticker.loc[ticker]
+                signal_row = signal_by_ticker.loc[ticker]
+                for col in compare_cols:
+                    a = result_row[col]
+                    b = signal_row[col]
+                    a_missing = pd.isna(a)
+                    b_missing = pd.isna(b)
+                    if a_missing != b_missing:
+                        raise ValueError(f"Signal/results mismatch for {ticker} column '{col}': missing {a_missing} vs {b_missing}")
+                    if not a_missing and a != b:
+                        raise ValueError(
+                            f"Signal/results mismatch for {ticker} column '{col}': {a!r} vs {b!r}"
+                        )
 
 
 def _build_observation_row(

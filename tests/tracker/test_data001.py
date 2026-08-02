@@ -113,7 +113,7 @@ def _make_report(observations: list[dict], *, requested_provider="yahoo", actual
         total_fetch_eligible=len(obs),
         total_retries=0,
         total_fetched=len(obs) if has_scored else 0,
-        total_scored=int(signal_mask.sum()),
+        total_scored=int(signal_mask.sum()) + int((obs["status"] == ObservationStatus.BELOW_THRESHOLD.value).sum()),
         total_signals=len(results),
         total_below_threshold=int((obs["status"] == ObservationStatus.BELOW_THRESHOLD.value).sum()),
         total_insufficient_data=int((obs["status"] == ObservationStatus.INSUFFICIENT_DATA.value).sum()),
@@ -556,3 +556,127 @@ def test_init_migration_is_atomic_and_idempotent(tmp_path, monkeypatch):
         observations = con.execute("SELECT COUNT(*) FROM scan_observations").fetchone()[0]
         assert sessions == 1
         assert observations == 1
+
+
+def test_scan_report_validate_rejects_signal_observation_with_empty_results():
+    """A report that has signal observations but no results rows is structurally invalid."""
+    obs = pd.DataFrame([_signal_obs_row("AAPL", 70)])
+    results = pd.DataFrame(columns=[
+        "ticker", "score", "last_close", "volume_ratio", "rsi",
+        "days_until_earnings", "reasons", "provider",
+    ])
+    report = ScanReport(
+        results=results,
+        requested_provider="yahoo",
+        actual_provider="yahoo",
+        fallback_used=False,
+        providers_attempted=("yahoo",),
+        failures={},
+        total_requested=1,
+        total_fetch_attempted=1,
+        total_fetch_eligible=1,
+        total_retries=0,
+        total_fetched=1,
+        total_scored=1,
+        total_signals=1,
+        total_below_threshold=0,
+        total_insufficient_data=0,
+        total_earnings_excluded=0,
+        earnings_failures={},
+        fetch_failures={},
+        scoring_failures={},
+        attempt_log=[],
+        observations=obs,
+    )
+    with pytest.raises(ValueError, match="results DataFrame has 0 rows but 1 signal observations"):
+        report.validate(expected_tickers=["AAPL"])
+
+
+def test_scan_report_validate_rejects_mismatched_result_metrics():
+    """The results DataFrame must match the signal observations row-for-row."""
+    obs = pd.DataFrame([_signal_obs_row("AAPL", 70)])
+    results = pd.DataFrame([{
+        "ticker": "AAPL",
+        "score": 71,
+        "last_close": 100.0,
+        "volume_ratio": 2.0,
+        "rsi": 60.0,
+        "days_until_earnings": None,
+        "reasons": "volume surge",
+        "provider": "yahoo",
+    }])
+    report = ScanReport(
+        results=results,
+        requested_provider="yahoo",
+        actual_provider="yahoo",
+        fallback_used=False,
+        providers_attempted=("yahoo",),
+        failures={},
+        total_requested=1,
+        total_fetch_attempted=1,
+        total_fetch_eligible=1,
+        total_retries=0,
+        total_fetched=1,
+        total_scored=1,
+        total_signals=1,
+        total_below_threshold=0,
+        total_insufficient_data=0,
+        total_earnings_excluded=0,
+        earnings_failures={},
+        fetch_failures={},
+        scoring_failures={},
+        attempt_log=[],
+        observations=obs,
+    )
+    with pytest.raises(ValueError, match="Signal/results mismatch for AAPL column 'score'"):
+        report.validate(expected_tickers=["AAPL"])
+
+
+def test_scan_report_validate_rejects_mismatched_counters():
+    """Report counters must equal the counts implied by the observation statuses."""
+    obs = pd.DataFrame([_signal_obs_row("AAPL", 70)])
+    results = obs[obs["status"] == ObservationStatus.SIGNAL.value][[
+        "ticker", "score", "last_close", "volume_ratio", "rsi",
+        "days_until_earnings", "reasons", "provider",
+    ]]
+    report = ScanReport(
+        results=results,
+        requested_provider="yahoo",
+        actual_provider="yahoo",
+        fallback_used=False,
+        providers_attempted=("yahoo",),
+        failures={},
+        total_requested=1,
+        total_fetch_attempted=1,
+        total_fetch_eligible=1,
+        total_retries=0,
+        total_fetched=1,
+        total_scored=1,
+        total_signals=0,
+        total_below_threshold=0,
+        total_insufficient_data=0,
+        total_earnings_excluded=0,
+        earnings_failures={},
+        fetch_failures={},
+        scoring_failures={},
+        attempt_log=[],
+        observations=obs,
+    )
+    with pytest.raises(ValueError, match="Report counter 'total_signals' is 0 but observations imply 1"):
+        report.validate(expected_tickers=["AAPL"])
+
+
+def test_record_scan_preserves_legacy_scan_runs_signal_only_semantics(fresh_signal_db):
+    """Legacy scan_runs rows are written only for scans with qualifying signals, with tickers_n = hits_n = signals."""
+    no_signal = _make_report([_below_threshold_obs_row("AAPL")])
+    with_signal = _make_report([_signal_obs_row("MSFT", 70)])
+
+    store.record_scan(no_signal, "intraday", 40, ["AAPL"], scan_time=_ny(2025, 1, 15, 10, 0))
+    store.record_scan(with_signal, "intraday", 40, ["MSFT"], scan_time=_ny(2025, 1, 15, 10, 5))
+
+    with store._conn() as con:
+        rows = con.execute("SELECT * FROM scan_runs ORDER BY run_time").fetchall()
+    assert len(rows) == 1
+    assert rows[0]["tickers_n"] == 1
+    assert rows[0]["hits_n"] == 1
+    assert rows[0]["provider"] == "yahoo"

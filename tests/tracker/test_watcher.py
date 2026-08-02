@@ -37,6 +37,16 @@ def _scan_report(
     failures = {**fetch_failures, **scoring_failures}
     providers = providers_attempted or (provider,)
 
+    # Normalize result frames to the stable signal column contract.
+    if not results_df.empty:
+        results_df = results_df.copy()
+        if "days_until_earnings" not in results_df.columns:
+            results_df["days_until_earnings"] = None
+        if "provider" not in results_df.columns:
+            results_df["provider"] = provider
+        else:
+            results_df["provider"] = results_df["provider"].fillna(provider)
+
     observed_tickers = set(results_df["ticker"].tolist())
     observed_tickers.update(fetch_failures)
     observed_tickers.update(earnings_failures)
@@ -156,7 +166,12 @@ def _scan_report(
         total_fetch_attempted=total_fetch_attempted,
         total_retries=total_retries,
         total_fetched=total_fetched,
-        total_scored=0,
+        total_scored=(
+            len(results_df)
+            + int((observations_df["status"] == ObservationStatus.BELOW_THRESHOLD.value).sum())
+            if not observations_df.empty
+            else len(results_df)
+        ),
         total_signals=len(results_df),
         total_below_threshold=int((observations_df["status"] == ObservationStatus.BELOW_THRESHOLD.value).sum()) if not observations_df.empty else 0,
         total_insufficient_data=int((observations_df["status"] == ObservationStatus.INSUFFICIENT_DATA.value).sum()) if not observations_df.empty else 0,

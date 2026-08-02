@@ -614,8 +614,9 @@ def record_scan(
                 ),
             )
 
-        # Preserve legacy scan_runs audit for completed/partial sessions only.
-        if status != "failed":
+        # Preserve legacy scan_runs audit only for scans that produced qualifying signals.
+        # Mirror the prior record_signals behavior: both tickers_n and hits_n equal the signal count.
+        if counts["signals_n"] > 0:
             con.execute(
                 """
                 INSERT INTO scan_runs (run_time, timeframe, tickers_n, hits_n, provider)
@@ -624,7 +625,7 @@ def record_scan(
                 (
                     report_time,
                     timeframe,
-                    report.total_requested,
+                    counts["signals_n"],
                     counts["signals_n"],
                     actual_provider or "unknown",
                 ),
@@ -647,6 +648,13 @@ def record_signals(results: pd.DataFrame, timeframe: str, provider: str | None =
     scan_provider = _resolve_signal_provider(results, provider=provider)
     scan_time = datetime.now(UTC)
     session_id = uuid.uuid4().hex
+
+    # Normalize legacy result frames to the stable signal column contract.
+    # A single scan has one resolved provider, so all result rows share it.
+    results = results.copy()
+    if "days_until_earnings" not in results.columns:
+        results["days_until_earnings"] = None
+    results["provider"] = scan_provider
 
     observations = []
     for _, row in results.iterrows():
