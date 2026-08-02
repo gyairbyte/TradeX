@@ -675,3 +675,42 @@ def test_run_with_report_propagates_retry_and_attempt_history():
     assert report.attempt_log == attempt_log
     assert report.fallback_used is True
     assert report.actual_provider == "schwab"
+
+
+def test_run_with_report_canonicalizes_non_round_scored_metrics():
+    """Scored metrics with many decimals are canonicalized once and reused for both results and signal observations."""
+
+    def fake_score(df):
+        return {
+            "score": 75,
+            "last_close": 100.12345678,
+            "volume_ratio": 2.345678,
+            "rsi": 60.6789,
+            "reasons": ["volume", "momentum"],
+        }
+
+    def fake_fetch_multi_report(tickers, tf, provider=None, **kwargs):
+        return _make_fetch_report(
+            tickers,
+            data={t: pd.DataFrame([0] * 31) for t in tickers},
+            provider=provider,
+            actual_provider=provider,
+        )
+
+    with (
+        patch.object(engine, "fetch_multi_report", side_effect=fake_fetch_multi_report),
+        patch.object(engine, "days_until_earnings", return_value=None),
+        patch.object(engine, "SIGNAL_MAP", {"intraday": (fake_score, "intraday")}),
+    ):
+        report = engine.run_with_report(["AAPL"], timeframe="intraday", min_score=50)
+
+    report.validate(expected_tickers=["AAPL"])
+    assert report.total_signals == 1
+    obs = report.observations.iloc[0]
+    res = report.results.iloc[0]
+    assert res["last_close"] == 100.1235
+    assert res["volume_ratio"] == 2.35
+    assert res["rsi"] == 60.7
+    assert obs["last_close"] == res["last_close"]
+    assert obs["volume_ratio"] == res["volume_ratio"]
+    assert obs["rsi"] == res["rsi"]

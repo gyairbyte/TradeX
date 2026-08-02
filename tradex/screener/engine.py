@@ -391,45 +391,49 @@ def run_with_report(
         reasons = _format_reasons(result)
         obs_provider = actual_provider or requested_provider
 
+        # Canonicalize the scored row once so both `results` and the signal
+        # observation share identical values and pass validation.
+        canonical = {
+            "ticker": ticker,
+            "score": int(result["score"]),
+            "last_close": round(float(result["last_close"]), 4),
+            "volume_ratio": round(float(result["volume_ratio"]), 2),
+            "rsi": round(float(result["rsi"]), 1),
+            "days_until_earnings": days_map.get(ticker),
+            "reasons": reasons,
+            "provider": obs_provider,
+        }
+
         if result["score"] < min_score:
             total_below_threshold += 1
             observations.append(
                 _build_observation_row(
                     ticker,
                     ObservationStatus.BELOW_THRESHOLD,
-                    score=result["score"],
-                    last_close=result["last_close"],
-                    volume_ratio=result["volume_ratio"],
-                    rsi=result["rsi"],
-                    days_until_earnings=days_map.get(ticker),
-                    reasons=reasons,
-                    provider=obs_provider,
+                    score=canonical["score"],
+                    last_close=canonical["last_close"],
+                    volume_ratio=canonical["volume_ratio"],
+                    rsi=canonical["rsi"],
+                    days_until_earnings=canonical["days_until_earnings"],
+                    reasons=canonical["reasons"],
+                    provider=canonical["provider"],
                 )
             )
             continue
 
-        rows.append({
-            "ticker": ticker,
-            "score": result["score"],
-            "last_close": result["last_close"],
-            "volume_ratio": round(result["volume_ratio"], 2),
-            "rsi": round(result["rsi"], 1),
-            "days_until_earnings": days_map.get(ticker),
-            "reasons": reasons,
-            "provider": obs_provider,
-        })
+        rows.append(canonical)
 
         observations.append(
             _build_observation_row(
                 ticker,
                 ObservationStatus.SIGNAL,
-                score=result["score"],
-                last_close=result["last_close"],
-                volume_ratio=result["volume_ratio"],
-                rsi=result["rsi"],
-                days_until_earnings=days_map.get(ticker),
-                reasons=reasons,
-                provider=obs_provider,
+                score=canonical["score"],
+                last_close=canonical["last_close"],
+                volume_ratio=canonical["volume_ratio"],
+                rsi=canonical["rsi"],
+                days_until_earnings=canonical["days_until_earnings"],
+                reasons=canonical["reasons"],
+                provider=canonical["provider"],
             )
         )
 
