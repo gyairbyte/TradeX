@@ -42,9 +42,9 @@ def test_get_prev_close_returns_none_on_missing_data():
 
 def test_get_premarket_price_yahoo():
     """Yahoo pre-market price uses 1m prepost history and returns the last pre-9:30am ET bar."""
-    # 2024-01-03 is a Wednesday. 08:30/09:00/09:30 UTC = 03:30/04:00/04:30 ET.
-    # The 04:00 and 04:30 ET bars are valid pre-market; the latest valid close is 103.0.
-    times = pd.date_range("2024-01-03 08:30", periods=3, freq="30min", tz="UTC")
+    # 2024-01-03 is a Wednesday. 09:00/09:30/10:00 UTC = 04:00/04:30/05:00 ET.
+    # The 04:00, 04:30 and 05:00 ET bars are valid pre-market; the latest valid close is 103.0.
+    times = pd.date_range("2024-01-03 09:00", periods=3, freq="30min", tz="UTC")
     df = pd.DataFrame({
         "Open": [100.0, 101.0, 103.0],
         "High": [101.0, 102.0, 104.0],
@@ -57,7 +57,8 @@ def test_get_premarket_price_yahoo():
     fake_ticker.history.return_value = df
     fake_tk_cls = Mock(return_value=fake_ticker)
 
-    as_of = datetime(2024, 1, 3, 8, 30, tzinfo=UTC)
+    # 10:30 UTC = 05:30 ET, before the 09:30 ET open, so all bars are in the past.
+    as_of = datetime(2024, 1, 3, 10, 30, tzinfo=UTC)
     with patch.object(gap_scanner.yf, "Ticker", fake_tk_cls):
         price = gap_scanner.get_premarket_price("AAPL", provider="yahoo", as_of=as_of)
 
@@ -79,8 +80,11 @@ def test_get_premarket_price_returns_none_for_empty():
     fake_ticker.history.return_value = pd.DataFrame()
     fake_tk_cls = Mock(return_value=fake_ticker)
 
+    # 10:30 UTC = 05:30 ET on a trading day, so the date is valid and the empty response
+    # is the reason ``None`` is returned.
+    as_of = datetime(2024, 1, 3, 10, 30, tzinfo=UTC)
     with patch.object(gap_scanner.yf, "Ticker", fake_tk_cls):
-        assert gap_scanner.get_premarket_price("AAPL", provider="yahoo") is None
+        assert gap_scanner.get_premarket_price("AAPL", provider="yahoo", as_of=as_of) is None
 
 
 def test_scan_gaps_propagates_provider():
@@ -159,7 +163,8 @@ def test_get_premarket_price_winter_bars():
     fake_ticker.history.return_value = df
     fake_tk_cls = Mock(return_value=fake_ticker)
 
-    as_of = datetime(2024, 1, 3, 10, 0, tzinfo=UTC)  # 05:00 ET
+    # 11:30 UTC = 06:30 ET, after the latest bar but before the 09:30 ET open.
+    as_of = datetime(2024, 1, 3, 11, 30, tzinfo=UTC)
     with patch.object(gap_scanner.yf, "Ticker", fake_tk_cls):
         price = gap_scanner.get_premarket_price("AAPL", provider="yahoo", as_of=as_of)
 
@@ -186,7 +191,8 @@ def test_get_premarket_price_summer_bars():
     fake_ticker.history.return_value = df
     fake_tk_cls = Mock(return_value=fake_ticker)
 
-    as_of = datetime(2024, 7, 3, 9, 0, tzinfo=UTC)  # 05:00 EDT
+    # 11:30 UTC = 07:30 EDT, after the latest bar but before the 09:30 ET open.
+    as_of = datetime(2024, 7, 3, 11, 30, tzinfo=UTC)
     with patch.object(gap_scanner.yf, "Ticker", fake_tk_cls):
         price = gap_scanner.get_premarket_price("AAPL", provider="yahoo", as_of=as_of)
 
@@ -282,14 +288,106 @@ def test_get_premarket_price_excludes_post_market():
 
 
 def test_get_premarket_price_holiday_returns_none():
-    # New Year's 2025
+    """A full XNYS holiday must short-circuit before any Yahoo network call."""
+    fake_ticker = Mock()
+    fake_ticker.history.return_value = pd.DataFrame()
+    fake_tk_cls = Mock(return_value=fake_ticker)
+
+    # New Year's Day 2025 is not an XNYS session.
     as_of = datetime(2025, 1, 1, 13, 0, tzinfo=UTC)
-    assert gap_scanner.get_premarket_price("AAPL", provider="yahoo", as_of=as_of) is None
+    with patch.object(gap_scanner.yf, "Ticker", fake_tk_cls):
+        assert gap_scanner.get_premarket_price("AAPL", provider="yahoo", as_of=as_of) is None
+
+    fake_tk_cls.assert_not_called()
+    fake_ticker.history.assert_not_called()
 
 
-def test_get_premarket_price_weekend_returns_none():
+def test_get_premarket_price_good_friday_returns_none():
+    """Good Friday is an XNYS holiday and must not reach Yahoo."""
+    fake_ticker = Mock()
+    fake_ticker.history.return_value = pd.DataFrame()
+    fake_tk_cls = Mock(return_value=fake_ticker)
+
+    as_of = datetime(2024, 3, 29, 13, 0, tzinfo=UTC)
+    with patch.object(gap_scanner.yf, "Ticker", fake_tk_cls):
+        assert gap_scanner.get_premarket_price("AAPL", provider="yahoo", as_of=as_of) is None
+
+    fake_tk_cls.assert_not_called()
+    fake_ticker.history.assert_not_called()
+
+
+def test_get_premarket_price_saturday_returns_none():
+    """Saturday must return None without constructing a Yahoo Ticker."""
+    fake_ticker = Mock()
+    fake_ticker.history.return_value = pd.DataFrame()
+    fake_tk_cls = Mock(return_value=fake_ticker)
+
+    as_of = datetime(2025, 1, 4, 13, 0, tzinfo=UTC)  # Saturday
+    with patch.object(gap_scanner.yf, "Ticker", fake_tk_cls):
+        assert gap_scanner.get_premarket_price("AAPL", provider="yahoo", as_of=as_of) is None
+
+    fake_tk_cls.assert_not_called()
+    fake_ticker.history.assert_not_called()
+
+
+def test_get_premarket_price_sunday_returns_none():
+    """Sunday must return None without constructing a Yahoo Ticker."""
+    fake_ticker = Mock()
+    fake_ticker.history.return_value = pd.DataFrame()
+    fake_tk_cls = Mock(return_value=fake_ticker)
+
     as_of = datetime(2025, 1, 5, 13, 0, tzinfo=UTC)  # Sunday
-    assert gap_scanner.get_premarket_price("AAPL", provider="yahoo", as_of=as_of) is None
+    with patch.object(gap_scanner.yf, "Ticker", fake_tk_cls):
+        assert gap_scanner.get_premarket_price("AAPL", provider="yahoo", as_of=as_of) is None
+
+    fake_tk_cls.assert_not_called()
+    fake_ticker.history.assert_not_called()
+
+
+def test_get_premarket_price_ignores_bars_after_as_of():
+    """A scan at 08:00 ET must not select later pre-market bars available in the frame."""
+    # 2024-01-03. Bars at 12:59/13:00/13:30/14:00 UTC = 07:59/08:00/08:30/09:00 ET.
+    times = pd.DatetimeIndex([
+        "2024-01-03 12:59",
+        "2024-01-03 13:00",
+        "2024-01-03 13:30",
+        "2024-01-03 14:00",
+    ], tz="UTC")
+    df = pd.DataFrame({
+        "Open": [100.0, 101.0, 102.0, 103.0],
+        "High": [101.0, 102.0, 103.0, 104.0],
+        "Low": [99.0, 100.0, 101.0, 102.0],
+        "Close": [101.0, 102.0, 103.0, 104.0],
+        "Volume": [100, 100, 100, 100],
+    }, index=times)
+
+    fake_ticker = Mock()
+    fake_ticker.history.return_value = df
+    fake_tk_cls = Mock(return_value=fake_ticker)
+
+    # as_of at 08:00 ET = 13:00 UTC. The 08:30 and 09:00 ET bars must be excluded.
+    as_of = datetime(2024, 1, 3, 13, 0, tzinfo=UTC)
+    with patch.object(gap_scanner.yf, "Ticker", fake_tk_cls):
+        price = gap_scanner.get_premarket_price("AAPL", provider="yahoo", as_of=as_of)
+
+    assert price == 102.0
+    fake_tk_cls.assert_called_once()
+
+
+def test_get_premarket_price_rejects_naive_as_of():
+    with pytest.raises(ValueError):
+        gap_scanner.get_premarket_price(
+            "AAPL", provider="yahoo",
+            as_of=datetime(2024, 1, 3, 8, 0),  # noqa: DTZ001
+        )
+
+
+def test_get_prev_close_rejects_naive_as_of():
+    with pytest.raises(ValueError):
+        gap_scanner._get_prev_close(
+            "AAPL", provider="yahoo",
+            as_of=datetime(2024, 1, 3, 8, 0),  # noqa: DTZ001
+        )
 
 
 def test_get_prev_close_tuesday_morning():

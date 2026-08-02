@@ -37,7 +37,9 @@ from tradex.data.history import fetch_daily_history
 from tradex.market import (
     MARKET_TIMEZONE,
     get_market_session,
+    is_trading_day,
     next_trading_session,
+    normalize_market_datetime,
     previous_trading_session,
 )
 
@@ -63,8 +65,11 @@ def _get_prev_close(
     timezone.
     """
     as_of = as_of or datetime.now(UTC)
+    # ``normalize_market_datetime`` raises ValueError for naive datetimes before
+    # any provider call or broad exception handler can swallow it.
+    ny_as_of = normalize_market_datetime(as_of)
     try:
-        current_day = next_trading_session(as_of).session_date
+        current_day = next_trading_session(ny_as_of).session_date
         prev = previous_trading_session(current_day)
         df = fetch_daily_history(
             ticker,
@@ -99,25 +104,36 @@ def get_premarket_price(
     Uses the NYSE calendar to identify the intended session date, then selects
     1-minute Yahoo bars from 04:00 AM ET through (but not including) the actual
     regular-session open on that date. Bars from the previous day's after-hours,
-    regular-session, or post-market periods are excluded.
+    regular-session, or post-market periods are excluded, as are bars after ``as_of``.
     """
     as_of = as_of or datetime.now(UTC)
+    # ``normalize_market_datetime`` raises ValueError for naive datetimes.
+    ny_as_of = normalize_market_datetime(as_of)
+
     p = (provider or DEFAULT_PROVIDER).lower()
     if p != "yahoo":
         raise ProviderCapabilityError(
             f"Provider '{p}' does not yet support pre-market/extended-hours quotes"
         )
 
+    session_date = ny_as_of.date()
+    if not is_trading_day(session_date):
+        return None
+
+    session = get_market_session(session_date)
+    if session is None:
+        return None
+
+    premarket_start = datetime.combine(
+        session_date, time(4, 0), tzinfo=MARKET_TIMEZONE
+    )
+
+    # The pre-market window ends at the earlier of ``as_of`` and the regular open.
+    window_end = min(ny_as_of, session.opens_at)
+    if window_end <= premarket_start:
+        return None
+
     try:
-        current = next_trading_session(as_of)
-        session = get_market_session(current.session_date)
-        if session is None:
-            return None
-
-        premarket_start = datetime.combine(
-            session.session_date, time(4, 0), tzinfo=MARKET_TIMEZONE
-        )
-
         tk = yf.Ticker(ticker)
         # Request enough 1-minute history to cover a weekend gap.
         df = tk.history(period="5d", interval="1m", prepost=True)
@@ -131,9 +147,10 @@ def get_premarket_price(
         df.index = pd.to_datetime(df.index, utc=True)
         ny_index = df.index.tz_convert(MARKET_TIMEZONE)
         mask = (
-            (ny_index.date == session.session_date)
+            (ny_index.date == session_date)
             & (ny_index >= premarket_start)
             & (ny_index < session.opens_at)
+            & (ny_index <= ny_as_of)
         )
         premarket = df.loc[mask]
         if premarket.empty:
