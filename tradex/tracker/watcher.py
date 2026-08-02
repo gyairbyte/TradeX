@@ -110,11 +110,12 @@ def run_once(
     store.init()
     requested_provider = resolve_provider(provider)
     fetch_policy = policy or FetchPolicy.build(max_retries=max_retries, fallback_order=fallback_order)
-    print(f"[{timestamp}] Scanning {len(tickers)} tickers on {timeframe} (provider={requested_provider}, "
+    requested_tickers = list(dict.fromkeys(str(t).upper() for t in tickers))
+    print(f"[{timestamp}] Scanning {len(requested_tickers)} tickers on {timeframe} (provider={requested_provider}, "
           f"max_retries={fetch_policy.max_retries}, fallback={fetch_policy.fallback_order or 'disabled'})…")
 
     report = screener_run_with_report(
-        tickers,
+        requested_tickers,
         timeframe=timeframe,
         min_score=min_score,
         provider=requested_provider,
@@ -139,7 +140,7 @@ def run_once(
               f"Providers attempted: {report.providers_attempted}. "
               f"Failure categories: {categories or ['unknown']}.")
     elif report.results.empty:
-        if report.total_earnings_excluded == len(tickers):
+        if report.total_earnings_excluded == len(requested_tickers):
             print(f"[{timestamp}] No signals above {min_score}; all {report.total_earnings_excluded} tickers excluded due to earnings.")
         else:
             print(f"[{timestamp}] No signals above {min_score}.")
@@ -154,7 +155,7 @@ def run_once(
         report,
         timeframe=timeframe,
         min_score=min_score,
-        tickers_scanned=report.observations["ticker"].tolist() if not report.observations.empty else [],
+        tickers_scanned=requested_tickers,
         scan_time=now,
     )
 

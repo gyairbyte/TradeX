@@ -14,6 +14,7 @@ from tradex.tracker import store, watcher
 def _scan_report(
     results_df,
     provider,
+    tickers=None,
     total_fetched=None,
     fallback_used=False,
     fetch_failures=None,
@@ -36,7 +37,16 @@ def _scan_report(
     failures = {**fetch_failures, **scoring_failures}
     providers = providers_attempted or (provider,)
 
-    observations = []
+    observed_tickers = set(results_df["ticker"].tolist())
+    observed_tickers.update(fetch_failures)
+    observed_tickers.update(earnings_failures)
+    observed_tickers.update(scoring_failures)
+    requested_tickers = set(tickers) if tickers else observed_tickers
+    requested_tickers = {str(t).strip().upper() for t in requested_tickers}
+
+    actual_provider = provider if (total_fetched > 0 or not results_df.empty) else None
+
+    observations: list[dict] = []
     for _, row in results_df.iterrows():
         observations.append({
             "ticker": str(row["ticker"]).strip().upper(),
@@ -47,7 +57,7 @@ def _scan_report(
             "rsi": float(row["rsi"]),
             "days_until_earnings": int(row["days_until_earnings"]) if pd.notna(row.get("days_until_earnings")) else None,
             "reasons": str(row.get("reasons", "")),
-            "provider": provider,
+            "provider": actual_provider,
             "error_category": None,
             "error_message": None,
         })
@@ -75,7 +85,7 @@ def _scan_report(
             "rsi": None,
             "days_until_earnings": None,
             "reasons": None,
-            "provider": provider,
+            "provider": actual_provider,
             "error_category": type(err).__name__,
             "error_message": str(err),
         })
@@ -93,31 +103,63 @@ def _scan_report(
             "error_category": type(err).__name__,
             "error_message": str(err),
         })
+
+    seen = {obs["ticker"] for obs in observations}
+    for ticker in requested_tickers - seen:
+        if actual_provider is not None:
+            observations.append({
+                "ticker": ticker,
+                "status": ObservationStatus.BELOW_THRESHOLD.value,
+                "score": 0,
+                "last_close": 0.0,
+                "volume_ratio": 0.0,
+                "rsi": 0.0,
+                "days_until_earnings": None,
+                "reasons": "",
+                "provider": actual_provider,
+                "error_category": None,
+                "error_message": None,
+            })
+        else:
+            observations.append({
+                "ticker": ticker,
+                "status": ObservationStatus.INSUFFICIENT_DATA.value,
+                "score": None,
+                "last_close": None,
+                "volume_ratio": None,
+                "rsi": None,
+                "days_until_earnings": None,
+                "reasons": None,
+                "provider": None,
+                "error_category": None,
+                "error_message": None,
+            })
+
     observations_df = pd.DataFrame(observations)
     if observations_df.empty:
         observations_df = pd.DataFrame(columns=[
             "ticker", "status", "score", "last_close", "volume_ratio", "rsi",
             "days_until_earnings", "reasons", "provider", "error_category", "error_message",
         ])
-
-    total_requested = len(observations_df)
+    else:
+        observations_df = observations_df.sort_values("ticker").reset_index(drop=True)
 
     return ScanReport(
         results=results_df,
         requested_provider=provider,
-        actual_provider=provider,
+        actual_provider=actual_provider,
         fallback_used=fallback_used,
         providers_attempted=providers,
         failures=failures,
-        total_requested=total_requested,
+        total_requested=len(requested_tickers),
         total_fetch_eligible=total_fetch_eligible,
         total_fetch_attempted=total_fetch_attempted,
         total_retries=total_retries,
         total_fetched=total_fetched,
         total_scored=0,
         total_signals=len(results_df),
-        total_below_threshold=0,
-        total_insufficient_data=0,
+        total_below_threshold=int((observations_df["status"] == ObservationStatus.BELOW_THRESHOLD.value).sum()) if not observations_df.empty else 0,
+        total_insufficient_data=int((observations_df["status"] == ObservationStatus.INSUFFICIENT_DATA.value).sum()) if not observations_df.empty else 0,
         total_earnings_excluded=0,
         earnings_failures=earnings_failures,
         fetch_failures=fetch_failures,
@@ -131,13 +173,13 @@ def test_run_once_passes_provider_to_screener(fresh_signal_db):
     """run_once must forward the provider argument to the structured screener report."""
     captured = {}
 
-    def fake_screener_run(*args, **kwargs):
+    def fake_screener_run(tickers, *args, **kwargs):
         captured["kwargs"] = kwargs
         empty = pd.DataFrame(columns=[
             "ticker", "score", "last_close", "volume_ratio", "rsi",
             "days_until_earnings", "reasons", "provider",
         ])
-        return _scan_report(empty, kwargs.get("provider"), total_fetched=0)
+        return _scan_report(empty, kwargs.get("provider"), total_fetched=0, tickers=tickers)
 
     with (
         patch.object(watcher, "screener_run_with_report", side_effect=fake_screener_run),
@@ -173,7 +215,7 @@ def test_run_once_passes_provider_to_confluence_and_pattern(fresh_signal_db):
     ])
 
     with (
-        patch.object(watcher, "screener_run_with_report", return_value=_scan_report(empty, "schwab", total_fetched=1)),
+        patch.object(watcher, "screener_run_with_report", return_value=_scan_report(empty, "schwab", total_fetched=1, tickers=["AAPL"])),
         patch.object(watcher, "run_outcome_pass"),
         patch.object(watcher, "run_confluence_screen", side_effect=fake_confluence),
         patch.object(watcher, "run_match_screen", side_effect=fake_matcher),
@@ -426,7 +468,7 @@ def test_run_once_manual_default_runs_outside_market_hours(fresh_signal_db, caps
         "ticker", "score", "last_close", "volume_ratio", "rsi",
         "days_until_earnings", "reasons", "provider",
     ])
-    report = _scan_report(empty, provider="yahoo", total_fetched=0)
+    report = _scan_report(empty, provider="yahoo", total_fetched=0, tickers=["AAPL"])
 
     # Saturday 10:00 AM ET
     now = _ny(2025, 1, 18, 10, 0)
@@ -535,7 +577,7 @@ def test_run_once_uses_new_york_timestamp_format(capsys):
     # 2025-07-02 10:00 EDT
     now = datetime(2025, 7, 2, 14, 0, tzinfo=UTC)
     with (
-        patch.object(watcher, "screener_run_with_report", return_value=_scan_report(empty, "yahoo", total_fetched=0)),
+        patch.object(watcher, "screener_run_with_report", return_value=_scan_report(empty, "yahoo", total_fetched=0, tickers=["AAPL"])),
         patch.object(watcher, "_check_alerts"),
     ):
         watcher.run_once(["AAPL"], timeframe="intraday", now=now)

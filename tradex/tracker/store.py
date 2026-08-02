@@ -25,7 +25,7 @@ from tradex.market.hours import is_trading_day, normalize_market_datetime
 DB_PATH = os.getenv("TRADEX_DB_PATH", os.path.expanduser("~/.tradex/signals.db"))
 
 # DB schema version managed by PRAGMA user_version.
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 
 
 class StoreError(Exception):
@@ -79,97 +79,117 @@ def _column_names(con: sqlite3.Connection, table: str) -> set[str]:
     return {c[1] for c in con.execute(f"PRAGMA table_info({table})")}
 
 
-def _create_schema_v1(con: sqlite3.Connection) -> None:
-    """Create the complete DATA-001 schema and indexes."""
-    con.executescript("""
-        CREATE TABLE IF NOT EXISTS signal_history (
-            id                INTEGER PRIMARY KEY AUTOINCREMENT,
-            ticker            TEXT    NOT NULL,
-            timeframe         TEXT    NOT NULL,
-            scan_time         TEXT    NOT NULL,   -- ISO8601 UTC
-            score             INTEGER NOT NULL,
-            last_close        REAL,
-            volume_ratio      REAL,
-            rsi               REAL,
-            reasons           TEXT,              -- pipe-separated
-            -- provenance: OHLCV provider that produced this signal
-            provider          TEXT    NOT NULL DEFAULT 'unknown',
-            -- outcome tracking (filled in later via mark_outcome)
-            outcome_close     REAL,
-            outcome_pct       REAL,
-            outcome_at        TEXT,
-            outcome_provider  TEXT,
-            -- DATA-001 session linkage
-            scan_session_id   TEXT,
-            trading_date      TEXT
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_sh_ticker          ON signal_history(ticker);
-        CREATE INDEX IF NOT EXISTS idx_sh_timeframe       ON signal_history(timeframe);
-        CREATE INDEX IF NOT EXISTS idx_sh_scan_time        ON signal_history(scan_time);
-        CREATE INDEX IF NOT EXISTS idx_sh_scan_session_id  ON signal_history(scan_session_id);
-        CREATE INDEX IF NOT EXISTS idx_sh_trading_date     ON signal_history(trading_date);
-
-        CREATE TABLE IF NOT EXISTS scan_runs (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            run_time    TEXT NOT NULL,
-            timeframe   TEXT NOT NULL,
-            tickers_n   INTEGER,
-            hits_n      INTEGER,
-            provider    TEXT    NOT NULL DEFAULT 'unknown'
-        );
-
-        CREATE TABLE IF NOT EXISTS scan_sessions (
-            session_id            TEXT PRIMARY KEY,
-            scan_time             TEXT NOT NULL,            -- ISO8601 UTC
-            trading_date          TEXT,                     -- New York calendar date or NULL
-            timeframe             TEXT NOT NULL,
-            requested_provider    TEXT NOT NULL,
-            actual_provider       TEXT,
-            fallback_used         INTEGER NOT NULL DEFAULT 0,
-            providers_attempted   TEXT,                     -- comma-separated
-            status                TEXT NOT NULL,
-            source                TEXT NOT NULL DEFAULT 'live',
-            observations_complete INTEGER NOT NULL DEFAULT 0,
-            requested_n           INTEGER NOT NULL DEFAULT 0,
-            observations_n        INTEGER NOT NULL DEFAULT 0,
-            signals_n             INTEGER NOT NULL DEFAULT 0,
-            below_threshold_n     INTEGER NOT NULL DEFAULT 0,
-            earnings_excluded_n   INTEGER NOT NULL DEFAULT 0,
-            earnings_failure_n    INTEGER NOT NULL DEFAULT 0,
-            fetch_failure_n       INTEGER NOT NULL DEFAULT 0,
-            insufficient_data_n   INTEGER NOT NULL DEFAULT 0,
-            scoring_failure_n     INTEGER NOT NULL DEFAULT 0,
-            min_score             INTEGER NOT NULL DEFAULT 0
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_ss_timeframe       ON scan_sessions(timeframe);
-        CREATE INDEX IF NOT EXISTS idx_ss_scan_time       ON scan_sessions(scan_time);
-        CREATE INDEX IF NOT EXISTS idx_ss_trading_date    ON scan_sessions(trading_date);
-
-        CREATE TABLE IF NOT EXISTS scan_observations (
-            id                INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id        TEXT NOT NULL,
-            ticker            TEXT NOT NULL,
-            status            TEXT NOT NULL,
-            score             INTEGER,
-            last_close        REAL,
-            volume_ratio      REAL,
-            rsi               REAL,
-            days_until_earnings INTEGER,
-            reasons           TEXT,
-            provider          TEXT,
-            error_category    TEXT,
-            error_message     TEXT,
-            FOREIGN KEY (session_id) REFERENCES scan_sessions(session_id) ON DELETE CASCADE
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_so_session_id    ON scan_observations(session_id);
-        CREATE INDEX IF NOT EXISTS idx_so_ticker        ON scan_observations(ticker);
-        CREATE INDEX IF NOT EXISTS idx_so_status        ON scan_observations(status);
-        CREATE INDEX IF NOT EXISTS idx_so_ticker_time   ON scan_observations(ticker, session_id);
-    """)
+def _set_schema_version(con: sqlite3.Connection) -> None:
     con.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
+
+
+def _execute_schema_statements(con: sqlite3.Connection, script: str) -> None:
+    """Run a semicolon-separated schema script inside an explicit transaction."""
+    for raw in script.split(";"):
+        stmt = "\n".join(
+            line for line in raw.splitlines()
+            if line.strip() and not line.strip().startswith("--")
+        ).strip()
+        if stmt:
+            con.execute(stmt)
+
+
+_SCHEMA_SCRIPT = """
+    CREATE TABLE IF NOT EXISTS signal_history (
+        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticker            TEXT    NOT NULL,
+        timeframe         TEXT    NOT NULL,
+        scan_time         TEXT    NOT NULL,   -- ISO8601 UTC
+        score             INTEGER NOT NULL,
+        last_close        REAL,
+        volume_ratio      REAL,
+        rsi               REAL,
+        reasons           TEXT,              -- pipe-separated
+        -- provenance: OHLCV provider that produced this signal
+        provider          TEXT    NOT NULL DEFAULT 'unknown',
+        -- outcome tracking (filled in later via mark_outcome)
+        outcome_close     REAL,
+        outcome_pct       REAL,
+        outcome_at        TEXT,
+        outcome_provider  TEXT,
+        -- DATA-001 session linkage
+        scan_session_id   TEXT,
+        trading_date      TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_sh_ticker          ON signal_history(ticker);
+    CREATE INDEX IF NOT EXISTS idx_sh_timeframe       ON signal_history(timeframe);
+    CREATE INDEX IF NOT EXISTS idx_sh_scan_time        ON signal_history(scan_time);
+    CREATE INDEX IF NOT EXISTS idx_sh_scan_session_id  ON signal_history(scan_session_id);
+    CREATE INDEX IF NOT EXISTS idx_sh_trading_date     ON signal_history(trading_date);
+
+    CREATE TABLE IF NOT EXISTS scan_runs (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_time    TEXT NOT NULL,
+        timeframe   TEXT NOT NULL,
+        tickers_n   INTEGER,
+        hits_n      INTEGER,
+        provider    TEXT    NOT NULL DEFAULT 'unknown'
+    );
+
+    CREATE TABLE IF NOT EXISTS scan_sessions (
+        session_id            TEXT PRIMARY KEY,
+        scan_time             TEXT NOT NULL,            -- ISO8601 UTC
+        trading_date          TEXT,                     -- New York calendar date or NULL
+        timeframe             TEXT    NOT NULL,
+        requested_provider    TEXT    NOT NULL,
+        actual_provider       TEXT,
+        fallback_used         INTEGER NOT NULL DEFAULT 0,
+        providers_attempted   TEXT,                     -- comma-separated
+        status                TEXT    NOT NULL,
+        source                TEXT    NOT NULL DEFAULT 'live',
+        observations_complete INTEGER NOT NULL DEFAULT 0,
+        requested_n           INTEGER NOT NULL DEFAULT 0,
+        observations_n        INTEGER NOT NULL DEFAULT 0,
+        signals_n             INTEGER NOT NULL DEFAULT 0,
+        below_threshold_n     INTEGER NOT NULL DEFAULT 0,
+        earnings_excluded_n   INTEGER NOT NULL DEFAULT 0,
+        earnings_failure_n    INTEGER NOT NULL DEFAULT 0,
+        fetch_failure_n       INTEGER NOT NULL DEFAULT 0,
+        insufficient_data_n   INTEGER NOT NULL DEFAULT 0,
+        scoring_failure_n     INTEGER NOT NULL DEFAULT 0,
+        min_score             INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ss_timeframe       ON scan_sessions(timeframe);
+    CREATE INDEX IF NOT EXISTS idx_ss_scan_time       ON scan_sessions(scan_time);
+    CREATE INDEX IF NOT EXISTS idx_ss_trading_date    ON scan_sessions(trading_date);
+
+    CREATE TABLE IF NOT EXISTS scan_observations (
+        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id        TEXT    NOT NULL,
+        ticker            TEXT    NOT NULL,
+        status            TEXT    NOT NULL,
+        score             INTEGER,
+        last_close        REAL,
+        volume_ratio      REAL,
+        rsi               REAL,
+        days_until_earnings INTEGER,
+        reasons           TEXT,
+        provider          TEXT,
+        error_category    TEXT,
+        error_message     TEXT,
+        FOREIGN KEY (session_id) REFERENCES scan_sessions(session_id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_so_session_id    ON scan_observations(session_id);
+    CREATE INDEX IF NOT EXISTS idx_so_ticker        ON scan_observations(ticker);
+    CREATE INDEX IF NOT EXISTS idx_so_status        ON scan_observations(status);
+    CREATE INDEX IF NOT EXISTS idx_so_ticker_time   ON scan_observations(ticker, session_id);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_so_unique_session_ticker
+        ON scan_observations(session_id, ticker);
+"""
+
+
+def _create_schema_v1(con: sqlite3.Connection) -> None:
+    """Create the complete DATA-001 schema, indexes, and observation uniqueness."""
+    _execute_schema_statements(con, _SCHEMA_SCRIPT)
 
 
 def _migrate_v0(con: sqlite3.Connection) -> None:
@@ -180,11 +200,12 @@ def _migrate_v0(con: sqlite3.Connection) -> None:
         con.execute("ALTER TABLE signal_history ADD COLUMN provider TEXT NOT NULL DEFAULT 'unknown'")
     if "outcome_provider" not in sh_cols:
         con.execute("ALTER TABLE signal_history ADD COLUMN outcome_provider TEXT")
-        con.execute("""
-            UPDATE signal_history
-            SET outcome_provider = 'unknown'
-            WHERE outcome_provider IS NULL AND outcome_close IS NOT NULL
-        """)
+        if "outcome_close" in sh_cols:
+            con.execute("""
+                UPDATE signal_history
+                SET outcome_provider = 'unknown'
+                WHERE outcome_provider IS NULL AND outcome_close IS NOT NULL
+            """)
     if "scan_session_id" not in sh_cols:
         con.execute("ALTER TABLE signal_history ADD COLUMN scan_session_id TEXT")
     if "trading_date" not in sh_cols:
@@ -198,15 +219,21 @@ def _migrate_v0(con: sqlite3.Connection) -> None:
     _create_schema_v1(con)
 
     # Build deterministic synthetic sessions for legacy signal rows.
+    # Older signal_history tables may be missing optional columns; only select what exists.
+    available_sh_cols = _column_names(con, "signal_history")
+    optional_cols = [c for c in ("volume_ratio", "rsi", "reasons") if c in available_sh_cols]
+    select_cols = ["id", "ticker", "timeframe", "scan_time", "score", "last_close", "provider"] + optional_cols
     legacy_rows = con.execute(
-        """
-        SELECT id, ticker, timeframe, scan_time, score, last_close, volume_ratio,
-               rsi, reasons, provider
+        f"""
+        SELECT {', '.join(select_cols)}
         FROM signal_history
         WHERE scan_session_id IS NULL
         ORDER BY scan_time, timeframe, provider, id
         """
     ).fetchall()
+
+    def _legacy_value(row, col: str):
+        return row[col] if col in available_sh_cols else None
 
     session_map: dict[tuple[str, str, str], str] = {}
     for row in legacy_rows:
@@ -270,7 +297,7 @@ def _migrate_v0(con: sqlite3.Connection) -> None:
         )
 
         # Create one observation for each legacy signal (all legacy rows are qualifying signals).
-        reasons = row["reasons"] or ""
+        reasons = _legacy_value(row, "reasons") or ""
         con.execute(
             """
             INSERT INTO scan_observations
@@ -284,8 +311,8 @@ def _migrate_v0(con: sqlite3.Connection) -> None:
                 "signal",
                 row["score"],
                 row["last_close"],
-                row["volume_ratio"],
-                row["rsi"],
+                _legacy_value(row, "volume_ratio"),
+                _legacy_value(row, "rsi"),
                 None,
                 reasons,
                 row["provider"] or "unknown",
@@ -313,20 +340,30 @@ def _migrate_v0(con: sqlite3.Connection) -> None:
             (session_id, session_id, session_id, session_id),
         )
 
-    con.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
+
+def _migrate_v1_to_v2(con: sqlite3.Connection) -> None:
+    """Add the observation uniqueness constraint introduced after DATA-001."""
+    con.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_so_unique_session_ticker
+            ON scan_observations(session_id, ticker)
+    """)
 
 
 def init():
-    """Create tables if they don't exist and migrate older schemas."""
-    with _conn() as con:
+    """Create tables if they don't exist and migrate older schemas atomically."""
+    with _transaction() as con:
         version = con.execute("PRAGMA user_version").fetchone()[0]
         if version < _SCHEMA_VERSION:
-            if _table_exists(con, "signal_history"):
+            if version == 0 and _table_exists(con, "signal_history"):
                 _migrate_v0(con)
+                _migrate_v1_to_v2(con)
+            elif version == 1 and _table_exists(con, "signal_history"):
+                _migrate_v1_to_v2(con)
             else:
                 _create_schema_v1(con)
         else:
             _create_schema_v1(con)
+        _set_schema_version(con)
 
 
 _MISSING_PROVIDERS = {"", "unknown", "nan", "<na>", "none"}
@@ -431,11 +468,15 @@ def _safe_str_or_none(value) -> str | None:
 
 
 def _status_for_observations(obs: pd.DataFrame) -> str:
-    """Determine scan_sessions.status from the observation DataFrame."""
+    """Determine scan_sessions.status from the observation DataFrame.
+
+    Earnings-excluded observations are valid, successfully-processed outcomes and
+    therefore keep a session in ``completed`` status unless a failure also exists.
+    """
     if obs.empty:
         return "failed"
     statuses = set(obs["status"].dropna().astype(str).unique())
-    has_success = bool(statuses & {"signal", "below_threshold"})
+    has_success = bool(statuses & {"signal", "below_threshold", "earnings_excluded"})
     has_failure = bool(statuses & {"earnings_failure", "fetch_failure", "insufficient_data", "scoring_failure"})
     if has_success and has_failure:
         return "partial"
@@ -474,9 +515,9 @@ def record_scan(
     trading_date = _derive_trading_date(scan_time)
 
     requested_provider = report.requested_provider
-    actual_provider = report.actual_provider or requested_provider
+    actual_provider = report.actual_provider
     fallback_used = 1 if report.fallback_used else 0
-    providers_attempted = ",".join(report.providers_attempted) if report.providers_attempted else actual_provider
+    providers_attempted = ",".join(report.providers_attempted) if report.providers_attempted else None
     status = _status_for_observations(report.observations)
 
     obs = report.observations
@@ -573,6 +614,22 @@ def record_scan(
                 ),
             )
 
+        # Preserve legacy scan_runs audit for completed/partial sessions only.
+        if status != "failed":
+            con.execute(
+                """
+                INSERT INTO scan_runs (run_time, timeframe, tickers_n, hits_n, provider)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    report_time,
+                    timeframe,
+                    report.total_requested,
+                    counts["signals_n"],
+                    actual_provider or "unknown",
+                ),
+            )
+
     return session_id
 
 
@@ -635,14 +692,6 @@ def record_signals(results: pd.DataFrame, timeframe: str, provider: str | None =
 
     record_scan(report, timeframe, min_score=0, tickers_scanned=results["ticker"].tolist(),
                 scan_time=scan_time, session_id=session_id)
-
-    # Preserve legacy scan_runs audit row for compatibility.
-    report_time = scan_time.isoformat()
-    with _conn() as con:
-        con.execute(
-            "INSERT INTO scan_runs (run_time, timeframe, tickers_n, hits_n, provider) VALUES (?, ?, ?, ?, ?)",
-            (report_time, timeframe, len(results), len(results), scan_provider),
-        )
 
 
 def get_history(ticker: str, timeframe: str, days: int = 14) -> pd.DataFrame:
@@ -857,30 +906,38 @@ def get_daily_score_history(ticker: str, timeframe: str, days: int = 14) -> pd.D
 
     When a ticker was observed multiple times in one trading session, the latest
     successfully-scored observation is used so the detector is scan-frequency
-    invariant.
+    invariant. Ties are broken by the observation ``id`` (most recent first).
     """
     since = (datetime.now(UTC) - timedelta(days=days)).isoformat()
     with _conn() as con:
         rows = con.execute(
             """
-            SELECT
-                so.ticker,
-                ss.trading_date,
-                MAX(ss.scan_time) AS scan_time,
-                so.score,
-                so.last_close,
-                so.status,
-                so.provider,
-                so.reasons
-            FROM scan_observations so
-            JOIN scan_sessions ss ON so.session_id = ss.session_id
-            WHERE so.ticker = ?
-              AND ss.timeframe = ?
-              AND ss.scan_time >= ?
-              AND so.status IN ('signal', 'below_threshold')
-              AND ss.trading_date IS NOT NULL
-            GROUP BY ss.trading_date
-            ORDER BY ss.trading_date ASC
+            WITH ranked AS (
+                SELECT
+                    so.ticker,
+                    ss.trading_date,
+                    ss.scan_time,
+                    so.score,
+                    so.last_close,
+                    so.status,
+                    so.provider,
+                    so.reasons,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY ss.trading_date
+                        ORDER BY ss.scan_time DESC, so.id DESC
+                    ) AS rn
+                FROM scan_observations so
+                JOIN scan_sessions ss ON so.session_id = ss.session_id
+                WHERE so.ticker = ?
+                  AND ss.timeframe = ?
+                  AND ss.scan_time >= ?
+                  AND so.status IN ('signal', 'below_threshold')
+                  AND ss.trading_date IS NOT NULL
+            )
+            SELECT ticker, trading_date, scan_time, score, last_close, status, provider, reasons
+            FROM ranked
+            WHERE rn = 1
+            ORDER BY trading_date ASC
             """,
             (ticker, timeframe, since),
         ).fetchall()
@@ -888,28 +945,39 @@ def get_daily_score_history(ticker: str, timeframe: str, days: int = 14) -> pd.D
 
 
 def get_all_daily_scores(timeframe: str, days: int = 14) -> pd.DataFrame:
-    """Return the latest score observation per ticker per trading date."""
+    """Return the latest score observation per ticker per trading date.
+
+    Ties are broken by observation ``id`` (most recent first).
+    """
     since = (datetime.now(UTC) - timedelta(days=days)).isoformat()
     with _conn() as con:
         rows = con.execute(
             """
-            SELECT
-                so.ticker,
-                ss.trading_date,
-                MAX(ss.scan_time) AS scan_time,
-                so.score,
-                so.last_close,
-                so.status,
-                so.provider,
-                so.reasons
-            FROM scan_observations so
-            JOIN scan_sessions ss ON so.session_id = ss.session_id
-            WHERE ss.timeframe = ?
-              AND ss.scan_time >= ?
-              AND so.status IN ('signal', 'below_threshold')
-              AND ss.trading_date IS NOT NULL
-            GROUP BY so.ticker, ss.trading_date
-            ORDER BY so.ticker, ss.trading_date ASC
+            WITH ranked AS (
+                SELECT
+                    so.ticker,
+                    ss.trading_date,
+                    ss.scan_time,
+                    so.score,
+                    so.last_close,
+                    so.status,
+                    so.provider,
+                    so.reasons,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY so.ticker, ss.trading_date
+                        ORDER BY ss.scan_time DESC, so.id DESC
+                    ) AS rn
+                FROM scan_observations so
+                JOIN scan_sessions ss ON so.session_id = ss.session_id
+                WHERE ss.timeframe = ?
+                  AND ss.scan_time >= ?
+                  AND so.status IN ('signal', 'below_threshold')
+                  AND ss.trading_date IS NOT NULL
+            )
+            SELECT ticker, trading_date, scan_time, score, last_close, status, provider, reasons
+            FROM ranked
+            WHERE rn = 1
+            ORDER BY ticker, trading_date ASC
             """,
             (timeframe, since),
         ).fetchall()

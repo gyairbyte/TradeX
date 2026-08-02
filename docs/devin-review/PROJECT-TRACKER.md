@@ -367,7 +367,8 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Fix scan audit to record tickers scanned vs. found
 - **Category:** Data integrity
 - **Priority:** Medium
-- **Status:** Deferred
+- **Status:** Proposed
+- **Intended pull request:** `devin/fix-scan-audit`
 - **Problem statement:** `scan_runs` records `tickers_n = len(results)` and `hits_n = len(results)`, so it cannot distinguish how many tickers were scanned.
 - **Recommended action:** Update `record_signals` to accept `tickers_scanned` and write accurate counts.
 - **Reason:** Audit data is needed to detect provider failures and understand coverage.

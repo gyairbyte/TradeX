@@ -466,12 +466,6 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
                     st.success(f"Found {len(results)} opportunities (excluded tickers with earnings within {earnings_buffer}d)")
                 else:
                     st.success(f"Found {len(results)} opportunities")
-            store.record_scan(
-                report,
-                timeframe=timeframe,
-                min_score=min_score,
-                tickers_scanned=report.observations["ticker"].tolist() if not report.observations.empty else [],
-            )
             st.dataframe(
                 results,
                 use_container_width=True,
@@ -493,6 +487,14 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
             st.session_state["scan_results"] = results
             st.session_state["scan_timeframe"] = timeframe
             st.session_state["scan_provider"] = actual_provider
+
+        # Persist every scan exactly once, regardless of whether it produced signals.
+        store.record_scan(
+            report,
+            timeframe=timeframe,
+            min_score=min_score,
+            tickers_scanned=list(dict.fromkeys(str(t).upper() for t in watchlist)),
+        )
 
         # Surface each non-empty stage failure map independently.
         if has_earnings_failures:

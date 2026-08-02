@@ -61,6 +61,7 @@ OBSERVATION_COLUMNS = [
 SUCCESSFUL_STATUSES = {
     ObservationStatus.SIGNAL,
     ObservationStatus.BELOW_THRESHOLD,
+    ObservationStatus.EARNINGS_EXCLUDED,
 }
 
 FAILURE_STATUSES = {
@@ -121,8 +122,13 @@ class ScanReport:
     min_score: int = 0
 
     def validate(self, expected_tickers: list[str] | None = None) -> None:
-        """Validate that observations are internally consistent."""
+        """Validate that observations are internally consistent and complete."""
         obs = self.observations
+        if len(obs) != self.total_requested:
+            raise ValueError(
+                f"Observation count mismatch: {len(obs)} rows for total_requested={self.total_requested}"
+            )
+
         if expected_tickers is not None:
             normalized_expected = list(dict.fromkeys(_normalize_ticker(t) for t in expected_tickers))
             if len(obs) != len(normalized_expected):
@@ -146,11 +152,23 @@ class ScanReport:
                 if missing:
                     raise ValueError(f"Signal observation missing required column '{col}'")
 
-            # Successful scored observations must share the actual provider.
+            # Successful observations must share the actual provider (earnings-excluded rows have no provider).
             scored = obs[obs["status"].isin(SUCCESSFUL_STATUSES)]
-            providers = set(scored["provider"].dropna().unique())
-            if len(providers) > 1:
-                raise ValueError(f"Mixed providers in successful observations: {sorted(providers)}")
+            scored_providers = set(scored["provider"].dropna().unique())
+            if len(scored_providers) > 1:
+                raise ValueError(f"Mixed providers in successful observations: {sorted(scored_providers)}")
+
+            if self.actual_provider is not None:
+                for provider in scored_providers:
+                    if provider != self.actual_provider:
+                        raise ValueError(
+                            f"Observation provider {provider!r} does not match report.actual_provider {self.actual_provider!r}"
+                        )
+            else:
+                if scored_providers:
+                    raise ValueError(
+                        "report.actual_provider is None but scored observations have provider set"
+                    )
 
             # results must mirror the signal observations exactly.
             if not self.results.empty:
