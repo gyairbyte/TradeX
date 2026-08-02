@@ -714,7 +714,7 @@ with tab_confluence:
     st.subheader("Confluence Scanner — Multi-Timeframe Alignment")
     st.caption(
         "Finds stocks scoring well across intraday, short-term, AND long-term simultaneously. "
-        "When all timeframes agree, the setup has more conviction."
+        "Missing timeframes are penalized; only a true 3/3 result can be labeled 'all timeframes aligned'."
     )
 
     with st.expander("Why confluence matters", expanded=False):
@@ -727,27 +727,34 @@ in a downtrend on the daily — that's a low-conviction trade fighting the bigge
 - The daily chart (short-term) shows an uptrend structure
 - The weekly chart (long-term) shows the stock in a healthy secular trend
 
-**Confluence score weights:**
+**Confluence score weights (fixed denominator — missing timeframes contribute zero):**
 | Timeframe | Weight | Why |
 |---|---|---|
 | Intraday (5m) | 30% | Noisiest — good confirmation but not the driver |
 | Short-term (1d) | 40% | Most actionable timeframe for swing trades |
 | Long-term (1wk) | 30% | Establishes whether the broader trend supports the trade |
 
-**Confluence tiers:**
-- 🟢 **90+** — All three timeframes strongly aligned. Rare and high conviction.
-- 🟡 **70–89** — Two or more timeframes well aligned. Strong setup.
-- 🟠 **50–69** — Partial alignment. Use additional confirmation.
-- 🔴 **<50** — Single timeframe only. Low conviction — treat carefully.
+**Coverage:**
+- `3/3` — All three timeframes fetched and scored successfully.
+- `2/3` — Two timeframes contributed. Strong or moderate tiers are possible if the corrected score and active-timeframe count support it.
+- `1/3` — Single timeframe only, always treated as weak/single-timeframe.
+- `0/3` — No usable data.
 
-A stock scoring 80+ on intraday alone is interesting. The same stock also scoring 70+ on short and long is a fundamentally different — and better — trade.
+**Confluence tiers:**
+- 🟢 **90+ and 3/3 active** — `all timeframes aligned`. Rare and high conviction.
+- 🟡 **70+ with at least two active timeframes** — `strong confluence`.
+- 🟠 **50–69 with at least two active timeframes** — `moderate confluence`.
+- 🔴 **<50 or only one/three timeframes active** — Weak confluence or weak/incomplete timeframes.
+
+A stock scoring 80+ on intraday alone is interesting, but it is not multi-timeframe confluence. The same stock also scoring 70+ on short and long is a fundamentally different — and better — trade.
         """)
 
     min_confluence = st.slider(
         "Min confluence score", 0, 100, 50, key="min_conf",
         help=(
-            "Filters results to stocks where the weighted average score across all three "
-            "timeframes exceeds this value.\n\n"
+            "Filters results to stocks where the fixed-denominator weighted score across the "
+            "three configured timeframes exceeds this value. Missing timeframes contribute zero, "
+            "so a single 100-score timeframe cannot pass a 70 threshold.\n\n"
             "• **Lower (30–50)** — more results, includes partial alignments.\n"
             "• **50–70** — meaningful alignment across at least two timeframes.\n"
             "• **Higher (70–100)** — only the strongest multi-timeframe setups. Fewer but higher quality."
@@ -776,8 +783,11 @@ A stock scoring 80+ on intraday alone is interesting. The same stock also scorin
                 use_container_width=True,
                 column_config={
                     "ticker":              st.column_config.TextColumn("Ticker"),
-                    "confluence_score":    st.column_config.ProgressColumn("Confluence", min_value=0, max_value=100, help="Weighted average score across all three timeframes."),
+                    "confluence_score":    st.column_config.ProgressColumn("Confluence", min_value=0, max_value=100, help="Fixed-denominator weighted score across intraday (30%), short (40%), and long (30%). Missing timeframes contribute zero."),
                     "tier":                st.column_config.TextColumn("Tier"),
+                    "timeframe_coverage":  st.column_config.TextColumn("Coverage", help="Fraction of timeframes that successfully contributed (0/3, 1/3, 2/3, or 3/3)."),
+                    "available_timeframes": st.column_config.TextColumn("Available TFs", help="Timeframes that fetched and scored successfully."),
+                    "missing_timeframes":  st.column_config.TextColumn("Missing TFs", help="Timeframes that did not contribute due to missing data, insufficient bars, or scorer errors."),
                     "active_timeframes":   st.column_config.TextColumn("Active TFs", help="Timeframes where score ≥ 50."),
                     "score_intraday":      st.column_config.ProgressColumn("Intraday", min_value=0, max_value=100),
                     "score_short":         st.column_config.ProgressColumn("Short", min_value=0, max_value=100),

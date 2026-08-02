@@ -133,16 +133,18 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Fix confluence "all timeframes aligned" mislabel
 - **Category:** Correctness
 - **Priority:** High
-- **Status:** Proposed
+- **Status:** Completed
+- **Resolved by:** `devin/fix-confluence-missing-timeframe`
 - **Problem statement:** Confluence renormalizes weights over available timeframes and can report `"all timeframes aligned"` when only one timeframe is present.
-- **Recommended action:** Require all three timeframes for a confluence score, or add a missing-timeframe penalty. Never report "all timeframes aligned" unless all three timeframes contributed.
+- **Recommended action:** Use fixed-denominator weights (intraday 30%, short 40%, long 30%) so missing timeframes contribute zero. Add explicit coverage metadata (`available_timeframes`, `missing_timeframes`, `timeframe_coverage`, `complete_timeframe_coverage`). Only award `all timeframes aligned` when 3/3 timeframes contributed, all three are active (score ≥ 50), and the confluence score is at least 90.
 - **Reason:** The label implies multi-timeframe agreement, which is not true when data is missing.
 - **Dependencies:** None
-- **Files likely affected:** `tradex/tracker/confluence.py`
-- **Testing requirements:** Unit test with only intraday data available; verify tier does not claim alignment.
-- **Acceptance criteria:** Confluence score and tier accurately reflect which timeframes contributed.
+- **Files likely affected:** `tradex/tracker/confluence.py`, `tradex/ui/dashboard.py`, `tests/tracker/test_confluence.py`, `README.md`, `SETUP.md`
+- **Testing requirements:** Unit tests for fixed-weight scoring across all missing-timeframe combinations, tier classification, coverage metadata, stable no-data schema, and `run_confluence_screen` threshold behavior.
+- **Acceptance criteria:** Confluence score and tier accurately reflect which timeframes contributed; the former strict `COR-006` xfail in `tests/tracker/test_confluence.py` is now a passing regression; no `COR-006` xfail remains.
 - **Intended pull request:** `devin/fix-confluence-missing-timeframe`
 - **Affects trading behavior:** Yes (confluence output changes)
+- **Next recommended PR:** `devin/reevaluate-scores-with-validated-data`
 
 ### ALERT-001: Add alert deduplication and cooldown
 
@@ -314,7 +316,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Acceptance criteria:** A point-in-time backtest can be run for the short-term scorer via `python -m tradex.backtest --csv ...` and produces a deterministic JSON/report with no `NaN` or `inf` values.
 - **Intended pull request:** `devin/add-backtest-engine`
 - **Affects trading behavior:** No
-- **Next recommended PR:** `devin/fix-confluence-missing-timeframe` (COR-006)
+- **Next recommended PR:** `devin/reevaluate-scores-with-validated-data`
 
 ---
 
