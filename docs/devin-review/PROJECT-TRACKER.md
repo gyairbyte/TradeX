@@ -24,7 +24,8 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Redesign signal history to record all scan observations
 - **Category:** Data integrity
 - **Priority:** High
-- **Status:** Proposed
+- **Status:** Completed
+- **Resolved by:** `devin/redesign-signal-history`
 - **Problem statement:** The store only records signals that pass `min_score`. A stock whose score deteriorates disappears from history, so the coil detector cannot see fading setups, and the signal journal is incomplete.
 - **Recommended action:** Add a `scan_observations` table (or widen `signal_history`) to record one row per ticker per scan session, including failures to pass `min_score`. Add a `session_id`/`trading_date` concept.
 - **Reason:** Correct downstream analysis (coils, journal, outcome) depends on an accurate, complete history.
@@ -41,7 +42,8 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Count distinct trading sessions, not scan executions
 - **Category:** Data integrity
 - **Priority:** High
-- **Status:** Proposed
+- **Status:** Completed
+- **Resolved by:** `devin/redesign-signal-history`
 - **Problem statement:** The coil detector uses `COUNT(*)` on `signal_history` rows. If the watcher runs multiple times per day, the same trading day contributes multiple appearances.
 - **Recommended action:** Group coil appearances by `session_id` or `trading_date` once signal history records sessions.
 - **Reason:** A coil is a multi-day market phenomenon, not a function of scan frequency.
@@ -49,7 +51,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Files likely affected:** `tradex/tracker/analyzer.py`, `tradex/tracker/store.py`
 - **Testing requirements:** DB test with three scans in one day; verify `appearances` = 1.
 - **Acceptance criteria:** Coil `appearances` reflects distinct trading sessions, not scan rows.
-- **Intended pull request:** `devin/redesign-signal-history` or follow-up
+- **Intended pull request:** `devin/redesign-signal-history`
 - **Affects trading behavior:** Yes
 
 ### COIL-002: Remove scan-frequency bias from coil strength
@@ -58,7 +60,8 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Remove scan-frequency bias from coil strength
 - **Category:** Correctness
 - **Priority:** High
-- **Status:** Proposed
+- **Status:** Completed
+- **Resolved by:** `devin/redesign-signal-history`
 - **Problem statement:** `coil_strength` includes `appearances * 5`, so running the watcher more often mechanically increases strength.
 - **Recommended action:** Replace the linear appearances term with a capped fraction of recent sessions, or remove it and rely on score/trend.
 - **Reason:** Coil strength must be independent of how often the user runs the watcher.
@@ -365,6 +368,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Category:** Data integrity
 - **Priority:** Medium
 - **Status:** Proposed
+- **Intended pull request:** `devin/fix-scan-audit`
 - **Problem statement:** `scan_runs` records `tickers_n = len(results)` and `hits_n = len(results)`, so it cannot distinguish how many tickers were scanned.
 - **Recommended action:** Update `record_signals` to accept `tickers_scanned` and write accurate counts.
 - **Reason:** Audit data is needed to detect provider failures and understand coverage.

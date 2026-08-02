@@ -157,20 +157,23 @@ These are independent of `DATA_PROVIDER` and use their own env vars / dashboard 
 
 ## Signal State Tracking
 
-The tracker module is what separates TradeX from standard screeners. Rather than showing you a snapshot, it builds a history of every signal fired and detects patterns across time.
+The tracker module is what separates TradeX from standard screeners. Rather than showing you a snapshot, it builds a history of every ticker observed in every scan session and detects patterns across distinct NYSE trading sessions.
 
-1. Run the **Scanner** tab (or `watcher.py` on a schedule) — each result is saved to `~/.tradex/signals.db`
-2. As history accumulates, the **Coil Detector** surfaces stocks scoring well for multiple days *without breaking out yet*
-3. The **Confluence** tab shows stocks scoring well across all three timeframes simultaneously
-4. The **Outcome Tracker** fetches prices 1d/3d/5d after each signal and writes `outcome_pct` and `outcome_provider` back to the DB
-5. The **Signal Journal** rolls those outcomes up into win rate / expectancy by score bucket and shows both the signal and outcome provider
+1. Run the **Scanner** tab (or `watcher.py` on a schedule) — every ticker requested is saved as an observation in `~/.tradex/signals.db`; qualifying signals are also written to `signal_history`
+2. As history accumulates, the **Coil Detector** surfaces stocks scoring well for multiple distinct NYSE sessions *without breaking out yet*
+3. The **Fading Setups** detector surfaces stocks that previously coiled but have started to deteriorate
+4. The **Confluence** tab shows stocks scoring well across all three timeframes simultaneously
+5. The **Outcome Tracker** fetches prices 1d/3d/5d after each signal and writes `outcome_pct` and `outcome_provider` back to the DB
+6. The **Signal Journal** rolls those outcomes up into win rate / expectancy by score bucket and shows both the signal and outcome provider
 
 ### Coil detection logic
 A "coil" is a stock that:
-- Has appeared in scans at least N times over the look-back window
+- Has appeared in scans on at least N distinct NYSE trading sessions over the look-back window
 - Has a current score above threshold (default: 45)
 - Has NOT already made a large price move (not already broken out)
 - Has a score that is stable or trending upward
+
+Coil appearances count distinct NYSE trading sessions, not scan rows, so running the watcher more often inside the same session does not mechanically create a coil.
 
 ### Running the watcher
 ```bash

@@ -110,11 +110,12 @@ def run_once(
     store.init()
     requested_provider = resolve_provider(provider)
     fetch_policy = policy or FetchPolicy.build(max_retries=max_retries, fallback_order=fallback_order)
-    print(f"[{timestamp}] Scanning {len(tickers)} tickers on {timeframe} (provider={requested_provider}, "
+    requested_tickers = list(dict.fromkeys(str(t).upper() for t in tickers))
+    print(f"[{timestamp}] Scanning {len(requested_tickers)} tickers on {timeframe} (provider={requested_provider}, "
           f"max_retries={fetch_policy.max_retries}, fallback={fetch_policy.fallback_order or 'disabled'})…")
 
     report = screener_run_with_report(
-        tickers,
+        requested_tickers,
         timeframe=timeframe,
         min_score=min_score,
         provider=requested_provider,
@@ -139,7 +140,7 @@ def run_once(
               f"Providers attempted: {report.providers_attempted}. "
               f"Failure categories: {categories or ['unknown']}.")
     elif report.results.empty:
-        if report.total_earnings_excluded == len(tickers):
+        if report.total_earnings_excluded == len(requested_tickers):
             print(f"[{timestamp}] No signals above {min_score}; all {report.total_earnings_excluded} tickers excluded due to earnings.")
         else:
             print(f"[{timestamp}] No signals above {min_score}.")
@@ -148,7 +149,15 @@ def run_once(
         print(f"[{timestamp}] {len(results)} signals found (actual provider={actual_provider}, "
               f"retries={report.total_retries}, fallback={report.fallback_used}):")
         print(results[["ticker", "score", "volume_ratio", "rsi", "provider"]].to_string(index=False))
-        store.record_signals(results, timeframe, provider=actual_provider)
+
+    # Persist the full scan report (observations, session, and signals).
+    store.record_scan(
+        report,
+        timeframe=timeframe,
+        min_score=min_score,
+        tickers_scanned=requested_tickers,
+        scan_time=now,
+    )
 
     # Surface each non-empty stage map independently.
     if has_earnings_failures:
@@ -167,13 +176,13 @@ def run_once(
     if report.attempt_log:
         print(f"[{timestamp}] Attempt summary (providers attempted: {report.providers_attempted}, "
               f"total attempts: {report.total_fetch_attempted}, retries: {report.total_retries}).")
-        for provider in report.providers_attempted:
-            entries = [a for a in report.attempt_log if a.provider == provider]
+        for prov in report.providers_attempted:
+            entries = [a for a in report.attempt_log if a.provider == prov]
             attempted = len(entries)
             succeeded = sum(1 for e in entries if e.success)
             failed = attempted - succeeded
             retries = sum(e.retries for e in entries)
-            print(f"  - {provider}: {attempted} attempted, {succeeded} succeeded, {failed} failed, {retries} retries")
+            print(f"  - {prov}: {attempted} attempted, {succeeded} succeeded, {failed} failed, {retries} retries")
 
     if report.total_fetched > 0:
         _check_alerts(tickers, timeframe, provider=actual_provider)
