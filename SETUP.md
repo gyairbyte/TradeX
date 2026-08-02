@@ -51,7 +51,12 @@ python -m venv .venv
 ```
 
 ### Optional provider extras
-Only install what the user actually uses. Default `yahoo` provider needs nothing extra.
+Default `yahoo` provider needs nothing extra. For the full test suite and every provider used in CI, install the `all` extra together with `dev`:
+```bash
+uv sync --extra dev --extra all
+```
+
+To add only specific providers after a base `uv sync`:
 ```bash
 uv pip install -e ".[alpaca]"   # Alpaca real-time (free tier)
 uv pip install -e ".[ibkr]"     # Interactive Brokers (requires local TWS/Gateway)
@@ -72,7 +77,7 @@ copy .env.example .env    # Windows
 
 `DATA_PROVIDER` controls **OHLCV data** only. Options flow, earnings, and market-cap ranking have their own source overrides (see `.env.example`).
 
-Signal history records the OHLCV provider that produced each signal (`signal_history.provider`), and resolved outcomes record `outcome_provider`. Every scan now writes a `scan_sessions` row and one `scan_observations` row per ticker requested, including tickers that scored below threshold or failed to fetch. Pre-existing databases are migrated safely; rows created before this feature are labeled `unknown` and assigned to synthetic legacy sessions.
+Signal history records the OHLCV provider that produced each signal (`signal_history.provider`), and resolved outcomes record `outcome_provider`. Every scan now writes a `scan_sessions` row and one `scan_observations` row per ticker requested, including tickers that scored below threshold or failed to fetch. A linked `scan_runs` audit row records `tickers_n` (requested), `hits_n` (qualifying signals), `status` (completed / partial / failed / unknown), `requested_provider` / `actual_provider`, and `source` (native / compatibility / legacy). Pre-existing databases are migrated safely; rows created before this feature are labeled `unknown` and assigned to synthetic legacy sessions, while old `scan_runs` rows are preserved with `source='legacy'` and `counts_complete=0`.
 
 Key variables:
 | Variable | Required? | Notes |

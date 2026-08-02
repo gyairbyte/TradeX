@@ -20,7 +20,7 @@ tradex/
 │   │   └── weights.py             # User-tunable per-signal weights, persisted to JSON
 │   ├── screener/engine.py         # Runs scorers across a watchlist, returns ranked DataFrame
 │   ├── tracker/
-│   │   ├── store.py               # SQLite signal history (~/.tradex/signals.db)
+│   │   ├── store.py               # SQLite canonical scan sessions + observations and `scan_runs` audit surface
 │   │   ├── analyzer.py            # Coil detector — pre-breakout pressure detection
 │   │   ├── confluence.py          # Multi-timeframe alignment scoring
 │   │   ├── outcome_tracker.py     # 1d/3d/5d price follow-up, win rate by score bucket
@@ -100,7 +100,7 @@ uv pip install -e ".[schwab]"   # Charles Schwab
 uv pip install -e ".[all]"      # All providers
 
 # For development + all providers (used by CI)
-uv sync --extra dev --extra schwab
+uv sync --extra dev --extra all
 
 # Copy and fill in your credentials
 cp .env.example .env
@@ -157,7 +157,7 @@ These are independent of `DATA_PROVIDER` and use their own env vars / dashboard 
 
 ## Signal State Tracking
 
-The tracker module is what separates TradeX from standard screeners. Rather than showing you a snapshot, it builds a history of every ticker observed in every scan session and detects patterns across distinct NYSE trading sessions.
+The tracker module is what separates TradeX from standard screeners. Rather than showing you a snapshot, it builds a history of every ticker observed in every scan session and detects patterns across distinct NYSE trading sessions. `scan_sessions` and `scan_observations` are the canonical tables; `scan_runs` is the backward-compatible audit surface that stores requested/observed/hit counts, provider, status, and source for each run.
 
 1. Run the **Scanner** tab (or `watcher.py` on a schedule) — every ticker requested is saved as an observation in `~/.tradex/signals.db`; qualifying signals are also written to `signal_history`
 2. As history accumulates, the **Coil Detector** surfaces stocks scoring well for multiple distinct NYSE sessions *without breaking out yet*
@@ -233,8 +233,9 @@ Save and switch between named ticker lists (e.g. "Semis", "Crypto-adjacent", "Ea
 - [x] Add provider/source provenance persistence to signal history and outcomes (PROVIDER-004)
 - [x] Define provider failure and fallback policy (PROVIDER-005)
 - [x] Add market-hours and timezone handling (COR-005)
-- [ ] Redesign signal-history storage and access patterns (DATA-001)
-- [ ] Backtesting module to validate signal quality historically
+- [x] Redesign signal-history storage and access patterns (DATA-001)
+- [x] Fix scan audit to accurately distinguish requested, observed, qualifying, and failed scans (COR-012)
+- [ ] Backtesting module to validate signal quality historically (VAL-001)
 - [ ] Portfolio-level risk view
 
 ### Nice-to-have enhancements

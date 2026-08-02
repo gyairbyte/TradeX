@@ -25,6 +25,7 @@ def _scan_report(
     total_fetch_attempted=1,
     attempt_log=None,
     providers_attempted=None,
+    requested_provider=None,
 ):
     from tradex.screener.engine import ObservationStatus
 
@@ -35,7 +36,8 @@ def _scan_report(
     total_fetch_eligible = total_fetch_eligible if total_fetch_eligible is not None else total_fetched + len(fetch_failures)
     attempt_log = attempt_log or []
     failures = {**fetch_failures, **scoring_failures}
-    providers = providers_attempted or (provider,)
+    requested = requested_provider or provider
+    providers = providers_attempted or (requested,)
 
     # Normalize result frames to the stable signal column contract.
     if not results_df.empty:
@@ -156,7 +158,7 @@ def _scan_report(
 
     return ScanReport(
         results=results_df,
-        requested_provider=provider,
+        requested_provider=requested,
         actual_provider=actual_provider,
         fallback_used=fallback_used,
         providers_attempted=providers,
@@ -663,3 +665,256 @@ def test_cli_flag_propagates_market_hours_only():
         check=False,
     )
     assert "--market-hours-only" in result.stdout
+
+
+# ── COR-012 scan-audit integration tests ─────────────────────────────────────
+
+
+def _assert_scan_audit_row(timeframe="intraday"):
+    """Return the single audit row for a watcher-initiated scan."""
+    runs = store.get_recent_scan_runs(timeframe=timeframe)
+    assert len(runs) == 1, f"expected one audit row, got {len(runs)}"
+    return runs.iloc[0]
+
+
+def test_watcher_successful_signal_scan_creates_audit_row(fresh_signal_db):
+    """A scan that produces qualifying signals writes one native audit row."""
+    results = _screener_results("schwab")
+    with (
+        patch.object(watcher, "screener_run_with_report", return_value=_scan_report(results, "schwab")),
+        patch.object(watcher, "_check_alerts"),
+    ):
+        watcher.run_once(["AAPL"], timeframe="intraday", provider="schwab")
+
+    run = _assert_scan_audit_row()
+    assert run["tickers_n"] == 1
+    assert run["hits_n"] == 1
+    assert run["status"] == "completed"
+    assert run["counts_complete"] == 1
+    assert run["source"] == "native"
+    assert run["requested_provider"] == "schwab"
+    assert run["actual_provider"] == "schwab"
+    assert run["provider"] == "schwab"
+
+
+def test_watcher_zero_signal_scan_creates_audit_row(fresh_signal_db):
+    """A scan with no qualifying signals still writes a native audit row."""
+    results = pd.DataFrame(columns=[
+        "ticker", "score", "last_close", "volume_ratio", "rsi",
+        "days_until_earnings", "reasons", "provider",
+    ])
+    report = _scan_report(results, "yahoo", total_fetched=1, tickers=["AAPL"])
+    with (
+        patch.object(watcher, "screener_run_with_report", return_value=report),
+        patch.object(watcher, "_check_alerts"),
+    ):
+        watcher.run_once(["AAPL"], timeframe="intraday", provider="yahoo")
+
+    run = _assert_scan_audit_row()
+    assert run["tickers_n"] == 1
+    assert run["hits_n"] == 0
+    assert run["status"] == "completed"
+
+
+def test_watcher_all_earnings_excluded_creates_audit_row(fresh_signal_db):
+    """A scan where every ticker is earnings-excluded writes a zero-hit audit row."""
+    from tradex.screener.engine import ObservationStatus, ScanReport
+
+    scan_time = _ny(2025, 1, 15, 10, 0)
+    observations = pd.DataFrame([
+        {
+            "ticker": "AAPL",
+            "status": ObservationStatus.EARNINGS_EXCLUDED.value,
+            "score": None,
+            "last_close": None,
+            "volume_ratio": None,
+            "rsi": None,
+            "days_until_earnings": 2,
+            "reasons": None,
+            "provider": None,
+            "error_category": None,
+            "error_message": None,
+        },
+        {
+            "ticker": "MSFT",
+            "status": ObservationStatus.EARNINGS_EXCLUDED.value,
+            "score": None,
+            "last_close": None,
+            "volume_ratio": None,
+            "rsi": None,
+            "days_until_earnings": 1,
+            "reasons": None,
+            "provider": None,
+            "error_category": None,
+            "error_message": None,
+        },
+    ])
+    report = ScanReport(
+        results=pd.DataFrame(columns=[
+            "ticker", "score", "last_close", "volume_ratio", "rsi",
+            "days_until_earnings", "reasons", "provider",
+        ]),
+        requested_provider="yahoo",
+        actual_provider="yahoo",
+        fallback_used=False,
+        providers_attempted=("yahoo",),
+        failures={},
+        total_requested=2,
+        total_fetch_attempted=2,
+        total_fetched=2,
+        total_scored=0,
+        total_signals=0,
+        total_below_threshold=0,
+        total_insufficient_data=0,
+        total_earnings_excluded=2,
+        earnings_failures={},
+        fetch_failures={},
+        scoring_failures={},
+        total_fetch_eligible=2,
+        total_retries=0,
+        attempt_log=[],
+        observations=observations,
+    )
+
+    with (
+        patch.object(watcher, "screener_run_with_report", return_value=report),
+        patch.object(watcher, "_check_alerts"),
+    ):
+        watcher.run_once(["AAPL", "MSFT"], timeframe="intraday", provider="yahoo", now=scan_time)
+
+    run = _assert_scan_audit_row()
+    assert run["tickers_n"] == 2
+    assert run["hits_n"] == 0
+    assert run["status"] == "completed"
+    assert run["actual_provider"] == "yahoo"
+
+
+def test_watcher_partial_scan_creates_audit_row(fresh_signal_db):
+    """A scan with some signals and some fetch failures writes a partial audit row."""
+    from tradex.data.fetcher import ProviderTransientError
+
+    results = _screener_results("yahoo")
+    report = _scan_report(
+        results,
+        "yahoo",
+        tickers=["AAPL", "MSFT"],
+        fetch_failures={"MSFT": ProviderTransientError("network")},
+        total_fetched=1,
+    )
+
+    with (
+        patch.object(watcher, "screener_run_with_report", return_value=report),
+        patch.object(watcher, "_check_alerts"),
+    ):
+        watcher.run_once(["AAPL", "MSFT"], timeframe="intraday", provider="yahoo")
+
+    run = _assert_scan_audit_row()
+    assert run["tickers_n"] == 2
+    assert run["hits_n"] == 1
+    assert run["status"] == "partial"
+
+
+def test_watcher_complete_provider_failure_creates_audit_row(fresh_signal_db, capsys):
+    """A scan where every provider fails writes a failed audit row."""
+    from tradex.data.fetcher import ProviderTransientError
+
+    results = pd.DataFrame(columns=[
+        "ticker", "score", "last_close", "volume_ratio", "rsi",
+        "days_until_earnings", "reasons", "provider",
+    ])
+    report = _scan_report(
+        results,
+        "yahoo",
+        tickers=["AAPL"],
+        fetch_failures={"AAPL": ProviderTransientError("network")},
+        total_fetched=0,
+    )
+
+    with (
+        patch.object(watcher, "screener_run_with_report", return_value=report),
+        patch.object(watcher, "_check_alerts"),
+    ):
+        watcher.run_once(["AAPL"], timeframe="intraday", provider="yahoo")
+
+    run = _assert_scan_audit_row()
+    assert run["tickers_n"] == 1
+    assert run["hits_n"] == 0
+    assert run["status"] == "failed"
+    assert run["actual_provider"] is None
+
+
+def test_watcher_market_hours_skip_writes_no_audit_row(fresh_signal_db, capsys):
+    """A market-hours skip must not create any session, observation, signal, or audit state."""
+    now = _ny(2025, 1, 15, 17, 0)
+    with (
+        patch.object(watcher, "screener_run_with_report") as mock_screener,
+        patch.object(watcher.store, "record_scan") as mock_record,
+        patch.object(watcher, "_check_alerts") as mock_alerts,
+    ):
+        watcher.run_once(["AAPL"], timeframe="intraday", market_hours_only=True, now=now)
+
+    assert mock_screener.call_count == 0
+    assert mock_record.call_count == 0
+    assert mock_alerts.call_count == 0
+    with store._conn() as con:
+        for table in ("scan_sessions", "scan_observations", "signal_history", "scan_runs"):
+            assert con.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
+
+
+def test_watcher_duplicate_input_tickers_count_once(fresh_signal_db):
+    """The watchlist passed to record_scan is normalized and deduplicated."""
+    results = _screener_results("yahoo")
+    with patch.object(watcher, "screener_run_with_report", return_value=_scan_report(results, "yahoo")) as mock_screener, patch.object(watcher, "_check_alerts"):
+        watcher.run_once(["AAPL", "aapl", "AAPL"], timeframe="intraday", provider="yahoo")
+
+    # The screener receives the normalized, deduplicated watchlist.
+    assert mock_screener.call_args.args[0] == ["AAPL"]
+    run = _assert_scan_audit_row()
+    assert run["tickers_n"] == 1
+    assert run["hits_n"] == 1
+
+
+def test_watcher_injected_timestamp_is_audit_timestamp(fresh_signal_db):
+    """The aware datetime injected into run_once becomes the audit run_time."""
+    now = _ny(2025, 6, 15, 10, 30)
+    results = _screener_results("yahoo")
+    with (
+        patch.object(watcher, "screener_run_with_report", return_value=_scan_report(results, "yahoo")),
+        patch.object(watcher, "_check_alerts"),
+    ):
+        watcher.run_once(["AAPL"], timeframe="intraday", provider="yahoo", now=now)
+
+    run = _assert_scan_audit_row()
+    assert run["run_time"] == now.astimezone(UTC).isoformat()
+
+
+def test_watcher_requested_and_actual_provider_distinct_after_fallback(fresh_signal_db, capsys):
+    """When the watcher falls back, requested_provider and actual_provider differ."""
+    from tradex.data.fetcher import FetchAttempt
+
+    results = _screener_results("schwab")
+    attempt_log = [
+        FetchAttempt(provider="yahoo", ticker="AAPL", attempts=1, retries=0, success=False),
+        FetchAttempt(provider="schwab", ticker="AAPL", attempts=1, retries=0, success=True),
+    ]
+    report = _scan_report(
+        results,
+        "schwab",
+        fallback_used=True,
+        providers_attempted=("yahoo", "schwab"),
+        attempt_log=attempt_log,
+        requested_provider="yahoo",
+    )
+
+    with (
+        patch.object(watcher, "screener_run_with_report", return_value=report),
+        patch.object(watcher, "_check_alerts"),
+    ):
+        watcher.run_once(["AAPL"], timeframe="intraday", provider="yahoo", fallback_order=("schwab",))
+
+    captured = capsys.readouterr()
+    assert "fallback=True" in captured.out
+    run = _assert_scan_audit_row()
+    assert run["requested_provider"] == "yahoo"
+    assert run["actual_provider"] == "schwab"
+    assert run["provider"] == "schwab"
