@@ -5,7 +5,7 @@ Streamlit dashboard — eight tabs:
   3. Confluence    : stocks scoring well across multiple timeframes
   4. Pattern Match : compare live stocks against historical run-up/decline fingerprints
   5. Pre-Market    : gap scanner — identify gap-up/down candidates before open
-  6. Options Flow  : unusual options activity — vol/OI spikes, put/call sentiment
+  6. Options Activity : true options flow and chain-snapshot activity
   7. Alerts        : configure Discord/email alert thresholds
   8. Signal Journal: historical signal outcomes (did the move happen?)
 
@@ -36,7 +36,14 @@ from tradex.data.fetcher import (
     fetch,
     resolve_provider,
 )
-from tradex.options.flow import get_put_call_sentiment, scan_unusual_flow
+from tradex.options.flow import (
+    get_put_call_activity,
+    resolve_chain_source,
+    resolve_flow_source,
+    scan_chain_activity_with_report,
+    scan_unusual_flow_with_report,
+)
+from tradex.options.models import OptionsActivityReport, OptionsDataKind, OptionsScanStatus
 from tradex.patterns.config import PROFILES
 from tradex.patterns.fingerprint import list_fingerprints, load_fingerprint, run_full_build
 from tradex.patterns.matcher import match_ticker, run_match_screen
@@ -105,6 +112,103 @@ def _all_provider_failures(counts: dict[str, int]) -> bool:
 
 def _all_missing_data(counts: dict[str, int]) -> bool:
     return _all_tickers_are(counts, {"no_previous_close", "no_premarket_data"})
+
+
+def _options_source_status_message(status) -> str:
+    """Human-readable summary of an options source capability status."""
+    kind = status.data_kind.value.replace("_", " ") if status.data_kind else "unavailable"
+    name = status.actual_source or status.requested_source
+    msg = f"{name.title()}: {kind.title()}"
+    if status.error:
+        msg += f" — {status.error}"
+    return msg
+
+
+def _true_flow_disabled_message(status) -> str:
+    """Return the disabled explanation for the true-flow scan button."""
+    if status.available and status.data_kind == OptionsDataKind.TRUE_FLOW:
+        return ""
+    return (
+        "No true options-flow source is configured. Tradier and Yahoo provide chain snapshots, "
+        "not transaction-level flow. Configure Unusual Whales to enable this scanner."
+    )
+
+
+def _options_status_container(status, label: str) -> None:
+    """Render a source status box for the given options capability."""
+    if not status.available:
+        st.error(f"{label}: {_options_source_status_message(status)}")
+    elif status.error:
+        st.warning(f"{label}: {_options_source_status_message(status)}")
+    else:
+        st.info(f"{label}: {_options_source_status_message(status)}")
+
+
+def _chain_scan_disabled_message(status) -> str:
+    """Return the disabled explanation for the chain-activity scan button."""
+    if status.available and status.data_kind == OptionsDataKind.CHAIN_SNAPSHOT:
+        return ""
+    return (
+        status.error
+        or "No options-chain snapshot source is available for the selected source. "
+           "Configure TRADIER_API_KEY or select Yahoo to enable this scanner."
+    )
+
+
+def _render_options_report(report: OptionsActivityReport, label: str, min_vol_oi: float) -> None:
+    """Render a scan report, clearly separating results from partial/complete failures."""
+    if report is None:
+        return
+
+    if report.status == OptionsScanStatus.SOURCE_UNAVAILABLE:
+        st.error(
+            f"{label}: source unavailable — "
+            f"{report.source_status.error or 'check configuration'}"
+        )
+        return
+    if report.status == OptionsScanStatus.NOT_FLOW_CAPABLE:
+        st.error(
+            f"{label}: not a true-flow source — "
+            f"{report.source_status.error or 'selected source does not provide transaction-level flow'}"
+        )
+        return
+    if report.status == OptionsScanStatus.COMPLETE_FAILURE:
+        st.error(
+            f"{label}: scan failed for all requested tickers. "
+            f"Status: {report.status.value}"
+        )
+        with st.expander("Failures"):
+            st.json(report.failures)
+        return
+
+    if report.total_matches:
+        st.success(
+            f"{report.total_matches} {label.lower()} found "
+            f"(source: {report.actual_source}; "
+            f"data_kind: {report.data_kind.value if report.data_kind else 'unknown'})"
+        )
+        st.dataframe(report.results, use_container_width=True)
+    elif report.failures:
+        st.warning(
+            f"{label}: no matches; {len(report.failures)} ticker(s) failed. "
+            f"Status: {report.status.value}"
+        )
+        with st.expander("Failures"):
+            st.json(report.failures)
+    else:
+        st.info(
+            f"{label}: no matches above {min_vol_oi}x Vol/OI ratio "
+            f"(source: {report.actual_source or report.requested_source})."
+        )
+
+    if report.failures and report.total_matches:
+        st.warning(
+            f"Partial failure: {len(report.failures)} ticker(s) failed while other "
+            f"tickers produced matches. Status: {report.status.value}"
+        )
+        with st.expander("Failures"):
+            st.json(report.failures)
+
 
 def _alert_policy_from_env() -> AlertPolicy:
     """Build the default alert policy from environment variables.
@@ -193,8 +297,8 @@ with st.sidebar:
         options_sources(),
         index=options_source_index(),
         help=(
-            "Options-flow data source. ``auto`` follows the priority "
-            "Unusual Whales → Tradier → Yahoo based on configured API keys. "
+            "Options data source. True options-flow scans require a configured Unusual Whales API key; "
+            "chain-activity scans use Tradier when configured, otherwise Yahoo. "
             "A specific paid source will not fall back if credentials are missing."
         ),
     )
@@ -393,7 +497,7 @@ with st.sidebar:
 
 tab_scanner, tab_coil, tab_confluence, tab_pattern, tab_premarket, tab_options, tab_alerts, tab_journal, tab_weights, tab_help = st.tabs([
     "Scanner", "Coil Detector", "Confluence", "Pattern Match",
-    "Pre-Market", "Options Flow", "Alerts", "Signal Journal", "Weights", "Help",
+    "Pre-Market", "Options Activity", "Alerts", "Signal Journal", "Weights", "Help",
 ])
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1302,119 +1406,153 @@ Gaps occur overnight when new information is reflected in prices while the marke
                 )
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 6 — OPTIONS FLOW
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 6 — OPTIONS ACTIVITY
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_options:
-    st.subheader("Options Flow — Unusual Activity Scanner")
+    st.subheader("Options Activity")
     st.caption(
-        "Detects unusual options volume relative to open interest. "
-        "Institutional players frequently telegraph moves through options 1–3 days before price follows."
+        "Distinguishes true options-flow events from delayed options-chain snapshots. "
+        "Chain volume and open interest describe aggregate positioning, not direction or intent."
     )
 
-    with st.expander("How to read options flow", expanded=False):
+    with st.expander("How to read options activity", expanded=False):
         st.markdown("""
 **Options basics:**
-- A **call option** gives the buyer the right to buy a stock at a set price. Buying calls = bullish bet.
-- A **put option** gives the buyer the right to sell a stock at a set price. Buying puts = bearish bet.
-- **Volume** = number of contracts traded today.
+- A **call option** gives the holder the right to buy a stock at a set price.
+- A **put option** gives the holder the right to sell a stock at a set price.
+- **Volume** = number of contracts traded in a period.
 - **Open Interest (OI)** = total number of contracts currently outstanding.
 
-**Why Vol/OI ratio matters:**
-If a stock normally has 500 open interest on a call strike and today 3,000 contracts trade (6x),
-that's unusual. Someone is making a large, directional bet. Institutions don't accidentally buy
-3,000 contracts — they're positioning for a move.
+**True options flow vs. chain snapshots:**
+- **True flow** = transaction-level events (sweeps, block trades, reported premium). Only available
+  from a true-flow provider such as Unusual Whales when configured.
+- **Chain snapshots** = a provider's listing of contracts with volume, OI, bid, ask, and last price.
+  Tradier and Yahoo provide snapshots, not individual trade events. Sweep, side, and timestamp fields
+  are not inferred from a snapshot.
 
-| Vol/OI Ratio | Interpretation |
-|---|---|
-| > 10x | Extremely unusual — likely a sweep across multiple exchanges |
-| 3–10x | Notable — worth investigating |
-| 1–3x | Slightly elevated — may be noise |
+**Why Vol/OI ratio is reported:**
+A high volume-to-open-interest ratio can flag unusual turnover on a contract, but it only measures
+how much trading happened relative to outstanding contracts. It does not identify the trade side,
+whether the activity was opening or closing, or who initiated the trade.
 
-**Sweeps** (available with Unusual Whales API): a single large market order that "sweeps" multiple
-exchanges filling at the ask. This is aggressive — someone wants in immediately at any price.
-That urgency is a strong signal.
+|| Vol/OI Ratio | Reading |
+|---|---|---|
+|| > 10x | Very high turnover relative to outstanding contracts |
+|| 3–10x | Elevated turnover |
+|| 1–3x | Typical to slightly elevated |
 
-**Put/Call Ratio:**
-- < 0.7 — Heavy call buying relative to puts. Bullish sentiment.
-- 0.7–1.2 — Balanced. Neutral.
-- > 1.2 — Heavy put buying. Bearish sentiment or hedging.
+**Sweeps:** Only a true-flow provider can report whether a trade was a sweep. A sweep indicator
+must come from the provider; it is never inferred from a chain snapshot.
 
-**Data sources (in priority order):**
-1. **Unusual Whales** ($50/mo) — real-time sweep detection, best signal quality
-2. **Tradier** (free with account) — real-time chains, no sweep detection
-3. **yfinance** (free, default) — delayed chains, volume/OI only. Good enough to spot anomalies.
+**Call/Put volume balance:**
+Aggregate call and put volume is a non-directional description of activity. It is **not** a
+bullish/bearish signal. A high call/put ratio only tells you more calls traded than puts; those
+calls could be bought or sold, opening or closing.
+
+**Data sources:**
+- **Unusual Whales** — true options-flow events when `UNUSUAL_WHALES_API_KEY` is configured.
+- **Tradier** — options-chain snapshots when `TRADIER_API_KEY` is configured.
+- **Yahoo** — delayed options-chain snapshots, no credentials required.
         """)
 
     st.caption(f"Selected options source: **{options_source}**")
-    if options_source == "auto":
-        st.info("auto follows the documented priority: Unusual Whales → Tradier → Yahoo based on configured API keys.")
-    elif options_source == "unusual_whales":
-        st.info("Using Unusual Whales API — requires UNUSUAL_WHALES_API_KEY.")
-    elif options_source == "tradier":
-        st.info("Using Tradier API — requires TRADIER_API_KEY.")
-    else:
-        st.info("Using yfinance (free, delayed) — volume/OI analysis only.")
+    flow_status = resolve_flow_source(options_source)
+    chain_status = resolve_chain_source(options_source)
 
     o_col1, o_col2 = st.columns(2)
     min_vol_oi = o_col1.slider(
         "Min Vol/OI ratio", 1.0, 20.0, 3.0, step=0.5, key="min_vol_oi",
         help=(
-            "Only show options contracts where today's volume exceeds this multiple of open interest.\n\n"
-            "• **1–2x** — slightly elevated. Lots of noise.\n"
-            "• **3x (default)** — meaningful threshold. Catches most unusual activity.\n"
-            "• **10x+** — extremely unusual. Very likely institutional or sweep."
+            "Only show options contracts where volume exceeds this multiple of open interest.\n\n"
+            "• **1–2x** — slightly elevated, lots of noise.\n"
+            "• **3x (default)** — meaningful turnover threshold.\n"
+            "• **10x+** — very high turnover."
         ),
     )
     o_col2.markdown("""
 **Vol/OI guide:**
-- **>10x** — extremely unusual, likely a sweep
-- **3–10x** — notable, worth watching
-- **1–3x** — slightly elevated, may be noise
+- **>10x** — very high turnover
+- **3–10x** — elevated turnover
+- **1–3x** — typical to slightly elevated
     """)
 
-    unusual = pd.DataFrame()
-    options_error = None
-    if st.button("Scan Options Flow", type="primary", key="btn_options"):
-        with st.spinner(f"Scanning options chains for {len(watchlist)} tickers…"):
-            try:
-                unusual = scan_unusual_flow(watchlist, min_vol_oi=min_vol_oi, source=options_source)
-            except ProviderCapabilityError as e:
-                options_error = str(e)
-                st.error(options_error)
-    if options_error is None:
-        if unusual.empty:
-            st.info(f"No unusual options activity found above {min_vol_oi}x Vol/OI ratio (source: {options_source}).")
-        else:
-            st.success(f"{len(unusual)} unusual contracts found (source: {options_source})")
-            st.dataframe(unusual, use_container_width=True)
+    st.divider()
+    st.subheader("True Options Flow")
+    st.caption("Transaction-level flow events from Unusual Whales. Requires a configured API key.")
+    _options_status_container(flow_status, "True-flow source")
+
+    flow_disabled = _true_flow_disabled_message(flow_status)
+    if flow_disabled:
+        st.warning(flow_disabled)
+
+    flow_report = None
+    if st.button(
+        "Scan True Options Flow",
+        type="primary",
+        key="btn_options",
+        disabled=not flow_status.available,
+        help="Scan for transaction-level flow events (sweeps, premium, side) from Unusual Whales.",
+    ):
+        with st.spinner(f"Scanning true options flow for {len(watchlist)} tickers…"):
+            flow_report = scan_unusual_flow_with_report(
+                watchlist, min_vol_oi=min_vol_oi, source=options_source
+            )
+
+    _render_options_report(flow_report, "True Options Flow", min_vol_oi)
 
     st.divider()
-    st.subheader("Put/Call Sentiment")
-    st.caption("Aggregate call vs. put volume for a single ticker to gauge overall options sentiment.")
+    st.subheader("Options Chain Activity")
+    st.caption("Options-chain snapshots from Tradier or Yahoo. Volume, OI, bid/ask/last only.")
+    _options_status_container(chain_status, "Chain source")
+
+    chain_disabled = not chain_status.available or chain_status.data_kind != OptionsDataKind.CHAIN_SNAPSHOT
+    chain_disabled_message = _chain_scan_disabled_message(chain_status)
+    if chain_disabled_message:
+        st.warning(chain_disabled_message)
+
+    chain_report = None
+    if st.button(
+        "Scan Options Chain Activity",
+        key="btn_options_chain",
+        disabled=chain_disabled,
+        help="Scan Tradier or Yahoo option chains for elevated volume/OI turnover.",
+    ):
+        with st.spinner(f"Scanning options chains for {len(watchlist)} tickers…"):
+            chain_report = scan_chain_activity_with_report(
+                watchlist, min_vol_oi=min_vol_oi, source=options_source
+            )
+
+    _render_options_report(chain_report, "Options Chain Activity", min_vol_oi)
+
+    st.divider()
+    st.subheader("Call/Put Volume Balance")
+    st.caption("Aggregate call vs. put volume from the selected chain source. This is non-directional.")
     pc_ticker = st.selectbox("Select ticker", watchlist, key="sel_pc")
-    if st.button("Get Sentiment", key="btn_pc", help="Fetch the options chain and compute the put/call ratio."):
+    if st.button(
+        "Get Volume Balance",
+        key="btn_pc",
+        help="Fetch the options chain and compute a non-directional call/put volume balance.",
+    ):
         with st.spinner(f"Fetching options data for {pc_ticker}…"):
-            sentiment = get_put_call_sentiment(pc_ticker, source=options_source)
-        if sentiment.get("error"):
-            st.error(sentiment["error"])
+            activity = get_put_call_activity(pc_ticker, source=options_source)
+        if activity.get("error"):
+            st.error(activity["error"])
         else:
             s_col1, s_col2, s_col3, s_col4 = st.columns(4)
-            s_col1.metric("Put/Call Ratio", sentiment.get("put_call_ratio", "N/A"),
-                          help="Put volume ÷ Call volume. <0.7=bullish, >1.2=bearish.")
-            s_col2.metric("Call Volume",    sentiment.get("call_volume", 0))
-            s_col3.metric("Put Volume",     sentiment.get("put_volume", 0))
-            s_col4.metric("Sentiment",      sentiment.get("sentiment", "unknown").upper())
-            ratio  = sentiment.get("put_call_ratio")
-            source = sentiment.get("data_source", "unknown")
-            if ratio is not None:
-                if ratio < 0.7:
-                    st.success(f"Bullish — heavy call buying relative to puts (source: {source})")
-                elif ratio > 1.2:
-                    st.error(f"Bearish — heavy put buying relative to calls (source: {source})")
-                else:
-                    st.info(f"Neutral — balanced call/put activity (source: {source})")
+            s_col1.metric(
+                "Put/Call Ratio",
+                activity.get("put_call_volume_ratio", "N/A"),
+                help="Put volume ÷ Call volume. Non-directional description of aggregate volume.",
+            )
+            s_col2.metric("Call Volume", activity.get("call_volume", 0))
+            s_col3.metric("Put Volume", activity.get("put_volume", 0))
+            s_col4.metric("Volume Balance", activity.get("volume_balance", "unknown").upper())
+            if not activity.get("directional_inference"):
+                st.info(
+                    "Volume balance is non-directional. It does not imply bullish or bearish intent."
+                )
 
-# ══════════════════════════════════════════════════════════════════════════════
 # TAB 7 — ALERTS
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_alerts:

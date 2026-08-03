@@ -163,7 +163,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Acceptance criteria:** Repeated checks for the same alert identity produce only one Discord/email message per cooldown window; state persists across watcher restarts; manual test alerts bypass cooldown.
 - **Intended pull request:** `devin/add-alert-cooldown`
 - **Affects trading behavior:** Yes — production trading-alert delivery cadence changes; signals, scores, thresholds, rankings, and eligibility remain unchanged. Implementation authorized by Gary; final merge requires Gary’s explicit approval.
-- **Next recommended PR:** `devin/add-initial-adrs` (DEC-001)
+- **Next recommended PR:** `devin/validate-pattern-matcher` (PATTERN-001)
 
 ### TEST-001: Complete test foundation and fixtures
 
@@ -497,16 +497,18 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Gate options flow behind real data source
 - **Category:** Cleanup
 - **Priority:** Medium
-- **Status:** Proposed
-- **Problem statement:** Without Unusual Whales/Tradier credentials, options flow degrades to delayed yfinance chain data that is not "flow."
-- **Recommended action:** Show a warning and disable "unusual activity" scanning unless a real flow provider is configured; or move the feature to `research/`.
-- **Reason:** Prevents users from making decisions on misleading data.
+- **Status:** Completed
+- **Resolved by:** `devin/gate-options-flow`
+- **Problem statement:** Without Unusual Whales credentials, options flow degraded to delayed yfinance chain data that is not transaction-level "flow." Tradier and Yahoo supply chain snapshots, not true flow.
+- **Recommended action:** Add capability-aware source resolution that distinguishes `true_flow` (Unusual Whales, when configured) from `chain_snapshot` (Tradier or Yahoo). Disable the true-flow scan when no true-flow source is configured and clearly label chain activity as non-directional snapshot data.
+- **Reason:** Prevents users from making decisions on data that has been mislabeled as unusual options flow or directional signal.
 - **Dependencies:** None
-- **Files likely affected:** `tradex/options/flow.py`, `tradex/ui/dashboard.py`
-- **Testing requirements:** Unit test verifying degraded state is detected.
-- **Acceptance criteria:** Options flow tab clearly states data source limitations and does not present chain volume as flow.
+- **Files likely affected:** `tradex/options/models.py`, `tradex/options/flow.py`, `tradex/ui/dashboard.py`, `README.md`, `SETUP.md`, `.env.example`, `CLAUDE.md`
+- **Testing requirements:** Unit tests for typed models, source resolution, true-flow reports, chain reports, put/call balance, provider error handling, and dashboard helpers. Credential-free and network-free.
+- **Acceptance criteria:** True-flow scans only run when Unusual Whales is configured; chain scans use Tradier or Yahoo; no result is labeled as true flow from a snapshot source; put/call volume balance is explicitly non-directional; the dashboard tab is renamed to "Options Activity" and shows source/data-kind warnings.
 - **Intended pull request:** `devin/gate-options-flow`
-- **Affects trading behavior:** Yes
+- **Affects trading behavior:** Yes — production options-feature eligibility and interpretation change: users without Unusual Whales can no longer run a true options-flow scan, and chain volume/OI is no longer presented as unusual/directional flow. Final merge requires Gary's explicit approval.
+- **Next recommended PR:** `devin/validate-pattern-matcher` (PATTERN-001)
 
 ### UI-001: Split `dashboard.py` into tab and component modules
 
@@ -644,6 +646,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 | Low | 5 | DOC-001: Fix documentation drift |
 
 **Recommended next pull request order:**
-1. `devin/add-initial-adrs` (DEC-001).
-2. `devin/improve-long-term-score` (LONG-001).
+1. `devin/validate-pattern-matcher` (PATTERN-001).
+2. `devin/add-initial-adrs` (DEC-001) — deferred behind remaining medium-priority trust work.
+3. `devin/improve-long-term-score` (LONG-001).
 

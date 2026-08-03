@@ -75,7 +75,11 @@ copy .env.example .env    # Windows
 
 `.env` is gitignored — credentials never leave the machine. Open `.env` and fill in only what the user needs. **Do not invent values.** If the user hasn't said which provider they want, default to `DATA_PROVIDER=yahoo` (no credentials required) and ask about the others.
 
-`DATA_PROVIDER` controls **OHLCV data** only. Options flow, earnings, and market-cap ranking have their own source overrides (see `.env.example`).
+`DATA_PROVIDER` controls **OHLCV data** only. Options activity, earnings, and market-cap ranking have their own source overrides (see `.env.example`).
+
+For options, the source also determines the *kind* of data available:
+- `unusual_whales` (or `auto` when `UNUSUAL_WHALES_API_KEY` is set) provides **true options-flow** events (sweeps, premium, side). Events without a valid `open_interest` value receive `vol_oi_ratio=None` and are excluded from `min_vol_oi` filtering.
+- `tradier` (or `auto` when `TRADIER_API_KEY` is set) and `yahoo` provide **options-chain snapshots** (volume, open interest, bid/ask/last) only. They cannot supply transaction-level flow.
 
 Signal history records the OHLCV provider that produced each signal (`signal_history.provider`), and resolved outcomes record `outcome_provider`. Every scan now writes a `scan_sessions` row and one `scan_observations` row per ticker requested, including tickers that scored below threshold or failed to fetch. A linked `scan_runs` audit row records `tickers_n` (requested), `hits_n` (qualifying signals), `status` (completed / partial / failed / unknown), `requested_provider` / `actual_provider`, and `source` (native / compatibility / legacy). Pre-existing databases are migrated safely; rows created before this feature are labeled `unknown` and assigned to synthetic legacy sessions, while old `scan_runs` rows are preserved with `source='legacy'` and `counts_complete=0`.
 
@@ -85,7 +89,7 @@ Key variables:
 | `DATA_PROVIDER` | Yes | OHLCV provider: `yahoo`, `alpaca`, `ibkr`, `schwab`. Default `yahoo`. |
 | `OHLCV_MAX_RETRIES` | No | Extra retry attempts per ticker for transient failures only. Default `0`, max `3`. |
 | `OHLCV_FALLBACK_ORDER` | No | Comma-separated whole-scan fallback provider chain (e.g. `schwab,yahoo`). Empty/missing = disabled. |
-| `OPTIONS_DATA_SOURCE` | No | `auto` (default), `unusual_whales`, `tradier`, `yahoo` |
+| `OPTIONS_DATA_SOURCE` | No | `auto` (default), `unusual_whales`, `tradier`, `yahoo`. `unusual_whales` gives true flow; `tradier`/`yahoo` give chain snapshots. |
 | `EARNINGS_DATA_SOURCE` | No | `yahoo` (default) |
 | `MARKET_CAP_DATA_SOURCE` | No | `yahoo` (default), `schwab` |
 | `ALPACA_API_KEY` / `ALPACA_SECRET_KEY` | Only for Alpaca | From alpaca.markets dashboard |
@@ -396,7 +400,7 @@ Once the dashboard is running at `http://localhost:8501`:
 | **Confluence** | Stocks scoring well across all three timeframes simultaneously. Missing timeframes contribute zero and are shown as `0/3`–`3/3` coverage. `all timeframes aligned` requires 3/3 coverage and all active. |
 | **Pattern Match** | Compares current 10-day windows against historical run-up / decline fingerprints. |
 | **Pre-Market** | Gap-up / gap-down detection vs. previous close with optional liquidity, spread, catalyst, and freshness filters. All new filters are off by default. |
-| **Options Flow** | Unusual options volume vs. open interest. Requires market hours for live data. |
+| **Options Activity** | Two separate sections: true options-flow events (Unusual Whales) and options-chain snapshots (Tradier/Yahoo). Chain volume/OI is non-directional. The true-flow scanner is disabled if no Unusual Whales key is configured. |
 | **Alerts** | Configure Discord / email thresholds, view effective cooldown durations, and inspect recent persistent alert state. Requires `.env` credentials for notifications. |
 | **Signal Journal** | Win rate and expectancy by score bucket, plus signal/outcome provider columns — only meaningful after weeks of watcher runs. |
 | **Weights** | Tune per-signal point values. Persists to `~/.tradex/weights.json`. |
