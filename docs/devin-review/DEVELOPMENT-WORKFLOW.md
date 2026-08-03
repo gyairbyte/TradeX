@@ -1,5 +1,7 @@
 # TradeX Development Workflow
 
+> **Superseded by canonical documentation.** This historical review document is retained for context. Current TradeX AI-development and research-governance instructions live in [`docs/AI-DEVELOPMENT-WORKFLOW.md`](../AI-DEVELOPMENT-WORKFLOW.md) and [`docs/RESEARCH-PROTOCOL.md`](../RESEARCH-PROTOCOL.md), and the canonical project tracker is [`docs/PROJECT-TRACKER.md`](../PROJECT-TRACKER.md).
+
 This document defines how TradeX should be developed after the initial audit. The goal is to keep each change small, reviewable, and focused on one coherent objective.
 
 ## Branch naming
@@ -168,7 +170,7 @@ A change is not complete until:
 
 ## How Devin should approach future TradeX assignments
 
-1. **Read the project tracker first.** `docs/devin-review/PROJECT-TRACKER.md` is the single source of truth for recommended next work.
+1. **Read the project tracker first.** `docs/PROJECT-TRACKER.md` is the single source of truth for recommended next work.
 2. **Confirm the assignment maps to one coherent project.** If it spans multiple roadmap projects, ask the user which to start with.
 3. **Open a branch** named `devin/<description>` from the latest `main`.
 4. **Add or update tests** before or alongside any code change.

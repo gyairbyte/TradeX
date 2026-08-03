@@ -330,7 +330,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Recommended action:** Add `tradex/research/score_validation` with a versioned offline dataset manifest, SHA-256 verification, point-in-time score generation, 1/3/5-bar forward-return event studies, temporal splits, score-bucket/threshold/component aggregation, per-ticker/pooled summaries, transaction-cost sensitivity, and deterministic JSON/CSV/Markdown reports.
 - **Reason:** Needed before changing any production score, weights, or thresholds.
 - **Dependencies:** VAL-001
-- **Files affected:** `tradex/signals/short_term.py`, `tradex/research/score_validation/*.py`, `tests/research/score_validation/*.py`, `README.md`, `SETUP.md`, `.agents/skills/tradex-local-testing/SKILL.md`, `docs/devin-review/PROJECT-TRACKER.md`
+- **Files affected:** `tradex/signals/short_term.py`, `tradex/research/score_validation/*.py`, `tests/research/score_validation/*.py`, `README.md`, `SETUP.md`, `.agents/skills/tradex-local-testing/SKILL.md`, `docs/PROJECT-TRACKER.md`
 - **Testing requirements:** Credential-free, network-free, deterministic tests covering manifest validation, snapshot mocking, point-in-time events, temporal splits, aggregations, report output, CLI help, and rerun determinism.
 - **Acceptance criteria:**
   - `python -m tradex.research.score_validation evaluate --manifest ...` runs offline with a fresh `ShortWeights()` and produces deterministic outputs.
@@ -373,7 +373,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Recommended action:** Add `tradex/market/hours.py` with NYSE/XNYS market-open checks and schedule in the `America/New_York` timezone.
 - **Reason:** Avoids wasted scans, stale data, and alerts at wrong times.
 - **Dependencies:** None
-- **Files likely affected:** `tradex/market/hours.py`, `tradex/market/__init__.py`, `tradex/tracker/watcher.py`, `tradex/premarket/gap_scanner.py`, `README.md`, `SETUP.md`, `docs/devin-review/PROJECT-TRACKER.md`
+- **Files likely affected:** `tradex/market/hours.py`, `tradex/market/__init__.py`, `tradex/tracker/watcher.py`, `tradex/premarket/gap_scanner.py`, `README.md`, `SETUP.md`, `docs/PROJECT-TRACKER.md`
 - **Testing requirements:** Unit tests for open/close/early-close/holiday/DST boundaries, naive-datetime rejection, timezone conversion, watcher gating, daily-job registration in `America/New_York`, pre-market filtering, and previous-close date handling.
 - **Acceptance criteria:**
   - `tradex/market/hours.py` exposes `MarketSession`, `MarketStatus`, `get_market_session`, `is_regular_market_open`, `market_status`, `previous_trading_session`, `next_trading_session` against the XNYS calendar in `America/New_York`.
@@ -444,7 +444,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Recommended action:** Add point-in-time market-regime and relative-strength filters evaluated through a reproducible research pipeline. Expose to production only if both the event-study and paired-backtest holdout gates pass.
 - **Reason:** Buying pullbacks in a bear market or weak sector is a different proposition than in a strong bull market.
 - **Dependencies:** VAL-001 (backtesting harness), VAL-002 (score validation study)
-- **Files affected:** `tradex/market/__init__.py`, `tradex/market/context.py`, `tradex/market/models.py`, `tradex/signals/short_term.py`, `tradex/screener/engine.py`, `tradex/research/short_context/*`, `tests/market/test_context.py`, `tests/research/short_context/*`, `README.md`, `SETUP.md`, `.agents/skills/tradex-local-testing/SKILL.md`, `docs/devin-review/PROJECT-TRACKER.md`
+- **Files affected:** `tradex/market/__init__.py`, `tradex/market/context.py`, `tradex/market/models.py`, `tradex/signals/short_term.py`, `tradex/screener/engine.py`, `tradex/research/short_context/*`, `tests/market/test_context.py`, `tests/research/short_context/*`, `README.md`, `SETUP.md`, `.agents/skills/tradex-local-testing/SKILL.md`, `docs/PROJECT-TRACKER.md`
 - **Testing requirements:** Unit tests for context computation, eligibility, spec validation, event generation, candidate selection, paired backtests, report generation, and CLI help; synthetic end-to-end workflow; focused and full pytest suites.
 - **Acceptance criteria:**
   - `short_term.score` accepts optional `context` and `context_policy` kwargs, preserves the existing numeric `score` as `base_score`, and adds `context_eligible`, `context_status`, `context_reasons`, and `market_context`.
@@ -559,6 +559,24 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Testing requirements:** Doc review checklist.
 - **Acceptance criteria:** Tab counts and feature statuses are consistent; `SETUP.md` uses `ALERT_DISCORD_TOKEN`.
 - **Intended pull request:** `devin/fix-doc-drift`
+- **Affects trading behavior:** No
+
+### DOC-002: Establish canonical AI-development and research-governance documentation
+
+- **ID:** DOC-002
+- **Title:** Establish canonical AI-development and research-governance documentation
+- **Category:** Documentation
+- **Priority:** Low
+- **Status:** Completed
+- **Resolved by:** `devin/add-ai-development-governance`
+- **Problem statement:** TradeX lacked canonical shared documentation defining the ChatGPT–Devin–Codex workflow and minimum trading-research standards. The project tracker also lived under a review-specific directory rather than the canonical documentation root.
+- **Recommended action:** Create `docs/AI-DEVELOPMENT-WORKFLOW.md` and `docs/RESEARCH-PROTOCOL.md`; move the existing project tracker out of `docs/devin-review/` to `docs/PROJECT-TRACKER.md`; update all repository references; add navigation from a top-level project document.
+- **Reason:** Provides a single, discoverable source of truth for AI-agent assignments and research safeguards.
+- **Dependencies:** None
+- **Files likely affected:** `docs/AI-DEVELOPMENT-WORKFLOW.md`, `docs/RESEARCH-PROTOCOL.md`, `docs/PROJECT-TRACKER.md`, `docs/devin-review/REPOSITORY-ORGANIZATION.md`, `docs/devin-review/DEVELOPMENT-WORKFLOW.md`, `CLAUDE.md`
+- **Testing requirements:** Doc review checklist; `git diff --check`; `rg` for obsolete tracker references.
+- **Acceptance criteria:** Canonical docs exist; tracker moved with history preserved; no active references to the old tracker path; top-level document points AI agents and contributors to the canonical docs.
+- **Intended pull request:** `devin/add-ai-development-governance`
 - **Affects trading behavior:** No
 
 ### LONG-001: Redesign or deprioritize long-term scorer

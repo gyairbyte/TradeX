@@ -183,11 +183,11 @@ No files should be deleted in the initial audit PR. Future PRs may remove or qua
 | Data-provider behavior | `docs/decisions/0001-data-provider-contract.md` (proposed) | `data/fetcher.py`, README |
 | Database schema | `docs/decisions/0002-database-schema.md` (proposed) | `tracker/store.py` |
 | Testing instructions | `tests/README.md` (proposed) | `SETUP.md` |
-| Development workflow | `docs/devin-review/DEVELOPMENT-WORKFLOW.md` | PR template, `CLAUDE.md` |
+| Development workflow | `docs/AI-DEVELOPMENT-WORKFLOW.md` | PR template, `CLAUDE.md` |
 | Configuration reference | `.env.example` + `docs/decisions/0003-configuration.md` | `SETUP.md` |
 | Known limitations | `docs/devin-review/EXECUTIVE-SUMMARY.md` | README |
 | Research hypotheses & results | `research/README.md` and per-experiment READMEs | `VALIDATION-PLAN.md` |
-| Roadmap | `docs/devin-review/RECOMMENDED-ROADMAP.md` | `PROJECT-TRACKER.md` |
+| Roadmap | `docs/devin-review/RECOMMENDED-ROADMAP.md` | `docs/PROJECT-TRACKER.md` |
 | ADRs | `docs/decisions/*.md` | `ARCHITECTURE-REVIEW.md` |
 
 ## Testing hierarchy
