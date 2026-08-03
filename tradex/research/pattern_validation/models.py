@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field, is_dataclass
 from datetime import UTC, date, datetime
@@ -80,7 +81,7 @@ def _clean_value(value: Any) -> Any:
         return value.isoformat()
     if isinstance(value, date):
         return value.isoformat()
-    if isinstance(value, dict):
+    if isinstance(value, (dict, Mapping)):
         return {str(k): _clean_value(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
         return [_clean_value(v) for v in value]
@@ -89,7 +90,7 @@ def _clean_value(value: Any) -> Any:
 
 def _clean(data: Any) -> Any:
     """Recursively clean a structure for JSON serialization."""
-    if isinstance(data, dict):
+    if isinstance(data, (dict, Mapping)):
         return {str(k): _clean(v) for k, v in data.items()}
     if isinstance(data, (list, tuple)):
         return [_clean(v) for v in data]
@@ -98,32 +99,73 @@ def _clean(data: Any) -> Any:
     return _clean_value(data)
 
 
-class FrozenDict(dict):
-    """Immutable dict subclass; still JSON/deepcopy-compatible."""
+class FrozenMapping(Mapping):
+    """Immutable mapping that is not a dict subclass.
+
+    All standard mutation paths raise ``TypeError``. The object implements
+    ``collections.abc.Mapping``, so it supports read-only item access,
+    iteration, and ``dict()`` conversion, but cannot be mutated through
+    inherited ``dict`` internals.
+    """
+
+    __slots__ = ("_d",)
+
+    def __init__(self, mapping: Mapping | None = None) -> None:
+        object.__setattr__(self, "_d", dict(mapping) if mapping is not None else {})
+
+    def __getstate__(self) -> dict:
+        return {"_d": self._d}
+
+    def __setstate__(self, state: dict) -> None:
+        object.__setattr__(self, "_d", state["_d"])
+
+    def __getitem__(self, key: Any) -> Any:
+        return self._d[key]
+
+    def __iter__(self) -> Any:
+        return iter(self._d)
+
+    def __len__(self) -> int:
+        return len(self._d)
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}({self._d!r})"
+
+    def __setattr__(self, key: str, value: Any) -> None:
+        raise TypeError(f"{self.__class__.__name__} is immutable")
+
+    def __delattr__(self, key: str) -> None:
+        raise TypeError(f"{self.__class__.__name__} is immutable")
 
     def __setitem__(self, key: Any, value: Any) -> None:
-        raise TypeError("FrozenDict does not support item assignment")
+        raise TypeError(f"{self.__class__.__name__} does not support item assignment")
 
     def __delitem__(self, key: Any) -> None:
-        raise TypeError("FrozenDict does not support item deletion")
+        raise TypeError(f"{self.__class__.__name__} does not support item deletion")
+
+    def __ior__(self, other: Any) -> "FrozenMapping":  # type: ignore[override]
+        raise TypeError(f"{self.__class__.__name__} does not support |=")
 
     def update(self, *args: Any, **kwargs: Any) -> None:  # type: ignore[override]
-        raise TypeError("FrozenDict does not support update")
+        raise TypeError(f"{self.__class__.__name__} does not support update")
 
     def pop(self, *args: Any, **kwargs: Any) -> Any:  # type: ignore[override]
-        raise TypeError("FrozenDict does not support pop")
+        raise TypeError(f"{self.__class__.__name__} does not support pop")
 
     def popitem(self) -> Any:  # type: ignore[override]
-        raise TypeError("FrozenDict does not support popitem")
+        raise TypeError(f"{self.__class__.__name__} does not support popitem")
 
     def clear(self) -> None:
-        raise TypeError("FrozenDict does not support clear")
+        raise TypeError(f"{self.__class__.__name__} does not support clear")
 
     def setdefault(self, *args: Any, **kwargs: Any) -> Any:  # type: ignore[override]
-        raise TypeError("FrozenDict does not support setdefault")
+        raise TypeError(f"{self.__class__.__name__} does not support setdefault")
 
-    def __deepcopy__(self, memo: dict[int, Any]) -> "FrozenDict":
-        return FrozenDict({deepcopy(k, memo): deepcopy(v, memo) for k, v in self.items()})
+    def __deepcopy__(self, memo: dict[int, Any]) -> "FrozenMapping":
+        return FrozenMapping({deepcopy(k, memo): deepcopy(v, memo) for k, v in self._d.items()})
+
+    def to_dict(self) -> dict:
+        return dict(self._d)
 
 
 def _canonical_json_sha256(obj: Any) -> str:
@@ -313,8 +355,10 @@ class StudySpec:
         for k, v in self.series_weights.items():
             _require_finite_number(f"series_weights[{k}]", v)
             validated_weights[str(k)] = float(v)
-        object.__setattr__(self, "series_weights", FrozenDict(validated_weights))
-        object.__setattr__(self, "splits", FrozenDict({k: Split(start=s.start, end=s.end) for k, s in self.splits.items()}))
+        object.__setattr__(self, "series_weights", FrozenMapping(validated_weights))
+        object.__setattr__(
+            self, "splits", FrozenMapping({k: Split(start=s.start, end=s.end) for k, s in self.splits.items()})
+        )
 
         if not self.tickers:
             raise ValidationError("tickers must not be empty")
@@ -516,6 +560,9 @@ class DatasetManifest:
         object.__setattr__(self, "successful_tickers", tuple(self.successful_tickers))
         object.__setattr__(self, "failed_tickers", tuple(self.failed_tickers))
         object.__setattr__(self, "failure_categories", tuple(self.failure_categories))
+        object.__setattr__(
+            self, "splits", FrozenMapping({k: Split(start=s.start, end=s.end) for k, s in self.splits.items()})
+        )
         if not self.manifest_sha256:
             object.__setattr__(self, "manifest_sha256", _canonical_json_sha256(self.to_dict()))
 

@@ -235,7 +235,7 @@ def _build_report_markdown(
         f"- Successful: {len(manifest.successful_tickers)}",
         f"- Failed: {len(manifest.failed_tickers)} ({', '.join(manifest.failure_categories) or 'none'})",
         f"- Request date range: `{manifest.request_start}` to `{manifest.request_end}`",
-        f"- Provider adjustment policy: `{manifest.adjustment_policy}`",
+        f"- Provider adjustment policy: `{manifest.adjustment_policy}` (provider-returned candles used as-is; no additional adjustment or independent corporate-action verification)",
         "",
         "## Development Fingerprints",
         "",
@@ -380,7 +380,7 @@ def run_study(
         "This is a research study, not a live-trading recommendation.",
         "The universe is a fixed convenience cohort and is not point-in-time; survivorship and selection bias are present.",
         "Execution assumptions use next-open entry and fifth-close exit with conservative slippage but no borrow fees or borrow-availability constraints for shorts.",
-        "Results depend on the market-data provider's adjustment and dividend policy.",
+        "Results depend on the market-data provider's returned daily candles; no additional split or dividend adjustment is applied, and the provider's exact corporate-action methodology is not independently verified.",
     ]
 
     report_markdown = _build_report_markdown(

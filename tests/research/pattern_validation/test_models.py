@@ -1,6 +1,7 @@
 """Tests for pattern-validation model validation and serialization."""
 from __future__ import annotations
 
+import json
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -102,13 +103,35 @@ def test_study_spec_sha256_changes_with_research_test_mode():
 
 
 def test_study_spec_series_weights_and_splits_are_immutable():
+    from collections.abc import Mapping
+
     spec = StudySpec(research_test_mode=True, tickers=("AAPL",))
-    assert isinstance(spec.series_weights, dict)
-    assert isinstance(spec.splits, dict)
+    assert isinstance(spec.series_weights, Mapping)
+    assert isinstance(spec.splits, Mapping)
+    assert not isinstance(spec.series_weights, dict)
+    assert not isinstance(spec.splits, dict)
+    original_sha = spec.sha256
     with pytest.raises(TypeError):
         spec.series_weights["price_pct"] = 0.0
     with pytest.raises(TypeError):
         spec.splits["extra"] = Split(date(2020, 1, 1), date(2020, 12, 31))
+    with pytest.raises(TypeError):
+        spec.series_weights |= {"price_pct": 0.0}
+    with pytest.raises(TypeError):
+        spec.splits |= {"extra": Split(date(2020, 1, 1), date(2020, 12, 31))}
+    with pytest.raises(TypeError):
+        spec.series_weights.update({"price_pct": 0.0})
+    with pytest.raises(TypeError):
+        spec.splits.update({"extra": Split(date(2020, 1, 1), date(2020, 12, 31))})
+    with pytest.raises(TypeError):
+        spec.series_weights.pop("price_pct")
+    with pytest.raises(TypeError):
+        spec.splits.pop("development")
+    with pytest.raises(TypeError):
+        spec.series_weights.clear()
+    assert spec.sha256 == original_sha
+    assert dict(spec.series_weights) == dict(StudySpec(research_test_mode=True, tickers=("AAPL",)).series_weights)
+    assert json.loads(spec.to_json()) == json.loads(StudySpec(research_test_mode=True, tickers=("AAPL",)).to_json())
 
 
 def test_run_study_rejects_manifest_provider_mismatch(tiny_bars, tiny_spec):

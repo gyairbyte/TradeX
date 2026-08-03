@@ -413,7 +413,7 @@ uv run python -m tradex.research.pattern_validation evaluate --help
 
 The package builds one fingerprint per event type from the development split only, evaluates validation/holdout against that immutable fingerprint, and enforces the locked splits, weights, thresholds, and `MINING_UNIVERSE`. `production_promotion_eligible` is always `false` because the universe is not point-in-time.
 
-For Schwab, the adjustment policy is `provider_default`: the provider adapter returns split- and dividend-adjusted daily candles as-is, and the study does not apply additional adjustment or independently verify the exact adjustment methodology beyond the provider contract.
+For Schwab, the adjustment policy is `provider_default`: the provider-returned daily candles are used as-is, the study does not apply additional split or dividend adjustment, and the exact corporate-action methodology is not independently verified beyond the provider contract.
 
 ---
 

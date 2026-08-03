@@ -93,9 +93,9 @@ def test_load_snapshot_fails_on_checksum_mismatch(tmp_path, tiny_study_dates):
         fetch_fn=_synthetic_fetcher,
         overwrite=True,
     )
-    # Corrupt the CSV on disk.
+    # Corrupt the CSV on disk by mutating a stable string in the header.
     csv_path = out / "AAPL.csv"
-    csv_path.write_text(csv_path.read_text(encoding="utf-8").replace("100.", "999."), encoding="utf-8")
+    csv_path.write_text(csv_path.read_text(encoding="utf-8").replace("datetime", "datetimex"), encoding="utf-8")
     with pytest.raises(ValidationError, match="checksum mismatch"):
         load_snapshot(manifest_path)
 

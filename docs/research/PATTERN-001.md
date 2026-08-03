@@ -83,7 +83,7 @@ uv --system-certs run python -m tradex.research.pattern_validation evaluate `
 
 ## Adjustment policy
 
-For Schwab, the study uses the provider's returned adjusted daily candles as-is. The `adjustment_policy` field is set to `provider_default` and the study does not apply additional split or dividend adjustments or independently verify the exact adjustment methodology beyond the provider contract.
+For Schwab, the study uses the provider-returned daily candles as-is. The `adjustment_policy` field is set to `provider_default`; the study does not apply additional split or dividend adjustment, and the exact corporate-action methodology is not independently verified beyond the provider contract.
 
 ## Interpretation of results
 

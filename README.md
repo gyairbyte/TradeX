@@ -309,7 +309,7 @@ Key design choices:
 - Execution: signal known after decision-date close, entry at next open, exit at close of the fifth session; cost scenarios 0/5/10 bps per side.
 - The `MINING_UNIVERSE` from `tradex/patterns/miner.py` is copied into the study spec and hashed; the universe is described as a fixed convenience cohort, not a point-in-time index.
 - `production_promotion_eligible` is always `false` because the universe is not point-in-time.
-- For Schwab, the adjustment policy is `provider_default` and the provider adapter returns split- and dividend-adjusted daily candles as-is; the study does not apply any additional adjustment or verify the exact adjustment methodology beyond the provider contract.
+- For Schwab, the adjustment policy is `provider_default`: the provider-returned daily candles are used as-is, the study does not apply additional split or dividend adjustment, and the exact corporate-action methodology is not independently verified beyond the provider contract.
 
 **Valid outcome:** A study may conclude `supported`, `rejected`, or `inconclusive`; regardless, the result is research-only and does not promote pattern matching into production scoring, ranking, eligibility, or automatic alerts.
 
