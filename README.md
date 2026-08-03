@@ -44,7 +44,9 @@ tradex/
 │   │   ├── config.py              # Validated GapScanConfig
 │   │   ├── cli.py                 # `python -m tradex.premarket scan ...`
 │   │   └── __main__.py            # CLI entry point
-│   ├── options/flow.py            # Unusual options activity, put/call sentiment
+│   ├── options/
+│   │   ├── models.py              # Typed options source, capability, and scan report models
+│   │   └── flow.py                # True-flow scanning, chain-snapshot scanning, put/call balance
 │   ├── alerts/
 │   │   ├── models.py              # AlertKey, AlertCooldownConfig, AlertDispatchResult
 │   │   ├── notifier.py            # Discord bot + email alerting helpers
@@ -95,7 +97,7 @@ These conditions together suggest a stock that has been "coiling" and is ready f
 | **Confluence** | Stocks scoring well across intraday + short + long simultaneously; coverage (0/3–3/3) is now explicit |
 | **Pattern Match** | Compare current 10-day windows against historical run-up/decline fingerprints |
 | **Pre-Market** | Gap-up/down detection vs. previous close using pre-market quotes |
-| **Options Flow** | Unusual options volume vs. open interest, put/call sentiment |
+| **Options Activity** | True options-flow events (Unusual Whales) and options-chain snapshots (Tradier/Yahoo), with non-directional put/call volume balance |
 | **Alerts** | Configure Discord/email push and view persistent cooldown state for coil, confluence, pattern, and gap alerts |
 | **Signal Journal** | Historical outcomes: did the move happen? Win rate by score bucket |
 | **Weights** | Tune per-signal point values for each timeframe; persisted across restarts |
@@ -306,7 +308,7 @@ These settings may also be passed programmatically as `FetchPolicy(max_retries=.
 
 These are independent of `DATA_PROVIDER` and use their own env vars / dashboard selectors:
 
-- **Options flow**: `OPTIONS_DATA_SOURCE` (`auto`, `unusual_whales`, `tradier`, `yahoo`)
+- **Options activity**: `OPTIONS_DATA_SOURCE` (`auto`, `unusual_whales`, `tradier`, `yahoo`). Unusual Whales supplies true transaction-level flow; Tradier and Yahoo supply chain snapshots only.
 - **Earnings calendar**: `EARNINGS_DATA_SOURCE` (`yahoo` only in this release)
 - **Market-cap ranking**: `MARKET_CAP_DATA_SOURCE` (`yahoo`, `schwab`)
 - **Index constituents**: Wikipedia (no env var required)
@@ -408,6 +410,43 @@ The scheduled watcher uses `scan_gaps_with_report` so it logs requested, qualifi
 
 ---
 
+## Options Activity
+
+The Options Activity dashboard tab and `tradex/options/flow.py` distinguish two kinds of options data:
+
+- **True options flow** — transaction-level events such as sweeps, reported premium, side, and event timestamps. Only Unusual Whales (`UNUSUAL_WHALES_API_KEY`) can supply this. The true-flow scan is disabled when no key is configured.
+- **Options-chain snapshots** — delayed or provider-defined listings of contracts with volume, open interest, bid, ask, and last. Tradier (`TRADIER_API_KEY`) and Yahoo provide snapshots, not individual trades.
+
+**Key usage rules:**
+- Chain volume/OI is never presented as "unusual options flow" or as a directional/institutional signal.
+- `vol_oi_ratio` is `volume / open_interest` only when both values are finite, non-negative volume, and strictly positive open interest; otherwise it is `null`.
+- Put/call volume balance is explicitly non-directional. Values are `call_heavy`, `put_heavy`, `balanced`, `call_only`, `put_only`, `unknown`, or `unavailable`.
+- `directional_inference` is always `false` for aggregate chain volume.
+
+**Public API:**
+```python
+from tradex.options.flow import (
+    scan_unusual_flow_with_report,
+    scan_chain_activity_with_report,
+    get_put_call_activity,
+    resolve_flow_source,
+    resolve_chain_source,
+)
+
+# True flow (requires Unusual Whales)
+report = scan_unusual_flow_with_report(["AAPL"], min_vol_oi=3.0, source="auto")
+
+# Chain snapshot (Tradier or Yahoo)
+report = scan_chain_activity_with_report(["AAPL"], min_vol_oi=3.0, source="auto")
+
+# Non-directional put/call balance from a chain source
+balance = get_put_call_activity("AAPL", source="auto")
+```
+
+Legacy wrappers `scan_unusual_flow(...)` and `get_put_call_sentiment(...)` remain importable for backward compatibility.
+
+---
+
 ## Earnings Awareness
 
 A technically-clean setup that resolves *into* an earnings print is no longer a technical trade — it's a binary event bet. TradeX fetches the next earnings date per ticker via yfinance (cached 24h in `~/.tradex/earnings_cache.db`) and exposes:
@@ -436,7 +475,7 @@ Save and switch between named ticker lists (e.g. "Semis", "Crypto-adjacent", "Ea
 - [x] Persistent alert cooldown, deduplication, and audit state
 - [x] Pre-market gap scanner
 - [x] Quality-aware pre-market gap scanner with structured reports, liquidity metrics, spread/catalyst filters, and point-in-time replay (GAP-001)
-- [x] Options flow integration (unusual vol/OI, put/call sentiment)
+- [x] Options activity gating (OPT-001) — true options flow (Unusual Whales) separated from chain snapshots (Tradier/Yahoo); put/call volume balance is non-directional
 - [x] In-app Help tab + tooltips throughout dashboard
 - [x] Earnings awareness — filter + flag stocks with earnings within N days
 - [x] Watchlist persistence — save/load/delete named watchlists

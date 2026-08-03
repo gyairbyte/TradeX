@@ -223,6 +223,25 @@ uv run python -m tradex.research.score_validation evaluate \
 
 Do not present event-study returns as portfolio equity, account returns, or proof of a tradable strategy. The executable backtest lives in `tradex/backtest`.
 
+## Options Activity
+
+Run the focused options and dashboard-helper suites:
+
+```bash
+uv run pytest tests/options -q
+uv run pytest tests/ui -q
+```
+
+Options tests must be credential-free and network-free. Verify:
+
+- `resolve_flow_source` only selects Unusual Whales when `UNUSUAL_WHALES_API_KEY` is configured.
+- `resolve_chain_source` selects Tradier when `TRADIER_API_KEY` is configured, otherwise Yahoo, and never labels a snapshot source as `true_flow`.
+- `scan_unusual_flow_with_report` returns `OptionsScanStatus.NOT_FLOW_CAPABLE` for Tradier/Yahoo.
+- `scan_chain_activity_with_report` returns `data_kind=chain_snapshot` and never infers `is_sweep`, `side`, or `provider_sentiment`.
+- `vol_oi_ratio` is `volume / open_interest` only for finite, non-negative volume and strictly positive open interest; otherwise `null`.
+- `get_put_call_activity` returns a non-directional `volume_balance` and `directional_inference=false` for aggregate chain volume.
+- Dashboard helpers `_options_source_status_message`, `_true_flow_disabled_message`, and `_options_status_container` render source/data-kind warnings without claiming directional/institutional signals.
+
 ## Pre-market gap scanner CLI
 
 Inspect pre-market scanner options with:

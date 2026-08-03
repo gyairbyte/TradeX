@@ -66,7 +66,9 @@ Scanner runs → results DataFrame
 | `tradex/premarket/catalysts.py` | Earnings + headline context (explicitly sourced, no causal inference). |
 | `tradex/premarket/gap_scanner.py` | Public orchestration layer (`scan_gaps_with_report`) and backward-compatible `scan_gaps` wrapper. |
 | `tradex/premarket/cli.py` | Pre-market scanner CLI (`python -m tradex.premarket scan ...`). |
-| `tradex/ui/dashboard.py` | Streamlit UI: Scanner, Coil Detector, Confluence, Pattern Match, Pre-Market, Signal Journal, Weights, Alerts, Options, Help |
+| `tradex/options/models.py` | Typed options source/capability and scan report models (`OptionsDataKind`, `OptionsSourceStatus`, `OptionsActivityReport`). |
+| `tradex/options/flow.py` | Capability-aware options source resolution, true-flow scanning, chain-snapshot scanning, and non-directional put/call balance. |
+| `tradex/ui/dashboard.py` | Streamlit UI: Scanner, Coil Detector, Confluence, Pattern Match, Pre-Market, Signal Journal, Weights, Alerts, Options Activity, Help |
 | `pyproject.toml` | Python 3.11+ project, deps: yfinance, pandas, ta, streamlit, plotly |
 | `.env.example` | Template for all provider credentials (Yahoo needs none; Alpaca needs API keys; IBKR needs TWS running; Schwab needs OAuth app + token file) |
 
@@ -99,7 +101,7 @@ df = run(["AAPL", "NVDA", "AMD"], timeframe="intraday", min_score=40)
 
 1. **Alert system** — push notification or Slack webhook when coil or confluence threshold is crossed
 2. **Earnings awareness** — flag or filter stocks with earnings within N days
-3. **Options flow integration** — unusual options activity as an additional signal layer (Unusual Whales API or Tradier)
+3. **Options activity dashboard** — true options-flow events (Unusual Whales) and chain-snapshot activity (Tradier/Yahoo) are displayed separately, not mixed as directional signals
 4. **Watchlist persistence** — save/load named watchlists to disk or DB
 5. **Scoring weight customization** — let user tune signal weights in UI
 6. **Long-term score validation** — compare the long-term scorer to a simple 40-week MA benchmark
@@ -115,6 +117,7 @@ df = run(["AAPL", "NVDA", "AMD"], timeframe="intraday", min_score=40)
 - **OAuth token safety** — Schwab tokens live outside the repo. `scripts/schwab_oauth.py` refuses to write a token inside the project and sets restrictive file permissions.
 - **Provider propagation** — `screener/engine.py`, `tracker/watcher.py`, and `ui/dashboard.py` now thread `provider` through to `fetch()` for all OHLCV workflows.
 - **Pre-market gap scanner is source-aware** — `tradex/premarket/sources.py` resolves the OHLCV provider once and rejects unsupported providers with `ProviderCapabilityError`. Spread and catalyst sources are explicit and never silently fall back.
+- **Options activity is separated from directional signals** — `tradex/options/flow.py` distinguishes true transaction-level flow (Unusual Whales) from delayed/aggregate options-chain snapshots (Tradier/Yahoo). Chain volume/OI is labeled `chain_snapshot`, is never presented as "unusual options flow," and the put/call volume balance is explicitly non-directional.
 - **Streamlit for UI** — fastest to iterate on, no frontend knowledge needed. Can replace with React later if needed.
 - **Score-based not rule-based** — a pure rule-based "buy/sell" signal is brittle; scores let Gary apply judgment.
 - **Three separate scorers vs. one unified** — timeframes have fundamentally different signal logic; keeping them separate avoids messy conditionals.
