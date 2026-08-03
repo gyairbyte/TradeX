@@ -170,11 +170,16 @@ def create_snapshot(
     source_description: str = "offline OHLCV snapshots",
     adjustment_policy: str = "provider_default",
     fetch_fn: Callable[[str, date, date, str | None], pd.DataFrame] | None = None,
+    created_at: datetime | None = None,
 ) -> Path:
     """Fetch or receive per-ticker OHLCV data and write an atomic snapshot with manifest.
 
     ``fetch_fn`` is injected for credential-free tests; it defaults to
     ``tradex.data.history.fetch_daily_history``.
+
+    ``created_at`` is normally the current UTC wall-clock time. It can be
+    injected for reproducible snapshot manifests in tests or for a deliberate
+    dataset version label.
     """
     output_dir = Path(output_dir)
     if output_dir.exists() and not overwrite:
@@ -261,7 +266,7 @@ def create_snapshot(
         manifest = DatasetManifest(
             schema_version=1,
             dataset_name=dataset_name,
-            created_at=datetime.now(UTC),
+            created_at=created_at or datetime.now(UTC),
             source_description=source_description,
             provider=provider or "unknown",
             adjustment_policy=adjustment_policy,

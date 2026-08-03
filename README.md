@@ -265,22 +265,36 @@ Key design choices:
 
 `tradex/research/pattern_validation` runs a locked, point-in-time study of the existing `tradex/patterns/matcher` using Pearson shape similarity weighted by `SERIES_WEIGHTS`. It evaluates whether decision dates with similarity ≥ 75 produce higher signed five-session returns than frequency-matched controls after conservative execution costs.
 
-```bash
-# 1) Build an offline snapshot (network required; credentials depend on provider)
-uv run python -m tradex.research.pattern_validation snapshot \
-  --tickers AAPL,MSFT,NVDA \
-  --start 2018-01-02 \
-  --end 2026-07-31 \
-  --provider schwab \
-  --output data/pattern_validation/snapshot
+```powershell
+# Windows PowerShell workflow for the locked PATTERN-001 Schwab study.
+# Run from the repository root after placing your Schwab token at the documented path.
 
-# 2) Evaluate offline (no network, no credentials, no ~/.tradex/fingerprints.db)
-uv run python -m tradex.research.pattern_validation evaluate \
-  --manifest data/pattern_validation/snapshot/manifest.lock.json \
-  --output results/pattern_validation
+# 1) Verify the token exists (do not print token contents).
+Test-Path "$env:USERPROFILE\.tradex_schwab_token.json"
+Get-Item "$env:USERPROFILE\.tradex_schwab_token.json" | Select-Object FullName, Length, LastWriteTime
+
+# 2) Optional read-only Schwab smoke test.
+uv --system-certs run python scripts/schwab_smoke_test.py
+
+# 3) Build the locked offline snapshot. Use the exact ordered MINING_UNIVERSE and dates.
+$SnapshotDir = "$env:USERPROFILE\.tradex\research\pattern-validation\snapshot"
+uv --system-certs run python -m tradex.research.pattern_validation snapshot `
+  --universe current-mining-universe `
+  --start 2018-01-02 `
+  --end 2026-07-31 `
+  --provider schwab `
+  --output $SnapshotDir
+
+# 4) Evaluate offline (no network, no credentials, no ~/.tradex/fingerprints.db)
+$ResultsDir = "$env:USERPROFILE\.tradex\research\pattern-validation\results"
+uv --system-certs run python -m tradex.research.pattern_validation evaluate `
+  --manifest "$SnapshotDir\manifest.lock.json" `
+  --output $ResultsDir
 ```
 
-Outputs (`results/pattern_validation/`):
+The locked study uses the full `MINING_UNIVERSE` from `tradex/patterns/miner.py`. Raw OHLCV, `.env`, OAuth tokens, credentials, and HTTP responses must never be committed; the handoff bundle is described in `docs/research/PATTERN-001.md`.
+
+Outputs (`$ResultsDir`):
 
 - `study.json`, `study_spec.lock.json`, `manifest.lock.json`, `development_fingerprints.json`
 - `observations.csv`, `qualifying_signals.csv`, `frequency_matched_controls.csv`, `event_study.csv`, `executable_trades.csv`
@@ -295,6 +309,7 @@ Key design choices:
 - Execution: signal known after decision-date close, entry at next open, exit at close of the fifth session; cost scenarios 0/5/10 bps per side.
 - The `MINING_UNIVERSE` from `tradex/patterns/miner.py` is copied into the study spec and hashed; the universe is described as a fixed convenience cohort, not a point-in-time index.
 - `production_promotion_eligible` is always `false` because the universe is not point-in-time.
+- For Schwab, the adjustment policy is `provider_default` and the provider adapter returns split- and dividend-adjusted daily candles as-is; the study does not apply any additional adjustment or verify the exact adjustment methodology beyond the provider contract.
 
 **Valid outcome:** A study may conclude `supported`, `rejected`, or `inconclusive`; regardless, the result is research-only and does not promote pattern matching into production scoring, ranking, eligibility, or automatic alerts.
 

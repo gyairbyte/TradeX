@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from copy import deepcopy
 from dataclasses import asdict, dataclass, field, is_dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -95,6 +96,34 @@ def _clean(data: Any) -> Any:
     if is_dataclass(data) and not isinstance(data, type):
         return _clean(asdict(data))
     return _clean_value(data)
+
+
+class FrozenDict(dict):
+    """Immutable dict subclass; still JSON/deepcopy-compatible."""
+
+    def __setitem__(self, key: Any, value: Any) -> None:
+        raise TypeError("FrozenDict does not support item assignment")
+
+    def __delitem__(self, key: Any) -> None:
+        raise TypeError("FrozenDict does not support item deletion")
+
+    def update(self, *args: Any, **kwargs: Any) -> None:  # type: ignore[override]
+        raise TypeError("FrozenDict does not support update")
+
+    def pop(self, *args: Any, **kwargs: Any) -> Any:  # type: ignore[override]
+        raise TypeError("FrozenDict does not support pop")
+
+    def popitem(self) -> Any:  # type: ignore[override]
+        raise TypeError("FrozenDict does not support popitem")
+
+    def clear(self) -> None:
+        raise TypeError("FrozenDict does not support clear")
+
+    def setdefault(self, *args: Any, **kwargs: Any) -> Any:  # type: ignore[override]
+        raise TypeError("FrozenDict does not support setdefault")
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> "FrozenDict":
+        return FrozenDict({deepcopy(k, memo): deepcopy(v, memo) for k, v in self.items()})
 
 
 def _canonical_json_sha256(obj: Any) -> str:
@@ -284,8 +313,8 @@ class StudySpec:
         for k, v in self.series_weights.items():
             _require_finite_number(f"series_weights[{k}]", v)
             validated_weights[str(k)] = float(v)
-        object.__setattr__(self, "series_weights", validated_weights)
-        object.__setattr__(self, "splits", dict(self.splits))
+        object.__setattr__(self, "series_weights", FrozenDict(validated_weights))
+        object.__setattr__(self, "splits", FrozenDict({k: Split(start=s.start, end=s.end) for k, s in self.splits.items()}))
 
         if not self.tickers:
             raise ValidationError("tickers must not be empty")

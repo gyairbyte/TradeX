@@ -44,13 +44,17 @@ def frequency_matched_controls(
         available = len(non_signals)
         selected: list[Observation] = []
         underfilled = False
-        if n == 0 or available == 0:
+        if n == 0:
             continue
-        if available <= n:
+        if available == 0 or available < n:
+            underfilled = True
+            underfilled_keys.append(key)
+            if available == 0:
+                selected = []
+            else:
+                selected = non_signals
+        elif available == n:
             selected = non_signals
-            if available < n:
-                underfilled = True
-                underfilled_keys.append(key)
         else:
             # random.sample is deterministic given the seeded RNG order.
             selected = rng.sample(non_signals, n)

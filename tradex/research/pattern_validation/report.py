@@ -305,12 +305,40 @@ def _build_report_markdown(
     return "\n".join(lines)
 
 
+def _verify_manifest_against_spec(manifest: DatasetManifest, spec: StudySpec) -> None:
+    """Ensure the supplied manifest is the dataset the locked spec describes."""
+    errors: list[str] = []
+    if manifest.provider != spec.provider:
+        errors.append(f"manifest provider '{manifest.provider}' does not match spec provider '{spec.provider}'")
+    if tuple(manifest.requested_tickers) != tuple(spec.tickers):
+        errors.append("manifest requested_tickers do not match spec.tickers (order and content)")
+    if manifest.request_start != spec.start_date:
+        errors.append(f"manifest request_start {manifest.request_start} does not match spec start_date {spec.start_date}")
+    if manifest.request_end != spec.end_date:
+        errors.append(f"manifest request_end {manifest.request_end} does not match spec end_date {spec.end_date}")
+    if manifest.adjustment_policy != spec.adjustment_policy:
+        errors.append(f"manifest adjustment_policy '{manifest.adjustment_policy}' does not match spec '{spec.adjustment_policy}'")
+    if set(manifest.splits.keys()) != set(spec.splits.keys()):
+        errors.append(f"manifest splits {list(manifest.splits.keys())} do not match spec splits {list(spec.splits.keys())}")
+    else:
+        for name in sorted(spec.splits):
+            ms = manifest.splits[name]
+            ss = spec.splits[name]
+            if ms.start != ss.start or ms.end != ss.end:
+                errors.append(
+                    f"manifest split '{name}' ({ms.start} to {ms.end}) does not match spec split ({ss.start} to {ss.end})"
+                )
+    if errors:
+        raise ValidationError("manifest/spec contract mismatch: " + "; ".join(errors))
+
+
 def run_study(
     manifest: DatasetManifest,
     bars: dict[str, pd.DataFrame],
     spec: StudySpec,
 ) -> StudyResult:
     """Execute the full pattern-similarity validation pipeline."""
+    _verify_manifest_against_spec(manifest, spec)
     # 1. Build development-only fingerprints.
     fingerprints, _ = build_development_fingerprints(bars, spec)
     # An empty fingerprint set is allowed; downstream metrics produce an inconclusive result.

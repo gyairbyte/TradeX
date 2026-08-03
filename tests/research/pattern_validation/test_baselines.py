@@ -54,6 +54,53 @@ def test_frequency_matched_controls_expose_audit_counts(tiny_bars, tiny_spec):
         assert audit.underfilled == (audit.requested > audit.available)
 
 
+def test_frequency_matched_controls_zero_available_is_audited():
+    """A group with qualifying signals and zero controls is recorded as underfilled."""
+    from datetime import date
+
+    from tradex.research.pattern_validation.models import Observation, Split, StudySpec
+
+    signal = Observation(
+        ticker="AAPL",
+        split="validation",
+        event_type="runup",
+        decision_date=date(2021, 6, 1),
+        signal_time=date(2021, 6, 1),
+        similarity_score=80.0,
+        series_scores={"price_pct": 80.0},
+        is_qualifying=True,
+        data_source="synthetic",
+        signal_close=100.0,
+        entry_date=date(2021, 6, 2),
+        raw_entry_price=100.0,
+        exit_date=date(2021, 6, 7),
+        raw_exit_price=105.0,
+        gross_return_pct=5.0,
+        net_return_pct_by_slippage={"10": 4.9},
+        outcome_status="complete",
+    )
+    spec = StudySpec(
+        tickers=("AAPL",),
+        provider="synthetic",
+        start_date=date(2021, 1, 1),
+        end_date=date(2021, 12, 31),
+        splits={"validation": Split(date(2021, 1, 1), date(2021, 12, 31))},
+        min_events=1,
+        minimum_validation_signals=1,
+        minimum_holdout_signals=1,
+        minimum_tickers=1,
+        research_test_mode=True,
+    )
+    selection = frequency_matched_controls([signal], spec)
+    assert len(selection.audit) == 1
+    audit = selection.audit[0]
+    assert audit.requested == 1
+    assert audit.available == 0
+    assert audit.selected == 0
+    assert audit.underfilled is True
+    assert selection.underfilled_keys == [("AAPL", "validation", 2021, "runup")]
+
+
 def test_frequency_matched_controls_underfill_marks_inconclusive():
     """When fewer non-signal observations exist than signals, the group is underfilled."""
     from datetime import date

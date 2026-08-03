@@ -110,6 +110,55 @@ def test_lift_bootstrap_uses_paired_ticker_clusters():
     assert ci_upper is not None
 
 
+def test_zero_controls_forces_inconclusive_classification():
+    """A signal group with zero available controls cannot be supported or rejected."""
+    from datetime import date
+
+    from tradex.research.pattern_validation.baselines import frequency_matched_controls
+    from tradex.research.pattern_validation.models import Observation, Split, StudySpec
+
+    signal = Observation(
+        ticker="AAPL",
+        split="validation",
+        event_type="runup",
+        decision_date=date(2021, 6, 1),
+        signal_time=date(2021, 6, 1),
+        similarity_score=80.0,
+        series_scores={"price_pct": 80.0},
+        is_qualifying=True,
+        data_source="synthetic",
+        signal_close=100.0,
+        entry_date=date(2021, 6, 2),
+        raw_entry_price=100.0,
+        exit_date=date(2021, 6, 7),
+        raw_exit_price=105.0,
+        gross_return_pct=5.0,
+        net_return_pct_by_slippage={"10": 4.9},
+        outcome_status="complete",
+    )
+    spec = StudySpec(
+        tickers=("AAPL",),
+        provider="synthetic",
+        start_date=date(2021, 1, 1),
+        end_date=date(2021, 12, 31),
+        splits={"validation": Split(date(2021, 1, 1), date(2021, 12, 31))},
+        min_events=1,
+        minimum_validation_signals=1,
+        minimum_holdout_signals=1,
+        minimum_tickers=1,
+        research_test_mode=True,
+    )
+    selection = frequency_matched_controls([signal], spec)
+    from tradex.research.pattern_validation.metrics import (
+        compute_all_metrics,
+        evaluate_evidence_gates,
+    )
+    pm, per_ticker = compute_all_metrics([signal], selection, [], spec)
+    decision = evaluate_evidence_gates(pm, per_ticker, spec)
+    assert decision.classification == "inconclusive"
+    assert "controls_underfilled" in decision.reason or "underfilled" in decision.reason
+
+
 def test_underfilled_baseline_invalidates_lift(tiny_bars, tiny_spec):
     """If any frequency-matched control group is underfilled, lift gates become inconclusive."""
     fingerprints, _ = build_development_fingerprints(tiny_bars, tiny_spec)

@@ -374,20 +374,33 @@ uv run python -m tradex.research.score_validation evaluate --help
 
 `tradex/research/pattern_validation` runs a locked, point-in-time study of the existing pattern matcher. It is research-only and does not alter production scoring, ranking, eligibility, or automatic alerts.
 
-```bash
-# Build an offline snapshot (network required; credentials depend on provider)
-uv run python -m tradex.research.pattern_validation snapshot \
-  --tickers AAPL,MSFT,NVDA \
-  --start 2018-01-02 \
-  --end 2026-07-31 \
-  --provider schwab \
-  --output data/pattern_validation/snapshot
+Windows PowerShell:
+
+```powershell
+# Verify the token exists (do not print token contents).
+Test-Path "$env:USERPROFILE\.tradex_schwab_token.json"
+Get-Item "$env:USERPROFILE\.tradex_schwab_token.json" | Select-Object FullName, Length, LastWriteTime
+
+# Optional read-only Schwab smoke test.
+uv --system-certs run python scripts/schwab_smoke_test.py
+
+# Build the locked offline snapshot.
+$SnapshotDir = "$env:USERPROFILE\.tradex\research\pattern-validation\snapshot"
+uv --system-certs run python -m tradex.research.pattern_validation snapshot `
+  --universe current-mining-universe `
+  --start 2018-01-02 `
+  --end 2026-07-31 `
+  --provider schwab `
+  --output $SnapshotDir
 
 # Evaluate offline (no network, no credentials, no ~/.tradex/fingerprints.db)
-uv run python -m tradex.research.pattern_validation evaluate \
-  --manifest data/pattern_validation/snapshot/manifest.lock.json \
-  --output results/pattern_validation
+$ResultsDir = "$env:USERPROFILE\.tradex\research\pattern-validation\results"
+uv --system-certs run python -m tradex.research.pattern_validation evaluate `
+  --manifest "$SnapshotDir\manifest.lock.json" `
+  --output $ResultsDir
 ```
+
+The locked study uses the exact ordered `MINING_UNIVERSE` from `tradex/patterns/miner.py`. Keep raw OHLCV, `.env`, OAuth tokens, credentials, and provider responses outside the repository. The handoff bundle is described in `docs/research/PATTERN-001.md`.
 
 Verify the package:
 
@@ -399,6 +412,8 @@ uv run python -m tradex.research.pattern_validation evaluate --help
 ```
 
 The package builds one fingerprint per event type from the development split only, evaluates validation/holdout against that immutable fingerprint, and enforces the locked splits, weights, thresholds, and `MINING_UNIVERSE`. `production_promotion_eligible` is always `false` because the universe is not point-in-time.
+
+For Schwab, the adjustment policy is `provider_default`: the provider adapter returns split- and dividend-adjusted daily candles as-is, and the study does not apply additional adjustment or independently verify the exact adjustment methodology beyond the provider contract.
 
 ---
 

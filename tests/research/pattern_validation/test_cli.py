@@ -44,6 +44,8 @@ def test_snapshot_and_evaluate_roundtrip(tmp_path, tiny_study_dates, tiny_spec):
         splits=tiny_study_dates["splits"],
         fetch_fn=fetch_fn,
         overwrite=True,
+        provider=tiny_spec.provider,
+        adjustment_policy=tiny_spec.adjustment_policy,
     )
 
     rc = main([

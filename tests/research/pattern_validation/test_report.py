@@ -22,6 +22,8 @@ def test_run_study_produces_required_artifacts(tmp_path, tiny_study_dates, tiny_
         splits=tiny_study_dates["splits"],
         fetch_fn=_synthetic_fetcher,
         overwrite=True,
+        provider=tiny_spec.provider,
+        adjustment_policy=tiny_spec.adjustment_policy,
     )
     from tradex.research.pattern_validation.snapshot import load_snapshot
     manifest, bars = load_snapshot(manifest_path)
@@ -67,6 +69,8 @@ def test_report_contains_neutral_language(tmp_path, tiny_study_dates, tiny_spec)
         splits=tiny_study_dates["splits"],
         fetch_fn=_synthetic_fetcher,
         overwrite=True,
+        provider=tiny_spec.provider,
+        adjustment_policy=tiny_spec.adjustment_policy,
     )
     from tradex.research.pattern_validation.snapshot import load_snapshot
     manifest, bars = load_snapshot(manifest_path)
@@ -87,6 +91,8 @@ def test_two_eval_runs_produce_byte_identical_artifacts(tmp_path, tiny_study_dat
         splits=tiny_study_dates["splits"],
         fetch_fn=_synthetic_fetcher,
         overwrite=True,
+        provider=tiny_spec.provider,
+        adjustment_policy=tiny_spec.adjustment_policy,
     )
     from tradex.research.pattern_validation.snapshot import load_snapshot
     manifest, bars = load_snapshot(manifest_path)

@@ -122,6 +122,38 @@ def test_snapshot_validates_ohlc_invariants(tmp_path, tiny_study_dates):
     assert len(cleaned) == len(raw) - 1
 
 
+def test_snapshot_manifest_is_stable_with_fixed_created_at(tmp_path, tiny_study_dates):
+    from datetime import UTC, datetime
+    fixed = datetime(2020, 1, 2, tzinfo=UTC)
+    out1 = tmp_path / "snap1"
+    out2 = tmp_path / "snap2"
+    manifest_path1 = create_snapshot(
+        tickers=["AAPL"],
+        start=tiny_study_dates["start_date"],
+        end=tiny_study_dates["end_date"],
+        output_dir=out1,
+        splits=tiny_study_dates["splits"],
+        fetch_fn=_synthetic_fetcher,
+        overwrite=True,
+        created_at=fixed,
+    )
+    manifest_path2 = create_snapshot(
+        tickers=["AAPL"],
+        start=tiny_study_dates["start_date"],
+        end=tiny_study_dates["end_date"],
+        output_dir=out2,
+        splits=tiny_study_dates["splits"],
+        fetch_fn=_synthetic_fetcher,
+        overwrite=True,
+        created_at=fixed,
+    )
+    data1 = json.loads(manifest_path1.read_text(encoding="utf-8"))
+    data2 = json.loads(manifest_path2.read_text(encoding="utf-8"))
+    assert data1["created_at"] == data2["created_at"]
+    assert data1["manifest_sha256"] == data2["manifest_sha256"]
+    assert (out1 / "AAPL.csv").read_bytes() == (out2 / "AAPL.csv").read_bytes()
+
+
 def test_snapshot_csv_is_sorted_by_index(tmp_path, tiny_study_dates):
     out = tmp_path / "snap"
     create_snapshot(

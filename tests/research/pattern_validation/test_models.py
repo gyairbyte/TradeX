@@ -1,7 +1,8 @@
 """Tests for pattern-validation model validation and serialization."""
 from __future__ import annotations
 
-from datetime import UTC, date
+from datetime import UTC, date, datetime
+from pathlib import Path
 
 import pytest
 
@@ -13,6 +14,7 @@ from tradex.research.pattern_validation.models import (
     ValidationError,
     _canonical_json_sha256,
 )
+from tradex.research.pattern_validation.snapshot import load_snapshot
 
 
 def test_study_spec_rejects_bool_for_number():
@@ -97,6 +99,50 @@ def test_study_spec_sha256_changes_with_research_test_mode():
     lock_locked = dict(base.to_lock_dict())
     lock_locked["research_test_mode"] = False
     assert _canonical_json_sha256(lock_test) != _canonical_json_sha256(lock_locked)
+
+
+def test_study_spec_series_weights_and_splits_are_immutable():
+    spec = StudySpec(research_test_mode=True, tickers=("AAPL",))
+    assert isinstance(spec.series_weights, dict)
+    assert isinstance(spec.splits, dict)
+    with pytest.raises(TypeError):
+        spec.series_weights["price_pct"] = 0.0
+    with pytest.raises(TypeError):
+        spec.splits["extra"] = Split(date(2020, 1, 1), date(2020, 12, 31))
+
+
+def test_run_study_rejects_manifest_provider_mismatch(tiny_bars, tiny_spec):
+    import tempfile
+    from dataclasses import replace
+    from datetime import date
+
+    from tradex.research.pattern_validation.models import Split
+    from tradex.research.pattern_validation.report import run_study
+    from tradex.research.pattern_validation.snapshot import create_snapshot
+
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "snap"
+        manifest_path = create_snapshot(
+            tickers=["AAPL"],
+            start=date(2020, 1, 2),
+            end=date(2024, 12, 31),
+            output_dir=out,
+            splits={"validation": Split(date(2020, 1, 2), date(2024, 12, 31))},
+            fetch_fn=lambda t, s, e, p: tiny_bars.get(t, tiny_bars["AAPL"]),
+            overwrite=True,
+            created_at=datetime(2020, 1, 2, tzinfo=UTC),
+        )
+        manifest, bars = load_snapshot(manifest_path)
+        bad_spec = replace(
+            tiny_spec,
+            provider="yahoo",
+            splits={"validation": Split(date(2020, 1, 2), date(2024, 12, 31))},
+            start_date=date(2020, 1, 2),
+            end_date=date(2024, 12, 31),
+            tickers=("AAPL",),
+        )
+        with pytest.raises(ValidationError, match="provider"):
+            run_study(manifest, bars, bad_spec)
 
 
 def test_manifest_serialization_roundtrip(tmp_path):
