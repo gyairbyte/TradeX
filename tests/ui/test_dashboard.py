@@ -2,6 +2,7 @@
 
 import importlib
 
+import pandas as pd
 import pytest
 
 from tradex.ui import source_defaults
@@ -314,3 +315,189 @@ def test_true_flow_disabled_message_when_unconfigured(dashboard_module):
     assert "No true options-flow source is configured" in msg
     assert "Tradier and Yahoo provide chain snapshots" in msg
     assert "Configure Unusual Whales" in msg
+
+
+def test_options_status_container_unavailable_source(dashboard_module):
+    from tradex.options.models import OptionsSourceStatus
+
+    status = OptionsSourceStatus(
+        requested_source="auto",
+        actual_source=None,
+        configured=False,
+        available=False,
+        data_kind=None,
+        freshness="unknown",
+        delayed=None,
+        supports_event_timestamps=False,
+        supports_trade_side=False,
+        supports_premium=False,
+        supports_sweeps=False,
+        supports_chain_volume=False,
+        supports_open_interest=False,
+        limitations=("not configured",),
+        error="No true-flow source is configured",
+    )
+    dashboard_module.st.reset_mock()
+    dashboard_module._options_status_container(status, "True-flow source")
+    assert dashboard_module.st.error.called
+
+
+def test_options_status_container_available_source(dashboard_module):
+    status = _chain_status("yahoo", available=True)
+    dashboard_module.st.reset_mock()
+    dashboard_module._options_status_container(status, "Chain source")
+    assert dashboard_module.st.info.called
+
+
+def test_chain_scan_disabled_message_empty_when_available(dashboard_module):
+    status = _chain_status("yahoo", available=True)
+    assert dashboard_module._chain_scan_disabled_message(status) == ""
+
+
+def test_chain_scan_disabled_message_when_unconfigured(dashboard_module):
+    status = _chain_status("tradier", available=False, error="TRADIER_API_KEY is not configured")
+    msg = dashboard_module._chain_scan_disabled_message(status)
+    assert "TRADIER_API_KEY is not configured" in msg
+
+
+def test_chain_scan_disabled_message_rejects_unusual_whales(dashboard_module):
+    from tradex.options.models import OptionsSourceStatus
+
+    status = OptionsSourceStatus(
+        requested_source="unusual_whales",
+        actual_source=None,
+        configured=True,
+        available=False,
+        data_kind=None,
+        freshness="provider_defined",
+        delayed=None,
+        supports_event_timestamps=True,
+        supports_trade_side=True,
+        supports_premium=True,
+        supports_sweeps=True,
+        supports_chain_volume=False,
+        supports_open_interest=True,
+        limitations=("true-flow source",),
+        error="Unusual Whales is a true-flow source, not a chain snapshot.",
+    )
+    msg = dashboard_module._chain_scan_disabled_message(status)
+    assert "Unusual Whales is a true-flow source" in msg
+
+
+def _make_chain_report(status, total_fetched=1, total_matches=0, failures=None):
+    from tradex.options.models import (
+        OptionsActivityReport,
+        OptionsDataKind,
+        OptionsScanStatus,
+        OptionsSourceStatus,
+    )
+
+    if status in (OptionsScanStatus.SOURCE_UNAVAILABLE, OptionsScanStatus.NOT_FLOW_CAPABLE):
+        source_status = OptionsSourceStatus(
+            requested_source="auto",
+            actual_source=None,
+            configured=False,
+            available=False,
+            data_kind=None,
+            freshness="unknown",
+            delayed=None,
+            supports_event_timestamps=False,
+            supports_trade_side=False,
+            supports_premium=False,
+            supports_sweeps=False,
+            supports_chain_volume=False,
+            supports_open_interest=False,
+            limitations=("source unavailable",),
+            error="No chain source available",
+        )
+    else:
+        source_status = OptionsSourceStatus(
+            requested_source="auto",
+            actual_source="yahoo",
+            configured=True,
+            available=True,
+            data_kind=OptionsDataKind.CHAIN_SNAPSHOT,
+            freshness="delayed",
+            delayed=True,
+            supports_event_timestamps=False,
+            supports_trade_side=False,
+            supports_premium=False,
+            supports_sweeps=False,
+            supports_chain_volume=True,
+            supports_open_interest=True,
+            limitations=("delayed",),
+            error=None,
+        )
+
+    if total_matches:
+        results = pd.DataFrame({"ticker": ["AAPL"]})
+    else:
+        results = pd.DataFrame()
+
+    return OptionsActivityReport(
+        requested_source="auto",
+        actual_source=source_status.actual_source,
+        data_kind=source_status.data_kind,
+        status=status,
+        results=results,
+        source_status=source_status,
+        total_requested=2,
+        total_fetched=total_fetched,
+        total_matches=total_matches,
+        failures=failures or {},
+        limitations=("delayed",),
+    )
+
+
+def test_render_options_report_valid_zero(dashboard_module):
+    from tradex.options.models import OptionsScanStatus
+
+    dashboard_module.st.reset_mock()
+    report = _make_chain_report(OptionsScanStatus.NO_MATCHES, total_fetched=1, total_matches=0)
+    dashboard_module._render_options_report(report, "Options Chain Activity", 3.0)
+    assert dashboard_module.st.info.called
+
+
+def test_render_options_report_partial_failure_with_matches(dashboard_module):
+    from tradex.options.models import OptionsScanStatus
+
+    dashboard_module.st.reset_mock()
+    report = _make_chain_report(
+        OptionsScanStatus.PARTIAL_FAILURE,
+        total_fetched=1,
+        total_matches=1,
+        failures={"MSFT": "network timeout"},
+    )
+    dashboard_module._render_options_report(report, "Options Chain Activity", 3.0)
+    assert dashboard_module.st.success.called
+    assert dashboard_module.st.warning.called
+    assert dashboard_module.st.dataframe.called
+    assert dashboard_module.st.json.called
+
+
+def test_render_options_report_complete_failure(dashboard_module):
+    from tradex.options.models import OptionsScanStatus
+
+    dashboard_module.st.reset_mock()
+    report = _make_chain_report(
+        OptionsScanStatus.COMPLETE_FAILURE,
+        total_fetched=0,
+        total_matches=0,
+        failures={"AAPL": "HTTP 500", "MSFT": "HTTP 500"},
+    )
+    dashboard_module._render_options_report(report, "Options Chain Activity", 3.0)
+    assert dashboard_module.st.error.called
+    assert dashboard_module.st.json.called
+
+
+def test_render_options_report_source_unavailable(dashboard_module):
+    from tradex.options.models import OptionsScanStatus
+
+    dashboard_module.st.reset_mock()
+    report = _make_chain_report(
+        OptionsScanStatus.SOURCE_UNAVAILABLE,
+        total_fetched=0,
+        total_matches=0,
+    )
+    dashboard_module._render_options_report(report, "Options Chain Activity", 3.0)
+    assert dashboard_module.st.error.called

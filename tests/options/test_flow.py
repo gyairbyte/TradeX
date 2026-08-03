@@ -288,6 +288,7 @@ def test_scan_unusual_flow_with_report_successful_mocked_uw(_uw_record):
             report = flow.scan_unusual_flow_with_report(["AAPL"], min_vol_oi=3.0)
 
     assert report.status == OptionsScanStatus.COMPLETED
+    assert report.total_fetched == 1
     assert report.total_matches == 1
     assert len(report.results) == 1
     row = report.results.iloc[0]
@@ -307,6 +308,8 @@ def test_scan_unusual_flow_with_report_provider_sweep_unavailable_becomes_none(_
     with _uw_configured_via_patch():
         with patch.object(flow, "_fetch_unusual_whales_flow", return_value=[record]):
             report = flow.scan_unusual_flow_with_report(["AAPL"], min_vol_oi=3.0)
+    assert report.total_fetched == 1
+    assert report.total_matches == 1
     row = report.results.iloc[0]
     assert row["is_sweep"] is None
     assert row["provider_sentiment"] is None
@@ -318,7 +321,7 @@ def test_scan_unusual_flow_with_report_valid_zero_events():
         with patch.object(flow, "_fetch_unusual_whales_flow", return_value=[]):
             report = flow.scan_unusual_flow_with_report(["AAPL"], min_vol_oi=3.0)
     assert report.status == OptionsScanStatus.NO_MATCHES
-    assert report.total_fetched == 0
+    assert report.total_fetched == 1
     assert report.total_matches == 0
 
 
@@ -333,6 +336,7 @@ def test_scan_unusual_flow_with_report_partial_failure(_uw_record):
             report = flow.scan_unusual_flow_with_report(["AAPL", "MSFT"], min_vol_oi=3.0)
 
     assert report.status == OptionsScanStatus.PARTIAL_FAILURE
+    assert report.total_fetched == 1
     assert report.total_matches == 1
     assert "MSFT" in report.failures
     assert "network timeout" in report.failures["MSFT"]
@@ -345,6 +349,7 @@ def test_scan_unusual_flow_with_report_complete_failure():
     ):
         report = flow.scan_unusual_flow_with_report(["AAPL", "MSFT"], min_vol_oi=3.0)
     assert report.status == OptionsScanStatus.COMPLETE_FAILURE
+    assert report.total_fetched == 0
     assert report.total_matches == 0
     assert set(report.failures.keys()) == {"AAPL", "MSFT"}
 
@@ -367,7 +372,11 @@ def test_true_flow_sorting_is_deterministic(_uw_record):
     with _uw_configured_via_patch():
         with patch.object(flow, "_fetch_unusual_whales_flow", return_value=[rec1, rec2]):
             report = flow.scan_unusual_flow_with_report(["AAPL"], min_vol_oi=3.0)
+    assert report.status == OptionsScanStatus.COMPLETED
+    assert report.total_fetched == 1
+    assert report.total_matches == 2
     ratios = report.results["vol_oi_ratio"].tolist()
+    assert len(ratios) == 2
     assert ratios[0] >= ratios[1]
 
 
@@ -383,6 +392,7 @@ def test_scan_chain_activity_with_report_mocked_yahoo(_yahoo_chain):
     assert report.status == OptionsScanStatus.COMPLETED
     assert report.actual_source == "yahoo"
     assert report.data_kind == OptionsDataKind.CHAIN_SNAPSHOT
+    assert report.total_fetched == 1
     assert report.total_matches == 2
     row = report.results.iloc[0]
     assert row["data_kind"] == "chain_snapshot"
@@ -400,6 +410,8 @@ def test_scan_chain_activity_with_report_mocked_tradier(_tradier_chain_row):
 
     assert report.status == OptionsScanStatus.COMPLETED
     assert report.actual_source == "tradier"
+    assert report.total_fetched == 1
+    assert report.total_matches == 1
     assert len(report.results) == 1
     assert report.results.iloc[0]["data_kind"] == "chain_snapshot"
 
@@ -421,6 +433,7 @@ def test_chain_report_high_vol_oi_qualifies(_tradier_chain_row):
     with _tradier_configured_via_patch():
         with patch.object(flow, "_fetch_tradier_chain", return_value=pd.DataFrame([row])):
             report = flow.scan_chain_activity_with_report(["AAPL"], min_vol_oi=3.0)
+    assert report.total_fetched == 1
     assert report.total_matches == 1
     assert report.results.iloc[0]["vol_oi_ratio"] == 3.0
 
@@ -439,6 +452,7 @@ def test_chain_report_exact_boundary():
     with _tradier_configured_via_patch():
         with patch.object(flow, "_fetch_tradier_chain", return_value=pd.DataFrame([row])):
             report = flow.scan_chain_activity_with_report(["AAPL"], min_vol_oi=3.0)
+    assert report.total_fetched == 1
     assert report.total_matches == 1
     assert report.results.iloc[0]["vol_oi_ratio"] == 3.0
 
@@ -454,6 +468,7 @@ def test_chain_report_below_boundary_is_filtered():
     with _tradier_configured_via_patch():
         with patch.object(flow, "_fetch_tradier_chain", return_value=pd.DataFrame([row])):
             report = flow.scan_chain_activity_with_report(["AAPL"], min_vol_oi=3.0)
+    assert report.total_fetched == 1
     assert report.total_matches == 0
     assert report.status == OptionsScanStatus.NO_MATCHES
 
@@ -569,6 +584,7 @@ def test_chain_report_no_premature_rounding():
     with _tradier_configured_via_patch():
         with patch.object(flow, "_fetch_tradier_chain", return_value=pd.DataFrame([row])):
             report = flow.scan_chain_activity_with_report(["AAPL"], min_vol_oi=666.0)
+    assert report.total_fetched == 1
     assert report.total_matches == 1
 
     with _tradier_configured_via_patch():
@@ -585,6 +601,8 @@ def test_chain_report_valid_zero_matches():
         with patch.object(flow, "_fetch_tradier_chain", return_value=pd.DataFrame()):
             report = flow.scan_chain_activity_with_report(["AAPL"], min_vol_oi=3.0)
     assert report.status == OptionsScanStatus.NO_MATCHES
+    assert report.total_fetched == 1
+    assert report.total_matches == 0
     assert report.results.empty
 
 
@@ -599,6 +617,7 @@ def test_chain_report_partial_failure(_tradier_chain_row):
         with patch.object(flow, "_fetch_tradier_chain", side_effect=_fetch):
             report = flow.scan_chain_activity_with_report(["AAPL", "MSFT"], min_vol_oi=3.0)
     assert report.status == OptionsScanStatus.PARTIAL_FAILURE
+    assert report.total_fetched == 1
     assert report.total_matches == 1
     assert "MSFT" in report.failures
 
@@ -609,6 +628,8 @@ def test_chain_report_complete_failure():
     ):
         report = flow.scan_chain_activity_with_report(["AAPL", "MSFT"], min_vol_oi=3.0)
     assert report.status == OptionsScanStatus.COMPLETE_FAILURE
+    assert report.total_fetched == 0
+    assert report.total_matches == 0
     assert "AAPL" in report.failures
 
 
@@ -620,7 +641,11 @@ def test_chain_report_sorting_is_deterministic():
     with _tradier_configured_via_patch():
         with patch.object(flow, "_fetch_tradier_chain", return_value=pd.DataFrame(rows)):
             report = flow.scan_chain_activity_with_report(["AAPL"], min_vol_oi=2.0)
+    assert report.status == OptionsScanStatus.COMPLETED
+    assert report.total_fetched == 1
+    assert report.total_matches == 2
     ratios = report.results["vol_oi_ratio"].tolist()
+    assert len(ratios) == 2
     assert ratios[0] >= ratios[1]
 
 
@@ -933,6 +958,150 @@ def test_get_flow_auto_with_no_paid_keys_falls_back_to_yahoo(_yahoo_chain):
 def test_wrapper_does_not_restore_misleading_behavior(_yahoo_chain):
     with pytest.raises(ProviderCapabilityError):
         flow.scan_unusual_flow(["AAPL"], source="yahoo")
+
+
+# ── report count semantics regressions ─────────────────────────────────────────
+def test_scan_unusual_flow_with_report_partial_failure_zero_matches():
+    with _uw_configured_via_patch():
+        def _fetch(ticker):
+            if ticker == "AAPL":
+                return []
+            raise ProviderTransientError("network timeout")
+
+        with patch.object(flow, "_fetch_unusual_whales_flow", side_effect=_fetch):
+            report = flow.scan_unusual_flow_with_report(["AAPL", "MSFT"], min_vol_oi=3.0)
+
+    assert report.status == OptionsScanStatus.PARTIAL_FAILURE
+    assert report.total_fetched == 1
+    assert report.total_matches == 0
+    assert "MSFT" in report.failures
+
+
+def test_chain_report_partial_failure_zero_matches():
+    row = {
+        "option_type": "call",
+        "strike": 150.0,
+        "expiration_date": "2024-02-16",
+        "volume": 3000,
+        "open_interest": 1000,
+    }
+    df = pd.DataFrame([row])
+    with _tradier_configured_via_patch():
+        def _fetch(ticker):
+            if ticker == "AAPL":
+                return df
+            raise ProviderTransientError("network timeout")
+
+        with patch.object(flow, "_fetch_tradier_chain", side_effect=_fetch):
+            report = flow.scan_chain_activity_with_report(["AAPL", "MSFT"], min_vol_oi=5.0)
+
+    assert report.status == OptionsScanStatus.PARTIAL_FAILURE
+    assert report.total_fetched == 1
+    assert report.total_matches == 0
+    assert "MSFT" in report.failures
+
+
+# ── provider boolean normalization regressions ─────────────────────────────────
+def test_provider_bool_strict_normalization():
+    assert flow._provider_bool(True) is True
+    assert flow._provider_bool(False) is False
+    assert flow._provider_bool(None) is None
+    assert flow._provider_bool(1) is True
+    assert flow._provider_bool(0) is False
+    assert flow._provider_bool("true") is True
+    assert flow._provider_bool("True") is True
+    assert flow._provider_bool("false") is False
+    assert flow._provider_bool("False") is False
+    assert flow._provider_bool("0") is False
+    assert flow._provider_bool("1") is True
+    assert flow._provider_bool("yes") is True
+    assert flow._provider_bool("no") is False
+    assert flow._provider_bool("foo") is None
+    assert flow._provider_bool("") is None
+    assert flow._provider_bool([1]) is None
+    assert flow._provider_bool({"is_sweep": True}) is None
+
+
+def test_scan_unusual_flow_string_false_is_not_sweep(_uw_record):
+    record = dict(_uw_record)
+    record["is_sweep"] = "false"
+    with _uw_configured_via_patch():
+        with patch.object(flow, "_fetch_unusual_whales_flow", return_value=[record]):
+            report = flow.scan_unusual_flow_with_report(["AAPL"], min_vol_oi=3.0)
+    row = report.results.iloc[0]
+    assert bool(row["is_sweep"]) is False
+
+
+# ── malformed provider schema regressions ──────────────────────────────────────
+def test_fetch_unusual_whales_top_level_not_dict():
+    resp = Mock(status_code=200, json=Mock(return_value=[]))
+    with _uw_configured_via_patch(), patch.object(flow.requests, "get", return_value=resp):
+        with pytest.raises(ProviderResponseError, match="not a JSON object"):
+            flow._fetch_unusual_whales_flow("AAPL")
+
+
+def test_fetch_unusual_whales_data_not_list():
+    resp = Mock(status_code=200, json=Mock(return_value={"data": "bad"}))
+    with _uw_configured_via_patch(), patch.object(flow.requests, "get", return_value=resp):
+        with pytest.raises(ProviderResponseError, match="not a list"):
+            flow._fetch_unusual_whales_flow("AAPL")
+
+
+def test_fetch_unusual_whales_requests_json_decode_error():
+    resp = Mock(
+        status_code=200,
+        json=Mock(side_effect=requests.exceptions.JSONDecodeError("test", "", 0)),
+    )
+    with _uw_configured_via_patch(), patch.object(flow.requests, "get", return_value=resp):
+        with pytest.raises(ProviderResponseError, match="malformed JSON"):
+            flow._fetch_unusual_whales_flow("AAPL")
+
+
+def test_parse_whales_flow_rejects_non_list():
+    with pytest.raises(ProviderResponseError, match="not a list"):
+        flow._parse_whales_flow("notalist", "AAPL", "unusual_whales", "unusual_whales")
+
+
+def test_parse_whales_flow_rejects_non_object_record():
+    with pytest.raises(ProviderResponseError, match="not an object"):
+        flow._parse_whales_flow(["bad"], "AAPL", "unusual_whales", "unusual_whales")
+
+
+def test_fetch_tradier_expirations_top_level_not_dict():
+    resp = Mock(status_code=200, json=Mock(return_value=[]))
+    with _tradier_configured_via_patch(), patch.object(flow.requests, "get", return_value=resp):
+        with pytest.raises(ProviderResponseError, match="not a JSON object"):
+            flow._fetch_tradier_chain("AAPL")
+
+
+def test_fetch_tradier_expirations_date_not_list_or_string():
+    resp = Mock(status_code=200, json=Mock(return_value={"expirations": {"date": 123}}))
+    with _tradier_configured_via_patch(), patch.object(flow.requests, "get", return_value=resp):
+        with pytest.raises(ProviderResponseError, match="not a list or string"):
+            flow._fetch_tradier_chain("AAPL")
+
+
+def test_fetch_tradier_chain_option_not_list_of_objects():
+    resp = Mock(
+        status_code=200,
+        json=Mock(side_effect=[
+            {"expirations": {"date": ["2024-02-16"]}},
+            {"options": {"option": ["bad"]}},
+        ]),
+    )
+    with _tradier_configured_via_patch(), patch.object(flow.requests, "get", return_value=resp):
+        with pytest.raises(ProviderResponseError, match="not a list of objects"):
+            flow._fetch_tradier_chain("AAPL")
+
+
+def test_fetch_tradier_requests_json_decode_error():
+    resp = Mock(
+        status_code=200,
+        json=Mock(side_effect=requests.exceptions.JSONDecodeError("test", "", 0)),
+    )
+    with _tradier_configured_via_patch(), patch.object(flow.requests, "get", return_value=resp):
+        with pytest.raises(ProviderResponseError, match="malformed JSON"):
+            flow._fetch_tradier_chain("AAPL")
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────

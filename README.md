@@ -420,6 +420,7 @@ The Options Activity dashboard tab and `tradex/options/flow.py` distinguish two 
 **Key usage rules:**
 - Chain volume/OI is never presented as "unusual options flow" or as a directional/institutional signal.
 - `vol_oi_ratio` is `volume / open_interest` only when both values are finite, non-negative volume, and strictly positive open interest; otherwise it is `null`.
+- True-flow events from Unusual Whales that lack a valid `open_interest` value receive `vol_oi_ratio=None` and are excluded from `min_vol_oi` filtering.
 - Put/call volume balance is explicitly non-directional. Values are `call_heavy`, `put_heavy`, `balanced`, `call_only`, `put_only`, `unknown`, or `unavailable`.
 - `directional_inference` is always `false` for aggregate chain volume.
 

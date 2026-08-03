@@ -96,9 +96,10 @@ def _unusual_whales_status(
         supports_premium=True,
         supports_sweeps=True,
         supports_chain_volume=False,
-        supports_open_interest=False,
+        supports_open_interest=True,
         limitations=(
             "Premium, side, sweep, and sentiment fields are provider-supplied and may be absent from any response.",
+            "Some flow events may not include valid open_interest; those records receive vol_oi_ratio=None and are excluded from min_vol_oi filtering.",
         ),
         error=error,
     )
@@ -392,9 +393,27 @@ def _normalize_contract_type(value: object) -> str | None:
 
 
 def _provider_bool(value: object) -> bool | None:
+    """Normalize provider boolean sweep flags.
+
+    Accepts real Python booleans, integers, and the string encodings
+    ``true``/``false``/``1``/``0``/``yes``/``no``/``y``/``n`` (case-insensitive).
+    Any other value is treated as ``None`` (unknown) so that a malformed field
+    can never silently become a sweep.
+    """
     if value is None:
         return None
-    return bool(value)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return value != 0
+    if isinstance(value, str):
+        s = value.strip().lower()
+        if s in ("true", "1", "yes", "y"):
+            return True
+        if s in ("false", "0", "no", "n"):
+            return False
+        return None
+    return None
 
 
 def _parse_whales_flow(
@@ -404,8 +423,18 @@ def _parse_whales_flow(
     actual_source: str,
 ) -> pd.DataFrame:
     """Normalize Unusual Whales flow records to the stable schema."""
+    if not isinstance(records, list):
+        raise ProviderResponseError(
+            f"Unusual Whales data for {ticker} is not a list"
+        )
     if not records:
         return _empty_results()
+
+    for idx, r in enumerate(records):
+        if not isinstance(r, Mapping):
+            raise ProviderResponseError(
+                f"Unusual Whales record {idx} for {ticker} is not an object"
+            )
 
     rows = []
     for r in records:
@@ -529,15 +558,28 @@ def _fetch_unusual_whales_flow(ticker: str, limit: int = 20) -> list[dict]:
             raise ProviderResponseError(
                 f"Unusual Whales returned HTTP {resp.status_code} for {ticker}"
             )
-        data = resp.json().get("data", [])
-        return data if isinstance(data, list) else []
-    except requests.RequestException as exc:
-        raise ProviderTransientError(
-            f"Unusual Whales request failed for {ticker}: {type(exc).__name__}"
+        payload = resp.json()
+        if not isinstance(payload, Mapping):
+            raise ProviderResponseError(
+                f"Unusual Whales response for {ticker} is not a JSON object"
+            )
+        data = payload.get("data", [])
+        if not isinstance(data, list):
+            raise ProviderResponseError(
+                f"Unusual Whales 'data' field for {ticker} is not a list"
+            )
+        return data
+    except requests.exceptions.JSONDecodeError as exc:
+        raise ProviderResponseError(
+            f"Unusual Whales returned malformed JSON for {ticker}"
         ) from exc
     except json.JSONDecodeError as exc:
         raise ProviderResponseError(
             f"Unusual Whales returned malformed JSON for {ticker}"
+        ) from exc
+    except requests.RequestException as exc:
+        raise ProviderTransientError(
+            f"Unusual Whales request failed for {ticker}: {type(exc).__name__}"
         ) from exc
     except ProviderError:
         raise
@@ -575,10 +617,27 @@ def _fetch_tradier_chain(ticker: str) -> pd.DataFrame:
             raise ProviderResponseError(
                 f"Tradier expirations returned HTTP {exp_resp.status_code} for {ticker}"
             )
-        expirations = exp_resp.json().get("expirations", {}).get("date", [])
+        exp_payload = exp_resp.json()
+        if not isinstance(exp_payload, Mapping):
+            raise ProviderResponseError(
+                f"Tradier expirations response for {ticker} is not a JSON object"
+            )
+        expirations_obj = exp_payload.get("expirations", {})
+        if not isinstance(expirations_obj, Mapping):
+            raise ProviderResponseError(
+                f"Tradier expirations object for {ticker} is malformed"
+            )
+        expirations = expirations_obj.get("date", [])
         if not expirations:
             return _empty_results()
-        nearest_exp = expirations[0] if isinstance(expirations, list) else expirations
+        if isinstance(expirations, list):
+            nearest_exp = expirations[0]
+        elif isinstance(expirations, str):
+            nearest_exp = expirations
+        else:
+            raise ProviderResponseError(
+                f"Tradier expirations 'date' field for {ticker} is not a list or string"
+            )
 
         chain_url = "https://api.tradier.com/v1/markets/options/chains"
         chain_resp = requests.get(
@@ -591,17 +650,37 @@ def _fetch_tradier_chain(ticker: str) -> pd.DataFrame:
             raise ProviderResponseError(
                 f"Tradier chain returned HTTP {chain_resp.status_code} for {ticker}"
             )
-        options = chain_resp.json().get("options", {}).get("option", [])
+        chain_payload = chain_resp.json()
+        if not isinstance(chain_payload, Mapping):
+            raise ProviderResponseError(
+                f"Tradier chain response for {ticker} is not a JSON object"
+            )
+        options_obj = chain_payload.get("options", {})
+        if not isinstance(options_obj, Mapping):
+            raise ProviderResponseError(
+                f"Tradier chain options object for {ticker} is malformed"
+            )
+        options = options_obj.get("option", [])
         if not options:
             return _empty_results()
+        if isinstance(options, dict):
+            options = [options]
+        if not isinstance(options, list) or not all(isinstance(opt, Mapping) for opt in options):
+            raise ProviderResponseError(
+                f"Tradier chain 'option' field for {ticker} is not a list of objects"
+            )
         return pd.DataFrame(options)
-    except requests.RequestException as exc:
-        raise ProviderTransientError(
-            f"Tradier request failed for {ticker}: {type(exc).__name__}"
+    except requests.exceptions.JSONDecodeError as exc:
+        raise ProviderResponseError(
+            f"Tradier returned malformed JSON for {ticker}"
         ) from exc
     except json.JSONDecodeError as exc:
         raise ProviderResponseError(
             f"Tradier returned malformed JSON for {ticker}"
+        ) from exc
+    except requests.RequestException as exc:
+        raise ProviderTransientError(
+            f"Tradier request failed for {ticker}: {type(exc).__name__}"
         ) from exc
     except ProviderError:
         raise
@@ -696,9 +775,22 @@ def _apply_vol_oi_filter(df: pd.DataFrame, min_vol_oi: float) -> pd.DataFrame:
     return df[mask].reset_index(drop=True)
 
 
-def _determine_scan_status(total_matches: int, failures: Mapping[str, str]) -> OptionsScanStatus:
+def _determine_scan_status(
+    total_matches: int,
+    total_fetched: int,
+    failures: Mapping[str, str],
+) -> OptionsScanStatus:
+    """Determine scan status from successful ticker fetches and failures.
+
+    ``total_fetched`` is the number of tickers that fetched successfully (it may be
+    zero even when rows were parsed). ``total_matches`` is the count of rows that
+    passed ``min_vol_oi``. A partial failure means at least one ticker succeeded
+    while another failed, regardless of how many rows matched the threshold.
+    """
     if failures:
-        return OptionsScanStatus.PARTIAL_FAILURE if total_matches > 0 else OptionsScanStatus.COMPLETE_FAILURE
+        if total_fetched > 0:
+            return OptionsScanStatus.PARTIAL_FAILURE
+        return OptionsScanStatus.COMPLETE_FAILURE
     if total_matches == 0:
         return OptionsScanStatus.NO_MATCHES
     return OptionsScanStatus.COMPLETED
@@ -714,7 +806,7 @@ def _scan_report(
     status: OptionsScanStatus | None = None,
 ) -> OptionsActivityReport:
     if status is None:
-        status = _determine_scan_status(total_matches, failures)
+        status = _determine_scan_status(total_matches, total_fetched, failures)
     limitations = tuple(source_status.limitations)
     return OptionsActivityReport(
         requested_source=source_status.requested_source,
@@ -776,11 +868,11 @@ def scan_unusual_flow_with_report(
             failures[ticker] = _sanitize_failure_message(exc)
 
     combined = pd.concat(all_rows, ignore_index=True) if all_rows else _empty_results()
-    total_fetched = len(combined)
+    total_fetched = len(all_rows)
     filtered = _apply_vol_oi_filter(combined, min_vol_oi)
     total_matches = len(filtered)
     sorted_results = _sort_results(filtered)
-    status = _determine_scan_status(total_matches, failures)
+    status = _determine_scan_status(total_matches, total_fetched, failures)
 
     return _scan_report(
         source_status,
@@ -850,11 +942,11 @@ def scan_chain_activity_with_report(
             failures[ticker] = _sanitize_failure_message(exc)
 
     combined = pd.concat(all_rows, ignore_index=True) if all_rows else _empty_results()
-    total_fetched = len(combined)
+    total_fetched = len(all_rows)
     filtered = _apply_vol_oi_filter(combined, min_vol_oi)
     total_matches = len(filtered)
     sorted_results = _sort_results(filtered)
-    status = _determine_scan_status(total_matches, failures)
+    status = _determine_scan_status(total_matches, total_fetched, failures)
 
     return _scan_report(
         source_status,

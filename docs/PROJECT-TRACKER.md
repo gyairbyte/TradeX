@@ -163,7 +163,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Acceptance criteria:** Repeated checks for the same alert identity produce only one Discord/email message per cooldown window; state persists across watcher restarts; manual test alerts bypass cooldown.
 - **Intended pull request:** `devin/add-alert-cooldown`
 - **Affects trading behavior:** Yes — production trading-alert delivery cadence changes; signals, scores, thresholds, rankings, and eligibility remain unchanged. Implementation authorized by Gary; final merge requires Gary’s explicit approval.
-- **Next recommended PR:** `devin/add-initial-adrs` (DEC-001)
+- **Next recommended PR:** `devin/validate-pattern-matcher` (PATTERN-001)
 
 ### TEST-001: Complete test foundation and fixtures
 
@@ -508,6 +508,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Acceptance criteria:** True-flow scans only run when Unusual Whales is configured; chain scans use Tradier or Yahoo; no result is labeled as true flow from a snapshot source; put/call volume balance is explicitly non-directional; the dashboard tab is renamed to "Options Activity" and shows source/data-kind warnings.
 - **Intended pull request:** `devin/gate-options-flow`
 - **Affects trading behavior:** Yes — production options-feature eligibility and interpretation change: users without Unusual Whales can no longer run a true options-flow scan, and chain volume/OI is no longer presented as unusual/directional flow. Final merge requires Gary's explicit approval.
+- **Next recommended PR:** `devin/validate-pattern-matcher` (PATTERN-001)
 
 ### UI-001: Split `dashboard.py` into tab and component modules
 
@@ -645,6 +646,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 | Low | 5 | DOC-001: Fix documentation drift |
 
 **Recommended next pull request order:**
-1. `devin/add-initial-adrs` (DEC-001).
-2. `devin/improve-long-term-score` (LONG-001).
+1. `devin/validate-pattern-matcher` (PATTERN-001).
+2. `devin/add-initial-adrs` (DEC-001) — deferred behind remaining medium-priority trust work.
+3. `devin/improve-long-term-score` (LONG-001).
 

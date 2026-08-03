@@ -78,7 +78,7 @@ copy .env.example .env    # Windows
 `DATA_PROVIDER` controls **OHLCV data** only. Options activity, earnings, and market-cap ranking have their own source overrides (see `.env.example`).
 
 For options, the source also determines the *kind* of data available:
-- `unusual_whales` (or `auto` when `UNUSUAL_WHALES_API_KEY` is set) provides **true options-flow** events (sweeps, premium, side).
+- `unusual_whales` (or `auto` when `UNUSUAL_WHALES_API_KEY` is set) provides **true options-flow** events (sweeps, premium, side). Events without a valid `open_interest` value receive `vol_oi_ratio=None` and are excluded from `min_vol_oi` filtering.
 - `tradier` (or `auto` when `TRADIER_API_KEY` is set) and `yahoo` provide **options-chain snapshots** (volume, open interest, bid/ask/last) only. They cannot supply transaction-level flow.
 
 Signal history records the OHLCV provider that produced each signal (`signal_history.provider`), and resolved outcomes record `outcome_provider`. Every scan now writes a `scan_sessions` row and one `scan_observations` row per ticker requested, including tickers that scored below threshold or failed to fetch. A linked `scan_runs` audit row records `tickers_n` (requested), `hits_n` (qualifying signals), `status` (completed / partial / failed / unknown), `requested_provider` / `actual_provider`, and `source` (native / compatibility / legacy). Pre-existing databases are migrated safely; rows created before this feature are labeled `unknown` and assigned to synthetic legacy sessions, while old `scan_runs` rows are preserved with `source='legacy'` and `counts_complete=0`.
