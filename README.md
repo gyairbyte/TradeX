@@ -12,6 +12,9 @@ TradeX identifies trading opportunities across three timeframes: **intraday**, *
 tradex/
 ├── tradex/
 │   ├── data/fetcher.py            # Multi-provider OHLCV fetcher (Yahoo, Alpaca, IBKR, Schwab)
+│   ├── market/
+│   │   ├── context.py             # Point-in-time regime and relative-strength context
+│   │   └── models.py              # ShortContextPolicy, ShortTermMarketContext
 │   ├── signals/
 │   │   ├── indicators.py          # RSI, MACD, EMA, Bollinger Bands, ATR, volume ratios
 │   │   ├── intraday.py            # 5m bars / 5-day window scorer
@@ -30,6 +33,9 @@ tradex/
 │   │   ├── miner.py               # Mines 3yr daily history for run-up / decline events
 │   │   ├── fingerprint.py         # Averages mined windows into fingerprints
 │   │   └── matcher.py             # Weighted Pearson similarity vs. live 10-day windows
+│   ├── research/
+│   │   ├── score_validation/      # VAL-002 reproducible score-validation study
+│   │   └── short_context/         # SHORT-001 market-context research pipeline
 │   ├── premarket/gap_scanner.py   # Pre-market gap-up/down detector
 │   ├── options/flow.py            # Unusual options activity, put/call sentiment
 │   ├── alerts/notifier.py         # Discord bot + email alerting
@@ -241,6 +247,27 @@ Key design choices:
 
 **Valid outcome:** A study may conclude `insufficient evidence to change the production score`. The tool does not automatically select, promote, or mutate production thresholds.
 
+### Short-term market context research (SHORT-001)
+
+`tradex/research/short_context` evaluates whether adding market-regime and relative-strength context improves the short-term scorer. It reuses the VAL-002 snapshot/evaluation design and adds point-in-time context computation in `tradex/market/context.py`.
+
+Candidate context policies:
+
+- `off` — baseline short-term score, no proxy fetches.
+- `market_rs` — requires the broad market to be in a bullish regime and have positive relative strength.
+- `market_sector_rs` — also requires the sector proxy to be bullish and relatively strong.
+
+The research scorer `short_term.score(df, context=..., context_policy=...)` keeps the numeric `score` unchanged and adds `base_score`, `context_eligible`, `context_status`, `context_reasons`, and `market_context`. A candidate context policy is only promoted to production when both the event-study and paired-backtest holdout gates pass; until then, the production screener does not expose context filtering.
+
+```bash
+# CLI
+uv run python -m tradex.research.short_context --help
+uv run python -m tradex.research.short_context snapshot --help
+uv run python -m tradex.research.short_context evaluate --help
+```
+
+A failed or inconclusive study leaves the existing short-term score, weights, thresholds, and production behavior unchanged.
+
 ---
 
 ## Data Providers
@@ -369,6 +396,7 @@ Save and switch between named ticker lists (e.g. "Semis", "Crypto-adjacent", "Ea
 - [x] Fix scan audit to accurately distinguish requested, observed, qualifying, and failed scans (COR-012)
 - [x] Backtesting module to validate signal quality historically (VAL-001)
 - [x] Reproducible, point-in-time score validation study (VAL-002)
+- [x] Short-term market context research pipeline and holdout gates (SHORT-001 — research infrastructure complete; production integration blocked pending real-data gates)
 - [ ] Portfolio-level risk view
 
 ### Nice-to-have enhancements
