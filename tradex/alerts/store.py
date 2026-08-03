@@ -1,6 +1,7 @@
 """Persistent, isolated SQLite alert cooldown state store."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sqlite3
@@ -12,7 +13,15 @@ from typing import Any
 
 import pandas as pd
 
-from tradex.alerts.models import AlertDecision, AlertKey, AlertPolicyError, ensure_aware_utc
+from tradex.alerts.models import (
+    AlertDecision,
+    AlertKey,
+    AlertPolicyError,
+    _CONTROL_RE,
+    _MAX_ALERT_TYPE_LEN,
+    _MAX_KEY_LEN,
+    ensure_aware_utc,
+)
 
 _SCHEMA_VERSION = 1
 
@@ -34,6 +43,7 @@ CREATE TABLE IF NOT EXISTS alert_state (
 
     claim_token TEXT,
     claim_expires_at TEXT,
+    last_claim_token_hash TEXT,
 
     last_decision TEXT,
     last_reason TEXT,
@@ -60,7 +70,32 @@ def _to_iso(value: datetime) -> str:
 def _from_iso(value: str | None) -> datetime | None:
     if value is None:
         return None
-    return datetime.fromisoformat(value).astimezone(UTC)
+    try:
+        return datetime.fromisoformat(value).astimezone(UTC)
+    except (TypeError, ValueError) as exc:
+        raise AlertStateError(f"corrupt datetime in alert state: {value!r}") from exc
+
+
+def _hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _validate_filter(value: Any, name: str) -> str:
+    """Validate a single filter value for list_alert_states.
+
+    Mirrors AlertKey normalization but raises ValueError instead of creating a key.
+    """
+    if not isinstance(value, str):
+        raise ValueError(f"{name} filter must be a string, got {type(value).__name__}")
+    normalized = value.strip().upper() if name == "ticker" else value.strip().lower()
+    if not normalized:
+        raise ValueError(f"{name} filter must not be empty or whitespace")
+    if _CONTROL_RE.search(normalized):
+        raise ValueError(f"{name} filter contains control characters")
+    max_len = _MAX_KEY_LEN if name == "ticker" else _MAX_ALERT_TYPE_LEN
+    if len(normalized) > max_len:
+        raise ValueError(f"{name} filter exceeds max length {max_len}")
+    return normalized
 
 
 @dataclass(frozen=True)
@@ -122,6 +157,14 @@ class AlertStore:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript(_CREATE_SCHEMA_SQL)
 
+            # Add the token-hash audit column to existing alert_state tables without it.
+            try:
+                conn.execute(
+                    "ALTER TABLE alert_state ADD COLUMN last_claim_token_hash TEXT"
+                )
+            except sqlite3.OperationalError:
+                pass
+
             row = conn.execute("SELECT version FROM _schema_version WHERE id = 1").fetchone()
             if row is None:
                 conn.execute(
@@ -166,6 +209,7 @@ class AlertStore:
         """
         observed_at = ensure_aware_utc(observed_at)
         token = uuid.uuid4().hex
+        token_hash = _hash_token(token)
         lease_expires = observed_at + timedelta(seconds=lease_seconds)
 
         conn = self._connection()
@@ -247,7 +291,7 @@ class AlertStore:
                             "decision": AlertDecision.SUPPRESSED_IN_FLIGHT,
                             "reason": "Another delivery claim is in flight",
                             "last_success_at": last_success_dt,
-                            "next_eligible_at": cooldown_dt,
+                            "next_eligible_at": claim_expires_dt,
                         }
 
                     # Stale or no claim: overwrite with new claim.
@@ -256,6 +300,7 @@ class AlertStore:
                         UPDATE alert_state
                         SET claim_token = ?,
                             claim_expires_at = ?,
+                            last_claim_token_hash = ?,
                             last_attempt_at = ?,
                             updated_at = ?
                         WHERE ticker = ? AND alert_type = ? AND timeframe = ?
@@ -263,6 +308,7 @@ class AlertStore:
                         (
                             token,
                             _to_iso(lease_expires),
+                            token_hash,
                             _to_iso(observed_at),
                             _to_iso(observed_at),
                             key.ticker,
@@ -285,9 +331,9 @@ class AlertStore:
                     """
                     INSERT INTO alert_state (
                         ticker, alert_type, timeframe,
-                        claim_token, claim_expires_at, last_attempt_at,
-                        created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        claim_token, claim_expires_at, last_claim_token_hash,
+                        last_attempt_at, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         key.ticker,
@@ -295,6 +341,7 @@ class AlertStore:
                         key.timeframe,
                         token,
                         _to_iso(lease_expires),
+                        token_hash,
                         _to_iso(observed_at),
                         _to_iso(observed_at),
                         _to_iso(observed_at),
@@ -331,9 +378,9 @@ class AlertStore:
     ) -> bool:
         """Finalize a previously acquired claim.
 
-        Returns ``True`` if the token matched and the row was updated. Wrong or
-        expired tokens return ``False``. Cooldown is only started for ``SENT``
-        decisions.
+        Returns ``True`` if the token matched and the lease is still valid.
+        Wrong or expired tokens, already-finalized rows, or mismatched outcomes
+        return ``False``. Cooldown is only started for ``SENT`` decisions.
         """
         observed_at = ensure_aware_utc(observed_at)
         cooldown_until = (
@@ -343,6 +390,7 @@ class AlertStore:
         )
 
         channel_json = json.dumps(channel_results, allow_nan=False, sort_keys=True, ensure_ascii=True)
+        token_hash = _hash_token(token)
 
         conn = self._connection()
         try:
@@ -351,7 +399,10 @@ class AlertStore:
             try:
                 row = cur.execute(
                     """
-                    SELECT claim_token, last_attempt_at, last_decision, last_subject, last_payload_hash
+                    SELECT
+                        claim_token, claim_expires_at, last_attempt_at,
+                        last_decision, last_subject, last_payload_hash,
+                        last_claim_token_hash
                     FROM alert_state
                     WHERE ticker = ? AND alert_type = ? AND timeframe = ?
                     """,
@@ -362,12 +413,23 @@ class AlertStore:
                     conn.rollback()
                     return False
 
-                stored_token, last_attempt_at, last_decision, last_subject, last_payload_hash = row
+                (
+                    stored_token,
+                    claim_expires_at,
+                    last_attempt_at,
+                    last_decision,
+                    last_subject,
+                    last_payload_hash,
+                    last_token_hash,
+                ) = row
 
-                # Idempotent duplicate finalize: same token already cleared and the
-                # same outcome was recorded for this exact attempt.
+                # Idempotent duplicate finalize: the same claim token produced the
+                # same outcome for this exact attempt. The raw claim token is never
+                # exposed; we compare its SHA-256 hash.
                 if (
                     stored_token is None
+                    and last_token_hash is not None
+                    and last_token_hash == token_hash
                     and last_attempt_at == _to_iso(observed_at)
                     and last_decision == decision.value
                     and last_subject == subject
@@ -376,7 +438,12 @@ class AlertStore:
                     conn.commit()
                     return True
 
-                if stored_token != token:
+                if stored_token is None or stored_token != token:
+                    conn.rollback()
+                    return False
+
+                claim_expires_dt = _from_iso(claim_expires_at)
+                if claim_expires_dt is not None and observed_at >= claim_expires_dt:
                     conn.rollback()
                     return False
 
@@ -503,22 +570,28 @@ class AlertStore:
     ) -> pd.DataFrame:
         """Return a stable, deterministic DataFrame of alert-state rows.
 
-        Columns include the key, audit timestamps, counters, and claim state.
-        Never exposes message bodies or secrets.
+        Columns include the key, audit timestamps, counters, and lease expiry.
+        The raw ``claim_token`` coordination handle is intentionally not exposed
+        in this public schema. Message bodies and secrets are never included.
         """
         if not isinstance(limit, int) or isinstance(limit, bool):
             raise TypeError("limit must be an integer")
         if limit <= 0 or limit > 10_000:
             raise ValueError("limit must be between 1 and 10000")
 
+        normalized_ticker = _validate_filter(ticker, "ticker") if ticker is not None else None
+        normalized_alert_type = (
+            _validate_filter(alert_type, "alert_type") if alert_type is not None else None
+        )
+
         filters: list[str] = []
         params: list[Any] = []
-        if ticker is not None:
+        if normalized_ticker is not None:
             filters.append("ticker = ?")
-            params.append(str(ticker).strip().upper())
-        if alert_type is not None:
+            params.append(normalized_ticker)
+        if normalized_alert_type is not None:
             filters.append("alert_type = ?")
-            params.append(str(alert_type).strip().lower())
+            params.append(normalized_alert_type)
 
         where = ""
         if filters:
@@ -532,7 +605,7 @@ class AlertStore:
                 SELECT
                     ticker, alert_type, timeframe,
                     last_attempt_at, last_success_at, cooldown_until,
-                    claim_token, claim_expires_at,
+                    claim_expires_at,
                     last_decision, last_reason, last_subject,
                     sent_count, suppressed_count, failed_count,
                     created_at, updated_at
@@ -548,46 +621,47 @@ class AlertStore:
         finally:
             conn.close()
 
+        columns = [
+            "ticker",
+            "alert_type",
+            "timeframe",
+            "last_decision",
+            "last_success_at",
+            "cooldown_until",
+            "claim_expires_at",
+            "sent_count",
+            "suppressed_count",
+            "failed_count",
+            "last_attempt_at",
+            "created_at",
+            "updated_at",
+        ]
+
         if not rows:
-            return pd.DataFrame(
-                columns=[
-                    "ticker",
-                    "alert_type",
-                    "timeframe",
-                    "last_decision",
-                    "last_success_at",
-                    "cooldown_until",
-                    "claim_token",
-                    "claim_expires_at",
-                    "sent_count",
-                    "suppressed_count",
-                    "failed_count",
-                    "last_attempt_at",
-                    "created_at",
-                    "updated_at",
-                ]
-            )
+            return pd.DataFrame(columns=columns)
 
         data = []
         for row in rows:
-            data.append(
-                {
-                    "ticker": row[0],
-                    "alert_type": row[1],
-                    "timeframe": row[2],
-                    "last_decision": row[8],
-                    "last_success_at": _from_iso(row[4]),
-                    "cooldown_until": _from_iso(row[5]),
-                    "claim_token": row[6],
-                    "claim_expires_at": _from_iso(row[7]),
-                    "sent_count": row[11],
-                    "suppressed_count": row[12],
-                    "failed_count": row[13],
-                    "last_attempt_at": _from_iso(row[3]),
-                    "created_at": _from_iso(row[14]),
-                    "updated_at": _from_iso(row[15]),
-                }
-            )
+            try:
+                data.append(
+                    {
+                        "ticker": row[0],
+                        "alert_type": row[1],
+                        "timeframe": row[2],
+                        "last_decision": row[7],
+                        "last_success_at": _from_iso(row[4]),
+                        "cooldown_until": _from_iso(row[5]),
+                        "claim_expires_at": _from_iso(row[6]),
+                        "sent_count": row[10],
+                        "suppressed_count": row[11],
+                        "failed_count": row[12],
+                        "last_attempt_at": _from_iso(row[3]),
+                        "created_at": _from_iso(row[13]),
+                        "updated_at": _from_iso(row[14]),
+                    }
+                )
+            except (TypeError, ValueError) as exc:
+                raise AlertStateError(f"corrupt alert state row: {exc}") from exc
 
         return pd.DataFrame(data)
 

@@ -224,7 +224,6 @@ def test_list_alert_states_empty_schema(tmp_alert_store):
         "last_decision",
         "last_success_at",
         "cooldown_until",
-        "claim_token",
         "claim_expires_at",
         "sent_count",
         "suppressed_count",
@@ -258,6 +257,49 @@ def test_list_invalid_limit(tmp_alert_store):
         tmp_alert_store.list_alert_states(limit=0)
     with pytest.raises(ValueError):
         tmp_alert_store.list_alert_states(limit=10001)
+
+
+def test_list_invalid_ticker_filter(tmp_alert_store):
+    with pytest.raises(ValueError):
+        tmp_alert_store.list_alert_states(ticker="  ")
+    with pytest.raises(ValueError):
+        tmp_alert_store.list_alert_states(ticker="AAPL\x00")
+    with pytest.raises(ValueError):
+        tmp_alert_store.list_alert_states(ticker=123)
+
+
+def test_list_invalid_alert_type_filter(tmp_alert_store):
+    with pytest.raises(ValueError):
+        tmp_alert_store.list_alert_states(alert_type="  ")
+    with pytest.raises(ValueError, match="control"):
+        tmp_alert_store.list_alert_states(alert_type="coil\x01")
+
+
+def test_in_flight_next_eligible_is_claim_expires_at(tmp_alert_store):
+    key = AlertKey("AAPL", "coil", "intraday")
+    now = datetime.now(UTC)
+    tmp_alert_store.claim(key, now, lease_seconds=120)
+    second = tmp_alert_store.claim(key, now, lease_seconds=120)
+    assert second["allowed"] is False
+    assert second["decision"] == AlertDecision.SUPPRESSED_IN_FLIGHT
+    assert second["next_eligible_at"] == now + timedelta(seconds=120)
+
+
+def test_corrupt_cooldown_until_raises_alert_state_error(tmp_alert_store):
+    key = AlertKey("AAPL", "coil", "intraday")
+    now = datetime.now(UTC)
+    token = tmp_alert_store.claim(key, now)["token"]
+    tmp_alert_store.finalize(
+        key, token, now, AlertDecision.SENT, 60, "subj", "hash", {"discord": True}, "sent"
+    )
+    conn = sqlite3.connect(str(tmp_alert_store.resolved_path))
+    conn.execute("UPDATE alert_state SET cooldown_until = 'not-a-date' WHERE ticker = ?", (key.ticker,))
+    conn.commit()
+    conn.close()
+    with pytest.raises(AlertStateError):
+        tmp_alert_store.get_state(key)
+    with pytest.raises(AlertStateError):
+        tmp_alert_store.list_alert_states()
 
 
 def test_no_secrets_stored(tmp_alert_store):

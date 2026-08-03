@@ -14,6 +14,7 @@ from tradex.alerts.models import (
     AlertDecision,
     AlertDispatchResult,
     AlertKey,
+    _sanitize_channel_results,
     ensure_aware_utc,
 )
 from tradex.alerts.notifier import is_alert_configured, send_alert
@@ -73,6 +74,89 @@ class AlertPolicy:
     def _cooldown_minutes_for(self, key: AlertKey) -> int | None:
         return self.cooldown_minutes_for(key)
 
+    def _validate_transport_result(self, raw: Any) -> dict[str, bool]:
+        """Normalize the transport result and raise ValueError for malformed data."""
+        return _sanitize_channel_results(raw)
+
+    def _classify_send(
+        self,
+        channel_results: dict[str, bool],
+    ) -> tuple[AlertDecision, str, datetime | None]:
+        """Classify a send attempt and determine the next eligible time.
+
+        Returns ``(decision, reason, next_eligible_at)``. Cooldown is only
+        started for ``SENT``; disabled sends use ``COOLDOWN_DISABLED`` when
+        at least one channel succeeds.
+        """
+        if not self.is_configured():
+            return AlertDecision.NO_CHANNELS_CONFIGURED, "No alert channels are configured", None
+        if any(channel_results.values()):
+            return AlertDecision.COOLDOWN_DISABLED, "Cooldown disabled; alert sent without state", None
+        return AlertDecision.DELIVERY_FAILED, "All configured channels returned False", None
+
+    def _finalize_or_policy_error(
+        self,
+        key: AlertKey,
+        token: str,
+        observed_at: datetime,
+        decision: AlertDecision,
+        cooldown_minutes: int | None,
+        subject: str,
+        payload_hash: str,
+        channel_results: dict[str, bool],
+        reason: str,
+        config_minutes: int | None,
+        last_success_at: datetime | None,
+        *,
+        next_eligible_at: datetime | None = None,
+    ) -> AlertDispatchResult:
+        """Finalize the claim and return a POLICY_ERROR if finalization fails.
+
+        A ``False`` return from ``store.finalize`` means the token/lease was
+        no longer valid; the dispatch must not be reported as a success.
+        """
+        try:
+            ok = self.store.finalize(
+                key, token, observed_at, decision, cooldown_minutes,
+                subject, payload_hash, channel_results, reason,
+            )
+        except AlertStateError as exc:
+            return AlertDispatchResult(
+                key=key,
+                decision=AlertDecision.POLICY_ERROR,
+                observed_at=observed_at,
+                cooldown_minutes=config_minutes,
+                last_success_at=last_success_at,
+                next_eligible_at=next_eligible_at,
+                reason=f"State store finalize failed: {exc}",
+                channel_results=channel_results,
+                error=str(exc),
+            )
+
+        if not ok:
+            return AlertDispatchResult(
+                key=key,
+                decision=AlertDecision.POLICY_ERROR,
+                observed_at=observed_at,
+                cooldown_minutes=config_minutes,
+                last_success_at=last_success_at,
+                next_eligible_at=next_eligible_at,
+                reason="Claim finalization rejected: token/lease mismatch or stale claim",
+                channel_results=channel_results,
+                error="finalize returned False",
+            )
+
+        return AlertDispatchResult(
+            key=key,
+            decision=decision,
+            observed_at=observed_at,
+            cooldown_minutes=config_minutes,
+            last_success_at=last_success_at,
+            next_eligible_at=next_eligible_at,
+            reason=reason,
+            channel_results=channel_results,
+        )
+
     def _send_without_cooldown(
         self,
         key: AlertKey,
@@ -81,9 +165,14 @@ class AlertPolicy:
         color_key: str,
         observed_at: datetime,
     ) -> AlertDispatchResult:
-        """Send without state when cooldown is disabled."""
+        """Send without state when cooldown is disabled.
+
+        A disabled cooldown means "attempt every cycle," not "assume delivery
+        succeeded." Malformed transport results and all-false channel results
+        are reported as delivery failures.
+        """
         try:
-            channel_results = self.transport(subject, body, color_key)
+            raw_results = self.transport(subject, body, color_key)
         except Exception as exc:  # noqa: BLE001
             sanitized = _sanitize_exception(exc)
             return AlertDispatchResult(
@@ -97,14 +186,31 @@ class AlertPolicy:
                 channel_results={},
                 error=sanitized,
             )
+
+        try:
+            channel_results = self._validate_transport_result(raw_results)
+        except ValueError as exc:
+            return AlertDispatchResult(
+                key=key,
+                decision=AlertDecision.DELIVERY_FAILED,
+                observed_at=observed_at,
+                cooldown_minutes=None,
+                last_success_at=None,
+                next_eligible_at=None,
+                reason=f"Malformed transport result: {exc}",
+                channel_results={},
+                error=str(exc)[:500],
+            )
+
+        decision, reason, _ = self._classify_send(channel_results)
         return AlertDispatchResult(
             key=key,
-            decision=AlertDecision.COOLDOWN_DISABLED,
+            decision=decision,
             observed_at=observed_at,
             cooldown_minutes=None,
             last_success_at=None,
             next_eligible_at=None,
-            reason="Cooldown disabled; alert sent without state",
+            reason=reason,
             channel_results=channel_results,
         )
 
@@ -163,33 +269,16 @@ class AlertPolicy:
 
         # Transport runs outside the SQLite lock.
         try:
-            channel_results = self.transport(subject, body, color_key)
+            raw_results = self.transport(subject, body, color_key)
         except Exception as exc:  # noqa: BLE001
             sanitized = _sanitize_exception(exc)
-            try:
-                self.store.finalize(
-                    key,
-                    token,
-                    observed_at,
-                    AlertDecision.DELIVERY_FAILED,
-                    None,
-                    subject,
-                    payload_hash,
-                    {},
-                    reason=f"Transport exception: {sanitized}",
-                )
-            except AlertStateError as store_exc:
-                return AlertDispatchResult(
-                    key=key,
-                    decision=AlertDecision.POLICY_ERROR,
-                    observed_at=observed_at,
-                    cooldown_minutes=cooldown_minutes,
-                    last_success_at=claim["last_success_at"],
-                    next_eligible_at=None,
-                    reason=f"Transport exception and state finalize failed: {store_exc}",
-                    channel_results={},
-                    error=f"{sanitized}; store: {store_exc}",
-                )
+            finalized = self._finalize_or_policy_error(
+                key, token, observed_at, AlertDecision.DELIVERY_FAILED, None,
+                subject, payload_hash, {}, f"Transport exception: {sanitized}",
+                cooldown_minutes, claim["last_success_at"],
+            )
+            if finalized.decision == AlertDecision.POLICY_ERROR:
+                return finalized
             return AlertDispatchResult(
                 key=key,
                 decision=AlertDecision.DELIVERY_FAILED,
@@ -200,6 +289,28 @@ class AlertPolicy:
                 reason=f"Transport exception: {sanitized}",
                 channel_results={},
                 error=sanitized,
+            )
+
+        try:
+            channel_results = self._validate_transport_result(raw_results)
+        except ValueError as exc:
+            finalized = self._finalize_or_policy_error(
+                key, token, observed_at, AlertDecision.DELIVERY_FAILED, None,
+                subject, payload_hash, {}, f"Malformed transport result: {exc}",
+                cooldown_minutes, claim["last_success_at"],
+            )
+            if finalized.decision == AlertDecision.POLICY_ERROR:
+                return finalized
+            return AlertDispatchResult(
+                key=key,
+                decision=AlertDecision.DELIVERY_FAILED,
+                observed_at=observed_at,
+                cooldown_minutes=cooldown_minutes,
+                last_success_at=claim["last_success_at"],
+                next_eligible_at=None,
+                reason=f"Malformed transport result: {exc}",
+                channel_results={},
+                error=str(exc)[:500],
             )
 
         if any(channel_results.values()):
@@ -218,30 +329,14 @@ class AlertPolicy:
             next_eligible_at = None
             last_success_at = claim["last_success_at"]
 
-        try:
-            self.store.finalize(
-                key,
-                token,
-                observed_at,
-                decision,
-                cooldown_minutes if decision == AlertDecision.SENT else None,
-                subject,
-                payload_hash,
-                channel_results,
-                reason,
-            )
-        except AlertStateError as exc:
-            return AlertDispatchResult(
-                key=key,
-                decision=AlertDecision.POLICY_ERROR,
-                observed_at=observed_at,
-                cooldown_minutes=cooldown_minutes,
-                last_success_at=claim["last_success_at"],
-                next_eligible_at=next_eligible_at,
-                reason=f"State store finalize failed: {exc}",
-                channel_results=channel_results,
-                error=str(exc),
-            )
+        finalized = self._finalize_or_policy_error(
+            key, token, observed_at, decision,
+            cooldown_minutes if decision == AlertDecision.SENT else None,
+            subject, payload_hash, channel_results, reason,
+            cooldown_minutes, last_success_at, next_eligible_at=next_eligible_at,
+        )
+        if finalized.decision == AlertDecision.POLICY_ERROR:
+            return finalized
 
         return AlertDispatchResult(
             key=key,

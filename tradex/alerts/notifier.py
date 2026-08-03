@@ -43,6 +43,7 @@ from tradex.alerts.models import (
     AlertDecision,
     AlertDispatchResult,
     AlertKey,
+    _sanitize_channel_results,
     ensure_aware_utc,
 )
 
@@ -150,6 +151,17 @@ def _cooldown_minutes_for(
     return policy.cooldown_minutes_for(key)
 
 
+def _decision_from_raw_send(
+    channel_results: dict[str, bool],
+) -> tuple[AlertDecision, str]:
+    """Classify a raw send result without a cooldown policy."""
+    if not is_alert_configured():
+        return AlertDecision.NO_CHANNELS_CONFIGURED, "No alert channels are configured"
+    if any(channel_results.values()):
+        return AlertDecision.COOLDOWN_DISABLED, "Cooldown disabled; alert sent without state"
+    return AlertDecision.DELIVERY_FAILED, "All configured channels returned False"
+
+
 def _dispatch_or_raw(
     key: AlertKey,
     subject: str,
@@ -163,7 +175,7 @@ def _dispatch_or_raw(
     if policy is not None:
         return policy.dispatch(key, subject, body, color_key=color_key, observed_at=observed_at)
     try:
-        channel_results = send_alert(subject, body, color_key)
+        raw_results = send_alert(subject, body, color_key)
     except Exception as exc:  # noqa: BLE001
         return AlertDispatchResult(
             key=key,
@@ -176,14 +188,31 @@ def _dispatch_or_raw(
             channel_results={},
             error=str(exc)[:500],
         )
+
+    try:
+        channel_results = _sanitize_channel_results(raw_results)
+    except ValueError as exc:
+        return AlertDispatchResult(
+            key=key,
+            decision=AlertDecision.DELIVERY_FAILED,
+            observed_at=observed_at,
+            cooldown_minutes=None,
+            last_success_at=None,
+            next_eligible_at=None,
+            reason=f"Malformed raw send result: {exc}",
+            channel_results={},
+            error=str(exc)[:500],
+        )
+
+    decision, reason = _decision_from_raw_send(channel_results)
     return AlertDispatchResult(
         key=key,
-        decision=AlertDecision.COOLDOWN_DISABLED,
+        decision=decision,
         observed_at=observed_at,
         cooldown_minutes=None,
         last_success_at=None,
         next_eligible_at=None,
-        reason="No cooldown policy configured; raw send used",
+        reason=reason,
         channel_results=channel_results,
     )
 

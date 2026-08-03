@@ -152,7 +152,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Add alert deduplication and cooldown
 - **Category:** Alerts
 - **Priority:** High
-- **Status:** Completed
+- **Status:** In review
 - **Resolved by:** `devin/add-alert-cooldown`
 - **Problem statement:** The watcher fires alerts on every scan cycle for every ticker above threshold, with no persistence or cooldown.
 - **Recommended action:** Introduce an alert state store keyed by `(ticker, alert_type, timeframe)` and enforce a configurable cooldown (e.g., 1 hour for coils).
@@ -162,7 +162,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Testing requirements:** Unit tests mocking `send_alert`; verify it is only called once per cooldown window; verify persistence across restarts, atomic claims, and dashboard display.
 - **Acceptance criteria:** Repeated checks for the same alert identity produce only one Discord/email message per cooldown window; state persists across watcher restarts; manual test alerts bypass cooldown.
 - **Intended pull request:** `devin/add-alert-cooldown`
-- **Affects trading behavior:** No
+- **Affects trading behavior:** Yes — production trading-alert delivery cadence changes; signals, scores, thresholds, rankings, and eligibility remain unchanged. Implementation authorized by Gary; final merge requires Gary’s explicit approval.
 - **Next recommended PR:** `devin/add-initial-adrs` (DEC-001)
 
 ### TEST-001: Complete test foundation and fixtures

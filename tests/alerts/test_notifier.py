@@ -193,7 +193,7 @@ class TestAlertGap:
 
 
 class TestRawSendBypass:
-    def test_no_policy_uses_raw_send(self, tmp_path):
+    def test_no_policy_uses_raw_send(self, tmp_path, monkeypatch):
         store = AlertStore(tmp_path / "alerts.db")
         policy = AlertPolicy(
             store=store,
@@ -202,6 +202,42 @@ class TestRawSendBypass:
         )
         now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
         r1 = alert_coil("AAPL", 70, 50, "up", "intraday", policy=policy, observed_at=now)
+
+        monkeypatch.setattr(
+            "tradex.alerts.notifier._send_discord",
+            lambda s, b, color_key="test": True,
+        )
+        monkeypatch.setattr("tradex.alerts.notifier._send_email", lambda s, b: True)
+        monkeypatch.setattr("tradex.alerts.notifier.is_alert_configured", lambda: True)
+
         r2 = alert_coil("AAPL", 70, 50, "up", "intraday", observed_at=now)
         assert r1.decision == AlertDecision.SENT
         assert r2.decision == AlertDecision.COOLDOWN_DISABLED
+
+    def test_no_policy_no_channels_configured(self, tmp_path, monkeypatch):
+        now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
+        monkeypatch.setattr("tradex.alerts.notifier.is_alert_configured", lambda: False)
+        result = alert_coil("AAPL", 70, 50, "up", "intraday", observed_at=now)
+        assert result.decision == AlertDecision.NO_CHANNELS_CONFIGURED
+
+    def test_no_policy_all_channels_fail(self, tmp_path, monkeypatch):
+        now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
+        monkeypatch.setattr(
+            "tradex.alerts.notifier._send_discord", lambda s, b, color_key="test": False
+        )
+        monkeypatch.setattr("tradex.alerts.notifier._send_email", lambda s, b: False)
+        monkeypatch.setattr("tradex.alerts.notifier.is_alert_configured", lambda: True)
+        result = alert_coil("AAPL", 70, 50, "up", "intraday", observed_at=now)
+        assert result.decision == AlertDecision.DELIVERY_FAILED
+
+    def test_no_policy_malformed_result_is_delivery_failed(self, tmp_path, monkeypatch):
+        now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
+        monkeypatch.setattr(
+            "tradex.alerts.notifier._send_discord",
+            lambda s, b, color_key="test": "true",
+        )
+        monkeypatch.setattr("tradex.alerts.notifier._send_email", lambda s, b: False)
+        monkeypatch.setattr("tradex.alerts.notifier.is_alert_configured", lambda: True)
+        result = alert_coil("AAPL", 70, 50, "up", "intraday", observed_at=now)
+        assert result.decision == AlertDecision.DELIVERY_FAILED
+        assert result.channel_results == {}

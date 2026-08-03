@@ -1,6 +1,7 @@
 """Tests for the alert cooldown policy."""
 from __future__ import annotations
 
+import time
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -287,3 +288,136 @@ class TestAlertPolicyPerTypeOverrides:
             key, "s", "b", observed_at=fixed_clock + timedelta(minutes=5)
         )
         assert result.decision == AlertDecision.SENT
+
+
+class TestAlertPolicyDisabledRawClassification:
+    def test_disabled_no_channels_configured(self, tmp_alert_store, fixed_clock):
+        config = AlertCooldownConfig(enabled=False)
+        policy = AlertPolicy(
+            config=config,
+            store=tmp_alert_store,
+            transport=lambda s, b, c: {"discord": False, "email": False},
+            is_configured=lambda: False,
+        )
+        key = AlertKey("AAPL", "coil", "intraday")
+        result = policy.dispatch(key, "s", "b", observed_at=fixed_clock)
+        assert result.decision == AlertDecision.NO_CHANNELS_CONFIGURED
+        assert result.channel_results == {"discord": False, "email": False}
+        assert tmp_alert_store.get_state(key) is None
+
+    def test_disabled_full_failure(self, tmp_alert_store, fixed_clock):
+        config = AlertCooldownConfig(enabled=False)
+        policy = AlertPolicy(
+            config=config,
+            store=tmp_alert_store,
+            transport=lambda s, b, c: {"discord": False, "email": False},
+            is_configured=lambda: True,
+        )
+        key = AlertKey("AAPL", "coil", "intraday")
+        result = policy.dispatch(key, "s", "b", observed_at=fixed_clock)
+        assert result.decision == AlertDecision.DELIVERY_FAILED
+        assert tmp_alert_store.get_state(key) is None
+
+    def test_disabled_success(self, tmp_alert_store, fixed_clock):
+        config = AlertCooldownConfig(enabled=False)
+        policy = AlertPolicy(
+            config=config,
+            store=tmp_alert_store,
+            transport=lambda s, b, c: {"discord": True},
+            is_configured=lambda: True,
+        )
+        key = AlertKey("AAPL", "coil", "intraday")
+        result = policy.dispatch(key, "s", "b", observed_at=fixed_clock)
+        assert result.decision == AlertDecision.COOLDOWN_DISABLED
+        assert result.channel_results == {"discord": True}
+        assert tmp_alert_store.get_state(key) is None
+
+    def test_malformed_transport_not_counted_as_success(self, tmp_alert_store, fixed_clock):
+        policy = AlertPolicy(
+            store=tmp_alert_store,
+            transport=lambda s, b, c: {"discord": "true"},
+            is_configured=lambda: True,
+        )
+        key = AlertKey("AAPL", "coil", "intraday")
+        result = policy.dispatch(key, "s", "b", observed_at=fixed_clock)
+        assert result.decision == AlertDecision.DELIVERY_FAILED
+        assert result.channel_results == {}
+        state = tmp_alert_store.get_state(key)
+        assert state is not None
+        assert state.cooldown_until is None
+        assert state.failed_count == 1
+        assert state.sent_count == 0
+
+    def test_malformed_non_mapping_transport_fails_closed(self, tmp_alert_store, fixed_clock):
+        policy = AlertPolicy(
+            store=tmp_alert_store,
+            transport=lambda s, b, c: ["discord"],
+            is_configured=lambda: True,
+        )
+        key = AlertKey("AAPL", "coil", "intraday")
+        result = policy.dispatch(key, "s", "b", observed_at=fixed_clock)
+        assert result.decision == AlertDecision.DELIVERY_FAILED
+        assert result.channel_results == {}
+
+
+class TestAlertPolicyFinalizeHandling:
+    def test_finalize_false_becomes_policy_error(self, tmp_alert_store, fixed_clock, monkeypatch):
+        policy = AlertPolicy(
+            store=tmp_alert_store,
+            transport=lambda s, b, c: {"discord": True},
+            is_configured=lambda: True,
+        )
+        monkeypatch.setattr(tmp_alert_store, "finalize", lambda *args, **kwargs: False)
+        key = AlertKey("AAPL", "coil", "intraday")
+        result = policy.dispatch(key, "s", "b", observed_at=fixed_clock)
+        assert result.decision == AlertDecision.POLICY_ERROR
+        assert "finalization" in result.reason.lower()
+
+    def test_expired_token_finalize_rejected(self, tmp_alert_store):
+        key = AlertKey("AAPL", "coil", "intraday")
+        now = datetime.now(UTC)
+        token = tmp_alert_store.claim(key, now, lease_seconds=1)["token"]
+        time.sleep(1.1)
+        now_after = datetime.now(UTC)
+        success = tmp_alert_store.finalize(
+            key, token, now_after, AlertDecision.SENT, 60, "subj", "hash", {"discord": True}, "sent"
+        )
+        assert success is False
+
+    def test_wrong_token_after_completed_finalize(self, tmp_alert_store):
+        key = AlertKey("AAPL", "coil", "intraday")
+        now = datetime.now(UTC)
+        token = tmp_alert_store.claim(key, now)["token"]
+        tmp_alert_store.finalize(
+            key, token, now, AlertDecision.SENT, 60, "subj", "hash", {"discord": True}, "sent"
+        )
+        success = tmp_alert_store.finalize(
+            key, "wrong-token", now, AlertDecision.SENT, 60, "subj", "hash", {"discord": True}, "sent"
+        )
+        assert success is False
+
+    def test_reclaimed_lease_finalize_rejected(self, tmp_path):
+        path = tmp_path / "alerts.db"
+        store1 = AlertStore(path)
+        store2 = AlertStore(path)
+        key = AlertKey("AAPL", "coil", "intraday")
+        now = datetime.now(UTC)
+        token1 = store1.claim(key, now, lease_seconds=1)["token"]
+        time.sleep(1.1)
+        now_after = datetime.now(UTC)
+        store2.claim(key, now_after, lease_seconds=60)
+        success = store1.finalize(
+            key, token1, now_after, AlertDecision.SENT, 60, "subj", "hash", {"discord": True}, "sent"
+        )
+        assert success is False
+
+    def test_idempotent_finalize_rejects_different_outcome(self, tmp_alert_store):
+        key = AlertKey("AAPL", "coil", "intraday")
+        now = datetime.now(UTC)
+        token = tmp_alert_store.claim(key, now)["token"]
+        args = (key, token, now, AlertDecision.SENT, 60, "subj", "hash", {"discord": True}, "sent")
+        assert tmp_alert_store.finalize(*args) is True
+        wrong_args = (
+            key, token, now, AlertDecision.DELIVERY_FAILED, None, "subj", "hash", {}, "failed"
+        )
+        assert tmp_alert_store.finalize(*wrong_args) is False

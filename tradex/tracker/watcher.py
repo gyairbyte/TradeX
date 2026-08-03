@@ -44,6 +44,15 @@ DEFAULT_WATCHLIST = [
 ]
 
 
+def _default_alert_policy() -> AlertPolicy:
+    """Build the default enabled alert policy from the environment.
+
+    The underlying store is not created until the first alert is evaluated,
+    so this helper is safe to call even when no alerts fire.
+    """
+    return AlertPolicy(AlertCooldownConfig.from_env())
+
+
 def _check_alerts(
     tickers: list[str],
     timeframe: str,
@@ -108,7 +117,7 @@ def _check_alerts(
 
 
 def _print_alert_summary(results: list[AlertDispatchResult]) -> None:
-    """Print a concise count of alert outcomes."""
+    """Print a concise count of alert outcomes plus per-suppression details."""
     evaluated = len(results)
     sent = sum(
         1
@@ -132,6 +141,24 @@ def _print_alert_summary(results: list[AlertDispatchResult]) -> None:
         f"[alerts] evaluated={evaluated} sent={sent} suppressed={suppressed} "
         f"failed={failed} policy_errors={policy_errors}"
     )
+
+    for r in results:
+        if r.decision == AlertDecision.SUPPRESSED_COOLDOWN:
+            next_eligible = (
+                r.next_eligible_at.isoformat() if r.next_eligible_at else "unknown"
+            )
+            print(
+                f"[alerts] suppressed (cooldown): {r.key.ticker} | {r.key.alert_type} | "
+                f"{r.key.timeframe}; next eligible at {next_eligible}"
+            )
+        elif r.decision == AlertDecision.SUPPRESSED_IN_FLIGHT:
+            claim_expires = (
+                r.next_eligible_at.isoformat() if r.next_eligible_at else "unknown"
+            )
+            print(
+                f"[alerts] suppressed (in-flight): {r.key.ticker} | {r.key.alert_type} | "
+                f"{r.key.timeframe}; claim expires at {claim_expires}"
+            )
 
 
 def run_once(
@@ -163,6 +190,9 @@ def run_once(
             next_open_str = status.next_open.astimezone(MARKET_TIMEZONE).strftime("%Y-%m-%d %H:%M %Z")
             print(f"[{timestamp}] Next regular session opens at {next_open_str}.")
         return
+
+    if alert_policy is None:
+        alert_policy = _default_alert_policy()
 
     store.init()
     requested_provider = resolve_provider(provider)
@@ -277,6 +307,9 @@ def _run_scheduled_premarket(
         ny_now = now.astimezone(MARKET_TIMEZONE)
         print(f"[{ny_now.strftime('%Y-%m-%d %H:%M %Z')}] Skipping pre-market gap scan — {status.reason}.")
         return
+
+    if alert_policy is None:
+        alert_policy = _default_alert_policy()
 
     config = GapScanConfig(min_abs_gap_pct=4.0)
     try:
@@ -429,18 +462,17 @@ if __name__ == "__main__":
 
     try:
         alert_config = AlertCooldownConfig.from_env()
-    except ValueError as exc:
+        overrides: dict[str, Any] = {}
+        if args.alert_cooldown_minutes is not None:
+            overrides["default_minutes"] = args.alert_cooldown_minutes
+        if args.disable_alert_cooldown:
+            overrides["enabled"] = False
+        if args.alert_state_path is not None:
+            overrides["state_path"] = Path(args.alert_state_path)
+        if overrides:
+            alert_config = dataclasses.replace(alert_config, **overrides)
+    except (TypeError, ValueError) as exc:
         parser.error(str(exc))
-
-    overrides: dict[str, Any] = {}
-    if args.alert_cooldown_minutes is not None:
-        overrides["default_minutes"] = args.alert_cooldown_minutes
-    if args.disable_alert_cooldown:
-        overrides["enabled"] = False
-    if args.alert_state_path is not None:
-        overrides["state_path"] = Path(args.alert_state_path)
-    if overrides:
-        alert_config = dataclasses.replace(alert_config, **overrides)
 
     alert_policy = AlertPolicy(alert_config)
 

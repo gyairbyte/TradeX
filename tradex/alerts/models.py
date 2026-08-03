@@ -238,9 +238,22 @@ class AlertCooldownConfig:
         return Path(os.path.expanduser(str(self.state_path)))
 
 
-def _sanitize_channel_results(results: Mapping[str, bool]) -> dict[str, bool]:
-    """Return a JSON-safe, deterministically ordered dict of channel results."""
-    return {k: bool(results[k]) for k in sorted(results.keys())}
+def _sanitize_channel_results(results: Any) -> dict[str, bool]:
+    """Return a JSON-safe, deterministically ordered dict of channel results.
+
+    Rejects non-bool values and non-mapping containers so a string like
+    ``"false"`` or ``None`` cannot be interpreted as a successful delivery.
+    """
+    if not isinstance(results, Mapping):
+        raise ValueError(f"channel results must be a mapping, got {type(results).__name__}")
+    sanitized: dict[str, bool] = {}
+    for k, v in sorted(results.items()):
+        if not isinstance(k, str):
+            raise ValueError(f"channel result key must be a string, got {type(k).__name__}")
+        if not isinstance(v, bool):
+            raise ValueError(f"channel result for {k!r} must be a bool, got {type(v).__name__}")
+        sanitized[k] = v
+    return sanitized
 
 
 @dataclass(frozen=True)
