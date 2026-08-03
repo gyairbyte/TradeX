@@ -602,16 +602,17 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Improve pre-market gap scanner
 - **Category:** Intraday trading
 - **Priority:** Low
-- **Status:** Proposed
-- **Problem statement:** The gap scanner uses delayed yfinance pre-market bars and does not filter by liquidity, spread, or catalyst.
-- **Recommended action:** Add liquidity/spread filters; link to earnings/news context; restrict to pre-market hours unless explicitly enabled.
-- **Reason:** Gaps without liquidity or catalyst context are not tradable.
+- **Status:** Completed
+- **Resolved by:** `devin/improve-gap-scanner`
+- **Problem statement:** The gap scanner used delayed yfinance pre-market bars and did not filter by liquidity, spread, or catalyst.
+- **Recommended action:** Refactor into `tradex/premarket/` with typed `GapScanConfig`, `PremarketSnapshot`, `DailyLiquidityBaseline`, `SpreadSnapshot`, and `GapCatalystContext` models; add liquidity/spread/catalyst filters (all opt-in); link to earnings/news context; restrict to pre-market hours unless explicitly enabled; expose `scan_gaps_with_report` public API and CLI; update dashboard and watcher to use structured reports.
+- **Reason:** Gaps without liquidity or catalyst context are not tradable; structured reports make scan quality visible and testable.
 - **Dependencies:** COR-005
-- **Files likely affected:** `tradex/premarket/gap_scanner.py`, `tradex/ui/dashboard.py`
-- **Testing requirements:** Unit tests with mocked pre-market data.
-- **Acceptance criteria:** Scanner shows liquidity metrics and catalyst context.
+- **Files likely affected:** `tradex/premarket/{config,models,sources,catalysts,gap_scanner,cli,__main__}.py`, `tradex/ui/dashboard.py`, `tradex/tracker/watcher.py`, `tests/premarket/`, `README.md`, `SETUP.md`
+- **Testing requirements:** Unit tests with mocked pre-market data covering configuration validation, source filtering, liquidity baselines, spread semantics, catalyst context, `scan_gaps_with_report` orchestration, CLI help, and no network on weekends/holidays.
+- **Acceptance criteria:** `scan_gaps_with_report` returns a typed `GapScanReport` with counts, observations, and results; all new filters are opt-in; default behavior and alert thresholds unchanged; spread never inferred from candle range; no live API calls in tests.
 - **Intended pull request:** `devin/improve-gap-scanner`
-- **Affects trading behavior:** Yes
+- **Affects trading behavior:** Yes — opt-in eligibility/filter change explicitly approved by Gary (filters are opt-in; default gap scanner behavior, gap tiers, and alert thresholds are preserved)
 
 ### DEC-001: Adopt Architectural Decision Records
 
@@ -641,10 +642,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 | Low | 5 | DOC-001: Fix documentation drift |
 
 **Recommended next pull request order:**
-1. `devin/redesign-signal-history` (DATA-001, COIL-001, COIL-002).
-2. `devin/fix-scan-audit` (COR-012).
-3. `devin/add-backtest-engine` (VAL-001).
-4. `devin/fix-confluence-missing-timeframe` (COR-006).
-5. `devin/reevaluate-scores-with-validated-data` (new, after backtesting).
-6. `devin/improve-gap-scanner` (INTRA-002, after COR-005 and DATA-001).
+1. `devin/add-alert-cooldown` (ALERT-001).
+2. `devin/add-initial-adrs` (DEC-001).
+3. `devin/improve-long-term-score` (LONG-001).
 

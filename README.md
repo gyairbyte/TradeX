@@ -36,7 +36,14 @@ tradex/
 │   ├── research/
 │   │   ├── score_validation/      # VAL-002 reproducible score-validation study
 │   │   └── short_context/         # SHORT-001 market-context research pipeline
-│   ├── premarket/gap_scanner.py   # Pre-market gap-up/down detector
+│   ├── premarket/
+│   │   ├── gap_scanner.py         # Public scan orchestrator + compat wrappers
+│   │   ├── models.py              # PremarketSnapshot, GapScanReport, catalyst/spread models
+│   │   ├── sources.py             # Pre-market OHLCV, liquidity baseline, spread snapshots
+│   │   ├── catalysts.py           # Earnings + headline context (explicitly sourced, non-causal)
+│   │   ├── config.py              # Validated GapScanConfig
+│   │   ├── cli.py                 # `python -m tradex.premarket scan ...`
+│   │   └── __main__.py            # CLI entry point
 │   ├── options/flow.py            # Unusual options activity, put/call sentiment
 │   ├── alerts/notifier.py         # Discord bot + email alerting
 │   ├── earnings/calendar.py       # Next-earnings lookup + 24h SQLite cache
@@ -352,7 +359,41 @@ python -m tradex.tracker.watcher --timeframe intraday --interval 5 \
 - Scheduled interval scans can be gated with `--market-hours-only` so they skip weekends, NYSE holidays (including Good Friday), early closes, and pre/post-market hours.
 - Manual one-off scans (`--interval 0`, the default) still run at any time unless `--market-hours-only` is also supplied.
 - The daily pre-market gap scan is scheduled for `08:00 America/New_York`; the outcome resolution pass is scheduled for `16:30 America/New_York`. Both remain at the same New York wall-clock time across DST changes and skip non-trading days.
-- Pre-market gap filtering uses the actual regular-session open from the exchange calendar and keeps only bars from `04:00` ET up to (but not including) the open on the intended session date.
+- Pre-market gap filtering uses the actual regular-session open from the exchange calendar and keeps only bars from `04:00` ET up to (but not including) the open on the intended session date. It excludes bars after the injected `as_of` timestamp, so historical/replay scans are point-in-time.
+
+---
+
+## Pre-Market Gap Scanner
+
+The scanner in `tradex/premarket/` finds stocks that have gapped from their prior regular-session close during the pre-market window (04:00 ET up to the regular open). It is built around a typed, validated `GapScanConfig` and returns a structured `GapScanReport`.
+
+**Quality controls (all opt-in, default is only the 2% minimum absolute gap):**
+- Minimum absolute gap, minimum price, and pre-market share/dollar volume thresholds
+- Pre-market volume as a multiple of recent average daily volume (configurable lookback)
+- Data-age freshness limit for the latest 1-minute bar
+- Optional spread filter (only real bid/ask quotes; never inferred from the candle range)
+- Optional catalyst requirement (earnings and/or recent Yahoo headline, explicitly sourced, no causal claims)
+- Optional `allow_after_open` for retrospective scans
+
+**Public API:**
+```python
+from tradex.premarket import GapScanConfig, scan_gaps_with_report
+
+report = scan_gaps_with_report(
+    ["AAPL", "TSLA"],
+    config=GapScanConfig(min_abs_gap_pct=4.0, min_premarket_volume_ratio=0.5),
+    provider="yahoo",
+)
+print(report.counts())
+print(report.results)
+```
+
+**CLI:**
+```bash
+python -m tradex.premarket scan --tickers AAPL,TSLA --min-gap 4.0 --min-premarket-volume 10000
+```
+
+The scheduled watcher uses `scan_gaps_with_report` so it logs requested, qualified, filtered, failed, and outside-window counts and only fires alerts on `large`/`massive` qualified gaps.
 
 ---
 
@@ -382,6 +423,7 @@ Save and switch between named ticker lists (e.g. "Semis", "Crypto-adjacent", "Ea
 - [x] Historical pattern fingerprinting (mine run-ups/declines, average pre-event windows, match live stocks)
 - [x] Alert system (Discord bot + email when coil / confluence / pattern thresholds crossed)
 - [x] Pre-market gap scanner
+- [x] Quality-aware pre-market gap scanner with structured reports, liquidity metrics, spread/catalyst filters, and point-in-time replay (GAP-001)
 - [x] Options flow integration (unusual vol/OI, put/call sentiment)
 - [x] In-app Help tab + tooltips throughout dashboard
 - [x] Earnings awareness — filter + flag stocks with earnings within N days

@@ -193,6 +193,32 @@ uv run python -m tradex.research.score_validation evaluate \
 
 Do not present event-study returns as portfolio equity, account returns, or proof of a tradable strategy. The executable backtest lives in `tradex/backtest`.
 
+## Pre-market gap scanner CLI
+
+Inspect pre-market scanner options with:
+
+```bash
+uv run python -m tradex.premarket --help
+uv run python -m tradex.premarket scan --help
+```
+
+Run the focused pre-market suite:
+
+```bash
+uv run pytest tests/premarket -q
+```
+
+Example credential-free scan (it returns `Outside window` on weekends and holidays because no market session is active):
+
+```bash
+uv run python -m tradex.premarket scan \
+  --tickers AAPL,TSLA,NVDA \
+  --min-gap 4.0 \
+  --min-premarket-volume 5000
+```
+
+All new filters are opt-in; the default behavior is a 2% minimum absolute gap. Spread filtering only uses real bid/ask quotes and is never inferred from the candle range. Catalyst context is explicitly sourced and does not claim a headline/earnings caused the gap.
+
 ## Short-term market context research CLI
 
 Inspect context-study commands with:
@@ -217,6 +243,16 @@ For explicitly requested manual UI testing:
 
 ```bash
 uv run streamlit run tradex/ui/dashboard.py
+```
+
+If Streamlit prompts for an email address on first run, stop the server and create `~/.streamlit/config.toml` with telemetry disabled so the dashboard starts non-interactively:
+
+```toml
+[server]
+headless = true
+
+[browser]
+gatherUsageStats = false
 ```
 
 Do not launch a real Streamlit server during unit tests.
