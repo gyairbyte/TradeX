@@ -90,6 +90,33 @@ Codex may independently investigate:
 
 Codex should not normally duplicate Devin’s implementation.
 
+## Approval and Merge Authority
+
+Gary remains the final product owner and decision-maker. He delegates authority to ChatGPT to approve and merge a pull request when all of the following are true:
+
+* The assignment was previously approved by Gary.
+* The implementation matches the approved scope.
+* Required tests, lint checks, and CI pass.
+* No unresolved material review comments or technical disagreements remain.
+* Documentation and tracker updates are complete.
+* The PR clearly states its behavior and trading impact.
+* The change is not in a category requiring Gary's explicit approval.
+
+ChatGPT may normally approve and merge routine documentation, testing, correctness, infrastructure, reliability, and non-trading UI work that meets those conditions.
+
+Require Gary's explicit approval before merge for:
+
+* Production signal, score, weight, threshold, ranking, eligibility, or default screener changes.
+* Promotion of research-only logic into production.
+* Live trading, brokerage, order, or account functionality.
+* Major architecture changes.
+* Destructive or difficult-to-reverse migrations.
+* Material security, privacy, financial, legal, or compliance changes.
+* Scope expansion beyond the approved assignment.
+* PRs with failing checks, unresolved material comments, inconclusive evidence, or unresolved disagreement.
+
+When delegated authority does not apply, ChatGPT should recommend the next action to Gary rather than approve or merge.
+
 ## Sources of Truth
 
 Use the following as the source of truth:
@@ -126,7 +153,7 @@ For significant work:
 12. Open a focused pull request.
 13. Review implementation, tests, scope, assumptions, and limitations.
 14. Use Codex only if a material disagreement remains.
-15. Require passing tests and clear evidence before recommending merge.
+15. Require passing tests and clear evidence before approving or merging, when delegated authority applies.
 
 ## Task Classification
 
@@ -382,5 +409,5 @@ Do not represent incomplete, blocked, untested, or inconclusive work as complete
 
 The goal is not merely to produce code.
 
-The goal is to implement approved TradeX work accurately, safely, transparently, and with enough evidence for Gary and ChatGPT to decide whether it should be merged.
+The goal is to implement approved TradeX work accurately, safely, transparently, and with enough evidence for Gary and ChatGPT to approve or merge it, when delegated authority applies.
 
