@@ -234,8 +234,12 @@ def compute_short_term_context(
 
     market = _context_for_proxy(as_of, market_proxy, ticker_df, market_df)
     sector: dict[str, Any] | None = None
-    if sector_proxy is not None and sector_df is not None:
-        sector = _context_for_proxy(as_of, sector_proxy, ticker_df, sector_df)
+    sector_required = sector_proxy is not None
+    if sector_required:
+        if sector_df is None:
+            sector = None
+        else:
+            sector = _context_for_proxy(as_of, sector_proxy, ticker_df, sector_df)
 
     errors: dict[str, str] = {}
     available: list[str] = []
@@ -257,28 +261,35 @@ def compute_short_term_context(
         if market["error"]:
             errors["market_relative_strength"] = market["error"]
 
-    if sector is not None:
-        sector_regime_available = sector["close"] is not None and sector["regime_bullish"] is not None
-        if sector_regime_available:
-            available.append("sector_regime")
+    if sector_required:
+        if sector is None:
+            sector_regime_available = False
+            sector_rs_available = False
+            missing.extend(["sector_regime", "sector_relative_strength"])
+            errors["sector_regime"] = "sector data not provided"
+            errors["sector_relative_strength"] = "sector data not provided"
         else:
-            missing.append("sector_regime")
-            if sector["error"]:
-                errors["sector_regime"] = sector["error"]
+            sector_regime_available = sector["close"] is not None and sector["regime_bullish"] is not None
+            if sector_regime_available:
+                available.append("sector_regime")
+            else:
+                missing.append("sector_regime")
+                if sector["error"]:
+                    errors["sector_regime"] = sector["error"]
 
-        sector_rs_available = sector["rs_ratio"] is not None and sector["rs_positive"] is not None
-        if sector_rs_available:
-            available.append("sector_relative_strength")
-        else:
-            missing.append("sector_relative_strength")
-            if sector["error"]:
-                errors["sector_relative_strength"] = sector["error"]
+            sector_rs_available = sector["rs_ratio"] is not None and sector["rs_positive"] is not None
+            if sector_rs_available:
+                available.append("sector_relative_strength")
+            else:
+                missing.append("sector_relative_strength")
+                if sector["error"]:
+                    errors["sector_relative_strength"] = sector["error"]
     else:
         sector_regime_available = False
         sector_rs_available = False
 
     context_complete = market_regime_available and market_rs_available
-    if sector is not None:
+    if sector_required:
         context_complete = context_complete and sector_regime_available and sector_rs_available
 
     return ShortTermMarketContext(

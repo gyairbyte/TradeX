@@ -257,7 +257,7 @@ Candidate context policies:
 - `market_rs` — requires the broad market to be in a bullish regime and have positive relative strength.
 - `market_sector_rs` — also requires the sector proxy to be bullish and relatively strong.
 
-The production `short_term.score(df, context=..., context_policy=...)` keeps the numeric `score` unchanged and adds `base_score`, `context_eligible`, `context_status`, `context_reasons`, and `market_context`. The screener's `run_with_report(..., short_context_policy="off", short_context_spec=None)` defaults to `off`, fetches no proxies in that mode, and only promotes a candidate policy when both the event-study and paired-backtest holdout gates pass.
+The research scorer `short_term.score(df, context=..., context_policy=...)` keeps the numeric `score` unchanged and adds `base_score`, `context_eligible`, `context_status`, `context_reasons`, and `market_context`. A candidate context policy is only promoted to production when both the event-study and paired-backtest holdout gates pass; until then, the production screener does not expose context filtering.
 
 ```bash
 # CLI

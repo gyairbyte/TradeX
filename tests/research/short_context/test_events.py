@@ -33,3 +33,20 @@ def test_holdout_events_not_leaked_into_development(synthetic_manifest) -> None:
     holdout_dates = df.loc[df["split"] == "holdout", "signal_time"]
     assert not dev_dates.empty and not holdout_dates.empty
     assert dev_dates.max() < holdout_dates.min()
+
+
+def test_data_quality_preserves_manifest_source_and_checksum(synthetic_manifest) -> None:
+    config = ScoreValidationConfig(
+        warmup_bars=60,
+        horizons=(1, 3, 5),
+        slippage_scenarios_bps=(0.0, 5.0, 10.0),
+    )
+    spec = synthetic_manifest["spec"]
+    _events, quality_rows = generate_context_events(synthetic_manifest["manifest_path"], spec, config)
+    assert len(quality_rows) == len(spec.target_tickers)
+    quality = quality_rows[0].to_dict()
+    assert quality["data_source"] == "synthetic"
+    assert quality["sha256"]
+    assert quality["manifest_rows"] > 0
+    assert quality["validated_rows"] > 0
+    assert quality["sha256"] != ""

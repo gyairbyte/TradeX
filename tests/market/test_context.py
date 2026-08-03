@@ -103,3 +103,22 @@ def test_is_context_eligible_market_sector_rs_missing_sector() -> None:
     eligible, status, _ = is_context_eligible(ctx, ShortContextPolicy.MARKET_SECTOR_RS)
     assert eligible is False
     assert status == "unavailable"
+
+
+def test_context_incomplete_when_sector_proxy_configured_but_missing() -> None:
+    """A configured sector proxy without sector data must make context incomplete."""
+    target = _trending_df(80)
+    market = _trending_df(80)
+    as_of = target.index[-1].to_pydatetime()
+    ctx = compute_short_term_context(
+        as_of=as_of,
+        ticker_df=target,
+        market_proxy="SPY",
+        market_df=market,
+        sector_proxy="XLK",
+        sector_df=None,
+    )
+    assert ctx.context_complete is False
+    assert "sector_regime" in ctx.missing_contexts
+    assert "sector_relative_strength" in ctx.missing_contexts
+    assert ctx.errors.get("sector_regime") == "sector data not provided"

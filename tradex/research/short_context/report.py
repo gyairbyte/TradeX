@@ -19,6 +19,7 @@ from tradex.research.score_validation.report import (
 from tradex.research.short_context.alignment import load_manifest_and_spec
 from tradex.research.short_context.backtest import run_paired_backtests
 from tradex.research.short_context.comparison import (
+    _build_ticker_comparison,
     build_candidate_comparison_df,
     evaluate_holdout,
     select_candidate,
@@ -31,6 +32,7 @@ from tradex.research.short_context.models import (
     PairedBacktestResult,
     PolicySplitMetrics,
     ShortContextSpec,
+    ValidationError,
     sha256_file,
 )
 from tradex.signals.weights import ShortWeights
@@ -49,6 +51,7 @@ def run_study(
         config = ScoreValidationConfig()
 
     manifest, spec = load_manifest_and_spec(manifest_path, spec_path)
+    _validate_config_against_spec(config, spec)
     manifest_sha = getattr(manifest, "_sha256", None)
     if manifest_sha is None:
         manifest_sha = sha256_file(manifest_path)
@@ -115,6 +118,29 @@ def run_study(
 
     write_study(study, output_dir, overwrite=overwrite)
     return study
+
+
+def _validate_config_against_spec(
+    config: ScoreValidationConfig,
+    spec: ShortContextSpec,
+) -> None:
+    """Reject runtime configs that disagree with the locked context-study spec."""
+    if spec.primary_horizon_bars not in config.horizons:
+        raise ValidationError(
+            f"primary_horizon_bars {spec.primary_horizon_bars} not in config.horizons {config.horizons}"
+        )
+    if not set(spec.horizons).issubset(set(config.horizons)):
+        raise ValidationError(
+            f"config.horizons {config.horizons} must include all spec.horizons {spec.horizons}"
+        )
+    if spec.primary_slippage_bps not in config.slippage_scenarios_bps:
+        raise ValidationError(
+            f"primary_slippage_bps {spec.primary_slippage_bps} not in config.slippage_scenarios_bps {config.slippage_scenarios_bps}"
+        )
+    if not set(spec.slippage_scenarios_bps).issubset(set(config.slippage_scenarios_bps)):
+        raise ValidationError(
+            f"config.slippage_scenarios_bps {config.slippage_scenarios_bps} must include all spec.slippage_scenarios_bps {spec.slippage_scenarios_bps}"
+        )
 
 
 def write_study(study: ContextStudyResult, output_dir: str | Path, overwrite: bool = False) -> dict[str, Path]:
@@ -307,69 +333,6 @@ def _comparison_metrics_to_dict(m: PolicySplitMetrics) -> dict[str, Any]:
         "median_ticker_event_return_pct": m.median_ticker_event_return_pct,
     }
 
-
-def _build_ticker_comparison(
-    events_df: pd.DataFrame,
-    spec: ShortContextSpec,
-    config: ScoreValidationConfig,
-    selected_policy: str | None,
-) -> pd.DataFrame:
-    """Return per-ticker holdout event-study comparison for selected candidate."""
-    if events_df.empty or selected_policy is None:
-        return _empty_ticker_comparison_df()
-
-    from tradex.research.short_context.comparison import (
-        _eligible_mask,
-        _net_return_col,
-        _policy_from_string,
-    )
-
-    holdout_df = events_df[events_df["split"] == "holdout"]
-    if holdout_df.empty:
-        return _empty_ticker_comparison_df()
-
-    policy = _policy_from_string(selected_policy)
-    col = _net_return_col(spec, config)
-    rows: list[dict[str, Any]] = []
-    for ticker in sorted(holdout_df["ticker"].unique()):
-        ticker_df = holdout_df[holdout_df["ticker"] == ticker]
-        baseline_df = ticker_df[ticker_df["baseline_qualifies"]]
-        candidate_df = ticker_df[_eligible_mask(ticker_df, policy)]
-
-        baseline_vals = pd.to_numeric(baseline_df[col], errors="coerce").dropna()
-        candidate_vals = pd.to_numeric(candidate_df[col], errors="coerce").dropna()
-
-        baseline_mean = float(baseline_vals.mean()) if not baseline_vals.empty else None
-        candidate_mean = float(candidate_vals.mean()) if not candidate_vals.empty else None
-        improved = (
-            candidate_mean is not None
-            and baseline_mean is not None
-            and candidate_mean >= baseline_mean
-        )
-
-        rows.append({
-            "ticker": ticker,
-            "baseline_event_count": len(baseline_df),
-            "candidate_event_count": len(candidate_df),
-            "baseline_mean_net_return_pct": baseline_mean,
-            "candidate_mean_net_return_pct": candidate_mean,
-            "candidate_improved": improved,
-        })
-
-    if not rows:
-        return _empty_ticker_comparison_df()
-    df = pd.DataFrame(rows)
-    for col_name in _empty_ticker_comparison_df().columns:
-        if col_name not in df.columns:
-            df[col_name] = None
-    return df[_empty_ticker_comparison_df().columns]
-
-
-def _empty_ticker_comparison_df() -> pd.DataFrame:
-    return pd.DataFrame(columns=[
-        "ticker", "baseline_event_count", "candidate_event_count",
-        "baseline_mean_net_return_pct", "candidate_mean_net_return_pct", "candidate_improved",
-    ])
 
 
 def _render_report(

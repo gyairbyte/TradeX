@@ -453,7 +453,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
   - Both the event-study and paired-backtest promotion gates must pass before production exposure.
   - On synthetic data the gate did not pass, so the candidate policy was not exposed and production behavior remains unchanged.
 - **Intended pull request:** `devin/improve-short-term-context`
-- **Affects trading behavior:** No by default (opt-in `short_context_policy` defaults to `off`); only Yes if a future holdout gate passes and the user explicitly enables it
+- **Affects trading behavior:** No; the production screener does not expose context filtering. Research output is promotion-gated, and a candidate policy is only integrated after both holdout gates pass.
 
 ### INTRA-001: Redesign intraday scorer around a specific setup
 

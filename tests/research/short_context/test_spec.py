@@ -28,6 +28,7 @@ def test_valid_spec_round_trip(tmp_path: Path) -> None:
         "horizons": [1, 3, 5],
         "slippage_scenarios_bps": [0.0, 5.0, 10.0],
         "commission_bps": 0.0,
+        "minimum_validation_events": 5,
         "minimum_holdout_events": 10,
         "minimum_holdout_tickers": 2,
         "minimum_event_retention_pct": 25.0,
@@ -40,7 +41,17 @@ def test_valid_spec_round_trip(tmp_path: Path) -> None:
     assert spec.study_name == "test"
     assert spec.target_tickers == ("AAPL", "MSFT")
     assert spec.candidate_policies == (ShortContextPolicy.MARKET_RS,)
+    assert spec.minimum_validation_events == 5
     assert raw is not None
+
+
+def test_validation_event_minimum_defaults_to_holdout_minimum(tmp_path: Path) -> None:
+    data = _minimal_spec()
+    data.pop("minimum_validation_events", None)
+    path = tmp_path / "spec.json"
+    path.write_text(json.dumps(data))
+    spec, _ = load_spec(path)
+    assert spec.minimum_validation_events == spec.minimum_holdout_events
 
 
 def test_unknown_top_level_key_rejected(tmp_path: Path) -> None:

@@ -316,7 +316,7 @@ uv run python -m tradex.research.short_context evaluate --help
 uv run pytest tests/market tests/research/short_context -q
 ```
 
-The candidate policies are `off` (baseline), `market_rs`, and `market_sector_rs`. A candidate is only promoted to production if both the event-study and paired-backtest holdout gates pass; otherwise the existing short-term score, weights, and thresholds remain unchanged.
+The candidate policies are `off` (baseline), `market_rs`, and `market_sector_rs`. A candidate is only promoted to production if both the event-study and paired-backtest holdout gates pass; until then, the production screener does not expose context filtering and the existing short-term score, weights, and thresholds remain unchanged.
 
 ---
 

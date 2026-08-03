@@ -22,7 +22,12 @@ def select_candidate(
     spec: ShortContextSpec,
     config: ScoreValidationConfig,
 ) -> CandidateResult:
-    """Select the best candidate policy using development and validation only."""
+    """Select the best candidate policy using development and validation only.
+
+    Holdout rows are intentionally ignored; if the input contains a holdout
+    split, it is dropped before any metric is computed so the candidate cannot
+    leak holdout information into the selection decision.
+    """
     if events_df.empty:
         return CandidateResult(
             selected_policy=None,
@@ -30,22 +35,22 @@ def select_candidate(
             policy_metrics={},
         )
 
+    if (events_df["split"] == "holdout").any():
+        events_df = events_df[events_df["split"].isin(["development", "validation"])].copy()
+
     policy_metrics: dict[str, dict[str, PolicySplitMetrics]] = {}
     qualified: list[tuple[ShortContextPolicy, dict[str, PolicySplitMetrics], float]] = []
 
     for policy in spec.candidate_policies:
         metrics_by_split: dict[str, PolicySplitMetrics] = {}
-        for split in ("development", "validation", "holdout"):
+        for split in ("development", "validation"):
             split_df = events_df[events_df["split"] == split]
             if split_df.empty:
                 continue
             baseline = _split_metrics(split_df, None, spec, config)
             candidate = _split_metrics(split_df, policy, spec, config)
             metrics_by_split[split] = candidate
-            if split == "validation":
-                metrics_by_split[f"{split}_baseline"] = baseline
-            if split == "development":
-                metrics_by_split[f"{split}_baseline"] = baseline
+            metrics_by_split[f"{split}_baseline"] = baseline
 
         policy_metrics[policy.value] = metrics_by_split
 
@@ -57,12 +62,11 @@ def select_candidate(
         if dev is None or dev_base is None or val is None or val_base is None:
             continue
 
-        if candidate_qualifies_for_holdout(dev, dev_base, val, val_base, spec, config, require_sample=False):
-            improvement = (
-                (val.mean_ticker_event_return_pct or 0.0)
-                - (val_base.mean_ticker_event_return_pct or 0.0)
+        if candidate_qualifies_for_selection(dev, dev_base, val, val_base, spec, config):
+            val_improvement = _nonmissing(val.mean_ticker_event_return_pct, 0.0) - _nonmissing(
+                val_base.mean_ticker_event_return_pct, 0.0
             )
-            qualified.append((policy, metrics_by_split, improvement))
+            qualified.append((policy, metrics_by_split, val_improvement))
 
     if not qualified:
         return CandidateResult(
@@ -119,7 +123,7 @@ def evaluate_holdout(
     baseline = _split_metrics(holdout_df, None, spec, config)
     candidate = _split_metrics(holdout_df, policy, spec, config)
 
-    failure_reasons = _holdout_failures(candidate, baseline, spec, config)
+    failure_reasons = _holdout_failures(events_df, candidate, baseline, spec, config, selected_policy)
     passed = not failure_reasons
 
     return HoldoutResult(
@@ -224,45 +228,68 @@ def _ticker_level_means(df: pd.DataFrame, col: str) -> tuple[float | None, float
     return float(np.mean(ticker_means)), float(np.median(ticker_means))
 
 
-def candidate_qualifies_for_holdout(
+def candidate_qualifies_for_selection(
     dev: PolicySplitMetrics,
     dev_base: PolicySplitMetrics,
     val: PolicySplitMetrics,
     val_base: PolicySplitMetrics,
     spec: ShortContextSpec,
     config: ScoreValidationConfig,
-    require_sample: bool = True,
 ) -> bool:
     """Return True when a candidate policy passes development and validation gates."""
     # Development mean must exceed baseline.
-    if (dev.mean_net_return_pct or -np.inf) <= (dev_base.mean_net_return_pct or -np.inf):
+    if not _gt(dev.mean_net_return_pct, dev_base.mean_net_return_pct):
         return False
 
-    # Validation criteria.
-    if require_sample and val.event_count < spec.minimum_holdout_events:
+    # Validation sample minimum.
+    if val.event_count < spec.minimum_validation_events:
         return False
+
     if val.retention_pct < spec.minimum_event_retention_pct:
         return False
     if val.coverage_pct < spec.minimum_ticker_coverage_pct:
         return False
-    if (val.mean_net_return_pct or -np.inf) <= (val_base.mean_net_return_pct or -np.inf):
+    if not _gt(val.mean_net_return_pct, val_base.mean_net_return_pct):
         return False
-    if (val.mean_ticker_event_return_pct or -np.inf) <= (
-        val_base.mean_ticker_event_return_pct or -np.inf
+    if not _gt(val.mean_ticker_event_return_pct, val_base.mean_ticker_event_return_pct):
+        return False
+    if not _gt_or_equal(val.median_net_return_pct, val_base.median_net_return_pct):
+        return False
+    if not _gte(
+        val.positive_return_rate_pct,
+        _nonmissing(val_base.positive_return_rate_pct, 0.0) - 2.0,
     ):
         return False
-    if (val.median_net_return_pct or -np.inf) < (val_base.median_net_return_pct or -np.inf):
-        return False
-    return (val.positive_return_rate_pct or 100.0) >= (
-        (val_base.positive_return_rate_pct or 0.0) - 2.0
-    )
+    return True
+
+
+def _nonmissing(value: float | None, default: float) -> float:
+    """Return ``value`` when it is not None, otherwise ``default``."""
+    return value if value is not None else default
+
+
+def _gt(a: float | None, b: float | None) -> bool:
+    """Strict greater-than that treats ``None`` as missing (False)."""
+    return a is not None and b is not None and a > b
+
+
+def _gt_or_equal(a: float | None, b: float | None) -> bool:
+    """Greater-than-or-equal that treats ``None`` as missing (False)."""
+    return a is not None and b is not None and a >= b
+
+
+def _gte(a: float | None, b: float | None) -> bool:
+    """Greater-than-or-equal that treats ``None`` as missing (False)."""
+    return a is not None and b is not None and a >= b
 
 
 def _holdout_failures(
+    events_df: pd.DataFrame,
     candidate: PolicySplitMetrics,
     baseline: PolicySplitMetrics,
     spec: ShortContextSpec,
     config: ScoreValidationConfig,
+    selected_policy: str,
 ) -> list[str]:
     """Return a list of failed holdout criteria."""
     failures: list[str] = []
@@ -283,16 +310,17 @@ def _holdout_failures(
         failures.append(
             f"holdout ticker coverage {candidate.coverage_pct:.2f}% < {spec.minimum_ticker_coverage_pct}%"
         )
-    if (candidate.mean_net_return_pct or -np.inf) <= (baseline.mean_net_return_pct or -np.inf):
+    if not _gt(candidate.mean_net_return_pct, baseline.mean_net_return_pct):
         failures.append("holdout mean return not greater than baseline")
-    if (candidate.mean_ticker_event_return_pct or -np.inf) <= (
-        baseline.mean_ticker_event_return_pct or -np.inf
+    if not _gt(
+        candidate.mean_ticker_event_return_pct, baseline.mean_ticker_event_return_pct
     ):
         failures.append("holdout equal-weighted per-ticker mean not greater than baseline")
-    if (candidate.median_net_return_pct or -np.inf) < (baseline.median_net_return_pct or -np.inf):
+    if not _gt_or_equal(candidate.median_net_return_pct, baseline.median_net_return_pct):
         failures.append("holdout median return lower than baseline")
-    if (candidate.positive_return_rate_pct or 100.0) < (
-        (baseline.positive_return_rate_pct or 0.0) - 2.0
+    if not _gte(
+        candidate.positive_return_rate_pct,
+        _nonmissing(baseline.positive_return_rate_pct, 0.0) - 2.0,
     ):
         failures.append("holdout positive-return rate degraded more than 2 percentage points")
 
@@ -301,9 +329,74 @@ def _holdout_failures(
         failures.append("improvement produced by only one ticker")
 
     # At least half of represented tickers have candidate mean >= baseline mean.
-    # This is checked at the per-ticker comparison level in the report pipeline.
+    ticker_comparison = _build_ticker_comparison(events_df, spec, config, selected_policy)
+    if not ticker_comparison.empty:
+        improved = ticker_comparison["candidate_improved"]
+        represented = improved.notna().sum()
+        if represented > 0 and improved.sum() < represented / 2:
+            failures.append(
+                f"fewer than half of represented holdout tickers improved ({int(improved.sum())}/{represented})"
+            )
 
     return failures
+
+
+def _build_ticker_comparison(
+    events_df: pd.DataFrame,
+    spec: ShortContextSpec,
+    config: ScoreValidationConfig,
+    selected_policy: str | None,
+) -> pd.DataFrame:
+    """Return per-ticker holdout event-study comparison for selected candidate."""
+    if events_df.empty or selected_policy is None:
+        return _empty_ticker_comparison_df()
+
+    holdout_df = events_df[events_df["split"] == "holdout"]
+    if holdout_df.empty:
+        return _empty_ticker_comparison_df()
+
+    policy = _policy_from_string(selected_policy)
+    col = _net_return_col(spec, config)
+    rows: list[dict[str, Any]] = []
+    for ticker in sorted(holdout_df["ticker"].unique()):
+        ticker_df = holdout_df[holdout_df["ticker"] == ticker]
+        baseline_df = ticker_df[ticker_df["baseline_qualifies"]]
+        candidate_df = ticker_df[_eligible_mask(ticker_df, policy)]
+
+        baseline_vals = pd.to_numeric(baseline_df[col], errors="coerce").dropna()
+        candidate_vals = pd.to_numeric(candidate_df[col], errors="coerce").dropna()
+
+        baseline_mean = float(baseline_vals.mean()) if not baseline_vals.empty else None
+        candidate_mean = float(candidate_vals.mean()) if not candidate_vals.empty else None
+        improved = (
+            candidate_mean is not None
+            and baseline_mean is not None
+            and candidate_mean >= baseline_mean
+        )
+
+        rows.append({
+            "ticker": ticker,
+            "baseline_event_count": len(baseline_df),
+            "candidate_event_count": len(candidate_df),
+            "baseline_mean_net_return_pct": baseline_mean,
+            "candidate_mean_net_return_pct": candidate_mean,
+            "candidate_improved": improved,
+        })
+
+    if not rows:
+        return _empty_ticker_comparison_df()
+    df = pd.DataFrame(rows)
+    for col_name in _empty_ticker_comparison_df().columns:
+        if col_name not in df.columns:
+            df[col_name] = None
+    return df[_empty_ticker_comparison_df().columns]
+
+
+def _empty_ticker_comparison_df() -> pd.DataFrame:
+    return pd.DataFrame(columns=[
+        "ticker", "baseline_event_count", "candidate_event_count",
+        "baseline_mean_net_return_pct", "candidate_mean_net_return_pct", "candidate_improved",
+    ])
 
 
 def build_candidate_comparison_df(

@@ -34,6 +34,7 @@ class ShortContextSpec:
     horizons: tuple[int, ...] = (1, 3, 5)
     slippage_scenarios_bps: tuple[float, ...] = (0.0, 5.0, 10.0)
     commission_bps: float = 0.0
+    minimum_validation_events: int | None = None
     minimum_holdout_events: int = 100
     minimum_holdout_tickers: int = 10
     minimum_event_retention_pct: float = 25.0
@@ -42,6 +43,10 @@ class ShortContextSpec:
     schema_version: int = 1
 
     def __post_init__(self) -> None:
+        # Default validation sample minimum to the holdout minimum when not specified.
+        if self.minimum_validation_events is None:
+            object.__setattr__(self, "minimum_validation_events", self.minimum_holdout_events)
+
         if self.schema_version != 1:
             raise ValidationError(f"Unsupported schema version: {self.schema_version}; expected 1")
         if not self.study_name or not isinstance(self.study_name, str):
@@ -123,6 +128,7 @@ class ShortContextSpec:
 
         _require_finite_nonnegative_number("commission_bps", self.commission_bps)
 
+        _require_positive_int("minimum_validation_events", self.minimum_validation_events)
         _require_positive_int("minimum_holdout_events", self.minimum_holdout_events)
         _require_positive_int("minimum_holdout_tickers", self.minimum_holdout_tickers)
 
@@ -172,6 +178,7 @@ class ShortContextSpec:
             "horizons": list(self.horizons),
             "slippage_scenarios_bps": list(self.slippage_scenarios_bps),
             "commission_bps": self.commission_bps,
+            "minimum_validation_events": self.minimum_validation_events,
             "minimum_holdout_events": self.minimum_holdout_events,
             "minimum_holdout_tickers": self.minimum_holdout_tickers,
             "minimum_event_retention_pct": self.minimum_event_retention_pct,

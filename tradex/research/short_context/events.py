@@ -51,6 +51,7 @@ def generate_context_events(
         market_df = proxy_dfs[market_proxy]
         sector_df = proxy_dfs.get(sector_proxy) if sector_proxy else None
 
+        entry = next(e for e in manifest.entries if e.ticker == ticker)
         ticker_events, quality = _generate_ticker_context_events(
             ticker,
             ticker_df,
@@ -61,6 +62,7 @@ def generate_context_events(
             spec,
             config,
             manifest.splits,
+            entry,
         )
         events.extend(ticker_events)
         quality_rows.append(quality)
@@ -78,6 +80,7 @@ def _generate_ticker_context_events(
     spec: ShortContextSpec,
     config: ScoreValidationConfig,
     splits: dict,
+    entry,
 ) -> tuple[list[ContextEventRecord], DataQualityRow]:
     """Generate events for a single target ticker."""
     ticker_events: list[ContextEventRecord] = []
@@ -202,17 +205,31 @@ def _generate_ticker_context_events(
     if not ticker_events:
         warnings.append("No events generated for this ticker")
 
+    duplicate_timestamps = int(ticker_df.index.duplicated().sum())
+    required_cols = ["open", "high", "low", "close", "volume"]
+    missing_required_values = int(
+        ticker_df[required_cols].isna().any(axis=1).sum()
+    )
+    invalid_ohlc_rows = int(
+        (
+            (ticker_df["low"] > ticker_df["open"])
+            | (ticker_df["low"] > ticker_df["close"])
+            | (ticker_df["high"] < ticker_df["open"])
+            | (ticker_df["high"] < ticker_df["close"])
+        ).sum()
+    )
+
     quality = DataQualityRow(
         ticker=ticker,
-        data_source="manifest",
-        sha256="",
-        manifest_rows=validated_rows,
+        data_source=entry.data_source,
+        sha256=entry.sha256,
+        manifest_rows=entry.rows,
         validated_rows=validated_rows,
         data_start=data_start,
         data_end=data_end,
-        duplicate_timestamps=0,
-        missing_required_values=0,
-        invalid_ohlc_rows=0,
+        duplicate_timestamps=duplicate_timestamps,
+        missing_required_values=missing_required_values,
+        invalid_ohlc_rows=invalid_ohlc_rows,
         split_event_counts=split_event_counts,
         complete_1_bar_outcomes=complete_outcomes.get(1, 0),
         complete_3_bar_outcomes=complete_outcomes.get(3, 0),

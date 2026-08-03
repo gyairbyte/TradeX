@@ -7,11 +7,11 @@ from typing import Any
 import pandas as pd
 
 from tradex.backtest.engine import run_backtest
-from tradex.backtest.models import BacktestConfig
+from tradex.backtest.models import BacktestConfig, BacktestDataError
 from tradex.market.context import compute_short_term_context
 from tradex.market.models import ShortContextPolicy
 from tradex.research.score_validation.manifest import load_manifest
-from tradex.research.score_validation.models import ScoreValidationConfig
+from tradex.research.score_validation.models import ScoreValidationConfig, Split
 from tradex.research.short_context.alignment import load_ticker_df
 from tradex.research.short_context.models import (
     PairedBacktestResult,
@@ -28,7 +28,12 @@ def run_paired_backtests(
     config: ScoreValidationConfig,
     selected_policy: str | None,
 ) -> PairedBacktestResult:
-    """Run paired baseline/candidate backtests for every holdout target ticker."""
+    """Run paired baseline/candidate backtests for every holdout target ticker.
+
+    Only bars within the manifest's holdout split are used for signal evaluation,
+    entries, exits, and metrics. Earlier bars are retained only as indicator
+    warmup.
+    """
     manifest = load_manifest(manifest_path)
     holdout_tickers = [t for t in spec.target_tickers]
 
@@ -40,21 +45,25 @@ def run_paired_backtests(
     for proxy in spec.proxy_tickers():
         proxy_dfs[proxy] = load_ticker_df(manifest, proxy)
 
-    backtest_config = BacktestConfig(
-        min_score=spec.baseline_score_threshold,
-        warmup_bars=config.warmup_bars,
-        max_holding_bars=spec.primary_horizon_bars,
-        stop_loss_pct=0.05,
-        take_profit_pct=0.10,
-        commission_bps=spec.commission_bps,
-        slippage_bps=spec.primary_slippage_bps,
-        initial_capital=100_000.0,
-        intrabar_policy="stop_first",
-    )
+    holdout = manifest.splits["holdout"]
+    min_warmup = max(config.warmup_bars, 50)
 
     for ticker in holdout_tickers:
         ticker_df = load_ticker_df(manifest, ticker)
         entry = next(e for e in manifest.entries if e.ticker == ticker)
+        bars, warmup = _holdout_window_bars(ticker_df, holdout, min_warmup=min_warmup)
+        backtest_config = BacktestConfig(
+            min_score=spec.baseline_score_threshold,
+            warmup_bars=warmup,
+            max_holding_bars=spec.primary_horizon_bars,
+            stop_loss_pct=0.05,
+            take_profit_pct=0.10,
+            commission_bps=spec.commission_bps,
+            slippage_bps=spec.primary_slippage_bps,
+            initial_capital=100_000.0,
+            intrabar_policy="stop_first",
+        )
+
         ctx = spec.ticker_context[ticker]
         market_proxy = ctx["market_proxy"]
         sector_proxy = ctx.get("sector_proxy")
@@ -64,7 +73,7 @@ def run_paired_backtests(
         baseline_fn = _make_baseline_score_fn()
         baseline_result = run_backtest(
             ticker=ticker,
-            bars=ticker_df,
+            bars=bars,
             score_fn=baseline_fn,
             config=backtest_config,
             strategy_name="short_term_baseline",
@@ -85,7 +94,7 @@ def run_paired_backtests(
             )
             candidate_result = run_backtest(
                 ticker=ticker,
-                bars=ticker_df,
+                bars=bars,
                 score_fn=candidate_fn,
                 config=backtest_config,
                 strategy_name=f"short_term_{policy.value}",
@@ -164,6 +173,44 @@ def _policy_from_string(value: str) -> ShortContextPolicy:
         raise ValidationError(f"unknown policy: {value}") from exc
 
 
+def _holdout_window_bars(
+    ticker_df: pd.DataFrame,
+    holdout: Split,
+    *,
+    min_warmup: int,
+) -> tuple[pd.DataFrame, int]:
+    """Return bars trimmed to the holdout window plus indicator warmup.
+
+    The returned DataFrame ends at the last bar on or before ``holdout.end``.
+    Only ``min_warmup`` bars before the first holdout bar are retained as
+    indicator warmup, so development/validation price changes far from the
+    holdout boundary cannot alter holdout backtest metrics.
+    """
+    if ticker_df.empty or ticker_df.index.tz is None:
+        raise BacktestDataError("Bars must be non-empty and timezone-aware")
+
+    dates = ticker_df.index.tz_convert("UTC").date
+    mask = (dates >= holdout.start) & (dates <= holdout.end)
+    holdout_indices = mask.nonzero()[0]
+    if holdout_indices.size == 0:
+        raise BacktestDataError(f"No bars within holdout window {holdout.start} to {holdout.end}")
+
+    end_idx = int(holdout_indices[-1])
+    start_idx = int(holdout_indices[0])
+    if start_idx + 1 < min_warmup:
+        raise BacktestDataError(
+            f"Holdout window starts at index {start_idx} but {min_warmup} warmup bars are required"
+        )
+
+    slice_start = max(0, start_idx - min_warmup + 1)
+    warmup = start_idx - slice_start + 1
+    bars = ticker_df.iloc[slice_start : end_idx + 1]
+    if len(bars) < warmup:
+        raise BacktestDataError("Trimmed holdout window is shorter than required warmup")
+
+    return bars, warmup
+
+
 def _short_weights_snapshot() -> dict[str, Any]:
     return {k: int(v) for k, v in ShortWeights().__dict__.items()}
 
@@ -215,7 +262,7 @@ def _backtest_gate_failures(
         baseline_df,
         candidate_df,
         on="ticker",
-        suffix=("_baseline", "_candidate"),
+        suffixes=("_baseline", "_candidate"),
         how="inner",
     )
     if compared.empty:

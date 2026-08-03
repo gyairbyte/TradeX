@@ -26,6 +26,7 @@ _ALLOWED_TOP_KEYS = {
     "horizons",
     "slippage_scenarios_bps",
     "commission_bps",
+    "minimum_validation_events",
     "minimum_holdout_events",
     "minimum_holdout_tickers",
     "minimum_event_retention_pct",
@@ -158,6 +159,11 @@ def _parse_spec(data: dict[str, Any]) -> ShortContextSpec:
     _validate_no_bool("commission_bps", commission_bps)
     _require_finite_nonnegative_number("commission_bps", commission_bps)
 
+    minimum_validation_events = data.get("minimum_validation_events", None)
+    if minimum_validation_events is not None:
+        _validate_no_bool("minimum_validation_events", minimum_validation_events)
+        _require_positive_int("minimum_validation_events", minimum_validation_events)
+
     minimum_holdout_events = data.get("minimum_holdout_events", 100)
     _validate_no_bool("minimum_holdout_events", minimum_holdout_events)
     _require_positive_int("minimum_holdout_events", minimum_holdout_events)
@@ -200,6 +206,7 @@ def _parse_spec(data: dict[str, Any]) -> ShortContextSpec:
         horizons=horizons,
         slippage_scenarios_bps=slippage_scenarios_bps,
         commission_bps=commission_bps,
+        minimum_validation_events=minimum_validation_events,
         minimum_holdout_events=minimum_holdout_events,
         minimum_holdout_tickers=minimum_holdout_tickers,
         minimum_event_retention_pct=minimum_event_retention_pct,
