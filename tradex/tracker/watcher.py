@@ -25,11 +25,10 @@ from typing import Any
 import schedule
 
 from tradex.alerts.models import AlertCooldownConfig, AlertDecision, AlertDispatchResult
-from tradex.alerts.notifier import alert_coil, alert_confluence, alert_gap, alert_pattern_match
+from tradex.alerts.notifier import alert_coil, alert_confluence, alert_gap
 from tradex.alerts.policy import AlertPolicy
 from tradex.data.fetcher import FetchPolicy, resolve_provider
 from tradex.market import MARKET_TIMEZONE, is_regular_market_open, market_status
-from tradex.patterns.matcher import run_match_screen
 from tradex.premarket.config import GapScanConfig
 from tradex.premarket.gap_scanner import scan_gaps_with_report
 from tradex.screener.engine import run_with_report as screener_run_with_report
@@ -61,7 +60,12 @@ def _check_alerts(
     alert_policy: AlertPolicy | None = None,
     observed_at: datetime | None = None,
 ) -> list[AlertDispatchResult]:
-    """Check coils, confluence, and pattern matches — fire alerts where thresholds are crossed."""
+    """Check coils and confluence — fire alerts where thresholds are crossed.
+
+    Pattern matching is experimental and quarantined from automatic alerts; it is
+    not evaluated here. See `tradex.research.pattern_validation` for the research
+    study.
+    """
     if alert_policy is None:
         alert_policy = _default_alert_policy()
 
@@ -95,26 +99,6 @@ def _check_alerts(
                 observed_at=observed_at,
             )
         )
-
-    # Pattern match alerts (only if fingerprints exist)
-    for event_type in ("runup", "decline"):
-        for profile in ("standard",):
-            matches = run_match_screen(
-                tickers, event_type=event_type, profile=profile, provider=provider
-            )
-            for _, row in matches.iterrows():
-                results.append(
-                    alert_pattern_match(
-                        ticker=row["ticker"],
-                        similarity=float(row["similarity_score"]),
-                        event_type=event_type,
-                        profile=profile,
-                        fp_events=int(row.get("fp_events", 0)),
-                        interpretation=row.get("interpretation", ""),
-                        policy=alert_policy,
-                        observed_at=observed_at,
-                    )
-                )
 
     return results
 

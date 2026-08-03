@@ -213,17 +213,12 @@ def test_run_once_passes_provider_to_screener(fresh_signal_db):
     assert captured["kwargs"]["provider"] == "alpaca"
 
 
-def test_run_once_passes_provider_to_confluence_and_pattern(fresh_signal_db):
-    """run_once must forward the actual provider to downstream OHLCV workflows."""
+def test_run_once_passes_provider_to_confluence(fresh_signal_db):
+    """run_once must forward the actual provider to downstream confluence workflow."""
     confluence_captured = {}
-    matcher_captured = {}
 
     def fake_confluence(tickers, **kwargs):
         confluence_captured["kwargs"] = kwargs
-        return MagicMock(empty=True)
-
-    def fake_matcher(tickers, **kwargs):
-        matcher_captured["kwargs"] = kwargs
         return MagicMock(empty=True)
 
     empty = pd.DataFrame(columns=[
@@ -235,10 +230,8 @@ def test_run_once_passes_provider_to_confluence_and_pattern(fresh_signal_db):
         patch.object(watcher, "screener_run_with_report", return_value=_scan_report(empty, "schwab", total_fetched=1, tickers=["AAPL"])),
         patch.object(watcher, "run_outcome_pass"),
         patch.object(watcher, "run_confluence_screen", side_effect=fake_confluence),
-        patch.object(watcher, "run_match_screen", side_effect=fake_matcher),
         patch.object(watcher, "alert_coil"),
         patch.object(watcher, "alert_confluence"),
-        patch.object(watcher, "alert_pattern_match"),
     ):
         watcher.run_once(
             ["AAPL"],
@@ -248,7 +241,6 @@ def test_run_once_passes_provider_to_confluence_and_pattern(fresh_signal_db):
         )
 
     assert confluence_captured["kwargs"].get("provider") == "schwab"
-    assert matcher_captured["kwargs"].get("provider") == "schwab"
 
 
 def test_start_loop_schedules_run_once_with_provider():

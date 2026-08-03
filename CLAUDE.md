@@ -59,16 +59,19 @@ Scanner runs → results DataFrame
 | `tradex/patterns/config.py` | PatternConfig dataclass + 3 profiles: `conservative`, `standard`, `volatile`. All thresholds configurable. |
 | `tradex/patterns/miner.py` | Mines 3yr daily history, finds run-up/decline events, extracts normalized pre-event windows. Universe: ~40 stocks. |
 | `tradex/patterns/fingerprint.py` | Averages mined windows into fingerprints (mean ± std per series). Persists to `~/.tradex/fingerprints.db`. |
-| `tradex/patterns/matcher.py` | Compares live 10-day window against fingerprint using weighted Pearson correlation. Returns 0–100 similarity score. |
+| `tradex/patterns/matcher.py` | Compares live 10-day window against fingerprint using weighted Pearson correlation. Returns 0–100 similarity score. Research-only; predictive value is unvalidated. |
 | `tradex/premarket/config.py` | Validated `GapScanConfig` dataclass for the pre-market gap scanner. |
 | `tradex/premarket/models.py` | Typed dataclasses: `PremarketSnapshot`, `DailyLiquidityBaseline`, `SpreadSnapshot`, `GapCatalystContext`, `GapObservation`, `GapScanReport`. |
 | `tradex/premarket/sources.py` | Pre-market OHLCV source adapter, daily liquidity baseline, and spread snapshots. |
 | `tradex/premarket/catalysts.py` | Earnings + headline context (explicitly sourced, no causal inference). |
 | `tradex/premarket/gap_scanner.py` | Public orchestration layer (`scan_gaps_with_report`) and backward-compatible `scan_gaps` wrapper. |
 | `tradex/premarket/cli.py` | Pre-market scanner CLI (`python -m tradex.premarket scan ...`). |
+| `tradex/research/pattern_validation/` | Locked, point-in-time pattern-similarity validation study (PATTERN-001). Not used in production. |
+| `tradex/research/score_validation/` | Reproducible score-validation event study (VAL-002). |
+| `tradex/research/short_context/` | Short-term market-regime context research (SHORT-001). |
 | `tradex/options/models.py` | Typed options source/capability and scan report models (`OptionsDataKind`, `OptionsSourceStatus`, `OptionsActivityReport`). |
 | `tradex/options/flow.py` | Capability-aware options source resolution, true-flow scanning, chain-snapshot scanning, and non-directional put/call balance. |
-| `tradex/ui/dashboard.py` | Streamlit UI: Scanner, Coil Detector, Confluence, Pattern Match, Pre-Market, Signal Journal, Weights, Alerts, Options Activity, Help |
+| `tradex/ui/dashboard.py` | Streamlit UI: Scanner, Coil Detector, Confluence, Pattern Similarity (experimental research), Pre-Market, Signal Journal, Weights, Alerts, Options Activity, Help |
 | `pyproject.toml` | Python 3.11+ project, deps: yfinance, pandas, ta, streamlit, plotly |
 | `.env.example` | Template for all provider credentials (Yahoo needs none; Alpaca needs API keys; IBKR needs TWS running; Schwab needs OAuth app + token file) |
 

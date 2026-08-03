@@ -3,7 +3,7 @@ Streamlit dashboard — eight tabs:
   1. Scanner       : run screener, view ranked results, drill-down chart
   2. Coil Detector : stocks building pressure over multiple days (pre-signal)
   3. Confluence    : stocks scoring well across multiple timeframes
-  4. Pattern Match : compare live stocks against historical run-up/decline fingerprints
+  4. Pattern Similarity : experimental shape comparison against historical run-up/decline fingerprints
   5. Pre-Market    : gap scanner — identify gap-up/down candidates before open
   6. Options Activity : true options flow and chain-snapshot activity
   7. Alerts        : configure Discord/email alert thresholds
@@ -26,7 +26,6 @@ from tradex.alerts.notifier import (
     DISCORD_CHANNEL_ID,
     DISCORD_TOKEN,
     EMAIL_TO,
-    PATTERN_ALERT_THRESHOLD,
     send_alert,
 )
 from tradex.alerts.policy import AlertPolicy
@@ -219,16 +218,13 @@ def _alert_policy_from_env() -> AlertPolicy:
 
 
 def _effective_cooldowns(config: AlertCooldownConfig) -> dict[str, int | str]:
-    """Return the effective cooldown minutes for each alert category."""
+    """Return the effective cooldown minutes for each automatic alert category."""
     if not config.enabled:
         return {"status": "disabled"}
     return {
         "coil": config.cooldown_minutes_for(AlertKey("X", "coil", "x")),
         "confluence": config.cooldown_minutes_for(
             AlertKey("X", "confluence", "multi")
-        ),
-        "pattern": config.cooldown_minutes_for(
-            AlertKey("X", "pattern:runup:standard", "pattern")
         ),
         "gap": config.cooldown_minutes_for(AlertKey("X", "gap:up", "premarket")),
     }
@@ -496,7 +492,7 @@ with st.sidebar:
     st.markdown("[📖 Help & Documentation](#help)", help="Open the Help tab for full feature explanations.")
 
 tab_scanner, tab_coil, tab_confluence, tab_pattern, tab_premarket, tab_options, tab_alerts, tab_journal, tab_weights, tab_help = st.tabs([
-    "Scanner", "Coil Detector", "Confluence", "Pattern Match",
+    "Scanner", "Coil Detector", "Confluence", "Pattern Similarity",
     "Pre-Market", "Options Activity", "Alerts", "Signal Journal", "Weights", "Help",
 ])
 
@@ -978,42 +974,52 @@ A stock scoring 80+ on intraday alone is interesting, but it is not multi-timefr
 # TAB 4 — PATTERN MATCH
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_pattern:
-    st.subheader("Pattern Match — Historical Run-Up & Decline Fingerprints")
+    st.subheader("Pattern Similarity — Experimental Research")
+    st.warning(
+        "Pattern similarity is experimental and has not been shown to predict future returns. "
+        "It is not used in production scoring, ranking, eligibility, or automatic alerts."
+    )
     st.caption(
-        "Compares each stock's current 10-day pattern against the averaged shape of "
-        "hundreds of historical run-ups or declines. High similarity = the setup looks "
-        "like it did before major moves in the past."
+        "Compares a stock's current 10-day price/volume/indicator shape against an averaged "
+        "shape from historical run-ups or declines. Pearson correlation measures resemblance, "
+        "not causality or expected return."
     )
 
-    with st.expander("How pattern matching works", expanded=False):
+    with st.expander("How pattern similarity works", expanded=False):
         st.markdown("""
-**The idea:** if hundreds of major run-ups all had a similar price/volume shape in the days before,
-and your stock's current shape matches that pattern — it's worth paying attention.
+**The idea:** historical run-ups and declines sometimes have recurring price/volume/indicator
+shapes in the days before the move. This tool measures how closely a stock's current 10-day
+shape resembles the *average* of those pre-move shapes.
 
-**Step 1 — Mining:** TradeX scans 3 years of history across 40+ stocks and finds every event where
-a stock moved +15% or more in 5 days (a "run-up") or -12% (a "decline"). It then extracts the
-10 trading days *before* each event started.
+**Step 1 — Mining:** TradeX scans the configured universe and finds past instances where a stock
+moved at least +15% in 5 days (a "run-up") or at least -12% in 5 days (a "decline"). It then
+extracts the 10 trading days *before* each event started.
 
-**Step 2 — Fingerprinting:** All those pre-event windows are normalized (so NVDA at $800 and
-AMD at $100 are comparable) and averaged into a "fingerprint" — the typical shape of price,
-volume, RSI, MACD, and Bollinger Band width in the days leading up to a major move.
+**Step 2 — Fingerprinting:** All pre-event windows are normalized (so different price levels
+are comparable) and averaged into a "fingerprint" — the mean shape of price, volume, RSI,
+MACD difference, and Bollinger Band width leading up to the mined events.
 
-**Step 3 — Matching:** Your stock's current 10-day window is compared against that fingerprint
-using Pearson correlation across 5 series. Each series is weighted:
+**Step 3 — Matching:** The stock's current 10-day window is compared against that fingerprint
+using Pearson correlation across the same 5 series. Each series is weighted:
 
-| Series | Weight | Why |
+| Series | Weight | Role |
 |---|---|---|
-| Price shape | 35% | Most direct signal |
-| Volume shape | 30% | Institutional footprint |
-| RSI | 15% | Momentum confirmation |
-| MACD | 10% | Trend direction |
-| BB Width | 10% | Volatility context |
+| Price shape | 35% | Largest weight |
+| Volume shape | 30% | Volume pattern in the 10-day window |
+| RSI | 15% | Momentum shape |
+| MACD | 10% | Trend-momentum shape |
+| BB Width | 10% | Volatility shape |
 
 **Similarity score guide:**
-- 90–100%: Near-perfect match
-- 75–89%: Strong match — alert threshold
-- 60–74%: Moderate — watch but don't act alone
-- <60%: Low similarity / noise
+- 90–100%: Very high shape similarity
+- 75–89%: High shape similarity — this is the existing display cutoff used in the validation study
+- 60–74%: Moderate shape similarity
+- <60%: Low shape similarity / noise
+
+**Important:** Pearson correlation measures *shape resemblance*, not causality or expected
+return. The validation study in `tradex.research.pattern_validation` is the only place this
+idea is evaluated for predictive value. Manual inspection here is experimental and does not
+justify a trade on its own.
 
 **Profiles:**
 - **Conservative** — +20% move threshold. For large stable stocks (AAPL, MSFT).
@@ -1064,15 +1070,16 @@ using Pearson correlation across 5 series. Each series is weighted:
     )
     match_etype = m_col2.selectbox(
         "Pattern type", ["runup", "decline"], key="match_etype",
-        help="'runup' = looking for stocks about to go up. 'decline' = looking for potential shorts or stocks to avoid.",
+        help="'runup' = compare against the averaged pre-run-up shape. 'decline' = compare against the averaged pre-decline shape. Both are experimental shape comparisons, not directional predictions.",
     )
     match_threshold = m_col3.slider(
         "Min similarity", 0, 100, int(PROFILES[match_profile].alert_threshold), key="match_thresh",
         help=(
             "Only show stocks above this similarity % to the historical fingerprint.\n\n"
-            "• **Lower (50–65%)** — more results, some false positives.\n"
-            "• **75% (default)** — strong match threshold.\n"
-            "• **Higher (85–100%)** — near-perfect matches only. Very few results."
+            "• **Lower (50–65%)** — more results, more noise.\n"
+            "• **75% (default)** — the fixed display cutoff used in the validation study.\n"
+            "• **Higher (85–100%)** — very high shape similarity only. Very few results.\n\n"
+            "This is a shape-similarity display setting, not a trade recommendation."
         ),
     )
 
@@ -1088,15 +1095,15 @@ using Pearson correlation across 5 series. Each series is weighted:
                     provider=provider,
                 )
             if match_results.empty:
-                st.warning(f"No tickers matched above {match_threshold}% similarity.")
+                st.warning(f"No tickers matched above {match_threshold}% shape similarity.")
             else:
-                st.success(f"{len(match_results)} pattern matches found")
+                st.success(f"{len(match_results)} tickers with shape similarity above {match_threshold}% (experimental)")
                 st.dataframe(
                     match_results,
                     use_container_width=True,
                     column_config={
                         "ticker":           st.column_config.TextColumn("Ticker"),
-                        "similarity_score": st.column_config.ProgressColumn("Similarity", min_value=0, max_value=100, help="How closely the current pattern matches historical pre-move fingerprint."),
+                        "similarity_score": st.column_config.ProgressColumn("Similarity", min_value=0, max_value=100, help="How closely the current 10-day shape resembles the historical fingerprint (0–100)."),
                         "match_tier":       st.column_config.TextColumn("Tier"),
                         "fp_events":        st.column_config.NumberColumn("Based On", help="Number of historical events that make up the fingerprint."),
                         "score_price":      st.column_config.ProgressColumn("Price Match", min_value=0, max_value=100),
@@ -1112,10 +1119,11 @@ using Pearson correlation across 5 series. Each series is weighted:
 
     if "match_results" in st.session_state and "match_etype_saved" in st.session_state and not st.session_state["match_results"].empty:
         st.divider()
-        st.subheader("Pattern Overlay — Live vs Fingerprint")
+        st.subheader("Pattern Shape Overlay — Live vs Historical Fingerprint")
         st.caption(
             "White line = your stock's last 10 days (normalized to % change from start). "
-            "Orange dashed = historical average pre-move shape. Shaded band = ±1 standard deviation."
+            "Orange dashed = historical average pre-event shape. Shaded band = ±1 standard deviation. "
+            "This is a shape comparison, not a prediction."
         )
         selected_match = st.selectbox(
             "Select ticker", st.session_state["match_results"]["ticker"].tolist(), key="sel_match",
@@ -1584,11 +1592,9 @@ with tab_alerts:
     t1, t2, t3 = st.columns(3)
     t1.metric("Coil threshold",      str(COIL_ALERT_THRESHOLD),
               help="Minimum coil strength score (0–100) to fire an alert. Lower = more alerts.")
-    t2.metric("Pattern threshold",   f"{PATTERN_ALERT_THRESHOLD}%",
-              help="Minimum pattern similarity % to fire an alert. Lower = more alerts, more noise.")
-    t3.metric("Confluence threshold", str(CONFLUENCE_ALERT_THRESHOLD),
+    t2.metric("Confluence threshold", str(CONFLUENCE_ALERT_THRESHOLD),
               help="Minimum confluence score (0–100) to fire an alert.")
-    st.code("ALERT_COIL_THRESHOLD=60\nALERT_PATTERN_THRESHOLD=75\nALERT_CONFLUENCE_THRESHOLD=70")
+    st.code("ALERT_COIL_THRESHOLD=60\nALERT_CONFLUENCE_THRESHOLD=70")
 
     st.divider()
     st.markdown("### Cooldown Status")
@@ -1657,10 +1663,10 @@ with tab_alerts:
 | Alert type | When it fires | Color in Discord |
 |---|---|---|
 | **Coil detected** | Coil strength ≥ threshold after a scan | 🟡 Amber |
-| **Pattern match** | Similarity ≥ threshold vs fingerprint | 🔵 Blurple |
 | **Confluence** | Cross-timeframe score ≥ threshold | 🟢 Green |
 | **Gap up** | Pre-market gap ≥ 4% upward (8am ET) | 🟢 Green |
 | **Gap down** | Pre-market gap ≥ 4% downward (8am ET) | 🔴 Red |
+| **Pattern similarity** | Not an automatic alert — use the *Pattern Similarity* tab for manual experimental inspection only | ⚪ Not applicable |
 
 Run the watcher to activate automatic alerts:
 ```bash

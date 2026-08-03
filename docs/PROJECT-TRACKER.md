@@ -163,7 +163,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Acceptance criteria:** Repeated checks for the same alert identity produce only one Discord/email message per cooldown window; state persists across watcher restarts; manual test alerts bypass cooldown.
 - **Intended pull request:** `devin/add-alert-cooldown`
 - **Affects trading behavior:** Yes — production trading-alert delivery cadence changes; signals, scores, thresholds, rankings, and eligibility remain unchanged. Implementation authorized by Gary; final merge requires Gary’s explicit approval.
-- **Next recommended PR:** `devin/validate-pattern-matcher` (PATTERN-001)
+- **Next recommended PR:** `devin/refactor-dashboard-boundaries` (UI-001)
 
 ### TEST-001: Complete test foundation and fixtures
 
@@ -480,16 +480,18 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Validate pattern matcher before dashboard promotion
 - **Category:** Backtesting
 - **Priority:** Medium
-- **Status:** Proposed
+- **Status:** Completed
+- **Resolved by:** `devin/validate-pattern-matcher`
 - **Problem statement:** Pattern matcher uses Pearson correlation vs. a fingerprint but has not been validated for predictive value.
 - **Recommended action:** Run an out-of-sample backtest; if it fails to add value, move pattern match to a research/experiment tab.
 - **Reason:** Correlation to a historical average is not a trade signal without empirical support.
 - **Dependencies:** VAL-001
-- **Files likely affected:** `tradex/patterns/matcher.py`, `tradex/ui/dashboard.py`
-- **Testing requirements:** Out-of-sample backtest on a point-in-time universe with delisted-bias controls.
-- **Acceptance criteria:** Pattern-match-based trades have statistically significant positive expectancy, or the feature is quarantined.
+- **Files likely affected:** `tradex/patterns/matcher.py`, `tradex/ui/dashboard.py`, `tradex/tracker/watcher.py`, `tradex/research/pattern_validation/`
+- **Testing requirements:** Out-of-sample backtest on a point-in-time universe with delisted-bias controls; production quarantine tests; artifact determinism tests.
+- **Acceptance criteria:** Pattern-match alerts are removed from the watcher; the dashboard tab is relabeled as experimental research with a prominent warning; the matcher output uses neutral wording; a locked `tradex/research/pattern_validation` package produces deterministic artifacts and never reads/writes `~/.tradex/fingerprints.db`.
 - **Intended pull request:** `devin/validate-pattern-matcher`
-- **Affects trading behavior:** Possibly Yes
+- **Affects trading behavior:** No — pattern matching is quarantined from production scoring, ranking, eligibility, and automatic alerts. The dashboard and matcher language are neutral and research-only.
+- **Next recommended PR:** `devin/refactor-dashboard-boundaries` (UI-001)
 
 ### OPT-001: Gate options flow behind real data source
 
@@ -508,7 +510,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Acceptance criteria:** True-flow scans only run when Unusual Whales is configured; chain scans use Tradier or Yahoo; no result is labeled as true flow from a snapshot source; put/call volume balance is explicitly non-directional; the dashboard tab is renamed to "Options Activity" and shows source/data-kind warnings.
 - **Intended pull request:** `devin/gate-options-flow`
 - **Affects trading behavior:** Yes — production options-feature eligibility and interpretation change: users without Unusual Whales can no longer run a true options-flow scan, and chain volume/OI is no longer presented as unusual/directional flow. Final merge requires Gary's explicit approval.
-- **Next recommended PR:** `devin/validate-pattern-matcher` (PATTERN-001)
+- **Next recommended PR:** `devin/refactor-dashboard-boundaries` (UI-001)
 
 ### UI-001: Split `dashboard.py` into tab and component modules
 

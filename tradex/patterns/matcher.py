@@ -4,16 +4,18 @@ Live pattern matcher.
 Compares a stock's current lookback window against stored fingerprints
 and returns a similarity score (0–100).
 
-Similarity method: Pearson correlation averaged across series.
-  - Correlation handles different scales naturally (no need for extra normalization)
-  - We weight price_pct and volume_ratio highest since they're most predictive
-  - RSI, MACD, BB are secondary confirmation
+Similarity method: Pearson correlation averaged across series. Correlation
+handles different scales naturally, but it measures shape resemblance, not
+causality or expected return.
 
 Score interpretation:
-  90–100 : Near-perfect match — very strong pattern signal
-  75–89  : Strong match — worth alerting
-  60–74  : Moderate match — watch but don't act alone
-  <60    : Weak / noise
+  90–100 : High shape similarity to the stored fingerprint
+  75–89  : Strong shape similarity to the stored fingerprint
+  60–74  : Moderate shape similarity
+  <60    : Low shape similarity / noise
+
+Predictive value is unvalidated. This module is used by the dashboard for
+experimental research and is not part of production scoring or automatic alerts.
 """
 from __future__ import annotations
 
@@ -138,16 +140,16 @@ def match_ticker(
     cfg = PROFILES[profile]
     if similarity >= 90:
         tier = "very strong"
-        note = f"Near-perfect match to historical {event_type} pattern."
+        note = "High shape similarity to the stored fingerprint. Predictive value is unvalidated."
     elif similarity >= cfg.alert_threshold:
         tier = "strong"
-        note = f"Strong match — historically this pattern preceded a {event_type} in {fp['n_events']} events."
+        note = "High shape similarity to the stored fingerprint. Predictive value is unvalidated."
     elif similarity >= 60:
         tier = "moderate"
-        note = "Partial match — watch closely but don't act on similarity alone."
+        note = "Moderate shape similarity to the stored fingerprint. Predictive value is unvalidated."
     else:
         tier = "weak"
-        note = "Low similarity — current pattern does not resemble historical events."
+        note = "Low shape similarity to the stored fingerprint. Predictive value is unvalidated."
 
     return {
         "ticker":           ticker,

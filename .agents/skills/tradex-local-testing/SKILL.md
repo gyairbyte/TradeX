@@ -127,6 +127,7 @@ Alert cooldown verification should confirm:
 - Manual test alerts (dashboard "Send Test Alert") bypass cooldown.
 - `datetime` validation rejects naive values and uses timezone-aware UTC internally.
 - `python -m tradex.tracker.watcher --help` works with no credentials and creates no alert state database.
+- Pattern matching is quarantined from automatic alerts; the watcher does not call `run_match_screen()` or `alert_pattern_match()`.
 
 ## Backtest CLI
 
@@ -179,6 +180,43 @@ Key execution assumptions for credential-free tests:
 - Stop and target are anchored to the entry fill, not the signal bar close.
 - Exit priority: opening gap through stop/target, then intraday stop/target (with `intrabar_policy` tie-break), then `time_exit` at `max_holding_bars`.
 - The equity curve marks a bar as exposed if a position is held at any point during that bar; the `position_ticker` column records the active ticker.
+
+## Pattern similarity validation CLI
+
+Inspect pattern-validation commands with:
+
+```bash
+uv run python -m tradex.research.pattern_validation --help
+uv run python -m tradex.research.pattern_validation snapshot --help
+uv run python -m tradex.research.pattern_validation evaluate --help
+```
+
+Run the focused suite:
+
+```bash
+uv run pytest tests/research/pattern_validation -q
+```
+
+The `snapshot` command is the only mode that may contact a market-data provider; the `evaluate` command requires no network, no credentials, no `.env`, and does not read or write `~/.tradex/fingerprints.db`.
+
+Example offline workflow with a synthetic manifest:
+
+```bash
+# 1. Build a versioned offline snapshot (network allowed; credentials depend on provider)
+uv run python -m tradex.research.pattern_validation snapshot \
+  --tickers AAPL,MSFT,NVDA \
+  --start 2018-01-02 \
+  --end 2026-07-31 \
+  --provider yahoo \
+  --output data/pattern_validation_snapshot
+
+# 2. Evaluate offline (no network, no credentials, no ~/.tradex/fingerprints.db)
+uv run python -m tradex.research.pattern_validation evaluate \
+  --manifest data/pattern_validation_snapshot/manifest.lock.json \
+  --output results/pattern_validation
+```
+
+The study is locked: it uses the `MINING_UNIVERSE` from `tradex/patterns/miner.py`, the standard profile, `SERIES_WEIGHTS`, a 10-bar lookback, a 75 similarity cutoff, and fixed development/validation/holdout splits. `production_promotion_eligible` is always `false` because the universe is not point-in-time.
 
 ## Score-validation CLI
 

@@ -57,11 +57,10 @@ class TestWatcherAlertIntegration:
         with (
             patch.object(watcher.analyzer, "detect_coils", return_value=fake_coils),
             patch.object(watcher, "run_confluence_screen", return_value=fake_confluence),
-            patch.object(watcher, "run_match_screen", return_value=empty_matches),
         ):
             results = watcher._check_alerts(["AAPL"], "intraday", observed_at=datetime.now(UTC))
         assert isinstance(results, list)
-        assert len(results) == 2  # coil + confluence; pattern matches are empty
+        assert len(results) == 2  # coil + confluence; pattern matching is quarantined from automatic alerts
 
     def test_check_alerts_builds_default_policy_and_suppresses(
         self, fake_coils, empty_matches, tmp_path, monkeypatch
@@ -79,7 +78,6 @@ class TestWatcherAlertIntegration:
         with (
             patch.object(watcher.analyzer, "detect_coils", return_value=fake_coils),
             patch.object(watcher, "run_confluence_screen", return_value=empty_matches),
-            patch.object(watcher, "run_match_screen", return_value=empty_matches),
         ):
             results1 = watcher._check_alerts(["AAPL"], "intraday", alert_policy=None, observed_at=now)
             results2 = watcher._check_alerts(["AAPL"], "intraday", alert_policy=None, observed_at=now)
@@ -116,7 +114,6 @@ class TestWatcherAlertIntegration:
             patch.object(watcher, "screener_run_with_report") as mock_screener,
             patch.object(watcher.analyzer, "detect_coils", return_value=fake_coils),
             patch.object(watcher, "run_confluence_screen", return_value=fake_confluence),
-            patch.object(watcher, "run_match_screen", return_value=empty_matches),
             patch.object(watcher.store, "record_scan"),
         ):
             mock_report = MagicMock()
@@ -170,7 +167,6 @@ class TestWatcherAlertIntegration:
                 patch.object(watcher, "screener_run_with_report") as mock_screener,
                 patch.object(watcher.analyzer, "detect_coils", return_value=fake_coils),
                 patch.object(watcher, "run_confluence_screen", return_value=fake_confluence),
-                patch.object(watcher, "run_match_screen", return_value=empty_matches),
                 patch.object(watcher.store, "record_scan"),
             ):
                 mock_report = MagicMock()
@@ -309,7 +305,6 @@ class TestWatcherAlertIntegration:
                 patch.object(watcher, "screener_run_with_report") as mock_screener,
                 patch.object(watcher.analyzer, "detect_coils", return_value=fake_coils),
                 patch.object(watcher, "run_confluence_screen", return_value=empty_matches),
-                patch.object(watcher, "run_match_screen", return_value=empty_matches),
                 patch.object(watcher.store, "record_scan"),
             ):
                 mock_report = MagicMock()
