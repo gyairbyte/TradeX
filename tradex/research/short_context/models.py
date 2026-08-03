@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 
 from tradex.market.models import ShortContextPolicy
+from tradex.research.score_validation.models import ScoreValidationConfig
 
 
 class ValidationError(ValueError):
@@ -382,6 +383,7 @@ class ContextStudyResult:
     """Complete deterministic result for a short-term context study."""
 
     spec: ShortContextSpec
+    runtime_config: ScoreValidationConfig
     manifest_path: Path
     manifest_sha256: str | None
     context_spec_sha256: str | None
@@ -397,10 +399,12 @@ class ContextStudyResult:
     generated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def to_dict(self) -> dict[str, Any]:
+        from tradex.research.score_validation.models import _config_to_dict
         return _clean({
             "schema_version": 1,
             "generated_at": _iso(self.generated_at),
             "spec": self.spec.to_dict(),
+            "runtime_config": _config_to_dict(self.runtime_config),
             "manifest_path": str(self.manifest_path),
             "manifest_sha256": self.manifest_sha256,
             "context_spec_sha256": self.context_spec_sha256,

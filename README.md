@@ -396,7 +396,7 @@ Save and switch between named ticker lists (e.g. "Semis", "Crypto-adjacent", "Ea
 - [x] Fix scan audit to accurately distinguish requested, observed, qualifying, and failed scans (COR-012)
 - [x] Backtesting module to validate signal quality historically (VAL-001)
 - [x] Reproducible, point-in-time score validation study (VAL-002)
-- [x] Short-term market context research study with promotion gates (SHORT-001)
+- [x] Short-term market context research pipeline and holdout gates (SHORT-001 — research infrastructure complete; production integration blocked pending real-data gates)
 - [ ] Portfolio-level risk view
 
 ### Nice-to-have enhancements

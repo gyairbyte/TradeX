@@ -334,6 +334,11 @@ def is_context_eligible(
     """Return (eligible, status, reasons) for a context and policy.
 
     ``status`` is one of ``off``, ``eligible``, or ``unavailable``.
+
+    * ``market_rs`` requires a bullish market regime and positive market RS.
+    * ``market_sector_rs`` requires a bullish market regime, bullish sector
+      regime, and positive sector RS. Market RS is diagnostic metadata only
+      and is not an eligibility requirement for the sector policy.
     """
     if policy == ShortContextPolicy.OFF:
         return True, "off", []
@@ -345,12 +350,12 @@ def is_context_eligible(
     if not context.market_regime_bullish:
         reasons.append("market regime not bullish")
 
-    if not context.market_relative_strength_available or context.market_relative_strength_positive is None:
-        return False, "unavailable", ["market relative strength unavailable"]
-    if not context.market_relative_strength_positive:
-        reasons.append("market relative strength not positive")
-
     if policy == ShortContextPolicy.MARKET_RS:
+        if not context.market_relative_strength_available or context.market_relative_strength_positive is None:
+            return False, "unavailable", ["market relative strength unavailable"]
+        if not context.market_relative_strength_positive:
+            reasons.append("market relative strength not positive")
+
         eligible = context.market_regime_bullish and context.market_relative_strength_positive
         status = "eligible" if eligible else ("unavailable" if not reasons else "filtered")
         return eligible, status, reasons
@@ -368,7 +373,6 @@ def is_context_eligible(
 
     eligible = (
         context.market_regime_bullish
-        and context.market_relative_strength_positive
         and context.sector_regime_bullish
         and context.sector_relative_strength_positive
     )

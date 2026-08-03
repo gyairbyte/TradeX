@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 
 from tradex.market.context import compute_short_term_context, is_context_eligible
-from tradex.market.models import ShortContextPolicy
+from tradex.market.models import ShortContextPolicy, ShortTermMarketContext
 
 
 def _trending_df(n: int = 80) -> pd.DataFrame:
@@ -122,3 +122,40 @@ def test_context_incomplete_when_sector_proxy_configured_but_missing() -> None:
     assert "sector_regime" in ctx.missing_contexts
     assert "sector_relative_strength" in ctx.missing_contexts
     assert ctx.errors.get("sector_regime") == "sector data not provided"
+
+
+def test_market_sector_rs_does_not_require_positive_market_rs() -> None:
+    """market_sector_rs requires market regime + sector regime + sector RS only."""
+    ctx = ShortTermMarketContext(
+        as_of=datetime(2020, 1, 1, tzinfo=UTC),
+        market_proxy="SPY",
+        sector_proxy="XLK",
+        market_regime_available=True,
+        market_regime_bullish=True,
+        sector_regime_available=True,
+        sector_regime_bullish=True,
+        market_relative_strength_available=True,
+        market_relative_strength_positive=False,
+        sector_relative_strength_available=True,
+        sector_relative_strength_positive=True,
+        market_close=100.0,
+        market_ema20=95.0,
+        market_ema50=90.0,
+        market_ema20_slope_5=1.0,
+        sector_close=50.0,
+        sector_ema20=48.0,
+        sector_ema50=45.0,
+        sector_ema20_slope_5=0.5,
+        market_rs_ratio=1.0,
+        market_rs_ema20=1.1,
+        market_rs_change_20_pct=-0.05,
+        sector_rs_ratio=1.0,
+        sector_rs_ema20=0.95,
+        sector_rs_change_20_pct=0.05,
+    )
+    market_eligible, market_status, _ = is_context_eligible(ctx, ShortContextPolicy.MARKET_RS)
+    sector_eligible, sector_status, _ = is_context_eligible(ctx, ShortContextPolicy.MARKET_SECTOR_RS)
+    assert market_eligible is False
+    assert market_status == "filtered"
+    assert sector_eligible is True
+    assert sector_status == "eligible"

@@ -155,6 +155,18 @@ def _net_return_col(spec: ShortContextSpec, config: ScoreValidationConfig) -> st
     return f"{horizon}_bar_net_return_pct_{_slippage_key(slippage)}bps"
 
 
+def _primary_outcome_status_col(spec: ShortContextSpec) -> str:
+    return f"{spec.primary_horizon_bars}_bar_outcome_status"
+
+
+def _complete_primary_mask(df: pd.DataFrame, spec: ShortContextSpec) -> pd.Series:
+    """Return a mask selecting rows with a complete primary-horizon outcome."""
+    status_col = _primary_outcome_status_col(spec)
+    if status_col not in df.columns:
+        return pd.Series(True, index=df.index)
+    return df[status_col] == "complete"
+
+
 def _eligible_mask(df: pd.DataFrame, policy: ShortContextPolicy | None) -> pd.Series:
     """Return a boolean mask for events qualifying under ``policy``."""
     if policy is None:
@@ -172,11 +184,17 @@ def _split_metrics(
     spec: ShortContextSpec,
     config: ScoreValidationConfig,
 ) -> PolicySplitMetrics:
-    """Compute descriptive metrics for a split and optional policy."""
+    """Compute descriptive metrics for a split and optional policy.
+
+    Only rows with a complete primary-horizon outcome are counted. This keeps
+    boundary signals with ``insufficient_future_bars`` from satisfying sample
+    minimums or inflating retention/coverage denominators.
+    """
     split = df["split"].iloc[0] if not df.empty else ""
-    mask = _eligible_mask(df, policy)
+    complete = _complete_primary_mask(df, spec)
+    mask = _eligible_mask(df, policy) & complete
     eligible_df = df[mask]
-    baseline_df = df[df["baseline_qualifies"]]
+    baseline_df = df[df["baseline_qualifies"] & complete]
 
     col = _net_return_col(spec, config)
     values = pd.to_numeric(eligible_df[col], errors="coerce").dropna()
@@ -352,6 +370,11 @@ def _build_ticker_comparison(
         return _empty_ticker_comparison_df()
 
     holdout_df = events_df[events_df["split"] == "holdout"]
+    if holdout_df.empty:
+        return _empty_ticker_comparison_df()
+
+    complete = _complete_primary_mask(holdout_df, spec)
+    holdout_df = holdout_df[complete]
     if holdout_df.empty:
         return _empty_ticker_comparison_df()
 

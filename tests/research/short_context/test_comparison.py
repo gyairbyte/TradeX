@@ -50,6 +50,7 @@ def _events_df() -> pd.DataFrame:
                     "market_rs_eligible": True,
                     "market_sector_rs_eligible": True,
                     "3_bar_net_return_pct_5bps": 1.0,
+                    "3_bar_outcome_status": "complete",
                 })
                 rows.append({
                     "ticker": ticker,
@@ -59,6 +60,7 @@ def _events_df() -> pd.DataFrame:
                     "market_rs_eligible": False,
                     "market_sector_rs_eligible": True,
                     "3_bar_net_return_pct_5bps": -1.0,
+                    "3_bar_outcome_status": "complete",
                 })
     return pd.DataFrame(rows)
 
@@ -126,12 +128,14 @@ def test_select_candidate_enforces_validation_minimum_and_zero_metrics() -> None
             "ticker": "AAPL", "split": "validation", "base_score": 70,
             "baseline_qualifies": True, "market_rs_eligible": True,
             "market_sector_rs_eligible": True, "3_bar_net_return_pct_5bps": 1.0,
+            "3_bar_outcome_status": "complete",
         })
     for _ in range(10):
         rows.append({
             "ticker": "AAPL", "split": "development", "base_score": 70,
             "baseline_qualifies": True, "market_rs_eligible": True,
             "market_sector_rs_eligible": True, "3_bar_net_return_pct_5bps": 1.0,
+            "3_bar_outcome_status": "complete",
         })
     df = pd.DataFrame(rows)
     result = select_candidate(df, spec, config)
@@ -145,22 +149,26 @@ def test_select_candidate_enforces_validation_minimum_and_zero_metrics() -> None
             "ticker": "AAPL", "split": "validation", "base_score": 70,
             "baseline_qualifies": True, "market_rs_eligible": True,
             "market_sector_rs_eligible": True, "3_bar_net_return_pct_5bps": 0.0,
+            "3_bar_outcome_status": "complete",
         })
         rows.append({
             "ticker": "AAPL", "split": "validation", "base_score": 70,
             "baseline_qualifies": True, "market_rs_eligible": False,
             "market_sector_rs_eligible": True, "3_bar_net_return_pct_5bps": -1.0,
+            "3_bar_outcome_status": "complete",
         })
     for _ in range(10):
         rows.append({
             "ticker": "AAPL", "split": "development", "base_score": 70,
             "baseline_qualifies": True, "market_rs_eligible": True,
             "market_sector_rs_eligible": True, "3_bar_net_return_pct_5bps": 0.0,
+            "3_bar_outcome_status": "complete",
         })
         rows.append({
             "ticker": "AAPL", "split": "development", "base_score": 70,
             "baseline_qualifies": True, "market_rs_eligible": False,
             "market_sector_rs_eligible": True, "3_bar_net_return_pct_5bps": -1.0,
+            "3_bar_outcome_status": "complete",
         })
     df = pd.DataFrame(rows)
     result = select_candidate(df, spec, config)
@@ -195,6 +203,7 @@ def test_evaluate_holdout_fails_when_half_tickers_do_not_improve() -> None:
                     "market_rs_eligible": eligible,
                     "market_sector_rs_eligible": True,
                     "3_bar_net_return_pct_5bps": value,
+                    "3_bar_outcome_status": "complete",
                 })
     spec = ShortContextSpec(
         study_name="unit",
@@ -222,6 +231,60 @@ def test_evaluate_holdout_fails_when_half_tickers_do_not_improve() -> None:
     result = evaluate_holdout(df, "market_rs", spec, config)
     assert result.passed is False
     assert any("fewer than half" in reason for reason in result.failure_reasons)
+
+
+def test_incomplete_primary_outcomes_not_counted() -> None:
+    """Incomplete primary-horizon rows must not satisfy sample minimums or denominators."""
+    spec = _unit_spec()
+    spec = ShortContextSpec(
+        study_name="unit",
+        target_tickers=("AAPL",),
+        ticker_context={"AAPL": {"market_proxy": "SPY", "sector_proxy": "XLK"}},
+        candidate_policies=(ShortContextPolicy.MARKET_RS,),
+        default_market_proxy="SPY",
+        primary_horizon_bars=3,
+        primary_slippage_bps=5.0,
+        horizons=(1, 3, 5),
+        slippage_scenarios_bps=(0.0, 5.0, 10.0),
+        commission_bps=0.0,
+        minimum_validation_events=100,
+        minimum_holdout_events=100,
+        minimum_holdout_tickers=1,
+        minimum_event_retention_pct=0.0,
+        minimum_ticker_coverage_pct=0.0,
+        baseline_score_threshold=40,
+    )
+    config = ScoreValidationConfig()
+    rows = []
+    for _ in range(99):
+        rows.append({
+            "ticker": "AAPL", "split": "validation", "base_score": 70,
+            "baseline_qualifies": True, "market_rs_eligible": True,
+            "market_sector_rs_eligible": True, "3_bar_net_return_pct_5bps": None,
+            "3_bar_outcome_status": "insufficient_future_bars",
+        })
+    rows.append({
+        "ticker": "AAPL", "split": "validation", "base_score": 70,
+        "baseline_qualifies": True, "market_rs_eligible": True,
+        "market_sector_rs_eligible": True, "3_bar_net_return_pct_5bps": 1.0,
+        "3_bar_outcome_status": "complete",
+    })
+    # Baseline has many more complete events but only the validation split is checked for selection.
+    for _ in range(200):
+        rows.append({
+            "ticker": "AAPL", "split": "development", "base_score": 70,
+            "baseline_qualifies": True, "market_rs_eligible": True,
+            "market_sector_rs_eligible": True, "3_bar_net_return_pct_5bps": 1.0,
+            "3_bar_outcome_status": "complete",
+        })
+    df = pd.DataFrame(rows)
+    result = select_candidate(df, spec, config)
+    assert result.selected_policy is None
+    val_metrics = result.policy_metrics["market_rs"]["validation"]
+    assert val_metrics.event_count == 1
+    assert val_metrics.baseline_event_count == 1
+    assert val_metrics.retention_pct == 100.0
+    assert val_metrics.coverage_pct == 100.0
 
 
 def test_build_candidate_comparison_has_expected_columns() -> None:

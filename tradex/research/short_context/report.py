@@ -101,6 +101,7 @@ def run_study(
 
     study = ContextStudyResult(
         spec=spec,
+        runtime_config=config,
         manifest_path=Path(manifest_path).expanduser().resolve(),
         manifest_sha256=manifest_sha,
         context_spec_sha256=spec_sha,
@@ -124,22 +125,23 @@ def _validate_config_against_spec(
     config: ScoreValidationConfig,
     spec: ShortContextSpec,
 ) -> None:
-    """Reject runtime configs that disagree with the locked context-study spec."""
-    if spec.primary_horizon_bars not in config.horizons:
+    """Reject runtime configs that disagree with the locked context-study spec.
+
+    The spec is authoritative: the runtime config must use exactly the same
+    horizons, slippage scenarios, and commission so event-study and paired
+    backtest gates use identical costs and outcome windows.
+    """
+    if tuple(config.horizons) != tuple(spec.horizons):
         raise ValidationError(
-            f"primary_horizon_bars {spec.primary_horizon_bars} not in config.horizons {config.horizons}"
+            f"config.horizons {tuple(config.horizons)} must equal spec.horizons {tuple(spec.horizons)}"
         )
-    if not set(spec.horizons).issubset(set(config.horizons)):
+    if config.commission_bps != spec.commission_bps:
         raise ValidationError(
-            f"config.horizons {config.horizons} must include all spec.horizons {spec.horizons}"
+            f"config.commission_bps {config.commission_bps} must equal spec.commission_bps {spec.commission_bps}"
         )
-    if spec.primary_slippage_bps not in config.slippage_scenarios_bps:
+    if tuple(config.slippage_scenarios_bps) != tuple(spec.slippage_scenarios_bps):
         raise ValidationError(
-            f"primary_slippage_bps {spec.primary_slippage_bps} not in config.slippage_scenarios_bps {config.slippage_scenarios_bps}"
-        )
-    if not set(spec.slippage_scenarios_bps).issubset(set(config.slippage_scenarios_bps)):
-        raise ValidationError(
-            f"config.slippage_scenarios_bps {config.slippage_scenarios_bps} must include all spec.slippage_scenarios_bps {spec.slippage_scenarios_bps}"
+            f"config.slippage_scenarios_bps {tuple(config.slippage_scenarios_bps)} must equal spec.slippage_scenarios_bps {tuple(spec.slippage_scenarios_bps)}"
         )
 
 
@@ -504,7 +506,10 @@ def _render_report(
     event_gate = holdout.passed
     backtest_gate = paired.passed
     if event_gate and backtest_gate:
-        lines.append("The context policy passed the predefined promotion gate and is available as an opt-in filter.")
+        lines.append(
+            "The context policy passed the predefined promotion gate and is eligible "
+            "for a future production-integration pull request, but it is not currently exposed."
+        )
     else:
         lines.append("The context policy did not pass the predefined promotion gate and was not exposed to production.")
         if not event_gate:
@@ -516,7 +521,10 @@ def _render_report(
     lines.append(f"## {section_number}. Production behavior")
     section_number += 1
     if event_gate and backtest_gate:
-        lines.append(f"- The selected policy `{candidate_selection.selected_policy}` may be used as an opt-in filter.")
+        lines.append(
+            f"- The selected policy `{candidate_selection.selected_policy}` passed both holdout gates; "
+            "production integration would require a separate PR."
+        )
     lines.append("- The production default remains `off`.")
     lines.append("- No short-term component condition, weight, or threshold was changed.")
     lines.append("")
