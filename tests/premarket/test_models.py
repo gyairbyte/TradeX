@@ -1,4 +1,5 @@
 """Tests for pre-market data models."""
+
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
@@ -40,19 +41,35 @@ def test_gap_note():
 
 
 def test_catalyst_context_status_combinations():
-    ctx = GapCatalystContext(ticker="AAPL", session_date=date(2024, 1, 3), earnings_status="earnings_today", headline_status="recent_headline")
+    ctx = GapCatalystContext(
+        ticker="AAPL",
+        session_date=date(2024, 1, 3),
+        earnings_status="earnings_today",
+        headline_status="recent_headline",
+    )
     assert ctx.status == "earnings_and_recent_headline"
 
-    ctx = GapCatalystContext(ticker="AAPL", session_date=date(2024, 1, 3), earnings_status="earnings_soon")
+    ctx = GapCatalystContext(
+        ticker="AAPL", session_date=date(2024, 1, 3), earnings_status="earnings_soon"
+    )
     assert ctx.status == "earnings_soon"
 
-    ctx = GapCatalystContext(ticker="AAPL", session_date=date(2024, 1, 3), headline_status="recent_headline")
+    ctx = GapCatalystContext(
+        ticker="AAPL", session_date=date(2024, 1, 3), headline_status="recent_headline"
+    )
     assert ctx.status == "recent_headline"
 
-    ctx = GapCatalystContext(ticker="AAPL", session_date=date(2024, 1, 3), earnings_status="none_detected", headline_status="none_detected")
+    ctx = GapCatalystContext(
+        ticker="AAPL",
+        session_date=date(2024, 1, 3),
+        earnings_status="none_detected",
+        headline_status="none_detected",
+    )
     assert ctx.status == "none_detected"
 
-    ctx = GapCatalystContext(ticker="AAPL", session_date=date(2024, 1, 3), earnings_status="unavailable")
+    ctx = GapCatalystContext(
+        ticker="AAPL", session_date=date(2024, 1, 3), earnings_status="unavailable"
+    )
     assert ctx.status == "unavailable"
 
     ctx = GapCatalystContext(ticker="AAPL", session_date=date(2024, 1, 3))
@@ -71,12 +88,14 @@ def test_clean_value():
 def test_gap_scan_report_counts_and_to_dict():
     from tradex.premarket.config import GapScanConfig
 
-    observations = pd.DataFrame({
-        "ticker": ["A", "B", "C", "D"],
-        "status": ["qualified", "filtered", "failed", "outside_window"],
-        "gap_pct": [5.0, 1.0, None, None],
-        "filter_reasons": [[], ["gap below 2.0%"], None, None],
-    })
+    observations = pd.DataFrame(
+        {
+            "ticker": ["A", "B", "C", "D"],
+            "status": ["qualified", "filtered", "failed", "outside_window"],
+            "gap_pct": [5.0, 1.0, None, None],
+            "filter_reasons": [[], ["gap below 2.0%"], None, None],
+        }
+    )
     results = observations[observations["status"] == "qualified"].drop(columns=["status"])
     report = GapScanReport(
         session_date=date(2024, 1, 3),
@@ -104,7 +123,9 @@ def test_gap_scan_report_counts_and_to_dict():
 
 
 def test_spread_snapshot_validation():
-    snap = SpreadSnapshot(available=True, bid=10.0, ask=10.05, midpoint=10.025, spread_bps=5.0, source="injected")
+    snap = SpreadSnapshot(
+        available=True, bid=10.0, ask=10.05, midpoint=10.025, spread_bps=5.0, source="injected"
+    )
     assert snap.available is True
     assert snap.spread_bps == pytest.approx(5.0)
 

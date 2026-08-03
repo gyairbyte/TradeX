@@ -1,4 +1,5 @@
 """Tests for pre-market catalyst context."""
+
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
@@ -24,22 +25,40 @@ def test_resolve_headline_source_unsupported():
 
 
 def test_earnings_status_today():
-    assert catalysts._earnings_status(date(2024, 1, 3), date(2024, 1, 3), 24.0) == ("earnings_today", date(2024, 1, 3))
+    assert catalysts._earnings_status(date(2024, 1, 3), date(2024, 1, 3), 24.0) == (
+        "earnings_today",
+        date(2024, 1, 3),
+        0,
+    )
 
 
 def test_earnings_status_soon():
-    assert catalysts._earnings_status(date(2024, 1, 4), date(2024, 1, 3), 24.0) == ("earnings_soon", date(2024, 1, 4))
+    assert catalysts._earnings_status(date(2024, 1, 4), date(2024, 1, 3), 24.0) == (
+        "earnings_soon",
+        date(2024, 1, 4),
+        1,
+    )
 
 
 def test_earnings_status_none():
-    assert catalysts._earnings_status(date(2024, 1, 10), date(2024, 1, 3), 24.0) == ("none_detected", None)
-    assert catalysts._earnings_status(None, date(2024, 1, 3), 24.0) == ("none_detected", None)
+    assert catalysts._earnings_status(date(2024, 1, 10), date(2024, 1, 3), 24.0) == (
+        "none_detected",
+        None,
+        None,
+    )
+    assert catalysts._earnings_status(None, date(2024, 1, 3), 24.0) == ("none_detected", None, None)
 
 
 def test_parse_headline_timestamp():
-    assert catalysts._parse_headline_timestamp(datetime(2024, 1, 3, 12, 0, tzinfo=UTC)) == datetime(2024, 1, 3, 12, 0, tzinfo=UTC)
-    assert catalysts._parse_headline_timestamp("2024-01-03T12:00:00+00:00") == datetime(2024, 1, 3, 12, 0, tzinfo=UTC)
-    assert catalysts._parse_headline_timestamp("2024-01-03T12:00:00Z") == datetime(2024, 1, 3, 12, 0, tzinfo=UTC)
+    assert catalysts._parse_headline_timestamp(datetime(2024, 1, 3, 12, 0, tzinfo=UTC)) == datetime(
+        2024, 1, 3, 12, 0, tzinfo=UTC
+    )
+    assert catalysts._parse_headline_timestamp("2024-01-03T12:00:00+00:00") == datetime(
+        2024, 1, 3, 12, 0, tzinfo=UTC
+    )
+    assert catalysts._parse_headline_timestamp("2024-01-03T12:00:00Z") == datetime(
+        2024, 1, 3, 12, 0, tzinfo=UTC
+    )
     assert catalysts._parse_headline_timestamp("not a date") is None
     assert catalysts._parse_headline_timestamp(None) is None
 
@@ -81,13 +100,16 @@ def test_fetch_catalyst_context_not_requested():
 
 def test_fetch_catalyst_context_earnings_and_headlines():
     as_of = datetime(2024, 1, 3, 13, 0, tzinfo=UTC)
-    fake_headlines = [{
-        "title": "Breakthrough",
-        "published": "2024-01-03T12:00:00+00:00",
-    }]
+    fake_headlines = [
+        {
+            "title": "Breakthrough",
+            "published": "2024-01-03T12:00:00+00:00",
+        }
+    ]
     with (
         patch.object(catalysts, "get_next_earnings", return_value=date(2024, 1, 3)),
         patch.object(catalysts, "_fetch_yahoo_headlines", return_value=(fake_headlines, None)),
+        patch.object(catalysts, "_utc_today", return_value=as_of.date()),
     ):
         ctx = catalysts.fetch_catalyst_context(
             "AAPL",
@@ -107,7 +129,11 @@ def test_fetch_catalyst_context_earnings_and_headlines():
 
 def test_fetch_catalyst_context_require_catalyst_filters_no_earnings():
     as_of = datetime(2024, 1, 3, 13, 0, tzinfo=UTC)
-    with patch.object(catalysts, "get_next_earnings", return_value=None):
+    with (
+        patch.object(catalysts, "get_next_earnings", return_value=None),
+        patch.object(catalysts, "_fetch_yahoo_headlines", return_value=(None, None)),
+        patch.object(catalysts, "_utc_today", return_value=as_of.date()),
+    ):
         ctx = catalysts.fetch_catalyst_context(
             "AAPL",
             date(2024, 1, 3),
@@ -119,5 +145,5 @@ def test_fetch_catalyst_context_require_catalyst_filters_no_earnings():
             headline_source=None,
         )
     assert ctx.earnings_status == "none_detected"
-    assert ctx.headline_status == "not_requested"
-    assert ctx.status == "none_detected"
+    assert ctx.headline_status == "unavailable"
+    assert ctx.status == "unavailable"

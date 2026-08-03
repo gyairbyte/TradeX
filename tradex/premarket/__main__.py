@@ -1,4 +1,5 @@
 """Entry point for ``python -m tradex.premarket``."""
+
 from __future__ import annotations
 
 import sys

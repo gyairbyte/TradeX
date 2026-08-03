@@ -4,6 +4,7 @@ The public entry point is ``scan_gaps_with_report()``. ``scan_gaps()`` and
 ``run_gap_alerts()`` preserve their original signatures while delegating to the
 new structured report.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
@@ -31,6 +32,7 @@ from tradex.premarket.models import (
     DailyLiquidityBaseline,
     GapCatalystContext,
     GapScanReport,
+    PremarketBarsResult,
     PremarketSnapshot,
     SpreadSnapshot,
 )
@@ -145,7 +147,12 @@ def get_premarket_price(
 
 def _classify_gap(gap_pct: float) -> tuple[str, str]:
     """Returns (tier, direction) for a given gap percentage."""
-    direction = "up" if gap_pct > 0 else "down"
+    if gap_pct > 0:
+        direction = "up"
+    elif gap_pct < 0:
+        direction = "down"
+    else:
+        direction = "flat"
     abs_gap = abs(gap_pct)
     if abs_gap >= GAP_TIERS["massive"]:
         tier = "massive"
@@ -193,14 +200,19 @@ def _qualify(
     prev_close: float,
     gap_pct: float,
     config: GapScanConfig,
-) -> tuple[str, list[str]]:
-    """Apply filter thresholds in order and return (status, filter_reasons)."""
+) -> tuple[str, list[str], float | None]:
+    """Apply filter thresholds in order and return (status, filter_reasons, volume_ratio)."""
     reasons: list[str] = []
 
-    if prev_close <= 0 or prev_close is None or not isinstance(prev_close, (int, float)):
-        return "failed", ["invalid previous close"]
+    if baseline.error is not None:
+        return "failed", [f"baseline provider failure: {baseline.error}"], None
+
+    if prev_close is None or prev_close <= 0 or not isinstance(prev_close, (int, float)):
+        return "failed", ["invalid previous close"], None
     if snapshot.premarket_last is None:
-        return "failed", ["no pre-market data"]
+        return "failed", ["no pre-market data"], None
+
+    ratio = _volume_ratio(snapshot, baseline)
 
     # 3. Minimum absolute gap
     if abs(gap_pct) < config.min_abs_gap_pct:
@@ -216,11 +228,15 @@ def _qualify(
         and snapshot.data_age_minutes is not None
         and snapshot.data_age_minutes > config.max_data_age_minutes
     ):
-        reasons.append(f"data age {snapshot.data_age_minutes:.1f}m exceeds {config.max_data_age_minutes}m")
+        reasons.append(
+            f"data age {snapshot.data_age_minutes:.1f}m exceeds {config.max_data_age_minutes}m"
+        )
 
     # 6. Pre-market share volume
     if config.min_premarket_volume > 0 and snapshot.premarket_volume < config.min_premarket_volume:
-        reasons.append(f"pre-market volume {snapshot.premarket_volume} below {config.min_premarket_volume}")
+        reasons.append(
+            f"pre-market volume {snapshot.premarket_volume} below {config.min_premarket_volume}"
+        )
 
     # 7. Pre-market dollar volume
     if (
@@ -230,13 +246,13 @@ def _qualify(
         reasons.append(f"pre-market dollar volume below ${config.min_premarket_dollar_volume:,.0f}")
 
     # 8. Pre-market volume ratio
-    ratio = _volume_ratio(snapshot, baseline)
-    if (
-        config.min_premarket_volume_ratio > 0
-        and ratio is not None
-        and ratio < config.min_premarket_volume_ratio
-    ):
-        reasons.append(f"volume ratio {ratio:.2f}x below {config.min_premarket_volume_ratio}x")
+    if config.min_premarket_volume_ratio > 0:
+        if ratio is None:
+            reasons.append(
+                f"volume ratio unavailable (baseline avg volume {baseline.average_daily_volume})"
+            )
+        elif ratio < config.min_premarket_volume_ratio:
+            reasons.append(f"volume ratio {ratio:.2f}x below {config.min_premarket_volume_ratio}x")
 
     # 9. Spread requirement and maximum spread
     if config.require_spread and not spread.available:
@@ -258,11 +274,13 @@ def _qualify(
         reasons.append("catalyst context required but not found")
 
     if reasons:
-        return "filtered", reasons
-    return "qualified", []
+        return "filtered", reasons, ratio
+    return "qualified", [], ratio
 
 
 def _volume_ratio(snapshot: PremarketSnapshot, baseline: DailyLiquidityBaseline) -> float | None:
+    if baseline.error is not None:
+        return None
     if baseline.average_daily_volume > 0 and snapshot.premarket_volume > 0:
         return snapshot.premarket_volume / baseline.average_daily_volume
     return None
@@ -275,14 +293,30 @@ def _snapshot_error_observation(
     actual_provider: str | None,
     error: str,
 ) -> pd.Series:
-    return pd.Series({
-        "ticker": ticker,
-        "session_date": session_date,
-        "status": "failed",
-        "requested_provider": requested_provider,
-        "actual_provider": actual_provider,
-        "error": error,
-    })
+    return pd.Series(
+        {
+            "ticker": ticker,
+            "session_date": session_date,
+            "status": "failed",
+            "requested_provider": requested_provider,
+            "actual_provider": actual_provider,
+            "error": error,
+        }
+    )
+
+
+def _premarket_move_pct(open_price: float | None, last_price: float | None) -> float | None:
+    if open_price is None or last_price is None or open_price <= 0:
+        return None
+    return ((last_price / open_price) - 1.0) * 100.0
+
+
+def _premarket_range_pct(
+    open_price: float | None, high: float | None, low: float | None
+) -> float | None:
+    if open_price is None or high is None or low is None or open_price <= 0 or low <= 0:
+        return None
+    return ((high - low) / open_price) * 100.0
 
 
 def _build_observation(
@@ -302,6 +336,7 @@ def _build_observation(
     note: str | None,
     reasons: list[str],
     error: str | None,
+    volume_ratio: float | None = None,
 ) -> pd.Series:
     snap = snapshot or PremarketSnapshot(
         ticker=ticker,
@@ -320,65 +355,77 @@ def _build_observation(
         premarket_vwap=None,
         data_age_minutes=None,
     )
-    ratio = _volume_ratio(snap, baseline) if baseline else None
-    return pd.Series({
-        "ticker": ticker,
-        "session_date": session_date,
-        "status": status,
-        "requested_provider": requested_provider,
-        "actual_provider": actual_provider or requested_provider,
-        "prev_close": prev_close,
-        "pre_market": snap.premarket_last,
-        "premarket_last": snap.premarket_last,
-        "premarket_open": snap.premarket_open,
-        "premarket_high": snap.premarket_high,
-        "premarket_low": snap.premarket_low,
-        "premarket_volume": snap.premarket_volume,
-        "premarket_dollar_volume": snap.premarket_dollar_volume,
-        "premarket_vwap": snap.premarket_vwap,
-        "data_age_minutes": snap.data_age_minutes,
-        "average_daily_volume": baseline.average_daily_volume if baseline else None,
-        "premarket_volume_ratio": ratio,
-        "spread_bps": spread.spread_bps if spread and spread.available else None,
-        "spread_available": spread.available if spread else False,
-        "catalyst_status": catalyst.status if catalyst else None,
-        "gap_pct": gap_pct,
-        "direction": direction,
-        "tier": tier,
-        "note": note,
-        "filter_reasons": reasons,
-        "error": error,
-    })
+    ratio = (
+        volume_ratio
+        if volume_ratio is not None
+        else (_volume_ratio(snap, baseline) if baseline else None)
+    )
+    move_pct = _premarket_move_pct(snap.premarket_open, snap.premarket_last)
+    range_pct = _premarket_range_pct(snap.premarket_open, snap.premarket_high, snap.premarket_low)
+    return pd.Series(
+        {
+            "ticker": ticker,
+            "session_date": session_date,
+            "previous_session_date": baseline.previous_session_date if baseline else None,
+            "prev_close": prev_close,
+            "pre_market": snap.premarket_last,
+            "premarket_last": snap.premarket_last,
+            "premarket_open": snap.premarket_open,
+            "premarket_high": snap.premarket_high,
+            "premarket_low": snap.premarket_low,
+            "premarket_volume": snap.premarket_volume,
+            "premarket_dollar_volume": snap.premarket_dollar_volume,
+            "premarket_vwap": snap.premarket_vwap,
+            "premarket_move_pct": move_pct,
+            "premarket_range_pct": range_pct,
+            "first_bar_time": snap.first_bar_time,
+            "last_bar_time": snap.last_bar_time,
+            "bar_count": snap.bar_count,
+            "data_age_minutes": snap.data_age_minutes,
+            "average_daily_volume": baseline.average_daily_volume if baseline else None,
+            "median_daily_volume": baseline.median_daily_volume if baseline else None,
+            "average_daily_dollar_volume": baseline.average_daily_dollar_volume
+            if baseline
+            else None,
+            "median_daily_dollar_volume": baseline.median_daily_dollar_volume if baseline else None,
+            "liquidity_lookback_sessions": baseline.lookback_sessions_available
+            if baseline
+            else None,
+            "premarket_volume_ratio": ratio,
+            "bid": spread.bid if spread and spread.available else None,
+            "ask": spread.ask if spread and spread.available else None,
+            "midpoint": spread.midpoint if spread and spread.available else None,
+            "spread_bps": spread.spread_bps if spread and spread.available else None,
+            "spread_source": spread.actual_source
+            if spread and spread.available
+            else spread.requested_source
+            if spread
+            else None,
+            "spread_available": spread.available if spread else False,
+            "catalyst_status": catalyst.status if catalyst else None,
+            "earnings_date": catalyst.earnings_date if catalyst else None,
+            "days_until_earnings": catalyst.days_until_earnings if catalyst else None,
+            "headline_title": catalyst.headline_title if catalyst else None,
+            "headline_publisher": catalyst.headline_publisher if catalyst else None,
+            "headline_published_at": catalyst.headline_published_at if catalyst else None,
+            "headline_source": catalyst.actual_headline_source if catalyst else None,
+            "headline_url": catalyst.headline_url if catalyst else None,
+            "gap_pct": gap_pct,
+            "direction": direction,
+            "tier": tier,
+            "note": note,
+            "filter_reasons": reasons,
+            "error": error,
+            "requested_provider": requested_provider,
+            "actual_provider": actual_provider,
+            "status": status,
+        }
+    )
 
 
 def _build_result_row(obs: pd.Series) -> pd.Series:
-    """Return the qualified result row matching the original ``scan_gaps`` columns."""
-    return pd.Series({
-        "ticker": obs["ticker"],
-        "prev_close": obs["prev_close"],
-        "pre_market": obs["pre_market"],
-        "premarket_last": obs["premarket_last"],
-        "premarket_open": obs["premarket_open"],
-        "premarket_high": obs["premarket_high"],
-        "premarket_low": obs["premarket_low"],
-        "premarket_volume": obs["premarket_volume"],
-        "premarket_dollar_volume": obs["premarket_dollar_volume"],
-        "premarket_vwap": obs["premarket_vwap"],
-        "data_age_minutes": obs["data_age_minutes"],
-        "average_daily_volume": obs["average_daily_volume"],
-        "premarket_volume_ratio": obs["premarket_volume_ratio"],
-        "spread_bps": obs["spread_bps"],
-        "spread_available": obs["spread_available"],
-        "catalyst_status": obs["catalyst_status"],
-        "gap_pct": obs["gap_pct"],
-        "direction": obs["direction"],
-        "tier": obs["tier"],
-        "note": obs["note"],
-        "filter_reasons": obs["filter_reasons"],
-        "error": obs["error"],
-        "requested_provider": obs["requested_provider"],
-        "actual_provider": obs["actual_provider"],
-    })
+    """Return a copy of the observation as a qualified result row."""
+    return obs.copy()
 
 
 def _sort_results(df: pd.DataFrame) -> pd.DataFrame:
@@ -433,7 +480,6 @@ def scan_gaps_with_report(
             provider_errors={t: str(exc) for t in requested_tickers},
         )
 
-    actual_provider: str | None = requested_provider
     provider_errors: dict[str, str] = {}
 
     session = get_market_session(session_date) if is_trading_day(session_date) else None
@@ -481,31 +527,23 @@ def scan_gaps_with_report(
                 provider=provider,
                 as_of=as_of,
             )
-            prev_close = baseline.previous_close
-        except ProviderCapabilityError as e:
-            actual_provider = None
-            provider_errors[ticker] = str(e)
-            obs = _build_observation(
-                ticker=ticker,
-                session_date=session_date,
-                status="failed",
-                requested_provider=requested_provider,
-                actual_provider=None,
-                prev_close=None,
-                snapshot=None,
-                baseline=None,
-                spread=None,
-                catalyst=None,
-                gap_pct=None,
-                direction=None,
-                tier=None,
-                note=None,
-                reasons=[],
-                error=str(e),
-            )
-            observations.append(obs)
-            continue
         except Exception as e:  # noqa: BLE001
+            baseline = DailyLiquidityBaseline(
+                previous_session_date=None,
+                previous_close=None,
+                lookback_sessions_requested=config.liquidity_lookback_sessions,
+                lookback_sessions_available=0,
+                average_daily_volume=0.0,
+                median_daily_volume=0.0,
+                average_daily_dollar_volume=0.0,
+                median_daily_dollar_volume=0.0,
+                requested_provider=provider,
+                actual_provider=None,
+                error=e,
+            )
+
+        if baseline.error is not None:
+            provider_errors[ticker] = str(baseline.error)
             obs = _build_observation(
                 ticker=ticker,
                 session_date=session_date,
@@ -514,7 +552,7 @@ def scan_gaps_with_report(
                 actual_provider=None,
                 prev_close=None,
                 snapshot=None,
-                baseline=None,
+                baseline=baseline,
                 spread=None,
                 catalyst=None,
                 gap_pct=None,
@@ -522,11 +560,12 @@ def scan_gaps_with_report(
                 tier=None,
                 note=None,
                 reasons=[],
-                error=str(e),
+                error=str(baseline.error),
             )
             observations.append(obs)
             continue
 
+        prev_close = baseline.previous_close
         if prev_close is None or prev_close <= 0:
             obs = _build_observation(
                 ticker=ticker,
@@ -557,58 +596,28 @@ def scan_gaps_with_report(
                 as_of=as_of,
                 allow_after_open=config.allow_after_open,
             )
-        except ProviderCapabilityError as e:
-            actual_provider = None
-            provider_errors[ticker] = str(e)
-            obs = _build_observation(
-                ticker=ticker,
-                session_date=session_date,
-                status="failed",
-                requested_provider=requested_provider,
-                actual_provider=None,
-                prev_close=prev_close,
-                snapshot=None,
-                baseline=baseline,
-                spread=None,
-                catalyst=None,
-                gap_pct=None,
-                direction=None,
-                tier=None,
-                note=None,
-                reasons=[],
-                error=str(e),
-            )
-            observations.append(obs)
-            continue
         except Exception as e:  # noqa: BLE001
-            obs = _build_observation(
+            bars_result = PremarketBarsResult(
                 ticker=ticker,
-                session_date=session_date,
-                status="failed",
                 requested_provider=requested_provider,
                 actual_provider=None,
-                prev_close=prev_close,
-                snapshot=None,
-                baseline=baseline,
-                spread=None,
-                catalyst=None,
-                gap_pct=None,
-                direction=None,
-                tier=None,
-                note=None,
-                reasons=[],
-                error=str(e),
+                session_date=session_date,
+                bars=pd.DataFrame(),
+                attempts=0,
+                retries=0,
+                error=e,
             )
-            observations.append(obs)
-            continue
 
         if bars_result.error is not None or bars_result.bars.empty:
+            error_msg = str(bars_result.error) if bars_result.error else "no pre-market data"
+            if bars_result.error is not None:
+                provider_errors[ticker] = error_msg
             obs = _build_observation(
                 ticker=ticker,
                 session_date=session_date,
                 status="failed",
                 requested_provider=requested_provider,
-                actual_provider=bars_result.actual_provider,
+                actual_provider=None,
                 prev_close=prev_close,
                 snapshot=None,
                 baseline=baseline,
@@ -619,7 +628,7 @@ def scan_gaps_with_report(
                 tier=None,
                 note=None,
                 reasons=["no pre-market data"],
-                error=str(bars_result.error) if bars_result.error else None,
+                error=error_msg,
             )
             observations.append(obs)
             continue
@@ -650,7 +659,7 @@ def scan_gaps_with_report(
         tier, direction = _classify_gap(gap_pct)
         note = _gap_note(gap_pct, tier, direction, catalyst.status if catalyst else None)
 
-        status, reasons = _qualify(
+        status, reasons, volume_ratio = _qualify(
             snapshot,
             baseline,
             spread,
@@ -665,7 +674,7 @@ def scan_gaps_with_report(
             session_date=session_date,
             status=status,
             requested_provider=requested_provider,
-            actual_provider=snapshot.actual_provider,
+            actual_provider=bars_result.actual_provider,
             prev_close=prev_close,
             snapshot=snapshot,
             baseline=baseline,
@@ -677,6 +686,7 @@ def scan_gaps_with_report(
             note=note,
             reasons=reasons,
             error=None,
+            volume_ratio=volume_ratio,
         )
         observations.append(obs)
         if status == "qualified":
@@ -693,11 +703,16 @@ def scan_gaps_with_report(
         if col not in observations_df.columns:
             observations_df[col] = pd.Series(dtype=dtype) if dtype is not None else None
 
+    actual_providers = {
+        obs.get("actual_provider") for obs in observations if obs.get("actual_provider")
+    }
+    report_actual_provider = next(iter(sorted(actual_providers))) if actual_providers else None
+
     return GapScanReport(
         session_date=session_date if session else None,
         as_of=as_of,
         requested_provider=requested_provider,
-        actual_provider=actual_provider,
+        actual_provider=report_actual_provider,
         config=config,
         requested_tickers=requested_tickers,
         results=results_df,
@@ -712,45 +727,65 @@ def scan_gaps(
     provider: str | None = None,
     as_of: datetime | None = None,
 ) -> pd.DataFrame:
-    """Scan a watchlist for pre-market gaps above the threshold.
+    """Compatibility wrapper that delegates to ``scan_gaps_with_report``.
 
-    This compatibility wrapper uses the local ``_get_prev_close`` and
-    ``get_premarket_price`` bindings so existing callers and tests continue to
-    work. It returns a DataFrame with the original columns, sorted by absolute
-    gap size, largest first.
+    Returns a DataFrame with the original public columns, sorted by absolute gap
+    size, largest first. Naive ``as_of`` values are rejected.
     """
-    rows = []
-    for ticker in tickers:
-        try:
-            prev_close = _get_prev_close(ticker, provider=provider, as_of=as_of)
-            if prev_close is None or prev_close == 0:
-                continue
-            pre_price = get_premarket_price(ticker, provider=provider, as_of=as_of)
-            if pre_price is None:
-                continue
-            gap_pct = (pre_price - prev_close) / prev_close * 100
-            if abs(gap_pct) < min_gap_pct:
-                continue
-            tier, direction = _classify_gap(gap_pct)
-            rows.append({
-                "ticker": ticker,
-                "prev_close": round(prev_close, 2),
-                "pre_market": round(pre_price, 2),
-                "gap_pct": round(gap_pct, 2),
-                "direction": direction,
-                "tier": tier,
-                "note": _gap_note(gap_pct, tier, direction, None),
-            })
-        except ProviderCapabilityError:
-            raise
-        except Exception:  # noqa: BLE001, S112
-            continue
-    if not rows:
-        return pd.DataFrame()
-    df = pd.DataFrame(rows)
-    df["__abs_gap__"] = df["gap_pct"].abs()
-    df = df.sort_values("__abs_gap__", ascending=False).drop(columns="__abs_gap__").reset_index(drop=True)
-    return df
+    if as_of is not None and as_of.tzinfo is None:
+        raise ValueError("Naive datetime is not accepted; provide a timezone-aware datetime.")
+
+    config = GapScanConfig(min_abs_gap_pct=min_gap_pct)
+    report = scan_gaps_with_report(
+        tickers,
+        config=config,
+        provider=provider,
+        as_of=as_of,
+    )
+
+    if report.provider_errors:
+        # Propagate an unsupported-provider failure to preserve the original contract.
+        first_error = next(iter(report.provider_errors.values()))
+        if "does not yet support" in first_error:
+            raise ProviderCapabilityError(first_error)
+
+    public_columns = [
+        "ticker",
+        "prev_close",
+        "pre_market",
+        "premarket_last",
+        "premarket_open",
+        "premarket_high",
+        "premarket_low",
+        "premarket_volume",
+        "premarket_dollar_volume",
+        "premarket_vwap",
+        "gap_pct",
+        "direction",
+        "tier",
+        "note",
+        "requested_provider",
+        "actual_provider",
+    ]
+    df = report.results.copy()
+    if df.empty:
+        return pd.DataFrame(columns=public_columns)
+    df = df[[c for c in public_columns if c in df.columns]]
+    for col in [
+        "prev_close",
+        "pre_market",
+        "premarket_last",
+        "premarket_open",
+        "premarket_high",
+        "premarket_low",
+        "premarket_vwap",
+        "gap_pct",
+    ]:
+        if col in df.columns:
+            df[col] = df[col].apply(
+                lambda x: round(x, 2) if pd.notna(x) and isinstance(x, (int, float)) else x
+            )
+    return df.reset_index(drop=True)
 
 
 def run_gap_alerts(

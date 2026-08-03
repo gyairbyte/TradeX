@@ -642,10 +642,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 | Low | 5 | DOC-001: Fix documentation drift |
 
 **Recommended next pull request order:**
-1. `devin/redesign-signal-history` (DATA-001, COIL-001, COIL-002).
-2. `devin/fix-scan-audit` (COR-012).
-3. `devin/add-backtest-engine` (VAL-001).
-4. `devin/fix-confluence-missing-timeframe` (COR-006).
-5. `devin/reevaluate-scores-with-validated-data` (new, after backtesting).
-6. `devin/improve-gap-scanner` (GAP-001, after COR-005 and DATA-001).
+1. `devin/add-alert-cooldown` (ALERT-001).
+2. `devin/add-initial-adrs` (DEC-001).
+3. `devin/improve-long-term-score` (LONG-001).
 

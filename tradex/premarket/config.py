@@ -1,4 +1,5 @@
 """Typed, validated configuration for the pre-market gap scanner."""
+
 from __future__ import annotations
 
 import math

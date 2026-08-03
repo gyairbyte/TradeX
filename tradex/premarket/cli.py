@@ -1,4 +1,5 @@
 """Command-line interface for the pre-market gap scanner."""
+
 from __future__ import annotations
 
 import argparse
@@ -59,20 +60,62 @@ def _build_config(args: argparse.Namespace) -> GapScanConfig:
 
 def _add_scan_parser(subparsers: Any) -> None:
     parser = subparsers.add_parser("scan", help="Run a pre-market gap scan")
-    parser.add_argument("--tickers", required=True, type=_parse_tickers, help="Comma-separated tickers")
-    parser.add_argument("--provider", default=None, help="OHLCV provider (default: DATA_PROVIDER/yahoo)")
+    parser.add_argument(
+        "--tickers", required=True, type=_parse_tickers, help="Comma-separated tickers"
+    )
+    parser.add_argument(
+        "--provider", default=None, help="OHLCV provider (default: DATA_PROVIDER/yahoo)"
+    )
     parser.add_argument("--min-gap", type=_parse_float, default=2.0, help="Minimum absolute gap %%")
-    parser.add_argument("--min-price", type=_parse_float, default=0.0, help="Minimum pre-market price")
-    parser.add_argument("--min-premarket-volume", type=_parse_int, default=0, help="Minimum pre-market share volume")
-    parser.add_argument("--min-premarket-dollar-volume", type=_parse_float, default=0.0, help="Minimum pre-market dollar volume")
-    parser.add_argument("--min-premarket-volume-ratio", type=_parse_float, default=0.0, help="Minimum pre-market/average-daily-volume ratio")
-    parser.add_argument("--max-data-age-minutes", type=_parse_optional_float, default=None, help="Maximum age of latest bar in minutes")
-    parser.add_argument("--max-spread-bps", type=_parse_optional_float, default=None, help="Maximum spread in basis points")
-    parser.add_argument("--require-spread", action="store_true", help="Require spread data to be available")
+    parser.add_argument(
+        "--min-price", type=_parse_float, default=0.0, help="Minimum pre-market price"
+    )
+    parser.add_argument(
+        "--min-premarket-volume", type=_parse_int, default=0, help="Minimum pre-market share volume"
+    )
+    parser.add_argument(
+        "--min-premarket-dollar-volume",
+        type=_parse_float,
+        default=0.0,
+        help="Minimum pre-market dollar volume",
+    )
+    parser.add_argument(
+        "--min-premarket-volume-ratio",
+        type=_parse_float,
+        default=0.0,
+        help="Minimum pre-market/average-daily-volume ratio",
+    )
+    parser.add_argument(
+        "--max-data-age-minutes",
+        type=_parse_optional_float,
+        default=None,
+        help="Maximum age of latest bar in minutes",
+    )
+    parser.add_argument(
+        "--max-spread-bps",
+        type=_parse_optional_float,
+        default=None,
+        help="Maximum spread in basis points",
+    )
+    parser.add_argument(
+        "--require-spread", action="store_true", help="Require spread data to be available"
+    )
     parser.add_argument("--require-catalyst", action="store_true", help="Require catalyst context")
-    parser.add_argument("--catalyst-lookback-hours", type=_parse_float, default=24.0, help="Headline lookback in hours")
-    parser.add_argument("--liquidity-lookback-sessions", type=_parse_int, default=20, help="Completed sessions for liquidity baseline")
-    parser.add_argument("--allow-after-open", action="store_true", help="Allow scan after regular-session open")
+    parser.add_argument(
+        "--catalyst-lookback-hours",
+        type=_parse_float,
+        default=24.0,
+        help="Headline lookback in hours",
+    )
+    parser.add_argument(
+        "--liquidity-lookback-sessions",
+        type=_parse_int,
+        default=20,
+        help="Completed sessions for liquidity baseline",
+    )
+    parser.add_argument(
+        "--allow-after-open", action="store_true", help="Allow scan after regular-session open"
+    )
     parser.add_argument("--earnings-source", default=None, help="Earnings source (e.g. yahoo)")
     parser.add_argument("--headline-source", default=None, help="Headline source (e.g. yahoo)")
     parser.add_argument("--include-catalysts", action="store_true", help="Fetch catalyst context")
@@ -82,8 +125,8 @@ def _add_scan_parser(subparsers: Any) -> None:
 
 
 def _run_scan(args: argparse.Namespace) -> int:
-    config = _build_config(args)
     try:
+        config = _build_config(args)
         report = scan_gaps_with_report(
             args.tickers,
             config=config,
@@ -109,7 +152,9 @@ def _run_scan(args: argparse.Namespace) -> int:
 
     if not report.results.empty:
         print("\nQualified gaps:")
-        display = report.results[["ticker", "prev_close", "pre_market", "gap_pct", "direction", "tier", "note"]]
+        display = report.results[
+            ["ticker", "prev_close", "pre_market", "gap_pct", "direction", "tier", "note"]
+        ]
         print(display.to_string(index=False))
 
     if args.json_output:

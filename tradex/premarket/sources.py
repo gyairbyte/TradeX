@@ -3,6 +3,7 @@
 All network access is isolated in this module. The orchestrator and CLI call the
 public functions here; tests mock at this boundary.
 """
+
 from __future__ import annotations
 
 import math
@@ -57,7 +58,9 @@ def _ny(value: datetime) -> datetime:
     return normalize_market_datetime(value)
 
 
-def _premarket_window(session_date: date, as_of: datetime, allow_after_open: bool) -> tuple[datetime, datetime] | None:
+def _premarket_window(
+    session_date: date, as_of: datetime, allow_after_open: bool
+) -> tuple[datetime, datetime] | None:
     """Return (premarket_start, window_end) for the requested session, or None if invalid."""
     session = get_market_session(session_date)
     if session is None:
@@ -106,18 +109,43 @@ def _filter_premarket_bars(
     return df.loc[mask]
 
 
-def _validate_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
-    """Drop rows with non-finite or missing OHLCV values; zero volume is valid."""
+class DataValidationError(ValueError):
+    """Raised when a provider response contains malformed OHLCV bars."""
+
+
+def _validate_ohlcv(df: pd.DataFrame) -> None:
+    """Validate OHLCV structure or raise DataValidationError.
+
+    Rejects missing columns, non-finite values, non-positive prices, negative
+    volume, and inconsistent high/low relationships. The entire response is
+    rejected if any row is invalid.
+    """
     required = ["open", "high", "low", "close", "volume"]
     for col in required:
         if col not in df.columns:
-            return df.iloc[0:0]
+            raise DataValidationError(f"Missing required OHLCV column: {col}")
     subset = ["open", "high", "low", "close"]
     for col in subset:
-        df = df[df[col].apply(lambda x: isinstance(x, (int, float)) and math.isfinite(x))]
-    if "volume" in df.columns:
-        df = df[df["volume"].apply(lambda x: isinstance(x, (int, float)) and math.isfinite(float(x)))]
-    return df
+        if not pd.api.types.is_numeric_dtype(df[col]):
+            raise DataValidationError(f"Column {col} is not numeric")
+    for idx, row in df.iterrows():
+        for col in subset:
+            val = row[col]
+            if not isinstance(val, (int, float)) or not math.isfinite(val) or val <= 0:
+                raise DataValidationError(
+                    f"Row {idx}: {col} must be a finite positive number (got {val})"
+                )
+        vol = row["volume"]
+        if not isinstance(vol, (int, float)) or not math.isfinite(float(vol)) or vol < 0:
+            raise DataValidationError(
+                f"Row {idx}: volume must be a finite non-negative number (got {vol})"
+            )
+        if row["low"] > row["high"]:
+            raise DataValidationError(f"Row {idx}: low ({row['low']}) > high ({row['high']})")
+        if row["open"] < row["low"] or row["open"] > row["high"]:
+            raise DataValidationError(f"Row {idx}: open ({row['open']}) outside high/low range")
+        if row["close"] < row["low"] or row["close"] > row["high"]:
+            raise DataValidationError(f"Row {idx}: close ({row['close']}) outside high/low range")
 
 
 def build_premarket_snapshot(
@@ -129,7 +157,6 @@ def build_premarket_snapshot(
     actual_provider: str | None,
 ) -> PremarketSnapshot:
     """Build a PremarketSnapshot from filtered, canonical pre-market bars."""
-    bars = _validate_ohlcv(bars)
     if bars.empty:
         return PremarketSnapshot(
             ticker=ticker,
@@ -148,6 +175,8 @@ def build_premarket_snapshot(
             premarket_vwap=None,
             data_age_minutes=None,
         )
+
+    _validate_ohlcv(bars)
 
     first_bar_time = bars.index[0]
     last_bar_time = bars.index[-1]
@@ -216,7 +245,7 @@ def _fetch_yahoo_premarket_bars(
         return PremarketBarsResult(
             ticker=ticker,
             requested_provider=requested_provider,
-            actual_provider=requested_provider,
+            actual_provider=None,
             session_date=session_date,
             bars=pd.DataFrame(),
             attempts=1,
@@ -230,11 +259,25 @@ def _fetch_yahoo_premarket_bars(
         df.columns = [c.lower() for c in df.columns]
 
     df.index = pd.to_datetime(df.index, utc=True)
+    try:
+        _validate_ohlcv(df)
+    except DataValidationError as exc:
+        return PremarketBarsResult(
+            ticker=ticker,
+            requested_provider=requested_provider,
+            actual_provider=requested_provider,
+            session_date=session_date,
+            bars=pd.DataFrame(),
+            attempts=1,
+            retries=0,
+            error=exc,
+        )
+
     df = _filter_premarket_bars(df, session_date, as_of, allow_after_open=allow_after_open)
     return PremarketBarsResult(
         ticker=ticker,
         requested_provider=requested_provider,
-        actual_provider=requested_provider,
+        actual_provider=requested_provider if not df.empty else None,
         session_date=session_date,
         bars=df,
         attempts=1,
@@ -277,7 +320,7 @@ def fetch_premarket_bars(
         return PremarketBarsResult(
             ticker=ticker,
             requested_provider=requested_provider,
-            actual_provider=requested_provider,
+            actual_provider=None,
             session_date=session_date,
             bars=pd.DataFrame(),
             attempts=0,
@@ -286,7 +329,9 @@ def fetch_premarket_bars(
         )
 
     if requested_provider == "yahoo":
-        return _fetch_yahoo_premarket_bars(ticker, as_of_utc, session_date, requested_provider, allow_after_open=allow_after_open)
+        return _fetch_yahoo_premarket_bars(
+            ticker, as_of_utc, session_date, requested_provider, allow_after_open=allow_after_open
+        )
 
     # Should be unreachable because of resolve_premarket_provider.
     raise ProviderCapabilityError(
@@ -383,6 +428,36 @@ def compute_liquidity_baseline(
     )
 
 
+def _baseline_error(
+    lookback_sessions: int,
+    error: Exception | None,
+    previous_session_date: date | None = None,
+    requested_provider: str | None = None,
+    actual_provider: str | None = None,
+) -> DailyLiquidityBaseline:
+    """Return a baseline whose fields are zeroed/None but whose error is preserved."""
+    return DailyLiquidityBaseline(
+        previous_session_date=previous_session_date,
+        previous_close=None,
+        lookback_sessions_requested=lookback_sessions,
+        lookback_sessions_available=0,
+        average_daily_volume=0.0,
+        median_daily_volume=0.0,
+        average_daily_dollar_volume=0.0,
+        median_daily_dollar_volume=0.0,
+        requested_provider=requested_provider,
+        actual_provider=actual_provider,
+        error=error,
+    )
+
+
+def _resolve_history_provider(provider: str | None) -> str:
+    """Return the canonical daily-history provider name."""
+    from tradex.data.fetcher import resolve_provider
+
+    return resolve_provider(provider)
+
+
 def fetch_daily_liquidity_baseline(
     ticker: str,
     session_date: date,
@@ -391,32 +466,35 @@ def fetch_daily_liquidity_baseline(
     provider: str | None,
     as_of: datetime | None = None,
 ) -> DailyLiquidityBaseline:
-    """Fetch completed daily history and compute the liquidity baseline."""
+    """Fetch completed daily history and compute the liquidity baseline.
+
+    Typed provider/data failures are preserved on the returned baseline object
+    rather than swallowed into a generic zero baseline.
+    """
+    requested_provider = provider
+    try:
+        actual_provider = _resolve_history_provider(provider)
+    except ProviderCapabilityError as exc:
+        return _baseline_error(lookback_sessions, exc, requested_provider=requested_provider)
+
     try:
         previous_session = previous_trading_session(session_date)
-    except Exception:  # noqa: BLE001
-        return DailyLiquidityBaseline(
-            previous_session_date=None,
-            previous_close=None,
-            lookback_sessions_requested=lookback_sessions,
-            lookback_sessions_available=0,
-            average_daily_volume=0.0,
-            median_daily_volume=0.0,
-            average_daily_dollar_volume=0.0,
-            median_daily_dollar_volume=0.0,
+    except Exception as exc:  # noqa: BLE001
+        return _baseline_error(
+            lookback_sessions,
+            exc,
+            requested_provider=requested_provider,
+            actual_provider=actual_provider,
         )
 
     start_dates = _previous_sessions(previous_session.session_date, lookback_sessions)
     if not start_dates:
-        return DailyLiquidityBaseline(
+        return _baseline_error(
+            lookback_sessions,
+            ValueError("No previous completed sessions available for liquidity baseline"),
             previous_session_date=previous_session.session_date,
-            previous_close=None,
-            lookback_sessions_requested=lookback_sessions,
-            lookback_sessions_available=0,
-            average_daily_volume=0.0,
-            median_daily_volume=0.0,
-            average_daily_dollar_volume=0.0,
-            median_daily_dollar_volume=0.0,
+            requested_provider=requested_provider,
+            actual_provider=actual_provider,
         )
 
     try:
@@ -424,24 +502,44 @@ def fetch_daily_liquidity_baseline(
             ticker,
             start=start_dates[0],
             end=previous_session.session_date,
-            provider=provider,
+            provider=actual_provider,
         )
-    except Exception:  # noqa: BLE001
-        return DailyLiquidityBaseline(
+    except ProviderCapabilityError as exc:
+        return _baseline_error(
+            lookback_sessions,
+            exc,
             previous_session_date=previous_session.session_date,
-            previous_close=None,
-            lookback_sessions_requested=lookback_sessions,
-            lookback_sessions_available=0,
-            average_daily_volume=0.0,
-            median_daily_volume=0.0,
-            average_daily_dollar_volume=0.0,
-            median_daily_dollar_volume=0.0,
+            requested_provider=requested_provider,
+            actual_provider=actual_provider,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _baseline_error(
+            lookback_sessions,
+            exc,
+            previous_session_date=previous_session.session_date,
+            requested_provider=requested_provider,
+            actual_provider=actual_provider,
         )
 
-    return compute_liquidity_baseline(daily_df, lookback_sessions, session_date)
+    baseline = compute_liquidity_baseline(daily_df, lookback_sessions, session_date)
+    return DailyLiquidityBaseline(
+        previous_session_date=baseline.previous_session_date,
+        previous_close=baseline.previous_close,
+        lookback_sessions_requested=baseline.lookback_sessions_requested,
+        lookback_sessions_available=baseline.lookback_sessions_available,
+        average_daily_volume=baseline.average_daily_volume,
+        median_daily_volume=baseline.median_daily_volume,
+        average_daily_dollar_volume=baseline.average_daily_dollar_volume,
+        median_daily_dollar_volume=baseline.median_daily_dollar_volume,
+        requested_provider=requested_provider,
+        actual_provider=actual_provider,
+        error=baseline.error,
+    )
 
 
-def _get_prev_close(ticker: str, provider: str | None = None, as_of: datetime | None = None) -> float | None:
+def _get_prev_close(
+    ticker: str, provider: str | None = None, as_of: datetime | None = None
+) -> float | None:
     """Compatibility wrapper that returns only the previous close."""
     as_of = as_of or datetime.now(UTC)
     ny_as_of = _ny(as_of)
@@ -456,7 +554,9 @@ def _get_prev_close(ticker: str, provider: str | None = None, as_of: datetime | 
     return baseline.previous_close
 
 
-def get_premarket_price(ticker: str, provider: str | None = None, as_of: datetime | None = None) -> float | None:
+def get_premarket_price(
+    ticker: str, provider: str | None = None, as_of: datetime | None = None
+) -> float | None:
     """Compatibility wrapper that returns the latest pre-market close or None."""
     as_of = as_of or datetime.now(UTC)
     ny_as_of = _ny(as_of)
@@ -504,6 +604,7 @@ def fetch_spread_snapshot(
     optional injection for tests; live sources are only enabled when their safe
     contracts already exist in the repository.
     """
+    requested_source = (provider or DEFAULT_PROVIDER).lower()
     if quote is not None:
         try:
             bid = float(quote["bid"])
@@ -512,14 +613,37 @@ def fetch_spread_snapshot(
             if ts is not None:
                 ts = pd.to_datetime(ts, utc=True).to_pydatetime()
         except Exception as exc:  # noqa: BLE001
-            return SpreadSnapshot(available=False, error=exc)
-        return _build_spread(bid, ask, as_of, ts, source="injected")
+            return SpreadSnapshot(
+                available=False,
+                requested_source=requested_source,
+                actual_source=None,
+                source=requested_source,
+                as_of=as_of,
+                error=exc,
+            )
+        actual_source = quote.get("source") or "injected"
+        return _build_spread(
+            bid, ask, as_of, ts, requested_source=requested_source, actual_source=actual_source
+        )
 
-    requested_provider = (provider or DEFAULT_PROVIDER).lower()
-    return SpreadSnapshot(available=False, source=requested_provider, as_of=as_of)
+    return SpreadSnapshot(
+        available=False,
+        requested_source=requested_source,
+        actual_source=None,
+        source=requested_source,
+        as_of=as_of,
+    )
 
 
-def _build_spread(bid: float, ask: float, as_of: datetime, quote_as_of: datetime | None, source: str) -> SpreadSnapshot:
+def _build_spread(
+    bid: float,
+    ask: float,
+    as_of: datetime,
+    quote_as_of: datetime | None,
+    *,
+    requested_source: str,
+    actual_source: str,
+) -> SpreadSnapshot:
     """Validate a bid/ask pair and compute spread in basis points."""
     try:
         if not math.isfinite(bid) or not math.isfinite(ask):
@@ -536,12 +660,21 @@ def _build_spread(bid: float, ask: float, as_of: datetime, quote_as_of: datetime
         spread_bps = ((ask - bid) / midpoint) * 10_000.0 if midpoint > 0 else None
         return SpreadSnapshot(
             available=True,
+            requested_source=requested_source,
+            actual_source=actual_source,
             bid=bid,
             ask=ask,
             midpoint=midpoint,
             spread_bps=spread_bps,
-            source=source,
+            source=actual_source,
             as_of=quote_as_of,
         )
     except Exception as exc:  # noqa: BLE001
-        return SpreadSnapshot(available=False, source=source, as_of=quote_as_of, error=exc)
+        return SpreadSnapshot(
+            available=False,
+            requested_source=requested_source,
+            actual_source=actual_source,
+            source=actual_source,
+            as_of=quote_as_of,
+            error=exc,
+        )

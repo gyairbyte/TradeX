@@ -26,7 +26,7 @@ from tradex.data.fetcher import FetchPolicy, resolve_provider
 from tradex.market import MARKET_TIMEZONE, is_regular_market_open, market_status
 from tradex.patterns.matcher import run_match_screen
 from tradex.premarket.config import GapScanConfig
-from tradex.premarket.gap_scanner import run_gap_alerts, scan_gaps_with_report
+from tradex.premarket.gap_scanner import scan_gaps_with_report
 from tradex.screener.engine import run_with_report as screener_run_with_report
 from tradex.tracker import analyzer, store
 from tradex.tracker.confluence import run_confluence_screen

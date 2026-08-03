@@ -905,6 +905,113 @@ def test_watcher_injected_timestamp_is_audit_timestamp(fresh_signal_db):
     assert run["run_time"] == now.astimezone(UTC).isoformat()
 
 
+def _premarket_report(
+    requested: int = 1,
+    qualified: int = 0,
+    filtered: int = 0,
+    failed: int = 0,
+    outside_window: int = 0,
+    provider_errors: dict | None = None,
+    results: pd.DataFrame | None = None,
+) -> MagicMock:
+    report = MagicMock()
+    report.counts.return_value = {
+        "requested": requested,
+        "qualified": qualified,
+        "filtered": filtered,
+        "failed": failed,
+        "outside_window": outside_window,
+    }
+    report.provider_errors = provider_errors or {}
+    report.results = results if results is not None else pd.DataFrame()
+    return report
+
+
+def test_scheduled_premarket_default_threshold_is_4_percent():
+    """The scheduled pre-market scan keeps the original 4% alert threshold."""
+    now = datetime(2025, 1, 15, 13, 0, tzinfo=UTC)  # 08:00 ET
+    report = _premarket_report()
+    with patch.object(watcher, "scan_gaps_with_report", return_value=report) as mock_scan:
+        watcher._run_scheduled_premarket(["AAPL"], provider="yahoo", now=now)
+    assert mock_scan.call_count == 1
+    _, kwargs = mock_scan.call_args
+    assert kwargs["config"].min_abs_gap_pct == 4.0
+
+
+def test_scheduled_premarket_filtered_rows_do_not_alert(capsys):
+    """A ticker that is filtered out must never trigger an alert."""
+    now = datetime(2025, 1, 15, 13, 0, tzinfo=UTC)
+    report = _premarket_report(requested=1, qualified=0, filtered=1, failed=0)
+    with (
+        patch.object(watcher, "scan_gaps_with_report", return_value=report),
+        patch("tradex.tracker.watcher.alert_gap") as mock_alert,
+    ):
+        watcher._run_scheduled_premarket(["AAPL"], provider="yahoo", now=now)
+    mock_alert.assert_not_called()
+    captured = capsys.readouterr()
+    assert "No qualifying gaps" in captured.out
+
+
+def test_scheduled_premarket_zero_results_not_provider_failure(capsys):
+    """A scan with no qualifying gaps is a normal zero result, not a provider failure."""
+    now = datetime(2025, 1, 15, 13, 0, tzinfo=UTC)
+    report = _premarket_report(requested=1, qualified=0, filtered=0, failed=0, outside_window=0)
+    with patch.object(watcher, "scan_gaps_with_report", return_value=report):
+        watcher._run_scheduled_premarket(["AAPL"], provider="yahoo", now=now)
+    captured = capsys.readouterr()
+    assert "No qualifying gaps" in captured.out
+    assert "failed" not in captured.out.lower() or "All tickers failed" not in captured.out
+
+
+def test_scheduled_premarket_partial_failure_surfaces(capsys):
+    """Partial provider failures are surfaced while still alerting qualifying rows."""
+    now = datetime(2025, 1, 15, 13, 0, tzinfo=UTC)
+    results = pd.DataFrame([{
+        "ticker": "AAPL", "gap_pct": 5.0, "direction": "up", "tier": "large",
+        "prev_close": 100.0, "pre_market": 105.0,
+    }])
+    report = _premarket_report(
+        requested=2, qualified=1, filtered=0, failed=1,
+        provider_errors={"TSLA": "data unavailable"},
+        results=results,
+    )
+    with (
+        patch.object(watcher, "scan_gaps_with_report", return_value=report),
+        patch("tradex.tracker.watcher.alert_gap") as mock_alert,
+    ):
+        watcher._run_scheduled_premarket(["AAPL", "TSLA"], provider="yahoo", now=now)
+    mock_alert.assert_called_once()
+    captured = capsys.readouterr()
+    assert "provider errors" in captured.out
+    assert "data unavailable" in captured.out
+
+
+def test_scheduled_premarket_complete_provider_failure_surfaces(capsys):
+    """When every ticker fails, the watcher reports a complete failure."""
+    now = datetime(2025, 1, 15, 13, 0, tzinfo=UTC)
+    report = _premarket_report(
+        requested=2, qualified=0, filtered=0, failed=2,
+        provider_errors={"AAPL": "outage", "TSLA": "outage"},
+    )
+    with patch.object(watcher, "scan_gaps_with_report", return_value=report):
+        watcher._run_scheduled_premarket(["AAPL", "TSLA"], provider="yahoo", now=now)
+    captured = capsys.readouterr()
+    assert "All tickers failed" in captured.out
+
+
+def test_scheduled_premarket_unsupported_capability_error_explicit(capsys):
+    """Unsupported providers produce an explicit capability error, not a traceback."""
+    from tradex.data.fetcher import ProviderCapabilityError
+
+    now = datetime(2025, 1, 15, 13, 0, tzinfo=UTC)
+    with patch.object(
+        watcher, "scan_gaps_with_report", side_effect=ProviderCapabilityError("schwab premarket unsupported")
+    ):
+        watcher._run_scheduled_premarket(["AAPL"], provider="schwab", now=now)
+    captured = capsys.readouterr()
+    assert "schwab premarket unsupported" in captured.out
+
+
 def test_watcher_requested_and_actual_provider_distinct_after_fallback(fresh_signal_db, capsys):
     """When the watcher falls back, requested_provider and actual_provider differ."""
     from tradex.data.fetcher import FetchAttempt

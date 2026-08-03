@@ -1,4 +1,5 @@
 """Typed data models for the quality-aware pre-market gap scanner."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -65,6 +66,9 @@ class DailyLiquidityBaseline:
     median_daily_volume: float
     average_daily_dollar_volume: float
     median_daily_dollar_volume: float
+    requested_provider: str | None = None
+    actual_provider: str | None = None
+    error: Exception | None = None
 
 
 @dataclass(frozen=True)
@@ -72,6 +76,8 @@ class SpreadSnapshot:
     """Optional bid/ask spread context for a pre-market quote."""
 
     available: bool
+    requested_source: str | None = None
+    actual_source: str | None = None
     bid: float | None = None
     ask: float | None = None
     midpoint: float | None = None
@@ -95,14 +101,19 @@ class GapCatalystContext:
     actual_headline_source: str | None = None
     headline_status: str | None = None
     headline_title: str | None = None
+    headline_publisher: str | None = None
     headline_published_at: datetime | None = None
     headline_url: str | None = None
+    days_until_earnings: int | None = None
     error: Exception | None = None
 
     @property
     def status(self) -> str:
         """Combined stable status for display."""
-        if self.earnings_status in ("earnings_today",) and self.headline_status == "recent_headline":
+        if (
+            self.earnings_status in ("earnings_today", "earnings_soon")
+            and self.headline_status == "recent_headline"
+        ):
             return "earnings_and_recent_headline"
         if self.earnings_status in ("earnings_today", "earnings_soon"):
             return self.earnings_status
@@ -126,26 +137,47 @@ class GapObservation:
     status: str  # qualified, filtered, failed, outside_window
     requested_provider: str | None
     actual_provider: str | None
+    previous_session_date: date | None = None
     prev_close: float | None = None
-    premarket_last: float | None = None
     premarket_open: float | None = None
     premarket_high: float | None = None
     premarket_low: float | None = None
+    premarket_last: float | None = None
     premarket_volume: int | None = None
     premarket_dollar_volume: float | None = None
     premarket_vwap: float | None = None
+    premarket_move_pct: float | None = None
+    premarket_range_pct: float | None = None
+    first_bar_time: datetime | None = None
+    last_bar_time: datetime | None = None
+    bar_count: int | None = None
     data_age_minutes: float | None = None
     average_daily_volume: float | None = None
+    median_daily_volume: float | None = None
+    average_daily_dollar_volume: float | None = None
+    median_daily_dollar_volume: float | None = None
+    liquidity_lookback_sessions: int | None = None
     premarket_volume_ratio: float | None = None
+    bid: float | None = None
+    ask: float | None = None
+    midpoint: float | None = None
     spread_bps: float | None = None
+    spread_source: str | None = None
     spread_available: bool = False
     catalyst_status: str | None = None
-    filter_reasons: list[str] = field(default_factory=list)
-    error: str | None = None
+    earnings_date: date | None = None
+    days_until_earnings: int | None = None
+    headline_title: str | None = None
+    headline_publisher: str | None = None
+    headline_published_at: datetime | None = None
+    headline_source: str | None = None
+    headline_url: str | None = None
     gap_pct: float | None = None
     direction: str | None = None
     tier: str | None = None
     note: str | None = None
+    filter_reasons: list[str] = field(default_factory=list)
+    error: str | None = None
 
 
 @dataclass
@@ -209,6 +241,7 @@ class GapScanReport:
 _COMMON_COLUMNS: dict[str, Any] = {
     "ticker": "string",
     "session_date": "string",
+    "previous_session_date": "string",
     "prev_close": "float64",
     "pre_market": "float64",
     "premarket_last": "float64",
@@ -218,12 +251,32 @@ _COMMON_COLUMNS: dict[str, Any] = {
     "premarket_volume": "int64",
     "premarket_dollar_volume": "float64",
     "premarket_vwap": "float64",
+    "premarket_move_pct": "float64",
+    "premarket_range_pct": "float64",
+    "first_bar_time": "string",
+    "last_bar_time": "string",
+    "bar_count": "int64",
     "data_age_minutes": "float64",
     "average_daily_volume": "float64",
+    "median_daily_volume": "float64",
+    "average_daily_dollar_volume": "float64",
+    "median_daily_dollar_volume": "float64",
+    "liquidity_lookback_sessions": "int64",
     "premarket_volume_ratio": "float64",
+    "bid": "float64",
+    "ask": "float64",
+    "midpoint": "float64",
     "spread_bps": "float64",
+    "spread_source": "string",
     "spread_available": "bool",
     "catalyst_status": "string",
+    "earnings_date": "string",
+    "days_until_earnings": "int64",
+    "headline_title": "string",
+    "headline_publisher": "string",
+    "headline_published_at": "string",
+    "headline_source": "string",
+    "headline_url": "string",
     "gap_pct": "float64",
     "direction": "string",
     "tier": "string",
@@ -232,6 +285,7 @@ _COMMON_COLUMNS: dict[str, Any] = {
     "error": "string",
     "requested_provider": "string",
     "actual_provider": "string",
+    "status": "string",
 }
 
 _RESULT_COLUMNS = _COMMON_COLUMNS

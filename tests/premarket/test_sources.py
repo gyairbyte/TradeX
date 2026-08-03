@@ -1,4 +1,5 @@
 """Tests for pre-market source adapters."""
+
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
@@ -13,16 +14,17 @@ from tradex.premarket.models import PremarketBarsResult, PremarketSnapshot, Spre
 
 
 def _make_minute_bars() -> pd.DataFrame:
-    times = pd.DatetimeIndex([
-        "2024-01-03 09:00", "2024-01-03 10:00", "2024-01-03 11:00"
-    ], tz="UTC")
-    return pd.DataFrame({
-        "Open": [100.0, 101.0, 102.0],
-        "High": [101.0, 102.0, 103.0],
-        "Low": [99.0, 100.0, 101.0],
-        "Close": [101.0, 102.0, 103.0],
-        "Volume": [100, 200, 300],
-    }, index=times)
+    times = pd.DatetimeIndex(["2024-01-03 09:00", "2024-01-03 10:00", "2024-01-03 11:00"], tz="UTC")
+    return pd.DataFrame(
+        {
+            "Open": [100.0, 101.0, 102.0],
+            "High": [101.0, 102.0, 103.0],
+            "Low": [99.0, 100.0, 101.0],
+            "Close": [101.0, 102.0, 103.0],
+            "Volume": [100, 200, 300],
+        },
+        index=times,
+    )
 
 
 def test_resolve_premarket_provider_yahoo():
@@ -60,10 +62,16 @@ def test_filter_premarket_bars_excludes_bars_after_as_of():
 def test_filter_premarket_bars_excludes_open_timestamp():
     # 2024-01-03 09:30 ET = 14:30 UTC.
     times = pd.DatetimeIndex(["2024-01-03 14:00", "2024-01-03 14:30"], tz="UTC")
-    df = pd.DataFrame({
-        "Open": [100.0, 103.0], "High": [101.0, 104.0], "Low": [99.0, 102.0],
-        "Close": [101.0, 103.0], "Volume": [100, 100],
-    }, index=times)
+    df = pd.DataFrame(
+        {
+            "Open": [100.0, 103.0],
+            "High": [101.0, 104.0],
+            "Low": [99.0, 102.0],
+            "Close": [101.0, 103.0],
+            "Volume": [100, 100],
+        },
+        index=times,
+    )
     as_of = datetime(2024, 1, 3, 14, 15, tzinfo=UTC)
     filtered = sources._filter_premarket_bars(df, date(2024, 1, 3), as_of, allow_after_open=False)
     assert len(filtered) == 1
@@ -107,14 +115,19 @@ def test_build_premarket_snapshot_empty_bars():
 
 def test_compute_liquidity_baseline():
     dates = pd.date_range("2024-01-02", periods=5, freq="B")
-    df = pd.DataFrame({
-        "open": [100.0] * 5,
-        "high": [101.0] * 5,
-        "low": [99.0] * 5,
-        "close": [100.0, 101.0, 102.0, 103.0, 104.0],
-        "volume": [1000, 2000, 3000, 4000, 5000],
-    }, index=pd.DatetimeIndex(dates, name="datetime"))
-    base = sources.compute_liquidity_baseline(df, lookback_sessions=5, target_session_date=date(2024, 1, 9))
+    df = pd.DataFrame(
+        {
+            "open": [100.0] * 5,
+            "high": [101.0] * 5,
+            "low": [99.0] * 5,
+            "close": [100.0, 101.0, 102.0, 103.0, 104.0],
+            "volume": [1000, 2000, 3000, 4000, 5000],
+        },
+        index=pd.DatetimeIndex(dates, name="datetime"),
+    )
+    base = sources.compute_liquidity_baseline(
+        df, lookback_sessions=5, target_session_date=date(2024, 1, 9)
+    )
     assert base.lookback_sessions_available == 5
     assert base.average_daily_volume == 3000.0
     assert base.previous_close == 104.0  # most recent completed session
@@ -126,9 +139,17 @@ def test_fetch_daily_liquidity_baseline_propagates_provider():
     def fake_daily_history(ticker, start, end, provider=None):
         captured["provider"] = provider
         dates = pd.date_range("2025-01-06", periods=1, freq="B")
-        return pd.DataFrame({
-            "open": [100.0], "high": [101.0], "low": [99.0], "close": [100.0], "volume": [1000],
-        }, index=pd.DatetimeIndex(dates, name="datetime"), dtype=float)
+        return pd.DataFrame(
+            {
+                "open": [100.0],
+                "high": [101.0],
+                "low": [99.0],
+                "close": [100.0],
+                "volume": [1000],
+            },
+            index=pd.DatetimeIndex(dates, name="datetime"),
+            dtype=float,
+        )
 
     with patch.object(sources, "fetch_daily_history", side_effect=fake_daily_history):
         base = sources.fetch_daily_liquidity_baseline(
@@ -153,16 +174,17 @@ def test_fetch_premarket_bars_holiday_no_network():
 
 
 def test_get_premarket_price_wrapper():
-    times = pd.DatetimeIndex([
-        "2024-01-03 09:00", "2024-01-03 10:00", "2024-01-03 11:00"
-    ], tz="UTC")
-    df = pd.DataFrame({
-        "Open": [100.0, 101.0, 102.0],
-        "High": [101.0, 102.0, 103.0],
-        "Low": [99.0, 100.0, 101.0],
-        "Close": [101.0, 102.0, 103.0],
-        "Volume": [100, 200, 300],
-    }, index=times)
+    times = pd.DatetimeIndex(["2024-01-03 09:00", "2024-01-03 10:00", "2024-01-03 11:00"], tz="UTC")
+    df = pd.DataFrame(
+        {
+            "Open": [100.0, 101.0, 102.0],
+            "High": [101.0, 102.0, 103.0],
+            "Low": [99.0, 100.0, 101.0],
+            "Close": [101.0, 102.0, 103.0],
+            "Volume": [100, 200, 300],
+        },
+        index=times,
+    )
     fake_ticker = Mock()
     fake_ticker.history.return_value = df
     fake_cls = Mock(return_value=fake_ticker)
@@ -174,15 +196,21 @@ def test_get_premarket_price_wrapper():
 
 def test_get_prev_close_wrapper():
     dates = pd.date_range("2024-01-02", periods=2, freq="B")
-    df = pd.DataFrame({
-        "open": [100.0, 101.0],
-        "high": [101.0, 102.0],
-        "low": [99.0, 100.0],
-        "close": [101.0, 102.0],
-        "volume": [1000, 1000],
-    }, index=pd.DatetimeIndex(dates, name="datetime"), dtype=float)
+    df = pd.DataFrame(
+        {
+            "open": [100.0, 101.0],
+            "high": [101.0, 102.0],
+            "low": [99.0, 100.0],
+            "close": [101.0, 102.0],
+            "volume": [1000, 1000],
+        },
+        index=pd.DatetimeIndex(dates, name="datetime"),
+        dtype=float,
+    )
     with patch.object(sources, "fetch_daily_history", return_value=df):
-        close = sources._get_prev_close("AAPL", provider="yahoo", as_of=datetime(2024, 1, 4, 8, 0, tzinfo=UTC))
+        close = sources._get_prev_close(
+            "AAPL", provider="yahoo", as_of=datetime(2024, 1, 4, 8, 0, tzinfo=UTC)
+        )
     assert close == 102.0
 
 
@@ -212,7 +240,100 @@ def test_fetch_spread_snapshot_rejects_crossed():
 
 
 def test_fetch_spread_snapshot_default_unavailable():
-    snap = sources.fetch_spread_snapshot("AAPL", datetime(2024, 1, 3, 13, 0, tzinfo=UTC), provider="yahoo")
+    snap = sources.fetch_spread_snapshot(
+        "AAPL", datetime(2024, 1, 3, 13, 0, tzinfo=UTC), provider="yahoo"
+    )
     assert isinstance(snap, SpreadSnapshot)
     assert snap.available is False
     assert snap.source == "yahoo"
+
+
+def _valid_bars() -> pd.DataFrame:
+    times = pd.DatetimeIndex(["2024-01-03 09:00", "2024-01-03 10:00"], tz="UTC")
+    return pd.DataFrame(
+        {
+            "open": [100.0, 101.0],
+            "high": [101.0, 102.0],
+            "low": [99.0, 100.0],
+            "close": [101.0, 102.0],
+            "volume": [100, 200],
+        },
+        index=times,
+    )
+
+
+def test_validate_ohlcv_rejects_missing_columns():
+    df = _valid_bars().drop(columns=["close"])
+    with pytest.raises(sources.DataValidationError, match="Missing required"):
+        sources.build_premarket_snapshot(
+            df, ticker="AAPL", session_date=date(2024, 1, 3),
+            as_of=datetime(2024, 1, 3, 14, 0, tzinfo=UTC),
+            requested_provider="yahoo", actual_provider="yahoo",
+        )
+
+
+def test_validate_ohlcv_rejects_nonfinite_prices():
+    df = _valid_bars()
+    df.loc[df.index[0], "open"] = float("nan")
+    with pytest.raises(sources.DataValidationError, match="finite"):
+        sources.build_premarket_snapshot(
+            df, ticker="AAPL", session_date=date(2024, 1, 3),
+            as_of=datetime(2024, 1, 3, 14, 0, tzinfo=UTC),
+            requested_provider="yahoo", actual_provider="yahoo",
+        )
+
+
+def test_validate_ohlcv_rejects_nonpositive_prices():
+    df = _valid_bars()
+    df.loc[df.index[0], "low"] = 0.0
+    with pytest.raises(sources.DataValidationError, match="positive"):
+        sources.build_premarket_snapshot(
+            df, ticker="AAPL", session_date=date(2024, 1, 3),
+            as_of=datetime(2024, 1, 3, 14, 0, tzinfo=UTC),
+            requested_provider="yahoo", actual_provider="yahoo",
+        )
+
+
+def test_validate_ohlcv_rejects_negative_volume():
+    df = _valid_bars()
+    df.loc[df.index[0], "volume"] = -1
+    with pytest.raises(sources.DataValidationError, match="non-negative"):
+        sources.build_premarket_snapshot(
+            df, ticker="AAPL", session_date=date(2024, 1, 3),
+            as_of=datetime(2024, 1, 3, 14, 0, tzinfo=UTC),
+            requested_provider="yahoo", actual_provider="yahoo",
+        )
+
+
+def test_validate_ohlcv_rejects_invalid_high_low():
+    df = _valid_bars()
+    df.loc[df.index[0], "low"] = 102.0
+    with pytest.raises(sources.DataValidationError, match="low"):
+        sources.build_premarket_snapshot(
+            df, ticker="AAPL", session_date=date(2024, 1, 3),
+            as_of=datetime(2024, 1, 3, 14, 0, tzinfo=UTC),
+            requested_provider="yahoo", actual_provider="yahoo",
+        )
+
+
+def test_validate_ohlcv_rejects_open_outside_high_low():
+    df = _valid_bars()
+    df.loc[df.index[0], "open"] = 98.0
+    with pytest.raises(sources.DataValidationError, match="open"):
+        sources.build_premarket_snapshot(
+            df, ticker="AAPL", session_date=date(2024, 1, 3),
+            as_of=datetime(2024, 1, 3, 14, 0, tzinfo=UTC),
+            requested_provider="yahoo", actual_provider="yahoo",
+        )
+
+
+def test_validate_ohlcv_rejects_mixed_valid_invalid_rows():
+    """A single malformed row must reject the entire provider response."""
+    df = _valid_bars()
+    df.loc[df.index[1], "close"] = 200.0  # outside high/low
+    with pytest.raises(sources.DataValidationError, match="close"):
+        sources.build_premarket_snapshot(
+            df, ticker="AAPL", session_date=date(2024, 1, 3),
+            as_of=datetime(2024, 1, 3, 14, 0, tzinfo=UTC),
+            requested_provider="yahoo", actual_provider="yahoo",
+        )

@@ -39,7 +39,7 @@ from tradex.patterns.config import PROFILES
 from tradex.patterns.fingerprint import list_fingerprints, load_fingerprint, run_full_build
 from tradex.patterns.matcher import match_ticker, run_match_screen
 from tradex.premarket.config import GapScanConfig
-from tradex.premarket.gap_scanner import scan_gaps, scan_gaps_with_report
+from tradex.premarket.gap_scanner import scan_gaps_with_report
 from tradex.premarket.models import GapScanReport
 from tradex.screener.engine import run_with_report
 from tradex.signals import weights as signal_weights
@@ -1171,13 +1171,34 @@ Gaps occur overnight when new information is reflected in prices while the marke
         m5.metric("Outside window", counts["outside_window"])
 
         if gap_report.provider_errors:
-            st.warning("Partial provider failures: " + ", ".join(gap_report.provider_errors.keys()))
+            st.error("Provider failures: " + ", ".join(gap_report.provider_errors.keys()))
 
         if not gap_report.results.empty:
             st.success(f"{len(gap_report.results)} qualified gaps found")
             display = gap_report.results.copy()
             display["gap_display"] = display["gap_pct"].apply(lambda x: f"{x:+.2f}%")
-            display_cols = ["ticker", "gap_display", "prev_close", "pre_market", "premarket_volume", "data_age_minutes", "tier", "note"]
+            display["spread_display"] = display["spread_bps"].apply(
+                lambda x: f"{x:.2f} bps" if pd.notna(x) else "unavailable"
+            )
+            display["volume_ratio_display"] = display["premarket_volume_ratio"].apply(
+                lambda x: f"{x:.2f}x" if pd.notna(x) else "unavailable"
+            )
+            display_cols = [
+                "ticker",
+                "gap_display",
+                "prev_close",
+                "pre_market",
+                "premarket_volume",
+                "premarket_dollar_volume",
+                "volume_ratio_display",
+                "spread_display",
+                "catalyst_status",
+                "data_age_minutes",
+                "requested_provider",
+                "actual_provider",
+                "tier",
+                "note",
+            ]
             available_cols = [c for c in display_cols if c in display.columns]
             st.dataframe(
                 display[available_cols],
@@ -1187,7 +1208,13 @@ Gaps occur overnight when new information is reflected in prices while the marke
                     "prev_close": st.column_config.NumberColumn("Prev Close", format="$%.2f"),
                     "pre_market": st.column_config.NumberColumn("Pre-Market", format="$%.2f"),
                     "premarket_volume": st.column_config.NumberColumn("Pre-Market Volume"),
+                    "premarket_dollar_volume": st.column_config.NumberColumn("Pre-Market $ Volume", format="$%.2f"),
+                    "volume_ratio_display": st.column_config.TextColumn("Volume Ratio"),
+                    "spread_display": st.column_config.TextColumn("Spread"),
+                    "catalyst_status": st.column_config.TextColumn("Catalyst"),
                     "data_age_minutes": st.column_config.NumberColumn("Data Age (min)"),
+                    "requested_provider": st.column_config.TextColumn("Requested Provider"),
+                    "actual_provider": st.column_config.TextColumn("Actual Provider"),
                     "note": st.column_config.TextColumn("Context", width="large"),
                 },
             )
@@ -1204,7 +1231,7 @@ Gaps occur overnight when new information is reflected in prices while the marke
             if counts["outside_window"] == counts["requested"]:
                 st.info("No pre-market scan performed: current time is outside the pre-market window or the exchange is closed.")
             elif counts["failed"] == counts["requested"]:
-                st.info("No pre-market data available for the selected tickers.")
+                st.error("All tickers failed. Check provider errors above.")
             else:
                 st.info(f"No gaps above {min_gap}% found. {counts['filtered']} filtered, {counts['failed']} failed, {counts['outside_window']} outside window.")
 

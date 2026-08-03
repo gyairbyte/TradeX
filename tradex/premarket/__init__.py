@@ -1,4 +1,5 @@
 """Pre-market gap scanner package."""
+
 from tradex.premarket.config import GapScanConfig
 from tradex.premarket.gap_scanner import (
     DEFAULT_MIN_GAP,
