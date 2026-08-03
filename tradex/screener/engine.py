@@ -6,6 +6,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any
 
 import pandas as pd
 
@@ -18,7 +19,11 @@ from tradex.data.fetcher import (
     fetch_multi_report,
     resolve_provider,
 )
+from tradex.data.history import fetch_daily_history
 from tradex.earnings import days_until_earnings
+from tradex.market.context import compute_short_term_context
+from tradex.market.models import ShortContextPolicy
+from tradex.research.short_context.models import ShortContextSpec
 from tradex.signals import intraday, long_term, short_term
 
 SIGNAL_MAP = {
@@ -272,12 +277,18 @@ def run_with_report(
     earnings_source: str | None = None,
     policy: FetchPolicy | None = None,
     sleeper: Callable[[float], None] | None = None,
+    short_context_policy: str = "off",
+    short_context_spec: ShortContextSpec | None = None,
 ) -> ScanReport:
     """Run the screener and return a structured report.
 
     The report distinguishes valid zero-signal scans, earnings-source failures,
     OHLCV provider failures, and scoring failures; tracks the actual provider used
     (including fallback); and preserves accurate provenance on every observation.
+
+    ``short_context_policy`` is opt-in and defaults to ``"off"``; when set to a
+    candidate policy a ``short_context_spec`` must be supplied and proxies are
+    fetched once per unique proxy before scoring.
     """
     if timeframe not in SIGNAL_MAP:
         raise ValueError(f"timeframe must be one of {list(SIGNAL_MAP)}")
@@ -285,6 +296,16 @@ def run_with_report(
     scorer, tf_key = SIGNAL_MAP[timeframe]
     requested_provider = resolve_provider(provider)
     effective_policy = policy or FetchPolicy.build()
+
+    try:
+        ctx_policy = ShortContextPolicy(short_context_policy)
+    except ValueError as exc:
+        raise ValueError(f"short_context_policy must be one of {[p.value for p in ShortContextPolicy]}") from exc
+    context_active = ctx_policy != ShortContextPolicy.OFF
+    if context_active and short_context_spec is None:
+        raise ValueError("short_context_spec is required when short_context_policy is not 'off'")
+    if context_active and timeframe != "short":
+        raise ValueError("short_context_policy only applies to the 'short' timeframe")
 
     unique_tickers = list(dict.fromkeys(_normalize_ticker(t) for t in tickers))
 
@@ -338,6 +359,38 @@ def run_with_report(
     total_fetch_attempted = fetch_report.total_fetch_attempted
     total_fetched = fetch_report.total_fetched
 
+    # Pre-fetch proxy histories once per unique proxy when market context is active.
+    proxy_dfs: dict[str, pd.DataFrame] = {}
+    ticker_context_args: dict[str, dict[str, Any] | None] = {}
+    if context_active and short_context_spec is not None:
+        proxy_tickers: set[str] = set()
+        for ticker in eligible_tickers:
+            if ticker in short_context_spec.target_tickers:
+                ctx = short_context_spec.ticker_context.get(ticker) or {}
+                market_proxy = ctx.get("market_proxy") or short_context_spec.default_market_proxy
+                sector_proxy = ctx.get("sector_proxy")
+                ticker_context_args[ticker] = {
+                    "market_proxy": market_proxy,
+                    "sector_proxy": sector_proxy,
+                }
+                proxy_tickers.add(market_proxy)
+                if sector_proxy:
+                    proxy_tickers.add(sector_proxy)
+            else:
+                ticker_context_args[ticker] = None
+        if proxy_tickers:
+            valid_dfs = [df for df in fetch_report.data.values() if df is not None and not df.empty]
+            if valid_dfs:
+                min_date = min(df.index.min() for df in valid_dfs)
+                max_date = max(df.index.max() for df in valid_dfs)
+                start = (min_date - pd.Timedelta(days=120)).date()
+                end = max_date.date()
+                for proxy in sorted(proxy_tickers):
+                    try:
+                        proxy_dfs[proxy] = fetch_daily_history(proxy, start, end, provider=requested_provider)
+                    except Exception:  # noqa: BLE001
+                        proxy_dfs[proxy] = pd.DataFrame()
+
     rows: list[dict] = []
     total_scored = 0
     total_below_threshold = 0
@@ -372,8 +425,28 @@ def run_with_report(
             )
             continue
 
+        as_of: datetime | None = None
+        if isinstance(df.index, pd.DatetimeIndex):
+            as_of = df.index[-1].to_pydatetime()
         try:
-            result = scorer(df)
+            if context_active and ticker_context_args.get(ticker) and as_of is not None:
+                args = ticker_context_args[ticker]
+                market_df = proxy_dfs.get(args["market_proxy"], pd.DataFrame())
+                sector_proxy = args.get("sector_proxy")
+                sector_df = proxy_dfs.get(sector_proxy) if sector_proxy else None
+                context = None
+                if not market_df.empty:
+                    context = compute_short_term_context(
+                        as_of=as_of,
+                        ticker_df=df,
+                        market_proxy=args["market_proxy"],
+                        market_df=market_df,
+                        sector_proxy=sector_proxy,
+                        sector_df=sector_df,
+                    )
+                result = scorer(df, context=context, context_policy=ctx_policy)
+            else:
+                result = scorer(df)
         except Exception:  # noqa: BLE001
             err = ProviderResponseError(f"Scoring failed for {ticker} ({timeframe})")
             scoring_failures[ticker] = err
@@ -389,6 +462,9 @@ def run_with_report(
 
         total_scored += 1
         reasons = _format_reasons(result)
+        ctx_reasons = result.get("context_reasons") or []
+        if ctx_reasons:
+            reasons = f"{reasons} | {' | '.join(str(r) for r in ctx_reasons)}"
         obs_provider = actual_provider or requested_provider
 
         # Canonicalize the scored row once so both `results` and the signal
@@ -404,7 +480,8 @@ def run_with_report(
             "provider": obs_provider,
         }
 
-        if result["score"] < min_score:
+        context_eligible = result.get("context_eligible", True)
+        if not context_eligible or result["score"] < min_score:
             total_below_threshold += 1
             observations.append(
                 _build_observation_row(
@@ -491,6 +568,8 @@ def run(
     provider: str | None = None,
     earnings_source: str | None = None,
     policy: FetchPolicy | None = None,
+    short_context_policy: str = "off",
+    short_context_spec: ShortContextSpec | None = None,
 ) -> pd.DataFrame:
     """Compatibility wrapper that returns the signal DataFrame from ``run_with_report``."""
     report = run_with_report(
@@ -503,5 +582,7 @@ def run(
         provider=provider,
         earnings_source=earnings_source,
         policy=policy,
+        short_context_policy=short_context_policy,
+        short_context_spec=short_context_spec,
     )
     return report.results

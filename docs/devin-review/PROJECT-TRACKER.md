@@ -438,16 +438,22 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Add market regime and relative strength to short-term scorer
 - **Category:** Short-term trading
 - **Priority:** Medium
-- **Status:** Proposed
-- **Problem statement:** The short-term score does not account for whether SPY/QQQ or the sector is trending.
-- **Recommended action:** Add inputs for SPY trend and sector relative strength; either as filters or as score modifiers.
+- **Status:** Blocked (infrastructure complete; gate not passed on synthetic data)
+- **Resolved by:** `devin/improve-short-term-context`
+- **Problem statement:** The short-term score does not account for whether the broad market or sector is trending.
+- **Recommended action:** Add point-in-time market-regime and relative-strength filters evaluated through a reproducible research pipeline. Expose to production only if both the event-study and paired-backtest holdout gates pass.
 - **Reason:** Buying pullbacks in a bear market or weak sector is a different proposition than in a strong bull market.
 - **Dependencies:** VAL-001 (backtesting harness), VAL-002 (score validation study)
-- **Files likely affected:** `tradex/signals/short_term.py`, `tradex/data/fetcher.py`, new `tradex/market/context.py`
-- **Testing requirements:** Backtest comparing current score vs. regime-aware score on hold-out data.
-- **Acceptance criteria:** Regime-aware score has higher net expectancy in backtest.
+- **Files affected:** `tradex/market/__init__.py`, `tradex/market/context.py`, `tradex/market/models.py`, `tradex/signals/short_term.py`, `tradex/screener/engine.py`, `tradex/research/short_context/*`, `tests/market/test_context.py`, `tests/research/short_context/*`, `README.md`, `SETUP.md`, `.agents/skills/tradex-local-testing/SKILL.md`, `docs/devin-review/PROJECT-TRACKER.md`
+- **Testing requirements:** Unit tests for context computation, eligibility, spec validation, event generation, candidate selection, paired backtests, report generation, and CLI help; synthetic end-to-end workflow; focused and full pytest suites.
+- **Acceptance criteria:**
+  - `short_term.score` accepts optional `context` and `context_policy` kwargs, preserves the existing numeric `score` as `base_score`, and adds `context_eligible`, `context_status`, `context_reasons`, and `market_context`.
+  - `tradex/research/short_context` produces `study.json`, `context_events.csv`, `candidate_comparison.csv`, `candidate_selection.json`, `holdout_evaluation.csv`, `paired_backtests.csv`, `ticker_comparison.csv`, `data_quality.csv`, `report.md`, `manifest.lock.json`, and `context_spec.lock.json`.
+  - Candidate selection uses only `development` + `validation`; `holdout` does not influence any decision.
+  - Both the event-study and paired-backtest promotion gates must pass before production exposure.
+  - On synthetic data the gate did not pass, so the candidate policy was not exposed and production behavior remains unchanged.
 - **Intended pull request:** `devin/improve-short-term-context`
-- **Affects trading behavior:** Yes
+- **Affects trading behavior:** No by default (opt-in `short_context_policy` defaults to `off`); only Yes if a future holdout gate passes and the user explicitly enables it
 
 ### INTRA-001: Redesign intraday scorer around a specific setup
 

@@ -193,6 +193,24 @@ uv run python -m tradex.research.score_validation evaluate \
 
 Do not present event-study returns as portfolio equity, account returns, or proof of a tradable strategy. The executable backtest lives in `tradex/backtest`.
 
+## Short-term market context research CLI
+
+Inspect context-study commands with:
+
+```bash
+uv run python -m tradex.research.short_context --help
+uv run python -m tradex.research.short_context snapshot --help
+uv run python -m tradex.research.short_context evaluate --help
+```
+
+Run the focused market-context and scorer suites:
+
+```bash
+uv run pytest tests/market tests/research/short_context -q
+```
+
+The `snapshot` command is the only mode that may contact a market-data provider. The `evaluate` command is offline and credential-free once a manifest exists. The candidate policies are `off`, `market_rs`, and `market_sector_rs`; a candidate is only promoted when both the event-study and paired-backtest holdout gates pass. A failed or inconclusive study leaves the short-term scorer unchanged.
+
 ## Dashboard
 
 For explicitly requested manual UI testing:

@@ -2,8 +2,13 @@
 Short-term signals (days to weeks): trend momentum + volume confirmation.
 """
 import pandas as pd
+
+from tradex.market.context import is_context_eligible
+from tradex.market.models import ShortContextPolicy, ShortTermMarketContext
+
 from .indicators import add_indicators
-from .weights import ShortWeights, load as load_weights
+from .weights import ShortWeights
+from .weights import load as load_weights
 
 
 def _evaluate_components(df: pd.DataFrame, weights: ShortWeights) -> dict:
@@ -69,17 +74,42 @@ def _evaluate_components(df: pd.DataFrame, weights: ShortWeights) -> dict:
     }
 
 
-def score(df: pd.DataFrame, weights: ShortWeights | None = None) -> dict:
+def score(
+    df: pd.DataFrame,
+    weights: ShortWeights | None = None,
+    *,
+    context: ShortTermMarketContext | None = None,
+    context_policy: ShortContextPolicy = ShortContextPolicy.OFF,
+) -> dict:
     if weights is None:
         weights = load_weights().short
 
     result = _evaluate_components(df, weights)
+    base_score = min(result["raw_score"], 100)
+
+    if context_policy == ShortContextPolicy.OFF:
+        eligible = True
+        status = "off"
+        context_reasons: list[str] = []
+    elif context is None:
+        eligible = False
+        status = "unavailable"
+        context_reasons = ["context required for enabled policy"]
+    else:
+        eligible, status, context_reasons = is_context_eligible(context, context_policy)
+
     return {
-        "score": min(result["raw_score"], 100),
+        "score": base_score,
         "reasons": result["reasons"],
         "last_close": result["last_close"],
         "volume_ratio": result["volume_ratio"],
         "rsi": result["rsi"],
         "components": result["components"],
         "component_points": result["component_points"],
+        "base_score": base_score,
+        "context_policy": context_policy.value,
+        "context_eligible": eligible,
+        "context_status": status,
+        "context_reasons": context_reasons,
+        "market_context": context.to_dict() if context is not None else None,
     }

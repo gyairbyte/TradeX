@@ -302,7 +302,25 @@ uv run python -m tradex.research.score_validation evaluate --help
 
 ---
 
-## 9. Known caveats and gotchas
+## 9. Short-term market context research (optional)
+
+`tradex/research/short_context` evaluates whether adding market-regime and relative-strength filters improves the short-term scorer. It reuses the VAL-002 snapshot/evaluation design and adds point-in-time context computation in `tradex/market/context.py`.
+
+```bash
+# Inspect commands
+uv run python -m tradex.research.short_context --help
+uv run python -m tradex.research.short_context snapshot --help
+uv run python -m tradex.research.short_context evaluate --help
+
+# Verify the package
+uv run pytest tests/market tests/research/short_context -q
+```
+
+The candidate policies are `off` (baseline), `market_rs`, and `market_sector_rs`. A candidate is only promoted to production if both the event-study and paired-backtest holdout gates pass; otherwise the existing short-term score, weights, and thresholds remain unchanged.
+
+---
+
+## 10. Known caveats and gotchas
 
 1. **macOS Gatekeeper blocks the first launch** of `TradeX.app`. Right-click → Open the first time. Subsequent double-clicks work normally.
 2. **The launcher needs `~/.tradex/config`** (or `$TRADEX_HOME`) when run from outside the repo (e.g. from `/Applications`). If you see "Could not locate the TradeX project directory," go back to step 3.
@@ -317,7 +335,7 @@ uv run python -m tradex.research.score_validation evaluate --help
 
 ---
 
-## 10. Navigation cheat-sheet for the user
+## 11. Navigation cheat-sheet for the user
 
 Once the dashboard is running at `http://localhost:8501`:
 
@@ -336,7 +354,7 @@ Once the dashboard is running at `http://localhost:8501`:
 
 ---
 
-## 11. After-setup sanity checks (agent should run these)
+## 12. After-setup sanity checks (agent should run these)
 
 Before reporting success to the user, the agent should verify:
 - [ ] `.venv/` exists and contains `streamlit`
