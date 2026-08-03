@@ -402,9 +402,12 @@ def evaluate_evidence_gates(
     period_metrics: dict[tuple[str, str], PeriodMetrics],
     per_ticker: list[TickerMetrics],
     spec: StudySpec,
+    *,
+    manifest_ok: bool = True,
+    integrity_reasons: list[str] | None = None,
 ) -> PromotionDecision:
     """Evaluate the locked evidence gates independently for run-up and decline."""
-    gate_results: dict[str, Any] = {"no_leakage_or_integrity_failures": True}
+    gate_results: dict[str, Any] = {"no_leakage_or_integrity_failures": manifest_ok}
     event_classifications: dict[str, str] = {}
     all_reasons: list[str] = []
 
@@ -581,6 +584,12 @@ def evaluate_evidence_gates(
         overall = "inconclusive"
     else:
         overall = "supported"
+
+    if not manifest_ok:
+        overall = "inconclusive"
+        gate_results["overall_classification"] = overall
+        if integrity_reasons:
+            all_reasons.extend(integrity_reasons)
 
     gate_results["event_classifications"] = event_classifications
     gate_results["overall_classification"] = overall

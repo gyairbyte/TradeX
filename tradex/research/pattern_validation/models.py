@@ -503,6 +503,12 @@ class DatasetManifest:
     def to_json(self, indent: int | None = None) -> str:
         return json.dumps(_clean(self.to_dict()), indent=indent, sort_keys=True, allow_nan=False)
 
+    def verify_integrity(self) -> bool:
+        """Recompute the canonical SHA-256 and compare to the stored value."""
+        d = self.to_dict()
+        d["manifest_sha256"] = ""
+        return _canonical_json_sha256(d) == self.manifest_sha256
+
 
 @dataclass(frozen=True)
 class Fingerprint:

@@ -307,7 +307,11 @@ def run_study(
 
     # 5. Metrics and evidence gates.
     period_metrics, per_ticker = compute_all_metrics(observations, controls, trades, spec)
-    promotion = evaluate_evidence_gates(period_metrics, per_ticker, spec)
+    manifest_ok = manifest.verify_integrity()
+    integrity_reasons = [] if manifest_ok else ["manifest integrity check failed"]
+    promotion = evaluate_evidence_gates(
+        period_metrics, per_ticker, spec, manifest_ok=manifest_ok, integrity_reasons=integrity_reasons
+    )
 
     # 6. Data quality.
     data_quality_df = _build_data_quality(manifest, bars, observations, spec)
