@@ -245,6 +245,16 @@ For explicitly requested manual UI testing:
 uv run streamlit run tradex/ui/dashboard.py
 ```
 
+If Streamlit prompts for an email address on first run, stop the server and create `~/.streamlit/config.toml` with telemetry disabled so the dashboard starts non-interactively:
+
+```toml
+[server]
+headless = true
+
+[browser]
+gatherUsageStats = false
+```
+
 Do not launch a real Streamlit server during unit tests.
 
 ## Deterministic time handling
