@@ -19,6 +19,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
+from tradex.alerts.models import AlertCooldownConfig, AlertKey
 from tradex.alerts.notifier import (
     COIL_ALERT_THRESHOLD,
     CONFLUENCE_ALERT_THRESHOLD,
@@ -28,6 +29,7 @@ from tradex.alerts.notifier import (
     PATTERN_ALERT_THRESHOLD,
     send_alert,
 )
+from tradex.alerts.policy import AlertPolicy
 from tradex.data.fetcher import (
     FetchPolicy,
     ProviderCapabilityError,
@@ -41,10 +43,10 @@ from tradex.patterns.matcher import match_ticker, run_match_screen
 from tradex.premarket.config import GapScanConfig
 from tradex.premarket.gap_scanner import scan_gaps_with_report
 from tradex.premarket.models import (
-    VALID_TICKER_RE,
     _FAILURE_STATUSES,
     _FILTER_STATUSES,
     _OUTSIDE_WINDOW_STATUSES,
+    VALID_TICKER_RE,
     GapScanReport,
 )
 from tradex.screener.engine import run_with_report
@@ -103,6 +105,30 @@ def _all_provider_failures(counts: dict[str, int]) -> bool:
 
 def _all_missing_data(counts: dict[str, int]) -> bool:
     return _all_tickers_are(counts, {"no_previous_close", "no_premarket_data"})
+
+def _alert_policy_from_env() -> AlertPolicy:
+    """Build the default alert policy from environment variables.
+
+    Isolated so tests can swap it without launching Streamlit.
+    """
+    return AlertPolicy(AlertCooldownConfig.from_env())
+
+
+def _effective_cooldowns(config: AlertCooldownConfig) -> dict[str, int | str]:
+    """Return the effective cooldown minutes for each alert category."""
+    if not config.enabled:
+        return {"status": "disabled"}
+    return {
+        "coil": config.cooldown_minutes_for(AlertKey("X", "coil", "x")),
+        "confluence": config.cooldown_minutes_for(
+            AlertKey("X", "confluence", "multi")
+        ),
+        "pattern": config.cooldown_minutes_for(
+            AlertKey("X", "pattern:runup:standard", "pattern")
+        ),
+        "gap": config.cooldown_minutes_for(AlertKey("X", "gap:up", "premarket")),
+    }
+
 
 st.set_page_config(page_title="TradeX", layout="wide")
 st.title("TradeX — Market Opportunity Scanner")
@@ -1427,8 +1453,54 @@ with tab_alerts:
     st.code("ALERT_COIL_THRESHOLD=60\nALERT_PATTERN_THRESHOLD=75\nALERT_CONFLUENCE_THRESHOLD=70")
 
     st.divider()
+    st.markdown("### Cooldown Status")
+    st.caption(
+        "Cooldown affects alert delivery only. It does not change signals, scores, "
+        "thresholds, rankings, or opportunity eligibility."
+    )
+    try:
+        alert_policy = _alert_policy_from_env()
+        cfg = alert_policy.config
+        c1, c2 = st.columns(2)
+        c1.metric("Cooldown enabled", str(cfg.enabled))
+        c2.metric("Default duration", f"{cfg.default_minutes} min")
+
+        st.markdown("**Effective per-type cooldowns**")
+        st.json(_effective_cooldowns(cfg))
+
+        st.markdown("### Persistent Alert State")
+        st.caption(
+            "Recent automatic alert history. The state file is created on the first "
+            "eligible automatic alert or the first explicit query."
+        )
+        if alert_policy.store.resolved_path.exists():
+            try:
+                state_df = alert_policy.list_alert_states(limit=50)
+                if state_df.empty:
+                    st.info("No alert state records yet.")
+                else:
+                    display_cols = [
+                        "ticker",
+                        "alert_type",
+                        "timeframe",
+                        "last_decision",
+                        "last_success_at",
+                        "cooldown_until",
+                        "sent_count",
+                        "suppressed_count",
+                        "failed_count",
+                    ]
+                    st.dataframe(state_df[display_cols], use_container_width=True)
+            except Exception as e:  # noqa: BLE001
+                st.error(f"Alert state is unavailable or corrupt: {e}")
+        else:
+            st.info("Persistent alert state has not been initialized yet.")
+    except Exception as e:  # noqa: BLE001
+        st.error(f"Invalid alert cooldown configuration: {e}")
+
+    st.divider()
     st.markdown("### Send Test Alert")
-    st.caption("Verify your channels are working before relying on them.")
+    st.caption("Verify your channels are working before relying on them. Test alerts bypass cooldown.")
     if st.button("Send Test Alert", key="btn_test_alert"):
         results = send_alert(
             subject="TradeX Test Alert",
@@ -1455,6 +1527,16 @@ with tab_alerts:
 Run the watcher to activate automatic alerts:
 ```bash
 .venv/bin/python -m tradex.tracker.watcher --timeframe intraday --interval 5
+```
+
+Add a cooldown override:
+```bash
+.venv/bin/python -m tradex.tracker.watcher --timeframe intraday --interval 5 --alert-cooldown-minutes 120
+```
+
+Disable cooldown entirely:
+```bash
+.venv/bin/python -m tradex.tracker.watcher --timeframe intraday --interval 5 --disable-alert-cooldown
 ```
 """)
 

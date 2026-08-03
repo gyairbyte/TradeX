@@ -45,7 +45,11 @@ tradex/
 │   │   ├── cli.py                 # `python -m tradex.premarket scan ...`
 │   │   └── __main__.py            # CLI entry point
 │   ├── options/flow.py            # Unusual options activity, put/call sentiment
-│   ├── alerts/notifier.py         # Discord bot + email alerting
+│   ├── alerts/
+│   │   ├── models.py              # AlertKey, AlertCooldownConfig, AlertDispatchResult
+│   │   ├── notifier.py            # Discord bot + email alerting helpers
+│   │   ├── policy.py              # Persistent cooldown, atomic claim, deduplication
+│   │   └── store.py               # Isolated SQLite alert cooldown state
 │   ├── earnings/calendar.py       # Next-earnings lookup + 24h SQLite cache
 │   ├── watchlists/store.py        # Named watchlist persistence
 │   └── ui/dashboard.py            # Streamlit dashboard (10 tabs)
@@ -92,7 +96,7 @@ These conditions together suggest a stock that has been "coiling" and is ready f
 | **Pattern Match** | Compare current 10-day windows against historical run-up/decline fingerprints |
 | **Pre-Market** | Gap-up/down detection vs. previous close using pre-market quotes |
 | **Options Flow** | Unusual options volume vs. open interest, put/call sentiment |
-| **Alerts** | Configure Discord/email push for coil, confluence, and pattern thresholds |
+| **Alerts** | Configure Discord/email push and view persistent cooldown state for coil, confluence, pattern, and gap alerts |
 | **Signal Journal** | Historical outcomes: did the move happen? Win rate by score bucket |
 | **Weights** | Tune per-signal point values for each timeframe; persisted across restarts |
 | **Help** | In-app documentation for every feature |
@@ -352,7 +356,14 @@ python -m tradex.tracker.watcher --timeframe intraday --interval 5 --market-hour
 # With retries and an explicit whole-scan fallback chain
 python -m tradex.tracker.watcher --timeframe intraday --interval 5 \
   --max-retries 2 --fallback-order "schwab,yahoo" --market-hours-only
+
+# Override alert cooldown duration, disable it, or use a custom state database
+python -m tradex.tracker.watcher --timeframe intraday --interval 5 --alert-cooldown-minutes 120
+python -m tradex.tracker.watcher --timeframe intraday --interval 5 --disable-alert-cooldown
+python -m tradex.tracker.watcher --timeframe intraday --interval 5 --alert-state-path /path/to/alerts.db
 ```
+
+The watcher uses a persistent SQLite alert state database (default `~/.tradex/alerts.db`). Each alert is identified by `(ticker, alert_type, timeframe)` and suppressed during the configured cooldown. The first eligible alert is sent; repeats are blocked. Manual test alerts from the dashboard bypass cooldown. State is only mutated when at least one channel successfully receives the alert.
 
 **Market-hours behavior**
 - TradeX models the NYSE regular session in the `America/New_York` timezone using the `exchange-calendars` XNYS calendar.
@@ -421,7 +432,8 @@ Save and switch between named ticker lists (e.g. "Semis", "Crypto-adjacent", "Ea
 - [x] Automated outcome tracking (1d/3d/5d price fetch, win rate, expectancy by score bucket)
 - [x] Signal journal with quality breakdown by score range and timeframe
 - [x] Historical pattern fingerprinting (mine run-ups/declines, average pre-event windows, match live stocks)
-- [x] Alert system (Discord bot + email when coil / confluence / pattern thresholds crossed)
+- [x] Alert system (Discord bot + email when coil / confluence / pattern / gap thresholds crossed)
+- [x] Persistent alert cooldown, deduplication, and audit state
 - [x] Pre-market gap scanner
 - [x] Quality-aware pre-market gap scanner with structured reports, liquidity metrics, spread/catalyst filters, and point-in-time replay (GAP-001)
 - [x] Options flow integration (unusual vol/OI, put/call sentiment)
@@ -444,7 +456,7 @@ Save and switch between named ticker lists (e.g. "Semis", "Crypto-adjacent", "Ea
 ### Nice-to-have enhancements
 - [ ] Sector/industry grouping — show signals rolled up by sector to spot rotations
 - [ ] Correlation-aware confluence — penalize confluence across highly correlated tickers
-- [ ] Live alerts triggered by the watcher (currently alerts must be checked from the dashboard)
+- [x] Live alerts triggered by the watcher with persistent cooldown and deduplication
 - [ ] Mobile-friendly dashboard view
 - [ ] Export scan results to CSV / Notion
 - [ ] Walk-forward optimization for signal weights (once backtesting exists)

@@ -16,12 +16,17 @@ Usage:
     from tradex.tracker.watcher import run_once, start_loop
 """
 import argparse
+import dataclasses
 import time
 from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
 
 import schedule
 
+from tradex.alerts.models import AlertCooldownConfig, AlertDecision, AlertDispatchResult
 from tradex.alerts.notifier import alert_coil, alert_confluence, alert_gap, alert_pattern_match
+from tradex.alerts.policy import AlertPolicy
 from tradex.data.fetcher import FetchPolicy, resolve_provider
 from tradex.market import MARKET_TIMEZONE, is_regular_market_open, market_status
 from tradex.patterns.matcher import run_match_screen
@@ -39,27 +44,56 @@ DEFAULT_WATCHLIST = [
 ]
 
 
-def _check_alerts(tickers: list[str], timeframe: str, provider: str | None = None) -> None:
+def _default_alert_policy() -> AlertPolicy:
+    """Build the default enabled alert policy from the environment.
+
+    The underlying store is not created until the first alert is evaluated,
+    so this helper is safe to call even when no alerts fire.
+    """
+    return AlertPolicy(AlertCooldownConfig.from_env())
+
+
+def _check_alerts(
+    tickers: list[str],
+    timeframe: str,
+    provider: str | None = None,
+    *,
+    alert_policy: AlertPolicy | None = None,
+    observed_at: datetime | None = None,
+) -> list[AlertDispatchResult]:
     """Check coils, confluence, and pattern matches — fire alerts where thresholds are crossed."""
+    if alert_policy is None:
+        alert_policy = _default_alert_policy()
+
+    results: list[AlertDispatchResult] = []
+
     # Coil alerts
     coils = analyzer.detect_coils(timeframe, days=7)
     for _, row in coils.iterrows():
-        alert_coil(
-            ticker=row["ticker"],
-            coil_strength=row["coil_strength"],
-            score=row["latest_score"],
-            trend=row["trend_direction"],
-            timeframe=timeframe,
+        results.append(
+            alert_coil(
+                ticker=row["ticker"],
+                coil_strength=row["coil_strength"],
+                score=row["latest_score"],
+                trend=row["trend_direction"],
+                timeframe=timeframe,
+                policy=alert_policy,
+                observed_at=observed_at,
+            )
         )
 
     # Confluence alerts
     conf = run_confluence_screen(tickers, provider=provider)
     for _, row in conf.iterrows():
-        alert_confluence(
-            ticker=row["ticker"],
-            confluence_score=int(row["confluence_score"]),
-            active_timeframes=row["active_timeframes"].split(", ") if row["active_timeframes"] else [],
-            last_close=float(row.get("last_close") or 0),
+        results.append(
+            alert_confluence(
+                ticker=row["ticker"],
+                confluence_score=int(row["confluence_score"]),
+                active_timeframes=row["active_timeframes"].split(", ") if row["active_timeframes"] else [],
+                last_close=float(row.get("last_close") or 0),
+                policy=alert_policy,
+                observed_at=observed_at,
+            )
         )
 
     # Pattern match alerts (only if fingerprints exist)
@@ -69,14 +103,65 @@ def _check_alerts(tickers: list[str], timeframe: str, provider: str | None = Non
                 tickers, event_type=event_type, profile=profile, provider=provider
             )
             for _, row in matches.iterrows():
-                alert_pattern_match(
-                    ticker=row["ticker"],
-                    similarity=float(row["similarity_score"]),
-                    event_type=event_type,
-                    profile=profile,
-                    fp_events=int(row.get("fp_events", 0)),
-                    interpretation=row.get("interpretation", ""),
+                results.append(
+                    alert_pattern_match(
+                        ticker=row["ticker"],
+                        similarity=float(row["similarity_score"]),
+                        event_type=event_type,
+                        profile=profile,
+                        fp_events=int(row.get("fp_events", 0)),
+                        interpretation=row.get("interpretation", ""),
+                        policy=alert_policy,
+                        observed_at=observed_at,
+                    )
                 )
+
+    return results
+
+
+def _print_alert_summary(results: list[AlertDispatchResult]) -> None:
+    """Print a concise count of alert outcomes plus per-suppression details."""
+    evaluated = len(results)
+    sent = sum(
+        1
+        for r in results
+        if r.decision in (AlertDecision.SENT, AlertDecision.COOLDOWN_DISABLED)
+    )
+    suppressed = sum(
+        1
+        for r in results
+        if r.decision
+        in (AlertDecision.SUPPRESSED_COOLDOWN, AlertDecision.SUPPRESSED_IN_FLIGHT)
+    )
+    failed = sum(
+        1
+        for r in results
+        if r.decision
+        in (AlertDecision.DELIVERY_FAILED, AlertDecision.NO_CHANNELS_CONFIGURED)
+    )
+    policy_errors = sum(1 for r in results if r.decision == AlertDecision.POLICY_ERROR)
+    print(
+        f"[alerts] evaluated={evaluated} sent={sent} suppressed={suppressed} "
+        f"failed={failed} policy_errors={policy_errors}"
+    )
+
+    for r in results:
+        if r.decision == AlertDecision.SUPPRESSED_COOLDOWN:
+            next_eligible = (
+                r.next_eligible_at.isoformat() if r.next_eligible_at else "unknown"
+            )
+            print(
+                f"[alerts] suppressed (cooldown): {r.key.ticker} | {r.key.alert_type} | "
+                f"{r.key.timeframe}; next eligible at {next_eligible}"
+            )
+        elif r.decision == AlertDecision.SUPPRESSED_IN_FLIGHT:
+            claim_expires = (
+                r.next_eligible_at.isoformat() if r.next_eligible_at else "unknown"
+            )
+            print(
+                f"[alerts] suppressed (in-flight): {r.key.ticker} | {r.key.alert_type} | "
+                f"{r.key.timeframe}; claim expires at {claim_expires}"
+            )
 
 
 def run_once(
@@ -88,6 +173,7 @@ def run_once(
     fallback_order: str | tuple[str, ...] | list[str] | None = None,
     policy: FetchPolicy | None = None,
     market_hours_only: bool = False,
+    alert_policy: AlertPolicy | None = None,
     now: datetime | None = None,
 ) -> None:
     """Run a single scan pass, persist results, and fire any threshold alerts.
@@ -107,6 +193,9 @@ def run_once(
             next_open_str = status.next_open.astimezone(MARKET_TIMEZONE).strftime("%Y-%m-%d %H:%M %Z")
             print(f"[{timestamp}] Next regular session opens at {next_open_str}.")
         return
+
+    if alert_policy is None:
+        alert_policy = _default_alert_policy()
 
     store.init()
     requested_provider = resolve_provider(provider)
@@ -186,7 +275,11 @@ def run_once(
             print(f"  - {prov}: {attempted} attempted, {succeeded} succeeded, {failed} failed, {retries} retries")
 
     if report.total_fetched > 0:
-        _check_alerts(tickers, timeframe, provider=actual_provider)
+        alert_results = _check_alerts(
+            tickers, timeframe, provider=actual_provider,
+            alert_policy=alert_policy, observed_at=now,
+        )
+        _print_alert_summary(alert_results)
 
 
 def _run_scheduled_outcomes(
@@ -206,6 +299,8 @@ def _run_scheduled_outcomes(
 def _run_scheduled_premarket(
     tickers: list[str],
     provider: str | None = None,
+    *,
+    alert_policy: AlertPolicy | None = None,
     now: datetime | None = None,
 ) -> None:
     """Trading-day guard for the daily pre-market gap scan using the structured report."""
@@ -215,6 +310,9 @@ def _run_scheduled_premarket(
         ny_now = now.astimezone(MARKET_TIMEZONE)
         print(f"[{ny_now.strftime('%Y-%m-%d %H:%M %Z')}] Skipping pre-market gap scan — {status.reason}.")
         return
+
+    if alert_policy is None:
+        alert_policy = _default_alert_policy()
 
     config = GapScanConfig(min_abs_gap_pct=4.0)
     try:
@@ -243,15 +341,21 @@ def _run_scheduled_premarket(
     elif counts["qualified"] == 0:
         print("[pre-market gap] No qualifying gaps at 4% threshold.")
 
+    gap_results: list[AlertDispatchResult] = []
     for _, row in report.results.iterrows():
         if row["tier"] in ("large", "massive"):
-            alert_gap(
-                ticker=row["ticker"],
-                gap_pct=row["gap_pct"],
-                direction=row["direction"],
-                prev_close=row["prev_close"],
-                pre_market=row["pre_market"],
+            gap_results.append(
+                alert_gap(
+                    ticker=row["ticker"],
+                    gap_pct=row["gap_pct"],
+                    direction=row["direction"],
+                    prev_close=row["prev_close"],
+                    pre_market=row["pre_market"],
+                    policy=alert_policy,
+                    observed_at=now,
+                )
             )
+    _print_alert_summary(gap_results)
 
 
 def start_loop(
@@ -264,11 +368,15 @@ def start_loop(
     fallback_order: str | tuple[str, ...] | list[str] | None = None,
     policy: FetchPolicy | None = None,
     market_hours_only: bool = False,
+    alert_policy: AlertPolicy | None = None,
 ) -> None:
     """
     Block and run scans every interval_minutes.
     Designed to run during market hours (9:30am–4pm ET).
     """
+    if alert_policy is None:
+        alert_policy = AlertPolicy(AlertCooldownConfig.from_env())
+
     requested_provider = resolve_provider(provider)
     fetch_policy = policy or FetchPolicy.build(max_retries=max_retries, fallback_order=fallback_order)
     print(f"Starting watcher: {timeframe} every {interval_minutes}m "
@@ -279,6 +387,7 @@ def start_loop(
         tickers, timeframe, min_score, provider,
         max_retries=max_retries, fallback_order=fallback_order, policy=policy,
         market_hours_only=market_hours_only,
+        alert_policy=alert_policy,
     )
 
     def _scheduled_run() -> None:
@@ -286,6 +395,7 @@ def start_loop(
             tickers, timeframe, min_score, requested_provider,
             max_retries=max_retries, fallback_order=fallback_order, policy=policy,
             market_hours_only=market_hours_only,
+            alert_policy=alert_policy,
             now=datetime.now(UTC),
         )
 
@@ -296,7 +406,7 @@ def start_loop(
     )
     # Daily pre-market: gap scan at 8:00 AM New York time.
     schedule.every().day.at("08:00", "America/New_York").do(
-        _run_scheduled_premarket, tickers=tickers, provider=provider
+        _run_scheduled_premarket, tickers=tickers, provider=requested_provider, alert_policy=alert_policy
     )
 
     try:
@@ -335,17 +445,51 @@ if __name__ == "__main__":
         action="store_true",
         help="Only run interval scans while the NYSE regular session is open.",
     )
+    parser.add_argument(
+        "--alert-cooldown-minutes",
+        type=int,
+        default=None,
+        help="Default alert cooldown in minutes (overrides ALERT_COOLDOWN_MINUTES env var).",
+    )
+    parser.add_argument(
+        "--disable-alert-cooldown",
+        action="store_true",
+        help="Send every eligible alert without cooldown.",
+    )
+    parser.add_argument(
+        "--alert-state-path",
+        default=None,
+        help="Path to the isolated alert cooldown SQLite database (overrides ALERT_STATE_PATH).",
+    )
     args = parser.parse_args()
+
+    try:
+        alert_config = AlertCooldownConfig.from_env()
+        overrides: dict[str, Any] = {}
+        if args.alert_cooldown_minutes is not None:
+            overrides["default_minutes"] = args.alert_cooldown_minutes
+        if args.disable_alert_cooldown:
+            overrides["enabled"] = False
+        if args.alert_state_path is not None:
+            overrides["state_path"] = Path(args.alert_state_path)
+        if overrides:
+            alert_config = dataclasses.replace(alert_config, **overrides)
+    except (TypeError, ValueError) as exc:
+        parser.error(str(exc))
+
+    alert_policy = AlertPolicy(alert_config)
 
     if args.interval > 0:
         start_loop(
             DEFAULT_WATCHLIST, args.timeframe, args.interval, args.min_score,
             args.provider, max_retries=args.max_retries, fallback_order=args.fallback_order,
             market_hours_only=args.market_hours_only,
+            alert_policy=alert_policy,
         )
     else:
         run_once(
             DEFAULT_WATCHLIST, args.timeframe, args.min_score, args.provider,
             max_retries=args.max_retries, fallback_order=args.fallback_order,
             market_hours_only=args.market_hours_only,
+            alert_policy=alert_policy,
         )
