@@ -346,3 +346,62 @@ def test_validate_ohlcv_rejects_mixed_valid_invalid_rows():
             as_of=datetime(2024, 1, 3, 14, 0, tzinfo=UTC),
             requested_provider="yahoo", actual_provider="yahoo",
         )
+
+
+def test_today_uses_new_york_market_date():
+    """_today returns the America/New_York calendar date, not the UTC date."""
+    # 04:30 UTC in January = 23:30 ET the *previous* calendar day.
+    winter = datetime(2024, 1, 3, 4, 30, tzinfo=UTC)
+    assert sources._today(winter) == date(2024, 1, 2)
+    # 09:30 UTC in July = 05:30 EDT the *same* calendar day.
+    summer = datetime(2024, 7, 3, 9, 30, tzinfo=UTC)
+    assert sources._today(summer) == date(2024, 7, 3)
+
+
+def test_fetch_yahoo_premarket_bars_uses_new_york_session_date():
+    """A session date that is the current NY date is not rejected when UTC date differs."""
+    from unittest.mock import MagicMock
+
+    from tradex.premarket import sources as sources_mod
+
+    # 04:30 UTC on 2024-01-03 is 23:30 ET on 2024-01-02.
+    # The NY session date is 2024-01-02, but the UTC date is 2024-01-03.
+    as_of = datetime(2024, 1, 3, 4, 30, tzinfo=UTC)
+    times = pd.DatetimeIndex(["2024-01-02 14:00", "2024-01-02 14:15"], tz="UTC")
+    fake_df = pd.DataFrame(
+        {
+            "open": [100.0, 101.0],
+            "high": [101.0, 102.0],
+            "low": [99.0, 100.0],
+            "close": [101.0, 102.0],
+            "volume": [100, 200],
+        },
+        index=times,
+    )
+    fake_ticker = MagicMock()
+    fake_ticker.history.return_value = fake_df
+    with patch.object(sources_mod.yf, "Ticker", return_value=fake_ticker), patch.object(sources_mod, "_today", return_value=date(2024, 1, 2)):
+        result = sources_mod._fetch_yahoo_premarket_bars(
+            "AAPL", as_of, date(2024, 1, 2), "yahoo", allow_after_open=True
+        )
+    assert result.error is None
+    assert not result.bars.empty
+    assert fake_ticker.history.called
+
+
+def test_fetch_premarket_bars_uses_new_york_session_date():
+    """A pre-market as_of whose NY session date matches _today() is not rejected."""
+    from unittest.mock import MagicMock
+
+    from tradex.premarket import sources as sources_mod
+
+    # 14:00 UTC on 2024-01-03 is 09:00 ET (within pre-market, same calendar date).
+    as_of = datetime(2024, 1, 3, 14, 0, tzinfo=UTC)
+    fake_df = _valid_bars()
+    fake_ticker = MagicMock()
+    fake_ticker.history.return_value = fake_df
+    with patch.object(sources_mod.yf, "Ticker", return_value=fake_ticker), patch.object(sources_mod, "_today", return_value=date(2024, 1, 3)):
+        result = sources_mod.fetch_premarket_bars("AAPL", provider="yahoo", as_of=as_of)
+    assert result.error is None
+    assert not result.bars.empty
+    assert fake_ticker.history.called

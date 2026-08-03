@@ -553,6 +553,111 @@ def test_scan_gaps_with_report_requires_catalyst():
     assert any("catalyst context required" in r for r in report.observations.iloc[0]["filter_reasons"])
 
 
+def test_scan_gaps_with_report_stage_counts():
+    """Stage-specific failure counts are exposed and do not depend on final status."""
+    config = GapScanConfig(min_abs_gap_pct=2.0)
+    with (
+        patch(
+            "tradex.premarket.gap_scanner.fetch_daily_liquidity_baseline",
+            return_value=_baseline(100.0),
+        ),
+        patch("tradex.premarket.gap_scanner.fetch_premarket_bars", return_value=_bars()),
+        patch(
+            "tradex.premarket.gap_scanner.build_premarket_snapshot", return_value=_snapshot(105.0)
+        ),
+        patch(
+            "tradex.premarket.gap_scanner.fetch_spread_snapshot",
+            return_value=SpreadSnapshot(available=False, error=Exception("no quote")),
+        ),
+        patch(
+            "tradex.premarket.gap_scanner.fetch_catalyst_context",
+            return_value=GapCatalystContext(
+                ticker="AAPL",
+                session_date=date(2024, 1, 3),
+                earnings_status="unavailable",
+                error=Exception("no earnings"),
+            ),
+        ),
+    ):
+        report = scan_gaps_with_report(
+            ["AAPL"], config=config, as_of=datetime(2024, 1, 3, 13, 0, tzinfo=UTC)
+        )
+
+    counts = report.counts()
+    assert counts["qualified"] == 1
+    assert counts["baseline_failures"] == 0
+    assert counts["premarket_failures"] == 0
+    assert counts["spread_failures"] == 1
+    assert counts["catalyst_failures"] == 1
+    assert counts["calculation_failures"] == 0
+    assert "AAPL" not in report.provider_errors
+
+    obs = report.observations.iloc[0]
+    assert pd.isna(obs["baseline_error"])
+    assert pd.isna(obs["premarket_error"])
+    assert obs["spread_error"] is not None and "no quote" in obs["spread_error"]
+    assert obs["catalyst_error"] is not None and "no earnings" in obs["catalyst_error"]
+    assert pd.isna(obs["calculation_error"])
+
+
+def test_scan_gaps_with_report_calculation_failure_not_provider_error():
+    """A snapshot calculation failure is a calculation failure, not a provider error."""
+    config = GapScanConfig()
+    with (
+        patch(
+            "tradex.premarket.gap_scanner.fetch_daily_liquidity_baseline",
+            return_value=_baseline(100.0),
+        ),
+        patch("tradex.premarket.gap_scanner.fetch_premarket_bars", return_value=_bars()),
+        patch(
+            "tradex.premarket.gap_scanner.build_premarket_snapshot",
+            side_effect=RuntimeError("snapshot exploded"),
+        ),
+        patch(
+            "tradex.premarket.gap_scanner.fetch_spread_snapshot",
+            return_value=SpreadSnapshot(available=False),
+        ),
+        patch(
+            "tradex.premarket.gap_scanner.fetch_catalyst_context",
+            return_value=GapCatalystContext(ticker="AAPL", session_date=date(2024, 1, 3)),
+        ),
+    ):
+        report = scan_gaps_with_report(
+            ["AAPL"], config=config, as_of=datetime(2024, 1, 3, 13, 0, tzinfo=UTC)
+        )
+
+    assert report.counts()["calculation_failure"] == 1
+    assert report.counts()["provider_failure"] == 0
+    assert report.counts()["calculation_failures"] == 1
+    assert report.counts()["baseline_failures"] == 0
+    assert report.counts()["premarket_failures"] == 0
+    assert "AAPL" not in report.provider_errors
+    assert "snapshot exploded" in str(report.observations.iloc[0]["calculation_error"])
+
+
+def test_scan_gaps_with_report_baseline_failure_stage_count():
+    """A baseline provider failure increments baseline_failures and provider_errors."""
+    config = GapScanConfig()
+    with (
+        patch(
+            "tradex.premarket.gap_scanner.fetch_daily_liquidity_baseline",
+            side_effect=ProviderCapabilityError("yahoo history failed"),
+        ),
+        patch("tradex.premarket.gap_scanner.fetch_premarket_bars") as mock_bars,
+    ):
+        report = scan_gaps_with_report(
+            ["AAPL"], config=config, as_of=datetime(2024, 1, 3, 13, 0, tzinfo=UTC)
+        )
+
+    assert report.counts()["provider_failure"] == 1
+    assert report.counts()["baseline_failures"] == 1
+    assert report.counts()["premarket_failures"] == 0
+    assert report.counts()["calculation_failures"] == 0
+    assert "AAPL" in report.provider_errors
+    assert "yahoo history failed" in report.provider_errors["AAPL"]
+    mock_bars.assert_not_called()
+
+
 def test_scan_gaps_with_report_rejects_empty_ticker_list():
     with pytest.raises(ValueError):
         scan_gaps_with_report([], config=GapScanConfig())

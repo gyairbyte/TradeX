@@ -226,6 +226,11 @@ class GapObservation:
     note: str | None = None
     filter_reasons: list[str] = field(default_factory=list)
     error: str | None = None
+    baseline_error: str | None = None
+    premarket_error: str | None = None
+    spread_error: str | None = None
+    catalyst_error: str | None = None
+    calculation_error: str | None = None
 
 
 @dataclass
@@ -275,7 +280,7 @@ class GapScanReport:
         }
 
     def counts(self) -> dict[str, int]:
-        """Return requested, aggregated, and categorized outcome counts."""
+        """Return requested, aggregated, and stage-specific outcome counts."""
         obs = self.observations
         statuses = obs["status"].tolist() if not obs.empty else []
         counts: dict[str, int] = {"requested": len(self.requested_tickers)}
@@ -287,6 +292,16 @@ class GapScanReport:
         counts["filtered"] = sum(counts.get(s, 0) for s in _FILTER_STATUSES)
         counts["failed"] = sum(counts.get(s, 0) for s in _FAILURE_STATUSES)
         counts["outside_window"] = sum(counts.get(s, 0) for s in _OUTSIDE_WINDOW_STATUSES)
+
+        # Stage-specific failure counts derived from stable observation fields.
+        for col in ["baseline_error", "premarket_error", "spread_error", "catalyst_error", "calculation_error"]:
+            col_values = obs[col] if not obs.empty else pd.Series(dtype="object")
+            counts[col] = int(col_values.notna().sum())
+        counts["baseline_failures"] = counts["baseline_error"]
+        counts["premarket_failures"] = counts["premarket_error"]
+        counts["spread_failures"] = counts["spread_error"]
+        counts["catalyst_failures"] = counts["catalyst_error"]
+        counts["calculation_failures"] = counts["calculation_error"]
         return counts
 
 
@@ -335,6 +350,11 @@ _COMMON_COLUMNS: dict[str, Any] = {
     "note": "string",
     "filter_reasons": object,
     "error": "string",
+    "baseline_error": "string",
+    "premarket_error": "string",
+    "spread_error": "string",
+    "catalyst_error": "string",
+    "calculation_error": "string",
     "requested_provider": "string",
     "actual_provider": "string",
     "status": "string",

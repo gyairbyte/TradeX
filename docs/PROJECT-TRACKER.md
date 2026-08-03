@@ -612,7 +612,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Testing requirements:** Unit tests with mocked pre-market data covering configuration validation, source filtering, liquidity baselines, spread semantics, catalyst context, `scan_gaps_with_report` orchestration, CLI help, and no network on weekends/holidays.
 - **Acceptance criteria:** `scan_gaps_with_report` returns a typed `GapScanReport` with counts, observations, and results; all new filters are opt-in; default behavior and alert thresholds unchanged; spread never inferred from candle range; no live API calls in tests.
 - **Intended pull request:** `devin/improve-gap-scanner`
-- **Affects trading behavior:** No (filters are opt-in; default gap scanner behavior and thresholds preserved)
+- **Affects trading behavior:** Yes — opt-in eligibility/filter change explicitly approved by Gary (filters are opt-in; default gap scanner behavior, gap tiers, and alert thresholds are preserved)
 
 ### DEC-001: Adopt Architectural Decision Records
 

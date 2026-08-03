@@ -196,3 +196,36 @@ def test_fetch_catalyst_context_historical_headline_is_unavailable():
         )
     assert ctx.headline_status == "unavailable"
     assert ctx.earnings_status == "unavailable"
+
+
+def test_utc_today_uses_new_york_market_date():
+    """_utc_today returns the America/New_York calendar date, not the UTC date."""
+    # 04:30 UTC in January = 23:30 ET the *previous* calendar day.
+    winter = datetime(2024, 1, 3, 4, 30, tzinfo=UTC)
+    assert catalysts._utc_today(winter) == date(2024, 1, 2)
+    # 09:30 UTC in July = 05:30 EDT the *same* calendar day.
+    summer = datetime(2024, 7, 3, 9, 30, tzinfo=UTC)
+    assert catalysts._utc_today(summer) == date(2024, 7, 3)
+
+
+def test_fetch_catalyst_context_uses_new_york_session_date_for_history():
+    """A historical as_of whose NY date is before today is classified as replay."""
+    # 04:30 UTC on 2024-01-02 is NY 2024-01-01 23:30. If current NY date is 2024-01-02,
+    # the as_of is historical, and Yahoo headlines must be unavailable.
+    as_of = datetime(2024, 1, 2, 4, 30, tzinfo=UTC)
+    with (
+        patch.object(catalysts, "get_next_earnings") as mock_earn,
+        patch.object(catalysts, "_utc_today", return_value=date(2024, 1, 2)),
+    ):
+        mock_earn.return_value = None
+        ctx = catalysts.fetch_catalyst_context(
+            "AAPL",
+            date(2024, 1, 2),
+            as_of,
+            include_catalysts=True,
+            require_catalyst=False,
+            lookback_hours=24.0,
+            earnings_source=None,
+            headline_source="yahoo",
+        )
+    assert ctx.headline_status == "unavailable"

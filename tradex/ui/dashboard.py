@@ -98,7 +98,7 @@ def _all_tickers_are(counts: dict[str, int], statuses: set[str]) -> bool:
 
 
 def _all_provider_failures(counts: dict[str, int]) -> bool:
-    return _all_tickers_are(counts, {"provider_failure", "calculation_failure"})
+    return _all_tickers_are(counts, {"provider_failure"})
 
 
 def _all_missing_data(counts: dict[str, int]) -> bool:

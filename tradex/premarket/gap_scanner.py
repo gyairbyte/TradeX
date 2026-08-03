@@ -282,6 +282,7 @@ def _snapshot_error_observation(
             "requested_provider": requested_provider,
             "actual_provider": actual_provider,
             "error": error,
+            "premarket_error": error,
         }
     )
 
@@ -319,6 +320,8 @@ def _build_observation(
     reasons: list[str],
     error: str | None,
     volume_ratio: float | None = None,
+    premarket_error: str | None = None,
+    calculation_error: str | None = None,
 ) -> pd.Series:
     snap = snapshot or PremarketSnapshot(
         ticker=ticker,
@@ -344,6 +347,17 @@ def _build_observation(
     )
     move_pct = _premarket_move_pct(snap.premarket_open, snap.premarket_last)
     range_pct = _premarket_range_pct(prev_close, snap.premarket_high, snap.premarket_low)
+    baseline_error = str(baseline.error) if baseline and baseline.error is not None else None
+    spread_error = None
+    if spread and spread.error is not None:
+        spread_error = str(spread.error)
+    elif spread and not spread.available:
+        spread_error = "spread data unavailable"
+    catalyst_error = None
+    if catalyst and catalyst.error is not None:
+        catalyst_error = str(catalyst.error)
+    elif catalyst and catalyst.status == "unavailable":
+        catalyst_error = "catalyst context unavailable"
     return pd.Series(
         {
             "ticker": ticker,
@@ -398,6 +412,11 @@ def _build_observation(
             "note": note,
             "filter_reasons": reasons,
             "error": error,
+            "baseline_error": baseline_error,
+            "premarket_error": premarket_error,
+            "spread_error": spread_error,
+            "catalyst_error": catalyst_error,
+            "calculation_error": calculation_error,
             "requested_provider": requested_provider,
             "actual_provider": actual_provider,
             "status": status,
@@ -619,6 +638,7 @@ def scan_gaps_with_report(
                 note=None,
                 reasons=fail_reasons,
                 error=error_msg,
+                premarket_error=error_msg,
             )
             observations.append(obs)
             continue
@@ -634,7 +654,6 @@ def scan_gaps_with_report(
             )
         except Exception as exc:  # noqa: BLE001
             error_msg = f"snapshot calculation failure: {exc}"
-            provider_errors[ticker] = error_msg
             obs = _build_observation(
                 ticker=ticker,
                 session_date=session_date,
@@ -652,6 +671,7 @@ def scan_gaps_with_report(
                 note=None,
                 reasons=[error_msg],
                 error=error_msg,
+                calculation_error=error_msg,
             )
             observations.append(obs)
             continue

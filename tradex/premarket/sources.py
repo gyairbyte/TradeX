@@ -56,9 +56,11 @@ def _as_utc(value: datetime) -> datetime:
     return value.astimezone(UTC)
 
 
-def _today() -> date:
-    """Return the current UTC date. Overrideable for deterministic testing."""
-    return datetime.now(UTC).date()
+def _today(now: datetime | None = None) -> date:
+    """Return the New York market date for ``now`` (default UTC now)."""
+    if now is None:
+        now = datetime.now(UTC)
+    return now.astimezone(MARKET_TIMEZONE).date()
 
 
 def _ny(value: datetime) -> datetime:

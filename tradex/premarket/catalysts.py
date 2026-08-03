@@ -13,12 +13,20 @@ import pandas as pd
 
 from tradex.data.fetcher import ProviderCapabilityError
 from tradex.earnings.calendar import get_next_earnings
+from tradex.market import MARKET_TIMEZONE
 from tradex.premarket.models import GapCatalystContext
 
 
-def _utc_today() -> date:
-    """Return the current UTC date; patchable for deterministic tests."""
-    return datetime.now(UTC).date()
+def _ny(value: datetime) -> datetime:
+    """Return ``value`` normalized to America/New_York."""
+    return value.astimezone(MARKET_TIMEZONE)
+
+
+def _utc_today(now: datetime | None = None) -> date:
+    """Return the New York market date for ``now`` (default UTC now); patchable for deterministic tests."""
+    if now is None:
+        now = datetime.now(UTC)
+    return now.astimezone(MARKET_TIMEZONE).date()
 
 _EARNINGS_STATUSES = (
     "earnings_today",
@@ -218,7 +226,8 @@ def fetch_catalyst_context(
     headline_url: str | None = None
     actual_headline_source: str | None = None
     error: Exception | None = None
-    historical_replay = as_of.date() < _utc_today()
+    as_of_ny = _ny(as_of)
+    historical_replay = as_of_ny.date() < _utc_today()
 
     # Earnings
     if requested_earnings_source:
@@ -236,7 +245,7 @@ def fetch_catalyst_context(
                     ticker, source=actual_earnings_source, use_cache=False
                 )
                 earnings_status, earnings_date, days_until_earnings = _earnings_status(
-                    next_earnings, session_date or as_of.date(), lookback_hours
+                    next_earnings, session_date or as_of_ny.date(), lookback_hours
                 )
         except ProviderCapabilityError as exc:
             actual_earnings_source = requested_earnings_source
