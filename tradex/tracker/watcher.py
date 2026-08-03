@@ -21,11 +21,12 @@ from datetime import UTC, datetime
 
 import schedule
 
-from tradex.alerts.notifier import alert_coil, alert_confluence, alert_pattern_match
+from tradex.alerts.notifier import alert_coil, alert_confluence, alert_gap, alert_pattern_match
 from tradex.data.fetcher import FetchPolicy, resolve_provider
 from tradex.market import MARKET_TIMEZONE, is_regular_market_open, market_status
 from tradex.patterns.matcher import run_match_screen
-from tradex.premarket.gap_scanner import run_gap_alerts
+from tradex.premarket.config import GapScanConfig
+from tradex.premarket.gap_scanner import run_gap_alerts, scan_gaps_with_report
 from tradex.screener.engine import run_with_report as screener_run_with_report
 from tradex.tracker import analyzer, store
 from tradex.tracker.confluence import run_confluence_screen
@@ -207,14 +208,46 @@ def _run_scheduled_premarket(
     provider: str | None = None,
     now: datetime | None = None,
 ) -> None:
-    """Trading-day guard for the daily pre-market gap scan."""
+    """Trading-day guard for the daily pre-market gap scan using the structured report."""
     now = now or datetime.now(UTC)
     status = market_status(now)
     if not status.is_trading_day:
         ny_now = now.astimezone(MARKET_TIMEZONE)
         print(f"[{ny_now.strftime('%Y-%m-%d %H:%M %Z')}] Skipping pre-market gap scan — {status.reason}.")
         return
-    run_gap_alerts(tickers, min_gap_pct=4.0, provider=provider, as_of=now)
+
+    config = GapScanConfig(min_abs_gap_pct=4.0)
+    try:
+        report = scan_gaps_with_report(tickers, config=config, provider=provider, as_of=now)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[pre-market gap] {exc}")
+        return
+
+    counts = report.counts()
+    print(
+        f"[pre-market gap] requested={counts['requested']}, "
+        f"qualified={counts['qualified']}, filtered={counts['filtered']}, "
+        f"failed={counts['failed']}, outside_window={counts['outside_window']}"
+    )
+
+    if report.provider_errors:
+        categories = sorted({str(e) for e in report.provider_errors.values()})
+        print(f"[pre-market gap] provider errors: {categories}")
+
+    if counts["failed"] == counts["requested"] and counts["requested"] > 0:
+        print("[pre-market gap] All tickers failed — possible provider or data outage.")
+    elif counts["qualified"] == 0:
+        print("[pre-market gap] No qualifying gaps at 4% threshold.")
+
+    for _, row in report.results.iterrows():
+        if row["tier"] in ("large", "massive"):
+            alert_gap(
+                ticker=row["ticker"],
+                gap_pct=row["gap_pct"],
+                direction=row["direction"],
+                prev_close=row["prev_close"],
+                pre_market=row["pre_market"],
+            )
 
 
 def start_loop(

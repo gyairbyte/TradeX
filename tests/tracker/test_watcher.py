@@ -620,21 +620,38 @@ def test_start_loop_daily_jobs_use_new_york_timezone():
 
 def test_scheduled_premarket_skips_non_trading_day(capsys):
     now = datetime(2025, 1, 1, 13, 0, tzinfo=UTC)  # New Year's morning ET
-    with patch.object(watcher, "run_gap_alerts") as mock_gap:
+    with patch.object(watcher, "scan_gaps_with_report") as mock_report:
         watcher._run_scheduled_premarket(["AAPL"], provider="yahoo", now=now)
-    assert mock_gap.call_count == 0
+    assert mock_report.call_count == 0
     captured = capsys.readouterr()
     assert "Skipping pre-market gap scan" in captured.out
 
 
 def test_scheduled_premarket_runs_on_trading_day():
     now = datetime(2025, 1, 15, 13, 0, tzinfo=UTC)  # 08:00 ET
-    with patch.object(watcher, "run_gap_alerts") as mock_gap:
+    mock_report = MagicMock()
+    mock_report.counts.return_value = {"requested": 1, "qualified": 1, "filtered": 0, "failed": 0, "outside_window": 0}
+    mock_report.provider_errors = {}
+    mock_report.results.iterrows.return_value = [
+        (0, pd.Series({
+            "ticker": "AAPL",
+            "gap_pct": 5.0,
+            "direction": "up",
+            "tier": "large",
+            "prev_close": 100.0,
+            "pre_market": 105.0,
+        })),
+    ]
+    with (
+        patch.object(watcher, "scan_gaps_with_report", return_value=mock_report) as mock_scan,
+        patch("tradex.tracker.watcher.alert_gap") as mock_alert,
+    ):
         watcher._run_scheduled_premarket(["AAPL"], provider="yahoo", now=now)
-    assert mock_gap.call_count == 1
-    _, kwargs = mock_gap.call_args
+    assert mock_scan.call_count == 1
+    _, kwargs = mock_scan.call_args
     assert kwargs["provider"] == "yahoo"
     assert kwargs["as_of"] == now
+    assert mock_alert.call_count == 1
 
 
 def test_scheduled_outcomes_skips_non_trading_day(capsys):

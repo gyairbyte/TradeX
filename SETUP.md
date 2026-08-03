@@ -206,7 +206,35 @@ Run during market hours. With `--market-hours-only`, scans are skipped outside t
 
 ---
 
-## 7. Backtesting (optional)
+## 7. Pre-Market Gap Scanner
+
+The `tradex/premarket` scanner finds pre-market gaps and produces a structured `GapScanReport` with counts, per-ticker observations, and optional quality filters.
+
+```bash
+# Basic scan (Yahoo, default 2% minimum absolute gap)
+uv run python -m tradex.premarket scan --tickers AAPL,TSLA,NVDA --min-gap 2.0
+
+# With quality filters (all opt-in)
+uv run python -m tradex.premarket scan \
+  --tickers AAPL,TSLA,NVDA \
+  --min-gap 4.0 \
+  --min-premarket-volume 5000 \
+  --min-premarket-volume-ratio 0.2 \
+  --max-data-age-minutes 15 \
+  --include-catalysts
+
+# Write results to JSON/CSV for downstream use
+uv run python -m tradex.premarket scan \
+  --tickers AAPL,TSLA,NVDA \
+  --json-output gap_report.json \
+  --csv-output gap_results.csv
+```
+
+All filters are off by default except `min-gap`. Spread filtering only uses real bid/ask quotes and is never inferred from the candle range. The scheduled watcher calls the same `scan_gaps_with_report` API and logs requested, qualified, filtered, failed, and outside-window counts.
+
+---
+
+## 8. Backtesting (optional)
 
 TradeX includes a deterministic, point-in-time backtest engine in `tradex/backtest`. It is a research tool, not a live-trading system.
 
@@ -264,7 +292,7 @@ uv run python -m tradex.backtest --help
 
 ---
 
-## 8. Score-validation study (optional)
+## 9. Score-validation study (optional)
 
 TradeX includes a reproducible event-study package in `tradex/research/score_validation` for evaluating whether the short-term scorer is calibrated to forward returns. It is research-only and does not alter the production score.
 
@@ -302,7 +330,7 @@ uv run python -m tradex.research.score_validation evaluate --help
 
 ---
 
-## 9. Short-term market context research (optional)
+## 10. Short-term market context research (optional)
 
 `tradex/research/short_context` evaluates whether adding market-regime and relative-strength filters improves the short-term scorer. It reuses the VAL-002 snapshot/evaluation design and adds point-in-time context computation in `tradex/market/context.py`.
 
@@ -320,7 +348,7 @@ The candidate policies are `off` (baseline), `market_rs`, and `market_sector_rs`
 
 ---
 
-## 10. Known caveats and gotchas
+## 11. Known caveats and gotchas
 
 1. **macOS Gatekeeper blocks the first launch** of `TradeX.app`. Right-click → Open the first time. Subsequent double-clicks work normally.
 2. **The launcher needs `~/.tradex/config`** (or `$TRADEX_HOME`) when run from outside the repo (e.g. from `/Applications`). If you see "Could not locate the TradeX project directory," go back to step 3.
@@ -335,7 +363,7 @@ The candidate policies are `off` (baseline), `market_rs`, and `market_sector_rs`
 
 ---
 
-## 11. Navigation cheat-sheet for the user
+## 12. Navigation cheat-sheet for the user
 
 Once the dashboard is running at `http://localhost:8501`:
 
@@ -345,7 +373,7 @@ Once the dashboard is running at `http://localhost:8501`:
 | **Coil Detector** | Needs scan history across several NYSE trading sessions to detect coiling stocks; appears count distinct sessions, not scan rows. |
 | **Confluence** | Stocks scoring well across all three timeframes simultaneously. Missing timeframes contribute zero and are shown as `0/3`–`3/3` coverage. `all timeframes aligned` requires 3/3 coverage and all active. |
 | **Pattern Match** | Compares current 10-day windows against historical run-up / decline fingerprints. |
-| **Pre-Market** | Gap-up / gap-down detection vs. previous close. Only useful between ~7am and 9:30am ET. |
+| **Pre-Market** | Gap-up / gap-down detection vs. previous close with optional liquidity, spread, catalyst, and freshness filters. All new filters are off by default. |
 | **Options Flow** | Unusual options volume vs. open interest. Requires market hours for live data. |
 | **Alerts** | Configure Discord / email thresholds. Requires `.env` credentials. |
 | **Signal Journal** | Win rate and expectancy by score bucket, plus signal/outcome provider columns — only meaningful after weeks of watcher runs. |
@@ -354,7 +382,7 @@ Once the dashboard is running at `http://localhost:8501`:
 
 ---
 
-## 12. After-setup sanity checks (agent should run these)
+## 13. After-setup sanity checks (agent should run these)
 
 Before reporting success to the user, the agent should verify:
 - [ ] `.venv/` exists and contains `streamlit`

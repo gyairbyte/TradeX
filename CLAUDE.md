@@ -51,16 +51,22 @@ Scanner runs → results DataFrame
 | `tradex/signals/short_term.py` | Short-term scorer — EMA structure, volume confirmation, MACD, pullback-to-EMA setups |
 | `tradex/signals/long_term.py` | Long-term scorer — secular trend, volume accumulation, weekly MACD, BB coiling |
 | `tradex/screener/engine.py` | Runs a scorer over a watchlist, filters by min_score, returns sorted DataFrame |
-| `tradex/tracker/store.py` | SQLite persistence for signal history. Tables: `signal_history`, `scan_runs`. DB at `~/.tradex/signals.db`. |
+| `tradex/tracker/store.py` | SQLite persistence for signal history and canonical scan sessions/observations. Tables: `signal_history`, `scan_sessions`, `scan_observations`, `scan_runs`. DB at `~/.tradex/signals.db`. |
 | `tradex/tracker/analyzer.py` | Coil detector — reads history, finds stocks building pressure without breaking out. Returns coil strength score. |
-| `tradex/tracker/confluence.py` | Scores a ticker across all 3 timeframes simultaneously. Weighted confluence score (intraday 30%, short 40%, long 30%). |
+| `tradex/tracker/confluence.py` | Scores a ticker across all 3 timeframes simultaneously. Coverage-aware weighted score (intraday 30%, short 40%, long 30%). |
 | `tradex/tracker/outcome_tracker.py` | Automated outcome marking. Fetches price at 1d/3d/5d after signal fires, writes outcome_pct back to DB. Also exposes `get_outcome_stats()` for win rate by score bucket. |
 | `tradex/tracker/watcher.py` | Scheduled scan runner. Runs screener on interval, persists results, triggers outcome pass daily at 4:30pm ET. `python -m tradex.tracker.watcher --interval 5` |
 | `tradex/patterns/config.py` | PatternConfig dataclass + 3 profiles: `conservative`, `standard`, `volatile`. All thresholds configurable. |
 | `tradex/patterns/miner.py` | Mines 3yr daily history, finds run-up/decline events, extracts normalized pre-event windows. Universe: ~40 stocks. |
 | `tradex/patterns/fingerprint.py` | Averages mined windows into fingerprints (mean ± std per series). Persists to `~/.tradex/fingerprints.db`. |
 | `tradex/patterns/matcher.py` | Compares live 10-day window against fingerprint using weighted Pearson correlation. Returns 0–100 similarity score. |
-| `tradex/ui/dashboard.py` | Streamlit UI: 5 tabs — Scanner, Coil Detector, Confluence, Pattern Match, Signal Journal |
+| `tradex/premarket/config.py` | Validated `GapScanConfig` dataclass for the pre-market gap scanner. |
+| `tradex/premarket/models.py` | Typed dataclasses: `PremarketSnapshot`, `DailyLiquidityBaseline`, `SpreadSnapshot`, `GapCatalystContext`, `GapObservation`, `GapScanReport`. |
+| `tradex/premarket/sources.py` | Pre-market OHLCV source adapter, daily liquidity baseline, and spread snapshots. |
+| `tradex/premarket/catalysts.py` | Earnings + headline context (explicitly sourced, no causal inference). |
+| `tradex/premarket/gap_scanner.py` | Public orchestration layer (`scan_gaps_with_report`) and backward-compatible `scan_gaps` wrapper. |
+| `tradex/premarket/cli.py` | Pre-market scanner CLI (`python -m tradex.premarket scan ...`). |
+| `tradex/ui/dashboard.py` | Streamlit UI: Scanner, Coil Detector, Confluence, Pattern Match, Pre-Market, Signal Journal, Weights, Alerts, Options, Help |
 | `pyproject.toml` | Python 3.11+ project, deps: yfinance, pandas, ta, streamlit, plotly |
 | `.env.example` | Template for all provider credentials (Yahoo needs none; Alpaca needs API keys; IBKR needs TWS running; Schwab needs OAuth app + token file) |
 
@@ -92,11 +98,11 @@ df = run(["AAPL", "NVDA", "AMD"], timeframe="intraday", min_score=40)
 ## Next Features to Build (in priority order)
 
 1. **Alert system** — push notification or Slack webhook when coil or confluence threshold is crossed
-3. **Pre-market gap scanner** — identify gap-up/down candidates before open
-4. **Earnings awareness** — flag or filter stocks with earnings within N days
-5. **Options flow integration** — unusual options activity as an additional signal layer (Unusual Whales API or Tradier)
-6. **Watchlist persistence** — save/load named watchlists to disk or DB
-7. **Scoring weight customization** — let user tune signal weights in UI
+2. **Earnings awareness** — flag or filter stocks with earnings within N days
+3. **Options flow integration** — unusual options activity as an additional signal layer (Unusual Whales API or Tradier)
+4. **Watchlist persistence** — save/load named watchlists to disk or DB
+5. **Scoring weight customization** — let user tune signal weights in UI
+6. **Long-term score validation** — compare the long-term scorer to a simple 40-week MA benchmark
 
 ---
 
@@ -107,7 +113,8 @@ df = run(["AAPL", "NVDA", "AMD"], timeframe="intraday", min_score=40)
 - **Schwab provider is validated and hardened** — `tradex/data/fetcher.py` normalizes Schwab candles to the canonical OHLCV contract (sorted, de-duplicated, UTC-indexed DataFrame with columns `open`, `high`, `low`, `close`, `volume`). The contract is enforced by deterministic, credential-free tests in `tests/data/test_schwab_provider.py`.
 - **Provider abstraction in fetcher.py only** — signal code receives a plain DataFrame and never knows which provider supplied it. Keep it that way.
 - **OAuth token safety** — Schwab tokens live outside the repo. `scripts/schwab_oauth.py` refuses to write a token inside the project and sets restrictive file permissions.
-- **Provider propagation is incomplete** — `screener/engine.py`, `tracker/watcher.py`, and `ui/dashboard.py` accept `provider` in places but drop it before `fetch()`. The next provider PR is `devin/fix-provider-propagation`.
+- **Provider propagation** — `screener/engine.py`, `tracker/watcher.py`, and `ui/dashboard.py` now thread `provider` through to `fetch()` for all OHLCV workflows.
+- **Pre-market gap scanner is source-aware** — `tradex/premarket/sources.py` resolves the OHLCV provider once and rejects unsupported providers with `ProviderCapabilityError`. Spread and catalyst sources are explicit and never silently fall back.
 - **Streamlit for UI** — fastest to iterate on, no frontend knowledge needed. Can replace with React later if needed.
 - **Score-based not rule-based** — a pure rule-based "buy/sell" signal is brittle; scores let Gary apply judgment.
 - **Three separate scorers vs. one unified** — timeframes have fundamentally different signal logic; keeping them separate avoids messy conditionals.

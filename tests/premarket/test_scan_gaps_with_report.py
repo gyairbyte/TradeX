@@ -1,0 +1,194 @@
+"""Tests for the structured ``scan_gaps_with_report`` orchestrator."""
+from __future__ import annotations
+
+from datetime import UTC, date, datetime
+from unittest.mock import patch
+
+import pandas as pd
+import pytest
+
+from tradex.data.fetcher import ProviderCapabilityError
+from tradex.premarket.config import GapScanConfig
+from tradex.premarket.gap_scanner import scan_gaps_with_report
+from tradex.premarket.models import (
+    DailyLiquidityBaseline,
+    GapCatalystContext,
+    PremarketBarsResult,
+    PremarketSnapshot,
+    SpreadSnapshot,
+)
+
+
+def _baseline(prev_close: float, avg_vol: float = 1_000_000.0) -> DailyLiquidityBaseline:
+    return DailyLiquidityBaseline(
+        previous_session_date=date(2024, 1, 2),
+        previous_close=prev_close,
+        lookback_sessions_requested=20,
+        lookback_sessions_available=20,
+        average_daily_volume=avg_vol,
+        median_daily_volume=avg_vol,
+        average_daily_dollar_volume=prev_close * avg_vol,
+        median_daily_dollar_volume=prev_close * avg_vol,
+    )
+
+
+def _snapshot(last: float, volume: int = 1000) -> PremarketSnapshot:
+    return PremarketSnapshot(
+        ticker="AAPL",
+        session_date=date(2024, 1, 3),
+        requested_provider="yahoo",
+        actual_provider="yahoo",
+        first_bar_time=datetime(2024, 1, 3, 9, 0, tzinfo=UTC),
+        last_bar_time=datetime(2024, 1, 3, 13, 0, tzinfo=UTC),
+        bar_count=10,
+        premarket_open=last - 1.0,
+        premarket_high=last + 1.0,
+        premarket_low=last - 1.0,
+        premarket_last=last,
+        premarket_volume=volume,
+        premarket_dollar_volume=last * volume,
+        premarket_vwap=last,
+        data_age_minutes=5.0,
+    )
+
+
+def _make_bars() -> pd.DataFrame:
+    times = pd.DatetimeIndex([
+        "2024-01-03 09:00", "2024-01-03 10:00", "2024-01-03 13:00"
+    ], tz="UTC")
+    return pd.DataFrame({
+        "open": [100.0, 101.0, 102.0],
+        "high": [101.0, 102.0, 103.0],
+        "low": [99.0, 100.0, 101.0],
+        "close": [101.0, 102.0, 103.0],
+        "volume": [100, 200, 300],
+    }, index=times)
+
+
+def _bars() -> PremarketBarsResult:
+    return PremarketBarsResult(
+        ticker="AAPL",
+        requested_provider="yahoo",
+        actual_provider="yahoo",
+        session_date=date(2024, 1, 3),
+        bars=_make_bars(),
+    )
+
+
+def test_scan_gaps_with_report_qualifies():
+    config = GapScanConfig(min_abs_gap_pct=2.0)
+    with (
+        patch("tradex.premarket.gap_scanner.fetch_daily_liquidity_baseline", return_value=_baseline(100.0)),
+        patch("tradex.premarket.gap_scanner.fetch_premarket_bars", return_value=_bars()),
+        patch("tradex.premarket.gap_scanner.build_premarket_snapshot", return_value=_snapshot(105.0)),
+        patch("tradex.premarket.gap_scanner.fetch_spread_snapshot", return_value=SpreadSnapshot(available=False)),
+        patch("tradex.premarket.gap_scanner.fetch_catalyst_context", return_value=GapCatalystContext(ticker="AAPL", session_date=date(2024, 1, 3))),
+    ):
+        report = scan_gaps_with_report(["AAPL"], config=config, as_of=datetime(2024, 1, 3, 13, 0, tzinfo=UTC))
+
+    assert report.counts()["qualified"] == 1
+    assert report.counts()["failed"] == 0
+    assert not report.results.empty
+    assert report.results.iloc[0]["gap_pct"] == pytest.approx(5.0)
+    assert report.results.iloc[0]["tier"] == "large"
+    assert report.results.iloc[0]["direction"] == "up"
+
+
+def test_scan_gaps_with_report_filters_below_min_gap():
+    config = GapScanConfig(min_abs_gap_pct=10.0)
+    with (
+        patch("tradex.premarket.gap_scanner.fetch_daily_liquidity_baseline", return_value=_baseline(100.0)),
+        patch("tradex.premarket.gap_scanner.fetch_premarket_bars", return_value=_bars()),
+        patch("tradex.premarket.gap_scanner.build_premarket_snapshot", return_value=_snapshot(105.0)),
+        patch("tradex.premarket.gap_scanner.fetch_spread_snapshot", return_value=SpreadSnapshot(available=False)),
+        patch("tradex.premarket.gap_scanner.fetch_catalyst_context", return_value=GapCatalystContext(ticker="AAPL", session_date=date(2024, 1, 3))),
+    ):
+        report = scan_gaps_with_report(["AAPL"], config=config, as_of=datetime(2024, 1, 3, 13, 0, tzinfo=UTC))
+
+    assert report.counts()["qualified"] == 0
+    assert report.counts()["filtered"] == 1
+    assert "gap below 10.0%" in report.observations.iloc[0]["filter_reasons"]
+
+
+def test_scan_gaps_with_report_outside_window_before_premarket():
+    config = GapScanConfig()
+    as_of = datetime(2024, 1, 3, 7, 0, tzinfo=UTC)  # 02:00 ET
+    report = scan_gaps_with_report(["AAPL"], config=config, as_of=as_of)
+    assert report.counts()["outside_window"] == 1
+    assert report.counts()["qualified"] == 0
+    assert "before pre-market session" in report.observations.iloc[0]["filter_reasons"]
+
+
+def test_scan_gaps_with_report_outside_window_after_open():
+    config = GapScanConfig(allow_after_open=False)
+    as_of = datetime(2024, 1, 3, 14, 45, tzinfo=UTC)  # 09:45 ET
+    report = scan_gaps_with_report(["AAPL"], config=config, as_of=as_of)
+    assert report.counts()["outside_window"] == 1
+    assert "regular session has opened" in report.observations.iloc[0]["filter_reasons"]
+
+
+def test_scan_gaps_with_report_allow_after_open():
+    config = GapScanConfig(min_abs_gap_pct=2.0, allow_after_open=True)
+    with (
+        patch("tradex.premarket.gap_scanner.fetch_daily_liquidity_baseline", return_value=_baseline(100.0)),
+        patch("tradex.premarket.gap_scanner.fetch_premarket_bars", return_value=_bars()),
+        patch("tradex.premarket.gap_scanner.build_premarket_snapshot", return_value=_snapshot(105.0)),
+        patch("tradex.premarket.gap_scanner.fetch_spread_snapshot", return_value=SpreadSnapshot(available=False)),
+        patch("tradex.premarket.gap_scanner.fetch_catalyst_context", return_value=GapCatalystContext(ticker="AAPL", session_date=date(2024, 1, 3))),
+    ):
+        as_of = datetime(2024, 1, 3, 14, 45, tzinfo=UTC)
+        report = scan_gaps_with_report(["AAPL"], config=config, as_of=as_of)
+
+    assert report.counts()["outside_window"] == 0
+    assert report.counts()["qualified"] == 1
+
+
+def test_scan_gaps_with_report_propagates_provider_error():
+    config = GapScanConfig()
+    error = ProviderCapabilityError("schwab premarket unsupported")
+    with (
+        patch("tradex.premarket.gap_scanner.fetch_daily_liquidity_baseline", side_effect=error),
+        patch("tradex.premarket.gap_scanner.fetch_premarket_bars") as mock_bars,
+    ):
+        report = scan_gaps_with_report(["AAPL"], config=config, provider="schwab", as_of=datetime(2024, 1, 3, 13, 0, tzinfo=UTC))
+
+    assert report.counts()["failed"] == 1
+    assert "AAPL" in report.provider_errors
+    mock_bars.assert_not_called()
+
+
+def test_scan_gaps_with_report_filters_by_volume_ratio():
+    config = GapScanConfig(min_abs_gap_pct=2.0, min_premarket_volume_ratio=1.0)
+    with (
+        patch("tradex.premarket.gap_scanner.fetch_daily_liquidity_baseline", return_value=_baseline(100.0, avg_vol=10_000.0)),
+        patch("tradex.premarket.gap_scanner.fetch_premarket_bars", return_value=_bars()),
+        patch("tradex.premarket.gap_scanner.build_premarket_snapshot", return_value=_snapshot(105.0, volume=1000)),
+        patch("tradex.premarket.gap_scanner.fetch_spread_snapshot", return_value=SpreadSnapshot(available=False)),
+        patch("tradex.premarket.gap_scanner.fetch_catalyst_context", return_value=GapCatalystContext(ticker="AAPL", session_date=date(2024, 1, 3))),
+    ):
+        report = scan_gaps_with_report(["AAPL"], config=config, as_of=datetime(2024, 1, 3, 13, 0, tzinfo=UTC))
+
+    assert report.counts()["qualified"] == 0
+    assert report.counts()["filtered"] == 1
+    assert "volume ratio" in str(report.observations.iloc[0]["filter_reasons"])
+
+
+def test_scan_gaps_with_report_to_dict_json_safe():
+    config = GapScanConfig()
+    with (
+        patch("tradex.premarket.gap_scanner.fetch_daily_liquidity_baseline", return_value=_baseline(100.0)),
+        patch("tradex.premarket.gap_scanner.fetch_premarket_bars", return_value=_bars()),
+        patch("tradex.premarket.gap_scanner.build_premarket_snapshot", return_value=_snapshot(105.0)),
+        patch("tradex.premarket.gap_scanner.fetch_spread_snapshot", return_value=SpreadSnapshot(available=False)),
+        patch("tradex.premarket.gap_scanner.fetch_catalyst_context", return_value=GapCatalystContext(ticker="AAPL", session_date=date(2024, 1, 3))),
+    ):
+        report = scan_gaps_with_report(["AAPL"], config=config, as_of=datetime(2024, 1, 3, 13, 0, tzinfo=UTC))
+
+    d = report.to_dict()
+    assert d["session_date"] == "2024-01-03"
+    assert d["as_of"].endswith("+00:00")
+    assert "results" in d
+    assert "observations" in d
+    for obs in d["observations"]:
+        assert "filter_reasons" in obs
+        assert "gap_pct" in obs
