@@ -1,14 +1,14 @@
 """Point-in-time similarity evaluation and forward-return simulation."""
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
 from .fingerprints import _normalize_window
-from .models import Fingerprint, Observation, StudySpec, Trade, _clean
+from .models import Fingerprint, Observation, StudySpec, Trade
 
 
 def _series_similarity(live: list[float], fp_mean: list[float]) -> float:
@@ -126,7 +126,7 @@ def _evaluate_decision(
 
     decision_ts = split_df.index[decision_idx]
     decision_date = decision_ts.to_pydatetime().date()
-    signal_time = datetime(decision_date.year, decision_date.month, decision_date.day, 21, 0, tzinfo=timezone.utc)
+    signal_time = datetime(decision_date.year, decision_date.month, decision_date.day, 21, 0, tzinfo=UTC)
     signal_close = float(split_df["close"].iloc[decision_idx])
 
     # Forward horizon must also fit inside this split.

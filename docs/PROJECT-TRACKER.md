@@ -480,7 +480,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Validate pattern matcher before dashboard promotion
 - **Category:** Backtesting
 - **Priority:** Medium
-- **Status:** Blocked — production quarantine and research infrastructure complete; local read-only Schwab study pending ChatGPT review.
+- **Status:** Implemented — awaiting ChatGPT re-review after calculation and audit-semantic corrections.
 - **Resolved by:** `devin/validate-pattern-matcher`
 - **Problem statement:** Pattern matcher uses Pearson correlation vs. a fingerprint but has not been validated for predictive value.
 - **Recommended action:** Run an out-of-sample backtest; if it fails to add value, move pattern match to a research/experiment tab.

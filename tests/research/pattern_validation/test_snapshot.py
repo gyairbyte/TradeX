@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from typing import ClassVar
 from unittest.mock import Mock, patch
 
 import pandas as pd
@@ -81,6 +82,24 @@ def test_load_snapshot_roundtrip(tmp_path, tiny_study_dates):
     assert manifest.requested_tickers == ("AAPL",)
 
 
+def test_load_snapshot_fails_on_checksum_mismatch(tmp_path, tiny_study_dates):
+    out = tmp_path / "snap"
+    manifest_path = create_snapshot(
+        tickers=["AAPL"],
+        start=tiny_study_dates["start_date"],
+        end=tiny_study_dates["end_date"],
+        output_dir=out,
+        splits=tiny_study_dates["splits"],
+        fetch_fn=_synthetic_fetcher,
+        overwrite=True,
+    )
+    # Corrupt the CSV on disk.
+    csv_path = out / "AAPL.csv"
+    csv_path.write_text(csv_path.read_text(encoding="utf-8").replace("100.", "999."), encoding="utf-8")
+    with pytest.raises(ValidationError, match="checksum mismatch"):
+        load_snapshot(manifest_path)
+
+
 def test_snapshot_validates_ohlc_invariants(tmp_path, tiny_study_dates):
     def bad_fetcher(ticker, start, end, provider):
         df = _synthetic_fetcher(ticker, start, end, provider).copy()
@@ -103,6 +122,21 @@ def test_snapshot_validates_ohlc_invariants(tmp_path, tiny_study_dates):
     assert len(cleaned) == len(raw) - 1
 
 
+def test_snapshot_csv_is_sorted_by_index(tmp_path, tiny_study_dates):
+    out = tmp_path / "snap"
+    create_snapshot(
+        tickers=["AAPL"],
+        start=tiny_study_dates["start_date"],
+        end=tiny_study_dates["end_date"],
+        output_dir=out,
+        splits=tiny_study_dates["splits"],
+        fetch_fn=_synthetic_fetcher,
+        overwrite=True,
+    )
+    df = pd.read_csv(out / "AAPL.csv", index_col=0, parse_dates=True)
+    assert df.index.is_monotonic_increasing
+
+
 def _synthetic_fetcher(ticker, start, end, provider):
     from .conftest import make_synthetic_bars
     return make_synthetic_bars(ticker, start, end, seed=abs(hash(ticker)) % 10000)
@@ -119,26 +153,44 @@ def _make_candle(dt: datetime, open_: float, high: float, low: float, close: flo
     }
 
 
+class _GuardedSchwabClient:
+    """Fake Schwab client that exposes only the allowed market-data method."""
+
+    _ALLOWED: ClassVar[set[str]] = {"get_price_history_every_day"}
+
+    def __init__(self, candles):
+        self._candles = candles
+        self.calls = []
+
+    def __getattr__(self, name: str):
+        if name in self._ALLOWED:
+            return self._make_candle_method(name)
+        raise AttributeError(f"forbidden Schwab client method accessed: {name}")
+
+    def _make_candle_method(self, name: str):
+        def _call(*args, **kwargs):
+            self.calls.append((name, args, kwargs))
+            return Mock(
+                status_code=200,
+                raise_for_status=Mock(),
+                json=Mock(return_value={"candles": self._candles}),
+            )
+        return _call
+
+
 def test_snapshot_with_guarded_fake_schwab_client(tmp_path, tiny_study_dates):
     """The snapshot path can use a fake Schwab client without credentials or network."""
     start = tiny_study_dates["start_date"]
     end = tiny_study_dates["end_date"]
     t1 = datetime(2020, 1, 2, tzinfo=UTC)
     t2 = datetime(2020, 1, 3, tzinfo=UTC)
-    fake_client = Mock()
-    fake_client.get_price_history_every_day.return_value = Mock(
-        status_code=200,
-        raise_for_status=Mock(),
-        json=Mock(return_value={
-            "candles": [
-                _make_candle(t1, 100.0, 101.0, 99.0, 100.5, 1000),
-                _make_candle(t2, 100.5, 102.0, 100.0, 101.5, 1100),
-            ]
-        }),
-    )
+    client = _GuardedSchwabClient([
+        _make_candle(t1, 100.0, 101.0, 99.0, 100.5, 1000),
+        _make_candle(t2, 100.5, 102.0, 100.0, 101.5, 1100),
+    ])
 
     out = tmp_path / "snap"
-    with patch("tradex.data.history._get_schwab_client", return_value=fake_client):
+    with patch("tradex.data.history._get_schwab_client", return_value=client):
         manifest_path = create_snapshot(
             tickers=["AAPL"],
             start=start,
@@ -156,4 +208,12 @@ def test_snapshot_with_guarded_fake_schwab_client(tmp_path, tiny_study_dates):
     df = pd.read_csv(out / "AAPL.csv", index_col=0, parse_dates=True)
     assert len(df) == 2
     assert list(df.columns) == ["open", "high", "low", "close", "volume"]
-    fake_client.get_price_history_every_day.assert_called_once()
+    assert any(call[0] == "get_price_history_every_day" for call in client.calls)
+
+
+def test_guarded_fake_schwab_client_forbids_account_endpoints():
+    """The fake client raises on any disallowed account/position/order/transaction method."""
+    client = _GuardedSchwabClient([])
+    for forbidden in ("get_accounts", "get_positions", "get_orders", "get_transactions"):
+        with pytest.raises(AttributeError, match="forbidden"):
+            getattr(client, forbidden)

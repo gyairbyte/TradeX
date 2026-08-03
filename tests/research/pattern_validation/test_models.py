@@ -65,6 +65,40 @@ def test_study_spec_sha256_is_stable():
     assert h1 == h2
 
 
+def test_study_spec_rejects_numeric_string_slippage():
+    with pytest.raises(ValidationError):
+        StudySpec(
+            research_test_mode=True,
+            tickers=("AAPL",),
+            slippage_scenarios_bps=("10",),
+        )
+
+
+def test_study_spec_rejects_numeric_string_series_weights():
+    with pytest.raises(ValidationError):
+        StudySpec(
+            research_test_mode=True,
+            tickers=("AAPL",),
+            series_weights={"price_pct": "0.35"},
+        )
+
+
+def test_study_spec_lock_dict_contains_research_test_mode():
+    spec = StudySpec(research_test_mode=True, tickers=("AAPL",))
+    lock = spec.to_lock_dict()
+    assert "research_test_mode" in lock
+    assert lock["research_test_mode"] is True
+
+
+def test_study_spec_sha256_changes_with_research_test_mode():
+    base = StudySpec(research_test_mode=True, tickers=("AAPL",))
+    lock_test = dict(base.to_lock_dict())
+    lock_test["research_test_mode"] = True
+    lock_locked = dict(base.to_lock_dict())
+    lock_locked["research_test_mode"] = False
+    assert _canonical_json_sha256(lock_test) != _canonical_json_sha256(lock_locked)
+
+
 def test_manifest_serialization_roundtrip(tmp_path):
     from datetime import datetime
     entry = ManifestEntry(

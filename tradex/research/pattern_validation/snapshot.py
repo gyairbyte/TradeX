@@ -2,13 +2,12 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import math
 import shutil
 import tempfile
-from datetime import date, datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Any, Callable
 
 import pandas as pd
 
@@ -16,13 +15,10 @@ from tradex.data.history import fetch_daily_history
 
 from .models import (
     DatasetManifest,
-    DataQualityRow,
     ManifestEntry,
     Split,
     ValidationError,
-    _clean,
 )
-
 
 _CANONICAL_COLUMNS = ["open", "high", "low", "close", "volume"]
 
@@ -90,9 +86,10 @@ def _validate_ticker_df(df: pd.DataFrame, start: date, end: date) -> tuple[pd.Da
     df = df[_CANONICAL_COLUMNS]
     df = df.apply(pd.to_numeric, errors="coerce")
 
-    # Drop duplicate timestamps, keep last.
+    # Drop duplicate timestamps, keep last, then sort deterministically.
     before = len(df)
     df = df[~df.index.duplicated(keep="last")]
+    df = df.sort_index()
     counts["duplicate_timestamps"] = before - len(df)
 
     # Restrict to requested date range.
@@ -144,7 +141,7 @@ def _count_complete_bars(df: pd.DataFrame, lookback: int, holding: int) -> tuple
     return complete_lookbacks, complete_forward_bars
 
 
-def _count_split_events(df: pd.DataFrame, splits: dict[str, Split], lookback: int, holding: int, move_days: int) -> dict[str, int]:
+def _count_split_events(df: pd.DataFrame, splits: dict[str, Split], lookback: int, holding: int, move_days: int, runup_pct: float = 15.0, decline_pct: float = 12.0) -> dict[str, int]:
     """Count mined events per split for data-quality reporting (no future leakage)."""
     from .fingerprints import _find_events  # local import to avoid circularity
 
@@ -155,8 +152,8 @@ def _count_split_events(df: pd.DataFrame, splits: dict[str, Split], lookback: in
         if len(split_df) < lookback + move_days + holding + 5:
             counts[name] = 0
             continue
-        runups = _find_events(split_df, runup_pct=15.0, decline_pct=12.0, move_days=move_days, lookback=lookback, event_type="runup")
-        declines = _find_events(split_df, runup_pct=15.0, decline_pct=12.0, move_days=move_days, lookback=lookback, event_type="decline")
+        runups = _find_events(split_df, runup_pct=runup_pct, decline_pct=decline_pct, move_days=move_days, lookback=lookback, event_type="runup")
+        declines = _find_events(split_df, runup_pct=runup_pct, decline_pct=decline_pct, move_days=move_days, lookback=lookback, event_type="decline")
         counts[name] = len(runups) + len(declines)
     return counts
 
@@ -264,7 +261,7 @@ def create_snapshot(
         manifest = DatasetManifest(
             schema_version=1,
             dataset_name=dataset_name,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
             source_description=source_description,
             provider=provider or "unknown",
             adjustment_policy=adjustment_policy,
@@ -309,16 +306,24 @@ def _load_ticker_csv(manifest_dir: Path, entry: ManifestEntry) -> pd.DataFrame:
 
 
 def load_snapshot(manifest_path: str | Path) -> tuple[DatasetManifest, dict[str, pd.DataFrame]]:
-    """Load a manifest and all associated ticker CSVs."""
+    """Load a manifest and all associated ticker CSVs, verifying per-file SHA-256."""
     manifest_path = Path(manifest_path)
     manifest_dir = manifest_path.parent
-    with manifest_path.open("r", encoding="utf-8") as f:
-        data = json.load(f)
-    from .models import load_manifest
+    from .models import ValidationError, load_manifest
+
     manifest = load_manifest(manifest_path)
+    if not manifest.verify_integrity():
+        raise ValidationError("manifest metadata integrity check failed")
+
     bars: dict[str, pd.DataFrame] = {}
     for entry in manifest.entries:
         if entry.failure or not entry.path:
             continue
+        path = manifest_dir / entry.path
+        if not path.exists():
+            raise ValidationError(f"manifest entry missing on disk: {path}")
+        actual = _sha256_file(path)
+        if actual != entry.sha256:
+            raise ValidationError(f"checksum mismatch for {entry.ticker}: expected {entry.sha256}, got {actual}")
         bars[entry.ticker] = _load_ticker_csv(manifest_dir, entry)
     return manifest, bars

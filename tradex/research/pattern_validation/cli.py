@@ -53,18 +53,20 @@ def _parse_split_arg(text: str) -> dict[str, str]:
     return {"start": parts[0], "end": parts[1]}
 
 
-def _build_default_spec(manifest, splits: dict | None = None, research_test_mode: bool = False) -> StudySpec:
+def _build_default_spec(manifest, splits: dict | None = None, research_test_mode: bool | None = None) -> StudySpec:
     if splits is None:
         splits = _split_to_split(_default_splits())
-    return StudySpec(
-        tickers=manifest.requested_tickers,
-        dataset_name=manifest.dataset_name,
-        provider=manifest.provider,
-        start_date=manifest.request_start,
-        end_date=manifest.request_end,
-        splits=splits,
-        research_test_mode=research_test_mode,
-    )
+    kwargs: dict[str, Any] = {
+        "tickers": manifest.requested_tickers,
+        "dataset_name": manifest.dataset_name,
+        "provider": manifest.provider,
+        "start_date": manifest.request_start,
+        "end_date": manifest.request_end,
+        "splits": splits,
+    }
+    if research_test_mode is not None:
+        kwargs["research_test_mode"] = research_test_mode
+    return StudySpec(**kwargs)
 
 
 def _resolve_snapshot_tickers(args: argparse.Namespace) -> list[str]:
@@ -186,7 +188,7 @@ def main(argv: list[str] | None = None) -> int:
     eval_p.add_argument("--manifest", required=True, help="Path to the snapshot manifest.lock.json")
     eval_p.add_argument("--output", required=True, help="Output directory for study artifacts")
     eval_p.add_argument("--spec", default=None, help="Optional study_spec.lock.json; default spec is derived from the manifest")
-    eval_p.add_argument("--research-test", action="store_true", help="Skip locked-contract validation for synthetic/test specs")
+    eval_p.add_argument("--research-test", action="store_true", default=None, help="Skip locked-contract validation for synthetic/test specs")
     eval_p.add_argument("--overwrite", action="store_true", help="Replace an existing output directory")
     eval_p.set_defaults(func=_cmd_evaluate)
 

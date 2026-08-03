@@ -1,7 +1,6 @@
 """Development-only fingerprint construction from locked offline snapshots."""
 from __future__ import annotations
 
-import json
 from datetime import date
 from typing import Any
 
@@ -10,7 +9,7 @@ import pandas as pd
 
 from tradex.signals.indicators import add_indicators
 
-from .models import Fingerprint, StudySpec, ValidationError, _canonical_json_sha256, _clean
+from .models import Fingerprint, StudySpec, ValidationError, _canonical_json_sha256
 
 
 def _find_events(

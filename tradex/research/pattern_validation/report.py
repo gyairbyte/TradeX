@@ -3,11 +3,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import shutil
 import tempfile
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -18,16 +17,19 @@ from .fingerprints import build_development_fingerprints
 from .metrics import compute_all_metrics, evaluate_evidence_gates
 from .models import (
     DatasetManifest,
-    DataQualityRow,
     PromotionDecision,
     StudyResult,
     StudySpec,
     ValidationError,
-    _canonical_json_sha256,
     _clean,
 )
-from .observations import build_executable_trades, evaluate_splits, observations_to_dataframe, trades_to_dataframe
-from .snapshot import load_snapshot
+from .observations import (
+    build_executable_trades,
+    evaluate_splits,
+    observations_to_dataframe,
+    trades_to_dataframe,
+)
+from .snapshot import _count_split_events
 
 
 def _hash_file(path: Path) -> str:
@@ -80,9 +82,16 @@ def _build_data_quality(
         if df is not None and not df.empty:
             complete_lookbacks, complete_forward_bars = _count_complete_bars(df, spec.lookback_days, spec.holding_days)
 
-        split_counts: dict[str, int] = {}
+        eligible_per_split: dict[str, int] = {}
+        event_counts_per_split: dict[str, int] = {}
         for split_name in spec.splits:
-            split_counts[split_name] = obs_by_ticker_split.get((entry.ticker, split_name), {}).get("eligible", 0)
+            eligible_per_split[split_name] = obs_by_ticker_split.get((entry.ticker, split_name), {}).get("eligible", 0)
+            if df is not None and not df.empty:
+                event_counts_per_split[split_name] = _count_split_events(
+                    df, spec.splits, spec.lookback_days, spec.holding_days, spec.move_days, spec.runup_pct, spec.decline_pct
+                ).get(split_name, 0)
+            else:
+                event_counts_per_split[split_name] = 0
 
         rows.append({
             "ticker": entry.ticker,
@@ -98,7 +107,8 @@ def _build_data_quality(
             "bars_outside_range": quality.get("bars_outside_range", 0),
             "complete_lookbacks": complete_lookbacks,
             "complete_forward_bars": complete_forward_bars,
-            "split_event_counts": split_counts,
+            "eligible_observations_per_split": eligible_per_split,
+            "split_event_counts": event_counts_per_split,
             "warnings": warnings,
         })
 
@@ -127,6 +137,9 @@ def _build_baseline_comparison(
             "mean_return_ci_lower": pm.mean_return_ci_lower,
             "mean_return_ci_upper": pm.mean_return_ci_upper,
             "win_rate": pm.win_rate,
+            "executable_trades": pm.executed_trades,
+            "executable_mean_net_return_pct": pm.executable_mean_net_return_pct,
+            "executable_win_rate": pm.executable_win_rate,
         })
     for tm in sorted(per_ticker, key=lambda x: (x.split, x.event_type, x.ticker)):
         records.append({
@@ -144,6 +157,9 @@ def _build_baseline_comparison(
             "mean_return_ci_lower": None,
             "mean_return_ci_upper": None,
             "win_rate": tm.win_rate,
+            "executable_trades": tm.executed_trades,
+            "executable_mean_net_return_pct": tm.executable_mean_net_return_pct,
+            "executable_win_rate": tm.executable_win_rate,
         })
     return pd.DataFrame(records)
 
@@ -168,6 +184,7 @@ def _build_report_markdown(
     limitations: list[str],
     generated_at: datetime,
 ) -> str:
+    study_mode = "research test (not the locked PATTERN-001 contract)" if spec.research_test_mode else "locked PATTERN-001 contract"
     lines: list[str] = [
         "# Pattern Similarity Validation Study Report",
         "",
@@ -175,6 +192,7 @@ def _build_report_markdown(
         f"**Provider:** `{spec.provider}`  ",
         f"**Profile:** `{spec.profile}`  ",
         f"**Study range:** `{spec.start_date}` to `{spec.end_date}`  ",
+        f"**Study mode:** `{study_mode}`  ",
         f"**Generated:** `{generated_at.isoformat()}`  ",
         "",
         "## Hypothesis",
@@ -245,6 +263,8 @@ def _build_report_markdown(
             f"- Mean net return at {spec.decision_slippage_bps} bps/side: {pm.mean_net_return_pct:.4f}%" if pm.mean_net_return_pct is not None else "- Mean net return: N/A",
             f"- Median net return: {pm.median_net_return_pct:.4f}%" if pm.median_net_return_pct is not None else "- Median net return: N/A",
             f"- Win rate: {pm.win_rate:.2%}" if pm.win_rate is not None else "- Win rate: N/A",
+            f"- Mean net return (non-overlapping executable trades): {pm.executable_mean_net_return_pct:.4f}%" if pm.executable_mean_net_return_pct is not None else "- Mean net return (executable trades): N/A",
+            f"- Win rate (executable trades): {pm.executable_win_rate:.2%}" if pm.executable_win_rate is not None else "- Win rate (executable trades): N/A",
             f"- Baseline mean return: {pm.baseline_mean_return_pct:.4f}%" if pm.baseline_mean_return_pct is not None else "- Baseline mean return: N/A",
             f"- Lift over baseline: {pm.baseline_lift_bps} bps" if pm.baseline_lift_bps is not None else "- Lift over baseline: N/A",
             f"- Lift CI (2.5%-97.5%): [{pm.baseline_lift_ci_lower:.4f}, {pm.baseline_lift_ci_upper:.4f}]" if pm.baseline_lift_ci_lower is not None else "- Lift CI: N/A",
@@ -252,6 +272,7 @@ def _build_report_markdown(
             f"- Max ticker concentration: {pm.max_ticker_concentration:.2%}" if pm.max_ticker_concentration is not None else "- Max ticker concentration: N/A",
             f"- Max contribution concentration: {pm.max_contribution_concentration:.2%}" if pm.max_contribution_concentration is not None else "- Max contribution concentration: N/A",
             f"- Overlapping signals: {pm.overlap_count}",
+            f"- Frequency-matched controls underfilled: {pm.baseline_underfilled}",
             f"- Missing/insufficient data observations: {pm.missing_data_count}",
             "",
             "#### Returns by slippage scenario",
@@ -277,7 +298,8 @@ def _build_report_markdown(
         "- Point-in-time correctness was enforced: only bars available through the decision date were used for similarity.",
         "- Forward returns did not cross split boundaries.",
         "- The frequency-matched baseline was selected deterministically with the locked seed.",
-        "- No production scores, rankings, eligibility, or alerts were changed.",
+        "- Automatic pattern-match alerts were removed; the matcher output and dashboard tab are labeled experimental research only.",
+        "- No production scores, rankings, eligibility, thresholds, or weights were changed.",
         "",
     ])
     return "\n".join(lines)
@@ -301,12 +323,12 @@ def run_study(
 
     # 4. Baselines.
     if spec.baseline_definition == "frequency_matched":
-        controls = frequency_matched_controls(observations, spec)
+        baseline_selection = frequency_matched_controls(observations, spec)
     else:
-        controls = unconditional_baseline_observations(observations, spec)
+        baseline_selection = unconditional_baseline_observations(observations, spec)
 
     # 5. Metrics and evidence gates.
-    period_metrics, per_ticker = compute_all_metrics(observations, controls, trades, spec)
+    period_metrics, per_ticker = compute_all_metrics(observations, baseline_selection, trades, spec)
     manifest_ok = manifest.verify_integrity()
     integrity_reasons = [] if manifest_ok else ["manifest integrity check failed"]
     promotion = evaluate_evidence_gates(
@@ -319,7 +341,7 @@ def run_study(
     # 7. DataFrames.
     observations_df = observations_to_dataframe(observations)
     qualifying_df = observations_df[observations_df["is_qualifying"] == True].copy() if not observations_df.empty else pd.DataFrame()
-    controls_df = observations_to_dataframe(controls)
+    controls_df = observations_to_dataframe(baseline_selection.controls)
     event_study_df = qualifying_df.copy() if not qualifying_df.empty else pd.DataFrame()
     trades_df = trades_to_dataframe(trades)
     ticker_summary_df = pd.DataFrame([tm.to_dict() for tm in per_ticker])

@@ -2,13 +2,19 @@
 from __future__ import annotations
 
 import random
-from statistics import median
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from .models import Observation, PeriodMetrics, PromotionDecision, StudySpec, TickerMetrics
+from .models import (
+    BaselineSelection,
+    Observation,
+    PeriodMetrics,
+    PromotionDecision,
+    StudySpec,
+    TickerMetrics,
+)
 
 
 def _rnd(value: Any, digits: int = 6) -> Any:
@@ -81,11 +87,12 @@ def _ticker_cluster_bootstrap(
     seed: int,
     resamples: int = 5000,
 ) -> tuple[float | None, float | None, float | None]:
-    """Two-level ticker-cluster bootstrap of the pooled mean return.
+    """True ticker-cluster bootstrap of the pooled mean return.
 
-    At each replicate, sample tickers with replacement and then sample that
-    ticker's returns with replacement. The point estimate is the pooled mean
-    of all original returns. The 95% CI uses the 2.5th and 97.5th percentiles.
+    At each replicate, sample tickers with replacement and retain *all*
+    observations from each selected cluster. No additional row-level resampling
+    is performed. The point estimate is the pooled mean of all original returns.
+    The 95% CI uses the 2.5th and 97.5th percentiles of the replicate means.
     """
     by_ticker: dict[str, list[float]] = {}
     for obs in observations:
@@ -108,14 +115,10 @@ def _ticker_cluster_bootstrap(
     for _ in range(resamples):
         sample: list[float] = []
         for t in rng.choices(tickers, k=len(tickers)):
-            row = by_ticker[t]
-            sample.extend(rng.choices(row, k=len(row)))
-        if not sample:
-            estimates.append(0.0)
-        else:
+            sample.extend(by_ticker[t])
+        if sample:
             estimates.append(float(np.nanmean(sample)))
 
-    estimates = [e for e in estimates if np.isfinite(e)]
     if not estimates:
         return point, None, None
     ci_lower = _rnd(float(np.nanpercentile(estimates, 2.5)))
@@ -130,7 +133,13 @@ def _lift_bootstrap(
     seed: int,
     resamples: int = 5000,
 ) -> tuple[float | None, float | None, float | None]:
-    """Two-level ticker-cluster bootstrap of mean(signal) - mean(control)."""
+    """True ticker-cluster bootstrap of mean(signal) - mean(control) in basis points.
+
+    One common set of tickers is resampled with replacement at each replicate.
+    All signal returns and all matched control returns for each selected ticker
+    are retained. The replicate lift is computed from the pooled signal and
+    control means and reported in basis points (percentage * 100).
+    """
     sig_by_ticker: dict[str, list[float]] = {}
     for obs in signal_observations:
         if obs.outcome_status != "complete":
@@ -149,33 +158,27 @@ def _lift_bootstrap(
             continue
         base_by_ticker.setdefault(obs.ticker, []).append(net)
 
-    if not sig_by_ticker or not base_by_ticker:
+    paired_tickers = sorted(set(sig_by_ticker) & set(base_by_ticker))
+    if not paired_tickers:
         return None, None, None
 
-    sig_tickers = list(sig_by_ticker.keys())
-    base_tickers = list(base_by_ticker.keys())
-
-    sig_point = _rnd(float(np.nanmean([r for rs in sig_by_ticker.values() for r in rs])))
-    base_point = _rnd(float(np.nanmean([r for rs in base_by_ticker.values() for r in rs])))
-    point = _rnd((sig_point or 0.0) - (base_point or 0.0))
+    sig_all = [r for rs in sig_by_ticker.values() for r in rs]
+    base_all = [r for rs in base_by_ticker.values() for r in rs]
+    point = _rnd((float(np.nanmean(sig_all)) - float(np.nanmean(base_all))) * 100.0)
 
     rng = random.Random(seed)
     estimates: list[float] = []
     for _ in range(resamples):
         sig_sample: list[float] = []
-        for t in rng.choices(sig_tickers, k=len(sig_tickers)):
-            row = sig_by_ticker[t]
-            sig_sample.extend(rng.choices(row, k=len(row)))
         base_sample: list[float] = []
-        for t in rng.choices(base_tickers, k=len(base_tickers)):
-            row = base_by_ticker[t]
-            base_sample.extend(rng.choices(row, k=len(row)))
+        for t in rng.choices(paired_tickers, k=len(paired_tickers)):
+            sig_sample.extend(sig_by_ticker[t])
+            base_sample.extend(base_by_ticker[t])
         if sig_sample and base_sample:
-            estimates.append(float(np.nanmean(sig_sample)) - float(np.nanmean(base_sample)))
-        else:
-            estimates.append(0.0)
+            estimates.append(
+                (float(np.nanmean(sig_sample)) - float(np.nanmean(base_sample))) * 100.0
+            )
 
-    estimates = [e for e in estimates if np.isfinite(e)]
     if not estimates:
         return point, None, None
     ci_lower = _rnd(float(np.nanpercentile(estimates, 2.5)))
@@ -194,6 +197,7 @@ def _component_scores_distribution(
 def _per_ticker_metrics(
     observations: list[Observation],
     baseline_observations: list[Observation],
+    trades: list[Any],
     slippage_key: str,
 ) -> list[TickerMetrics]:
     """Compute per-ticker summary for one split/event type."""
@@ -228,15 +232,26 @@ def _per_ticker_metrics(
         if mean_net is not None and base_mean is not None:
             lift_bps = _rnd((mean_net - base_mean) * 100.0)
 
+        ticker_trades = [t for t in trades if t.ticker == ticker]
+        executable_rets = [
+            t.net_return_pct_by_slippage[slippage_key]
+            for t in ticker_trades
+            if t.net_return_pct_by_slippage.get(slippage_key) is not None
+        ]
+        executable_mean = _mean(executable_rets)
+        executable_win_rate = _win_rate(executable_rets)
+
         rows.append(TickerMetrics(
             ticker=ticker,
             split=obs_list[0].split if obs_list else (baseline_observations[0].split if baseline_observations else ""),
             event_type=obs_list[0].event_type if obs_list else (baseline_observations[0].event_type if baseline_observations else ""),
             observations=len(obs_list),
             qualifying_signals=len(qualifying),
-            executed_trades=0,  # populated by caller from trades
+            executed_trades=len(ticker_trades),
             mean_gross_return_pct=mean_gross,
             mean_net_return_pct=mean_net,
+            executable_mean_net_return_pct=executable_mean,
+            executable_win_rate=executable_win_rate,
             mean_baseline_return_pct=base_mean,
             lift_bps=lift_bps,
             win_rate=_win_rate(qualifying_rets),
@@ -249,6 +264,7 @@ def _compute_period_metrics(
     event_type: str,
     observations: list[Observation],
     baseline_observations: list[Observation],
+    control_audit: list[Any],
     trades: list[Any],
     spec: StudySpec,
 ) -> tuple[PeriodMetrics, list[TickerMetrics]]:
@@ -259,6 +275,11 @@ def _compute_period_metrics(
     all_complete = [o for o in observations if o.outcome_status == "complete"]
     qualifying = [o for o in all_complete if o.is_qualifying]
     executed = [t for t in trades if t.split == split and t.event_type == event_type]
+
+    # Determine whether any frequency-matched control group for this split/event
+    # was underfilled. If so, baseline/lift metrics are intentionally invalidated.
+    audit_for_period = [a for a in control_audit if a.split == split and a.event_type == event_type]
+    baseline_underfilled = any(a.underfilled for a in audit_for_period)
 
     sims = [o.similarity_score for o in qualifying]
     sim_dist = _returns_distribution(sims)
@@ -283,19 +304,26 @@ def _compute_period_metrics(
         for o in baseline_observations
         if o.outcome_status == "complete" and o.net_return_pct_by_slippage.get(slippage_key) is not None
     ]
-    baseline_mean = _mean(baseline_rets)
+    baseline_mean = None if baseline_underfilled else _mean(baseline_rets)
     signal_mean = _mean(rets)
     if signal_mean is not None and baseline_mean is not None:
-        lift_bps = _rnd((signal_mean - baseline_mean) * 100.0)
         lift_point, lift_ci_lower, lift_ci_upper = _lift_bootstrap(
             qualifying, baseline_observations, slippage_key, spec.random_seed, spec.bootstrap.resamples
         )
     else:
-        lift_bps = None
         lift_point, lift_ci_lower, lift_ci_upper = None, None, None
 
+    # Executable-trade metrics (non-overlapping per-ticker trades).
+    executable_rets = [
+        t.net_return_pct_by_slippage[slippage_key]
+        for t in executed
+        if t.net_return_pct_by_slippage.get(slippage_key) is not None
+    ]
+    executable_mean = _mean(executable_rets)
+    executable_win_rate = _win_rate(executable_rets)
+
     # Per-ticker metrics for this split/event type.
-    per_ticker = _per_ticker_metrics(observations, baseline_observations, slippage_key)
+    per_ticker = _per_ticker_metrics(observations, baseline_observations, executed, slippage_key)
     for i, tm in enumerate(per_ticker):
         per_ticker[i] = TickerMetrics(
             ticker=tm.ticker,
@@ -303,9 +331,11 @@ def _compute_period_metrics(
             event_type=tm.event_type,
             observations=tm.observations,
             qualifying_signals=tm.qualifying_signals,
-            executed_trades=len([t for t in executed if t.ticker == tm.ticker]),
+            executed_trades=tm.executed_trades,
             mean_gross_return_pct=tm.mean_gross_return_pct,
             mean_net_return_pct=tm.mean_net_return_pct,
+            executable_mean_net_return_pct=tm.executable_mean_net_return_pct,
+            executable_win_rate=tm.executable_win_rate,
             mean_baseline_return_pct=tm.mean_baseline_return_pct,
             lift_bps=tm.lift_bps,
             win_rate=tm.win_rate,
@@ -336,7 +366,7 @@ def _compute_period_metrics(
             max_contribution_conc = _rnd(max(abs(v) / abs(total_return) for v in contributions.values()))
 
     overlap_count = 0
-    for ticker in set(o.ticker for o in qualifying):
+    for ticker in {o.ticker for o in qualifying}:
         t_obs = sorted([o for o in qualifying if o.ticker == ticker], key=lambda x: x.decision_date)
         for i in range(len(t_obs) - 1):
             if t_obs[i].exit_date is not None and t_obs[i + 1].entry_date is not None and t_obs[i + 1].entry_date <= t_obs[i].exit_date:
@@ -379,14 +409,16 @@ def _compute_period_metrics(
         mean_net_return_pct=mean_net,
         median_net_return_pct=_median(rets),
         win_rate=_win_rate(rets),
+        executable_mean_net_return_pct=executable_mean,
+        executable_win_rate=executable_win_rate,
         returns_by_slippage=returns_by_slippage,
         baseline_mean_return_pct=baseline_mean,
-        baseline_lift_bps=lift_bps,
+        baseline_lift_bps=lift_point,
         baseline_lift_ci_lower=lift_ci_lower,
         baseline_lift_ci_upper=lift_ci_upper,
         mean_return_ci_lower=ci_lower,
         mean_return_ci_upper=ci_upper,
-        win_rate_lift=(_win_rate(rets) - _win_rate(baseline_rets)) if rets and baseline_rets else None,
+        win_rate_lift=(_win_rate(rets) - _win_rate(baseline_rets)) if rets and baseline_rets and not baseline_underfilled else None,
         max_ticker_concentration=max_ticker_conc,
         max_contribution_concentration=max_contribution_conc,
         overlap_count=overlap_count,
@@ -395,6 +427,8 @@ def _compute_period_metrics(
         second_half_mean_return_pct=second_mean,
         median_ticker_lift_bps=median_ticker_lift,
         pct_tickers_positive_lift=pct_positive_lift,
+        control_selection_audit=[a.to_dict() for a in audit_for_period],
+        baseline_underfilled=baseline_underfilled,
     ), per_ticker
 
 
@@ -416,11 +450,13 @@ def evaluate_evidence_gates(
         ho = period_metrics.get(("holdout", event_type))
         reasons: list[str] = []
 
-        def check(name: str, passes: bool, value: Any, fail_message: str) -> None:
-            gate_results[f"{event_type}_{name}_value"] = value
-            gate_results[f"{event_type}_{name}_passed"] = passes
+        def check(
+            name: str, passes: bool, value: Any, fail_message: str, *, _event_type: str = event_type, _reasons: list[str] = reasons
+        ) -> None:
+            gate_results[f"{_event_type}_{name}_value"] = value
+            gate_results[f"{_event_type}_{name}_passed"] = passes
             if not passes:
-                reasons.append(f"{event_type}/{name}: {fail_message} ({value})")
+                _reasons.append(f"{_event_type}/{name}: {fail_message} ({value})")
 
         # Sample-size gates.
         check(
@@ -458,6 +494,18 @@ def evaluate_evidence_gates(
             ho is not None and (ho.max_ticker_concentration is None or ho.max_ticker_concentration <= spec.max_ticker_concentration),
             ho.max_ticker_concentration if ho else None,
             f"ticker concentration above {spec.max_ticker_concentration}",
+        )
+        check(
+            "validation_controls_underfilled",
+            val is not None and not val.baseline_underfilled,
+            val.baseline_underfilled if val else False,
+            "validation frequency-matched controls underfilled",
+        )
+        check(
+            "holdout_controls_underfilled",
+            ho is not None and not ho.baseline_underfilled,
+            ho.baseline_underfilled if ho else False,
+            "holdout frequency-matched controls underfilled",
         )
 
         # Mean net return positive.
@@ -555,9 +603,33 @@ def evaluate_evidence_gates(
         )
 
         # Classify this event type.
-        sample_gates = [f"{event_type}_validation_signals_passed", f"{event_type}_holdout_signals_passed", f"{event_type}_validation_tickers_passed", f"{event_type}_holdout_tickers_passed", f"{event_type}_validation_max_ticker_concentration_passed", f"{event_type}_holdout_max_ticker_concentration_passed"]
-        return_gates = [f"{event_type}_validation_mean_net_return_positive_passed", f"{event_type}_holdout_mean_net_return_positive_passed", f"{event_type}_validation_mean_ci_above_zero_passed", f"{event_type}_holdout_mean_ci_above_zero_passed", f"{event_type}_validation_lift_threshold_passed", f"{event_type}_holdout_lift_threshold_passed", f"{event_type}_validation_lift_ci_above_zero_passed", f"{event_type}_holdout_lift_ci_above_zero_passed", f"{event_type}_validation_median_ticker_lift_positive_passed", f"{event_type}_holdout_median_ticker_lift_positive_passed", f"{event_type}_validation_pct_tickers_positive_lift_passed", f"{event_type}_holdout_pct_tickers_positive_lift_passed", f"{event_type}_holdout_first_half_positive_passed", f"{event_type}_holdout_second_half_positive_passed"]
-        return_value_gates = [f"{event_type}_validation_mean_net_return_positive_value", f"{event_type}_holdout_mean_net_return_positive_value", f"{event_type}_validation_mean_ci_above_zero_value", f"{event_type}_holdout_mean_ci_above_zero_value", f"{event_type}_validation_lift_threshold_value", f"{event_type}_holdout_lift_threshold_value", f"{event_type}_validation_lift_ci_above_zero_value", f"{event_type}_holdout_lift_ci_above_zero_value", f"{event_type}_validation_median_ticker_lift_positive_value", f"{event_type}_holdout_median_ticker_lift_positive_value", f"{event_type}_validation_pct_tickers_positive_lift_value", f"{event_type}_holdout_pct_tickers_positive_lift_value", f"{event_type}_holdout_first_half_positive_value", f"{event_type}_holdout_second_half_positive_value"]
+        sample_gates = [
+            f"{event_type}_validation_signals_passed",
+            f"{event_type}_holdout_signals_passed",
+            f"{event_type}_validation_tickers_passed",
+            f"{event_type}_holdout_tickers_passed",
+            f"{event_type}_validation_max_ticker_concentration_passed",
+            f"{event_type}_holdout_max_ticker_concentration_passed",
+            f"{event_type}_validation_controls_underfilled_passed",
+            f"{event_type}_holdout_controls_underfilled_passed",
+        ]
+        return_gates = [
+            f"{event_type}_validation_mean_net_return_positive_passed",
+            f"{event_type}_holdout_mean_net_return_positive_passed",
+            f"{event_type}_validation_mean_ci_above_zero_passed",
+            f"{event_type}_holdout_mean_ci_above_zero_passed",
+            f"{event_type}_validation_lift_threshold_passed",
+            f"{event_type}_holdout_lift_threshold_passed",
+            f"{event_type}_validation_lift_ci_above_zero_passed",
+            f"{event_type}_holdout_lift_ci_above_zero_passed",
+            f"{event_type}_validation_median_ticker_lift_positive_passed",
+            f"{event_type}_holdout_median_ticker_lift_positive_passed",
+            f"{event_type}_validation_pct_tickers_positive_lift_passed",
+            f"{event_type}_holdout_pct_tickers_positive_lift_passed",
+            f"{event_type}_holdout_first_half_positive_passed",
+            f"{event_type}_holdout_second_half_positive_passed",
+        ]
+        return_value_gates = [g.replace("_passed", "_value") for g in return_gates]
         sample_pass = all(gate_results.get(g) is True for g in sample_gates)
         return_pass = all(gate_results.get(g) is True for g in return_gates)
         return_unavailable = any(gate_results.get(g) is None for g in return_value_gates)
@@ -604,20 +676,22 @@ def evaluate_evidence_gates(
 
 def compute_all_metrics(
     observations: list[Observation],
-    controls: list[Observation],
+    baseline_selection: BaselineSelection,
     trades: list[Any],
     spec: StudySpec,
 ) -> tuple[dict[tuple[str, str], PeriodMetrics], list[TickerMetrics]]:
     """Compute period metrics and per-ticker metrics for every split/event type."""
+    baseline_observations = baseline_selection.controls
+    control_audit = baseline_selection.audit
     period_metrics: dict[tuple[str, str], PeriodMetrics] = {}
     per_ticker_all: list[TickerMetrics] = []
 
     for split in spec.splits:
         for event_type in spec.event_types:
             split_obs = [o for o in observations if o.split == split and o.event_type == event_type]
-            split_controls = [o for o in controls if o.split == split and o.event_type == event_type]
+            split_controls = [o for o in baseline_observations if o.split == split and o.event_type == event_type]
             split_trades = [t for t in trades if t.split == split and t.event_type == event_type]
-            pm, per_ticker = _compute_period_metrics(split, event_type, split_obs, split_controls, split_trades, spec)
+            pm, per_ticker = _compute_period_metrics(split, event_type, split_obs, split_controls, control_audit, split_trades, spec)
             period_metrics[(split, event_type)] = pm
             per_ticker_all.extend(per_ticker)
 

@@ -4,9 +4,8 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field, is_dataclass
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -129,7 +128,7 @@ class Split:
     def to_dict(self) -> dict[str, str]:
         return {"start": self.start.isoformat(), "end": self.end.isoformat()}
 
-    def overlaps(self, other: "Split") -> bool:
+    def overlaps(self, other: Split) -> bool:
         return self.start <= other.end and other.start <= self.end
 
 
@@ -165,7 +164,7 @@ class BootstrapConfig:
         return {"method": self.method, "resamples": self.resamples, "seed": self.seed}
 
 
-def _validate_locked_contract(spec: "StudySpec") -> None:
+def _validate_locked_contract(spec: StudySpec) -> None:
     """Enforce the exact locked PATTERN-001 Schwab study contract."""
     errors: list[str] = []
 
@@ -271,11 +270,21 @@ class StudySpec:
     research_test_mode: bool = False
 
     def __post_init__(self) -> None:
-        # Normalize mutable inputs defensively.
+        # Validate and normalize mutable inputs.  Numeric strings are rejected.
         object.__setattr__(self, "tickers", tuple(str(t).strip().upper() for t in self.tickers))
         object.__setattr__(self, "event_types", tuple(self.event_types))
-        object.__setattr__(self, "slippage_scenarios_bps", tuple(float(s) for s in self.slippage_scenarios_bps))
-        object.__setattr__(self, "series_weights", {str(k): float(v) for k, v in self.series_weights.items()})
+
+        validated_slippage: list[float] = []
+        for s in self.slippage_scenarios_bps:
+            _require_nonnegative_finite("slippage_scenarios_bps element", s)
+            validated_slippage.append(float(s))
+        object.__setattr__(self, "slippage_scenarios_bps", tuple(validated_slippage))
+
+        validated_weights: dict[str, float] = {}
+        for k, v in self.series_weights.items():
+            _require_finite_number(f"series_weights[{k}]", v)
+            validated_weights[str(k)] = float(v)
+        object.__setattr__(self, "series_weights", validated_weights)
         object.__setattr__(self, "splits", dict(self.splits))
 
         if not self.tickers:
@@ -409,7 +418,7 @@ class StudySpec:
             "adjustment_policy": self.adjustment_policy,
             "universe_classification": self.universe_classification,
             "production_promotion_eligible": self.production_promotion_eligible,
-            # research_test_mode is a tooling flag, not part of the locked study contract.
+            "research_test_mode": self.research_test_mode,
         }
 
     def to_json(self, indent: int | None = None) -> str:
@@ -629,7 +638,9 @@ class TickerMetrics:
     qualifying_signals: int
     executed_trades: int
     mean_gross_return_pct: float | None
-    mean_net_return_pct: float | None  # decision slippage
+    mean_net_return_pct: float | None  # decision slippage (event-study / qualifying)
+    executable_mean_net_return_pct: float | None  # non-overlapping executable trades
+    executable_win_rate: float | None
     mean_baseline_return_pct: float | None
     lift_bps: float | None
     win_rate: float | None
@@ -661,7 +672,9 @@ class PeriodMetrics:
     median_gross_return_pct: float | None
     mean_net_return_pct: float | None  # decision slippage
     median_net_return_pct: float | None
-    win_rate: float | None
+    win_rate: float | None  # qualifying-signal win rate
+    executable_mean_net_return_pct: float | None  # non-overlapping executable trades
+    executable_win_rate: float | None
     returns_by_slippage: dict[str, dict[str, float | None]]
     baseline_mean_return_pct: float | None
     baseline_lift_bps: float | None
@@ -678,6 +691,8 @@ class PeriodMetrics:
     second_half_mean_return_pct: float | None
     median_ticker_lift_bps: float | None
     pct_tickers_positive_lift: float | None
+    control_selection_audit: list[dict[str, Any]] = field(default_factory=list)
+    baseline_underfilled: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "returns_by_slippage", {str(k): dict(v) for k, v in (self.returns_by_slippage or {}).items()})
@@ -707,10 +722,12 @@ class DataQualityRow:
     bars_outside_range: int
     complete_lookbacks: int
     complete_forward_bars: int
+    eligible_observations_per_split: dict[str, int]
     split_event_counts: dict[str, int]
     warnings: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "eligible_observations_per_split", dict(self.eligible_observations_per_split))
         object.__setattr__(self, "split_event_counts", dict(self.split_event_counts))
         object.__setattr__(self, "warnings", list(self.warnings))
 
@@ -741,6 +758,44 @@ class PromotionDecision:
         return _clean(asdict(self))
 
 
+@dataclass(frozen=True)
+class ControlAudit:
+    """Audit record for one frequency-matched control selection group."""
+
+    ticker: str
+    split: str
+    year: int
+    event_type: str
+    requested: int
+    available: int
+    selected: int
+    underfilled: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        return _clean(asdict(self))
+
+
+@dataclass(frozen=True)
+class BaselineSelection:
+    """Frequency-matched or unconditional control selection with audit metadata."""
+
+    controls: list[Observation] = field(default_factory=list)
+    audit: list[ControlAudit] = field(default_factory=list)
+    underfilled_keys: list[tuple[str, str, int, str]] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "controls", list(self.controls))
+        object.__setattr__(self, "audit", list(self.audit))
+        object.__setattr__(self, "underfilled_keys", list(self.underfilled_keys))
+
+    def to_dict(self) -> dict[str, Any]:
+        return _clean({
+            "controls": [o.to_dict() for o in self.controls],
+            "audit": [a.to_dict() for a in self.audit],
+            "underfilled_keys": list(self.underfilled_keys),
+        })
+
+
 @dataclass
 class StudyResult:
     """Complete deterministic result for one pattern-similarity validation study."""
@@ -759,7 +814,7 @@ class StudyResult:
     data_quality: pd.DataFrame
     promotion_decision: PromotionDecision
     report_markdown: str
-    generated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    generated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     limitations: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
@@ -797,7 +852,7 @@ class StudyResult:
         return [_clean(r) for r in df.to_dict("records")]
 
 
-def load_spec(path: str | Path, research_test_mode: bool = False) -> StudySpec:
+def load_spec(path: str | Path, research_test_mode: bool | None = None) -> StudySpec:
     """Load a StudySpec from a JSON lock file."""
     p = Path(path)
     with p.open("r", encoding="utf-8") as f:
@@ -814,7 +869,8 @@ def load_spec(path: str | Path, research_test_mode: bool = False) -> StudySpec:
     # Drop computed fields that are not constructor arguments.
     data.pop("universe_hash", None)
     data.pop("schema_version", None)
-    data["research_test_mode"] = research_test_mode
+    if research_test_mode is not None:
+        data["research_test_mode"] = research_test_mode
     return StudySpec(**data)
 
 

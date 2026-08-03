@@ -2,10 +2,8 @@
 from __future__ import annotations
 
 import random
-from datetime import date
-from typing import Any
 
-from .models import Observation, StudySpec
+from .models import BaselineSelection, ControlAudit, Observation, StudySpec
 
 
 def _group_key(obs: Observation) -> tuple[str, str, int, str]:
@@ -16,8 +14,15 @@ def _group_key(obs: Observation) -> tuple[str, str, int, str]:
 def frequency_matched_controls(
     observations: list[Observation],
     spec: StudySpec,
-) -> list[Observation]:
-    """Select deterministic below-threshold controls matched to qualifying signals."""
+) -> BaselineSelection:
+    """Select deterministic below-threshold controls matched to qualifying signals.
+
+    For each (ticker, split, year, event_type) group, this selects the same number
+    of non-qualifying complete observations as qualifying signals. If fewer
+    non-qualifying observations are available than requested, the group is
+    marked ``underfilled`` and all available controls are used, but the resulting
+    lift for that split/event type is intentionally invalidated.
+    """
     rng = random.Random(spec.random_seed)
 
     by_group: dict[tuple[str, str, int, str], list[Observation]] = {}
@@ -28,28 +33,53 @@ def frequency_matched_controls(
         by_group.setdefault(key, []).append(obs)
 
     controls: list[Observation] = []
-    for key, group in by_group.items():
+    audit: list[ControlAudit] = []
+    underfilled_keys: list[tuple[str, str, int, str]] = []
+
+    for key, group in sorted(by_group.items()):
         signals = [o for o in group if o.is_qualifying]
         non_signals = [o for o in group if not o.is_qualifying and o.outcome_status == "complete"]
         n = len(signals)
-        if n == 0 or len(non_signals) == 0:
+        requested = n
+        available = len(non_signals)
+        selected: list[Observation] = []
+        underfilled = False
+        if n == 0 or available == 0:
             continue
-        # Deterministic selection without replacement from below-threshold observations.
-        if len(non_signals) <= n:
+        if available <= n:
             selected = non_signals
+            if available < n:
+                underfilled = True
+                underfilled_keys.append(key)
         else:
             # random.sample is deterministic given the seeded RNG order.
             selected = rng.sample(non_signals, n)
         controls.extend(selected)
-    return controls
+        audit.append(ControlAudit(
+            ticker=key[0],
+            split=key[1],
+            year=key[2],
+            event_type=key[3],
+            requested=requested,
+            available=available,
+            selected=len(selected),
+            underfilled=underfilled,
+        ))
+
+    return BaselineSelection(
+        controls=controls,
+        audit=audit,
+        underfilled_keys=underfilled_keys,
+    )
 
 
 def unconditional_baseline_observations(
     observations: list[Observation],
     spec: StudySpec,
-) -> list[Observation]:
+) -> BaselineSelection:
     """All otherwise eligible (complete outcome) observations for the same ticker/split/event_type."""
-    return [o for o in observations if o.outcome_status == "complete"]
+    _ = spec  # spec reserved for future filtering
+    return BaselineSelection(controls=[o for o in observations if o.outcome_status == "complete"])
 
 
 def compute_baseline_returns(

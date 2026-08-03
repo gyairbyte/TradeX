@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from .models import (
     BootstrapConfig,
-    DatasetManifest,
     DataQualityRow,
+    DatasetManifest,
     Fingerprint,
     ManifestEntry,
     Observation,
@@ -22,8 +22,8 @@ from .snapshot import create_snapshot
 
 __all__ = [
     "BootstrapConfig",
-    "DatasetManifest",
     "DataQualityRow",
+    "DatasetManifest",
     "Fingerprint",
     "ManifestEntry",
     "Observation",
