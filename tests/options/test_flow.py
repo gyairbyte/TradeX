@@ -1008,6 +1008,8 @@ def test_provider_bool_strict_normalization():
     assert flow._provider_bool(None) is None
     assert flow._provider_bool(1) is True
     assert flow._provider_bool(0) is False
+    assert flow._provider_bool(2) is None
+    assert flow._provider_bool(-1) is None
     assert flow._provider_bool("true") is True
     assert flow._provider_bool("True") is True
     assert flow._provider_bool("false") is False
@@ -1030,6 +1032,16 @@ def test_scan_unusual_flow_string_false_is_not_sweep(_uw_record):
             report = flow.scan_unusual_flow_with_report(["AAPL"], min_vol_oi=3.0)
     row = report.results.iloc[0]
     assert bool(row["is_sweep"]) is False
+
+
+def test_scan_unusual_flow_out_of_range_int_is_not_sweep(_uw_record):
+    record = dict(_uw_record)
+    record["is_sweep"] = 2
+    with _uw_configured_via_patch():
+        with patch.object(flow, "_fetch_unusual_whales_flow", return_value=[record]):
+            report = flow.scan_unusual_flow_with_report(["AAPL"], min_vol_oi=3.0)
+    row = report.results.iloc[0]
+    assert not bool(row["is_sweep"]) or pd.isna(row["is_sweep"])
 
 
 # ── malformed provider schema regressions ──────────────────────────────────────

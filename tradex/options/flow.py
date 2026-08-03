@@ -395,17 +395,22 @@ def _normalize_contract_type(value: object) -> str | None:
 def _provider_bool(value: object) -> bool | None:
     """Normalize provider boolean sweep flags.
 
-    Accepts real Python booleans, integers, and the string encodings
-    ``true``/``false``/``1``/``0``/``yes``/``no``/``y``/``n`` (case-insensitive).
-    Any other value is treated as ``None`` (unknown) so that a malformed field
-    can never silently become a sweep.
+    Accepts real Python booleans, integer ``0`` or ``1``, and the string
+    encodings ``true``/``false``/``1``/``0``/``yes``/``no``/``y``/``n``
+    (case-insensitive). Any other value — including integers outside ``0/1`` —
+    is treated as ``None`` (unknown) so that malformed data can never silently
+    render as a sweep.
     """
     if value is None:
         return None
     if isinstance(value, bool):
         return value
     if isinstance(value, int):
-        return value != 0
+        if value == 0:
+            return False
+        if value == 1:
+            return True
+        return None
     if isinstance(value, str):
         s = value.strip().lower()
         if s in ("true", "1", "yes", "y"):
