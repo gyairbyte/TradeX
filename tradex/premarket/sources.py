@@ -7,12 +7,16 @@ public functions here; tests mock at this boundary.
 from __future__ import annotations
 
 import math
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 
 import pandas as pd
 import yfinance as yf
 
-from tradex.data.fetcher import DEFAULT_PROVIDER, ProviderCapabilityError
+from tradex.data.fetcher import (
+    DEFAULT_PROVIDER,
+    ProviderCapabilityError,
+    ProviderDataUnavailableError,
+)
 from tradex.data.history import fetch_daily_history
 from tradex.market import (
     MARKET_TIMEZONE,
@@ -50,6 +54,11 @@ def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         raise ValueError("Naive datetime is not accepted; provide a timezone-aware datetime.")
     return value.astimezone(UTC)
+
+
+def _today() -> date:
+    """Return the current UTC date. Overrideable for deterministic testing."""
+    return datetime.now(UTC).date()
 
 
 def _ny(value: datetime) -> datetime:
@@ -225,10 +234,33 @@ def _fetch_yahoo_premarket_bars(
     requested_provider: str,
     allow_after_open: bool = False,
 ) -> PremarketBarsResult:
-    """Fetch 1-minute pre/post history from Yahoo and filter to the pre-market window."""
+    """Fetch 1-minute pre/post history from Yahoo for the session of ``as_of``.
+
+    The request is anchored to ``session_date`` (start/end) and then filtered to
+    the pre-market window ending at ``as_of``. Retrospective scans for sessions
+    older than today are not supported by the free Yahoo 1-minute feed and return
+    a typed ``ProviderDataUnavailableError`` without reaching the network.
+    """
+    if session_date != _today():
+        return PremarketBarsResult(
+            ticker=ticker,
+            requested_provider=requested_provider,
+            actual_provider=None,
+            session_date=session_date,
+            bars=pd.DataFrame(),
+            attempts=0,
+            retries=0,
+            error=ProviderDataUnavailableError(
+                f"Yahoo 1m pre-market data for {session_date} is unavailable; "
+                "retrospective mode is limited to the current session."
+            ),
+        )
+
+    start = session_date - timedelta(days=1)
+    end = session_date + timedelta(days=1)
     try:
         tk = yf.Ticker(ticker)
-        df = tk.history(period="5d", interval="1m", prepost=True)
+        df = tk.history(start=start, end=end, interval="1m", prepost=True)
     except Exception as exc:  # noqa: BLE001
         return PremarketBarsResult(
             ticker=ticker,
@@ -557,39 +589,18 @@ def _get_prev_close(
 def get_premarket_price(
     ticker: str, provider: str | None = None, as_of: datetime | None = None
 ) -> float | None:
-    """Compatibility wrapper that returns the latest pre-market close or None."""
+    """Compatibility wrapper that returns the latest pre-market close or None.
+
+    Delegates to ``fetch_premarket_bars`` so the request is anchored to ``as_of``
+    and retrospective sessions are rejected without duplicating network logic.
+    """
     as_of = as_of or datetime.now(UTC)
-    ny_as_of = _ny(as_of)
-    session_date = ny_as_of.date()
-    if not is_trading_day(session_date):
+    result = fetch_premarket_bars(
+        ticker, provider=provider, as_of=as_of, allow_after_open=False
+    )
+    if result.error is not None or result.bars.empty:
         return None
-    window = _premarket_window(session_date, ny_as_of, allow_after_open=False)
-    if window is None:
-        return None
-
-    p = (provider or DEFAULT_PROVIDER).lower()
-    if p != "yahoo":
-        raise ProviderCapabilityError(
-            f"Provider '{p}' does not yet support pre-market/extended-hours quotes"
-        )
-
-    try:
-        tk = yf.Ticker(ticker)
-        df = tk.history(period="5d", interval="1m", prepost=True)
-    except Exception:  # noqa: BLE001
-        return None
-
-    if df.empty:
-        return None
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = [c[0].lower() for c in df.columns]
-    else:
-        df.columns = [c.lower() for c in df.columns]
-    df.index = pd.to_datetime(df.index, utc=True)
-    df = _filter_premarket_bars(df, session_date, as_of, allow_after_open=False)
-    if df.empty:
-        return None
-    return float(df["close"].iloc[-1])
+    return float(result.bars["close"].iloc[-1])
 
 
 def fetch_spread_snapshot(

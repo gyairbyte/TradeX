@@ -911,6 +911,10 @@ def _premarket_report(
     filtered: int = 0,
     failed: int = 0,
     outside_window: int = 0,
+    provider_failure: int = 0,
+    no_previous_close: int = 0,
+    no_premarket_data: int = 0,
+    non_trading_day: int = 0,
     provider_errors: dict | None = None,
     results: pd.DataFrame | None = None,
 ) -> MagicMock:
@@ -921,6 +925,10 @@ def _premarket_report(
         "filtered": filtered,
         "failed": failed,
         "outside_window": outside_window,
+        "provider_failure": provider_failure,
+        "no_previous_close": no_previous_close,
+        "no_premarket_data": no_premarket_data,
+        "non_trading_day": non_trading_day,
     }
     report.provider_errors = provider_errors or {}
     report.results = results if results is not None else pd.DataFrame()
@@ -960,7 +968,7 @@ def test_scheduled_premarket_zero_results_not_provider_failure(capsys):
         watcher._run_scheduled_premarket(["AAPL"], provider="yahoo", now=now)
     captured = capsys.readouterr()
     assert "No qualifying gaps" in captured.out
-    assert "failed" not in captured.out.lower() or "All tickers failed" not in captured.out
+    assert "All tickers failed" not in captured.out
 
 
 def test_scheduled_premarket_partial_failure_surfaces(capsys):
@@ -990,7 +998,7 @@ def test_scheduled_premarket_complete_provider_failure_surfaces(capsys):
     """When every ticker fails, the watcher reports a complete failure."""
     now = datetime(2025, 1, 15, 13, 0, tzinfo=UTC)
     report = _premarket_report(
-        requested=2, qualified=0, filtered=0, failed=2,
+        requested=2, qualified=0, filtered=0, failed=2, provider_failure=2,
         provider_errors={"AAPL": "outage", "TSLA": "outage"},
     )
     with patch.object(watcher, "scan_gaps_with_report", return_value=report):

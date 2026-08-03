@@ -109,6 +109,53 @@ def test_scan_gaps_with_report_qualifies():
     assert report.results.iloc[0]["direction"] == "up"
 
 
+def test_scan_gaps_with_report_range_uses_previous_close():
+    """Range % uses the previous close as the denominator, not the pre-market open."""
+    # prev_close=100, pre_market open=150, high=160, low=140.
+    # Range using prev_close: (160 - 140) / 100 * 100 = 20.0
+    # Range using open: (160 - 140) / 150 * 100 ≈ 13.33
+    snapshot = PremarketSnapshot(
+        ticker="AAPL",
+        session_date=date(2024, 1, 3),
+        requested_provider="yahoo",
+        actual_provider="yahoo",
+        first_bar_time=datetime(2024, 1, 3, 9, 0, tzinfo=UTC),
+        last_bar_time=datetime(2024, 1, 3, 13, 0, tzinfo=UTC),
+        bar_count=10,
+        premarket_open=150.0,
+        premarket_high=160.0,
+        premarket_low=140.0,
+        premarket_last=155.0,
+        premarket_volume=1000,
+        premarket_dollar_volume=155_000.0,
+        premarket_vwap=155.0,
+        data_age_minutes=5.0,
+    )
+    config = GapScanConfig(min_abs_gap_pct=2.0)
+    with (
+        patch(
+            "tradex.premarket.gap_scanner.fetch_daily_liquidity_baseline",
+            return_value=_baseline(100.0),
+        ),
+        patch("tradex.premarket.gap_scanner.fetch_premarket_bars", return_value=_bars()),
+        patch(
+            "tradex.premarket.gap_scanner.build_premarket_snapshot", return_value=snapshot
+        ),
+        patch(
+            "tradex.premarket.gap_scanner.fetch_spread_snapshot",
+            return_value=SpreadSnapshot(available=False),
+        ),
+        patch(
+            "tradex.premarket.gap_scanner.fetch_catalyst_context",
+            return_value=GapCatalystContext(ticker="AAPL", session_date=date(2024, 1, 3)),
+        ),
+    ):
+        report = scan_gaps_with_report(
+            ["AAPL"], config=config, as_of=datetime(2024, 1, 3, 13, 0, tzinfo=UTC)
+        )
+    assert report.results.iloc[0]["premarket_range_pct"] == pytest.approx(20.0)
+
+
 def test_scan_gaps_with_report_filters_below_min_gap():
     config = GapScanConfig(min_abs_gap_pct=10.0)
     with (

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any
@@ -17,6 +18,53 @@ GAP_TIERS = {
 }
 
 DEFAULT_MIN_GAP = 2.0
+
+# Validated ticker contract shared by CLI, dashboard, and scanner.
+# Tickers are 1-10 uppercase characters starting with a letter; dots and hyphens
+# are allowed (e.g. BRK.B, BRK-B).  A leading '$' is stripped by callers.
+VALID_TICKER_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")
+
+# Stable primary outcome taxonomy for every requested ticker.
+GAP_STATUS_QUALIFIED = "qualified"
+GAP_STATUS_BELOW_GAP_THRESHOLD = "below_gap_threshold"
+GAP_STATUS_PRICE_FILTERED = "price_filtered"
+GAP_STATUS_LIQUIDITY_FILTERED = "liquidity_filtered"
+GAP_STATUS_STALE_DATA = "stale_data"
+GAP_STATUS_SPREAD_FILTERED = "spread_filtered"
+GAP_STATUS_SPREAD_UNAVAILABLE = "spread_unavailable"
+GAP_STATUS_CATALYST_FILTERED = "catalyst_filtered"
+GAP_STATUS_NO_PREVIOUS_CLOSE = "no_previous_close"
+GAP_STATUS_NO_PREMARKET_DATA = "no_premarket_data"
+GAP_STATUS_PROVIDER_FAILURE = "provider_failure"
+GAP_STATUS_CALCULATION_FAILURE = "calculation_failure"
+GAP_STATUS_NON_TRADING_DAY = "non_trading_day"
+GAP_STATUS_OUTSIDE_WINDOW = "outside_window"
+GAP_STATUS_FILTERED = "filtered"
+GAP_STATUS_FAILED = "failed"
+
+_FILTER_STATUSES = {
+    GAP_STATUS_BELOW_GAP_THRESHOLD,
+    GAP_STATUS_PRICE_FILTERED,
+    GAP_STATUS_LIQUIDITY_FILTERED,
+    GAP_STATUS_STALE_DATA,
+    GAP_STATUS_SPREAD_FILTERED,
+    GAP_STATUS_SPREAD_UNAVAILABLE,
+    GAP_STATUS_CATALYST_FILTERED,
+    GAP_STATUS_FILTERED,
+}
+
+_FAILURE_STATUSES = {
+    GAP_STATUS_NO_PREVIOUS_CLOSE,
+    GAP_STATUS_NO_PREMARKET_DATA,
+    GAP_STATUS_PROVIDER_FAILURE,
+    GAP_STATUS_CALCULATION_FAILURE,
+    GAP_STATUS_FAILED,
+}
+
+_OUTSIDE_WINDOW_STATUSES = {
+    GAP_STATUS_NON_TRADING_DAY,
+    GAP_STATUS_OUTSIDE_WINDOW,
+}
 
 
 @dataclass(frozen=True)
@@ -227,15 +275,19 @@ class GapScanReport:
         }
 
     def counts(self) -> dict[str, int]:
-        """Requested, qualified, filtered, failed, and outside-window counts."""
+        """Return requested, aggregated, and categorized outcome counts."""
         obs = self.observations
-        return {
-            "requested": len(self.requested_tickers),
-            "qualified": len(obs[obs["status"] == "qualified"]),
-            "filtered": len(obs[obs["status"] == "filtered"]),
-            "failed": len(obs[obs["status"] == "failed"]),
-            "outside_window": len(obs[obs["status"] == "outside_window"]),
-        }
+        statuses = obs["status"].tolist() if not obs.empty else []
+        counts: dict[str, int] = {"requested": len(self.requested_tickers)}
+        for status in _FILTER_STATUSES | _FAILURE_STATUSES | _OUTSIDE_WINDOW_STATUSES | {GAP_STATUS_QUALIFIED}:
+            counts[status] = 0
+        for status in statuses:
+            counts[status] = counts.get(status, 0) + 1
+        counts["qualified"] = counts.get(GAP_STATUS_QUALIFIED, 0)
+        counts["filtered"] = sum(counts.get(s, 0) for s in _FILTER_STATUSES)
+        counts["failed"] = sum(counts.get(s, 0) for s in _FAILURE_STATUSES)
+        counts["outside_window"] = sum(counts.get(s, 0) for s in _OUTSIDE_WINDOW_STATUSES)
+        return counts
 
 
 _COMMON_COLUMNS: dict[str, Any] = {

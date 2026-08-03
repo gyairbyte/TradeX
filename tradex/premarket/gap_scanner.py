@@ -10,7 +10,6 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 
 import pandas as pd
-import yfinance as yf
 
 from tradex.data.fetcher import DEFAULT_PROVIDER, ProviderCapabilityError
 from tradex.data.history import fetch_daily_history
@@ -28,7 +27,22 @@ from tradex.premarket.models import (
     _OBSERVATION_COLUMNS,
     _RESULT_COLUMNS,
     DEFAULT_MIN_GAP,
+    GAP_STATUS_BELOW_GAP_THRESHOLD,
+    GAP_STATUS_CALCULATION_FAILURE,
+    GAP_STATUS_CATALYST_FILTERED,
+    GAP_STATUS_LIQUIDITY_FILTERED,
+    GAP_STATUS_NO_PREMARKET_DATA,
+    GAP_STATUS_NO_PREVIOUS_CLOSE,
+    GAP_STATUS_NON_TRADING_DAY,
+    GAP_STATUS_OUTSIDE_WINDOW,
+    GAP_STATUS_PRICE_FILTERED,
+    GAP_STATUS_PROVIDER_FAILURE,
+    GAP_STATUS_QUALIFIED,
+    GAP_STATUS_SPREAD_FILTERED,
+    GAP_STATUS_SPREAD_UNAVAILABLE,
+    GAP_STATUS_STALE_DATA,
     GAP_TIERS,
+    VALID_TICKER_RE,
     DailyLiquidityBaseline,
     GapCatalystContext,
     GapScanReport,
@@ -43,6 +57,7 @@ from tradex.premarket.sources import (
     fetch_daily_liquidity_baseline,
     fetch_premarket_bars,
     fetch_spread_snapshot,
+    get_premarket_price,
     resolve_premarket_provider,
 )
 
@@ -95,56 +110,6 @@ def _get_prev_close(
         return None
 
 
-def get_premarket_price(
-    ticker: str,
-    provider: str | None = None,
-    as_of: datetime | None = None,
-) -> float | None:
-    """Fetch the latest pre-market/extended-hours price before the session open.
-
-    Uses the local ``yf.Ticker`` binding so existing tests can patch it at
-    ``gap_scanner.yf.Ticker``.
-    """
-    as_of = as_of or datetime.now(UTC)
-    ny_as_of = normalize_market_datetime(as_of)
-
-    p = (provider or DEFAULT_PROVIDER).lower()
-    if p != "yahoo":
-        raise ProviderCapabilityError(
-            f"Provider '{p}' does not yet support pre-market/extended-hours quotes"
-        )
-
-    session_date = ny_as_of.date()
-    if not is_trading_day(session_date):
-        return None
-    session = get_market_session(session_date)
-    if session is None:
-        return None
-
-    premarket_start = datetime.combine(session_date, PREMARKET_OPEN_TIME, tzinfo=MARKET_TIMEZONE)
-    window_end = min(ny_as_of, session.opens_at)
-    if window_end <= premarket_start:
-        return None
-
-    try:
-        tk = yf.Ticker(ticker)
-        df = tk.history(period="5d", interval="1m", prepost=True)
-    except Exception:  # noqa: BLE001
-        return None
-
-    if df.empty:
-        return None
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = [c[0].lower() for c in df.columns]
-    else:
-        df.columns = [c.lower() for c in df.columns]
-    df.index = pd.to_datetime(df.index, utc=True)
-    df = _filter_premarket_bars(df, session_date, as_of, allow_after_open=False)
-    if df.empty:
-        return None
-    return float(df["close"].iloc[-1])
-
-
 def _classify_gap(gap_pct: float) -> tuple[str, str]:
     """Returns (tier, direction) for a given gap percentage."""
     if gap_pct > 0:
@@ -183,13 +148,37 @@ def _normalize_tickers(tickers: list[str]) -> list[str]:
     seen: set[str] = set()
     normalized: list[str] = []
     for t in tickers:
-        s = str(t).strip().upper()
+        s = str(t).strip().upper().lstrip("$")
         if not s:
             raise ValueError("tickers must not contain empty symbols")
+        if not VALID_TICKER_RE.match(s):
+            raise ValueError(f"invalid ticker symbol: {t!r}")
         if s not in seen:
             seen.add(s)
             normalized.append(s)
     return normalized
+
+
+def _primary_status_for_filter_reasons(reasons: list[str]) -> str:
+    """Map the first applicable filter reason to a stable primary status."""
+    if not reasons:
+        return GAP_STATUS_QUALIFIED
+    reason = reasons[0]
+    if reason.startswith("gap below"):
+        return GAP_STATUS_BELOW_GAP_THRESHOLD
+    if reason.startswith("price below"):
+        return GAP_STATUS_PRICE_FILTERED
+    if reason.startswith("pre-market volume") or reason.startswith("pre-market dollar volume") or reason.startswith("volume ratio"):
+        return GAP_STATUS_LIQUIDITY_FILTERED
+    if reason.startswith("data age"):
+        return GAP_STATUS_STALE_DATA
+    if reason == "spread data required but unavailable":
+        return GAP_STATUS_SPREAD_UNAVAILABLE
+    if reason.startswith("spread"):
+        return GAP_STATUS_SPREAD_FILTERED
+    if reason.startswith("catalyst"):
+        return GAP_STATUS_CATALYST_FILTERED
+    return GAP_STATUS_BELOW_GAP_THRESHOLD
 
 
 def _qualify(
@@ -201,28 +190,20 @@ def _qualify(
     gap_pct: float,
     config: GapScanConfig,
 ) -> tuple[str, list[str], float | None]:
-    """Apply filter thresholds in order and return (status, filter_reasons, volume_ratio)."""
+    """Apply filter thresholds and return (primary_status, filter_reasons, volume_ratio)."""
     reasons: list[str] = []
-
-    if baseline.error is not None:
-        return "failed", [f"baseline provider failure: {baseline.error}"], None
-
-    if prev_close is None or prev_close <= 0 or not isinstance(prev_close, (int, float)):
-        return "failed", ["invalid previous close"], None
-    if snapshot.premarket_last is None:
-        return "failed", ["no pre-market data"], None
 
     ratio = _volume_ratio(snapshot, baseline)
 
-    # 3. Minimum absolute gap
+    # 1. Minimum absolute gap
     if abs(gap_pct) < config.min_abs_gap_pct:
         reasons.append(f"gap below {config.min_abs_gap_pct}%")
 
-    # 4. Minimum price
+    # 2. Minimum price
     if config.min_price > 0 and (snapshot.premarket_last or 0) < config.min_price:
         reasons.append(f"price below ${config.min_price}")
 
-    # 5. Data freshness
+    # 3. Data freshness
     if (
         config.max_data_age_minutes is not None
         and snapshot.data_age_minutes is not None
@@ -232,20 +213,20 @@ def _qualify(
             f"data age {snapshot.data_age_minutes:.1f}m exceeds {config.max_data_age_minutes}m"
         )
 
-    # 6. Pre-market share volume
+    # 4. Pre-market share volume
     if config.min_premarket_volume > 0 and snapshot.premarket_volume < config.min_premarket_volume:
         reasons.append(
             f"pre-market volume {snapshot.premarket_volume} below {config.min_premarket_volume}"
         )
 
-    # 7. Pre-market dollar volume
+    # 5. Pre-market dollar volume
     if (
         config.min_premarket_dollar_volume > 0
         and snapshot.premarket_dollar_volume < config.min_premarket_dollar_volume
     ):
         reasons.append(f"pre-market dollar volume below ${config.min_premarket_dollar_volume:,.0f}")
 
-    # 8. Pre-market volume ratio
+    # 6. Pre-market volume ratio
     if config.min_premarket_volume_ratio > 0:
         if ratio is None:
             reasons.append(
@@ -254,7 +235,7 @@ def _qualify(
         elif ratio < config.min_premarket_volume_ratio:
             reasons.append(f"volume ratio {ratio:.2f}x below {config.min_premarket_volume_ratio}x")
 
-    # 9. Spread requirement and maximum spread
+    # 7. Spread requirement and maximum spread
     if config.require_spread and not spread.available:
         reasons.append("spread data required but unavailable")
     if (
@@ -264,7 +245,7 @@ def _qualify(
     ):
         reasons.append(f"spread {spread.spread_bps:.1f} bps exceeds {config.max_spread_bps} bps")
 
-    # 10. Catalyst requirement
+    # 8. Catalyst requirement
     if config.require_catalyst and catalyst.status not in (
         "earnings_today",
         "earnings_soon",
@@ -274,8 +255,8 @@ def _qualify(
         reasons.append("catalyst context required but not found")
 
     if reasons:
-        return "filtered", reasons, ratio
-    return "qualified", [], ratio
+        return _primary_status_for_filter_reasons(reasons), reasons, ratio
+    return GAP_STATUS_QUALIFIED, [], ratio
 
 
 def _volume_ratio(snapshot: PremarketSnapshot, baseline: DailyLiquidityBaseline) -> float | None:
@@ -297,7 +278,7 @@ def _snapshot_error_observation(
         {
             "ticker": ticker,
             "session_date": session_date,
-            "status": "failed",
+            "status": GAP_STATUS_PROVIDER_FAILURE,
             "requested_provider": requested_provider,
             "actual_provider": actual_provider,
             "error": error,
@@ -312,11 +293,12 @@ def _premarket_move_pct(open_price: float | None, last_price: float | None) -> f
 
 
 def _premarket_range_pct(
-    open_price: float | None, high: float | None, low: float | None
+    prev_close: float | None, high: float | None, low: float | None
 ) -> float | None:
-    if open_price is None or high is None or low is None or open_price <= 0 or low <= 0:
+    """Return the pre-market trading range as a percentage of the previous close."""
+    if prev_close is None or high is None or low is None or prev_close <= 0 or low <= 0:
         return None
-    return ((high - low) / open_price) * 100.0
+    return ((high - low) / prev_close) * 100.0
 
 
 def _build_observation(
@@ -361,7 +343,7 @@ def _build_observation(
         else (_volume_ratio(snap, baseline) if baseline else None)
     )
     move_pct = _premarket_move_pct(snap.premarket_open, snap.premarket_last)
-    range_pct = _premarket_range_pct(snap.premarket_open, snap.premarket_high, snap.premarket_low)
+    range_pct = _premarket_range_pct(prev_close, snap.premarket_high, snap.premarket_low)
     return pd.Series(
         {
             "ticker": ticker,
@@ -485,8 +467,10 @@ def scan_gaps_with_report(
     session = get_market_session(session_date) if is_trading_day(session_date) else None
     premarket_start = datetime.combine(session_date, PREMARKET_OPEN_TIME, tzinfo=MARKET_TIMEZONE)
     outside_reason: str | None = None
+    outside_status = GAP_STATUS_OUTSIDE_WINDOW
     if session is None:
         outside_reason = "not an XNYS trading session"
+        outside_status = GAP_STATUS_NON_TRADING_DAY
     elif not config.allow_after_open and ny_as_of >= session.opens_at:
         outside_reason = "regular session has opened"
     elif ny_as_of < premarket_start:
@@ -500,7 +484,7 @@ def scan_gaps_with_report(
             obs = _build_observation(
                 ticker=ticker,
                 session_date=None if session is None else session_date,
-                status="outside_window",
+                status=outside_status,
                 requested_provider=requested_provider,
                 actual_provider=None,
                 prev_close=None,
@@ -547,7 +531,7 @@ def scan_gaps_with_report(
             obs = _build_observation(
                 ticker=ticker,
                 session_date=session_date,
-                status="failed",
+                status=GAP_STATUS_PROVIDER_FAILURE,
                 requested_provider=requested_provider,
                 actual_provider=None,
                 prev_close=None,
@@ -559,7 +543,7 @@ def scan_gaps_with_report(
                 direction=None,
                 tier=None,
                 note=None,
-                reasons=[],
+                reasons=[f"baseline provider failure: {baseline.error}"],
                 error=str(baseline.error),
             )
             observations.append(obs)
@@ -570,7 +554,7 @@ def scan_gaps_with_report(
             obs = _build_observation(
                 ticker=ticker,
                 session_date=session_date,
-                status="failed",
+                status=GAP_STATUS_NO_PREVIOUS_CLOSE,
                 requested_provider=requested_provider,
                 actual_provider=None,
                 prev_close=prev_close,
@@ -609,13 +593,19 @@ def scan_gaps_with_report(
             )
 
         if bars_result.error is not None or bars_result.bars.empty:
-            error_msg = str(bars_result.error) if bars_result.error else "no pre-market data"
             if bars_result.error is not None:
+                error_msg = str(bars_result.error)
                 provider_errors[ticker] = error_msg
+                fail_status = GAP_STATUS_PROVIDER_FAILURE
+                fail_reasons = [f"premarket provider failure: {error_msg}"]
+            else:
+                error_msg = "no pre-market data"
+                fail_status = GAP_STATUS_NO_PREMARKET_DATA
+                fail_reasons = ["no pre-market data"]
             obs = _build_observation(
                 ticker=ticker,
                 session_date=session_date,
-                status="failed",
+                status=fail_status,
                 requested_provider=requested_provider,
                 actual_provider=None,
                 prev_close=prev_close,
@@ -627,20 +617,44 @@ def scan_gaps_with_report(
                 direction=None,
                 tier=None,
                 note=None,
-                reasons=["no pre-market data"],
+                reasons=fail_reasons,
                 error=error_msg,
             )
             observations.append(obs)
             continue
 
-        snapshot = build_premarket_snapshot(
-            bars_result.bars,
-            ticker=ticker,
-            session_date=session_date,
-            as_of=as_of,
-            requested_provider=requested_provider,
-            actual_provider=bars_result.actual_provider,
-        )
+        try:
+            snapshot = build_premarket_snapshot(
+                bars_result.bars,
+                ticker=ticker,
+                session_date=session_date,
+                as_of=as_of,
+                requested_provider=requested_provider,
+                actual_provider=bars_result.actual_provider,
+            )
+        except Exception as exc:  # noqa: BLE001
+            error_msg = f"snapshot calculation failure: {exc}"
+            provider_errors[ticker] = error_msg
+            obs = _build_observation(
+                ticker=ticker,
+                session_date=session_date,
+                status=GAP_STATUS_CALCULATION_FAILURE,
+                requested_provider=requested_provider,
+                actual_provider=None,
+                prev_close=prev_close,
+                snapshot=None,
+                baseline=baseline,
+                spread=None,
+                catalyst=None,
+                gap_pct=None,
+                direction=None,
+                tier=None,
+                note=None,
+                reasons=[error_msg],
+                error=error_msg,
+            )
+            observations.append(obs)
+            continue
 
         # Optional spread and catalyst
         spread = fetch_spread_snapshot(ticker, as_of, provider=provider)

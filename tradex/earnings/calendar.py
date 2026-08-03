@@ -127,20 +127,28 @@ def _fetch_from_yahoo(ticker: str) -> date | None:
 
 
 def get_next_earnings(
-    ticker: str, force_refresh: bool = False, source: str | None = None
+    ticker: str,
+    force_refresh: bool = False,
+    source: str | None = None,
+    use_cache: bool = True,
 ) -> date | None:
     """Return the next earnings date for `ticker`, or None if unavailable.
 
     ``source`` is explicit; defaults to ``EARNINGS_DATA_SOURCE`` or ``yahoo``.
     Unsupported sources raise ProviderCapabilityError.
+
+    When ``use_cache`` is False the Yahoo lookup is still used, but no SQLite
+    cache file is read or written. This is the path used by the pre-market gap
+    scanner, which must not create persistent database files.
     """
     source = _resolve_earnings_source(source)
-    if not force_refresh:
+    if use_cache and not force_refresh:
         cached, fresh = _cache_get(ticker, source)
         if fresh:
             return cached
     next_date = _fetch_from_yahoo(ticker)
-    _cache_put(ticker, source, next_date)
+    if use_cache:
+        _cache_put(ticker, source, next_date)
     return next_date
 
 

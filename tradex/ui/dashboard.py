@@ -40,7 +40,13 @@ from tradex.patterns.fingerprint import list_fingerprints, load_fingerprint, run
 from tradex.patterns.matcher import match_ticker, run_match_screen
 from tradex.premarket.config import GapScanConfig
 from tradex.premarket.gap_scanner import scan_gaps_with_report
-from tradex.premarket.models import GapScanReport
+from tradex.premarket.models import (
+    VALID_TICKER_RE,
+    _FAILURE_STATUSES,
+    _FILTER_STATUSES,
+    _OUTSIDE_WINDOW_STATUSES,
+    GapScanReport,
+)
 from tradex.screener.engine import run_with_report
 from tradex.signals import weights as signal_weights
 from tradex.signals.indicators import add_indicators
@@ -69,7 +75,6 @@ DEFAULT_TICKERS = [
 ]
 
 _TICKER_SPLIT_RE = re.compile(r"[\s,;|]+")
-_TICKER_VALID_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")
 
 
 def _parse_pasted_tickers(raw: str) -> list[str]:
@@ -82,9 +87,22 @@ def _parse_pasted_tickers(raw: str) -> list[str]:
     seen: list[str] = []
     for tok in _TICKER_SPLIT_RE.split(raw or ""):
         tok = tok.strip().lstrip("$").upper()
-        if tok and _TICKER_VALID_RE.match(tok) and tok not in seen:
+        if tok and VALID_TICKER_RE.match(tok) and tok not in seen:
             seen.append(tok)
     return seen
+
+
+def _all_tickers_are(counts: dict[str, int], statuses: set[str]) -> bool:
+    requested = counts.get("requested", 0)
+    return requested > 0 and sum(counts.get(s, 0) for s in statuses) == requested
+
+
+def _all_provider_failures(counts: dict[str, int]) -> bool:
+    return _all_tickers_are(counts, {"provider_failure", "calculation_failure"})
+
+
+def _all_missing_data(counts: dict[str, int]) -> bool:
+    return _all_tickers_are(counts, {"no_previous_close", "no_premarket_data"})
 
 st.set_page_config(page_title="TradeX", layout="wide")
 st.title("TradeX — Market Opportunity Scanner")
@@ -1163,12 +1181,13 @@ Gaps occur overnight when new information is reflected in prices while the marke
 
     if gap_error is None and gap_report is not None:
         counts = gap_report.counts()
-        m1, m2, m3, m4, m5 = st.columns(5)
+        m1, m2, m3, m4, m5, m6 = st.columns(6)
         m1.metric("Requested", counts["requested"])
         m2.metric("Qualified", counts["qualified"])
         m3.metric("Filtered", counts["filtered"])
         m4.metric("Failed", counts["failed"])
         m5.metric("Outside window", counts["outside_window"])
+        m6.metric("Provider failures", counts.get("provider_failure", 0))
 
         if gap_report.provider_errors:
             st.error("Provider failures: " + ", ".join(gap_report.provider_errors.keys()))
@@ -1228,15 +1247,17 @@ Gaps occur overnight when new information is reflected in prices while the marke
             gap_fig.update_layout(height=350)
             st.plotly_chart(gap_fig, use_container_width=True)
         else:
-            if counts["outside_window"] == counts["requested"]:
+            if _all_provider_failures(counts):
+                st.error("All tickers failed due to provider or calculation errors. Check provider errors above.")
+            elif _all_missing_data(counts):
+                st.error("All tickers lack required market data (previous close or pre-market bars).")
+            elif _all_tickers_are(counts, _OUTSIDE_WINDOW_STATUSES):
                 st.info("No pre-market scan performed: current time is outside the pre-market window or the exchange is closed.")
-            elif counts["failed"] == counts["requested"]:
-                st.error("All tickers failed. Check provider errors above.")
-            else:
+            elif counts["qualified"] == 0:
                 st.info(f"No gaps above {min_gap}% found. {counts['filtered']} filtered, {counts['failed']} failed, {counts['outside_window']} outside window.")
 
-        filtered = gap_report.observations[gap_report.observations["status"] == "filtered"]
-        failed = gap_report.observations[gap_report.observations["status"] == "failed"]
+        filtered = gap_report.observations[gap_report.observations["status"].isin(_FILTER_STATUSES)]
+        failed = gap_report.observations[gap_report.observations["status"].isin(_FAILURE_STATUSES)]
         with st.expander("Filtered tickers", expanded=False):
             if filtered.empty:
                 st.caption("No tickers were filtered.")
@@ -1250,7 +1271,7 @@ Gaps occur overnight when new information is reflected in prices while the marke
                 st.caption("No tickers failed.")
             else:
                 st.dataframe(
-                    failed[["ticker", "error"]].reset_index(drop=True),
+                    failed[["ticker", "status", "error"]].reset_index(drop=True),
                     use_container_width=True,
                 )
 

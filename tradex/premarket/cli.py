@@ -12,6 +12,7 @@ import pandas as pd
 
 from tradex.premarket.config import GapScanConfig
 from tradex.premarket.gap_scanner import scan_gaps_with_report
+from tradex.premarket.models import VALID_TICKER_RE
 
 
 def _parse_float(value: str) -> float:
@@ -35,9 +36,12 @@ def _parse_optional_float(value: str) -> float | None:
 
 
 def _parse_tickers(value: str) -> list[str]:
-    parts = [p.strip().upper() for p in value.split(",")]
+    parts = [p.strip().upper().lstrip("$") for p in value.split(",")]
     if not parts or any(not p for p in parts):
         raise argparse.ArgumentTypeError("tickers must be non-empty comma-separated symbols")
+    for p in parts:
+        if not VALID_TICKER_RE.match(p):
+            raise argparse.ArgumentTypeError(f"invalid ticker symbol: {p!r}")
     return parts
 
 

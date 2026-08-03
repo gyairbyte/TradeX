@@ -234,8 +234,12 @@ def _run_scheduled_premarket(
         categories = sorted({str(e) for e in report.provider_errors.values()})
         print(f"[pre-market gap] provider errors: {categories}")
 
-    if counts["failed"] == counts["requested"] and counts["requested"] > 0:
+    provider_failures = counts.get("provider_failure", 0) + counts.get("calculation_failure", 0)
+    missing_data = counts.get("no_previous_close", 0) + counts.get("no_premarket_data", 0)
+    if provider_failures == counts["requested"] and counts["requested"] > 0:
         print("[pre-market gap] All tickers failed — possible provider or data outage.")
+    elif missing_data == counts["requested"] and counts["requested"] > 0:
+        print("[pre-market gap] All tickers lack required market data (previous close or pre-market bars).")
     elif counts["qualified"] == 0:
         print("[pre-market gap] No qualifying gaps at 4% threshold.")
 

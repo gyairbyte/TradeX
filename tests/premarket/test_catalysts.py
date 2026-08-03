@@ -147,3 +147,52 @@ def test_fetch_catalyst_context_require_catalyst_filters_no_earnings():
     assert ctx.earnings_status == "none_detected"
     assert ctx.headline_status == "unavailable"
     assert ctx.status == "unavailable"
+
+
+def test_fetch_catalyst_context_no_earnings_cache_db(tmp_path, monkeypatch):
+    """The pre-market scanner must not create the earnings cache database."""
+    monkeypatch.setattr("tradex.earnings.calendar.CACHE_DIR", tmp_path)
+    monkeypatch.setattr("tradex.earnings.calendar.CACHE_DB", tmp_path / "earnings_cache.db")
+
+    as_of = datetime(2024, 1, 3, 13, 0, tzinfo=UTC)
+    with (
+        patch.object(catalysts, "get_next_earnings") as mock_earn,
+        patch.object(catalysts, "_fetch_yahoo_headlines", return_value=(None, None)),
+        patch.object(catalysts, "_utc_today", return_value=as_of.date()),
+    ):
+        mock_earn.return_value = date(2024, 1, 3)
+        ctx = catalysts.fetch_catalyst_context(
+            "AAPL",
+            date(2024, 1, 3),
+            as_of,
+            include_catalysts=True,
+            require_catalyst=False,
+            lookback_hours=24.0,
+            earnings_source="yahoo",
+            headline_source=None,
+        )
+    mock_earn.assert_called_once_with("AAPL", source="yahoo", use_cache=False)
+    assert not (tmp_path / "earnings_cache.db").exists()
+    assert ctx.earnings_status == "earnings_today"
+
+
+def test_fetch_catalyst_context_historical_headline_is_unavailable():
+    """For a historical as_of, headline absence is unavailable, not none_detected."""
+    as_of = datetime(2024, 1, 3, 13, 0, tzinfo=UTC)
+    with (
+        patch.object(catalysts, "get_next_earnings") as mock_earn,
+        patch.object(catalysts, "_utc_today", return_value=date(2024, 1, 4)),
+    ):
+        mock_earn.return_value = date(2024, 1, 3)
+        ctx = catalysts.fetch_catalyst_context(
+            "AAPL",
+            date(2024, 1, 3),
+            as_of,
+            include_catalysts=True,
+            require_catalyst=False,
+            lookback_hours=24.0,
+            earnings_source="yahoo",
+            headline_source="yahoo",
+        )
+    assert ctx.headline_status == "unavailable"
+    assert ctx.earnings_status == "unavailable"

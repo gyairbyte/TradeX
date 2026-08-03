@@ -150,3 +150,18 @@ def test_cli_strict_json_output_with_nonempty_results(tmp_path):
     assert data["counts"]["qualified"] == 1
     assert len(data["results"]) == 1
     assert data["results"][0]["ticker"] == "AAPL"
+
+
+def test_cli_accepts_dot_hyphen_and_dollar_tickers():
+    report = _empty_report(["BRK.B", "BRK-B"])
+    with patch("tradex.premarket.cli.scan_gaps_with_report", return_value=report) as mock_scan:
+        code = main(["scan", "--tickers", "$BRK.B,BRK-B,aaapl"])
+    assert code == 0
+    args = mock_scan.call_args
+    assert args[0][0] == ["BRK.B", "BRK-B", "AAAPL"]
+
+
+def test_cli_rejects_malformed_tickers():
+    for bad in ["A@PL", "123", "ABCDEFGHIJK", "A B"]:
+        with pytest.raises(SystemExit):
+            main(["scan", "--tickers", bad])

@@ -232,7 +232,9 @@ def fetch_catalyst_context(
                     "earnings context marked unavailable."
                 )
             else:
-                next_earnings = get_next_earnings(ticker, source=actual_earnings_source)
+                next_earnings = get_next_earnings(
+                    ticker, source=actual_earnings_source, use_cache=False
+                )
                 earnings_status, earnings_date, days_until_earnings = _earnings_status(
                     next_earnings, session_date or as_of.date(), lookback_hours
                 )
@@ -249,7 +251,13 @@ def fetch_catalyst_context(
     if requested_headline_source:
         try:
             actual_headline_source = _resolve_headline_source(requested_headline_source)
-            if actual_headline_source == "yahoo":
+            if historical_replay:
+                headline_status = "unavailable"
+                error = error or ValueError(
+                    "Yahoo headlines are not point-in-time for historical as_of; "
+                    "headline context marked unavailable."
+                )
+            elif actual_headline_source == "yahoo":
                 headlines, exc = _fetch_yahoo_headlines(ticker, as_of, lookback_hours)
                 if exc:
                     headline_status = "unavailable"

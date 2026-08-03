@@ -189,9 +189,18 @@ def test_get_premarket_price_wrapper():
     fake_ticker.history.return_value = df
     fake_cls = Mock(return_value=fake_ticker)
     as_of = datetime(2024, 1, 3, 14, 0, tzinfo=UTC)
-    with patch.object(sources.yf, "Ticker", fake_cls):
+    with (
+        patch.object(sources.yf, "Ticker", fake_cls),
+        patch.object(sources, "_today", return_value=date(2024, 1, 3)),
+    ):
         price = sources.get_premarket_price("AAPL", provider="yahoo", as_of=as_of)
     assert price == 103.0
+    fake_ticker.history.assert_called_once()
+    _, kwargs = fake_ticker.history.call_args
+    assert kwargs["start"] == date(2024, 1, 2)
+    assert kwargs["end"] == date(2024, 1, 4)
+    assert kwargs["interval"] == "1m"
+    assert kwargs["prepost"] is True
 
 
 def test_get_prev_close_wrapper():

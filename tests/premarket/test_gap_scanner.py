@@ -1,13 +1,13 @@
 """Tests for pre-market gap scanner source separation."""
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from unittest.mock import Mock, patch
 
 import pandas as pd
 import pytest
 
 from tradex.data.fetcher import ProviderCapabilityError
-from tradex.premarket import gap_scanner
+from tradex.premarket import gap_scanner, sources
 
 
 def _make_daily_history(values, start: str = "2024-01-02") -> pd.DataFrame:
@@ -70,13 +70,17 @@ def test_get_premarket_price_yahoo():
 
     # 10:30 UTC = 05:30 ET, before the 09:30 ET open, so all bars are in the past.
     as_of = datetime(2024, 1, 3, 10, 30, tzinfo=UTC)
-    with patch.object(gap_scanner.yf, "Ticker", fake_tk_cls):
+    with (
+        patch("tradex.premarket.sources.yf.Ticker", fake_tk_cls),
+        patch.object(sources, "_today", return_value=as_of.date()),
+    ):
         price = gap_scanner.get_premarket_price("AAPL", provider="yahoo", as_of=as_of)
 
     assert price == 103.0
     fake_ticker.history.assert_called_once()
     _, kwargs = fake_ticker.history.call_args
-    assert kwargs["period"] == "5d"
+    assert kwargs["start"] == as_of.date() - timedelta(days=1)
+    assert kwargs["end"] == as_of.date() + timedelta(days=1)
     assert kwargs["interval"] == "1m"
     assert kwargs["prepost"] is True
 
@@ -94,7 +98,10 @@ def test_get_premarket_price_returns_none_for_empty():
     # 10:30 UTC = 05:30 ET on a trading day, so the date is valid and the empty response
     # is the reason ``None`` is returned.
     as_of = datetime(2024, 1, 3, 10, 30, tzinfo=UTC)
-    with patch.object(gap_scanner.yf, "Ticker", fake_tk_cls):
+    with (
+        patch("tradex.premarket.sources.yf.Ticker", fake_tk_cls),
+        patch.object(sources, "_today", return_value=as_of.date()),
+    ):
         assert gap_scanner.get_premarket_price("AAPL", provider="yahoo", as_of=as_of) is None
 
 
@@ -231,12 +238,16 @@ def test_get_premarket_price_winter_bars():
 
     # 11:30 UTC = 06:30 ET, after the latest bar but before the 09:30 ET open.
     as_of = datetime(2024, 1, 3, 11, 30, tzinfo=UTC)
-    with patch.object(gap_scanner.yf, "Ticker", fake_tk_cls):
+    with (
+        patch("tradex.premarket.sources.yf.Ticker", fake_tk_cls),
+        patch.object(sources, "_today", return_value=as_of.date()),
+    ):
         price = gap_scanner.get_premarket_price("AAPL", provider="yahoo", as_of=as_of)
 
     assert price == 103.0
     _, kwargs = fake_ticker.history.call_args
-    assert kwargs["period"] == "5d"
+    assert kwargs["start"] == as_of.date() - timedelta(days=1)
+    assert kwargs["end"] == as_of.date() + timedelta(days=1)
 
 
 def test_get_premarket_price_summer_bars():
@@ -260,7 +271,10 @@ def test_get_premarket_price_summer_bars():
 
     # 11:30 UTC = 07:30 EDT, after the latest bar but before the 09:30 ET open.
     as_of = datetime(2024, 7, 3, 11, 30, tzinfo=UTC)
-    with patch.object(gap_scanner.yf, "Ticker", fake_tk_cls):
+    with (
+        patch("tradex.premarket.sources.yf.Ticker", fake_tk_cls),
+        patch.object(sources, "_today", return_value=as_of.date()),
+    ):
         price = gap_scanner.get_premarket_price("AAPL", provider="yahoo", as_of=as_of)
 
     assert price == 103.0
@@ -286,7 +300,10 @@ def test_get_premarket_price_excludes_exact_open():
     fake_tk_cls = Mock(return_value=fake_ticker)
 
     as_of = datetime(2024, 1, 3, 14, 15, tzinfo=UTC)  # 09:15 ET
-    with patch.object(gap_scanner.yf, "Ticker", fake_tk_cls):
+    with (
+        patch("tradex.premarket.sources.yf.Ticker", fake_tk_cls),
+        patch.object(sources, "_today", return_value=as_of.date()),
+    ):
         price = gap_scanner.get_premarket_price("AAPL", provider="yahoo", as_of=as_of)
 
     assert price == 101.0
@@ -313,7 +330,10 @@ def test_get_premarket_price_excludes_prior_after_hours():
     fake_tk_cls = Mock(return_value=fake_ticker)
 
     as_of = datetime(2024, 1, 3, 13, 30, tzinfo=UTC)  # 08:30 ET
-    with patch.object(gap_scanner.yf, "Ticker", fake_tk_cls):
+    with (
+        patch("tradex.premarket.sources.yf.Ticker", fake_tk_cls),
+        patch.object(sources, "_today", return_value=as_of.date()),
+    ):
         price = gap_scanner.get_premarket_price("AAPL", provider="yahoo", as_of=as_of)
 
     assert price is None
@@ -338,7 +358,10 @@ def test_get_premarket_price_excludes_before_4am():
     fake_tk_cls = Mock(return_value=fake_ticker)
 
     as_of = datetime(2024, 1, 3, 8, 0, tzinfo=UTC)
-    with patch.object(gap_scanner.yf, "Ticker", fake_tk_cls):
+    with (
+        patch("tradex.premarket.sources.yf.Ticker", fake_tk_cls),
+        patch.object(sources, "_today", return_value=as_of.date()),
+    ):
         price = gap_scanner.get_premarket_price("AAPL", provider="yahoo", as_of=as_of)
 
     assert price is None
@@ -364,7 +387,10 @@ def test_get_premarket_price_excludes_post_market():
     fake_tk_cls = Mock(return_value=fake_ticker)
 
     as_of = datetime(2024, 1, 3, 21, 0, tzinfo=UTC)  # 16:00 ET
-    with patch.object(gap_scanner.yf, "Ticker", fake_tk_cls):
+    with (
+        patch("tradex.premarket.sources.yf.Ticker", fake_tk_cls),
+        patch.object(sources, "_today", return_value=as_of.date()),
+    ):
         price = gap_scanner.get_premarket_price("AAPL", provider="yahoo", as_of=as_of)
 
     assert price is None
@@ -378,7 +404,10 @@ def test_get_premarket_price_holiday_returns_none():
 
     # New Year's Day 2025 is not an XNYS session.
     as_of = datetime(2025, 1, 1, 13, 0, tzinfo=UTC)
-    with patch.object(gap_scanner.yf, "Ticker", fake_tk_cls):
+    with (
+        patch("tradex.premarket.sources.yf.Ticker", fake_tk_cls),
+        patch.object(sources, "_today", return_value=as_of.date()),
+    ):
         assert gap_scanner.get_premarket_price("AAPL", provider="yahoo", as_of=as_of) is None
 
     fake_tk_cls.assert_not_called()
@@ -392,7 +421,10 @@ def test_get_premarket_price_good_friday_returns_none():
     fake_tk_cls = Mock(return_value=fake_ticker)
 
     as_of = datetime(2024, 3, 29, 13, 0, tzinfo=UTC)
-    with patch.object(gap_scanner.yf, "Ticker", fake_tk_cls):
+    with (
+        patch("tradex.premarket.sources.yf.Ticker", fake_tk_cls),
+        patch.object(sources, "_today", return_value=as_of.date()),
+    ):
         assert gap_scanner.get_premarket_price("AAPL", provider="yahoo", as_of=as_of) is None
 
     fake_tk_cls.assert_not_called()
@@ -406,7 +438,10 @@ def test_get_premarket_price_saturday_returns_none():
     fake_tk_cls = Mock(return_value=fake_ticker)
 
     as_of = datetime(2025, 1, 4, 13, 0, tzinfo=UTC)  # Saturday
-    with patch.object(gap_scanner.yf, "Ticker", fake_tk_cls):
+    with (
+        patch("tradex.premarket.sources.yf.Ticker", fake_tk_cls),
+        patch.object(sources, "_today", return_value=as_of.date()),
+    ):
         assert gap_scanner.get_premarket_price("AAPL", provider="yahoo", as_of=as_of) is None
 
     fake_tk_cls.assert_not_called()
@@ -420,7 +455,10 @@ def test_get_premarket_price_sunday_returns_none():
     fake_tk_cls = Mock(return_value=fake_ticker)
 
     as_of = datetime(2025, 1, 5, 13, 0, tzinfo=UTC)  # Sunday
-    with patch.object(gap_scanner.yf, "Ticker", fake_tk_cls):
+    with (
+        patch("tradex.premarket.sources.yf.Ticker", fake_tk_cls),
+        patch.object(sources, "_today", return_value=as_of.date()),
+    ):
         assert gap_scanner.get_premarket_price("AAPL", provider="yahoo", as_of=as_of) is None
 
     fake_tk_cls.assert_not_called()
@@ -456,7 +494,10 @@ def test_get_premarket_price_ignores_bars_after_as_of():
 
     # as_of at 08:00 ET = 13:00 UTC. The 08:30 and 09:00 ET bars must be excluded.
     as_of = datetime(2024, 1, 3, 13, 0, tzinfo=UTC)
-    with patch.object(gap_scanner.yf, "Ticker", fake_tk_cls):
+    with (
+        patch("tradex.premarket.sources.yf.Ticker", fake_tk_cls),
+        patch.object(sources, "_today", return_value=as_of.date()),
+    ):
         price = gap_scanner.get_premarket_price("AAPL", provider="yahoo", as_of=as_of)
 
     assert price == 102.0
@@ -592,3 +633,22 @@ def test_get_prev_close_empty_history_returns_none():
     as_of = datetime(2025, 1, 7, 8, 0, tzinfo=UTC)
     with patch.object(gap_scanner, "fetch_daily_history", return_value=pd.DataFrame()):
         assert gap_scanner._get_prev_close("AAPL", provider="yahoo", as_of=as_of) is None
+
+
+def test_normalize_tickers_accepts_valid_symbols():
+    assert gap_scanner._normalize_tickers(["aapl", "$AAPL", "BRK.B", "BRK-B"]) == [
+        "AAPL",
+        "BRK.B",
+        "BRK-B",
+    ]
+    assert gap_scanner._normalize_tickers(["A", "ABCDEFGHIJ"]) == ["A", "ABCDEFGHIJ"]
+
+
+def test_normalize_tickers_rejects_malformed_symbols():
+    for bad in ["", "A@PL", "123", "A B", "ABCDEFGHIJK"]:
+        with pytest.raises(ValueError):
+            gap_scanner._normalize_tickers([bad])
+
+
+def test_normalize_tickers_deduplicates():
+    assert gap_scanner._normalize_tickers(["AAPL", "aapl", "$AAPL"]) == ["AAPL"]
