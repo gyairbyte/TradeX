@@ -62,6 +62,9 @@ def _check_alerts(
     observed_at: datetime | None = None,
 ) -> list[AlertDispatchResult]:
     """Check coils, confluence, and pattern matches — fire alerts where thresholds are crossed."""
+    if alert_policy is None:
+        alert_policy = _default_alert_policy()
+
     results: list[AlertDispatchResult] = []
 
     # Coil alerts

@@ -375,14 +375,27 @@ class AlertStore:
         payload_hash: str,
         channel_results: dict[str, bool],
         reason: str,
+        *,
+        finalized_at: datetime | None = None,
     ) -> bool:
         """Finalize a previously acquired claim.
 
-        Returns ``True`` if the token matched and the lease is still valid.
-        Wrong or expired tokens, already-finalized rows, or mismatched outcomes
-        return ``False``. Cooldown is only started for ``SENT`` decisions.
+        ``observed_at`` is the original observation timestamp used for cooldown
+        and audit (``last_success_at``). ``finalized_at`` is the actual UTC
+        timestamp when finalization occurs and is used for lease validity; it
+        defaults to ``observed_at`` when omitted for backward compatibility.
+
+        Returns ``True`` if the token matched and the lease was still valid at
+        ``finalized_at``. Wrong or expired tokens, already-finalized rows with a
+        mismatched outcome, or reclaimed leases return ``False``. Cooldown is
+        only started for ``SENT`` decisions.
         """
         observed_at = ensure_aware_utc(observed_at)
+        if finalized_at is None:
+            finalized_at = observed_at
+        else:
+            finalized_at = ensure_aware_utc(finalized_at)
+
         cooldown_until = (
             observed_at + timedelta(minutes=cooldown_minutes)
             if decision == AlertDecision.SENT and cooldown_minutes is not None
@@ -443,7 +456,7 @@ class AlertStore:
                     return False
 
                 claim_expires_dt = _from_iso(claim_expires_at)
-                if claim_expires_dt is not None and observed_at >= claim_expires_dt:
+                if claim_expires_dt is not None and finalized_at >= claim_expires_dt:
                     conn.rollback()
                     return False
 
@@ -472,7 +485,7 @@ class AlertStore:
                             subject,
                             payload_hash,
                             channel_json,
-                            _to_iso(observed_at),
+                            _to_iso(finalized_at),
                             key.ticker,
                             key.alert_type,
                             key.timeframe,
@@ -499,7 +512,7 @@ class AlertStore:
                             subject,
                             payload_hash,
                             channel_json,
-                            _to_iso(observed_at),
+                            _to_iso(finalized_at),
                             key.ticker,
                             key.alert_type,
                             key.timeframe,

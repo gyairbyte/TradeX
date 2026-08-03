@@ -1,7 +1,6 @@
 """Tests for the alert cooldown policy."""
 from __future__ import annotations
 
-import time
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -18,7 +17,7 @@ def fixed_clock():
 
 class TestAlertPolicyDispatch:
     def test_first_send(self, tmp_alert_store, fixed_clock):
-        policy = AlertPolicy(
+        policy = AlertPolicy(clock=lambda: fixed_clock, 
             store=tmp_alert_store,
             transport=lambda s, b, c: {"discord": True, "email": False},
             is_configured=lambda: True,
@@ -31,7 +30,7 @@ class TestAlertPolicyDispatch:
         assert result.next_eligible_at == fixed_clock + timedelta(minutes=60)
 
     def test_repeat_suppressed(self, tmp_alert_store, fixed_clock):
-        policy = AlertPolicy(
+        policy = AlertPolicy(clock=lambda: fixed_clock, 
             store=tmp_alert_store,
             transport=lambda s, b, c: {"discord": True, "email": False},
             is_configured=lambda: True,
@@ -43,7 +42,7 @@ class TestAlertPolicyDispatch:
         assert result.channel_results == {}
 
     def test_exact_expiry_sends(self, tmp_alert_store, fixed_clock):
-        policy = AlertPolicy(
+        policy = AlertPolicy(clock=lambda: fixed_clock, 
             store=tmp_alert_store,
             transport=lambda s, b, c: {"discord": True, "email": False},
             is_configured=lambda: True,
@@ -61,7 +60,7 @@ class TestAlertPolicyDispatch:
             calls.append(1)
             return {"discord": True}
 
-        policy = AlertPolicy(
+        policy = AlertPolicy(clock=lambda: fixed_clock, 
             store=tmp_alert_store,
             transport=transport,
             is_configured=lambda: True,
@@ -72,7 +71,7 @@ class TestAlertPolicyDispatch:
         assert len(calls) == 1
 
     def test_partial_success_starts_cooldown(self, tmp_alert_store, fixed_clock):
-        policy = AlertPolicy(
+        policy = AlertPolicy(clock=lambda: fixed_clock, 
             store=tmp_alert_store,
             transport=lambda s, b, c: {"discord": True, "email": False},
             is_configured=lambda: True,
@@ -84,7 +83,7 @@ class TestAlertPolicyDispatch:
         assert state.cooldown_until == fixed_clock + timedelta(minutes=60)
 
     def test_total_failure_does_not_start_cooldown(self, tmp_alert_store, fixed_clock):
-        policy = AlertPolicy(
+        policy = AlertPolicy(clock=lambda: fixed_clock, 
             store=tmp_alert_store,
             transport=lambda s, b, c: {"discord": False, "email": False},
             is_configured=lambda: True,
@@ -97,7 +96,7 @@ class TestAlertPolicyDispatch:
         assert state.failed_count == 1
 
     def test_no_channels_configured(self, tmp_alert_store, fixed_clock):
-        policy = AlertPolicy(
+        policy = AlertPolicy(clock=lambda: fixed_clock, 
             store=tmp_alert_store,
             transport=lambda s, b, c: {"discord": False, "email": False},
             is_configured=lambda: False,
@@ -110,7 +109,7 @@ class TestAlertPolicyDispatch:
 
     def test_disabled_cooldown_sends_every_time(self, tmp_alert_store, fixed_clock):
         config = AlertCooldownConfig(enabled=False)
-        policy = AlertPolicy(
+        policy = AlertPolicy(clock=lambda: fixed_clock, 
             config=config,
             store=tmp_alert_store,
             transport=lambda s, b, c: {"discord": True},
@@ -127,7 +126,7 @@ class TestAlertPolicyDispatch:
         def transport(s, b, c):
             raise RuntimeError("network failure")
 
-        policy = AlertPolicy(
+        policy = AlertPolicy(clock=lambda: fixed_clock, 
             store=tmp_alert_store,
             transport=transport,
             is_configured=lambda: True,
@@ -142,14 +141,14 @@ class TestAlertPolicyDispatch:
     def test_state_store_error_fails_closed(self, tmp_path, fixed_clock):
         path = tmp_path / "alerts.db"
         path.write_text("corrupt")
-        policy = AlertPolicy(store=AlertStore(path))
+        policy = AlertPolicy(clock=lambda: fixed_clock, store=AlertStore(path))
         key = AlertKey("AAPL", "coil", "intraday")
         result = policy.dispatch(key, "s", "b", observed_at=fixed_clock)
         assert result.decision == AlertDecision.POLICY_ERROR
         assert "state" in result.reason.lower()
 
     def test_different_ticker_independent(self, tmp_alert_store, fixed_clock):
-        policy = AlertPolicy(
+        policy = AlertPolicy(clock=lambda: fixed_clock, 
             store=tmp_alert_store,
             transport=lambda s, b, c: {"discord": True},
             is_configured=lambda: True,
@@ -160,7 +159,7 @@ class TestAlertPolicyDispatch:
         assert r2.decision == AlertDecision.SENT
 
     def test_different_alert_type_independent(self, tmp_alert_store, fixed_clock):
-        policy = AlertPolicy(
+        policy = AlertPolicy(clock=lambda: fixed_clock, 
             store=tmp_alert_store,
             transport=lambda s, b, c: {"discord": True},
             is_configured=lambda: True,
@@ -171,7 +170,7 @@ class TestAlertPolicyDispatch:
         assert r2.decision == AlertDecision.SENT
 
     def test_different_timeframe_independent(self, tmp_alert_store, fixed_clock):
-        policy = AlertPolicy(
+        policy = AlertPolicy(clock=lambda: fixed_clock, 
             store=tmp_alert_store,
             transport=lambda s, b, c: {"discord": True},
             is_configured=lambda: True,
@@ -191,7 +190,7 @@ class TestAlertPolicyDispatch:
             calls.append(1)
             return {"discord": True}
 
-        policy2 = AlertPolicy(store=store2, transport=transport, is_configured=lambda: True)
+        policy2 = AlertPolicy(clock=lambda: fixed_clock, store=store2, transport=transport, is_configured=lambda: True)
         key = AlertKey("AAPL", "coil", "intraday")
 
         # Process 1 acquires the claim and holds it while process 2 attempts dispatch.
@@ -224,7 +223,7 @@ class TestAlertPolicyDispatch:
         # Manually create an expired, unfinalized claim.
         tmp_alert_store.claim(key, fixed_clock, lease_seconds=1)
         later = fixed_clock + timedelta(seconds=2)
-        policy = AlertPolicy(
+        policy = AlertPolicy(clock=lambda: fixed_clock, 
             store=tmp_alert_store,
             transport=lambda s, b, c: {"discord": True},
             is_configured=lambda: True,
@@ -232,8 +231,8 @@ class TestAlertPolicyDispatch:
         result = policy.dispatch(key, "s", "b", observed_at=later)
         assert result.decision == AlertDecision.SENT
 
-    def test_naive_observed_at_rejected(self, tmp_alert_store):
-        policy = AlertPolicy(store=tmp_alert_store)
+    def test_naive_observed_at_rejected(self, tmp_alert_store, fixed_clock):
+        policy = AlertPolicy(clock=lambda: fixed_clock, store=tmp_alert_store)
         with pytest.raises(ValueError, match="naive"):
             policy.dispatch(
                 AlertKey("AAPL", "coil", "intraday"),
@@ -246,7 +245,7 @@ class TestAlertPolicyDispatch:
 class TestAlertPolicyPerTypeOverrides:
     def test_coil_override(self, tmp_alert_store, fixed_clock):
         config = AlertCooldownConfig(coil_minutes=5)
-        policy = AlertPolicy(
+        policy = AlertPolicy(clock=lambda: fixed_clock, 
             config=config,
             store=tmp_alert_store,
             transport=lambda s, b, c: {"discord": True},
@@ -261,7 +260,7 @@ class TestAlertPolicyPerTypeOverrides:
 
     def test_gap_override(self, tmp_alert_store, fixed_clock):
         config = AlertCooldownConfig(gap_minutes=5)
-        policy = AlertPolicy(
+        policy = AlertPolicy(clock=lambda: fixed_clock, 
             config=config,
             store=tmp_alert_store,
             transport=lambda s, b, c: {"discord": True},
@@ -276,7 +275,7 @@ class TestAlertPolicyPerTypeOverrides:
 
     def test_pattern_override(self, tmp_alert_store, fixed_clock):
         config = AlertCooldownConfig(pattern_minutes=5)
-        policy = AlertPolicy(
+        policy = AlertPolicy(clock=lambda: fixed_clock, 
             config=config,
             store=tmp_alert_store,
             transport=lambda s, b, c: {"discord": True},
@@ -293,7 +292,7 @@ class TestAlertPolicyPerTypeOverrides:
 class TestAlertPolicyDisabledRawClassification:
     def test_disabled_no_channels_configured(self, tmp_alert_store, fixed_clock):
         config = AlertCooldownConfig(enabled=False)
-        policy = AlertPolicy(
+        policy = AlertPolicy(clock=lambda: fixed_clock, 
             config=config,
             store=tmp_alert_store,
             transport=lambda s, b, c: {"discord": False, "email": False},
@@ -307,7 +306,7 @@ class TestAlertPolicyDisabledRawClassification:
 
     def test_disabled_full_failure(self, tmp_alert_store, fixed_clock):
         config = AlertCooldownConfig(enabled=False)
-        policy = AlertPolicy(
+        policy = AlertPolicy(clock=lambda: fixed_clock, 
             config=config,
             store=tmp_alert_store,
             transport=lambda s, b, c: {"discord": False, "email": False},
@@ -320,7 +319,7 @@ class TestAlertPolicyDisabledRawClassification:
 
     def test_disabled_success(self, tmp_alert_store, fixed_clock):
         config = AlertCooldownConfig(enabled=False)
-        policy = AlertPolicy(
+        policy = AlertPolicy(clock=lambda: fixed_clock, 
             config=config,
             store=tmp_alert_store,
             transport=lambda s, b, c: {"discord": True},
@@ -333,7 +332,7 @@ class TestAlertPolicyDisabledRawClassification:
         assert tmp_alert_store.get_state(key) is None
 
     def test_malformed_transport_not_counted_as_success(self, tmp_alert_store, fixed_clock):
-        policy = AlertPolicy(
+        policy = AlertPolicy(clock=lambda: fixed_clock, 
             store=tmp_alert_store,
             transport=lambda s, b, c: {"discord": "true"},
             is_configured=lambda: True,
@@ -349,7 +348,7 @@ class TestAlertPolicyDisabledRawClassification:
         assert state.sent_count == 0
 
     def test_malformed_non_mapping_transport_fails_closed(self, tmp_alert_store, fixed_clock):
-        policy = AlertPolicy(
+        policy = AlertPolicy(clock=lambda: fixed_clock, 
             store=tmp_alert_store,
             transport=lambda s, b, c: ["discord"],
             is_configured=lambda: True,
@@ -362,7 +361,7 @@ class TestAlertPolicyDisabledRawClassification:
 
 class TestAlertPolicyFinalizeHandling:
     def test_finalize_false_becomes_policy_error(self, tmp_alert_store, fixed_clock, monkeypatch):
-        policy = AlertPolicy(
+        policy = AlertPolicy(clock=lambda: fixed_clock,
             store=tmp_alert_store,
             transport=lambda s, b, c: {"discord": True},
             is_configured=lambda: True,
@@ -373,20 +372,86 @@ class TestAlertPolicyFinalizeHandling:
         assert result.decision == AlertDecision.POLICY_ERROR
         assert "finalization" in result.reason.lower()
 
-    def test_expired_token_finalize_rejected(self, tmp_alert_store):
+    def test_finalize_uses_finalized_at_for_lease(self, tmp_alert_store, fixed_clock):
+        """Lease expiry is checked against the finalization time, not the observation time."""
         key = AlertKey("AAPL", "coil", "intraday")
-        now = datetime.now(UTC)
-        token = tmp_alert_store.claim(key, now, lease_seconds=1)["token"]
-        time.sleep(1.1)
-        now_after = datetime.now(UTC)
+        claim_ts = fixed_clock
+        token = tmp_alert_store.claim(key, claim_ts, lease_seconds=120)["token"]
         success = tmp_alert_store.finalize(
-            key, token, now_after, AlertDecision.SENT, 60, "subj", "hash", {"discord": True}, "sent"
+            key, token, claim_ts, AlertDecision.SENT, 60, "subj", "hash",
+            {"discord": True}, "sent",
+            finalized_at=claim_ts + timedelta(seconds=200),
         )
         assert success is False
 
-    def test_wrong_token_after_completed_finalize(self, tmp_alert_store):
+    def test_finalize_succeeds_before_lease_expiry(self, tmp_alert_store, fixed_clock):
         key = AlertKey("AAPL", "coil", "intraday")
-        now = datetime.now(UTC)
+        claim_ts = fixed_clock
+        token = tmp_alert_store.claim(key, claim_ts, lease_seconds=120)["token"]
+        success = tmp_alert_store.finalize(
+            key, token, claim_ts, AlertDecision.SENT, 60, "subj", "hash",
+            {"discord": True}, "sent",
+            finalized_at=claim_ts + timedelta(seconds=60),
+        )
+        assert success is True
+
+    def test_reclaimed_lease_finalize_rejected(self, tmp_path, fixed_clock):
+        path = tmp_path / "alerts.db"
+        store1 = AlertStore(path)
+        store2 = AlertStore(path)
+        key = AlertKey("AAPL", "coil", "intraday")
+        now = fixed_clock
+        token1 = store1.claim(key, now, lease_seconds=60)["token"]
+        later = now + timedelta(seconds=120)
+        store2.claim(key, later, lease_seconds=120)
+        success = store1.finalize(
+            key, token1, now, AlertDecision.SENT, 60, "subj", "hash",
+            {"discord": True}, "sent",
+            finalized_at=later,
+        )
+        assert success is False
+
+    def test_transport_completion_after_lease_expiry_returns_policy_error(
+        self, tmp_alert_store, fixed_clock
+    ):
+        """The policy reports POLICY_ERROR when transport completes after the lease expired."""
+        late_clock = lambda: fixed_clock + timedelta(seconds=200)
+        policy = AlertPolicy(
+            clock=late_clock,
+            store=tmp_alert_store,
+            transport=lambda s, b, c: {"discord": True},
+            is_configured=lambda: True,
+        )
+        key = AlertKey("AAPL", "coil", "intraday")
+        result = policy.dispatch(key, "s", "b", observed_at=fixed_clock)
+        assert result.decision == AlertDecision.POLICY_ERROR
+        assert "lease" in result.reason.lower() or "finalization" in result.reason.lower()
+
+    def test_normal_transport_completion_succeeds(self, tmp_alert_store, fixed_clock):
+        policy = AlertPolicy(
+            clock=lambda: fixed_clock,
+            store=tmp_alert_store,
+            transport=lambda s, b, c: {"discord": True},
+            is_configured=lambda: True,
+        )
+        key = AlertKey("AAPL", "coil", "intraday")
+        result = policy.dispatch(key, "s", "b", observed_at=fixed_clock)
+        assert result.decision == AlertDecision.SENT
+
+    def test_idempotent_finalize_rejects_different_outcome(self, tmp_alert_store, fixed_clock):
+        key = AlertKey("AAPL", "coil", "intraday")
+        now = fixed_clock
+        token = tmp_alert_store.claim(key, now)["token"]
+        args = (key, token, now, AlertDecision.SENT, 60, "subj", "hash", {"discord": True}, "sent")
+        assert tmp_alert_store.finalize(*args) is True
+        wrong_args = (
+            key, token, now, AlertDecision.DELIVERY_FAILED, None, "subj", "hash", {}, "failed"
+        )
+        assert tmp_alert_store.finalize(*wrong_args) is False
+
+    def test_wrong_token_after_completed_finalize(self, tmp_alert_store, fixed_clock):
+        key = AlertKey("AAPL", "coil", "intraday")
+        now = fixed_clock
         token = tmp_alert_store.claim(key, now)["token"]
         tmp_alert_store.finalize(
             key, token, now, AlertDecision.SENT, 60, "subj", "hash", {"discord": True}, "sent"
@@ -395,29 +460,3 @@ class TestAlertPolicyFinalizeHandling:
             key, "wrong-token", now, AlertDecision.SENT, 60, "subj", "hash", {"discord": True}, "sent"
         )
         assert success is False
-
-    def test_reclaimed_lease_finalize_rejected(self, tmp_path):
-        path = tmp_path / "alerts.db"
-        store1 = AlertStore(path)
-        store2 = AlertStore(path)
-        key = AlertKey("AAPL", "coil", "intraday")
-        now = datetime.now(UTC)
-        token1 = store1.claim(key, now, lease_seconds=1)["token"]
-        time.sleep(1.1)
-        now_after = datetime.now(UTC)
-        store2.claim(key, now_after, lease_seconds=60)
-        success = store1.finalize(
-            key, token1, now_after, AlertDecision.SENT, 60, "subj", "hash", {"discord": True}, "sent"
-        )
-        assert success is False
-
-    def test_idempotent_finalize_rejects_different_outcome(self, tmp_alert_store):
-        key = AlertKey("AAPL", "coil", "intraday")
-        now = datetime.now(UTC)
-        token = tmp_alert_store.claim(key, now)["token"]
-        args = (key, token, now, AlertDecision.SENT, 60, "subj", "hash", {"discord": True}, "sent")
-        assert tmp_alert_store.finalize(*args) is True
-        wrong_args = (
-            key, token, now, AlertDecision.DELIVERY_FAILED, None, "subj", "hash", {}, "failed"
-        )
-        assert tmp_alert_store.finalize(*wrong_args) is False

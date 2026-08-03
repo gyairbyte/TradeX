@@ -41,6 +41,17 @@ def empty_matches():
     return pd.DataFrame(columns=["ticker", "similarity_score", "fp_events", "interpretation"])
 
 
+@pytest.fixture(autouse=True)
+def _isolated_alert_state(tmp_path, monkeypatch):
+    """Redirect alert state to a per-test temp path and mock the notifier."""
+    monkeypatch.setenv("ALERT_STATE_PATH", str(tmp_path / "alerts.db"))
+    monkeypatch.setattr(
+        "tradex.alerts.policy.send_alert",
+        lambda s, b, color_key="test": {"discord": True, "email": False},
+    )
+    monkeypatch.setattr("tradex.alerts.policy.is_alert_configured", lambda: True)
+
+
 class TestWatcherAlertIntegration:
     def test_check_alerts_returns_results(self, fake_coils, fake_confluence, empty_matches):
         with (
@@ -52,12 +63,40 @@ class TestWatcherAlertIntegration:
         assert isinstance(results, list)
         assert len(results) == 2  # coil + confluence; pattern matches are empty
 
+    def test_check_alerts_builds_default_policy_and_suppresses(
+        self, fake_coils, empty_matches, tmp_path, monkeypatch
+    ):
+        """Direct _check_alerts(..., alert_policy=None) lazily builds the default policy."""
+        now = datetime.now(UTC)
+        alert_state_path = tmp_path / "alerts.db"
+        monkeypatch.setenv("ALERT_STATE_PATH", str(alert_state_path))
+        monkeypatch.setattr(
+            "tradex.alerts.policy.send_alert",
+            lambda s, b, color_key="test": {"discord": True, "email": False},
+        )
+        monkeypatch.setattr("tradex.alerts.policy.is_alert_configured", lambda: True)
+
+        with (
+            patch.object(watcher.analyzer, "detect_coils", return_value=fake_coils),
+            patch.object(watcher, "run_confluence_screen", return_value=empty_matches),
+            patch.object(watcher, "run_match_screen", return_value=empty_matches),
+        ):
+            results1 = watcher._check_alerts(["AAPL"], "intraday", alert_policy=None, observed_at=now)
+            results2 = watcher._check_alerts(["AAPL"], "intraday", alert_policy=None, observed_at=now)
+
+        assert any(r.decision == AlertDecision.SENT for r in results1)
+        assert any(r.decision == AlertDecision.SUPPRESSED_COOLDOWN for r in results2)
+        state = AlertStore(alert_state_path).get_state(AlertKey("AAPL", "coil", "intraday"))
+        assert state.sent_count == 1
+        assert state.suppressed_count == 1
+
     def test_run_once_passes_injected_timestamp_to_alerts(
         self, fake_coils, fake_confluence, empty_matches, tmp_path, capsys, fresh_signal_db
     ):
         now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
         store_path = tmp_path / "alerts.db"
         alert_policy = AlertPolicy(
+            clock=lambda: now,
             store=AlertStore(store_path),
             transport=lambda s, b, c: {"discord": True, "email": False},
             is_configured=lambda: True,
@@ -110,6 +149,7 @@ class TestWatcherAlertIntegration:
         now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
         store_path = tmp_path / "alerts.db"
         alert_policy = AlertPolicy(
+            clock=lambda: now,
             store=AlertStore(store_path),
             transport=lambda s, b, c: {"discord": True, "email": False},
             is_configured=lambda: True,
@@ -244,7 +284,7 @@ class TestWatcherAlertIntegration:
         self, fake_coils, empty_matches, tmp_path, monkeypatch, fresh_signal_db
     ):
         """run_once(..., alert_policy=None) lazily builds and reuses the default policy."""
-        now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
+        now = datetime.now(UTC)
         alert_state_path = tmp_path / "alerts.db"
         monkeypatch.setenv("ALERT_STATE_PATH", str(alert_state_path))
 

@@ -152,7 +152,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Add alert deduplication and cooldown
 - **Category:** Alerts
 - **Priority:** High
-- **Status:** In review
+- **Status:** Completed
 - **Resolved by:** `devin/add-alert-cooldown`
 - **Problem statement:** The watcher fires alerts on every scan cycle for every ticker above threshold, with no persistence or cooldown.
 - **Recommended action:** Introduce an alert state store keyed by `(ticker, alert_type, timeframe)` and enforce a configurable cooldown (e.g., 1 hour for coils).

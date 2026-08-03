@@ -5,7 +5,7 @@ import hashlib
 import json
 import re
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pandas as pd
 
@@ -60,12 +60,14 @@ class AlertPolicy:
         transport: Callable[[str, str, str], dict[str, bool]] | None = None,
         is_configured: Callable[[], bool] | None = None,
         *,
+        clock: Callable[[], datetime] | None = None,
         lease_seconds: int = _DEFAULT_LEASE_SECONDS,
     ) -> None:
         self.config = config or AlertCooldownConfig()
         self.store = store or AlertStore(self.config.resolved_state_path)
         self.transport = transport or send_alert
         self.is_configured = is_configured or is_alert_configured
+        self.clock = clock or (lambda: datetime.now(UTC))
         self.lease_seconds = lease_seconds
 
     def cooldown_minutes_for(self, key: AlertKey) -> int | None:
@@ -107,6 +109,7 @@ class AlertPolicy:
         reason: str,
         config_minutes: int | None,
         last_success_at: datetime | None,
+        finalized_at: datetime,
         *,
         next_eligible_at: datetime | None = None,
     ) -> AlertDispatchResult:
@@ -119,6 +122,7 @@ class AlertPolicy:
             ok = self.store.finalize(
                 key, token, observed_at, decision, cooldown_minutes,
                 subject, payload_hash, channel_results, reason,
+                finalized_at=finalized_at,
             )
         except AlertStateError as exc:
             return AlertDispatchResult(
@@ -272,10 +276,13 @@ class AlertPolicy:
             raw_results = self.transport(subject, body, color_key)
         except Exception as exc:  # noqa: BLE001
             sanitized = _sanitize_exception(exc)
+            finalized_at = ensure_aware_utc(self.clock())
+            if finalized_at < observed_at:
+                finalized_at = observed_at
             finalized = self._finalize_or_policy_error(
                 key, token, observed_at, AlertDecision.DELIVERY_FAILED, None,
                 subject, payload_hash, {}, f"Transport exception: {sanitized}",
-                cooldown_minutes, claim["last_success_at"],
+                cooldown_minutes, claim["last_success_at"], finalized_at,
             )
             if finalized.decision == AlertDecision.POLICY_ERROR:
                 return finalized
@@ -294,10 +301,13 @@ class AlertPolicy:
         try:
             channel_results = self._validate_transport_result(raw_results)
         except ValueError as exc:
+            finalized_at = ensure_aware_utc(self.clock())
+            if finalized_at < observed_at:
+                finalized_at = observed_at
             finalized = self._finalize_or_policy_error(
                 key, token, observed_at, AlertDecision.DELIVERY_FAILED, None,
                 subject, payload_hash, {}, f"Malformed transport result: {exc}",
-                cooldown_minutes, claim["last_success_at"],
+                cooldown_minutes, claim["last_success_at"], finalized_at,
             )
             if finalized.decision == AlertDecision.POLICY_ERROR:
                 return finalized
@@ -329,11 +339,16 @@ class AlertPolicy:
             next_eligible_at = None
             last_success_at = claim["last_success_at"]
 
+        finalized_at = ensure_aware_utc(self.clock())
+        if finalized_at < observed_at:
+            finalized_at = observed_at
+
         finalized = self._finalize_or_policy_error(
             key, token, observed_at, decision,
             cooldown_minutes if decision == AlertDecision.SENT else None,
             subject, payload_hash, channel_results, reason,
-            cooldown_minutes, last_success_at, next_eligible_at=next_eligible_at,
+            cooldown_minutes, last_success_at, finalized_at,
+            next_eligible_at=next_eligible_at,
         )
         if finalized.decision == AlertDecision.POLICY_ERROR:
             return finalized

@@ -70,7 +70,7 @@ class TestAlertCoil:
 
     def test_same_ticker_timeframe_suppresses(self, tmp_path):
         store = AlertStore(tmp_path / "alerts.db")
-        policy = AlertPolicy(
+        policy = AlertPolicy(clock=lambda: now, 
             store=store,
             transport=lambda s, b, c: {"discord": True},
             is_configured=lambda: True,
@@ -83,7 +83,7 @@ class TestAlertCoil:
 
     def test_different_timeframe_does_not_collide(self, tmp_path):
         store = AlertStore(tmp_path / "alerts.db")
-        policy = AlertPolicy(
+        policy = AlertPolicy(clock=lambda: now, 
             store=store,
             transport=lambda s, b, c: {"discord": True},
             is_configured=lambda: True,
@@ -117,7 +117,7 @@ class TestAlertConfluence:
 
     def test_uses_multi_timeframe_identity(self, tmp_path):
         store = AlertStore(tmp_path / "alerts.db")
-        policy = AlertPolicy(
+        policy = AlertPolicy(clock=lambda: now, 
             store=store,
             transport=lambda s, b, c: {"discord": True},
             is_configured=lambda: True,
@@ -145,7 +145,7 @@ class TestAlertPattern:
 
     def test_runup_decline_do_not_collide(self, tmp_path):
         store = AlertStore(tmp_path / "alerts.db")
-        policy = AlertPolicy(
+        policy = AlertPolicy(clock=lambda: now, 
             store=store,
             transport=lambda s, b, c: {"discord": True},
             is_configured=lambda: True,
@@ -158,7 +158,7 @@ class TestAlertPattern:
 
     def test_different_profiles_do_not_collide(self, tmp_path):
         store = AlertStore(tmp_path / "alerts.db")
-        policy = AlertPolicy(
+        policy = AlertPolicy(clock=lambda: now, 
             store=store,
             transport=lambda s, b, c: {"discord": True},
             is_configured=lambda: True,
@@ -173,7 +173,7 @@ class TestAlertPattern:
 class TestAlertGap:
     def test_gap_up_down_do_not_collide(self, tmp_path):
         store = AlertStore(tmp_path / "alerts.db")
-        policy = AlertPolicy(
+        policy = AlertPolicy(clock=lambda: now, 
             store=store,
             transport=lambda s, b, c: {"discord": True},
             is_configured=lambda: True,
@@ -195,7 +195,7 @@ class TestAlertGap:
 class TestRawSendBypass:
     def test_no_policy_uses_raw_send(self, tmp_path, monkeypatch):
         store = AlertStore(tmp_path / "alerts.db")
-        policy = AlertPolicy(
+        policy = AlertPolicy(clock=lambda: now, 
             store=store,
             transport=lambda s, b, c: {"discord": True},
             is_configured=lambda: True,
