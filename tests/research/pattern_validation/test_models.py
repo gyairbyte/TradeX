@@ -17,17 +17,17 @@ from tradex.research.pattern_validation.models import (
 
 def test_study_spec_rejects_bool_for_number():
     with pytest.raises(ValidationError):
-        StudySpec(tickers=("AAPL",), lookback_days=True)
+        StudySpec(research_test_mode=True, tickers=("AAPL",), lookback_days=True)
 
 
 def test_study_spec_rejects_numeric_string():
     with pytest.raises(ValidationError):
-        StudySpec(tickers=("AAPL",), lookback_days="10")
+        StudySpec(research_test_mode=True, tickers=("AAPL",), lookback_days="10")
 
 
 def test_study_spec_rejects_duplicate_tickers():
     with pytest.raises(ValidationError, match="duplicates"):
-        StudySpec(tickers=("AAPL", "AAPL"))
+        StudySpec(research_test_mode=True, tickers=("AAPL", "AAPL"))
 
 
 def test_study_spec_rejects_overlapping_splits():
@@ -36,7 +36,7 @@ def test_study_spec_rejects_overlapping_splits():
         "b": Split(date(2020, 6, 1), date(2021, 6, 1)),
     }
     with pytest.raises(ValidationError, match="overlap"):
-        StudySpec(tickers=("AAPL",), splits=splits)
+        StudySpec(research_test_mode=True, tickers=("AAPL",), splits=splits)
 
 
 def test_study_spec_rejects_split_outside_range():
@@ -44,22 +44,22 @@ def test_study_spec_rejects_split_outside_range():
         "development": Split(date(2019, 1, 1), date(2019, 12, 31)),
     }
     with pytest.raises(ValidationError, match="within"):
-        StudySpec(tickers=("AAPL",), start_date=date(2020, 1, 1), end_date=date(2020, 12, 31), splits=splits)
+        StudySpec(research_test_mode=True, tickers=("AAPL",), start_date=date(2020, 1, 1), end_date=date(2020, 12, 31), splits=splits)
 
 
 def test_study_spec_rejects_unknown_keys():
     with pytest.raises(TypeError):
-        StudySpec(tickers=("AAPL",), unknown_field=1)
+        StudySpec(research_test_mode=True, tickers=("AAPL",), unknown_field=1)
 
 
 def test_study_spec_universe_hash_is_stable():
-    spec1 = StudySpec(tickers=("AAPL", "MSFT"))
-    spec2 = StudySpec(tickers=("MSFT", "AAPL"))
+    spec1 = StudySpec(research_test_mode=True, tickers=("AAPL", "MSFT"))
+    spec2 = StudySpec(research_test_mode=True, tickers=("MSFT", "AAPL"))
     assert spec1.universe_hash != spec2.universe_hash
 
 
 def test_study_spec_sha256_is_stable():
-    spec = StudySpec(tickers=("AAPL", "MSFT"))
+    spec = StudySpec(research_test_mode=True, tickers=("AAPL", "MSFT"))
     h1 = spec.sha256
     h2 = _canonical_json_sha256(spec.to_lock_dict())
     assert h1 == h2
@@ -102,17 +102,17 @@ def test_manifest_serialization_roundtrip(tmp_path):
 
 
 def test_spec_json_roundtrip(tmp_path):
-    spec = StudySpec(tickers=("AAPL", "MSFT"))
+    spec = StudySpec(research_test_mode=True, tickers=("AAPL", "MSFT"))
     path = tmp_path / "spec.json"
     path.write_text(spec.to_json(indent=2), encoding="utf-8")
     from tradex.research.pattern_validation.models import load_spec
-    loaded = load_spec(path)
+    loaded = load_spec(path, research_test_mode=True)
     assert loaded.tickers == ("AAPL", "MSFT")
     assert loaded.sha256 == spec.sha256
 
 
 def test_production_promotion_eligible_must_be_false():
-    spec = StudySpec(tickers=("AAPL",))
+    spec = StudySpec(research_test_mode=True, tickers=("AAPL",))
     assert spec.production_promotion_eligible is False
     object.__setattr__(spec, "production_promotion_eligible", True)
     with pytest.raises(ValidationError, match="production_promotion_eligible"):

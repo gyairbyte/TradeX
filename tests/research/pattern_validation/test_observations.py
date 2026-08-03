@@ -18,10 +18,12 @@ def test_observations_are_point_in_time_isolated(tiny_bars, tiny_spec):
     assert obs
     # Pick a complete observation and truncate the future; similarity must not change.
     target = next(o for o in obs if o.outcome_status == "complete")
-    df = tiny_bars[target.ticker].copy()
-    df.index = pd.to_datetime(df.index)
-    decision_idx = df.index.get_loc(pd.Timestamp(target.decision_date, tz="UTC"))
-    truncated = df.iloc[: decision_idx + 6]  # keep enough to compute but hide later bars
+    full_df = tiny_bars[target.ticker].copy()
+    full_df.index = pd.to_datetime(full_df.index)
+    split = tiny_spec.splits[target.split]
+    split_df = full_df[(full_df.index >= pd.Timestamp(split.start, tz="UTC")) & (full_df.index <= pd.Timestamp(split.end, tz="UTC"))]
+    decision_idx = split_df.index.get_loc(pd.Timestamp(target.decision_date, tz="UTC"))
+    truncated = split_df.iloc[: decision_idx + 6]  # keep enough to compute but hide later bars
     sim_truncated = point_in_time_isolation_test(truncated, fingerprints[target.event_type], tiny_spec, decision_idx, target.event_type)
     assert sim_truncated == pytest.approx(target.similarity_score, rel=1e-6)
 

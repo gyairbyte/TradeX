@@ -130,7 +130,7 @@ After generating the token, run the read-only smoke test to confirm Schwab marke
 
 ```powershell
 uv --system-certs sync --extra dev --extra all
-$token = "$env:USERPROFILE\.tradex\schwab_token.json"
+$token = "$env:USERPROFILE\.tradex_schwab_token.json"
 Test-Path $token
 Get-Item $token | Select-Object FullName, Length, LastWriteTime
 New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.tradex\research\pattern-validation\snapshot" | Out-Null
@@ -141,7 +141,7 @@ On macOS / Linux:
 
 ```bash
 uv sync --extra dev --extra all
-test -f ~/.tradex/schwab_token.json && ls -l ~/.tradex/schwab_token.json
+test -f ~/.tradex_schwab_token.json && ls -l ~/.tradex_schwab_token.json
 mkdir -p ~/.tradex/research/pattern-validation/snapshot
 uv run python scripts/schwab_smoke_test.py
 ```

@@ -51,7 +51,9 @@ def _build_data_quality(
     observations: list[Any],
     spec: StudySpec,
 ) -> pd.DataFrame:
-    """Build a per-ticker data-quality summary with counts from the actual evaluation."""
+    """Build a per-ticker data-quality summary with counts from snapshot validation."""
+    from .snapshot import _count_complete_bars
+
     obs_by_ticker_split: dict[tuple[str, str], dict[str, int]] = defaultdict(lambda: defaultdict(int))
     for obs in observations:
         obs_by_ticker_split[(obs.ticker, obs.split)]["eligible"] += 1
@@ -66,47 +68,22 @@ def _build_data_quality(
 
     rows: list[dict[str, Any]] = []
     for entry in manifest.entries:
-        if entry.failure:
-            rows.append({
-                "ticker": entry.ticker,
-                "data_source": entry.data_source,
-                "sha256": entry.sha256,
-                "manifest_rows": entry.rows,
-                "validated_rows": 0,
-                "data_start": entry.start.isoformat() if entry.start else None,
-                "data_end": entry.end.isoformat() if entry.end else None,
-                "duplicate_timestamps": 0,
-                "missing_required_values": 0,
-                "invalid_ohlc_rows": 0,
-                "bars_outside_range": 0,
-                "complete_lookbacks": 0,
-                "complete_forward_bars": 0,
-                "split_event_counts": {},
-                "warnings": [entry.failure],
-            })
-            continue
+        quality = entry.quality or {}
+        warnings = list(entry.warnings or [])
+        if entry.failure and entry.failure not in warnings:
+            warnings.append(entry.failure)
 
         df = bars.get(entry.ticker)
-        validated_rows = len(df) if df is not None else 0
+        validated_rows = len(df) if df is not None else entry.rows
         complete_lookbacks = 0
         complete_forward_bars = 0
         if df is not None and not df.empty:
-            for i in range(len(df)):
-                if i >= spec.lookback_days:
-                    complete_lookbacks += 1
-                if i + spec.holding_days < len(df):
-                    complete_forward_bars += 1
+            complete_lookbacks, complete_forward_bars = _count_complete_bars(df, spec.lookback_days, spec.holding_days)
 
         split_counts: dict[str, int] = {}
         for split_name in spec.splits:
-            split = spec.splits[split_name]
-            if df is not None and not df.empty:
-                mask = (df.index >= pd.Timestamp(split.start, tz="UTC")) & (df.index <= pd.Timestamp(split.end, tz="UTC"))
-                split_counts[split_name] = int(mask.sum())
-            else:
-                split_counts[split_name] = 0
+            split_counts[split_name] = obs_by_ticker_split.get((entry.ticker, split_name), {}).get("eligible", 0)
 
-        warnings: list[str] = []
         rows.append({
             "ticker": entry.ticker,
             "data_source": entry.data_source,
@@ -115,10 +92,10 @@ def _build_data_quality(
             "validated_rows": validated_rows,
             "data_start": entry.start.isoformat() if entry.start else None,
             "data_end": entry.end.isoformat() if entry.end else None,
-            "duplicate_timestamps": 0,
-            "missing_required_values": 0,
-            "invalid_ohlc_rows": 0,
-            "bars_outside_range": 0,
+            "duplicate_timestamps": quality.get("duplicate_timestamps", 0),
+            "missing_required_values": quality.get("missing_required_values", 0),
+            "invalid_ohlc_rows": quality.get("invalid_ohlc_rows", 0),
+            "bars_outside_range": quality.get("bars_outside_range", 0),
             "complete_lookbacks": complete_lookbacks,
             "complete_forward_bars": complete_forward_bars,
             "split_event_counts": split_counts,
@@ -176,6 +153,7 @@ def _build_period_summary(period_metrics: dict[tuple[str, str], Any], spec: Stud
     for (split, event_type), pm in sorted(period_metrics.items()):
         d = pm.to_dict()
         d.pop("returns_by_slippage", None)
+        d.pop("component_scores", None)
         records.append(d)
     return pd.DataFrame(records)
 
@@ -188,6 +166,7 @@ def _build_report_markdown(
     per_ticker: list[Any],
     promotion: PromotionDecision,
     limitations: list[str],
+    generated_at: datetime,
 ) -> str:
     lines: list[str] = [
         "# Pattern Similarity Validation Study Report",
@@ -196,7 +175,7 @@ def _build_report_markdown(
         f"**Provider:** `{spec.provider}`  ",
         f"**Profile:** `{spec.profile}`  ",
         f"**Study range:** `{spec.start_date}` to `{spec.end_date}`  ",
-        f"**Generated:** `{datetime.now(timezone.utc).isoformat()}`  ",
+        f"**Generated:** `{generated_at.isoformat()}`  ",
         "",
         "## Hypothesis",
         "",
@@ -268,8 +247,8 @@ def _build_report_markdown(
             f"- Win rate: {pm.win_rate:.2%}" if pm.win_rate is not None else "- Win rate: N/A",
             f"- Baseline mean return: {pm.baseline_mean_return_pct:.4f}%" if pm.baseline_mean_return_pct is not None else "- Baseline mean return: N/A",
             f"- Lift over baseline: {pm.baseline_lift_bps} bps" if pm.baseline_lift_bps is not None else "- Lift over baseline: N/A",
-            f"- Lift CI (5%-95%): [{pm.baseline_lift_ci_lower:.4f}, {pm.baseline_lift_ci_upper:.4f}]" if pm.baseline_lift_ci_lower is not None else "- Lift CI: N/A",
-            f"- Mean return CI (5%-95%): [{pm.mean_return_ci_lower:.4f}, {pm.mean_return_ci_upper:.4f}]" if pm.mean_return_ci_lower is not None else "- Mean return CI: N/A",
+            f"- Lift CI (2.5%-97.5%): [{pm.baseline_lift_ci_lower:.4f}, {pm.baseline_lift_ci_upper:.4f}]" if pm.baseline_lift_ci_lower is not None else "- Lift CI: N/A",
+            f"- Mean return CI (2.5%-97.5%): [{pm.mean_return_ci_lower:.4f}, {pm.mean_return_ci_upper:.4f}]" if pm.mean_return_ci_lower is not None else "- Mean return CI: N/A",
             f"- Max ticker concentration: {pm.max_ticker_concentration:.2%}" if pm.max_ticker_concentration is not None else "- Max ticker concentration: N/A",
             f"- Max contribution concentration: {pm.max_contribution_concentration:.2%}" if pm.max_contribution_concentration is not None else "- Max contribution concentration: N/A",
             f"- Overlapping signals: {pm.overlap_count}",
@@ -311,9 +290,8 @@ def run_study(
 ) -> StudyResult:
     """Execute the full pattern-similarity validation pipeline."""
     # 1. Build development-only fingerprints.
-    fingerprints, events_df = build_development_fingerprints(bars, spec)
-    if not fingerprints:
-        raise ValidationError("no development fingerprints could be built")
+    fingerprints, _ = build_development_fingerprints(bars, spec)
+    # An empty fingerprint set is allowed; downstream metrics produce an inconclusive result.
 
     # 2. Evaluate validation and holdout observations.
     observations = evaluate_splits(bars, fingerprints, spec)
@@ -322,7 +300,10 @@ def run_study(
     trades = build_executable_trades(observations, spec)
 
     # 4. Baselines.
-    controls = frequency_matched_controls(observations, spec)
+    if spec.baseline_definition == "frequency_matched":
+        controls = frequency_matched_controls(observations, spec)
+    else:
+        controls = unconditional_baseline_observations(observations, spec)
 
     # 5. Metrics and evidence gates.
     period_metrics, per_ticker = compute_all_metrics(observations, controls, trades, spec)
@@ -349,7 +330,8 @@ def run_study(
     ]
 
     report_markdown = _build_report_markdown(
-        spec, manifest, fingerprints, period_metrics, per_ticker, promotion, limitations
+        spec, manifest, fingerprints, period_metrics, per_ticker, promotion, limitations,
+        generated_at=manifest.created_at,
     )
 
     return StudyResult(
@@ -368,6 +350,7 @@ def run_study(
         promotion_decision=promotion,
         report_markdown=report_markdown,
         limitations=limitations,
+        generated_at=manifest.created_at,
     )
 
 
@@ -417,7 +400,7 @@ def write_study(
         # Artifact manifest.
         artifact_manifest: dict[str, Any] = {
             "schema_version": 1,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": study.generated_at.isoformat(),
             "spec_sha256": study.spec.sha256,
             "manifest_sha256": study.manifest.manifest_sha256,
             "files": {},

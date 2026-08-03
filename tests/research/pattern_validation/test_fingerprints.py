@@ -3,10 +3,8 @@ from __future__ import annotations
 
 from datetime import date
 
-import pytest
-
 from tradex.research.pattern_validation.fingerprints import build_development_fingerprints
-from tradex.research.pattern_validation.models import Split, StudySpec, ValidationError
+from tradex.research.pattern_validation.models import Split, StudySpec
 
 
 def test_fingerprints_use_development_split_only(tiny_bars, tiny_spec):
@@ -36,8 +34,9 @@ def test_fingerprint_config_hash_matches_spec(tiny_bars, tiny_spec):
     assert fingerprints["runup"].lookback_days == tiny_spec.lookback_days
 
 
-def test_fingerprints_fail_without_enough_events(tiny_bars):
+def test_fingerprints_skip_event_type_without_enough_events(tiny_bars):
     spec = StudySpec(
+        research_test_mode=True,
         tickers=("AAPL", "MSFT"),
         provider="synthetic",
         start_date=date(2020, 1, 2),
@@ -45,5 +44,6 @@ def test_fingerprints_fail_without_enough_events(tiny_bars):
         splits={"development": Split(date(2020, 1, 2), date(2020, 1, 31))},
         min_events=5,
     )
-    with pytest.raises(ValidationError):
-        build_development_fingerprints(tiny_bars, spec)
+    fingerprints, events_df = build_development_fingerprints(tiny_bars, spec)
+    assert fingerprints == {}
+    assert events_df.empty

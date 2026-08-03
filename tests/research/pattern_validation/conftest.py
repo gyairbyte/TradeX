@@ -76,6 +76,7 @@ def tiny_spec(tiny_study_dates: dict[str, Any]) -> StudySpec:
         minimum_holdout_signals=1,
         minimum_tickers=1,
         bootstrap=BootstrapConfig(resamples=20),
+        research_test_mode=True,
     )
 
 

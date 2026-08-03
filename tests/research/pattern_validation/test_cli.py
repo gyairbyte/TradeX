@@ -51,6 +51,7 @@ def test_snapshot_and_evaluate_roundtrip(tmp_path, tiny_study_dates, tiny_spec):
         "--manifest", str(manifest_path),
         "--output", str(eval_out),
         "--spec", str(spec_path),
+        "--research-test",
         "--overwrite",
     ])
     assert rc == 0

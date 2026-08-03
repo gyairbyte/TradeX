@@ -150,7 +150,8 @@ def build_development_fingerprints(
                 windows_by_event[event_type].append(normalized)
 
     if not development_events:
-        raise ValidationError("no development events found; check data coverage and split dates")
+        # Allow an empty/inconclusive study when no development events are available.
+        return {}, pd.DataFrame()
 
     fingerprints: dict[str, Fingerprint] = {}
     for event_type in spec.event_types:
@@ -159,6 +160,8 @@ def build_development_fingerprints(
             continue
 
         n_events = len(windows)
+        if n_events < spec.min_events:
+            continue
         lookback = spec.lookback_days
         series: dict[str, dict[str, list[float]]] = {}
         for key in sorted(spec.series_weights.keys()):

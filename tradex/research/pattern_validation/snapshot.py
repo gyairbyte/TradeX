@@ -35,6 +35,30 @@ def _sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def _validate_ticker_input(ticker: str) -> str:
+    """Normalize and validate a single ticker symbol before use in paths."""
+    t = ticker.strip().upper()
+    if not t:
+        raise ValidationError("ticker must not be empty")
+    if not t.isalnum():
+        raise ValidationError(f"ticker must be alphanumeric; got {t!r}")
+    if any(sep in t for sep in ("/", "\\", ".", "..", "~")):
+        raise ValidationError(f"ticker contains path-like characters; got {t!r}")
+    return t
+
+
+def _validate_ticker_inputs(tickers: list[str]) -> None:
+    """Reject empty, duplicate, malformed, or path-like ticker input."""
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw in tickers:
+        t = _validate_ticker_input(raw)
+        if t in seen:
+            raise ValidationError(f"duplicate ticker: {t}")
+        seen.add(t)
+        normalized.append(t)
+
+
 def _validate_ticker_df(df: pd.DataFrame, start: date, end: date) -> tuple[pd.DataFrame, list[str], dict[str, int]]:
     """Validate and clean one ticker's OHLCV DataFrame.
 
@@ -107,33 +131,17 @@ def _validate_ticker_df(df: pd.DataFrame, start: date, end: date) -> tuple[pd.Da
     return df, warnings, counts
 
 
-def _build_data_quality(
-    ticker: str,
-    entry: ManifestEntry,
-    df: pd.DataFrame,
-    counts: dict[str, int],
-    split_event_counts: dict[str, int],
-    warnings: list[str],
-    complete_lookbacks: int,
-    complete_forward_bars: int,
-) -> DataQualityRow:
-    return DataQualityRow(
-        ticker=ticker,
-        data_source=entry.data_source,
-        sha256=entry.sha256,
-        manifest_rows=entry.rows,
-        validated_rows=len(df),
-        data_start=df.index.min().to_pydatetime() if not df.empty else None,
-        data_end=df.index.max().to_pydatetime() if not df.empty else None,
-        duplicate_timestamps=counts["duplicate_timestamps"],
-        missing_required_values=counts["missing_required_values"],
-        invalid_ohlc_rows=counts["invalid_ohlc_rows"],
-        bars_outside_range=counts["bars_outside_range"],
-        complete_lookbacks=complete_lookbacks,
-        complete_forward_bars=complete_forward_bars,
-        split_event_counts=split_event_counts,
-        warnings=warnings,
-    )
+def _count_complete_bars(df: pd.DataFrame, lookback: int, holding: int) -> tuple[int, int]:
+    """Count rows with enough preceding lookback and following forward bars."""
+    complete_lookbacks = 0
+    complete_forward_bars = 0
+    n = len(df)
+    for i in range(n):
+        if i >= lookback - 1:
+            complete_lookbacks += 1
+        if i + holding < n:
+            complete_forward_bars += 1
+    return complete_lookbacks, complete_forward_bars
 
 
 def _count_split_events(df: pd.DataFrame, splits: dict[str, Split], lookback: int, holding: int, move_days: int) -> dict[str, int]:
@@ -178,9 +186,9 @@ def create_snapshot(
     stage_dir = Path(tempfile.mkdtemp(prefix="pattern_validation_snapshot_"))
     try:
         fetcher = fetch_fn or fetch_daily_history
+        _validate_ticker_inputs(tickers)
         requested_tickers = tuple(str(t).strip().upper() for t in tickers)
         entries: list[ManifestEntry] = []
-        data_quality_rows: list[DataQualityRow] = []
         successful: list[str] = []
         failed: list[str] = []
         failure_categories: list[str] = []
@@ -205,6 +213,8 @@ def create_snapshot(
                     data_source=provider or "unknown",
                     adjustment_policy=adjustment_policy,
                     failure=category,
+                    quality={},
+                    warnings=[category],
                 ))
                 continue
 
@@ -223,6 +233,8 @@ def create_snapshot(
                     data_source=provider or "unknown",
                     adjustment_policy=adjustment_policy,
                     failure="no_valid_bars",
+                    quality=counts,
+                    warnings=warnings,
                 ))
                 continue
 
@@ -241,17 +253,12 @@ def create_snapshot(
                 data_source=provider or "unknown",
                 adjustment_policy=adjustment_policy,
                 failure=None,
+                quality=counts,
+                warnings=warnings,
             )
             entries.append(entry)
 
-            # Data-quality counts use a default lookback/holding for reporting.
-            split_event_counts = _count_split_events(df, splits, lookback=10, holding=5, move_days=5)
-            complete_lookbacks = int((df.index.to_series().diff().dt.days <= 5).sum())  # placeholder; refined later
-            complete_forward_bars = int((df.index.to_series().diff().dt.days <= 5).sum())  # placeholder
-            data_quality_rows.append(_build_data_quality(
-                ticker, entry, df, counts, split_event_counts, warnings,
-                complete_lookbacks, complete_forward_bars,
-            ))
+            # Quality and warnings are stored on the entry for downstream reporting.
 
         # Build manifest.
         manifest = DatasetManifest(

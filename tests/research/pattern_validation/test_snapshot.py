@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
+from unittest.mock import Mock, patch
 
 import pandas as pd
 import pytest
@@ -104,3 +106,54 @@ def test_snapshot_validates_ohlc_invariants(tmp_path, tiny_study_dates):
 def _synthetic_fetcher(ticker, start, end, provider):
     from .conftest import make_synthetic_bars
     return make_synthetic_bars(ticker, start, end, seed=abs(hash(ticker)) % 10000)
+
+
+def _make_candle(dt: datetime, open_: float, high: float, low: float, close: float, volume: float) -> dict:
+    return {
+        "open": open_,
+        "high": high,
+        "low": low,
+        "close": close,
+        "volume": volume,
+        "datetime": int(dt.timestamp() * 1000),
+    }
+
+
+def test_snapshot_with_guarded_fake_schwab_client(tmp_path, tiny_study_dates):
+    """The snapshot path can use a fake Schwab client without credentials or network."""
+    start = tiny_study_dates["start_date"]
+    end = tiny_study_dates["end_date"]
+    t1 = datetime(2020, 1, 2, tzinfo=UTC)
+    t2 = datetime(2020, 1, 3, tzinfo=UTC)
+    fake_client = Mock()
+    fake_client.get_price_history_every_day.return_value = Mock(
+        status_code=200,
+        raise_for_status=Mock(),
+        json=Mock(return_value={
+            "candles": [
+                _make_candle(t1, 100.0, 101.0, 99.0, 100.5, 1000),
+                _make_candle(t2, 100.5, 102.0, 100.0, 101.5, 1100),
+            ]
+        }),
+    )
+
+    out = tmp_path / "snap"
+    with patch("tradex.data.history._get_schwab_client", return_value=fake_client):
+        manifest_path = create_snapshot(
+            tickers=["AAPL"],
+            start=start,
+            end=end,
+            output_dir=out,
+            splits=tiny_study_dates["splits"],
+            provider="schwab",
+            overwrite=True,
+        )
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["provider"] == "schwab"
+    assert manifest["successful_tickers"] == ["AAPL"]
+    assert manifest["failed_tickers"] == []
+    df = pd.read_csv(out / "AAPL.csv", index_col=0, parse_dates=True)
+    assert len(df) == 2
+    assert list(df.columns) == ["open", "high", "low", "close", "volume"]
+    fake_client.get_price_history_every_day.assert_called_once()

@@ -1,7 +1,7 @@
 """Point-in-time similarity evaluation and forward-return simulation."""
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 import numpy as np
@@ -59,8 +59,52 @@ def _net_return(gross_pct: float, entry_price: float, exit_price: float, slippag
     return round(net, 4)
 
 
+def _prepare_split_df(df: pd.DataFrame, split: Any, spec: StudySpec) -> pd.DataFrame | None:
+    """Return a clean, indicator-enriched DataFrame for a single split.
+
+    Indicators are computed on the split only so validation/holdout rows never
+    leak development history.
+    """
+    from tradex.signals.indicators import add_indicators
+
+    split_start = pd.Timestamp(split.start, tz="UTC")
+    split_end = pd.Timestamp(split.end, tz="UTC") + pd.Timedelta(days=1) - pd.Timedelta(nanoseconds=1)
+    split_df = df[(df.index >= split_start) & (df.index <= split_end)].copy()
+    if split_df.empty:
+        return None
+
+    split_df = add_indicators(split_df)
+    required_cols = ["open", "high", "low", "close", "volume", "rsi", "macd_diff", "bb_width"]
+    split_df = split_df.dropna(subset=required_cols)
+    if len(split_df) < spec.lookback_days + spec.holding_days:
+        return None
+    return split_df
+
+
+def _evaluate_similarity_only(
+    split_df: pd.DataFrame,
+    decision_idx: int,
+    fingerprint: Fingerprint,
+    spec: StudySpec,
+) -> tuple[float, dict[str, float]] | None:
+    """Compute the weighted similarity for a single decision row using only its lookback."""
+    lookback = spec.lookback_days
+    if decision_idx < lookback - 1:
+        return None
+    window = split_df.iloc[decision_idx - lookback + 1 : decision_idx + 1]
+    if len(window) != lookback:
+        return None
+    required_cols = ["open", "high", "low", "close", "volume", "rsi", "macd_diff", "bb_width"]
+    if window[required_cols].isna().any().any():
+        return None
+    live_window = _normalize_window(window)
+    if live_window is None:
+        return None
+    return _compute_similarity(live_window, fingerprint, spec)
+
+
 def _evaluate_decision(
-    df: pd.DataFrame,
+    split_df: pd.DataFrame,
     decision_idx: int,
     fingerprint: Fingerprint,
     event_type: str,
@@ -68,41 +112,27 @@ def _evaluate_decision(
     spec: StudySpec,
     ticker: str,
 ) -> Observation | None:
-    """Evaluate one decision date in a point-in-time manner."""
+    """Evaluate one decision date in a point-in-time, split-isolated manner."""
     lookback = spec.lookback_days
-    if decision_idx < lookback:
-        return None
-    window = df.iloc[decision_idx - lookback : decision_idx + 1]
-    if len(window) != lookback + 1:
-        return None
-    # Decision date is the last row of the window.
-    decision_row = window.iloc[-1]
-    required_cols = ["open", "high", "low", "close", "volume", "rsi", "macd_diff", "bb_width"]
-    if decision_row[required_cols].isna().any():
-        return None
-    # The lookback itself must also be fully valid.
-    lookback_df = window.iloc[:-1]
-    if lookback_df[required_cols].isna().any().any():
+    if decision_idx < lookback - 1:
         return None
 
-    live_window = _normalize_window(lookback_df)
-    if live_window is None:
+    sim_result = _evaluate_similarity_only(split_df, decision_idx, fingerprint, spec)
+    if sim_result is None:
         return None
 
-    similarity, series_scores = _compute_similarity(live_window, fingerprint, spec)
+    similarity, series_scores = sim_result
     is_qualifying = similarity >= spec.similarity_threshold
 
-    decision_date = df.index[decision_idx].to_pydatetime().date()
-    signal_time = df.index[decision_idx].tz_convert("UTC").replace(hour=21, minute=0, second=0, microsecond=0)
-    if isinstance(signal_time, pd.Timestamp):
-        signal_time = signal_time.to_pydatetime()
+    decision_ts = split_df.index[decision_idx]
+    decision_date = decision_ts.to_pydatetime().date()
+    signal_time = datetime(decision_date.year, decision_date.month, decision_date.day, 21, 0, tzinfo=timezone.utc)
+    signal_close = float(split_df["close"].iloc[decision_idx])
 
-    signal_close = float(decision_row["close"])
-
-    # Forward horizon for execution.
+    # Forward horizon must also fit inside this split.
     entry_idx = decision_idx + 1
-    exit_idx = entry_idx + spec.holding_days - 1
-    if exit_idx >= len(df):
+    exit_idx = decision_idx + spec.holding_days
+    if exit_idx >= len(split_df):
         return Observation(
             ticker=ticker,
             split=split_name,
@@ -112,7 +142,7 @@ def _evaluate_decision(
             similarity_score=similarity,
             series_scores=series_scores,
             is_qualifying=is_qualifying,
-            data_source=ticker,
+            data_source=spec.provider,
             signal_close=signal_close,
             entry_date=None,
             raw_entry_price=None,
@@ -123,16 +153,16 @@ def _evaluate_decision(
             outcome_status="insufficient_future_bars",
         )
 
-    entry_price = float(df["open"].iloc[entry_idx])
-    exit_price = float(df["close"].iloc[exit_idx])
+    entry_price = float(split_df["open"].iloc[entry_idx])
+    exit_price = float(split_df["close"].iloc[exit_idx])
     if event_type == "runup":
         gross = (exit_price - entry_price) / entry_price * 100.0
     else:
         gross = (entry_price - exit_price) / entry_price * 100.0
     gross = round(gross, 4)
 
-    entry_date = df.index[entry_idx].to_pydatetime().date()
-    exit_date = df.index[exit_idx].to_pydatetime().date()
+    entry_date = split_df.index[entry_idx].to_pydatetime().date()
+    exit_date = split_df.index[exit_idx].to_pydatetime().date()
 
     net_by_slippage = {}
     for slippage_bps in spec.slippage_scenarios_bps:
@@ -148,7 +178,7 @@ def _evaluate_decision(
         similarity_score=similarity,
         series_scores=series_scores,
         is_qualifying=is_qualifying,
-        data_source=ticker,
+        data_source=spec.provider,
         signal_close=signal_close,
         entry_date=entry_date,
         raw_entry_price=round(entry_price, 4),
@@ -169,7 +199,7 @@ def _split_observations_for_ticker(
     spec: StudySpec,
     ticker: str,
 ) -> list[Observation]:
-    """Compute indicators on the full ticker history and evaluate the split."""
+    """Compute indicators on a single split and evaluate all decision dates."""
     df = df.copy()
     df.index = pd.to_datetime(df.index)
     if df.index.tz is None:
@@ -177,26 +207,13 @@ def _split_observations_for_ticker(
     else:
         df.index = df.index.tz_convert("UTC")
 
-    from tradex.signals.indicators import add_indicators
-    df = add_indicators(df)
-    required_cols = ["open", "high", "low", "close", "volume", "rsi", "macd_diff", "bb_width"]
-    df = df.dropna(subset=required_cols)
-    if df.empty:
-        return []
-
-    split_start = pd.Timestamp(split.start, tz="UTC")
-    split_end = pd.Timestamp(split.end, tz="UTC") + pd.Timedelta(days=1) - pd.Timedelta(nanoseconds=1)
-    split_mask = (df.index >= split_start) & (df.index <= split_end)
-    split_df = df[split_mask]
-    if split_df.empty:
+    split_df = _prepare_split_df(df, split, spec)
+    if split_df is None or split_df.empty:
         return []
 
     observations: list[Observation] = []
-    for decision_idx in range(len(df)):
-        decision_date = df.index[decision_idx]
-        if not (split_start <= decision_date <= split_end):
-            continue
-        obs = _evaluate_decision(df, decision_idx, fingerprint, event_type, split_name, spec, ticker)
+    for decision_idx in range(len(split_df)):
+        obs = _evaluate_decision(split_df, decision_idx, fingerprint, event_type, split_name, spec, ticker)
         if obs is not None:
             observations.append(obs)
     return observations
@@ -232,7 +249,6 @@ def evaluate_splits(
 def build_executable_trades(observations: list[Observation], spec: StudySpec) -> list[Trade]:
     """Per-ticker executable simulation: one active trade per ticker and event type."""
     trades: list[Trade] = []
-    # active_until keyed by (ticker, event_type, split) -> exit_date
     active_until: dict[tuple[str, str, str], date] = {}
 
     # Sort by decision_date to process chronologically.
@@ -276,14 +292,16 @@ def trades_to_dataframe(trades: list[Trade]) -> pd.DataFrame:
     return pd.DataFrame(records)
 
 
-def point_in_time_isolation_test(df: pd.DataFrame, fingerprint: Fingerprint, spec: StudySpec, decision_idx: int, event_type: str) -> float:
+def point_in_time_isolation_test(
+    df: pd.DataFrame,
+    fingerprint: Fingerprint,
+    spec: StudySpec,
+    decision_idx: int,
+    event_type: str,
+) -> float:
     """Return similarity for a decision index; used by tests to prove future bars cannot alter it."""
     from tradex.signals.indicators import add_indicators
-    decision_ts = df.index[decision_idx]
-    truncated = df.iloc[: decision_idx + 1].copy()
-    truncated = add_indicators(truncated)
-    required_cols = ["open", "high", "low", "close", "volume", "rsi", "macd_diff", "bb_width"]
-    truncated = truncated.dropna(subset=required_cols)
-    new_idx = truncated.index.get_loc(decision_ts)
-    obs = _evaluate_decision(truncated, new_idx, fingerprint, event_type, "test", spec, "TEST")
-    return obs.similarity_score if obs else 0.0
+
+    split_df = add_indicators(df.copy())
+    sim = _evaluate_similarity_only(split_df, decision_idx, fingerprint, spec)
+    return sim[0] if sim else 0.0

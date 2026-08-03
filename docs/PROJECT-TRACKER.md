@@ -480,7 +480,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Validate pattern matcher before dashboard promotion
 - **Category:** Backtesting
 - **Priority:** Medium
-- **Status:** Completed
+- **Status:** Blocked — production quarantine and research infrastructure complete; local read-only Schwab study pending ChatGPT review.
 - **Resolved by:** `devin/validate-pattern-matcher`
 - **Problem statement:** Pattern matcher uses Pearson correlation vs. a fingerprint but has not been validated for predictive value.
 - **Recommended action:** Run an out-of-sample backtest; if it fails to add value, move pattern match to a research/experiment tab.
@@ -490,8 +490,8 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Testing requirements:** Out-of-sample backtest on a point-in-time universe with delisted-bias controls; production quarantine tests; artifact determinism tests.
 - **Acceptance criteria:** Pattern-match alerts are removed from the watcher; the dashboard tab is relabeled as experimental research with a prominent warning; the matcher output uses neutral wording; a locked `tradex/research/pattern_validation` package produces deterministic artifacts and never reads/writes `~/.tradex/fingerprints.db`.
 - **Intended pull request:** `devin/validate-pattern-matcher`
-- **Affects trading behavior:** No — pattern matching is quarantined from production scoring, ranking, eligibility, and automatic alerts. The dashboard and matcher language are neutral and research-only.
-- **Next recommended PR:** `devin/refactor-dashboard-boundaries` (UI-001)
+- **Affects trading behavior:** Yes — the watcher no longer calls `run_match_screen()` or `alert_pattern_match()`; dashboard tab and matcher wording are relabeled as experimental research. No pattern similarity is added to scores, rankings, eligibility, or confluence.
+- **Next recommended PR:** `devin/centralize-config` (ARCH-001)
 
 ### OPT-001: Gate options flow behind real data source
 
@@ -648,7 +648,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 | Low | 5 | DOC-001: Fix documentation drift |
 
 **Recommended next pull request order:**
-1. `devin/validate-pattern-matcher` (PATTERN-001).
+1. `devin/centralize-config` (ARCH-001) — PATTERN-001 is blocked pending ChatGPT review of the local read-only Schwab study.
 2. `devin/add-initial-adrs` (DEC-001) — deferred behind remaining medium-priority trust work.
 3. `devin/improve-long-term-score` (LONG-001).
 

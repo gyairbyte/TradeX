@@ -34,8 +34,7 @@ def frequency_matched_controls(
         n = len(signals)
         if n == 0 or len(non_signals) == 0:
             continue
-        # Deterministic selection without replacement and without reusing signal dates.
-        non_signal_dates = {o.decision_date for o in non_signals}
+        # Deterministic selection without replacement from below-threshold observations.
         if len(non_signals) <= n:
             selected = non_signals
         else:

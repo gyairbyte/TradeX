@@ -8,6 +8,8 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from tradex.patterns.miner import MINING_UNIVERSE
+
 from .models import StudySpec, ValidationError, load_manifest, load_spec
 from .report import run_study, write_study
 from .snapshot import create_snapshot
@@ -44,7 +46,14 @@ def _split_to_split(split_dict: dict[str, dict[str, str]]) -> dict[str, Any]:
     return {name: Split(start=date.fromisoformat(s["start"]), end=date.fromisoformat(s["end"])) for name, s in split_dict.items()}
 
 
-def _build_default_spec(manifest, splits: dict | None = None) -> StudySpec:
+def _parse_split_arg(text: str) -> dict[str, str]:
+    parts = [p.strip() for p in text.split(",")]
+    if len(parts) != 2:
+        raise ValidationError(f"split argument must be 'YYYY-MM-DD,YYYY-MM-DD'; got {text!r}")
+    return {"start": parts[0], "end": parts[1]}
+
+
+def _build_default_spec(manifest, splits: dict | None = None, research_test_mode: bool = False) -> StudySpec:
     if splits is None:
         splits = _split_to_split(_default_splits())
     return StudySpec(
@@ -54,12 +63,38 @@ def _build_default_spec(manifest, splits: dict | None = None) -> StudySpec:
         start_date=manifest.request_start,
         end_date=manifest.request_end,
         splits=splits,
+        research_test_mode=research_test_mode,
     )
 
 
+def _resolve_snapshot_tickers(args: argparse.Namespace) -> list[str]:
+    if args.universe:
+        if args.universe != "current-mining-universe":
+            raise ValidationError(f"--universe must be 'current-mining-universe'; got {args.universe!r}")
+        if args.tickers:
+            raise ValidationError("--tickers and --universe are mutually exclusive")
+        return list(MINING_UNIVERSE)
+    if not args.tickers:
+        raise ValidationError("--tickers or --universe current-mining-universe is required")
+    return [t.strip().upper() for t in args.tickers.split(",")]
+
+
+def _resolve_snapshot_splits(args: argparse.Namespace) -> dict[str, Any]:
+    split_args = [args.development_split, args.validation_split, args.holdout_split]
+    if any(split_args):
+        if not all(split_args):
+            raise ValidationError("--development-split, --validation-split, and --holdout-split must all be provided together")
+        return _split_to_split({
+            "development": _parse_split_arg(args.development_split),
+            "validation": _parse_split_arg(args.validation_split),
+            "holdout": _parse_split_arg(args.holdout_split),
+        })
+    return _split_to_split(_load_splits(args.splits))
+
+
 def _cmd_snapshot(args: argparse.Namespace) -> int:
-    splits = _split_to_split(_load_splits(args.splits))
-    tickers = [t.strip().upper() for t in args.tickers.split(",")]
+    splits = _resolve_snapshot_splits(args)
+    tickers = _resolve_snapshot_tickers(args)
     manifest_path = create_snapshot(
         tickers=tickers,
         start=args.start,
@@ -98,21 +133,16 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
     _verify_manifest_files(manifest_dir, manifest)
 
     if args.spec:
-        spec = load_spec(args.spec)
+        spec = load_spec(args.spec, research_test_mode=args.research_test)
     else:
-        spec = _build_default_spec(manifest, manifest.splits)
-
-    # Ensure every requested ticker in the spec has a successful snapshot.
-    missing = set(spec.tickers) - set(manifest.successful_tickers)
-    if missing:
-        raise ValidationError(f"spec tickers missing from snapshot: {sorted(missing)}")
-
-    from .snapshot import load_snapshot
-    _, bars = load_snapshot(manifest_path)
+        spec = _build_default_spec(manifest, manifest.splits, research_test_mode=args.research_test)
 
     # Confirm deterministic fingerprint build is possible.
     if "development" not in spec.splits:
         raise ValidationError("development split is required in the study spec")
+
+    from .snapshot import load_snapshot
+    _, bars = load_snapshot(manifest_path)
 
     study = run_study(manifest, bars, spec)
     artifacts = write_study(study, args.output, overwrite=args.overwrite)
@@ -134,12 +164,16 @@ def main(argv: list[str] | None = None) -> int:
         "snapshot",
         help="Build an offline daily-OHLCV snapshot for a universe. No network required if --provider is omitted and a fetch_fn is injected; default requires network.",
     )
-    snap.add_argument("--tickers", required=True, help="Comma-separated ticker list (e.g. AAPL,MSFT,NVDA)")
+    snap.add_argument("--tickers", default=None, help="Comma-separated ticker list (e.g. AAPL,MSFT,NVDA). Mutually exclusive with --universe.")
+    snap.add_argument("--universe", default=None, help="Use the exact ordered MINING_UNIVERSE; value must be 'current-mining-universe'")
     snap.add_argument("--start", type=_date, required=True, help="Start date ISO-8601 (e.g. 2018-01-02)")
     snap.add_argument("--end", type=_date, required=True, help="End date ISO-8601 (e.g. 2026-07-31)")
     snap.add_argument("--output", required=True, help="Output snapshot directory")
     snap.add_argument("--provider", default=None, help="Data provider (e.g. schwab, yahoo). Default uses DATA_PROVIDER or yahoo.")
     snap.add_argument("--splits", default=None, help="JSON file or inline JSON mapping split name to {start, end}")
+    snap.add_argument("--development-split", default=None, help="Development split as 'YYYY-MM-DD,YYYY-MM-DD'")
+    snap.add_argument("--validation-split", default=None, help="Validation split as 'YYYY-MM-DD,YYYY-MM-DD'")
+    snap.add_argument("--holdout-split", default=None, help="Holdout split as 'YYYY-MM-DD,YYYY-MM-DD'")
     snap.add_argument("--dataset-name", default="pattern-similarity-validation")
     snap.add_argument("--overwrite", action="store_true", help="Replace an existing snapshot directory")
     snap.set_defaults(func=_cmd_snapshot)
@@ -152,6 +186,7 @@ def main(argv: list[str] | None = None) -> int:
     eval_p.add_argument("--manifest", required=True, help="Path to the snapshot manifest.lock.json")
     eval_p.add_argument("--output", required=True, help="Output directory for study artifacts")
     eval_p.add_argument("--spec", default=None, help="Optional study_spec.lock.json; default spec is derived from the manifest")
+    eval_p.add_argument("--research-test", action="store_true", help="Skip locked-contract validation for synthetic/test specs")
     eval_p.add_argument("--overwrite", action="store_true", help="Replace an existing output directory")
     eval_p.set_defaults(func=_cmd_evaluate)
 
@@ -161,7 +196,6 @@ def main(argv: list[str] | None = None) -> int:
     except ValidationError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+    except Exception as exc:  # noqa: BLE001
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1

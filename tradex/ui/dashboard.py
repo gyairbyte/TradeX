@@ -3,7 +3,7 @@ Streamlit dashboard — eight tabs:
   1. Scanner       : run screener, view ranked results, drill-down chart
   2. Coil Detector : stocks building pressure over multiple days (pre-signal)
   3. Confluence    : stocks scoring well across multiple timeframes
-  4. Pattern Similarity : experimental shape comparison against historical run-up/decline fingerprints
+  4. Pattern Similarity — Experimental Research : experimental shape comparison against historical run-up/decline fingerprints
   5. Pre-Market    : gap scanner — identify gap-up/down candidates before open
   6. Options Activity : true options flow and chain-snapshot activity
   7. Alerts        : configure Discord/email alert thresholds
@@ -492,7 +492,7 @@ with st.sidebar:
     st.markdown("[📖 Help & Documentation](#help)", help="Open the Help tab for full feature explanations.")
 
 tab_scanner, tab_coil, tab_confluence, tab_pattern, tab_premarket, tab_options, tab_alerts, tab_journal, tab_weights, tab_help = st.tabs([
-    "Scanner", "Coil Detector", "Confluence", "Pattern Similarity",
+    "Scanner", "Coil Detector", "Confluence", "Pattern Similarity — Experimental Research",
     "Pre-Market", "Options Activity", "Alerts", "Signal Journal", "Weights", "Help",
 ])
 

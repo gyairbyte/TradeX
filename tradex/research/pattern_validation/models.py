@@ -15,6 +15,7 @@ import pandas as pd
 
 from tradex.patterns.config import PROFILES
 from tradex.patterns.matcher import SERIES_WEIGHTS
+from tradex.patterns.miner import MINING_UNIVERSE
 
 
 class ValidationError(ValueError):
@@ -65,12 +66,12 @@ def _clean_value(value: Any) -> Any:
     if isinstance(value, float):
         if math.isnan(value) or math.isinf(value):
             return None
-        return value
+        return round(value, 6)
     if isinstance(value, np.floating):
         f = float(value)
         if math.isnan(f) or math.isinf(f):
             return None
-        return f
+        return round(f, 6)
     if isinstance(value, (np.integer, np.bool_)):
         return int(value) if not isinstance(value, np.bool_) else bool(value)
     if isinstance(value, np.ndarray):
@@ -132,6 +133,18 @@ class Split:
         return self.start <= other.end and other.start <= self.end
 
 
+# Locked canonical contract for the real Schwab PATTERN-001 study.
+_LOCKED_PROVIDER = "schwab"
+_LOCKED_START_DATE = date(2018, 1, 2)
+_LOCKED_END_DATE = date(2026, 7, 31)
+_LOCKED_SPLITS = {
+    "development": Split(_LOCKED_START_DATE, date(2021, 12, 31)),
+    "validation": Split(date(2022, 1, 3), date(2023, 12, 29)),
+    "holdout": Split(date(2024, 1, 2), _LOCKED_END_DATE),
+}
+_LOCKED_UNIVERSE = tuple(MINING_UNIVERSE)
+
+
 @dataclass(frozen=True)
 class BootstrapConfig:
     """Ticker-cluster bootstrap configuration."""
@@ -150,6 +163,75 @@ class BootstrapConfig:
 
     def to_dict(self) -> dict[str, Any]:
         return {"method": self.method, "resamples": self.resamples, "seed": self.seed}
+
+
+def _validate_locked_contract(spec: "StudySpec") -> None:
+    """Enforce the exact locked PATTERN-001 Schwab study contract."""
+    errors: list[str] = []
+
+    if spec.tickers != _LOCKED_UNIVERSE:
+        errors.append(f"tickers must be the exact ordered MINING_UNIVERSE; got {spec.tickers}")
+    if spec.provider != _LOCKED_PROVIDER:
+        errors.append(f"provider must be '{_LOCKED_PROVIDER}'; got {spec.provider}")
+    if spec.start_date != _LOCKED_START_DATE:
+        errors.append(f"start_date must be {_LOCKED_START_DATE}; got {spec.start_date}")
+    if spec.end_date != _LOCKED_END_DATE:
+        errors.append(f"end_date must be {_LOCKED_END_DATE}; got {spec.end_date}")
+
+    expected_splits = _LOCKED_SPLITS
+    if set(spec.splits.keys()) != set(expected_splits.keys()):
+        errors.append(f"splits must be {list(expected_splits.keys())}; got {list(spec.splits.keys())}")
+    else:
+        for name, expected in expected_splits.items():
+            actual = spec.splits[name]
+            if actual.start != expected.start or actual.end != expected.end:
+                errors.append(
+                    f"split '{name}' must be {expected.start} to {expected.end}; "
+                    f"got {actual.start} to {actual.end}"
+                )
+
+    locked_scalar_checks = {
+        "profile": ("standard", spec.profile),
+        "runup_pct": (15.0, spec.runup_pct),
+        "decline_pct": (12.0, spec.decline_pct),
+        "move_days": (5, spec.move_days),
+        "lookback_days": (10, spec.lookback_days),
+        "min_events": (20, spec.min_events),
+        "holding_days": (5, spec.holding_days),
+        "similarity_threshold": (75.0, spec.similarity_threshold),
+        "decision_slippage_bps": (10.0, spec.decision_slippage_bps),
+        "commission_bps": (0.0, spec.commission_bps),
+        "minimum_validation_signals": (100, spec.minimum_validation_signals),
+        "minimum_holdout_signals": (100, spec.minimum_holdout_signals),
+        "minimum_tickers": (15, spec.minimum_tickers),
+        "max_ticker_concentration": (0.20, spec.max_ticker_concentration),
+        "minimum_lift_bps": (25.0, spec.minimum_lift_bps),
+        "random_seed": (20260803, spec.random_seed),
+        "baseline_definition": ("frequency_matched", spec.baseline_definition),
+        "adjustment_policy": ("provider_default", spec.adjustment_policy),
+        "universe_classification": ("fixed_convenience_cohort_not_point_in_time", spec.universe_classification),
+    }
+    for name, (expected, actual) in locked_scalar_checks.items():
+        if actual != expected:
+            errors.append(f"{name} must be {expected!r}; got {actual!r}")
+
+    if tuple(spec.event_types) != ("runup", "decline"):
+        errors.append(f"event_types must be ('runup', 'decline'); got {spec.event_types}")
+
+    if tuple(spec.slippage_scenarios_bps) != (0.0, 5.0, 10.0):
+        errors.append(f"slippage_scenarios_bps must be (0.0, 5.0, 10.0); got {spec.slippage_scenarios_bps}")
+
+    if dict(sorted(spec.series_weights.items())) != dict(sorted(SERIES_WEIGHTS.items())):
+        errors.append(f"series_weights must match SERIES_WEIGHTS; got {spec.series_weights}")
+
+    if spec.bootstrap.to_dict() != BootstrapConfig().to_dict():
+        errors.append(f"bootstrap must match the locked default; got {spec.bootstrap.to_dict()}")
+
+    if spec.production_promotion_eligible is not False:
+        errors.append("production_promotion_eligible must be false")
+
+    if errors:
+        raise ValidationError("locked study contract violation: " + "; ".join(errors))
 
 
 @dataclass(frozen=True)
@@ -186,6 +268,7 @@ class StudySpec:
     adjustment_policy: str = "provider_default"
     universe_classification: str = "fixed_convenience_cohort_not_point_in_time"
     production_promotion_eligible: bool = False
+    research_test_mode: bool = False
 
     def __post_init__(self) -> None:
         # Normalize mutable inputs defensively.
@@ -268,6 +351,9 @@ class StudySpec:
         if self.baseline_definition not in {"frequency_matched", "unconditional"}:
             raise ValidationError(f"unknown baseline_definition {self.baseline_definition!r}")
 
+        if not self.research_test_mode:
+            _validate_locked_contract(self)
+
     @property
     def universe_hash(self) -> str:
         """SHA-256 of the ordered ticker list."""
@@ -323,6 +409,7 @@ class StudySpec:
             "adjustment_policy": self.adjustment_policy,
             "universe_classification": self.universe_classification,
             "production_promotion_eligible": self.production_promotion_eligible,
+            # research_test_mode is a tooling flag, not part of the locked study contract.
         }
 
     def to_json(self, indent: int | None = None) -> str:
@@ -342,6 +429,12 @@ class ManifestEntry:
     data_source: str
     adjustment_policy: str
     failure: str | None = None
+    quality: dict[str, Any] = field(default_factory=dict)
+    warnings: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "quality", dict(self.quality))
+        object.__setattr__(self, "warnings", list(self.warnings))
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -354,6 +447,8 @@ class ManifestEntry:
             "data_source": self.data_source,
             "adjustment_policy": self.adjustment_policy,
             "failure": self.failure,
+            "quality": _clean(self.quality),
+            "warnings": _clean(self.warnings),
         }
 
 
@@ -555,6 +650,7 @@ class PeriodMetrics:
     similarity_p50: float | None
     similarity_p75: float | None
     similarity_p95: float | None
+    component_scores: dict[str, dict[str, float | None]]
     mean_gross_return_pct: float | None
     median_gross_return_pct: float | None
     mean_net_return_pct: float | None  # decision slippage
@@ -579,6 +675,10 @@ class PeriodMetrics:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "returns_by_slippage", {str(k): dict(v) for k, v in (self.returns_by_slippage or {}).items()})
+        normalized_components: dict[str, dict[str, float | None]] = {}
+        for key, dist in (self.component_scores or {}).items():
+            normalized_components[str(key)] = {str(k): v for k, v in dict(dist).items()}
+        object.__setattr__(self, "component_scores", normalized_components)
 
     def to_dict(self) -> dict[str, Any]:
         return _clean(asdict(self))
@@ -691,7 +791,7 @@ class StudyResult:
         return [_clean(r) for r in df.to_dict("records")]
 
 
-def load_spec(path: str | Path) -> StudySpec:
+def load_spec(path: str | Path, research_test_mode: bool = False) -> StudySpec:
     """Load a StudySpec from a JSON lock file."""
     p = Path(path)
     with p.open("r", encoding="utf-8") as f:
@@ -708,6 +808,7 @@ def load_spec(path: str | Path) -> StudySpec:
     # Drop computed fields that are not constructor arguments.
     data.pop("universe_hash", None)
     data.pop("schema_version", None)
+    data["research_test_mode"] = research_test_mode
     return StudySpec(**data)
 
 

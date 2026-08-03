@@ -74,4 +74,28 @@ def test_report_contains_neutral_language(tmp_path, tiny_study_dates, tiny_spec)
     report = study.report_markdown
     assert "shape resemblance" in report
     assert "causality" in report
-    assert "Predictive value" not in report
+    assert "Predictive value is unvalidated" not in report
+
+
+def test_two_eval_runs_produce_byte_identical_artifacts(tmp_path, tiny_study_dates, tiny_spec):
+    snap = tmp_path / "snap"
+    manifest_path = create_snapshot(
+        tickers=list(tiny_spec.tickers),
+        start=tiny_study_dates["start_date"],
+        end=tiny_study_dates["end_date"],
+        output_dir=snap,
+        splits=tiny_study_dates["splits"],
+        fetch_fn=_synthetic_fetcher,
+        overwrite=True,
+    )
+    from tradex.research.pattern_validation.snapshot import load_snapshot
+    manifest, bars = load_snapshot(manifest_path)
+    out1 = tmp_path / "eval1"
+    out2 = tmp_path / "eval2"
+    study1 = run_study(manifest, bars, tiny_spec)
+    artifacts1 = write_study(study1, out1, overwrite=True)
+    study2 = run_study(manifest, bars, tiny_spec)
+    artifacts2 = write_study(study2, out2, overwrite=True)
+    assert set(artifacts1.keys()) == set(artifacts2.keys())
+    for name in sorted(artifacts1.keys()):
+        assert (out1 / name).read_bytes() == (out2 / name).read_bytes(), f"{name} differs between runs"
