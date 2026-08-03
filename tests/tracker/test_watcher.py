@@ -284,6 +284,7 @@ def test_start_loop_schedules_run_once_with_provider():
         "fallback_order": None,
         "policy": None,
         "market_hours_only": False,
+        "alert_policy": mock_run_once.call_args.kwargs["alert_policy"],
         "now": mock_run_once.call_args.kwargs["now"],
     }
     assert isinstance(mock_run_once.call_args.kwargs["now"], datetime)

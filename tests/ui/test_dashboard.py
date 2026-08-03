@@ -138,3 +138,37 @@ def test_dashboard_scan_passes_normalized_watchlist_to_record_scan(fresh_signal_
     assert len(tickers_scanned) == 20
     assert "AAPL" in tickers_scanned
     assert tickers_scanned == list(dict.fromkeys(tickers_scanned))
+
+
+def test_effective_cooldowns_helper():
+    """_effective_cooldowns exposes per-alert-type cooldown durations."""
+    from tradex.alerts.models import AlertCooldownConfig
+    from tradex.ui.dashboard import _effective_cooldowns
+
+    cfg = AlertCooldownConfig(enabled=True, default_minutes=60, coil_minutes=30)
+    result = _effective_cooldowns(cfg)
+    assert result["coil"] == 30
+    assert result["confluence"] == 60
+    assert result["pattern"] == 60
+    assert result["gap"] == 60
+
+    disabled_cfg = AlertCooldownConfig(enabled=False)
+    assert _effective_cooldowns(disabled_cfg) == {"status": "disabled"}
+
+
+def test_alert_policy_from_env_builds_policy(monkeypatch, tmp_path):
+    """The dashboard can construct a policy from environment variables."""
+    from pathlib import Path
+
+    from tradex.ui.dashboard import _alert_policy_from_env
+
+    state_path = tmp_path / "dash_alerts.db"
+    monkeypatch.setenv("ALERT_STATE_PATH", str(state_path))
+    monkeypatch.setenv("ALERT_COOLDOWN_MINUTES", "45")
+    monkeypatch.setenv("ALERT_COIL_COOLDOWN_MINUTES", "15")
+
+    policy = _alert_policy_from_env()
+    assert policy.config.default_minutes == 45
+    assert policy.config.coil_minutes == 15
+    assert Path(policy.config.resolved_state_path) == state_path
+    assert not state_path.exists()

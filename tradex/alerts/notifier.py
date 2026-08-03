@@ -1,5 +1,4 @@
-"""
-Alert notifier — Discord bot and email.
+"""Alert notifier — Discord bot and email.
 
 Sends alerts when:
   - A coil score crosses the coil threshold
@@ -33,11 +32,19 @@ from __future__ import annotations
 
 import os
 import smtplib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from email.mime.text import MIMEText
+from typing import Any
 
 import requests
 from dotenv import load_dotenv
+
+from tradex.alerts.models import (
+    AlertDecision,
+    AlertDispatchResult,
+    AlertKey,
+    ensure_aware_utc,
+)
 
 load_dotenv()
 
@@ -75,7 +82,7 @@ def _send_discord(subject: str, body: str, color_key: str = "test") -> bool:
     if not DISCORD_TOKEN or not DISCORD_CHANNEL_ID:
         return False
     try:
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
         embed = {
             "title":       f"TradeX — {subject}",
             "description": f"```{body}```",
@@ -92,7 +99,7 @@ def _send_discord(subject: str, body: str, color_key: str = "test") -> bool:
             print(f"[alert] Discord error {resp.status_code}: {resp.text}")
             return False
         return True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"[alert] Discord error: {e}")
         return False
 
@@ -101,7 +108,7 @@ def _send_email(subject: str, body: str) -> bool:
     if not all([EMAIL_TO, EMAIL_FROM, EMAIL_HOST, EMAIL_USER, EMAIL_PASS]):
         return False
     try:
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
         msg = MIMEText(f"{body}\n\nSent: {now}", "plain")
         msg["Subject"] = f"TradeX: {subject}"
         msg["From"]    = EMAIL_FROM
@@ -111,7 +118,7 @@ def _send_email(subject: str, body: str) -> bool:
             server.login(EMAIL_USER, EMAIL_PASS)
             server.sendmail(EMAIL_FROM, EMAIL_TO, msg.as_string())
         return True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"[alert] Email error: {e}")
         return False
 
@@ -127,23 +134,109 @@ def send_alert(subject: str, body: str, color_key: str = "test") -> dict[str, bo
     return results
 
 
+def is_alert_configured() -> bool:
+    """Return ``True`` when at least one alert channel has credentials configured."""
+    discord_ready = bool(DISCORD_TOKEN and DISCORD_CHANNEL_ID)
+    email_ready = bool(all([EMAIL_TO, EMAIL_FROM, EMAIL_HOST, EMAIL_USER, EMAIL_PASS]))
+    return discord_ready or email_ready
+
+
+def _cooldown_minutes_for(
+    policy: Any | None,
+    key: AlertKey,
+) -> int | None:
+    if policy is None:
+        return None
+    return policy.cooldown_minutes_for(key)
+
+
+def _dispatch_or_raw(
+    key: AlertKey,
+    subject: str,
+    body: str,
+    color_key: str,
+    policy: Any | None,
+    observed_at: datetime | None,
+) -> AlertDispatchResult:
+    """Dispatch through a policy if provided, otherwise send raw and return a result."""
+    observed_at = ensure_aware_utc(observed_at)
+    if policy is not None:
+        return policy.dispatch(key, subject, body, color_key=color_key, observed_at=observed_at)
+    try:
+        channel_results = send_alert(subject, body, color_key)
+    except Exception as exc:  # noqa: BLE001
+        return AlertDispatchResult(
+            key=key,
+            decision=AlertDecision.DELIVERY_FAILED,
+            observed_at=observed_at,
+            cooldown_minutes=None,
+            last_success_at=None,
+            next_eligible_at=None,
+            reason=f"Raw send failed: {exc}",
+            channel_results={},
+            error=str(exc)[:500],
+        )
+    return AlertDispatchResult(
+        key=key,
+        decision=AlertDecision.COOLDOWN_DISABLED,
+        observed_at=observed_at,
+        cooldown_minutes=None,
+        last_success_at=None,
+        next_eligible_at=None,
+        reason="No cooldown policy configured; raw send used",
+        channel_results=channel_results,
+    )
+
+
+def _below_threshold_result(
+    key: AlertKey,
+    policy: Any | None,
+    observed_at: datetime | None,
+    reason: str,
+) -> AlertDispatchResult:
+    observed_at = ensure_aware_utc(observed_at)
+    return AlertDispatchResult(
+        key=key,
+        decision=AlertDecision.BELOW_THRESHOLD,
+        observed_at=observed_at,
+        cooldown_minutes=_cooldown_minutes_for(policy, key),
+        last_success_at=None,
+        next_eligible_at=None,
+        reason=reason,
+        channel_results={},
+    )
+
+
 # ── typed alert helpers ───────────────────────────────────────────────────────
 
-def alert_coil(ticker: str, coil_strength: float, score: int, trend: str, timeframe: str):
+def alert_coil(
+    ticker: str,
+    coil_strength: float,
+    score: int,
+    trend: str,
+    timeframe: str,
+    *,
+    policy: Any | None = None,
+    observed_at: datetime | None = None,
+) -> AlertDispatchResult:
+    key = AlertKey(ticker=ticker, alert_type="coil", timeframe=timeframe)
     if coil_strength < COIL_ALERT_THRESHOLD:
-        return
-    send_alert(
-        subject=f"Coil Detected: {ticker}",
-        body=(
-            f"Ticker:        {ticker}\n"
-            f"Timeframe:     {timeframe}\n"
-            f"Coil strength: {coil_strength}\n"
-            f"Latest score:  {score}\n"
-            f"Trend:         {trend}\n\n"
-            f"Building pressure over multiple sessions — no breakout yet."
-        ),
-        color_key="coil",
+        return _below_threshold_result(
+            key,
+            policy,
+            observed_at,
+            f"Coil strength {coil_strength} below threshold {COIL_ALERT_THRESHOLD}",
+        )
+    subject = f"Coil Detected: {ticker}"
+    body = (
+        f"Ticker:        {ticker}\n"
+        f"Timeframe:     {timeframe}\n"
+        f"Coil strength: {coil_strength}\n"
+        f"Latest score:  {score}\n"
+        f"Trend:         {trend}\n\n"
+        f"Building pressure over multiple sessions — no breakout yet."
     )
+    return _dispatch_or_raw(key, subject, body, "coil", policy, observed_at)
 
 
 def alert_pattern_match(
@@ -153,49 +246,76 @@ def alert_pattern_match(
     profile: str,
     fp_events: int,
     interpretation: str,
-):
+    *,
+    policy: Any | None = None,
+    observed_at: datetime | None = None,
+) -> AlertDispatchResult:
+    key = AlertKey(ticker=ticker, alert_type=f"pattern:{event_type}:{profile}", timeframe="pattern")
     if similarity < PATTERN_ALERT_THRESHOLD:
-        return
-    send_alert(
-        subject=f"Pattern Match: {ticker} — {event_type.upper()} ({similarity:.0f}%)",
-        body=(
-            f"Ticker:       {ticker}\n"
-            f"Pattern:      {event_type}\n"
-            f"Profile:      {profile}\n"
-            f"Similarity:   {similarity:.1f}%\n"
-            f"Based on:     {fp_events} historical events\n\n"
-            f"{interpretation}"
-        ),
-        color_key="pattern",
+        return _below_threshold_result(
+            key,
+            policy,
+            observed_at,
+            f"Pattern similarity {similarity} below threshold {PATTERN_ALERT_THRESHOLD}",
+        )
+    subject = f"Pattern Match: {ticker} — {event_type.upper()} ({similarity:.0f}%)"
+    body = (
+        f"Ticker:       {ticker}\n"
+        f"Pattern:      {event_type}\n"
+        f"Profile:      {profile}\n"
+        f"Similarity:   {similarity:.1f}%\n"
+        f"Based on:     {fp_events} historical events\n\n"
+        f"{interpretation}"
     )
+    return _dispatch_or_raw(key, subject, body, "pattern", policy, observed_at)
 
 
-def alert_confluence(ticker: str, confluence_score: int, active_timeframes: list[str], last_close: float):
+def alert_confluence(
+    ticker: str,
+    confluence_score: int,
+    active_timeframes: list[str],
+    last_close: float,
+    *,
+    policy: Any | None = None,
+    observed_at: datetime | None = None,
+) -> AlertDispatchResult:
+    key = AlertKey(ticker=ticker, alert_type="confluence", timeframe="multi")
     if confluence_score < CONFLUENCE_ALERT_THRESHOLD:
-        return
-    send_alert(
-        subject=f"Confluence Alert: {ticker} ({confluence_score}/100)",
-        body=(
-            f"Ticker:            {ticker}\n"
-            f"Confluence score:  {confluence_score}\n"
-            f"Active timeframes: {', '.join(active_timeframes)}\n"
-            f"Last close:        ${last_close:.2f}\n\n"
-            f"Multiple timeframes aligned — higher conviction setup."
-        ),
-        color_key="confluence",
+        return _below_threshold_result(
+            key,
+            policy,
+            observed_at,
+            f"Confluence score {confluence_score} below threshold {CONFLUENCE_ALERT_THRESHOLD}",
+        )
+    subject = f"Confluence Alert: {ticker} ({confluence_score}/100)"
+    body = (
+        f"Ticker:            {ticker}\n"
+        f"Confluence score:  {confluence_score}\n"
+        f"Active timeframes: {', '.join(active_timeframes)}\n"
+        f"Last close:        ${last_close:.2f}\n\n"
+        f"Multiple timeframes aligned — higher conviction setup."
     )
+    return _dispatch_or_raw(key, subject, body, "confluence", policy, observed_at)
 
 
-def alert_gap(ticker: str, gap_pct: float, direction: str, prev_close: float, pre_market: float):
-    send_alert(
-        subject=f"Pre-Market Gap {direction.upper()}: {ticker} ({gap_pct:+.1f}%)",
-        body=(
-            f"Ticker:      {ticker}\n"
-            f"Direction:   {direction}\n"
-            f"Gap:         {gap_pct:+.1f}%\n"
-            f"Prev close:  ${prev_close:.2f}\n"
-            f"Pre-market:  ${pre_market:.2f}\n\n"
-            f"Significant pre-market gap detected before open."
-        ),
-        color_key=f"gap_{direction}",
+def alert_gap(
+    ticker: str,
+    gap_pct: float,
+    direction: str,
+    prev_close: float,
+    pre_market: float,
+    *,
+    policy: Any | None = None,
+    observed_at: datetime | None = None,
+) -> AlertDispatchResult:
+    key = AlertKey(ticker=ticker, alert_type=f"gap:{direction}", timeframe="premarket")
+    subject = f"Pre-Market Gap {direction.upper()}: {ticker} ({gap_pct:+.1f}%)"
+    body = (
+        f"Ticker:      {ticker}\n"
+        f"Direction:   {direction}\n"
+        f"Gap:         {gap_pct:+.1f}%\n"
+        f"Prev close:  ${prev_close:.2f}\n"
+        f"Pre-market:  ${pre_market:.2f}\n\n"
+        f"Significant pre-market gap detected before open."
     )
+    return _dispatch_or_raw(key, subject, body, f"gap_{direction}", policy, observed_at)

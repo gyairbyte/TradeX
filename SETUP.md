@@ -91,8 +91,15 @@ Key variables:
 | `ALPACA_API_KEY` / `ALPACA_SECRET_KEY` | Only for Alpaca | From alpaca.markets dashboard |
 | `SCHWAB_APP_KEY` / `SCHWAB_APP_SECRET` | Only for Schwab | From developer.schwab.com — also requires OAuth bootstrap (see §3a) |
 | `IBKR_HOST` / `IBKR_PORT` | Only for IBKR | TWS or Gateway must be running locally |
-| `DISCORD_BOT_TOKEN` / `DISCORD_CHANNEL_ID` | Only for Discord alerts | Optional |
-| `SMTP_*` | Only for email alerts | Optional |
+| `ALERT_DISCORD_TOKEN` / `ALERT_DISCORD_CHANNEL_ID` | Only for Discord alerts | Optional |
+| `ALERT_EMAIL_TO` / `ALERT_EMAIL_FROM` / `ALERT_EMAIL_HOST` / `ALERT_EMAIL_USER` / `ALERT_EMAIL_PASS` | Only for email alerts | Optional |
+| `ALERT_COOLDOWN_ENABLED` | No | `true` (default) / `false` to disable all automatic alert cooldowns |
+| `ALERT_COOLDOWN_MINUTES` | No | Default cooldown in minutes, `1` to `10080`. Default `60`. |
+| `ALERT_COIL_COOLDOWN_MINUTES` | No | Optional per-type override. Default `ALERT_COOLDOWN_MINUTES`. |
+| `ALERT_CONFLUENCE_COOLDOWN_MINUTES` | No | Optional per-type override. Default `ALERT_COOLDOWN_MINUTES`. |
+| `ALERT_PATTERN_COOLDOWN_MINUTES` | No | Optional per-type override. Default `ALERT_COOLDOWN_MINUTES`. |
+| `ALERT_GAP_COOLDOWN_MINUTES` | No | Optional per-type override. Default `ALERT_COOLDOWN_MINUTES`. |
+| `ALERT_STATE_PATH` | No | Isolated SQLite alert state database. Default `~/.tradex/alerts.db`. |
 
 ### 2a. Schwab OAuth bootstrap (only if `DATA_PROVIDER=schwab`)
 
@@ -192,7 +199,7 @@ If the dashboard fails to start, check the log at `~/.tradex/dashboard.log` (Mac
 
 ## 6. Optional: scheduled background scanner
 
-The watcher runs the screener on an interval and writes results to `~/.tradex/signals.db`. This is what powers the **Coil Detector** and **Signal Journal** tabs over time.
+The watcher runs the screener on an interval and writes results to `~/.tradex/signals.db`. This is what powers the **Coil Detector** and **Signal Journal** tabs over time. It also evaluates automatic alerts for coil, confluence, pattern, and pre-market gap setups, using a separate `~/.tradex/alerts.db` state database for cooldown and deduplication.
 
 ```bash
 # macOS / Linux
@@ -203,6 +210,21 @@ The watcher runs the screener on an interval and writes results to `~/.tradex/si
 ```
 
 Run during market hours. With `--market-hours-only`, scans are skipped outside the NYSE regular session (weekends, NYSE holidays including Good Friday, and early-close days are handled automatically via the `exchange-calendars` XNYS calendar). Manual one-off scans omit the flag. The daily pre-market gap scan fires at `08:00 America/New_York` and the outcome pass at `16:30 America/New_York`; both stay at the same New York wall-clock time across DST changes and skip non-trading days. The watcher persists the effective `provider` with each scan run and outcome pass.
+
+Alert cooldown is enabled by default. Override it at runtime:
+
+```bash
+# 120-minute default cooldown
+.venv/bin/python -m tradex.tracker.watcher --timeframe intraday --interval 5 --alert-cooldown-minutes 120
+
+# Disable cooldown entirely (send every eligible alert)
+.venv/bin/python -m tradex.tracker.watcher --timeframe intraday --interval 5 --disable-alert-cooldown
+
+# Use a custom alert state database
+.venv/bin/python -m tradex.tracker.watcher --timeframe intraday --interval 5 --alert-state-path /path/to/alerts.db
+```
+
+Each automatic alert is keyed by `(ticker, alert_type, timeframe)`. The first eligible alert is sent and starts a cooldown; repeats during that window are suppressed and recorded in the state database. Cooldown only starts when at least one configured channel successfully receives the alert. Manual test alerts from the dashboard bypass cooldown.
 
 ---
 
@@ -375,7 +397,7 @@ Once the dashboard is running at `http://localhost:8501`:
 | **Pattern Match** | Compares current 10-day windows against historical run-up / decline fingerprints. |
 | **Pre-Market** | Gap-up / gap-down detection vs. previous close with optional liquidity, spread, catalyst, and freshness filters. All new filters are off by default. |
 | **Options Flow** | Unusual options volume vs. open interest. Requires market hours for live data. |
-| **Alerts** | Configure Discord / email thresholds. Requires `.env` credentials. |
+| **Alerts** | Configure Discord / email thresholds, view effective cooldown durations, and inspect recent persistent alert state. Requires `.env` credentials for notifications. |
 | **Signal Journal** | Win rate and expectancy by score bucket, plus signal/outcome provider columns — only meaningful after weeks of watcher runs. |
 | **Weights** | Tune per-signal point values. Persists to `~/.tradex/weights.json`. |
 | **Help** | In-app docs for every feature. |

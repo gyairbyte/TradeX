@@ -95,8 +95,38 @@ uv run python -m tradex.tracker.watcher \
   --market-hours-only
 ```
 
+Alert cooldown options:
+
+```bash
+uv run python -m tradex.tracker.watcher --help
+uv run python -m tradex.tracker.watcher --timeframe intraday --interval 5 --alert-cooldown-minutes 120
+uv run python -m tradex.tracker.watcher --timeframe intraday --interval 5 --disable-alert-cooldown
+uv run python -m tradex.tracker.watcher --timeframe intraday --interval 5 --alert-state-path /path/to/alerts.db
+```
+
 Do not start a blocking watcher loop during automated testing.
 Patch the scheduler or inject deterministic time values instead.
+
+## Alert cooldown
+
+Run the focused alert suites and watcher alert integration tests:
+
+```bash
+uv run pytest tests/alerts -q
+uv run pytest tests/tracker/test_watcher.py -q
+uv run pytest tests/ui -q
+```
+
+Alert cooldown verification should confirm:
+
+- `AlertKey` distinguishes alerts by `(ticker, alert_type, timeframe)`.
+- `AlertPolicy.dispatch` sends the first eligible alert and suppresses repeats inside the cooldown window.
+- Cooldown state persists across `AlertStore` instances and survives restarts.
+- A held atomic claim prevents a second `AlertPolicy` from sending the same alert.
+- No cooldown is consumed when all channels fail to receive the alert.
+- Manual test alerts (dashboard "Send Test Alert") bypass cooldown.
+- `datetime` validation rejects naive values and uses timezone-aware UTC internally.
+- `python -m tradex.tracker.watcher --help` works with no credentials and creates no alert state database.
 
 ## Backtest CLI
 

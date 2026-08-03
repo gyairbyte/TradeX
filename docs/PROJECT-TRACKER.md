@@ -152,16 +152,18 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Add alert deduplication and cooldown
 - **Category:** Alerts
 - **Priority:** High
-- **Status:** Proposed
+- **Status:** Completed
+- **Resolved by:** `devin/add-alert-cooldown`
 - **Problem statement:** The watcher fires alerts on every scan cycle for every ticker above threshold, with no persistence or cooldown.
 - **Recommended action:** Introduce an alert state store keyed by `(ticker, alert_type, timeframe)` and enforce a configurable cooldown (e.g., 1 hour for coils).
 - **Reason:** Prevents alert spam and respects user attention.
 - **Dependencies:** None
-- **Files likely affected:** `tradex/alerts/notifier.py`, `tradex/tracker/watcher.py`, new `tradex/alerts/policy.py`
-- **Testing requirements:** Unit tests mocking `send_alert`; verify it is only called once per cooldown window.
-- **Acceptance criteria:** Repeated checks for the same coil produce only one Discord/email message per cooldown window.
+- **Files likely affected:** `tradex/alerts/notifier.py`, `tradex/tracker/watcher.py`, new `tradex/alerts/policy.py`, `tradex/alerts/models.py`, `tradex/alerts/store.py`, `tradex/ui/dashboard.py`
+- **Testing requirements:** Unit tests mocking `send_alert`; verify it is only called once per cooldown window; verify persistence across restarts, atomic claims, and dashboard display.
+- **Acceptance criteria:** Repeated checks for the same alert identity produce only one Discord/email message per cooldown window; state persists across watcher restarts; manual test alerts bypass cooldown.
 - **Intended pull request:** `devin/add-alert-cooldown`
 - **Affects trading behavior:** No
+- **Next recommended PR:** `devin/add-initial-adrs` (DEC-001)
 
 ### TEST-001: Complete test foundation and fixtures
 
@@ -637,12 +639,11 @@ This is the master backlog for recommendations from the Devin review. Items are 
 
 | Priority | Count | Representative first item |
 |---|---|---|
-| High | 16 | DATA-001: Redesign signal history to record all scan observations |
-| Medium | 8 | SHORT-001: Add market regime and relative strength to short-term scorer |
+| High | 15 | DATA-001: Redesign signal history to record all scan observations |
+| Medium | 12 | SHORT-001: Add market regime and relative strength to short-term scorer |
 | Low | 5 | DOC-001: Fix documentation drift |
 
 **Recommended next pull request order:**
-1. `devin/add-alert-cooldown` (ALERT-001).
-2. `devin/add-initial-adrs` (DEC-001).
-3. `devin/improve-long-term-score` (LONG-001).
+1. `devin/add-initial-adrs` (DEC-001).
+2. `devin/improve-long-term-score` (LONG-001).
 
