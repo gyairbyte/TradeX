@@ -1,12 +1,16 @@
-# ADR-0003: OHLCV Provider Contract and Error Taxonomy
+# ADR-0002: OHLCV Provider Contract and Error Taxonomy
 
 ## Status
 
 Accepted
 
-## Date
+## Recorded
 
-2026-08-01
+2026-08-04
+
+## Decision owners
+
+TradeX maintainers; final product decisions by Gary Yang. Code-level ownership follows `docs/AI-DEVELOPMENT-WORKFLOW.md`.
 
 ## Context
 
@@ -52,6 +56,24 @@ Provenance: `FetchReport` records `requested_provider`, `actual_provider`, `fall
 - Provider-specific differences in adjustment, timestamps, and coverage are documented rather than hidden.
 - Schwab is the only provider with deterministic, credential-free tests enforcing the full UTC-index contract (`tests/data/test_schwab_provider.py`).
 
+## Non-goals
+
+- Standardizing provider-specific adjustment policies, timestamp conventions, coverage, or data freshness beyond the documented behavior.
+- Fetching non-OHLCV market data (e.g., options chains, fundamental data, news) through the OHLCV fetcher.
+- Automatically retrying non-transient errors or silently falling back when no fallback order is configured.
+- Hiding provider identity from provenance fields.
+
+## Risks and limitations
+
+- Yahoo, Alpaca, and IBKR do not enforce the same UTC-index guarantee as Schwab. Code that assumes a timezone-aware, ascending `datetime` index may fail with those providers.
+- Provider API changes or package updates can alter returned columns, index behavior, or available history.
+- Fallback can mask a degraded primary provider because `actual_provider` changes and `fallback_used` is recorded, but downstream code may not inspect it.
+- The `dropna()` default removes any row missing at least one of `open/high/low/close/volume`; this is safe for signal code but may discard rows that a provider marks as partially complete.
+
+## Change control and supersession
+
+This ADR is immutable once Accepted. Any change to the cross-provider contract (column names, error taxonomy, fallback semantics, provider precedence, or provenance fields) requires a new ADR that supersedes this one. Adding a new provider is not a change to this ADR as long as it conforms to the documented contract. Changing production trading behavior based on provider data requires separate approval per `docs/AI-DEVELOPMENT-WORKFLOW.md` and, if applicable, validation per `docs/RESEARCH-PROTOCOL.md`.
+
 ## Rejected alternatives
 
 - Enforcing full UTC index normalization on all providers at this layer: rejected because Yahoo, Alpaca, and IBKR clients return heterogeneous index types and the current code does not normalize them. Schwab is the only provider with explicit normalization tests.
@@ -66,6 +88,8 @@ Provenance: `FetchReport` records `requested_provider`, `actual_provider`, `fall
 - `tests/data/test_schwab_provider.py`
 - `docs/PROJECT-TRACKER.md` (PROVIDER-004, PROVIDER-005)
 
-## Supersession
+## Revision history
 
-None.
+| Version | Date | Change | Owner |
+|---|---|---|---|
+| 1.0 | 2026-08-04 | Initial recorded version | TradeX maintainers |

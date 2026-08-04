@@ -6,9 +6,13 @@ Proposed / Accepted / Deprecated / Superseded
 
 If the status is **Superseded**, add a `Superseded by` link and keep this file as a historical record. If the status is **Deprecated**, explain why and what should be used instead.
 
-## Date
+## Recorded
 
 YYYY-MM-DD
+
+## Decision owners
+
+TradeX maintainers; final product decisions by Gary Yang. Code-level ownership follows `docs/AI-DEVELOPMENT-WORKFLOW.md`. Replace `<owner>` with the specific owner only when the decision has a single, named maintainer.
 
 ## Context
 
@@ -22,6 +26,18 @@ The exact decision made. Be specific: constants, defaults, public APIs, error ha
 
 Positive and negative outcomes. What becomes easier or harder? What is explicitly out of scope or left unchanged? What limitations remain?
 
+## Non-goals
+
+What this ADR explicitly does not cover or guarantee.
+
+## Risks and limitations
+
+What could go wrong, what edge cases exist, and what the decision does not validate.
+
+## Change control and supersession
+
+This ADR is immutable once **Accepted**. Any material change requires a new ADR that supersedes this one. Changes that affect production trading behavior require separate approval per `docs/AI-DEVELOPMENT-WORKFLOW.md` and validation per `docs/RESEARCH-PROTOCOL.md`.
+
 ## Rejected alternatives
 
 Briefly list alternatives considered and why they were rejected. This prevents future debates from restarting from scratch.
@@ -34,6 +50,8 @@ Briefly list alternatives considered and why they were rejected. This prevents f
 - Research artifacts or safe-handoff bundles
 - External documentation
 
-## Supersession
+## Revision history
 
-If this ADR supersedes another, add `Supersedes: [ADR-NNNN](NNNN-title.md)`. If this ADR is later superseded, add `Superseded by: [ADR-NNNN](NNNN-title.md)` and update its status accordingly.
+| Version | Date | Change | Owner |
+|---|---|---|---|
+| 1.0 | YYYY-MM-DD | Initial recorded version | TradeX maintainers |

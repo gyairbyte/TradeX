@@ -15,12 +15,17 @@ README = DECISIONS_DIR / "README.md"
 ALLOWED_STATUSES = {"Proposed", "Accepted", "Deprecated", "Superseded"}
 REQUIRED_SECTIONS = [
     "## Status",
-    "## Date",
+    "## Recorded",
+    "## Decision owners",
     "## Context",
     "## Decision",
     "## Consequences",
+    "## Non-goals",
+    "## Risks and limitations",
+    "## Change control and supersession",
     "## Rejected alternatives",
     "## References",
+    "## Revision history",
 ]
 
 # Placeholders that must not appear in accepted ADRs.
@@ -109,8 +114,11 @@ def test_indexed_adr_files_exist_and_match_metadata(readme_text: str) -> None:
             f"{path}: expected header {expected_header!r}, got {title_line!r}"
         )
 
+        for section in REQUIRED_SECTIONS:
+            assert section in text, f"{path}: missing required section {section}"
+
         if row["id"] == "0000":
-            # Template is not a real ADR.
+            # Template is not a real ADR; do not enforce status/date/placeholder rules.
             continue
 
         status_match = re.search(r"## Status\s*\n+([A-Za-z]+)", text)
@@ -123,14 +131,11 @@ def test_indexed_adr_files_exist_and_match_metadata(readme_text: str) -> None:
             f"{path}: README status {row['status']!r} does not match file status {status!r}"
         )
 
-        date_match = re.search(r"## Date\s*\n+(\d{4}-\d{2}-\d{2})", text)
-        assert date_match, f"{path}: missing or malformed ## Date (expected YYYY-MM-DD)"
+        date_match = re.search(r"## Recorded\s*\n+(\d{4}-\d{2}-\d{2})", text)
+        assert date_match, f"{path}: missing or malformed ## Recorded (expected YYYY-MM-DD)"
         assert date_match.group(1) == row["date"], (
             f"{path}: README date {row['date']!r} does not match file date {date_match.group(1)!r}"
         )
-
-        for section in REQUIRED_SECTIONS:
-            assert section in text, f"{path}: missing required section {section}"
 
 
 def test_accepted_adrs_contain_no_placeholders(readme_text: str) -> None:
