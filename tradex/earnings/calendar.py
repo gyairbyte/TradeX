@@ -15,7 +15,6 @@ Cache:
 """
 from __future__ import annotations
 
-import os
 import sqlite3
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -23,16 +22,21 @@ from pathlib import Path
 import pandas as pd
 import yfinance as yf
 
+from tradex.config import TradeXSettings, load_runtime_settings
 from tradex.data.fetcher import ProviderCapabilityError
 
-CACHE_DIR = Path(os.path.expanduser("~/.tradex"))
+CACHE_DIR = Path.home() / ".tradex"
 CACHE_DB = CACHE_DIR / "earnings_cache.db"
 CACHE_TTL_HOURS = 24
 
 
-def _resolve_earnings_source(source: str | None) -> str:
+def _resolve_earnings_source(
+    source: str | None, *, settings: TradeXSettings | None = None
+) -> str:
     """Return the validated earnings source. Only Yahoo is supported in this PR."""
-    s = (source or os.getenv("EARNINGS_DATA_SOURCE", "yahoo")).lower().strip()
+    if settings is None:
+        settings = load_runtime_settings()
+    s = (source or settings.earnings_data_source).lower().strip()
     if s != "yahoo":
         raise ProviderCapabilityError(
             f"Earnings source '{s}' is not supported; only 'yahoo' is available"
@@ -131,6 +135,8 @@ def get_next_earnings(
     force_refresh: bool = False,
     source: str | None = None,
     use_cache: bool = True,
+    *,
+    settings: TradeXSettings | None = None,
 ) -> date | None:
     """Return the next earnings date for `ticker`, or None if unavailable.
 
@@ -141,7 +147,7 @@ def get_next_earnings(
     cache file is read or written. This is the path used by the pre-market gap
     scanner, which must not create persistent database files.
     """
-    source = _resolve_earnings_source(source)
+    source = _resolve_earnings_source(source, settings=settings)
     if use_cache and not force_refresh:
         cached, fresh = _cache_get(ticker, source)
         if fresh:
@@ -152,20 +158,36 @@ def get_next_earnings(
     return next_date
 
 
-def days_until_earnings(ticker: str, force_refresh: bool = False, source: str | None = None) -> int | None:
-    next_date = get_next_earnings(ticker, force_refresh=force_refresh, source=source)
+def days_until_earnings(
+    ticker: str,
+    force_refresh: bool = False,
+    source: str | None = None,
+    *,
+    settings: TradeXSettings | None = None,
+) -> int | None:
+    next_date = get_next_earnings(
+        ticker, force_refresh=force_refresh, source=source, settings=settings
+    )
     if next_date is None:
         return None
     return (next_date - date.today()).days
 
 
-def is_within_earnings_window(ticker: str, within_days: int, source: str | None = None) -> bool:
+def is_within_earnings_window(
+    ticker: str,
+    within_days: int,
+    source: str | None = None,
+    *,
+    settings: TradeXSettings | None = None,
+) -> bool:
     """True if the ticker has earnings within `within_days` calendar days."""
-    days = days_until_earnings(ticker, source=source)
+    days = days_until_earnings(ticker, source=source, settings=settings)
     return days is not None and 0 <= days <= within_days
 
 
-def annotate(tickers: list[str], source: str | None = None) -> pd.DataFrame:
+def annotate(
+    tickers: list[str], source: str | None = None, *, settings: TradeXSettings | None = None
+) -> pd.DataFrame:
     """
     Return a DataFrame with one row per ticker:
       ticker | next_earnings (date or NaT) | days_until (int or NaN)
@@ -174,7 +196,7 @@ def annotate(tickers: list[str], source: str | None = None) -> pd.DataFrame:
     rows = []
     for t in tickers:
         try:
-            nxt = get_next_earnings(t, source=source)
+            nxt = get_next_earnings(t, source=source, settings=settings)
         except ProviderCapabilityError:
             nxt = None
         rows.append({

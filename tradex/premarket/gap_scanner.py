@@ -11,6 +11,7 @@ from datetime import UTC, date, datetime
 
 import pandas as pd
 
+from tradex.config import TradeXSettings, load_runtime_settings
 from tradex.data.fetcher import DEFAULT_PROVIDER, ProviderCapabilityError
 from tradex.data.history import fetch_daily_history
 from tradex.market import (
@@ -77,6 +78,8 @@ def _get_prev_close(
     ticker: str,
     provider: str | None = None,
     as_of: datetime | None = None,
+    *,
+    settings: TradeXSettings | None = None,
 ) -> float | None:
     """Fetch the most recent regular-session closing price before ``as_of``.
 
@@ -93,6 +96,7 @@ def _get_prev_close(
             prev.session_date,
             prev.session_date,
             provider=provider,
+            settings=settings,
         )
         if df.empty or "close" not in df.columns:
             return None
@@ -448,16 +452,19 @@ def scan_gaps_with_report(
     headline_source: str | None = None,
     include_catalysts: bool = False,
     as_of: datetime | None = None,
+    settings: TradeXSettings | None = None,
 ) -> GapScanReport:
     """Scan a watchlist for pre-market gaps and return a structured report."""
     as_of = as_of or datetime.now(UTC)
     ny_as_of = normalize_market_datetime(as_of)
     session_date = ny_as_of.date()
     config = config or GapScanConfig()
+    if settings is None:
+        settings = load_runtime_settings()
     requested_tickers = _normalize_tickers(tickers)
 
     try:
-        requested_provider = resolve_premarket_provider(provider)
+        requested_provider = resolve_premarket_provider(provider, settings=settings)
     except ProviderCapabilityError as exc:
         observations = [
             _snapshot_error_observation(
@@ -529,6 +536,7 @@ def scan_gaps_with_report(
                 lookback_sessions=config.liquidity_lookback_sessions,
                 provider=provider,
                 as_of=as_of,
+                settings=settings,
             )
         except Exception as e:  # noqa: BLE001
             baseline = DailyLiquidityBaseline(
@@ -598,6 +606,7 @@ def scan_gaps_with_report(
                 provider=provider,
                 as_of=as_of,
                 allow_after_open=config.allow_after_open,
+                settings=settings,
             )
         except Exception as e:  # noqa: BLE001
             bars_result = PremarketBarsResult(
@@ -687,6 +696,7 @@ def scan_gaps_with_report(
             lookback_hours=config.catalyst_lookback_hours,
             earnings_source=earnings_source,
             headline_source=headline_source,
+            settings=settings,
         )
 
         gap_pct = ((snapshot.premarket_last - prev_close) / prev_close) * 100.0
@@ -760,6 +770,8 @@ def scan_gaps(
     min_gap_pct: float = DEFAULT_MIN_GAP,
     provider: str | None = None,
     as_of: datetime | None = None,
+    *,
+    settings: TradeXSettings | None = None,
 ) -> pd.DataFrame:
     """Compatibility wrapper that delegates to ``scan_gaps_with_report``.
 
@@ -775,6 +787,7 @@ def scan_gaps(
         config=config,
         provider=provider,
         as_of=as_of,
+        settings=settings,
     )
 
     if report.provider_errors:
@@ -827,12 +840,20 @@ def run_gap_alerts(
     min_gap_pct: float = 4.0,
     provider: str | None = None,
     as_of: datetime | None = None,
+    *,
+    settings: TradeXSettings | None = None,
 ) -> pd.DataFrame:
     """Scan gaps and fire alerts for large/massive ones."""
     from tradex.alerts.notifier import alert_gap
 
+    if settings is None:
+        settings = load_runtime_settings()
+
     try:
-        gaps = scan_gaps(tickers, min_gap_pct=min_gap_pct, provider=provider, as_of=as_of)
+        gaps = scan_gaps(
+            tickers, min_gap_pct=min_gap_pct, provider=provider, as_of=as_of,
+            settings=settings,
+        )
     except ProviderCapabilityError as e:
         print(f"[gap alert] {e}")
         return pd.DataFrame()
@@ -846,5 +867,6 @@ def run_gap_alerts(
                 direction=row["direction"],
                 prev_close=row["prev_close"],
                 pre_market=row["pre_market"],
+                settings=settings,
             )
     return gaps

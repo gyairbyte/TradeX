@@ -30,7 +30,7 @@ def test_fetch_history_propagates_provider():
     """_fetch_history must call fetch_daily_history with the selected provider."""
     captured = []
 
-    def fake_fetch_daily(ticker, start, end, provider=None):
+    def fake_fetch_daily(ticker, start, end, provider=None, *, settings=None):
         captured.append((ticker, provider))
         return _make_history(80)
 
@@ -56,7 +56,7 @@ def test_mine_events_unsupported_provider_raises():
     """An unsupported provider must surface a ProviderCapabilityError."""
     cfg = PatternConfig(history_years=1, lookback_days=10, move_days=5, min_events=1)
 
-    def fake_fetch(ticker, start, end, provider=None):
+    def fake_fetch(ticker, start, end, provider=None, *, settings=None):
         from tradex.data.fetcher import ProviderCapabilityError
         raise ProviderCapabilityError("unsupported")
 

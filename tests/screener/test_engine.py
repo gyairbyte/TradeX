@@ -134,7 +134,7 @@ def test_engine_propagates_yahoo_provider_to_fetch():
 
 def test_engine_resolves_default_provider_before_fetch(monkeypatch):
     """Without an explicit provider, the resolved default provider is passed to fetch."""
-    monkeypatch.setattr("tradex.data.fetcher.DEFAULT_PROVIDER", "schwab")
+    monkeypatch.setenv("DATA_PROVIDER", "schwab")
     captured = {}
 
     def fake_score(df):

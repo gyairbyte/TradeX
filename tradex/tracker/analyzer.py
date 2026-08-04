@@ -93,13 +93,22 @@ def _extract_history(df: pd.DataFrame) -> tuple[list[float], list[float], list[s
     return scores, closes, statuses
 
 
-def detect_coils(timeframe: str, days: int = 7, min_appearances: int = MIN_COIL_DAYS) -> pd.DataFrame:
+def detect_coils(
+    timeframe: str,
+    days: int = 7,
+    min_appearances: int = MIN_COIL_DAYS,
+    *,
+    settings=None,
+) -> pd.DataFrame:
     """
     Scan signal history for tickers that are actively coiling.
 
     Returns a DataFrame of coiling stocks ranked by coil strength
     (combination of distinct-session persistence, active-session ratio,
     latest score, and trend).
+
+    ``settings`` is accepted for call-site consistency but not used; the analyzer
+    reads from the configured signal store.
     """
     all_points = _daily_points_all(timeframe, days=days)
     if all_points.empty:

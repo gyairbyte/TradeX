@@ -9,21 +9,28 @@ Storage: SQLite at ~/.tradex/watchlists.db, one row per named list.
 """
 from __future__ import annotations
 
-import os
 import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-DB_PATH = Path(os.path.expanduser("~/.tradex/watchlists.db"))
+DB_PATH: Path = Path("~/.tradex/watchlists.db")
 DEFAULT_NAME = "Default"
 
 
+def _db_path() -> str:
+    return DB_PATH.expanduser().resolve()
+
+
 def _conn() -> sqlite3.Connection:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    return sqlite3.connect(DB_PATH)
+    path = Path(_db_path())
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return sqlite3.connect(_db_path())
 
 
-def init() -> None:
+def init(db_path: str | Path | None = None) -> None:
+    global DB_PATH
+    if db_path is not None:
+        DB_PATH = Path(db_path)
     with _conn() as c:
         c.execute("""
             CREATE TABLE IF NOT EXISTS watchlists (

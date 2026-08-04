@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 import pytest
 
@@ -171,7 +171,7 @@ def test_fetch_catalyst_context_no_earnings_cache_db(tmp_path, monkeypatch):
             earnings_source="yahoo",
             headline_source=None,
         )
-    mock_earn.assert_called_once_with("AAPL", source="yahoo", use_cache=False)
+    mock_earn.assert_called_once_with("AAPL", source="yahoo", use_cache=False, settings=ANY)
     assert not (tmp_path / "earnings_cache.db").exists()
     assert ctx.earnings_status == "earnings_today"
 

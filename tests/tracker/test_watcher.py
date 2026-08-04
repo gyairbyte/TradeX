@@ -278,6 +278,7 @@ def test_start_loop_schedules_run_once_with_provider():
         "market_hours_only": False,
         "alert_policy": mock_run_once.call_args.kwargs["alert_policy"],
         "now": mock_run_once.call_args.kwargs["now"],
+        "settings": mock_run_once.call_args.kwargs["settings"],
     }
     assert isinstance(mock_run_once.call_args.kwargs["now"], datetime)
 
@@ -313,7 +314,7 @@ def test_run_once_persists_screener_provider(fresh_signal_db):
 
 def test_run_once_persists_env_default_provider(fresh_signal_db, monkeypatch):
     """When no provider is supplied, the resolved default provider is persisted."""
-    monkeypatch.setattr("tradex.data.fetcher.DEFAULT_PROVIDER", "alpaca")
+    monkeypatch.setenv("DATA_PROVIDER", "alpaca")
     results = _screener_results("alpaca")
 
     with (

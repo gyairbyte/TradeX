@@ -47,7 +47,7 @@ def _isolated_alert_state(tmp_path, monkeypatch):
     monkeypatch.setenv("ALERT_STATE_PATH", str(tmp_path / "alerts.db"))
     monkeypatch.setattr(
         "tradex.alerts.policy.send_alert",
-        lambda s, b, color_key="test": {"discord": True, "email": False},
+        lambda s, b, color_key="test", *, settings=None: {"discord": True, "email": False},
     )
     monkeypatch.setattr("tradex.alerts.policy.is_alert_configured", lambda: True)
 
@@ -71,7 +71,7 @@ class TestWatcherAlertIntegration:
         monkeypatch.setenv("ALERT_STATE_PATH", str(alert_state_path))
         monkeypatch.setattr(
             "tradex.alerts.policy.send_alert",
-            lambda s, b, color_key="test": {"discord": True, "email": False},
+            lambda s, b, color_key="test", *, settings=None: {"discord": True, "email": False},
         )
         monkeypatch.setattr("tradex.alerts.policy.is_alert_configured", lambda: True)
 
@@ -286,7 +286,7 @@ class TestWatcherAlertIntegration:
 
         monkeypatch.setattr(
             "tradex.alerts.policy.send_alert",
-            lambda s, b, color_key="test": {"discord": True, "email": False},
+            lambda s, b, color_key="test", *, settings=None: {"discord": True, "email": False},
         )
         monkeypatch.setattr("tradex.alerts.policy.is_alert_configured", lambda: True)
 

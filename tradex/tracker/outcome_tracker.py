@@ -22,6 +22,7 @@ import sqlite3
 
 import pandas as pd
 
+from tradex.config import TradeXSettings, load_runtime_settings
 from tradex.data.fetcher import ProviderCapabilityError, resolve_provider
 from tradex.data.history import fetch_daily_history
 from tradex.tracker.store import DB_PATH, _conn, _ensure_db_dir, mark_outcome_by_id
@@ -40,7 +41,12 @@ def _utc_now() -> datetime:
 
 
 def _fetch_close_after(
-    ticker: str, after_date: datetime, days_forward: int, provider: str | None = None
+    ticker: str,
+    after_date: datetime,
+    days_forward: int,
+    provider: str | None = None,
+    *,
+    settings: TradeXSettings | None = None,
 ) -> float | None:
     """
     Fetch the closing price `days_forward` trading sessions after `after_date`.
@@ -51,7 +57,7 @@ def _fetch_close_after(
     trading-session close is available in the daily data.
 
     ``provider`` is passed to the daily-history abstraction. When None, the value
-    of the ``DATA_PROVIDER`` environment variable is used.
+    is read from runtime settings.
 
     Returns None if the required trading session has not occurred yet or its
     close cannot be resolved.
@@ -75,7 +81,9 @@ def _fetch_close_after(
     if end_date < start_date:
         return None
 
-    df = fetch_daily_history(ticker, start_date, end_date, provider=provider)
+    df = fetch_daily_history(
+        ticker, start_date, end_date, provider=provider, settings=settings
+    )
 
     if df.empty:
         return None
@@ -113,7 +121,12 @@ def _write_outcome(signal: dict, outcome_close: float, outcome_provider: str):
     mark_outcome_by_id(signal["id"], outcome_close, outcome_provider=outcome_provider)
 
 
-def run_outcome_pass(verbose: bool = True, provider: str | None = None) -> dict:
+def run_outcome_pass(
+    verbose: bool = True,
+    provider: str | None = None,
+    *,
+    settings: TradeXSettings | None = None,
+) -> dict:
     """
     Check all unresolved signals and mark outcomes for those whose window has closed.
     Returns a summary dict of how many were resolved vs still pending.
@@ -121,8 +134,10 @@ def run_outcome_pass(verbose: bool = True, provider: str | None = None) -> dict:
     ``provider`` is passed to the daily-history abstraction for the close lookup.
     The resolved provider is recorded as ``outcome_provider`` on successful outcomes.
     """
+    if settings is None:
+        settings = load_runtime_settings()
     _ensure_db_dir()
-    outcome_provider = resolve_provider(provider)
+    outcome_provider = resolve_provider(provider, settings=settings)
     pending = _get_pending_outcomes()
     resolved = 0
     still_pending = 0
@@ -137,7 +152,7 @@ def run_outcome_pass(verbose: bool = True, provider: str | None = None) -> dict:
 
         try:
             outcome_close = _fetch_close_after(
-                signal["ticker"], scan_dt, days_forward, provider=outcome_provider
+                signal["ticker"], scan_dt, days_forward, provider=outcome_provider, settings=settings
             )
             if outcome_close is None:
                 still_pending += 1

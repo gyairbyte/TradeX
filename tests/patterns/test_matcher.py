@@ -35,7 +35,7 @@ def test_match_ticker_propagates_provider_to_fetch():
     """match_ticker must call fetch with the provided provider."""
     captured = []
 
-    def fake_fetch(ticker, timeframe, provider=None):
+    def fake_fetch(ticker, timeframe, provider=None, *, settings=None):
         captured.append((ticker, timeframe, provider))
         return _make_bars(30)
 
@@ -90,7 +90,7 @@ def test_match_ticker_uses_provider_as_fingerprint_source():
     def fake_fetch(*args, **kwargs):
         return _make_bars(30)
 
-    def capture_load_fingerprint(event_type, profile, source=None):
+    def capture_load_fingerprint(event_type, profile, source=None, *, settings=None):
         captured.append(source)
         return _fake_fingerprint(10)
 

@@ -5,16 +5,20 @@ application module.
 """
 from __future__ import annotations
 
-import os
+from tradex.config import TradeXSettings, load_runtime_settings
 
 
-def _default_source_index(sources: list[str], env_var: str, default: str) -> int:
-    """Return the selector index for ``env_var`` (falling back to ``default``).
+def _default_source_index(
+    sources: list[str],
+    configured: str,
+    default: str,
+) -> int:
+    """Return the selector index for a configured source (falling back to ``default``).
 
-    If the environment value is not one of the supported ``sources``, the
-    ``default`` is used. This keeps malformed env vars from breaking the UI.
+    If the configured value is not one of the supported ``sources``, the
+    ``default`` is used. This keeps malformed configuration from breaking the UI.
     """
-    raw = os.getenv(env_var, default).lower().strip()
+    raw = configured.lower().strip()
     if raw in sources:
         return sources.index(raw)
     return sources.index(default)
@@ -25,16 +29,35 @@ _EARNINGS_SOURCES = ["yahoo"]
 _MARKET_CAP_SOURCES = ["yahoo", "schwab"]
 
 
-def options_source_index() -> int:
-    return _default_source_index(_OPTIONS_SOURCES, "OPTIONS_DATA_SOURCE", "auto")
+def options_source_index(settings: TradeXSettings | None = None) -> int:
+    if settings is None:
+        try:
+            settings = load_runtime_settings()
+        except ValueError:
+            return _OPTIONS_SOURCES.index("auto")
+    return _default_source_index(
+        _OPTIONS_SOURCES, settings.options.options_data_source, "auto"
+    )
 
 
-def earnings_source_index() -> int:
-    return _default_source_index(_EARNINGS_SOURCES, "EARNINGS_DATA_SOURCE", "yahoo")
+def earnings_source_index(settings: TradeXSettings | None = None) -> int:
+    if settings is None:
+        try:
+            settings = load_runtime_settings()
+        except ValueError:
+            return _EARNINGS_SOURCES.index("yahoo")
+    return _default_source_index(_EARNINGS_SOURCES, settings.earnings_data_source, "yahoo")
 
 
-def market_cap_source_index() -> int:
-    return _default_source_index(_MARKET_CAP_SOURCES, "MARKET_CAP_DATA_SOURCE", "yahoo")
+def market_cap_source_index(settings: TradeXSettings | None = None) -> int:
+    if settings is None:
+        try:
+            settings = load_runtime_settings()
+        except ValueError:
+            return _MARKET_CAP_SOURCES.index("yahoo")
+    return _default_source_index(
+        _MARKET_CAP_SOURCES, settings.market_cap_data_source, "yahoo"
+    )
 
 
 def options_sources() -> list[str]:

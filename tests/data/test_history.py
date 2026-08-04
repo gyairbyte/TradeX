@@ -40,7 +40,7 @@ def _make_multiindex_yahoo(values, ticker: str = "AAPL") -> pd.DataFrame:
 
 def test_fetch_daily_history_resolves_default_provider(monkeypatch):
     """When provider is None, DATA_PROVIDER env var is used."""
-    monkeypatch.setattr("tradex.data.fetcher.DEFAULT_PROVIDER", "alpaca")
+    monkeypatch.setenv("DATA_PROVIDER", "alpaca")
     with pytest.raises(ProviderCapabilityError):
         history.fetch_daily_history("AAPL", date(2024, 1, 1), date(2024, 1, 5))
 

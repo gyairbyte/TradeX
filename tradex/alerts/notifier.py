@@ -30,14 +30,12 @@ Config via .env:
 """
 from __future__ import annotations
 
-import os
 import smtplib
 from datetime import UTC, datetime
 from email.mime.text import MIMEText
 from typing import Any
 
 import requests
-from dotenv import load_dotenv
 
 from tradex.alerts.models import (
     AlertDecision,
@@ -46,23 +44,37 @@ from tradex.alerts.models import (
     _sanitize_channel_results,
     ensure_aware_utc,
 )
+from tradex.config import (
+    AlertChannelSettings,
+    AlertThresholdSettings,
+    TradeXSettings,
+    load_runtime_settings,
+)
 
-load_dotenv()
 
-# ── channel config ────────────────────────────────────────────────────────────
-DISCORD_TOKEN      = os.getenv("ALERT_DISCORD_TOKEN", "")
-DISCORD_CHANNEL_ID = os.getenv("ALERT_DISCORD_CHANNEL_ID", "")
-EMAIL_TO           = os.getenv("ALERT_EMAIL_TO", "")
-EMAIL_FROM         = os.getenv("ALERT_EMAIL_FROM", "")
-EMAIL_HOST         = os.getenv("ALERT_EMAIL_HOST", "smtp.gmail.com")
-EMAIL_PORT         = int(os.getenv("ALERT_EMAIL_PORT", "587"))
-EMAIL_USER         = os.getenv("ALERT_EMAIL_USER", "")
-EMAIL_PASS         = os.getenv("ALERT_EMAIL_PASS", "")
+# Public defaults used when no runtime settings are provided (e.g. direct imports
+# without an explicit settings object). Real channel/threshold values are read
+# from the central ``TradeXSettings`` boundary at call time.
+COIL_ALERT_THRESHOLD = 60
+CONFLUENCE_ALERT_THRESHOLD = 70
+PATTERN_ALERT_THRESHOLD = 75.0
 
-# ── alert thresholds ──────────────────────────────────────────────────────────
-COIL_ALERT_THRESHOLD       = int(os.getenv("ALERT_COIL_THRESHOLD", "60"))
-PATTERN_ALERT_THRESHOLD    = float(os.getenv("ALERT_PATTERN_THRESHOLD", "75"))
-CONFLUENCE_ALERT_THRESHOLD = int(os.getenv("ALERT_CONFLUENCE_THRESHOLD", "70"))
+# Internal aliases to keep the notifier implementation consistent.
+_COIL_ALERT_THRESHOLD = COIL_ALERT_THRESHOLD
+_PATTERN_ALERT_THRESHOLD = PATTERN_ALERT_THRESHOLD
+_CONFLUENCE_ALERT_THRESHOLD = CONFLUENCE_ALERT_THRESHOLD
+
+
+def _alert_channels(settings: TradeXSettings | None = None) -> AlertChannelSettings:
+    if settings is None:
+        settings = load_runtime_settings()
+    return settings.alert_channels
+
+
+def _alert_thresholds(settings: TradeXSettings | None = None) -> AlertThresholdSettings:
+    if settings is None:
+        settings = load_runtime_settings()
+    return settings.alert_thresholds
 
 # Discord embed colors per alert type
 _COLORS = {
@@ -75,12 +87,21 @@ _COLORS = {
 }
 
 
-def _send_discord(subject: str, body: str, color_key: str = "test") -> bool:
+def _send_discord(
+    subject: str,
+    body: str,
+    color_key: str = "test",
+    *,
+    channels: AlertChannelSettings | None = None,
+) -> bool:
     """
     Send a rich embed message via the Discord bot API.
     Uses embeds so alerts are visually distinct from regular chat.
     """
-    if not DISCORD_TOKEN or not DISCORD_CHANNEL_ID:
+    channels = channels or _alert_channels()
+    token = channels.discord_token
+    channel_id = channels.discord_channel_id
+    if not token or not channel_id:
         return False
     try:
         now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
@@ -90,9 +111,9 @@ def _send_discord(subject: str, body: str, color_key: str = "test") -> bool:
             "color":       _COLORS.get(color_key, 0x99AAB5),
             "footer":      {"text": f"TradeX • {now}"},
         }
-        url = f"https://discord.com/api/v10/channels/{DISCORD_CHANNEL_ID}/messages"
+        url = f"https://discord.com/api/v10/channels/{channel_id}/messages"
         headers = {
-            "Authorization": f"Bot {DISCORD_TOKEN}",
+            "Authorization": f"Bot {token}",
             "Content-Type":  "application/json",
         }
         resp = requests.post(url, json={"embeds": [embed]}, headers=headers, timeout=10)
@@ -105,40 +126,66 @@ def _send_discord(subject: str, body: str, color_key: str = "test") -> bool:
         return False
 
 
-def _send_email(subject: str, body: str) -> bool:
-    if not all([EMAIL_TO, EMAIL_FROM, EMAIL_HOST, EMAIL_USER, EMAIL_PASS]):
+def _send_email(
+    subject: str,
+    body: str,
+    *,
+    channels: AlertChannelSettings | None = None,
+) -> bool:
+    channels = channels or _alert_channels()
+    if not all(
+        [channels.email_to, channels.email_from, channels.email_host, channels.email_user, channels.email_pass]
+    ):
         return False
     try:
         now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
         msg = MIMEText(f"{body}\n\nSent: {now}", "plain")
         msg["Subject"] = f"TradeX: {subject}"
-        msg["From"]    = EMAIL_FROM
-        msg["To"]      = EMAIL_TO
-        with smtplib.SMTP(EMAIL_HOST, EMAIL_PORT) as server:
+        msg["From"]    = channels.email_from
+        msg["To"]      = channels.email_to
+        with smtplib.SMTP(channels.email_host, channels.email_port) as server:
             server.starttls()
-            server.login(EMAIL_USER, EMAIL_PASS)
-            server.sendmail(EMAIL_FROM, EMAIL_TO, msg.as_string())
+            server.login(channels.email_user, channels.email_pass)
+            server.sendmail(channels.email_from, channels.email_to, msg.as_string())
         return True
     except Exception as e:  # noqa: BLE001
         print(f"[alert] Email error: {e}")
         return False
 
 
-def send_alert(subject: str, body: str, color_key: str = "test") -> dict[str, bool]:
+def send_alert(
+    subject: str,
+    body: str,
+    color_key: str = "test",
+    *,
+    settings: TradeXSettings | None = None,
+) -> dict[str, bool]:
     """Send an alert to all configured channels. Returns which channels succeeded."""
+    channels = _alert_channels(settings)
     results = {
-        "discord": _send_discord(subject, body, color_key=color_key),
-        "email":   _send_email(subject, body),
+        "discord": _send_discord(subject, body, color_key=color_key, channels=channels),
+        "email":   _send_email(subject, body, channels=channels),
     }
     sent = [k for k, v in results.items() if v]
     print(f"[alert] '{subject}' → {sent if sent else 'no channels configured'}")
     return results
 
 
-def is_alert_configured() -> bool:
+def is_alert_configured(*, settings: TradeXSettings | None = None) -> bool:
     """Return ``True`` when at least one alert channel has credentials configured."""
-    discord_ready = bool(DISCORD_TOKEN and DISCORD_CHANNEL_ID)
-    email_ready = bool(all([EMAIL_TO, EMAIL_FROM, EMAIL_HOST, EMAIL_USER, EMAIL_PASS]))
+    channels = _alert_channels(settings)
+    discord_ready = bool(channels.discord_token and channels.discord_channel_id)
+    email_ready = bool(
+        all(
+            [
+                channels.email_to,
+                channels.email_from,
+                channels.email_host,
+                channels.email_user,
+                channels.email_pass,
+            ]
+        )
+    )
     return discord_ready or email_ready
 
 
@@ -153,9 +200,11 @@ def _cooldown_minutes_for(
 
 def _decision_from_raw_send(
     channel_results: dict[str, bool],
+    *,
+    settings: TradeXSettings | None = None,
 ) -> tuple[AlertDecision, str]:
     """Classify a raw send result without a cooldown policy."""
-    if not is_alert_configured():
+    if not is_alert_configured(settings=settings):
         return AlertDecision.NO_CHANNELS_CONFIGURED, "No alert channels are configured"
     if any(channel_results.values()):
         return AlertDecision.COOLDOWN_DISABLED, "Cooldown disabled; alert sent without state"
@@ -169,13 +218,15 @@ def _dispatch_or_raw(
     color_key: str,
     policy: Any | None,
     observed_at: datetime | None,
+    *,
+    settings: TradeXSettings | None = None,
 ) -> AlertDispatchResult:
     """Dispatch through a policy if provided, otherwise send raw and return a result."""
     observed_at = ensure_aware_utc(observed_at)
     if policy is not None:
         return policy.dispatch(key, subject, body, color_key=color_key, observed_at=observed_at)
     try:
-        raw_results = send_alert(subject, body, color_key)
+        raw_results = send_alert(subject, body, color_key, settings=settings)
     except Exception as exc:  # noqa: BLE001
         return AlertDispatchResult(
             key=key,
@@ -204,7 +255,7 @@ def _dispatch_or_raw(
             error=str(exc)[:500],
         )
 
-    decision, reason = _decision_from_raw_send(channel_results)
+    decision, reason = _decision_from_raw_send(channel_results, settings=settings)
     return AlertDispatchResult(
         key=key,
         decision=decision,
@@ -247,14 +298,16 @@ def alert_coil(
     *,
     policy: Any | None = None,
     observed_at: datetime | None = None,
+    settings: TradeXSettings | None = None,
 ) -> AlertDispatchResult:
+    thresholds = _alert_thresholds(settings)
     key = AlertKey(ticker=ticker, alert_type="coil", timeframe=timeframe)
-    if coil_strength < COIL_ALERT_THRESHOLD:
+    if coil_strength < thresholds.coil:
         return _below_threshold_result(
             key,
             policy,
             observed_at,
-            f"Coil strength {coil_strength} below threshold {COIL_ALERT_THRESHOLD}",
+            f"Coil strength {coil_strength} below threshold {thresholds.coil}",
         )
     subject = f"Coil Detected: {ticker}"
     body = (
@@ -265,7 +318,7 @@ def alert_coil(
         f"Trend:         {trend}\n\n"
         f"Building pressure over multiple sessions — no breakout yet."
     )
-    return _dispatch_or_raw(key, subject, body, "coil", policy, observed_at)
+    return _dispatch_or_raw(key, subject, body, "coil", policy, observed_at, settings=settings)
 
 
 def alert_pattern_match(
@@ -278,14 +331,16 @@ def alert_pattern_match(
     *,
     policy: Any | None = None,
     observed_at: datetime | None = None,
+    settings: TradeXSettings | None = None,
 ) -> AlertDispatchResult:
+    thresholds = _alert_thresholds(settings)
     key = AlertKey(ticker=ticker, alert_type=f"pattern:{event_type}:{profile}", timeframe="pattern")
-    if similarity < PATTERN_ALERT_THRESHOLD:
+    if similarity < thresholds.pattern:
         return _below_threshold_result(
             key,
             policy,
             observed_at,
-            f"Pattern similarity {similarity} below threshold {PATTERN_ALERT_THRESHOLD}",
+            f"Pattern similarity {similarity} below threshold {thresholds.pattern}",
         )
     subject = f"Pattern Match: {ticker} — {event_type.upper()} ({similarity:.0f}%)"
     body = (
@@ -296,7 +351,7 @@ def alert_pattern_match(
         f"Based on:     {fp_events} historical events\n\n"
         f"{interpretation}"
     )
-    return _dispatch_or_raw(key, subject, body, "pattern", policy, observed_at)
+    return _dispatch_or_raw(key, subject, body, "pattern", policy, observed_at, settings=settings)
 
 
 def alert_confluence(
@@ -307,14 +362,16 @@ def alert_confluence(
     *,
     policy: Any | None = None,
     observed_at: datetime | None = None,
+    settings: TradeXSettings | None = None,
 ) -> AlertDispatchResult:
+    thresholds = _alert_thresholds(settings)
     key = AlertKey(ticker=ticker, alert_type="confluence", timeframe="multi")
-    if confluence_score < CONFLUENCE_ALERT_THRESHOLD:
+    if confluence_score < thresholds.confluence:
         return _below_threshold_result(
             key,
             policy,
             observed_at,
-            f"Confluence score {confluence_score} below threshold {CONFLUENCE_ALERT_THRESHOLD}",
+            f"Confluence score {confluence_score} below threshold {thresholds.confluence}",
         )
     subject = f"Confluence Alert: {ticker} ({confluence_score}/100)"
     body = (
@@ -324,7 +381,7 @@ def alert_confluence(
         f"Last close:        ${last_close:.2f}\n\n"
         f"Multiple timeframes aligned — higher conviction setup."
     )
-    return _dispatch_or_raw(key, subject, body, "confluence", policy, observed_at)
+    return _dispatch_or_raw(key, subject, body, "confluence", policy, observed_at, settings=settings)
 
 
 def alert_gap(
@@ -336,6 +393,7 @@ def alert_gap(
     *,
     policy: Any | None = None,
     observed_at: datetime | None = None,
+    settings: TradeXSettings | None = None,
 ) -> AlertDispatchResult:
     key = AlertKey(ticker=ticker, alert_type=f"gap:{direction}", timeframe="premarket")
     subject = f"Pre-Market Gap {direction.upper()}: {ticker} ({gap_pct:+.1f}%)"
@@ -347,4 +405,6 @@ def alert_gap(
         f"Pre-market:  ${pre_market:.2f}\n\n"
         f"Significant pre-market gap detected before open."
     )
-    return _dispatch_or_raw(key, subject, body, f"gap_{direction}", policy, observed_at)
+    return _dispatch_or_raw(
+        key, subject, body, f"gap_{direction}", policy, observed_at, settings=settings
+    )

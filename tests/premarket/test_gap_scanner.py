@@ -1,7 +1,7 @@
 """Tests for pre-market gap scanner source separation."""
 
 from datetime import UTC, date, datetime, timedelta
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock, patch
 
 import pandas as pd
 import pytest
@@ -29,7 +29,7 @@ def test_get_prev_close_propagates_provider():
     """_get_prev_close passes the provider and resolves the previous session date."""
     captured = []
 
-    def fake_history(ticker, start, end, provider=None):
+    def fake_history(ticker, start, end, provider=None, *, settings=None):
         captured.append((ticker, start, end, provider))
         return _make_daily_history([100.0, 101.0, 102.0])
 
@@ -201,7 +201,7 @@ def test_run_gap_alerts_propagates_provider():
     ):
         gap_scanner.run_gap_alerts(["AAPL"], min_gap_pct=4.0, provider="yahoo", as_of=as_of)
 
-    mock_scan.assert_called_once_with(["AAPL"], min_gap_pct=4.0, provider="yahoo", as_of=as_of)
+    mock_scan.assert_called_once_with(["AAPL"], min_gap_pct=4.0, provider="yahoo", as_of=as_of, settings=ANY)
     mock_alert.assert_not_called()
 
 
@@ -526,7 +526,7 @@ def test_get_prev_close_tuesday_morning():
     """Tuesday pre-market selects Monday's close."""
     captured = {}
 
-    def fake_history(ticker, start, end, provider=None):
+    def fake_history(ticker, start, end, provider=None, *, settings=None):
         captured["args"] = (ticker, start, end, provider)
         dates = pd.date_range("2025-01-06", periods=1, freq="B")
         return pd.DataFrame(
@@ -553,7 +553,7 @@ def test_get_prev_close_monday_morning():
     """Monday pre-market selects Friday's close."""
     captured = {}
 
-    def fake_history(ticker, start, end, provider=None):
+    def fake_history(ticker, start, end, provider=None, *, settings=None):
         captured["args"] = (ticker, start, end, provider)
         dates = pd.date_range("2025-01-03", periods=1, freq="B")
         return pd.DataFrame(
@@ -580,7 +580,7 @@ def test_get_prev_close_after_holiday():
     """After a holiday, the most recent completed session is selected."""
     captured = {}
 
-    def fake_history(ticker, start, end, provider=None):
+    def fake_history(ticker, start, end, provider=None, *, settings=None):
         captured["args"] = (ticker, start, end, provider)
         dates = pd.date_range("2024-12-31", periods=1, freq="B")
         return pd.DataFrame(
@@ -607,7 +607,7 @@ def test_get_prev_close_propagates_provider_to_fetch_daily_history():
     """_get_prev_close forwards the provider to the daily-history abstraction."""
     captured = {}
 
-    def fake_history(ticker, start, end, provider=None):
+    def fake_history(ticker, start, end, provider=None, *, settings=None):
         captured["provider"] = provider
         dates = pd.date_range("2025-01-06", periods=1, freq="B")
         return pd.DataFrame(

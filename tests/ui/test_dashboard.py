@@ -128,8 +128,9 @@ def test_dashboard_scan_passes_normalized_watchlist_to_record_scan(fresh_signal_
     monkeypatch.setattr("tradex.screener.engine.run_with_report", run_mock)
     monkeypatch.setattr("tradex.tracker.store.record_scan", record_mock)
 
-    # Importing the module executes the Streamlit UI and triggers the scan.
-    import tradex.ui.dashboard  # noqa: F401
+    # Execute the Streamlit UI as __main__ to trigger the scan.
+    import runpy
+    runpy.run_module("tradex.ui.dashboard", run_name="__main__")
 
     assert run_mock.call_count == 1
     assert record_mock.call_count == 1

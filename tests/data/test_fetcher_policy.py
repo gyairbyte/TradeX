@@ -32,10 +32,10 @@ def _make_df(rows=30):
 
 def _fake_providers(**funcs):
     base = {
-        "yahoo": funcs.get("yahoo", lambda t, f: _make_df()),
-        "alpaca": funcs.get("alpaca", lambda t, f: _make_df()),
-        "ibkr": funcs.get("ibkr", lambda t, f: _make_df()),
-        "schwab": funcs.get("schwab", lambda t, f: _make_df()),
+        "yahoo": funcs.get("yahoo", lambda t, f, *, settings=None: _make_df()),
+        "alpaca": funcs.get("alpaca", lambda t, f, *, settings=None: _make_df()),
+        "ibkr": funcs.get("ibkr", lambda t, f, *, settings=None: _make_df()),
+        "schwab": funcs.get("schwab", lambda t, f, *, settings=None: _make_df()),
     }
     return base
 
@@ -269,7 +269,7 @@ def test_fetch_multi_report_complete_success():
 
 
 def test_fetch_multi_report_complete_failure():
-    def fail(t, f):
+    def fail(t, f, *, settings=None):
         raise ProviderTransientError("network")
 
     with patch("tradex.data.fetcher._PROVIDERS", _fake_providers(yahoo=fail)):
@@ -284,7 +284,7 @@ def test_fetch_multi_report_complete_failure():
 def test_fetch_multi_report_partial_failure():
     calls = []
 
-    def mixed(t, f):
+    def mixed(t, f, *, settings=None):
         calls.append(t)
         if t == "AAPL":
             return _make_df()
@@ -300,7 +300,7 @@ def test_fetch_multi_report_partial_failure():
 
 
 def test_fetch_multi_report_empty_data_counts_as_unavailable():
-    def empty(t, f):
+    def empty(t, f, *, settings=None):
         return pd.DataFrame()
 
     with patch("tradex.data.fetcher._PROVIDERS", _fake_providers(yahoo=empty)):
@@ -311,7 +311,7 @@ def test_fetch_multi_report_empty_data_counts_as_unavailable():
 
 
 def test_fetch_multi_report_no_silent_skipping():
-    def fail(t, f):
+    def fail(t, f, *, settings=None):
         raise ProviderTransientError("network")
 
     with patch("tradex.data.fetcher._PROVIDERS", _fake_providers(yahoo=fail)):
@@ -322,7 +322,7 @@ def test_fetch_multi_report_no_silent_skipping():
 def test_fetch_multi_reports_actual_attempt_and_retry_counts():
     calls = []
 
-    def flaky(t, f):
+    def flaky(t, f, *, settings=None):
         calls.append(t)
         if len(calls) == 1:
             raise ProviderTransientError("network")
@@ -348,11 +348,11 @@ def test_fetch_multi_reports_progress_only_for_primary_provider():
     def status(msg):
         status_calls.append(msg)
 
-    def fail(t, f):
+    def fail(t, f, *, settings=None):
         raise ProviderTransientError("network")
 
     policy = FetchPolicy(fallback_order=("schwab",), max_retries=0)
-    with patch("tradex.data.fetcher._PROVIDERS", _fake_providers(yahoo=fail, schwab=lambda t, f: _make_df())):
+    with patch("tradex.data.fetcher._PROVIDERS", _fake_providers(yahoo=fail, schwab=lambda t, f, *, settings=None: _make_df())):
         report = fetch_multi_report(
             ["AAPL", "MSFT"], "intraday", provider="yahoo",
             policy=policy, progress=progress, status=status,
@@ -370,7 +370,7 @@ def test_fetch_multi_report_partial_failure_progress_zero_signals():
     def progress(done, total):
         progress_calls.append((done, total))
 
-    def mixed(t, f):
+    def mixed(t, f, *, settings=None):
         if t == "AAPL":
             return _make_df()
         raise ProviderTransientError("network")
@@ -396,10 +396,10 @@ def test_fetch_multi_compat_returns_data_dict():
 # ─── Fallback orchestration ──────────────────────────────────────────────
 
 def test_fallback_disabled_by_default():
-    def fail(t, f):
+    def fail(t, f, *, settings=None):
         raise ProviderTransientError("network")
 
-    with patch("tradex.data.fetcher._PROVIDERS", _fake_providers(yahoo=fail, schwab=lambda t, f: _make_df())):
+    with patch("tradex.data.fetcher._PROVIDERS", _fake_providers(yahoo=fail, schwab=lambda t, f, *, settings=None: _make_df())):
         report = fetch_multi_report(["AAPL"], "intraday", provider="yahoo")
     assert report.actual_provider is None
     assert report.fallback_used is False
@@ -407,11 +407,11 @@ def test_fallback_disabled_by_default():
 
 
 def test_explicit_fallback_after_complete_primary_failure():
-    def fail(t, f):
+    def fail(t, f, *, settings=None):
         raise ProviderTransientError("network")
 
     policy = FetchPolicy(fallback_order=("schwab",))
-    with patch("tradex.data.fetcher._PROVIDERS", _fake_providers(yahoo=fail, schwab=lambda t, f: _make_df())):
+    with patch("tradex.data.fetcher._PROVIDERS", _fake_providers(yahoo=fail, schwab=lambda t, f, *, settings=None: _make_df())):
         report = fetch_multi_report(["AAPL"], "intraday", provider="yahoo", policy=policy)
     assert report.actual_provider == "schwab"
     assert report.fallback_used is True
@@ -419,10 +419,10 @@ def test_explicit_fallback_after_complete_primary_failure():
 
 
 def test_fallback_order_followed():
-    def fail(t, f):
+    def fail(t, f, *, settings=None):
         raise ProviderTransientError("network")
 
-    def win(t, f):
+    def win(t, f, *, settings=None):
         return _make_df()
 
     policy = FetchPolicy(fallback_order=("alpaca", "schwab"))
@@ -434,10 +434,10 @@ def test_fallback_order_followed():
 
 
 def test_fallback_stops_at_first_usable_provider():
-    def fail(t, f):
+    def fail(t, f, *, settings=None):
         raise ProviderTransientError("network")
 
-    def win(t, f):
+    def win(t, f, *, settings=None):
         return _make_df()
 
     policy = FetchPolicy(fallback_order=("alpaca", "schwab"))
@@ -449,13 +449,13 @@ def test_fallback_stops_at_first_usable_provider():
 
 
 def test_partial_primary_success_prevents_fallback():
-    def mixed(t, f):
+    def mixed(t, f, *, settings=None):
         if t == "AAPL":
             return _make_df()
         raise ProviderTransientError("network")
 
     policy = FetchPolicy(fallback_order=("schwab",))
-    providers = _fake_providers(yahoo=mixed, schwab=lambda t, f: _make_df())
+    providers = _fake_providers(yahoo=mixed, schwab=lambda t, f, *, settings=None: _make_df())
     with patch("tradex.data.fetcher._PROVIDERS", providers):
         report = fetch_multi_report(["AAPL", "MSFT"], "intraday", provider="yahoo", policy=policy)
     assert report.actual_provider == "yahoo"
@@ -465,7 +465,7 @@ def test_partial_primary_success_prevents_fallback():
 
 
 def test_all_provider_failures_visible():
-    def fail(t, f):
+    def fail(t, f, *, settings=None):
         raise ProviderTransientError("network")
 
     policy = FetchPolicy(fallback_order=("schwab",))
@@ -479,10 +479,10 @@ def test_all_provider_failures_visible():
 
 
 def test_fallback_preserves_attempt_history():
-    def yahoo_fail(t, f):
+    def yahoo_fail(t, f, *, settings=None):
         raise ProviderTransientError("network")
 
-    def schwab_partial(t, f):
+    def schwab_partial(t, f, *, settings=None):
         if t == "AAPL":
             return _make_df()
         raise ProviderTransientError("network")
@@ -503,7 +503,7 @@ def test_fallback_preserves_attempt_history():
 
 
 def test_no_implicit_yahoo_fallback():
-    def fail(t, f):
+    def fail(t, f, *, settings=None):
         raise ProviderTransientError("network")
 
     providers = _fake_providers(schwab=fail)
@@ -514,11 +514,11 @@ def test_no_implicit_yahoo_fallback():
 
 
 def test_explicit_yahoo_fallback_allowed():
-    def fail(t, f):
+    def fail(t, f, *, settings=None):
         raise ProviderTransientError("network")
 
     policy = FetchPolicy(fallback_order=("yahoo",))
-    providers = _fake_providers(schwab=fail, yahoo=lambda t, f: _make_df())
+    providers = _fake_providers(schwab=fail, yahoo=lambda t, f, *, settings=None: _make_df())
     with patch("tradex.data.fetcher._PROVIDERS", providers):
         report = fetch_multi_report(["AAPL"], "intraday", provider="schwab", policy=policy)
     assert report.actual_provider == "yahoo"
@@ -528,7 +528,7 @@ def test_explicit_yahoo_fallback_allowed():
 # ─── Safe failure messages ─────────────────────────────────────────────
 
 def test_fetch_report_failure_messages_safe():
-    def fail(t, f):
+    def fail(t, f, *, settings=None):
         raise RuntimeError("oauth token 'secret-token-123' in /secrets/schwab.json")
 
     with patch("tradex.data.fetcher._PROVIDERS", _fake_providers(yahoo=fail)):

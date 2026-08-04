@@ -76,7 +76,7 @@ def test_confluence_propagates_provider_to_all_timeframes():
     """score_confluence must pass the provider to fetch for intraday, short, and long."""
     captured = []
 
-    def fake_fetch(ticker, timeframe, provider=None):
+    def fake_fetch(ticker, timeframe, provider=None, *, settings=None):
         captured.append((ticker, timeframe, provider))
         return _make_bars(31)
 
@@ -102,7 +102,7 @@ def test_run_confluence_screen_propagates_provider():
     """run_confluence_screen must pass provider to score_confluence."""
     captured = []
 
-    def fake_score_confluence(ticker, provider=None):
+    def fake_score_confluence(ticker, provider=None, *, settings=None):
         captured.append(provider)
         return {
             "ticker": ticker,
@@ -138,7 +138,7 @@ def _score_confluence_with_scores(scores: dict[str, int | None]):
 
     A score of None means the timeframe is unavailable (fetch raises).
     """
-    def fake_fetch(ticker, timeframe, provider=None):
+    def fake_fetch(ticker, timeframe, provider=None, *, settings=None):
         if scores.get(timeframe) is None:
             raise RuntimeError("no data")
         return _make_bars(31)
@@ -278,7 +278,7 @@ def test_coverage_metadata_with_missing_timeframes():
 
 
 def test_errors_record_insufficient_data_and_fetch_failures():
-    def fake_fetch(ticker, timeframe, provider=None):
+    def fake_fetch(ticker, timeframe, provider=None, *, settings=None):
         if timeframe == "intraday":
             return _make_bars(20)
         if timeframe == "short":

@@ -17,12 +17,13 @@ import uuid
 from collections.abc import Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pandas as pd
 
 from tradex.market.hours import is_trading_day, normalize_market_datetime
 
-DB_PATH = os.getenv("TRADEX_DB_PATH", os.path.expanduser("~/.tradex/signals.db"))
+DB_PATH: Path = Path("~/.tradex/signals.db")
 
 # DB schema version managed by PRAGMA user_version.
 _SCHEMA_VERSION = 3
@@ -32,11 +33,15 @@ class StoreError(Exception):
     """Raised when the persistence layer cannot complete an operation."""
 
 
+def _db_path() -> str:
+    return str(Path(str(DB_PATH)).expanduser())
+
+
 @contextmanager
 def _conn():
     """Yield a managed SQLite connection. Commits on normal exit."""
     _ensure_db_dir()
-    con = sqlite3.connect(DB_PATH)
+    con = sqlite3.connect(_db_path())
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")
     try:
@@ -50,7 +55,7 @@ def _conn():
 def _transaction():
     """Yield a connection with explicit BEGIN / COMMIT / ROLLBACK."""
     _ensure_db_dir()
-    con = sqlite3.connect(DB_PATH)
+    con = sqlite3.connect(_db_path())
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")
     con.execute("BEGIN")
@@ -65,7 +70,7 @@ def _transaction():
 
 
 def _ensure_db_dir():
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    Path(str(DB_PATH)).expanduser().parent.mkdir(parents=True, exist_ok=True)
 
 
 def _table_exists(con: sqlite3.Connection, table: str) -> bool:
@@ -531,8 +536,11 @@ def _migrate_v2_to_v3(con: sqlite3.Connection) -> None:
         )
 
 
-def init():
+def init(db_path: str | Path | None = None):
     """Create tables if they don't exist and migrate older schemas atomically."""
+    global DB_PATH
+    if db_path is not None:
+        DB_PATH = Path(db_path)
     with _transaction() as con:
         version = con.execute("PRAGMA user_version").fetchone()[0]
         if version < _SCHEMA_VERSION:

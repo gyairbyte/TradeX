@@ -12,6 +12,7 @@ from datetime import UTC, date, datetime, time, timedelta
 import pandas as pd
 import yfinance as yf
 
+from tradex.config import TradeXSettings, load_runtime_settings
 from tradex.data.fetcher import (
     DEFAULT_PROVIDER,
     ProviderCapabilityError,
@@ -34,11 +35,13 @@ from tradex.premarket.models import (
 PREMARKET_OPEN_TIME = time(4, 0)
 
 
-def resolve_premarket_provider(provider: str | None) -> str:
+def resolve_premarket_provider(
+    provider: str | None, *, settings: TradeXSettings | None = None
+) -> str:
     """Return the canonical pre-market provider name or raise ProviderCapabilityError."""
     from tradex.data.fetcher import resolve_provider
 
-    p = resolve_provider(provider)
+    p = resolve_provider(provider, settings=settings)
     if p == "yahoo":
         return p
     if p == "schwab":
@@ -326,16 +329,19 @@ def fetch_premarket_bars(
     provider: str | None,
     as_of: datetime,
     allow_after_open: bool = False,
+    settings: TradeXSettings | None = None,
 ) -> PremarketBarsResult:
     """Return canonical UTC-aware pre-market bars for ``ticker`` on the session of ``as_of``.
 
     Only Yahoo is currently supported; other providers raise ProviderCapabilityError
     rather than falling back silently.
     """
+    if settings is None:
+        settings = load_runtime_settings()
     as_of_utc = _as_utc(as_of)
     ny_as_of = _ny(as_of_utc)
     session_date = ny_as_of.date()
-    requested_provider = resolve_premarket_provider(provider)
+    requested_provider = resolve_premarket_provider(provider, settings=settings)
 
     if not is_trading_day(session_date):
         return PremarketBarsResult(
@@ -485,11 +491,13 @@ def _baseline_error(
     )
 
 
-def _resolve_history_provider(provider: str | None) -> str:
+def _resolve_history_provider(
+    provider: str | None, *, settings: TradeXSettings | None = None
+) -> str:
     """Return the canonical daily-history provider name."""
     from tradex.data.fetcher import resolve_provider
 
-    return resolve_provider(provider)
+    return resolve_provider(provider, settings=settings)
 
 
 def fetch_daily_liquidity_baseline(
@@ -499,15 +507,18 @@ def fetch_daily_liquidity_baseline(
     lookback_sessions: int,
     provider: str | None,
     as_of: datetime | None = None,
+    settings: TradeXSettings | None = None,
 ) -> DailyLiquidityBaseline:
     """Fetch completed daily history and compute the liquidity baseline.
 
     Typed provider/data failures are preserved on the returned baseline object
     rather than swallowed into a generic zero baseline.
     """
+    if settings is None:
+        settings = load_runtime_settings()
     requested_provider = provider
     try:
-        actual_provider = _resolve_history_provider(provider)
+        actual_provider = _resolve_history_provider(provider, settings=settings)
     except ProviderCapabilityError as exc:
         return _baseline_error(lookback_sessions, exc, requested_provider=requested_provider)
 
@@ -537,6 +548,7 @@ def fetch_daily_liquidity_baseline(
             start=start_dates[0],
             end=previous_session.session_date,
             provider=actual_provider,
+            settings=settings,
         )
     except ProviderCapabilityError as exc:
         return _baseline_error(
@@ -572,7 +584,11 @@ def fetch_daily_liquidity_baseline(
 
 
 def _get_prev_close(
-    ticker: str, provider: str | None = None, as_of: datetime | None = None
+    ticker: str,
+    provider: str | None = None,
+    as_of: datetime | None = None,
+    *,
+    settings: TradeXSettings | None = None,
 ) -> float | None:
     """Compatibility wrapper that returns only the previous close."""
     as_of = as_of or datetime.now(UTC)
@@ -584,12 +600,17 @@ def _get_prev_close(
         lookback_sessions=1,
         provider=provider,
         as_of=as_of,
+        settings=settings,
     )
     return baseline.previous_close
 
 
 def get_premarket_price(
-    ticker: str, provider: str | None = None, as_of: datetime | None = None
+    ticker: str,
+    provider: str | None = None,
+    as_of: datetime | None = None,
+    *,
+    settings: TradeXSettings | None = None,
 ) -> float | None:
     """Compatibility wrapper that returns the latest pre-market close or None.
 
@@ -598,7 +619,8 @@ def get_premarket_price(
     """
     as_of = as_of or datetime.now(UTC)
     result = fetch_premarket_bars(
-        ticker, provider=provider, as_of=as_of, allow_after_open=False
+        ticker, provider=provider, as_of=as_of, allow_after_open=False,
+        settings=settings,
     )
     if result.error is not None or result.bars.empty:
         return None
