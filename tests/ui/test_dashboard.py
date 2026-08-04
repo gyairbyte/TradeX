@@ -53,6 +53,7 @@ def test_dashboard_scan_passes_normalized_watchlist_to_record_scan(fresh_signal_
     from tradex.watchlists import store as wl_store
 
     # Isolate the watchlist database from the real ~/.tradex path.
+    monkeypatch.setenv("TRADEX_WATCHLISTS_DB_PATH", str(tmp_path / "watchlists.db"))
     monkeypatch.setattr(wl_store, "DB_PATH", tmp_path / "watchlists.db")
 
     # Replace the real Streamlit UI with deterministic mocks before importing dashboard.

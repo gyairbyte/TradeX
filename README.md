@@ -357,6 +357,15 @@ These settings may also be passed programmatically as `FetchPolicy(max_retries=.
 > **Note:** TD Ameritrade's API was shut down in September 2024. Use `schwab` instead.
 > Schwab output is normalized to a canonical OHLCV DataFrame (sorted, de-duplicated, UTC-indexed). Validate a local token with `scripts/schwab_smoke_test.py`.
 
+### Runtime configuration
+
+All runtime configuration lives in `tradex/config.py`. The public boundary is:
+
+- `settings_from_mapping(values)` — build a `TradeXSettings` from a plain dict without reading `.env` or `os.environ`.
+- `load_runtime_settings(dotenv_path=None)` — call-time loader that reads `.env` once, then applies `os.environ` overrides, but never mutates the process environment.
+
+Every public entry point accepts an optional `settings: TradeXSettings | None = None` keyword argument. When `settings` is omitted, the function calls `load_runtime_settings()` at call time, so modules can be imported safely without a `.env` file or credentials.
+
 ### Specialized sources
 
 These are independent of `DATA_PROVIDER` and use their own env vars / dashboard selectors:

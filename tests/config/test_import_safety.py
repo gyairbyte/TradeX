@@ -54,6 +54,18 @@ class _TopLevelEnvVisitor(ast.NodeVisitor):
                 # *.load_dotenv / *.dotenv_values
                 if func.attr in {"load_dotenv", "dotenv_values"}:
                     self.offending.append(node)
+                # Path.home() or any .expanduser() called at module scope
+                if func.attr in {"home", "expanduser"}:
+                    self.offending.append(node)
+                # os.path.expanduser(...)
+                if (
+                    func.attr == "expanduser"
+                    and isinstance(func.value, ast.Attribute)
+                    and isinstance(func.value.value, ast.Name)
+                    and func.value.value.id == "os"
+                    and func.value.attr == "path"
+                ):
+                    self.offending.append(node)
             if isinstance(func, ast.Name) and func.id in {"load_dotenv", "dotenv_values", "getenv"}:
                 self.offending.append(node)
         self.generic_visit(node)

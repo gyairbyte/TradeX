@@ -24,7 +24,7 @@ from typing import Any
 
 import schedule
 
-from tradex.alerts.models import AlertCooldownConfig, AlertDecision, AlertDispatchResult
+from tradex.alerts.models import AlertDecision, AlertDispatchResult
 from tradex.alerts.notifier import alert_coil, alert_confluence, alert_gap
 from tradex.alerts.policy import AlertPolicy
 from tradex.config import TradeXSettings, load_runtime_settings
@@ -50,7 +50,7 @@ def _default_alert_policy() -> AlertPolicy:
     The underlying store is not created until the first alert is evaluated,
     so this helper is safe to call even when no alerts fire.
     """
-    return AlertPolicy(AlertCooldownConfig.from_env())
+    return AlertPolicy(settings=load_runtime_settings())
 
 
 def _check_alerts(
@@ -250,6 +250,7 @@ def run_once(
         min_score=min_score,
         tickers_scanned=requested_tickers,
         scan_time=now,
+        settings=settings,
     )
 
     # Surface each non-empty stage map independently.
@@ -309,6 +310,7 @@ def _run_scheduled_premarket(
     *,
     alert_policy: AlertPolicy | None = None,
     now: datetime | None = None,
+    settings: TradeXSettings | None = None,
 ) -> None:
     """Trading-day guard for the daily pre-market gap scan using the structured report."""
     now = now or datetime.now(UTC)
@@ -318,7 +320,8 @@ def _run_scheduled_premarket(
         print(f"[{ny_now.strftime('%Y-%m-%d %H:%M %Z')}] Skipping pre-market gap scan — {status.reason}.")
         return
 
-    settings = load_runtime_settings()
+    if settings is None:
+        settings = load_runtime_settings()
     if alert_policy is None:
         alert_policy = AlertPolicy(
             settings.alert_cooldown, settings=settings,
@@ -382,12 +385,14 @@ def start_loop(
     policy: FetchPolicy | None = None,
     market_hours_only: bool = False,
     alert_policy: AlertPolicy | None = None,
+    settings: TradeXSettings | None = None,
 ) -> None:
     """
     Block and run scans every interval_minutes.
     Designed to run during market hours (9:30am–4pm ET).
     """
-    settings = load_runtime_settings()
+    if settings is None:
+        settings = load_runtime_settings()
     if alert_policy is None:
         alert_policy = AlertPolicy(
             settings.alert_cooldown, settings=settings,
@@ -426,7 +431,7 @@ def start_loop(
     )
     # Daily pre-market: gap scan at 8:00 AM New York time.
     schedule.every().day.at("08:00", "America/New_York").do(
-        _run_scheduled_premarket, tickers=tickers, provider=requested_provider, alert_policy=alert_policy
+        _run_scheduled_premarket, tickers=tickers, provider=requested_provider, alert_policy=alert_policy, settings=settings
     )
 
     try:

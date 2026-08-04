@@ -25,15 +25,14 @@ import yfinance as yf
 from tradex.config import TradeXSettings, load_runtime_settings
 from tradex.data.fetcher import ProviderCapabilityError
 
-CACHE_DIR = Path.home() / ".tradex"
-CACHE_DB = CACHE_DIR / "earnings_cache.db"
+DEFAULT_CACHE_DB = Path("~/.tradex/earnings_cache.db")
 CACHE_TTL_HOURS = 24
 
 
 def _resolve_cache_db(settings: TradeXSettings | None = None) -> Path:
-    """Return the earnings cache path from explicit settings or the module default."""
+    """Return the earnings cache path from explicit settings or the runtime default."""
     if settings is None:
-        return CACHE_DB
+        settings = load_runtime_settings()
     return settings.paths.earnings_cache_db
 
 
@@ -52,7 +51,8 @@ def _resolve_earnings_source(
 
 
 def _conn(cache_db: Path | None = None) -> sqlite3.Connection:
-    db = cache_db or CACHE_DB
+    db = cache_db or DEFAULT_CACHE_DB
+    db = Path(str(db)).expanduser()
     db.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db))
     conn.execute("""
@@ -71,10 +71,14 @@ def _conn(cache_db: Path | None = None) -> sqlite3.Connection:
 
 
 def _cache_get(
-    ticker: str, source: str, *, settings: TradeXSettings | None = None
+    ticker: str,
+    source: str,
+    *,
+    cache_db: Path | None = None,
+    settings: TradeXSettings | None = None,
 ) -> tuple[date | None, bool]:
     """Return (next_earnings_date_or_None, is_fresh)."""
-    with _conn(_resolve_cache_db(settings)) as c:
+    with _conn(cache_db or _resolve_cache_db(settings)) as c:
         row = c.execute(
             "SELECT next_earnings, fetched_at FROM earnings_cache WHERE ticker = ? AND source = ?",
             (ticker, source),
@@ -89,9 +93,14 @@ def _cache_get(
 
 
 def _cache_put(
-    ticker: str, source: str, next_earnings: date | None, *, settings: TradeXSettings | None = None
+    ticker: str,
+    source: str,
+    next_earnings: date | None,
+    *,
+    cache_db: Path | None = None,
+    settings: TradeXSettings | None = None,
 ) -> None:
-    with _conn(_resolve_cache_db(settings)) as c:
+    with _conn(cache_db or _resolve_cache_db(settings)) as c:
         c.execute(
             "INSERT OR REPLACE INTO earnings_cache (ticker, source, next_earnings, fetched_at) "
             "VALUES (?, ?, ?, ?)",
@@ -162,13 +171,14 @@ def get_next_earnings(
     if settings is None:
         settings = load_runtime_settings()
     source = _resolve_earnings_source(source, settings=settings)
+    cache_db = settings.paths.earnings_cache_db
     if use_cache and not force_refresh:
-        cached, fresh = _cache_get(ticker, source, settings=settings)
+        cached, fresh = _cache_get(ticker, source, cache_db=cache_db, settings=settings)
         if fresh:
             return cached
     next_date = _fetch_from_yahoo(ticker)
     if use_cache:
-        _cache_put(ticker, source, next_date, settings=settings)
+        _cache_put(ticker, source, next_date, cache_db=cache_db, settings=settings)
     return next_date
 
 

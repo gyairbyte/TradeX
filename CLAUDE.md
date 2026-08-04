@@ -20,7 +20,7 @@ Gary is particularly interested in:
 - **Keep it simple and readable** — this is a tool for understanding the market, not just black-box outputs. Every signal should have a human-readable reason.
 - **Score-based ranking** — all signals produce a 0–100 score so results are comparable across tickers and timeframes
 - **Modular signal logic** — each timeframe has its own scorer in `tradex/signals/`. Adding a new signal means editing one file.
-- **Pluggable data providers** — `fetcher.py` supports Yahoo (default), Alpaca, IBKR, and Schwab. Switching is one env var (`DATA_PROVIDER`). All providers return the same normalized DataFrame so signal code never knows which provider is active.
+- **Pluggable data providers** — `fetcher.py` supports Yahoo (default), Alpaca, IBKR, and Schwab. Switching is one env var (`DATA_PROVIDER`) or an explicit `TradeXSettings` object. All providers return the same normalized DataFrame so signal code never knows which provider is active.
 
 ---
 
@@ -45,7 +45,8 @@ Scanner runs → results DataFrame
 
 | File | Purpose |
 |---|---|
-| `tradex/data/fetcher.py` | Multi-provider OHLCV fetcher. Providers: `yahoo`, `alpaca`, `ibkr`, `schwab`. Three timeframe presets: `intraday` (5m/5d), `short` (1d/60d), `long` (1wk/2yr). Provider selected via `DATA_PROVIDER` env var. |
+| `tradex/config.py` | Typed, immutable runtime configuration. `load_runtime_settings()` reads `.env` + `os.environ` at call time; `settings_from_mapping()` is pure. Public functions accept `settings: TradeXSettings | None` and fall back at call time. |
+| `tradex/data/fetcher.py` | Multi-provider OHLCV fetcher. Providers: `yahoo`, `alpaca`, `ibkr`, `schwab`. Reads settings from explicit `TradeXSettings` or `load_runtime_settings()` at call time. |
 | `tradex/signals/indicators.py` | Shared indicator computation: RSI, MACD, EMA20/50, Bollinger Bands, ATR, volume ratio |
 | `tradex/signals/intraday.py` | Intraday swing scorer — volume surge, BB expansion, MACD crossover, RSI momentum |
 | `tradex/signals/short_term.py` | Short-term scorer — EMA structure, volume confirmation, MACD, pullback-to-EMA setups |
@@ -118,7 +119,8 @@ df = run(["AAPL", "NVDA", "AMD"], timeframe="intraday", min_score=40)
 - **Schwab provider is validated and hardened** — `tradex/data/fetcher.py` normalizes Schwab candles to the canonical OHLCV contract (sorted, de-duplicated, UTC-indexed DataFrame with columns `open`, `high`, `low`, `close`, `volume`). The contract is enforced by deterministic, credential-free tests in `tests/data/test_schwab_provider.py`.
 - **Provider abstraction in fetcher.py only** — signal code receives a plain DataFrame and never knows which provider supplied it. Keep it that way.
 - **OAuth token safety** — Schwab tokens live outside the repo. `scripts/schwab_oauth.py` refuses to write a token inside the project and sets restrictive file permissions.
-- **Provider propagation** — `screener/engine.py`, `tracker/watcher.py`, and `ui/dashboard.py` now thread `provider` through to `fetch()` for all OHLCV workflows.
+- **Centralized runtime configuration** — `tradex/config.py` is the only place allowed to read `.env` or the process environment. All other modules receive an explicit `TradeXSettings` object or call `load_runtime_settings()` at call time, so `tradex/` is import-safe and testable without a `.env` file.
+- **Provider propagation** — `screener/engine.py`, `tracker/watcher.py`, `ui/dashboard.py`, and public persistence/alert/options entry points thread `settings` through to `fetch()` and other configurable paths.
 - **Pre-market gap scanner is source-aware** — `tradex/premarket/sources.py` resolves the OHLCV provider once and rejects unsupported providers with `ProviderCapabilityError`. Spread and catalyst sources are explicit and never silently fall back.
 - **Options activity is separated from directional signals** — `tradex/options/flow.py` distinguishes true transaction-level flow (Unusual Whales) from delayed/aggregate options-chain snapshots (Tradier/Yahoo). Chain volume/OI is labeled `chain_snapshot`, is never presented as "unusual options flow," and the put/call volume balance is explicitly non-directional.
 - **Streamlit for UI** — fastest to iterate on, no frontend knowledge needed. Can replace with React later if needed.

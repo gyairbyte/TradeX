@@ -19,6 +19,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from tradex.config import TradeXSettings
 from tradex.tracker import store
 
 MIN_COIL_DAYS = 2          # minimum distinct sessions to qualify as a coil
@@ -72,14 +73,18 @@ def _price_broke_out(closes: list[float]) -> bool:
     return price_change_pct >= BREAKOUT_PCT
 
 
-def _daily_points_for_ticker(ticker: str, timeframe: str, days: int) -> pd.DataFrame:
+def _daily_points_for_ticker(
+    ticker: str, timeframe: str, days: int, *, settings: TradeXSettings | None = None
+) -> pd.DataFrame:
     """Latest scored observation per distinct XNYS trading session for one ticker."""
-    return store.get_daily_score_history(ticker, timeframe, days=days)
+    return store.get_daily_score_history(ticker, timeframe, days=days, settings=settings)
 
 
-def _daily_points_all(timeframe: str, days: int) -> pd.DataFrame:
+def _daily_points_all(
+    timeframe: str, days: int, *, settings: TradeXSettings | None = None
+) -> pd.DataFrame:
     """Latest scored observation per ticker per distinct trading session."""
-    return store.get_all_daily_scores(timeframe, days=days)
+    return store.get_all_daily_scores(timeframe, days=days, settings=settings)
 
 
 def _extract_history(df: pd.DataFrame) -> tuple[list[float], list[float], list[str]]:
@@ -98,7 +103,7 @@ def detect_coils(
     days: int = 7,
     min_appearances: int = MIN_COIL_DAYS,
     *,
-    settings=None,
+    settings: TradeXSettings | None = None,
 ) -> pd.DataFrame:
     """
     Scan signal history for tickers that are actively coiling.
@@ -106,11 +111,8 @@ def detect_coils(
     Returns a DataFrame of coiling stocks ranked by coil strength
     (combination of distinct-session persistence, active-session ratio,
     latest score, and trend).
-
-    ``settings`` is accepted for call-site consistency but not used; the analyzer
-    reads from the configured signal store.
     """
-    all_points = _daily_points_all(timeframe, days=days)
+    all_points = _daily_points_all(timeframe, days=days, settings=settings)
     if all_points.empty:
         return pd.DataFrame()
 
@@ -165,7 +167,13 @@ def detect_coils(
     )
 
 
-def detect_fading_setups(timeframe: str, days: int = 7, min_appearances: int = MIN_COIL_DAYS) -> pd.DataFrame:
+def detect_fading_setups(
+    timeframe: str,
+    days: int = 7,
+    min_appearances: int = MIN_COIL_DAYS,
+    *,
+    settings: TradeXSettings | None = None,
+) -> pd.DataFrame:
     """
     Scan signal history for tickers that were coiling but are now fading.
 
@@ -173,7 +181,7 @@ def detect_fading_setups(timeframe: str, days: int = 7, min_appearances: int = M
     persisted across multiple sessions, but the latest score is below the
     threshold or meaningfully below its prior peak with a declining session trend.
     """
-    all_points = _daily_points_all(timeframe, days=days)
+    all_points = _daily_points_all(timeframe, days=days, settings=settings)
     if all_points.empty:
         return pd.DataFrame()
 

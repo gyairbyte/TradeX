@@ -67,13 +67,21 @@ class AlertPolicy:
         lease_seconds: int = _DEFAULT_LEASE_SECONDS,
         settings: TradeXSettings | None = None,
     ) -> None:
-        if settings is None:
-            settings = load_runtime_settings()
         self.settings = settings
-        self.config = config or AlertCooldownConfig.from_mapping({})  # defaults
+        if config is None:
+            if self.settings is None:
+                self.settings = load_runtime_settings()
+            self.config = self.settings.alert_cooldown
+        else:
+            self.config = config
+
+        # Only load runtime settings if we still need defaults for store/transport/is_configured.
+        if self.settings is None and (store is None or transport is None or is_configured is None):
+            self.settings = load_runtime_settings()
+
         self.store = store or AlertStore(self.config.resolved_state_path)
-        self.transport = transport or partial(send_alert, settings=settings)
-        self.is_configured = is_configured or (lambda: is_alert_configured(settings=settings))
+        self.transport = transport or partial(send_alert, settings=self.settings)
+        self.is_configured = is_configured or (lambda: is_alert_configured(settings=self.settings))
         self.clock = clock or (lambda: datetime.now(UTC))
         self.lease_seconds = lease_seconds
 

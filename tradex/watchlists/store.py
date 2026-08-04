@@ -13,25 +13,32 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
+from tradex.config import TradeXSettings
+
 DB_PATH: Path = Path("~/.tradex/watchlists.db")
 DEFAULT_NAME = "Default"
 
 
-def _db_path() -> str:
-    return DB_PATH.expanduser().resolve()
+def _db_path(db_path: Path | None = None) -> str:
+    return str(Path(str(db_path or DB_PATH)).expanduser().resolve())
 
 
-def _conn() -> sqlite3.Connection:
-    path = Path(_db_path())
+def _conn(db_path: Path | None = None) -> sqlite3.Connection:
+    path = Path(_db_path(db_path))
     path.parent.mkdir(parents=True, exist_ok=True)
-    return sqlite3.connect(_db_path())
+    return sqlite3.connect(_db_path(db_path))
 
 
-def init(db_path: str | Path | None = None) -> None:
-    global DB_PATH
-    if db_path is not None:
-        DB_PATH = Path(db_path)
-    with _conn() as c:
+def _resolve_db_path(settings: TradeXSettings | None = None) -> Path:
+    """Return the watchlist database path from explicit settings or the module default."""
+    if settings is None:
+        return DB_PATH
+    return settings.paths.watchlists_db
+
+
+def init(db_path: str | Path | None = None, *, settings: TradeXSettings | None = None) -> None:
+    path = _resolve_db_path(settings) if db_path is None else Path(db_path)
+    with _conn(db_path=path) as c:
         c.execute("""
             CREATE TABLE IF NOT EXISTS watchlists (
                 name       TEXT PRIMARY KEY,
@@ -51,7 +58,7 @@ def _normalize(tickers: list[str]) -> list[str]:
     return seen
 
 
-def save(name: str, tickers: list[str]) -> None:
+def save(name: str, tickers: list[str], *, settings: TradeXSettings | None = None) -> None:
     """Create or overwrite a named watchlist. Names are case-sensitive."""
     name = name.strip()
     if not name:
@@ -60,7 +67,7 @@ def save(name: str, tickers: list[str]) -> None:
     if not tickers:
         raise ValueError("watchlist must contain at least one ticker")
     now = datetime.utcnow().isoformat()
-    with _conn() as c:
+    with _conn(db_path=_resolve_db_path(settings)) as c:
         row = c.execute("SELECT created_at FROM watchlists WHERE name = ?", (name,)).fetchone()
         created = row[0] if row else now
         c.execute(
@@ -70,25 +77,25 @@ def save(name: str, tickers: list[str]) -> None:
         )
 
 
-def load(name: str) -> list[str] | None:
+def load(name: str, *, settings: TradeXSettings | None = None) -> list[str] | None:
     """Return the tickers in a named watchlist, or None if it doesn't exist."""
-    with _conn() as c:
+    with _conn(db_path=_resolve_db_path(settings)) as c:
         row = c.execute("SELECT tickers FROM watchlists WHERE name = ?", (name,)).fetchone()
     if not row:
         return None
     return [t for t in row[0].split(",") if t]
 
 
-def delete(name: str) -> bool:
+def delete(name: str, *, settings: TradeXSettings | None = None) -> bool:
     """Delete a named watchlist. Returns True if a row was removed."""
-    with _conn() as c:
+    with _conn(db_path=_resolve_db_path(settings)) as c:
         cur = c.execute("DELETE FROM watchlists WHERE name = ?", (name,))
         return cur.rowcount > 0
 
 
-def list_all() -> list[dict]:
+def list_all(*, settings: TradeXSettings | None = None) -> list[dict]:
     """Return [{name, ticker_count, updated_at}] sorted by most recently updated."""
-    with _conn() as c:
+    with _conn(db_path=_resolve_db_path(settings)) as c:
         rows = c.execute(
             "SELECT name, tickers, updated_at FROM watchlists ORDER BY updated_at DESC"
         ).fetchall()

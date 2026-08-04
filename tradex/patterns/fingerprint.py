@@ -25,7 +25,6 @@ import numpy as np
 import pandas as pd
 
 from tradex.config import TradeXSettings, load_runtime_settings
-from tradex.data.fetcher import DEFAULT_PROVIDER
 from tradex.data.history import _resolve_history_provider
 from tradex.patterns.config import PatternConfig, PROFILES
 
@@ -33,21 +32,19 @@ DB_PATH: Path = Path("~/.tradex/fingerprints.db")
 SERIES_KEYS = ["price_pct", "volume_ratio", "rsi", "macd_diff", "bb_width", "atr"]
 
 
-def _db_path() -> str:
-    return str(Path(str(DB_PATH)).expanduser())
+def _db_path(db_path: Path | None = None) -> str:
+    return str(Path(str(db_path or DB_PATH)).expanduser())
 
 
-def init(db_path: str | Path | None = None) -> None:
+def init(db_path: str | Path | None = None, *, settings: TradeXSettings | None = None) -> None:
     """Initialize the fingerprint store at the given or default path."""
-    global DB_PATH
-    if db_path is not None:
-        DB_PATH = Path(db_path)
-    _init_db()
+    path = _resolve_db_path(settings) if db_path is None else Path(db_path)
+    _init_db(db_path=path)
 
 
 @contextmanager
-def _conn():
-    path = Path(_db_path())
+def _conn(db_path: Path | None = None):
+    path = Path(_db_path(db_path))
     path.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(str(path))
     con.row_factory = sqlite3.Row
@@ -58,8 +55,15 @@ def _conn():
         con.close()
 
 
-def _init_db():
-    with _conn() as con:
+def _resolve_db_path(settings: TradeXSettings | None = None) -> Path:
+    """Return the fingerprint database path from explicit settings or the module default."""
+    if settings is None:
+        return DB_PATH
+    return settings.paths.fingerprint_db
+
+
+def _init_db(db_path: Path | None = None):
+    with _conn(db_path=db_path) as con:
         # Create the table if it does not exist. Do NOT create the new
         # source-dependent index here -- on an old schema the `source` column
         # may be missing and the index creation would fail before migration runs.
@@ -115,7 +119,7 @@ def build_fingerprint(
     Returns None if there aren't enough events to trust the result.
     Saves to DB automatically.
     """
-    _init_db()
+    _init_db(db_path=_resolve_db_path(settings))
     if cfg is None:
         cfg = PROFILES[profile]
     if min_events is None:
@@ -164,7 +168,9 @@ def build_fingerprint(
     if source is not None:
         source = source.strip().lower()
     else:
-        source = settings.data.data_provider if settings is not None else DEFAULT_PROVIDER
+        if settings is None:
+            settings = load_runtime_settings()
+        source = settings.data.data_provider
 
     fp = {
         "event_type":    event_type,
@@ -180,7 +186,7 @@ def build_fingerprint(
     }
 
     # Persist
-    with _conn() as con:
+    with _conn(db_path=_resolve_db_path(settings)) as con:
         con.execute("""
             INSERT INTO fingerprints
               (event_type, profile, source, created_at, n_events, lookback_days, config_json, data_json)
@@ -218,9 +224,11 @@ def load_fingerprint(
     if source is not None:
         source = source.strip().lower()
     else:
-        source = settings.data.data_provider if settings is not None else DEFAULT_PROVIDER
-    _init_db()
-    with _conn() as con:
+        if settings is None:
+            settings = load_runtime_settings()
+        source = settings.data.data_provider
+    _init_db(db_path=_resolve_db_path(settings))
+    with _conn(db_path=_resolve_db_path(settings)) as con:
         row = con.execute("""
             SELECT data_json, created_at, n_events FROM fingerprints
             WHERE event_type = ? AND profile = ? AND source = ?
@@ -233,10 +241,10 @@ def load_fingerprint(
     return fp
 
 
-def list_fingerprints() -> pd.DataFrame:
+def list_fingerprints(*, settings: TradeXSettings | None = None) -> pd.DataFrame:
     """Return a summary of all stored fingerprints."""
-    _init_db()
-    with _conn() as con:
+    _init_db(db_path=_resolve_db_path(settings))
+    with _conn(db_path=_resolve_db_path(settings)) as con:
         rows = con.execute("""
             SELECT event_type, profile, source, created_at, n_events, lookback_days
             FROM fingerprints ORDER BY created_at DESC

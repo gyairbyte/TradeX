@@ -205,7 +205,7 @@ def _alert_policy_from_env() -> AlertPolicy:
 
     Isolated so tests can swap it without launching Streamlit.
     """
-    return AlertPolicy(AlertCooldownConfig.from_env())
+    return AlertPolicy(settings=load_runtime_settings())
 
 
 def _effective_cooldowns(config: AlertCooldownConfig) -> dict[str, int | str]:
@@ -225,8 +225,8 @@ def _ensure_stores(settings: TradeXSettings) -> None:
     """Lazy one-time SQLite initialization for the dashboard session."""
     key = "_tradex_stores_initialized"
     if not st.session_state.get(key):
-        store.init(db_path=str(settings.paths.signals_db))
-        wl_store.init(db_path=str(settings.paths.watchlists_db))
+        store.init(db_path=str(settings.paths.signals_db), settings=settings)
+        wl_store.init(db_path=str(settings.paths.watchlists_db), settings=settings)
         st.session_state[key] = True
 
 
@@ -316,7 +316,7 @@ if __name__ == "__main__":
         )
     
         # ── Watchlist selector ───────────────────────────────────────────────────
-        saved_lists = wl_store.list_all()
+        saved_lists = wl_store.list_all(settings=settings)
         # Build a {name -> ticker_count} lookup for the dropdown formatter
         _wl_counts = {w["name"]: w["ticker_count"] for w in saved_lists}
         # Preset labels (what they get saved under via "Import preset") — used to
@@ -351,7 +351,7 @@ if __name__ == "__main__":
         if active_name == WL_DEFAULT_NAME:
             base_tickers = DEFAULT_TICKERS
         else:
-            base_tickers = wl_store.load(active_name) or DEFAULT_TICKERS
+            base_tickers = wl_store.load(active_name, settings=settings) or DEFAULT_TICKERS
     
         custom = st.text_input(
             "Add tickers (comma-separated)",
@@ -385,7 +385,7 @@ if __name__ == "__main__":
                     st.error("No tickers found in the paste box.")
                 else:
                     try:
-                        wl_store.save(create_name, parsed)
+                        wl_store.save(create_name, parsed, settings=settings)
                         st.success(f"Created '{create_name}' with {len(parsed)} tickers: {', '.join(parsed[:8])}{'…' if len(parsed) > 8 else ''}")
                         st.rerun()
                     except ValueError as e:
@@ -404,7 +404,7 @@ if __name__ == "__main__":
             col_imp, col_refresh = st.columns(2)
             if col_imp.button("Import preset", key="wl_preset_import_btn", use_container_width=True):
                 try:
-                    wl_store.save(chosen_preset.label, list(chosen_preset.tickers))
+                    wl_store.save(chosen_preset.label, list(chosen_preset.tickers), settings=settings)
                     st.success(f"Imported '{chosen_preset.label}' ({len(chosen_preset.tickers)} tickers). Select it in 'Active watchlist'.")
                     st.rerun()
                 except ValueError as e:
@@ -424,7 +424,7 @@ if __name__ == "__main__":
                         for key, tickers in overrides.items():
                             preset = wl_presets.PRESETS_BY_KEY.get(key)
                             if preset and tickers:
-                                wl_store.save(preset.label, tickers)
+                                wl_store.save(preset.label, tickers, settings=settings)
                                 imported += 1
                         st.success(f"Refreshed {imported} presets. Active watchlists overwritten with latest constituents.")
                         for w in result.warnings:
@@ -441,7 +441,7 @@ if __name__ == "__main__":
             )
             if st.button("Save current", key="wl_save_btn", use_container_width=True):
                 try:
-                    wl_store.save(new_name, watchlist)
+                    wl_store.save(new_name, watchlist, settings=settings)
                     st.success(f"Saved '{new_name}' ({len(watchlist)} tickers)")
                     st.rerun()
                 except ValueError as e:
@@ -472,7 +472,7 @@ if __name__ == "__main__":
                     use_container_width=True,
                     type="primary",
                 ):
-                    deleted = [n for n in to_delete if wl_store.delete(n)]
+                    deleted = [n for n in to_delete if wl_store.delete(n, settings=settings)]
                     if deleted:
                         st.success(f"Deleted: {', '.join(deleted)}")
                         st.rerun()
@@ -645,6 +645,7 @@ if __name__ == "__main__":
                 timeframe=timeframe,
                 min_score=min_score,
                 tickers_scanned=list(dict.fromkeys(str(t).upper() for t in watchlist)),
+                settings=settings,
             )
     
             # Surface each non-empty stage failure map independently.
@@ -791,7 +792,7 @@ if __name__ == "__main__":
     
         if st.button("Detect Coils", key="btn_coil", type="primary",
                      help="Search signal history for stocks matching the coil definition."):
-            coils = analyzer.detect_coils(timeframe, days=coil_days, min_appearances=min_appearances)
+            coils = analyzer.detect_coils(timeframe, days=coil_days, min_appearances=min_appearances, settings=settings)
             if coils.empty:
                 st.info("No active coiling setups found. Run the Scanner a few times over multiple days to build history.")
             else:
@@ -835,7 +836,7 @@ if __name__ == "__main__":
     
         if st.button("Detect Fading Setups", key="btn_fade", type="secondary",
                      help="Search signal history for stocks that were coiling but are now fading."):
-            fading = analyzer.detect_fading_setups(timeframe, days=coil_days, min_appearances=min_appearances)
+            fading = analyzer.detect_fading_setups(timeframe, days=coil_days, min_appearances=min_appearances, settings=settings)
             if fading.empty:
                 st.info("No fading setups found.")
             else:
@@ -1750,7 +1751,7 @@ if __name__ == "__main__":
         with col_info:
             st.caption(f"Outcome provider: **{outcome_provider}**  ·  Refreshes automatically at 4:30pm ET when the watcher is running.")
     
-        journal = store.get_signal_journal(timeframe=timeframe if timeframe else None)
+        journal = store.get_signal_journal(timeframe=timeframe if timeframe else None, settings=settings)
     
         if journal.empty:
             st.info("No outcomes yet. Run the Scanner, wait 1–5 days, then click Refresh Outcomes.")
@@ -1842,7 +1843,7 @@ if __name__ == "__main__":
     - Use **Reset to defaults** to get back the original 30/20/30/20-style scoring at any time.
             """)
     
-        current = signal_weights.load()
+        current = signal_weights.load(settings=settings)
         section_meta = [
             ("Intraday (5-min bars)", "intraday", current.intraday),
             ("Short-term (daily bars)", "short", current.short),
@@ -1872,12 +1873,12 @@ if __name__ == "__main__":
                 short=signal_weights.ShortWeights(**new_values["short"]),
                 long=signal_weights.LongWeights(**new_values["long"]),
             )
-            signal_weights.save(updated)
+            signal_weights.save(updated, settings=settings)
             st.success("Weights saved. Re-run any Scanner or Confluence scan to see the effect.")
     
         if col_reset.button("Reset to defaults", key="weights_reset",
                             help="Restore original built-in weights (matches the scoring shown in CLAUDE.md and the README)."):
-            signal_weights.reset_to_defaults()
+            signal_weights.reset_to_defaults(settings=settings)
             st.success("Weights reset to defaults.")
             st.rerun()
     

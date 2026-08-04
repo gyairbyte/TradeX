@@ -12,11 +12,12 @@ Defaults reproduce the original hard-coded scoring exactly. Saved to JSON at
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
-WEIGHTS_PATH = Path(os.path.expanduser("~/.tradex/weights.json"))
+from tradex.config import TradeXSettings
+
+WEIGHTS_PATH = Path("~/.tradex/weights.json")
 
 
 @dataclass
@@ -129,12 +130,20 @@ def _field_names(cls) -> list[str]:
     return [f.name for f in fields(cls)]
 
 
-def load() -> Weights:
+def _resolve_weights_path(settings: TradeXSettings | None = None) -> Path:
+    """Return the weights file path from explicit settings or the module default."""
+    if settings is None:
+        return WEIGHTS_PATH
+    return settings.paths.weights
+
+
+def load(*, settings: TradeXSettings | None = None) -> Weights:
     """Return saved weights or defaults if no saved file exists."""
-    if not WEIGHTS_PATH.exists():
+    weights_path = _resolve_weights_path(settings)
+    if not Path(str(weights_path)).expanduser().exists():
         return Weights.defaults()
     try:
-        data = json.loads(WEIGHTS_PATH.read_text())
+        data = json.loads(Path(str(weights_path)).expanduser().read_text())
         intraday = IntradayWeights(**{k: v for k, v in data.get("intraday", {}).items() if k in _field_names(IntradayWeights)})
         short = ShortWeights(**{k: v for k, v in data.get("short", {}).items() if k in _field_names(ShortWeights)})
         long_ = LongWeights(**{k: v for k, v in data.get("long", {}).items() if k in _field_names(LongWeights)})
@@ -143,14 +152,16 @@ def load() -> Weights:
         return Weights.defaults()
 
 
-def save(weights: Weights) -> None:
-    WEIGHTS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    WEIGHTS_PATH.write_text(json.dumps(weights.to_dict(), indent=2))
+def save(weights: Weights, *, settings: TradeXSettings | None = None) -> None:
+    weights_path = _resolve_weights_path(settings)
+    path = Path(str(weights_path)).expanduser()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(weights.to_dict(), indent=2))
 
 
-def reset_to_defaults() -> Weights:
+def reset_to_defaults(*, settings: TradeXSettings | None = None) -> Weights:
     defaults = Weights.defaults()
-    save(defaults)
+    save(defaults, settings=settings)
     return defaults
 
 
