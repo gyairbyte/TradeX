@@ -247,12 +247,12 @@ def test_score_vectorized_matches_production_score(business_day_data_dir: Path) 
 
 def test_score_parity_with_na_n_warmup_and_ties() -> None:
     """Score parity holds when early bars are NaN and when volume ties occur."""
-    idx = pd.date_range("2010-01-04", periods=80, freq="W-MON", tz="UTC")
-    close = np.full(80, 100.0)
-    close[40:45] = 100.5  # small uptrend to trigger EMA
-    close[45:50] = 100.0
-    volume = np.full(80, 1_000_000.0)
-    volume[70:] = 1_500_000.0  # tied-ish volume
+    idx = pd.date_range("2010-01-04", periods=260, freq="B", tz="UTC")
+    close = np.full(260, 100.0)
+    close[130:140] = 100.5  # small uptrend to trigger EMA
+    close[140:150] = 100.0
+    volume = np.full(260, 1_000_000.0)
+    volume[230:] = 1_500_000.0  # tied-ish volume
     df = pd.DataFrame({
         "open": close * 0.99,
         "high": close * 1.01,
@@ -470,8 +470,7 @@ def test_exact_13_and_26_week_exit_timing(business_day_data_dir: Path) -> None:
 
 def test_protocol_json_matches_spec_defaults() -> None:
     """If a protocol file exists, it must round-trip to the default spec."""
-    from pathlib import Path
-    protocol_path = Path(__file__).parents[3] / "docs" / "research" / "LONG-001.json"
+    protocol_path = Path(__file__).resolve().parents[2] / "docs" / "research" / "LONG-001.json"
     if not protocol_path.exists():
         pytest.skip("protocol file not yet committed")
     raw = json.loads(protocol_path.read_text(encoding="utf-8"))
