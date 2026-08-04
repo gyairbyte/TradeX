@@ -1,0 +1,23 @@
+{
+  "created_at": "2026-08-04T01:12:11.616408+00:00",
+  "files": {
+    "baseline_comparison.csv": "8e91d456569ef6af5ea9fa19e1ae3a2927adaac062426380a056fe4f9e788015",
+    "data_quality.csv": "a29f42636fdf0e7aa2351509dfeb6799146d7aad043e219d68b850bce4b72d6e",
+    "development_fingerprints.json": "0fff13457361ed876bb30082a6ede74b17791d53ccb8972e3e68d8e4f8ee1d2f",
+    "event_study.csv": "2c771f0de0606713fade597049a8f68536dc75067861fcba6b31a0175edf9ccd",
+    "executable_trades.csv": "51dc27ba8a73a9303e9306efbd42439292414161a183ac6e93f3612e1ee65fca",
+    "frequency_matched_controls.csv": "d1d257a495f18549a0dff82ff50c49975ad191101f6da731aacd1230a48dbb81",
+    "manifest.lock.json": "6431368f9a95ae90ac21c188b3bb9a7bba8c5c6ed93db5fc1194775ce66d5660",
+    "observations.csv": "69ed5cd7da62d0421d3247d0116d43c2208b43c01bc9c6905b8dd64497d7c52d",
+    "period_summary.csv": "c6e08e66069d3943eef09d1dcaeecf95f3257b364371fe3f1d68a820a8ae76b7",
+    "promotion_decision.json": "93211901be5a0e33fd184433d11ab57118479975de28aa1063353c919e27ec30",
+    "qualifying_signals.csv": "2c771f0de0606713fade597049a8f68536dc75067861fcba6b31a0175edf9ccd",
+    "report.md": "37404c28669c1e88cd1f7299d13e0da63f5cbdb9a5d370a9bd6b3bfba8abee07",
+    "study.json": "d72cbd55b15daba0947f329ce517d21a7f11ba3260182b997fb9c4d0bd88e0ec",
+    "study_spec.lock.json": "9880c0e1df30b4de2b3cf97e02792355810703045d82b7847dda1b2b2bc86446",
+    "ticker_summary.csv": "f5153dd86443583f140d83a89155bd9754f08488c6e0941b914d1254a7bb8489"
+  },
+  "manifest_sha256": "9ea40e85d3c2388ec33f582988a79e66b8f0e5d18a04800c714db358db3080ef",
+  "schema_version": 1,
+  "spec_sha256": "68a3d59cf4b06f21889207dde67e217d2a61916ec7c331adb9fe629c521bf8c7"
+}

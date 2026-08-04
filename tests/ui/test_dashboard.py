@@ -153,8 +153,8 @@ def test_effective_cooldowns_helper():
     result = _effective_cooldowns(cfg)
     assert result["coil"] == 30
     assert result["confluence"] == 60
-    assert result["pattern"] == 60
     assert result["gap"] == 60
+    assert "pattern" not in result  # pattern matching is quarantined from automatic alerts
 
     disabled_cfg = AlertCooldownConfig(enabled=False)
     assert _effective_cooldowns(disabled_cfg) == {"status": "disabled"}

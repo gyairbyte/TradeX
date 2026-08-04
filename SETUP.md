@@ -126,10 +126,24 @@ App registration in the Schwab Developer Portal must use:
 
 ### 2b. Validate the Schwab provider (optional, local only)
 
-After generating the token, run the read-only smoke test to confirm Schwab market data works:
+After generating the token, run the read-only smoke test to confirm Schwab market data works. On Windows, use PowerShell from the repo root:
+
+```powershell
+uv --system-certs sync --extra dev --extra all
+$token = "$env:USERPROFILE\.tradex_schwab_token.json"
+Test-Path $token
+Get-Item $token | Select-Object FullName, Length, LastWriteTime
+New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.tradex\research\pattern-validation\snapshot" | Out-Null
+uv --system-certs run python scripts/schwab_smoke_test.py
+```
+
+On macOS / Linux:
 
 ```bash
-.venv/bin/python scripts/schwab_smoke_test.py
+uv sync --extra dev --extra all
+test -f ~/.tradex_schwab_token.json && ls -l ~/.tradex_schwab_token.json
+mkdir -p ~/.tradex/research/pattern-validation/snapshot
+uv run python scripts/schwab_smoke_test.py
 ```
 
 It fetches `SPY` (or `SCHWAB_SMOKE_SYMBOL` from `.env`) for the intraday, short, and long timeframes and verifies the canonical OHLCV contract. It never accesses account, position, balance, or order endpoints.
@@ -356,7 +370,54 @@ uv run python -m tradex.research.score_validation evaluate --help
 
 ---
 
-## 10. Short-term market context research (optional)
+## 10. Pattern similarity validation (optional)
+
+`tradex/research/pattern_validation` runs a locked, point-in-time study of the existing pattern matcher. It is research-only and does not alter production scoring, ranking, eligibility, or automatic alerts.
+
+Windows PowerShell:
+
+```powershell
+# Verify the token exists (do not print token contents).
+Test-Path "$env:USERPROFILE\.tradex_schwab_token.json"
+Get-Item "$env:USERPROFILE\.tradex_schwab_token.json" | Select-Object FullName, Length, LastWriteTime
+
+# Optional read-only Schwab smoke test.
+uv --system-certs run python scripts/schwab_smoke_test.py
+
+# Build the locked offline snapshot.
+$SnapshotDir = "$env:USERPROFILE\.tradex\research\pattern-validation\snapshot"
+uv --system-certs run python -m tradex.research.pattern_validation snapshot `
+  --universe current-mining-universe `
+  --start 2018-01-02 `
+  --end 2026-07-31 `
+  --provider schwab `
+  --output $SnapshotDir
+
+# Evaluate offline (no network, no credentials, no ~/.tradex/fingerprints.db)
+$ResultsDir = "$env:USERPROFILE\.tradex\research\pattern-validation\results"
+uv --system-certs run python -m tradex.research.pattern_validation evaluate `
+  --manifest "$SnapshotDir\manifest.lock.json" `
+  --output $ResultsDir
+```
+
+The locked study uses the exact ordered `MINING_UNIVERSE` from `tradex/patterns/miner.py`. Keep raw OHLCV, `.env`, OAuth tokens, credentials, and provider responses outside the repository. The handoff bundle is described in `docs/research/PATTERN-001.md`.
+
+Verify the package:
+
+```bash
+uv run pytest tests/research/pattern_validation -q
+uv run python -m tradex.research.pattern_validation --help
+uv run python -m tradex.research.pattern_validation snapshot --help
+uv run python -m tradex.research.pattern_validation evaluate --help
+```
+
+The package builds one fingerprint per event type from the development split only, evaluates validation/holdout against that immutable fingerprint, and enforces the locked splits, weights, thresholds, and `MINING_UNIVERSE`. `production_promotion_eligible` is always `false` because the universe is not point-in-time.
+
+For Schwab, the adjustment policy is `provider_default`: the provider-returned daily candles are used as-is, the study does not apply additional split or dividend adjustment, and the exact corporate-action methodology is not independently verified beyond the provider contract.
+
+---
+
+## 11. Short-term market context research (optional)
 
 `tradex/research/short_context` evaluates whether adding market-regime and relative-strength filters improves the short-term scorer. It reuses the VAL-002 snapshot/evaluation design and adds point-in-time context computation in `tradex/market/context.py`.
 
