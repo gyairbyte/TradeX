@@ -311,7 +311,7 @@ Key design choices:
 - `production_promotion_eligible` is always `false` because the universe is not point-in-time.
 - For Schwab, the adjustment policy is `provider_default`: the provider-returned daily candles are used as-is, the study does not apply additional split or dividend adjustment, and the exact corporate-action methodology is not independently verified beyond the provider contract.
 
-**Valid outcome:** A study may conclude `supported`, `rejected`, or `inconclusive`; regardless, the result is research-only and does not promote pattern matching into production scoring, ranking, eligibility, or automatic alerts.
+**Completed local Schwab study:** The locked PATTERN-001 study was run on the full `MINING_UNIVERSE` using Schwab daily candles. The result was **`rejected`** for both run-up and decline at the 10 bps/side decision cost, with `production_promotion_eligible=false`. The sanitized aggregate safe-handoff bundle is preserved at `docs/research/artifacts/PATTERN-001/2026-08-03-9ea40e85/` and summarized in `docs/research/PATTERN-001.md`. No matcher parameters were changed, and pattern matching remains quarantined from production scoring, ranking, eligibility, and automatic alerts.
 
 ### Short-term market context research (SHORT-001)
 

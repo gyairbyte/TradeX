@@ -480,8 +480,9 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Validate pattern matcher before dashboard promotion
 - **Category:** Backtesting
 - **Priority:** Medium
-- **Status:** Blocked — production quarantine and research infrastructure complete; local read-only Schwab study pending.
+- **Status:** Completed
 - **Resolved by:** `devin/validate-pattern-matcher`
+- **Real Schwab study result:** The locked PATTERN-001 Schwab study completed with run-up `rejected`, decline `rejected`, and `production_promotion_eligible=false`. Sanitized safe-handoff artifacts are at `docs/research/artifacts/PATTERN-001/2026-08-03-9ea40e85/`.
 - **Problem statement:** Pattern matcher uses Pearson correlation vs. a fingerprint but has not been validated for predictive value.
 - **Recommended action:** Run an out-of-sample backtest; if it fails to add value, move pattern match to a research/experiment tab.
 - **Reason:** Correlation to a historical average is not a trade signal without empirical support.
@@ -648,7 +649,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 | Low | 5 | DOC-001: Fix documentation drift |
 
 **Recommended next pull request order:**
-1. `devin/centralize-config` (ARCH-001) — PATTERN-001 is blocked pending ChatGPT review of the local read-only Schwab study.
-2. `devin/add-initial-adrs` (DEC-001) — deferred behind remaining medium-priority trust work.
+1. `devin/centralize-config` (ARCH-001).
+2. `devin/add-initial-adrs` (DEC-001).
 3. `devin/improve-long-term-score` (LONG-001).
 

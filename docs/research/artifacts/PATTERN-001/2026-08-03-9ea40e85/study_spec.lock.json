@@ -1,0 +1,110 @@
+{
+  "adjustment_policy": "provider_default",
+  "baseline_definition": "frequency_matched",
+  "bootstrap": {
+    "method": "ticker-cluster",
+    "resamples": 5000,
+    "seed": 20260803
+  },
+  "commission_bps": 0.0,
+  "dataset_name": "pattern-similarity-validation",
+  "decision_slippage_bps": 10.0,
+  "decline_pct": 12.0,
+  "end_date": "2026-07-31",
+  "event_types": [
+    "runup",
+    "decline"
+  ],
+  "holding_days": 5,
+  "lookback_days": 10,
+  "max_ticker_concentration": 0.2,
+  "min_events": 20,
+  "minimum_holdout_signals": 100,
+  "minimum_lift_bps": 25.0,
+  "minimum_tickers": 15,
+  "minimum_validation_signals": 100,
+  "move_days": 5,
+  "production_promotion_eligible": false,
+  "profile": "standard",
+  "provider": "schwab",
+  "random_seed": 20260803,
+  "research_test_mode": false,
+  "runup_pct": 15.0,
+  "schema_version": 1,
+  "series_weights": {
+    "bb_width": 0.1,
+    "macd_diff": 0.1,
+    "price_pct": 0.35,
+    "rsi": 0.15,
+    "volume_ratio": 0.3
+  },
+  "similarity_threshold": 75.0,
+  "slippage_scenarios_bps": [
+    0.0,
+    5.0,
+    10.0
+  ],
+  "splits": {
+    "development": {
+      "end": "2021-12-31",
+      "start": "2018-01-02"
+    },
+    "holdout": {
+      "end": "2026-07-31",
+      "start": "2024-01-02"
+    },
+    "validation": {
+      "end": "2023-12-29",
+      "start": "2022-01-03"
+    }
+  },
+  "start_date": "2018-01-02",
+  "tickers": [
+    "AAPL",
+    "MSFT",
+    "NVDA",
+    "GOOGL",
+    "AMZN",
+    "META",
+    "TSLA",
+    "AVGO",
+    "ORCL",
+    "AMD",
+    "JPM",
+    "BAC",
+    "GS",
+    "MS",
+    "BLK",
+    "SCHW",
+    "C",
+    "WFC",
+    "UNH",
+    "LLY",
+    "JNJ",
+    "ABBV",
+    "MRK",
+    "PFE",
+    "TMO",
+    "CAT",
+    "DE",
+    "XOM",
+    "CVX",
+    "COP",
+    "PLTR",
+    "CRWD",
+    "NET",
+    "SNOW",
+    "DDOG",
+    "ARM",
+    "SMCI",
+    "MU",
+    "MSTR",
+    "SPY",
+    "QQQ",
+    "SOXL",
+    "TQQQ",
+    "ARKK"
+  ],
+  "universe_classification": "fixed_convenience_cohort_not_point_in_time",
+  "universe_hash": "554c6933750be1f10716ce45912e70ff6c963cc190157f730ef1d7ddbd850404"
+}

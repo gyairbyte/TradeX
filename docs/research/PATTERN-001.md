@@ -85,6 +85,61 @@ uv --system-certs run python -m tradex.research.pattern_validation evaluate `
 
 For Schwab, the study uses the provider-returned daily candles as-is. The `adjustment_policy` field is set to `provider_default`; the study does not apply additional split or dividend adjustment, and the exact corporate-action methodology is not independently verified beyond the provider contract.
 
+## Real Schwab study results
+
+The locked local Schwab study was completed on the `MINING_UNIVERSE` using exact head `6035a7d7e4c7b4c31eb2c5bad34d809a0ce559e0`. The sanitized aggregate safe-handoff bundle is preserved at `docs/research/artifacts/PATTERN-001/2026-08-03-9ea40e85/`.
+
+### Verified identifiers
+
+| Identifier | Value |
+|---|---|
+| ZIP SHA-256 | `b0171d7e221c4e21e808eca0ffa27dba30d7ef7a835598133c3ef63cd1e5e424` |
+| Study-spec SHA-256 | `68a3d59cf4b06f21889207dde67e217d2a61916ec7c331adb9fe629c521bf8c7` |
+| Manifest SHA-256 | `9ea40e85d3c2388ec33f582988a79e66b8f0e5d18a04800c714db358db3080ef` |
+| Universe SHA-256 | `554c6933750be1f10716ce45912e70ff6c963cc190157f730ef1d7ddbd850404` |
+| Provider | `schwab` |
+| Date range | `2018-01-02` to `2026-07-31` |
+| Requested / successful / failed tickers | `44 / 44 / 0` |
+| Validated daily bars | `90,825` |
+| Invalid OHLC rows removed | `13` across `12` tickers |
+
+### Development fingerprints
+
+| Event type | Events | Tickers | Fingerprint SHA-256 |
+|---|---|---|---|
+| Run-up | `274` | `41` | `dfda89180393330da667f005db90cb1d0b49e80b37ea6a4982b13ab9030661e9` |
+| Decline | `322` | `42` | `35c632dcb4b5f245851c111dfb05c3a8d1cf6633c07741f89a54e273ed3e3ba1` |
+
+### Locked-study results at 10 bps per side
+
+**Run-up**
+
+- Validation: `170` signals / `42` tickers; mean net return `-0.071576%`; lift `+7.072294 bps`; lift CI `[-95.613019, 123.821956]`
+- Holdout: `234` signals / `44` tickers; mean net return `+0.258650%`; lift `+10.238333 bps`; lift CI `[-103.220270, 124.515187]`
+- Classification: `rejected`
+
+**Decline**
+
+- Validation: `1,816` signals / `43` tickers; mean signed net return `-1.343259%`; lift `-98.634383 bps`; lift CI `[-151.294198, -45.900568]`
+- Holdout: `2,341` signals / `44` tickers; mean signed net return `-0.979449%`; lift `-21.393567 bps`; lift CI `[-54.078555, 12.556656]`
+- Classification: `rejected`
+
+### Overall decision
+
+- **Overall classification:** `rejected`
+- **Run-up classification:** `rejected`
+- **Decline classification:** `rejected`
+- **`production_promotion_eligible`:** `false`
+- **`research_test_mode`:** `false`
+
+### Product decisions
+
+- Keep automatic pattern-match alerts disabled.
+- Keep the dashboard Pattern Similarity tab and matcher output explicitly experimental/non-predictive.
+- Do not add pattern similarity to production scoring, ranking, eligibility, or confluence.
+- Do not tune matcher weights, thresholds, profiles, event definitions, lookbacks, holding periods, or universe from these results.
+- Do not introduce an automatic inversion or alternative strategy without a separate approved study.
+
 ## Interpretation of results
 
 A result of `supported`, `rejected`, or `inconclusive` is research-only. Because the universe is a fixed convenience cohort rather than a point-in-time index, the result cannot be promoted to production pattern-match alerts, scoring, ranking, or eligibility.

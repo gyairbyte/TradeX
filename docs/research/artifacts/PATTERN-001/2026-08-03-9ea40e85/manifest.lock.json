@@ -1,0 +1,937 @@
+{
+  "adjustment_policy": "provider_default",
+  "created_at": "2026-08-04T01:12:11.616408+00:00",
+  "dataset_name": "pattern-similarity-validation",
+  "entries": [
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "AAPL.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 0,
+        "missing_required_values": 0
+      },
+      "rows": 2156,
+      "sha256": "1345e7515b9c7884c0727ec1472a6ff19a9d642b27d83603e3877011a4779ab7",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "AAPL",
+      "warnings": []
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "MSFT.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 0,
+        "missing_required_values": 0
+      },
+      "rows": 2156,
+      "sha256": "b1e064e21a89ecede4c8e07049a3862debfc033517b332cb217d4cef23640e8e",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "MSFT",
+      "warnings": []
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "NVDA.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 0,
+        "missing_required_values": 0
+      },
+      "rows": 2156,
+      "sha256": "185121b8b513bafba66ac0b57fa2cefd2fdc89a2daa7e1e37ad5ce89ce1d6ae8",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "NVDA",
+      "warnings": []
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "GOOGL.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 0,
+        "missing_required_values": 0
+      },
+      "rows": 2156,
+      "sha256": "af2189b71d61fc831319950a70d74846ba375ab0d13730a73a8520d57d1b1c81",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "GOOGL",
+      "warnings": []
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "AMZN.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 0,
+        "missing_required_values": 0
+      },
+      "rows": 2156,
+      "sha256": "018938b2f7252cf1f02e2b105424e87c3f6cdbff3ee6a6de25dab640e8c209d2",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "AMZN",
+      "warnings": []
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "META.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 0,
+        "missing_required_values": 0
+      },
+      "rows": 2156,
+      "sha256": "729e74185e693bdfe7f15f5c9f1bcd215cba11163beb2a4faf818860c5521d35",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "META",
+      "warnings": []
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "TSLA.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 0,
+        "missing_required_values": 0
+      },
+      "rows": 2156,
+      "sha256": "e7402b935918ffc49306ab99700cbd09762aa10c9813ec536e71a7d9156faf8c",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "TSLA",
+      "warnings": []
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "AVGO.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 0,
+        "missing_required_values": 0
+      },
+      "rows": 2156,
+      "sha256": "8bb95d486ad3b876516ca85ccf1e6eec6f0854807a9f01569c710067237261d2",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "AVGO",
+      "warnings": []
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "ORCL.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 0,
+        "missing_required_values": 0
+      },
+      "rows": 2156,
+      "sha256": "5ed6491c4be1e40db708952ffab7b4f8d067ecf790a6a596bf25e678f08f9d9c",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "ORCL",
+      "warnings": []
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "AMD.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 0,
+        "missing_required_values": 0
+      },
+      "rows": 2156,
+      "sha256": "9f983912853ff1b2eda93078647fd573a4034ee1ddf3c2567ee728d24d94a46d",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "AMD",
+      "warnings": []
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "JPM.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 1,
+        "missing_required_values": 0
+      },
+      "rows": 2155,
+      "sha256": "1351af4ca807c02436e0bec1c3abb072c2adbd0f16e14ab134fdd1efe9c3bf28",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "JPM",
+      "warnings": [
+        "invalid_ohlc_rows: 1"
+      ]
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "BAC.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 1,
+        "missing_required_values": 0
+      },
+      "rows": 2155,
+      "sha256": "773046bd00092a317e51d124a2a765b5c81ce12dbb53e10610b0d70cda3d0a43",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "BAC",
+      "warnings": [
+        "invalid_ohlc_rows: 1"
+      ]
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "GS.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 0,
+        "missing_required_values": 0
+      },
+      "rows": 2156,
+      "sha256": "ee23c08de9124651a0e0a597f8cf92ddb078d46b857a1b9ec19ab183806e60f2",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "GS",
+      "warnings": []
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "MS.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 1,
+        "missing_required_values": 0
+      },
+      "rows": 2155,
+      "sha256": "c12f0a45e12850510b73fd996c3eb89af8036566bfaa37be6e6400efece91999",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "MS",
+      "warnings": [
+        "invalid_ohlc_rows: 1"
+      ]
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "BLK.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 0,
+        "missing_required_values": 0
+      },
+      "rows": 2156,
+      "sha256": "657d6991970a5f204c5347679d233d978203baeeb21ee60d0a072aa3c51313e1",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "BLK",
+      "warnings": []
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "SCHW.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 0,
+        "missing_required_values": 0
+      },
+      "rows": 2156,
+      "sha256": "f68aeef733d3ed9c1fff0bea2c7a8b7f82f7aa9942f06c337f03dfb328102f84",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "SCHW",
+      "warnings": []
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "C.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 0,
+        "missing_required_values": 0
+      },
+      "rows": 2156,
+      "sha256": "ae3d5d6ea1eddccc3c2501de2b9500892c67ea48158f82dee580d650577b70c9",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "C",
+      "warnings": []
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "WFC.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 2,
+        "missing_required_values": 0
+      },
+      "rows": 2154,
+      "sha256": "f666742aba143e233da868d76147ba979839e4a2b90713162029d1274e719a09",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "WFC",
+      "warnings": [
+        "invalid_ohlc_rows: 2"
+      ]
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "UNH.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 0,
+        "missing_required_values": 0
+      },
+      "rows": 2156,
+      "sha256": "936390e91708dcf7579b587b4aa1becb50c8010f972e8e4ff8da69388a1e309b",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "UNH",
+      "warnings": []
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "LLY.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 0,
+        "missing_required_values": 0
+      },
+      "rows": 2156,
+      "sha256": "0a090b3bd790d588dd2c6dbd210b104ecd74e770f502e2053197740dc0f362f8",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "LLY",
+      "warnings": []
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "JNJ.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 1,
+        "missing_required_values": 0
+      },
+      "rows": 2155,
+      "sha256": "edb68fe70b75bd0c309712c61c4c918b31d70ee863483d05ec72f3ca3142440b",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "JNJ",
+      "warnings": [
+        "invalid_ohlc_rows: 1"
+      ]
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "ABBV.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 0,
+        "missing_required_values": 0
+      },
+      "rows": 2156,
+      "sha256": "bcbfb5d7a74adcfe104756e94ace530f91d5dab85eacf8e2081b34c813c16637",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "ABBV",
+      "warnings": []
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "MRK.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 0,
+        "missing_required_values": 0
+      },
+      "rows": 2156,
+      "sha256": "65171d002d7fe35db219616c11bba6cd4603677aab60d7cf748d332651749fbf",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "MRK",
+      "warnings": []
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "PFE.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 0,
+        "missing_required_values": 0
+      },
+      "rows": 2156,
+      "sha256": "a11f52e67b1706d006b34a431f9205afb39b1b5c7202ef02a7e88ef6eaf70ae6",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "PFE",
+      "warnings": []
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "TMO.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 0,
+        "missing_required_values": 0
+      },
+      "rows": 2156,
+      "sha256": "e709cd44a70c6305d5c801b7395f27d0a89db06150a07dca5d5f63360363b4fa",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "TMO",
+      "warnings": []
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "CAT.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 1,
+        "missing_required_values": 0
+      },
+      "rows": 2155,
+      "sha256": "c4abbab891c90ca8f0d7677300ea426bf6d90fcb007665b2f977e1039336a983",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "CAT",
+      "warnings": [
+        "invalid_ohlc_rows: 1"
+      ]
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "DE.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 1,
+        "missing_required_values": 0
+      },
+      "rows": 2155,
+      "sha256": "a714fc02b9ac66b7573e8452882b361fc218a41c6ea01062a3e6381d070abcb7",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "DE",
+      "warnings": [
+        "invalid_ohlc_rows: 1"
+      ]
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "XOM.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 1,
+        "missing_required_values": 0
+      },
+      "rows": 2155,
+      "sha256": "35a81a7b8d2d348f457457e23f80a3c8d9111f9f9b8ed3be3c61ddc036c980e5",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "XOM",
+      "warnings": [
+        "invalid_ohlc_rows: 1"
+      ]
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "CVX.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 1,
+        "missing_required_values": 0
+      },
+      "rows": 2155,
+      "sha256": "7241a0d55154e1d338e07b36b2900729bcb3566e7fe3f61064dbe4ca9817472d",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "CVX",
+      "warnings": [
+        "invalid_ohlc_rows: 1"
+      ]
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "COP.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 1,
+        "missing_required_values": 0
+      },
+      "rows": 2155,
+      "sha256": "1e8f0a9dda0f7e2b17d2ef0b986a7ab89b8883873e25b77fd22320ddc4be2a14",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "COP",
+      "warnings": [
+        "invalid_ohlc_rows: 1"
+      ]
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "PLTR.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 1,
+        "missing_required_values": 0
+      },
+      "rows": 1464,
+      "sha256": "f170807407cfa31c84f74df7099a35451f1fa0a4804623d39045c27290ca10dc",
+      "start": "2020-09-30T05:00:00+00:00",
+      "ticker": "PLTR",
+      "warnings": [
+        "invalid_ohlc_rows: 1"
+      ]
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "CRWD.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 0,
+        "missing_required_values": 0
+      },
+      "rows": 1794,
+      "sha256": "4e520d75eee6cf8de1fdb8da297618e43baa4b96fceca12dfb5bc6bf9fcdee91",
+      "start": "2019-06-12T05:00:00+00:00",
+      "ticker": "CRWD",
+      "warnings": []
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "NET.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 0,
+        "missing_required_values": 0
+      },
+      "rows": 1729,
+      "sha256": "be1613b8f3f0bf2464eb1d43fa4b619d47009ac35216fd28fbf824ecb41e95ac",
+      "start": "2019-09-13T05:00:00+00:00",
+      "ticker": "NET",
+      "warnings": []
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "SNOW.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 0,
+        "missing_required_values": 0
+      },
+      "rows": 1475,
+      "sha256": "4e21557eba67cccd5050555a346a7a2b5bb7f300b2dd2156c1e2abbcbb7a1965",
+      "start": "2020-09-16T05:00:00+00:00",
+      "ticker": "SNOW",
+      "warnings": []
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "DDOG.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 0,
+        "missing_required_values": 0
+      },
+      "rows": 1725,
+      "sha256": "cfd8f21ca6ed2a1454e55a73d971a6f35e0b2daf653997f407bd33064c918592",
+      "start": "2019-09-19T05:00:00+00:00",
+      "ticker": "DDOG",
+      "warnings": []
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "ARM.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 0,
+        "missing_required_values": 0
+      },
+      "rows": 722,
+      "sha256": "9e6af302f1586705408382b0867e9739600c8c52600727a379c10ff235c66abf",
+      "start": "2023-09-14T05:00:00+00:00",
+      "ticker": "ARM",
+      "warnings": []
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "SMCI.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 0,
+        "missing_required_values": 0
+      },
+      "rows": 2156,
+      "sha256": "677eb101aeda977bd607ac01d3d0818e0823ef1197c195634d6e2daf5aa38bf0",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "SMCI",
+      "warnings": []
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "MU.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 0,
+        "missing_required_values": 0
+      },
+      "rows": 2156,
+      "sha256": "f336ffee3d56106f0b4a163bdd0df293726da549377c0b3bbd74f238cc19f78f",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "MU",
+      "warnings": []
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "MSTR.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 0,
+        "missing_required_values": 0
+      },
+      "rows": 2156,
+      "sha256": "d1f07ba0e6534c47dc950c1dfb0dd8bb3a8f3ba546ba1b83b0178a561c0c3047",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "MSTR",
+      "warnings": []
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "SPY.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 0,
+        "missing_required_values": 0
+      },
+      "rows": 2156,
+      "sha256": "95b8bbfb6eb5ccbb0ccb6c1a35873ea1395e90984ff55063d2f91e7b3500db47",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "SPY",
+      "warnings": []
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "QQQ.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 0,
+        "missing_required_values": 0
+      },
+      "rows": 2156,
+      "sha256": "d197df7ce4bd66cd8e181d86f86d6635a5dd0f454dba66771305615f4511d727",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "QQQ",
+      "warnings": []
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "SOXL.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 1,
+        "missing_required_values": 0
+      },
+      "rows": 2155,
+      "sha256": "960edc75404c6f08a966b8b309fc853ce67ac2fa82c4369a611a8e79de9fc8b8",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "SOXL",
+      "warnings": [
+        "invalid_ohlc_rows: 1"
+      ]
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "TQQQ.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 0,
+        "missing_required_values": 0
+      },
+      "rows": 2156,
+      "sha256": "08d115d3b65c292f9e6425022014f8d253eab1e6e87586dd88734f30dfc0e9c7",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "TQQQ",
+      "warnings": []
+    },
+    {
+      "adjustment_policy": "provider_default",
+      "data_source": "schwab",
+      "end": "2026-07-31T05:00:00+00:00",
+      "failure": null,
+      "path": "ARKK.csv",
+      "quality": {
+        "bars_outside_range": 0,
+        "duplicate_timestamps": 0,
+        "invalid_ohlc_rows": 0,
+        "missing_required_values": 0
+      },
+      "rows": 2156,
+      "sha256": "6b4085b3c19e867d6432c34139fefa68fbf4518b2b372c4afa8757bd67e68e87",
+      "start": "2018-01-02T06:00:00+00:00",
+      "ticker": "ARKK",
+      "warnings": []
+    }
+  ],
+  "failed_tickers": [],
+  "failure_categories": [],
+  "manifest_sha256": "9ea40e85d3c2388ec33f582988a79e66b8f0e5d18a04800c714db358db3080ef",
+  "provider": "schwab",
+  "request_end": "2026-07-31",
+  "request_start": "2018-01-02",
+  "requested_tickers": [
+    "AAPL",
+    "MSFT",
+    "NVDA",
+    "GOOGL",
+    "AMZN",
+    "META",
+    "TSLA",
+    "AVGO",
+    "ORCL",
+    "AMD",
+    "JPM",
+    "BAC",
+    "GS",
+    "MS",
+    "BLK",
+    "SCHW",
+    "C",
+    "WFC",
+    "UNH",
+    "LLY",
+    "JNJ",
+    "ABBV",
+    "MRK",
+    "PFE",
+    "TMO",
+    "CAT",
+    "DE",
+    "XOM",
+    "CVX",
+    "COP",
+    "PLTR",
+    "CRWD",
+    "NET",
+    "SNOW",
+    "DDOG",
+    "ARM",
+    "SMCI",
+    "MU",
+    "MSTR",
+    "SPY",
+    "QQQ",
+    "SOXL",
+    "TQQQ",
+    "ARKK"
+  ],
+  "schema_version": 1,
+  "source_description": "offline OHLCV snapshots",
+  "splits": {
+    "development": {
+      "end": "2021-12-31",
+      "start": "2018-01-02"
+    },
+    "holdout": {
+      "end": "2026-07-31",
+      "start": "2024-01-02"
+    },
+    "validation": {
+      "end": "2023-12-29",
+      "start": "2022-01-03"
+    }
+  },
+  "successful_tickers": [
+    "AAPL",
+    "MSFT",
+    "NVDA",
+    "GOOGL",
+    "AMZN",
+    "META",
+    "TSLA",
+    "AVGO",
+    "ORCL",
+    "AMD",
+    "JPM",
+    "BAC",
+    "GS",
+    "MS",
+    "BLK",
+    "SCHW",
+    "C",
+    "WFC",
+    "UNH",
+    "LLY",
+    "JNJ",
+    "ABBV",
+    "MRK",
+    "PFE",
+    "TMO",
+    "CAT",
+    "DE",
+    "XOM",
+    "CVX",
+    "COP",
+    "PLTR",
+    "CRWD",
+    "NET",
+    "SNOW",
+    "DDOG",
+    "ARM",
+    "SMCI",
+    "MU",
+    "MSTR",
+    "SPY",
+    "QQQ",
+    "SOXL",
+    "TQQQ",
+    "ARKK"
+  ]
+}
