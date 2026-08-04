@@ -393,8 +393,8 @@ def test_conclusion_supports_further_research() -> None:
     """When all gates are met, the conclusion is supports_further_research."""
     spec = _sample_spec(
         minimum_signals=1,
-        minimum_stock_tickers=0,
-        minimum_etf_tickers=0,
+        minimum_stock_tickers=1,
+        minimum_etf_tickers=1,
         minimum_lift_bps=1.0,
         q10_support_max_worse_bps=1000.0,
     )
@@ -421,8 +421,97 @@ def test_conclusion_supports_further_research() -> None:
             "holdout": {"ci_lower": 0.1},
         },
     }
-    result = lte._derive_conclusion(pd.DataFrame(), pd.DataFrame(), summary, spec)
+    trades = pd.DataFrame({
+        "ticker": ["AAPL", "AAPL", "QQQ", "QQQ"],
+        "split": ["holdout", "holdout", "holdout", "holdout"],
+        "rule": ["candidate", "baseline", "candidate", "baseline"],
+        "overlap_policy": ["non_overlapping"] * 4,
+    })
+    result = lte._derive_conclusion(pd.DataFrame(), trades, summary, spec)
     assert result == "supports_further_research"
+
+
+def test_conclusion_support_uses_trades_not_events() -> None:
+    """The support cohort gate must count non-overlapping trades, not events."""
+    spec = _sample_spec(
+        minimum_signals=1,
+        minimum_stock_tickers=1,
+        minimum_etf_tickers=1,
+        minimum_lift_bps=1.0,
+        q10_support_max_worse_bps=1000.0,
+    )
+    summary = {
+        "split_stats": {
+            "validation": {
+                "sample_present": True,
+                "candidate": {"mean_net_return_pct": 2.0},
+                "baseline": {"mean_net_return_pct": 1.0},
+            },
+            "holdout": {
+                "sample_present": True,
+                "candidate": {"count": 10, "mean_net_return_pct": 2.0},
+                "baseline": {"count": 10, "mean_net_return_pct": 1.0},
+                "pooled_lift_at_cost_sensitivity_pct": 0.5,
+                "q10_lift_pct": 0.0,
+                "positive_lift_fraction_stock": 1.0,
+                "positive_lift_fraction_etf": 1.0,
+            },
+        },
+        "bootstrap_stats": {
+            "holdout": {"ci_lower": 0.1},
+        },
+    }
+    # Events claim to have non-overlapping holdout coverage for stock + ETF,
+    # but the actual non-overlapping trade records are missing.
+    events = pd.DataFrame({
+        "ticker": ["AAPL", "AAPL", "QQQ", "QQQ"],
+        "split": ["holdout", "holdout", "holdout", "holdout"],
+        "rule": ["candidate", "baseline", "candidate", "baseline"],
+        "overlap_policy": ["non_overlapping"] * 4,
+    })
+    result = lte._derive_conclusion(events, pd.DataFrame(), summary, spec)
+    assert result == "inconclusive"
+
+
+def test_conclusion_support_fails_when_etf_underrepresented() -> None:
+    """The support gate is inconclusive when an ETF cohort is below its minimum."""
+    spec = _sample_spec(
+        minimum_signals=1,
+        minimum_stock_tickers=1,
+        minimum_etf_tickers=1,
+        minimum_lift_bps=1.0,
+        q10_support_max_worse_bps=1000.0,
+    )
+    summary = {
+        "split_stats": {
+            "validation": {
+                "sample_present": True,
+                "candidate": {"mean_net_return_pct": 2.0},
+                "baseline": {"mean_net_return_pct": 1.0},
+            },
+            "holdout": {
+                "sample_present": True,
+                "candidate": {"count": 10, "mean_net_return_pct": 2.0},
+                "baseline": {"count": 10, "mean_net_return_pct": 1.0},
+                "pooled_lift_at_cost_sensitivity_pct": 0.5,
+                "q10_lift_pct": 0.0,
+                "positive_lift_fraction_stock": 1.0,
+                "positive_lift_fraction_etf": 1.0,
+            },
+        },
+        "bootstrap_stats": {
+            "holdout": {"ci_lower": 0.1},
+        },
+    }
+    # Only stock tickers in holdout trades.
+    trades = pd.DataFrame({
+        "ticker": ["AAPL", "AAPL", "MSFT", "MSFT"],
+        "split": ["holdout", "holdout", "holdout", "holdout"],
+        "rule": ["candidate", "baseline", "candidate", "baseline"],
+        "overlap_policy": ["non_overlapping"] * 4,
+    })
+    result = lte._derive_conclusion(pd.DataFrame(), trades, summary, spec)
+    assert result == "inconclusive"
 
 
 def test_conclusion_reject_or_deprioritize() -> None:

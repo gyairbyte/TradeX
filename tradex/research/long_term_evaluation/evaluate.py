@@ -949,6 +949,30 @@ def _build_summary(events: pd.DataFrame, trades: pd.DataFrame, aggregates: dict[
     return _clean(summary)
 
 
+def _cohort_ticker_counts_from_trades(
+    trades: pd.DataFrame, spec: LongTermStudySpec
+) -> tuple[dict[str, int], dict[str, int]]:
+    """Return per-cohort ticker counts for candidate and baseline non-overlapping trades."""
+    candidate = {"stock": 0, "etf": 0}
+    baseline = {"stock": 0, "etf": 0}
+    if trades.empty:
+        return candidate, baseline
+
+    hold = trades[trades["split"] == "holdout"]
+    if hold.empty:
+        return candidate, baseline
+
+    for rule, target in (("candidate", candidate), ("baseline", baseline)):
+        sub = hold[hold["rule"] == rule]
+        if sub.empty:
+            continue
+        for ticker in sub["ticker"].unique():
+            cohort = spec.cohort_for(ticker)
+            if cohort in target:
+                target[cohort] += 1
+    return candidate, baseline
+
+
 def _derive_conclusion(events: pd.DataFrame, trades: pd.DataFrame, summary: dict[str, Any], spec: LongTermStudySpec) -> str:
     """Apply the predefined LONG-001 evidence gates."""
     hold = summary.get("split_stats", {}).get("holdout", {})
@@ -982,16 +1006,16 @@ def _derive_conclusion(events: pd.DataFrame, trades: pd.DataFrame, summary: dict
         or base.get("count", 0) < spec.minimum_signals
     ):
         return "inconclusive"
-    combined_tickers = set()
-    if not events.empty:
-        hold_df = events[(events["split"] == "holdout") & (events["overlap_policy"] == "non_overlapping")]
-        if not hold_df.empty:
-            combined_tickers = set(hold_df["ticker"].unique())
-    else:
-        combined_tickers = set()
-    stock_count = sum(1 for t in combined_tickers if spec.cohort_for(t) == "stock")
-    etf_count = sum(1 for t in combined_tickers if spec.cohort_for(t) == "etf")
-    if stock_count < spec.minimum_stock_tickers or etf_count < spec.minimum_etf_tickers:
+
+    # Cohort representation must be measured from the non-overlapping trade
+    # sample, not from overlapping event-study records.
+    candidate_tickers, baseline_tickers = _cohort_ticker_counts_from_trades(trades, spec)
+    if (
+        candidate_tickers["stock"] < spec.minimum_stock_tickers
+        or candidate_tickers["etf"] < spec.minimum_etf_tickers
+        or baseline_tickers["stock"] < spec.minimum_stock_tickers
+        or baseline_tickers["etf"] < spec.minimum_etf_tickers
+    ):
         return "inconclusive"
 
     # Support gates.
