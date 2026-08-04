@@ -1,0 +1,4 @@
+split,rule_pair,horizon_weeks,slippage_bps,count,cluster_count,mean_diff_pct,ci_lower,ci_upper
+development,candidate_minus_baseline,13,5.0,1832,294,0.1807242108268395,-0.30487573372875765,0.6629576813503021
+holdout,candidate_minus_baseline,13,5.0,1229,209,0.4797162288185271,-0.37371720923212964,1.3293459532086846
+validation,candidate_minus_baseline,13,5.0,1023,168,1.11994708831512,0.21398298520270648,2.1293752688231455
