@@ -55,7 +55,7 @@ def test_evaluate_offline_end_to_end(tmp_path: Path):
 def test_snapshot_mocked_end_to_end(tmp_path: Path):
     out = tmp_path / "dataset"
 
-    def fake_history(ticker, start, end, provider=None):
+    def fake_history(ticker, start, end, provider=None, *, settings=None):
         idx = pd.date_range("2020-01-01", periods=120, freq="D", tz="UTC")
         return pd.DataFrame(
             {

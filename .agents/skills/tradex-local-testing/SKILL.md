@@ -76,6 +76,7 @@ Mock all provider and network boundaries.
 uv sync --extra dev --extra all
 uv run ruff check tests scripts
 uv run pytest tests -q
+uv run pytest tests/config -q
 ```
 
 ## Watcher CLI
@@ -128,6 +129,24 @@ Alert cooldown verification should confirm:
 - `datetime` validation rejects naive values and uses timezone-aware UTC internally.
 - `python -m tradex.tracker.watcher --help` works with no credentials and creates no alert state database.
 - Pattern matching is quarantined from automatic alerts; the watcher does not call `run_match_screen()` or `alert_pattern_match()`.
+
+## Configuration boundary
+
+Centralized runtime configuration lives in `tradex/config.py`:
+
+- `settings_from_mapping(values)` — pure builder from a dict; no `.env` or `os.environ` reads.
+- `load_runtime_settings(dotenv_path=None)` — call-time loader that reads `.env` once, then `os.environ` overrides, without mutating the process environment.
+
+All public entry points accept an optional `settings: TradeXSettings | None` keyword. When omitted they call `load_runtime_settings()` at call time, so `tradex/` modules are import-safe.
+
+Run the configuration and import-safety focused suites:
+
+```bash
+uv run pytest tests/config -q
+uv run python -m tradex.tracker.watcher --help
+```
+
+No `.env` file or credentials should be required to import `tradex.data.fetcher`, `tradex.alerts.notifier`, `tradex.options.flow`, `tradex.tracker.watcher`, or `tradex.ui.dashboard`.
 
 ## Backtest CLI
 

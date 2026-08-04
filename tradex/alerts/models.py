@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import math
-import os
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -191,18 +190,19 @@ class AlertCooldownConfig:
         _validate_minutes(self.gap_minutes, "gap_minutes")
 
     @classmethod
-    def from_env(cls) -> AlertCooldownConfig:
-        """Build a configuration from environment variables.
+    def from_mapping(cls, values: Mapping[str, str]) -> AlertCooldownConfig:
+        """Build a configuration from a plain ``{key: value}`` mapping.
 
-        Invalid values raise ValueError so watcher startup fails visibly.
+        Invalid values raise ``ValueError`` so watcher startup fails visibly.
+        This is the pure constructor that does not read the environment.
         """
-        enabled = _parse_env_bool(os.getenv("ALERT_COOLDOWN_ENABLED"), True)
+        enabled = _parse_env_bool(values.get("ALERT_COOLDOWN_ENABLED"), True)
         default_minutes = _parse_env_minutes(
-            os.getenv("ALERT_COOLDOWN_MINUTES", "60"), "ALERT_COOLDOWN_MINUTES"
+            values.get("ALERT_COOLDOWN_MINUTES", "60"), "ALERT_COOLDOWN_MINUTES"
         )
 
         def _opt(name: str) -> int | None:
-            raw = os.getenv(name)
+            raw = values.get(name)
             if raw is None:
                 return None
             return _parse_env_minutes(raw, name)
@@ -214,8 +214,18 @@ class AlertCooldownConfig:
             confluence_minutes=_opt("ALERT_CONFLUENCE_COOLDOWN_MINUTES"),
             pattern_minutes=_opt("ALERT_PATTERN_COOLDOWN_MINUTES"),
             gap_minutes=_opt("ALERT_GAP_COOLDOWN_MINUTES"),
-            state_path=_parse_env_path(os.getenv("ALERT_STATE_PATH"), Path("~/.tradex/alerts.db")),
+            state_path=_parse_env_path(values.get("ALERT_STATE_PATH"), Path("~/.tradex/alerts.db")),
         )
+
+    @classmethod
+    def from_env(cls) -> AlertCooldownConfig:
+        """Build a configuration from runtime environment variables.
+
+        Kept for backward compatibility; delegates to the centralized loader.
+        """
+        from tradex.config import load_runtime_settings
+
+        return load_runtime_settings().alert_cooldown
 
     def cooldown_minutes_for(self, key: AlertKey) -> int | None:
         """Effective cooldown duration for ``key`` in minutes, or None if disabled."""
@@ -235,7 +245,7 @@ class AlertCooldownConfig:
     @property
     def resolved_state_path(self) -> Path:
         """Return the state path with ``~`` expanded."""
-        return Path(os.path.expanduser(str(self.state_path)))
+        return self.state_path.expanduser()
 
 
 def _sanitize_channel_results(results: Any) -> dict[str, bool]:

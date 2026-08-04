@@ -24,7 +24,8 @@ import json
 import numpy as np
 import pandas as pd
 
-from tradex.data.fetcher import DEFAULT_PROVIDER, fetch
+from tradex.config import TradeXSettings, load_runtime_settings
+from tradex.data.fetcher import fetch
 from tradex.signals.indicators import add_indicators
 from tradex.patterns.fingerprint import load_fingerprint
 from tradex.patterns.config import PatternConfig, PROFILES
@@ -59,13 +60,19 @@ def _series_similarity(live: list[float], fp_mean: list[float]) -> float:
     return round((corr + 1) / 2 * 100, 1)
 
 
-def _extract_live_window(ticker: str, lookback_days: int, provider: str | None = None) -> dict | None:
+def _extract_live_window(
+    ticker: str,
+    lookback_days: int,
+    provider: str | None = None,
+    *,
+    settings: TradeXSettings | None = None,
+) -> dict | None:
     """
     Fetch the most recent `lookback_days` bars and extract normalized series.
     Uses intraday→short→long fallback depending on available data.
     """
     try:
-        df = fetch(ticker, "short", provider=provider)
+        df = fetch(ticker, "short", provider=provider, settings=settings)
         df = add_indicators(df).dropna()
     except Exception as e:
         return None
@@ -94,6 +101,8 @@ def match_ticker(
     event_type: str = "runup",
     profile: str = "standard",
     provider: str | None = None,
+    *,
+    settings: TradeXSettings | None = None,
 ) -> dict:
     """
     Compare a ticker's current pattern against the stored fingerprint.
@@ -104,8 +113,10 @@ def match_ticker(
         match_tier       : "strong" | "moderate" | "weak"
         interpretation   : plain-English description
     """
-    effective_source = (provider or DEFAULT_PROVIDER).lower()
-    fp = load_fingerprint(event_type, profile, source=provider)
+    if settings is None:
+        settings = load_runtime_settings()
+    effective_source = (provider or settings.data.data_provider).lower()
+    fp = load_fingerprint(event_type, profile, source=provider, settings=settings)
     if fp is None:
         return {
             "ticker": ticker, "event_type": event_type, "profile": profile,
@@ -115,7 +126,7 @@ def match_ticker(
         }
 
     lookback = fp["lookback_days"]
-    live = _extract_live_window(ticker, lookback, provider=provider)
+    live = _extract_live_window(ticker, lookback, provider=provider, settings=settings)
     if live is None:
         return {
             "ticker": ticker, "event_type": event_type, "profile": profile,
@@ -172,6 +183,8 @@ def run_match_screen(
     profile: str = "standard",
     min_similarity: float | None = None,
     provider: str | None = None,
+    *,
+    settings: TradeXSettings | None = None,
 ) -> pd.DataFrame:
     """
     Run pattern matching across a watchlist.
@@ -186,7 +199,9 @@ def run_match_screen(
     ]
     rows = []
     for ticker in tickers:
-        result = match_ticker(ticker, event_type=event_type, profile=profile, provider=provider)
+        result = match_ticker(
+            ticker, event_type=event_type, profile=profile, provider=provider, settings=settings
+        )
         if "error" not in result and result["similarity_score"] >= threshold:
             rows.append({
                 "ticker":            result["ticker"],

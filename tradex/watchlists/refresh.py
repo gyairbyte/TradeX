@@ -18,18 +18,13 @@ from __future__ import annotations
 
 import io
 import logging
-import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 
 import pandas as pd
 import requests
-from dotenv import load_dotenv
 
-# Load .env so SCHWAB_* credentials are available even when this module is
-# called from a context that hasn't already loaded them (scripts, notebooks).
-# Safe to call repeatedly.
-load_dotenv()
+from tradex.config import TradeXSettings, load_runtime_settings
 
 log = logging.getLogger(__name__)
 
@@ -138,12 +133,14 @@ def _fetch_yahoo_market_caps(tickers: list[str], max_workers: int = 12) -> dict[
     return caps
 
 
-def _fetch_schwab_market_caps(tickers: list[str]) -> dict[str, float]:
+def _fetch_schwab_market_caps(
+    tickers: list[str], *, settings: TradeXSettings | None = None
+) -> dict[str, float]:
     """Fetch market caps from Schwab FUNDAMENTAL data."""
     from tradex.data.fetcher import _get_schwab_client
 
     caps: dict[str, float] = {}
-    client = _get_schwab_client()
+    client = _get_schwab_client(settings=settings)
 
     batch_size = 100
     for i in range(0, len(tickers), batch_size):
@@ -168,12 +165,20 @@ def _fetch_schwab_market_caps(tickers: list[str]) -> dict[str, float]:
     return caps
 
 
-def _resolve_market_cap_source(source: str | None) -> str:
-    return (source or os.getenv("MARKET_CAP_DATA_SOURCE", "yahoo")).lower().strip()
+def _resolve_market_cap_source(
+    source: str | None, *, settings: TradeXSettings | None = None
+) -> str:
+    if settings is None:
+        settings = load_runtime_settings()
+    return (source or settings.market_cap_data_source).lower().strip()
 
 
 def fetch_market_caps(
-    tickers: list[str], source: str | None = None, max_workers: int = 12
+    tickers: list[str],
+    source: str | None = None,
+    max_workers: int = 12,
+    *,
+    settings: TradeXSettings | None = None,
 ) -> dict[str, float]:
     """Fetch market caps for ``tickers`` from an explicit source.
 
@@ -185,12 +190,12 @@ def fetch_market_caps(
     """
     from tradex.data.fetcher import ProviderCapabilityError
 
-    s = _resolve_market_cap_source(source)
+    s = _resolve_market_cap_source(source, settings=settings)
     if s == "yahoo":
         return _fetch_yahoo_market_caps(tickers, max_workers=max_workers)
     if s == "schwab":
         try:
-            return _fetch_schwab_market_caps(tickers)
+            return _fetch_schwab_market_caps(tickers, settings=settings)
         except ProviderCapabilityError:
             raise
         except Exception:
@@ -208,6 +213,8 @@ def _schwab_liquidity_filter(
     min_price: float = MIN_PRICE,
     min_avg_volume: int = MIN_AVG_VOLUME,
     batch_size: int = 100,
+    *,
+    settings: TradeXSettings | None = None,
 ) -> tuple[set[str], list[str]]:
     """Return (set of tickers passing filter, list of warnings).
 
@@ -220,7 +227,7 @@ def _schwab_liquidity_filter(
 
     warnings: list[str] = []
     try:
-        client = _get_schwab_client()
+        client = _get_schwab_client(settings=settings)
     except Exception:
         warnings.append(
             "Schwab not configured — skipping liquidity filter. "
@@ -279,8 +286,13 @@ def _schwab_liquidity_filter(
 
 
 def refresh_all(
-    top_n_per_sector: int = SECTOR_TOP_N, market_cap_source: str | None = None
+    top_n_per_sector: int = SECTOR_TOP_N,
+    market_cap_source: str | None = None,
+    *,
+    settings: TradeXSettings | None = None,
 ) -> RefreshResult:
+    if settings is None:
+        settings = load_runtime_settings()
     warnings: list[str] = []
 
     # ── Index lists (still useful as their own presets) ─────────────────────
@@ -309,9 +321,11 @@ def refresh_all(
         r1k_df = sp500_df.copy()
 
     # ── Market caps for SP100 ranking ───────────────────────────────────────
-    resolved_cap_source = _resolve_market_cap_source(market_cap_source)
+    resolved_cap_source = _resolve_market_cap_source(market_cap_source, settings=settings)
     try:
-        caps = fetch_market_caps(sp500_df["ticker"].tolist(), source=resolved_cap_source)
+        caps = fetch_market_caps(
+            sp500_df["ticker"].tolist(), source=resolved_cap_source, settings=settings
+        )
     except Exception:
         caps = {}
         warnings.append(f"Market-cap fetch failed for source '{resolved_cap_source}'")
@@ -323,7 +337,7 @@ def refresh_all(
 
     # ── Sector presets: Russell 1000 → liquidity filter → group by GICS ─────
     universe_tickers = r1k_df["ticker"].dropna().unique().tolist()
-    survivors, filter_warnings = _schwab_liquidity_filter(universe_tickers)
+    survivors, filter_warnings = _schwab_liquidity_filter(universe_tickers, settings=settings)
     warnings.extend(filter_warnings)
 
     filtered_df = r1k_df[r1k_df["ticker"].isin(survivors)].copy()

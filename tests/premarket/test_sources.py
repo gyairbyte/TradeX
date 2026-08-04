@@ -136,7 +136,7 @@ def test_compute_liquidity_baseline():
 def test_fetch_daily_liquidity_baseline_propagates_provider():
     captured = {}
 
-    def fake_daily_history(ticker, start, end, provider=None):
+    def fake_daily_history(ticker, start, end, provider=None, *, settings=None):
         captured["provider"] = provider
         dates = pd.date_range("2025-01-06", periods=1, freq="B")
         return pd.DataFrame(

@@ -13,6 +13,7 @@ from typing import Any
 import pandas as pd
 
 from tradex.backtest.validation import canonicalize_bars
+from tradex.config import TradeXSettings, load_runtime_settings
 from tradex.data.fetcher import resolve_provider
 from tradex.data.history import fetch_daily_history
 
@@ -32,6 +33,7 @@ def create_snapshot(
     splits: dict[str, tuple[str, str]],
     provider: str | None = None,
     overwrite: bool = False,
+    settings: TradeXSettings | None = None,
     dataset_name: str = "short-term-score-study",
     source_description: str = "offline OHLCV snapshots",
     adjustment_policy: str = "provider_default",
@@ -65,8 +67,9 @@ def create_snapshot(
     if end < start:
         raise ValidationError(f"End date {end} must be >= start date {start}")
 
-    explicit_provider = provider if provider is not None else os.getenv("DATA_PROVIDER", "yahoo")
-    resolved_provider = resolve_provider(explicit_provider)
+    if settings is None:
+        settings = load_runtime_settings()
+    resolved_provider = resolve_provider(provider, settings=settings)
 
     seen: set[str] = set()
     unique_tickers: list[str] = []
@@ -86,7 +89,9 @@ def create_snapshot(
     try:
         entries: list[ManifestEntry] = []
         for ticker in unique_tickers:
-            df = fetch_daily_history(ticker, start, end, provider=resolved_provider)
+            df = fetch_daily_history(
+                ticker, start, end, provider=resolved_provider, settings=settings
+            )
             if df is None or df.empty:
                 raise RuntimeError(f"No daily history returned for {ticker}")
 

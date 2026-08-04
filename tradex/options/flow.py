@@ -13,14 +13,13 @@ from __future__ import annotations
 
 import json
 import math
-import os
 from collections.abc import Mapping
 
 import pandas as pd
 import requests
 import yfinance as yf
-from dotenv import load_dotenv
 
+from tradex.config import TradeXSettings, load_runtime_settings
 from tradex.data.fetcher import (
     ProviderCapabilityError,
     ProviderError,
@@ -33,13 +32,6 @@ from tradex.options.models import (
     OptionsScanStatus,
     OptionsSourceStatus,
 )
-
-load_dotenv()
-
-UNUSUAL_WHALES_KEY = os.getenv("UNUSUAL_WHALES_API_KEY", "")
-TRADIER_KEY = os.getenv("TRADIER_API_KEY", "")
-
-OPTIONS_DATA_SOURCE = os.getenv("OPTIONS_DATA_SOURCE", "auto").lower().strip()
 
 _OPTIONS_SOURCES = {"auto", "unusual_whales", "tradier", "yahoo"}
 
@@ -57,9 +49,13 @@ _RESULT_COLUMNS = [
 
 
 # ── source resolution ────────────────────────────────────────────────────────
-def _resolve_options_source_name(source: str | None) -> str:
+def _resolve_options_source_name(
+    source: str | None, *, settings: TradeXSettings | None = None
+) -> str:
     """Return a validated options source string."""
-    s = (source or OPTIONS_DATA_SOURCE).lower().strip()
+    if settings is None:
+        settings = load_runtime_settings()
+    s = (source or settings.options.options_data_source).lower().strip()
     if s not in _OPTIONS_SOURCES:
         raise ProviderCapabilityError(
             f"Unknown options source '{source}'; supported: {', '.join(sorted(_OPTIONS_SOURCES))}"
@@ -67,12 +63,12 @@ def _resolve_options_source_name(source: str | None) -> str:
     return s
 
 
-def _has_unusual_whales() -> bool:
-    return bool(UNUSUAL_WHALES_KEY)
+def _has_unusual_whales(settings: TradeXSettings) -> bool:
+    return bool(settings.options.unusual_whales_api_key)
 
 
-def _has_tradier() -> bool:
-    return bool(TRADIER_KEY)
+def _has_tradier(settings: TradeXSettings) -> bool:
+    return bool(settings.options.tradier_api_key)
 
 
 def _unusual_whales_status(
@@ -81,12 +77,13 @@ def _unusual_whales_status(
     actual_source: str | None,
     available: bool,
     data_kind: OptionsDataKind | None = OptionsDataKind.TRUE_FLOW,
+    configured: bool = True,
     error: str | None = None,
 ) -> OptionsSourceStatus:
     return OptionsSourceStatus(
         requested_source=requested_source,
         actual_source=actual_source,
-        configured=_has_unusual_whales(),
+        configured=configured,
         available=available,
         data_kind=data_kind,
         freshness="provider_defined",
@@ -111,12 +108,13 @@ def _tradier_chain_status(
     actual_source: str | None,
     available: bool,
     data_kind: OptionsDataKind | None = OptionsDataKind.CHAIN_SNAPSHOT,
+    configured: bool = True,
     error: str | None = None,
 ) -> OptionsSourceStatus:
     return OptionsSourceStatus(
         requested_source=requested_source,
         actual_source=actual_source,
-        configured=_has_tradier(),
+        configured=configured,
         available=available,
         data_kind=data_kind,
         freshness="provider_defined",
@@ -166,27 +164,40 @@ def _yahoo_chain_status(
     )
 
 
-def resolve_flow_source(source: str | None = None) -> OptionsSourceStatus:
+def resolve_flow_source(
+    source: str | None = None,
+    *,
+    settings: TradeXSettings | None = None,
+) -> OptionsSourceStatus:
     """Resolve the requested source for a true-flow scan.
 
-    ``auto`` selects Unusual Whales only when ``UNUSUAL_WHALES_API_KEY`` is
+    ``auto`` selects Unusual Whales only when the Unusual Whales API key is
     configured. Tradier and Yahoo are explicitly rejected as non-flow-capable.
     No network calls are made.
     """
-    requested = _resolve_options_source_name(source)
+    if settings is None:
+        settings = load_runtime_settings()
+    requested = _resolve_options_source_name(source, settings=settings)
 
     if requested == "unusual_whales":
-        if _has_unusual_whales():
-            return _unusual_whales_status(requested, actual_source="unusual_whales", available=True)
+        configured = _has_unusual_whales(settings)
+        if configured:
+            return _unusual_whales_status(
+                requested,
+                actual_source="unusual_whales",
+                available=True,
+                configured=configured,
+            )
         return _unusual_whales_status(
             requested,
             actual_source=None,
             available=False,
+            configured=configured,
             error="Unusual Whales source selected but UNUSUAL_WHALES_API_KEY is not configured.",
         )
 
     if requested == "tradier":
-        configured = _has_tradier()
+        configured = _has_tradier(settings)
         error = "Tradier provides option-chain snapshots, not transaction-level flow."
         if not configured:
             error = (
@@ -197,6 +208,7 @@ def resolve_flow_source(source: str | None = None) -> OptionsSourceStatus:
             requested,
             actual_source=None,
             available=False,
+            configured=configured,
             data_kind=None,
             error=error,
         )
@@ -211,8 +223,14 @@ def resolve_flow_source(source: str | None = None) -> OptionsSourceStatus:
         )
 
     # requested == "auto"
-    if _has_unusual_whales():
-        return _unusual_whales_status("auto", actual_source="unusual_whales", available=True)
+    configured = _has_unusual_whales(settings)
+    if configured:
+        return _unusual_whales_status(
+            "auto",
+            actual_source="unusual_whales",
+            available=True,
+            configured=configured,
+        )
     return OptionsSourceStatus(
         requested_source="auto",
         actual_source=None,
@@ -235,17 +253,24 @@ def resolve_flow_source(source: str | None = None) -> OptionsSourceStatus:
     )
 
 
-def resolve_chain_source(source: str | None = None) -> OptionsSourceStatus:
+def resolve_chain_source(
+    source: str | None = None,
+    *,
+    settings: TradeXSettings | None = None,
+) -> OptionsSourceStatus:
     """Resolve the requested source for a chain-activity scan.
 
-    ``auto`` selects Tradier when ``TRADIER_API_KEY`` is configured, otherwise
+    ``auto`` selects Tradier when the Tradier API key is configured, otherwise
     Yahoo. Unusual Whales is rejected because it is a true-flow source, not a
     chain snapshot. No network calls are made.
     """
-    requested = _resolve_options_source_name(source)
+    if settings is None:
+        settings = load_runtime_settings()
+    requested = _resolve_options_source_name(source, settings=settings)
 
     if requested == "unusual_whales":
-        if _has_unusual_whales():
+        configured = _has_unusual_whales(settings)
+        if configured:
             error = "Unusual Whales is a true-flow source and is not used for chain-snapshot analysis."
         else:
             error = (
@@ -256,17 +281,22 @@ def resolve_chain_source(source: str | None = None) -> OptionsSourceStatus:
             requested,
             actual_source=None,
             available=False,
+            configured=configured,
             data_kind=None,
             error=error,
         )
 
     if requested == "tradier":
-        if _has_tradier():
-            return _tradier_chain_status(requested, actual_source="tradier", available=True)
+        configured = _has_tradier(settings)
+        if configured:
+            return _tradier_chain_status(
+                requested, actual_source="tradier", available=True, configured=configured
+            )
         return _tradier_chain_status(
             requested,
             actual_source=None,
             available=False,
+            configured=configured,
             error="Tradier source selected but TRADIER_API_KEY is not configured.",
         )
 
@@ -274,8 +304,11 @@ def resolve_chain_source(source: str | None = None) -> OptionsSourceStatus:
         return _yahoo_chain_status(requested, actual_source="yahoo", available=True)
 
     # requested == "auto"
-    if _has_tradier():
-        return _tradier_chain_status("auto", actual_source="tradier", available=True)
+    configured = _has_tradier(settings)
+    if configured:
+        return _tradier_chain_status(
+            "auto", actual_source="tradier", available=True, configured=configured
+        )
     return _yahoo_chain_status("auto", actual_source="yahoo", available=True)
 
 
@@ -295,10 +328,13 @@ def _validate_min_vol_oi(min_vol_oi: float) -> float:
     return float(min_vol_oi)
 
 
-def _sanitize_failure_message(exc: Exception) -> str:
+def _sanitize_failure_message(exc: Exception, *, settings: TradeXSettings) -> str:
     """Return a failure string with any configured credentials redacted."""
     text = f"{type(exc).__name__}: {exc}"
-    for secret in (UNUSUAL_WHALES_KEY, TRADIER_KEY):
+    for secret in (
+        settings.options.unusual_whales_api_key,
+        settings.options.tradier_api_key,
+    ):
         if secret:
             text = text.replace(secret, "***")
     return text
@@ -544,20 +580,25 @@ def _sort_results(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ── provider fetchers ────────────────────────────────────────────────────────
-def _fetch_unusual_whales_flow(ticker: str, limit: int = 20) -> list[dict]:
+def _fetch_unusual_whales_flow(
+    ticker: str, limit: int = 20, *, settings: TradeXSettings | None = None
+) -> list[dict]:
     """Fetch recent options flow for a ticker from Unusual Whales.
 
     Raises ``ProviderCapabilityError`` when the API key is missing,
     ``ProviderTransientError`` for network issues, and ``ProviderResponseError``
     for non-success HTTP or malformed JSON. No raw response bodies are exposed.
     """
-    if not UNUSUAL_WHALES_KEY:
+    if settings is None:
+        settings = load_runtime_settings()
+    key = settings.options.unusual_whales_api_key
+    if not key:
         raise ProviderCapabilityError(
             "Unusual Whales source selected but UNUSUAL_WHALES_API_KEY is not configured"
         )
     try:
         url = f"https://api.unusualwhales.com/api/stock/{ticker}/options-flow"
-        headers = {"Authorization": f"Bearer {UNUSUAL_WHALES_KEY}"}
+        headers = {"Authorization": f"Bearer {key}"}
         resp = requests.get(url, headers=headers, params={"limit": limit}, timeout=10)
         if resp.status_code != 200:
             raise ProviderResponseError(
@@ -594,19 +635,22 @@ def _fetch_unusual_whales_flow(ticker: str, limit: int = 20) -> list[dict]:
         ) from exc
 
 
-def _fetch_tradier_chain(ticker: str) -> pd.DataFrame:
+def _fetch_tradier_chain(ticker: str, *, settings: TradeXSettings | None = None) -> pd.DataFrame:
     """Fetch the nearest-expiry options chain from Tradier.
 
     Raises ``ProviderCapabilityError`` for missing credentials, ``ProviderTransientError``
     for network issues, and ``ProviderResponseError`` for bad HTTP or malformed data.
     """
-    if not TRADIER_KEY:
+    if settings is None:
+        settings = load_runtime_settings()
+    key = settings.options.tradier_api_key
+    if not key:
         raise ProviderCapabilityError(
             "Tradier source selected but TRADIER_API_KEY is not configured"
         )
 
     headers = {
-        "Authorization": f"Bearer {TRADIER_KEY}",
+        "Authorization": f"Bearer {key}",
         "Accept": "application/json",
     }
 
@@ -728,18 +772,25 @@ def _fetch_yf_chain(ticker: str) -> pd.DataFrame:
         ) from exc
 
 
-def _resolve_actual_source_for_get_flow(source_name: str) -> str:
+def _resolve_actual_source_for_get_flow(
+    source_name: str, *, settings: TradeXSettings
+) -> str:
     """Resolve ``auto`` to a concrete fetcher for the legacy ``get_flow`` path."""
     if source_name == "auto":
-        if _has_unusual_whales():
+        if _has_unusual_whales(settings):
             return "unusual_whales"
-        if _has_tradier():
+        if _has_tradier(settings):
             return "tradier"
         return "yahoo"
     return source_name
 
 
-def get_flow(ticker: str, source: str | None = None) -> pd.DataFrame:
+def get_flow(
+    ticker: str,
+    source: str | None = None,
+    *,
+    settings: TradeXSettings | None = None,
+) -> pd.DataFrame:
     """Fetch options data for ``ticker`` from a single concrete source.
 
     ``auto`` follows the legacy priority (Unusual Whales → Tradier → Yahoo). This
@@ -751,19 +802,21 @@ def get_flow(ticker: str, source: str | None = None) -> pd.DataFrame:
     malformed-response problems. Returns an empty DataFrame for valid zero-data
     responses.
     """
-    requested = _resolve_options_source_name(source)
-    actual = _resolve_actual_source_for_get_flow(requested)
+    if settings is None:
+        settings = load_runtime_settings()
+    requested = _resolve_options_source_name(source, settings=settings)
+    actual = _resolve_actual_source_for_get_flow(requested, settings=settings)
 
     if actual == "unusual_whales":
-        records = _fetch_unusual_whales_flow(ticker)
+        records = _fetch_unusual_whales_flow(ticker, settings=settings)
         return _parse_whales_flow(records, ticker, requested, actual)
 
     if actual == "tradier":
-        if not _has_tradier():
+        if not _has_tradier(settings):
             raise ProviderCapabilityError(
                 "Tradier source selected but TRADIER_API_KEY is not configured"
             )
-        df = _fetch_tradier_chain(ticker)
+        df = _fetch_tradier_chain(ticker, settings=settings)
         return _normalize_chain(df, ticker, requested, actual)
 
     if actual == "yahoo":
@@ -833,6 +886,7 @@ def scan_unusual_flow_with_report(
     *,
     min_vol_oi: float = VOL_OI_THRESHOLD,
     source: str | None = None,
+    settings: TradeXSettings | None = None,
 ) -> OptionsActivityReport:
     """Scan ``tickers`` for true options-flow events.
 
@@ -840,8 +894,10 @@ def scan_unusual_flow_with_report(
     adapters) may run. ``auto`` without Unusual Whales returns
     ``SOURCE_UNAVAILABLE``. Explicit chain sources return ``NOT_FLOW_CAPABLE``.
     """
+    if settings is None:
+        settings = load_runtime_settings()
     _validate_min_vol_oi(min_vol_oi)
-    source_status = resolve_flow_source(source)
+    source_status = resolve_flow_source(source, settings=settings)
 
     if source_status.data_kind != OptionsDataKind.TRUE_FLOW or not source_status.available:
         status = (
@@ -866,11 +922,11 @@ def scan_unusual_flow_with_report(
 
     for ticker in tickers:
         try:
-            records = _fetch_unusual_whales_flow(ticker)
+            records = _fetch_unusual_whales_flow(ticker, settings=settings)
             df = _parse_whales_flow(records, ticker, requested, actual)
             all_rows.append(df)
         except ProviderError as exc:
-            failures[ticker] = _sanitize_failure_message(exc)
+            failures[ticker] = _sanitize_failure_message(exc, settings=settings)
 
     combined = pd.concat(all_rows, ignore_index=True) if all_rows else _empty_results()
     total_fetched = len(all_rows)
@@ -894,13 +950,17 @@ def scan_unusual_flow(
     tickers: list[str],
     min_vol_oi: float = VOL_OI_THRESHOLD,
     source: str | None = None,
+    *,
+    settings: TradeXSettings | None = None,
 ) -> pd.DataFrame:
     """Backward-compatible wrapper for ``scan_unusual_flow_with_report``.
 
     Returns the result DataFrame for a successful true-flow scan. Raises
     ``ProviderCapabilityError`` when the source is unavailable or not flow-capable.
     """
-    report = scan_unusual_flow_with_report(tickers, min_vol_oi=min_vol_oi, source=source)
+    report = scan_unusual_flow_with_report(
+        tickers, min_vol_oi=min_vol_oi, source=source, settings=settings
+    )
     if report.status in (OptionsScanStatus.SOURCE_UNAVAILABLE, OptionsScanStatus.NOT_FLOW_CAPABLE):
         raise ProviderCapabilityError(report.source_status.error or "True-flow source unavailable")
     return report.results
@@ -911,6 +971,7 @@ def scan_chain_activity_with_report(
     *,
     min_vol_oi: float = VOL_OI_THRESHOLD,
     source: str | None = None,
+    settings: TradeXSettings | None = None,
 ) -> OptionsActivityReport:
     """Scan ``tickers`` for options-chain activity anomalies.
 
@@ -918,8 +979,10 @@ def scan_chain_activity_with_report(
     configured, otherwise Yahoo. Never labels chain data as flow, sweeps, or
     directional intent.
     """
+    if settings is None:
+        settings = load_runtime_settings()
     _validate_min_vol_oi(min_vol_oi)
-    source_status = resolve_chain_source(source)
+    source_status = resolve_chain_source(source, settings=settings)
 
     if not source_status.available or source_status.data_kind != OptionsDataKind.CHAIN_SNAPSHOT:
         return _scan_report(
@@ -934,7 +997,11 @@ def scan_chain_activity_with_report(
 
     actual = source_status.actual_source
     requested = source_status.requested_source
-    fetcher = _fetch_tradier_chain if actual == "tradier" else _fetch_yf_chain
+    fetcher = (
+        (lambda t: _fetch_tradier_chain(t, settings=settings))
+        if actual == "tradier"
+        else (lambda t: _fetch_yf_chain(t))
+    )
     all_rows: list[pd.DataFrame] = []
     failures: dict[str, str] = {}
 
@@ -944,7 +1011,7 @@ def scan_chain_activity_with_report(
             normalized = _normalize_chain(df, ticker, requested, actual)
             all_rows.append(normalized)
         except ProviderError as exc:
-            failures[ticker] = _sanitize_failure_message(exc)
+            failures[ticker] = _sanitize_failure_message(exc, settings=settings)
 
     combined = pd.concat(all_rows, ignore_index=True) if all_rows else _empty_results()
     total_fetched = len(all_rows)
@@ -968,13 +1035,17 @@ def scan_chain_activity(
     tickers: list[str],
     min_vol_oi: float = VOL_OI_THRESHOLD,
     source: str | None = None,
+    *,
+    settings: TradeXSettings | None = None,
 ) -> pd.DataFrame:
     """Backward-compatible wrapper for ``scan_chain_activity_with_report``.
 
     Returns the result DataFrame. Raises ``ProviderCapabilityError`` for an
     unavailable source.
     """
-    report = scan_chain_activity_with_report(tickers, min_vol_oi=min_vol_oi, source=source)
+    report = scan_chain_activity_with_report(
+        tickers, min_vol_oi=min_vol_oi, source=source, settings=settings
+    )
     if report.status == OptionsScanStatus.SOURCE_UNAVAILABLE:
         raise ProviderCapabilityError(report.source_status.error or "Chain source unavailable")
     return report.results
@@ -1012,6 +1083,7 @@ def get_put_call_activity(
     ticker: str,
     *,
     source: str | None = None,
+    settings: TradeXSettings | None = None,
 ) -> dict:
     """Return a non-directional call/put volume balance for ``ticker``.
 
@@ -1020,7 +1092,9 @@ def get_put_call_activity(
     result always includes ``directional_inference: false`` and never labels
     aggregate volume as bullish or bearish.
     """
-    source_status = resolve_chain_source(source)
+    if settings is None:
+        settings = load_runtime_settings()
+    source_status = resolve_chain_source(source, settings=settings)
 
     if not source_status.available or source_status.data_kind != OptionsDataKind.CHAIN_SNAPSHOT:
         return {
@@ -1038,7 +1112,7 @@ def get_put_call_activity(
         }
 
     try:
-        df = get_flow(ticker, source=source_status.actual_source)
+        df = get_flow(ticker, source=source_status.actual_source, settings=settings)
     except ProviderError as exc:
         return {
             "ticker": ticker,
@@ -1051,7 +1125,7 @@ def get_put_call_activity(
             "volume_balance": "unavailable",
             "directional_inference": False,
             "limitations": list(source_status.limitations),
-            "error": _sanitize_failure_message(exc),
+            "error": _sanitize_failure_message(exc, settings=settings),
         }
 
     if df.empty:
@@ -1088,14 +1162,19 @@ def get_put_call_activity(
     }
 
 
-def get_put_call_sentiment(ticker: str, source: str | None = None) -> dict:
+def get_put_call_sentiment(
+    ticker: str,
+    source: str | None = None,
+    *,
+    settings: TradeXSettings | None = None,
+) -> dict:
     """Backward-compatible wrapper for ``get_put_call_activity``.
 
     Preserves the legacy ``sentiment`` and ``put_call_ratio`` keys while replacing
     bullish/bearish conclusions with the non-directional volume balance. Always
     returns ``directional_inference: false``.
     """
-    activity = get_put_call_activity(ticker, source=source)
+    activity = get_put_call_activity(ticker, source=source, settings=settings)
     result = dict(activity)
     result["sentiment"] = activity["volume_balance"]
     result["put_call_ratio"] = activity["put_call_volume_ratio"]

@@ -18,6 +18,22 @@ from tradex.alerts.notifier import (
 )
 from tradex.alerts.policy import AlertPolicy
 from tradex.alerts.store import AlertStore
+from tradex.config import TradeXSettings, settings_from_mapping
+
+
+def _empty_settings() -> TradeXSettings:
+    """Return a runtime settings object with no alert channels configured."""
+    return TradeXSettings()
+
+
+def _discord_settings() -> TradeXSettings:
+    """Return a runtime settings object with a Discord channel configured."""
+    return settings_from_mapping(
+        {
+            "ALERT_DISCORD_TOKEN": "token",
+            "ALERT_DISCORD_CHANNEL_ID": "123",
+        }
+    )
 
 
 class TestSendAlert:
@@ -31,23 +47,16 @@ class TestSendAlert:
         assert "discord" in results
         assert "email" in results
 
-    def test_is_alert_configured_false_without_env(self, monkeypatch):
-        from tradex import alerts as alerts_module
-
-        monkeypatch.setattr(alerts_module.notifier, "DISCORD_TOKEN", "")
-        monkeypatch.setattr(alerts_module.notifier, "DISCORD_CHANNEL_ID", "")
-        monkeypatch.setattr(alerts_module.notifier, "EMAIL_TO", "")
-        monkeypatch.setattr(alerts_module.notifier, "EMAIL_FROM", "")
-        monkeypatch.setattr(alerts_module.notifier, "EMAIL_HOST", "")
-        monkeypatch.setattr(alerts_module.notifier, "EMAIL_USER", "")
-        monkeypatch.setattr(alerts_module.notifier, "EMAIL_PASS", "")
+    def test_is_alert_configured_false_without_channels(self, monkeypatch):
+        monkeypatch.setattr(
+            "tradex.alerts.notifier.load_runtime_settings", _empty_settings
+        )
         assert is_alert_configured() is False
 
     def test_is_alert_configured_true_with_discord(self, monkeypatch):
-        from tradex import alerts as alerts_module
-
-        monkeypatch.setattr(alerts_module.notifier, "DISCORD_TOKEN", "token")
-        monkeypatch.setattr(alerts_module.notifier, "DISCORD_CHANNEL_ID", "123")
+        monkeypatch.setattr(
+            "tradex.alerts.notifier.load_runtime_settings", _discord_settings
+        )
         assert is_alert_configured() is True
 
 
@@ -69,26 +78,28 @@ class TestAlertCoil:
         mock_policy.dispatch.assert_called_once()
 
     def test_same_ticker_timeframe_suppresses(self, tmp_path):
+        now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
         store = AlertStore(tmp_path / "alerts.db")
-        policy = AlertPolicy(clock=lambda: now, 
+        policy = AlertPolicy(
+            clock=lambda: now,
             store=store,
             transport=lambda s, b, c: {"discord": True},
             is_configured=lambda: True,
         )
-        now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
         r1 = alert_coil("AAPL", 70, 50, "up", "intraday", policy=policy, observed_at=now)
         r2 = alert_coil("AAPL", 70, 50, "up", "intraday", policy=policy, observed_at=now)
         assert r1.decision == AlertDecision.SENT
         assert r2.decision == AlertDecision.SUPPRESSED_COOLDOWN
 
     def test_different_timeframe_does_not_collide(self, tmp_path):
+        now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
         store = AlertStore(tmp_path / "alerts.db")
-        policy = AlertPolicy(clock=lambda: now, 
+        policy = AlertPolicy(
+            clock=lambda: now,
             store=store,
             transport=lambda s, b, c: {"discord": True},
             is_configured=lambda: True,
         )
-        now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
         r1 = alert_coil("AAPL", 70, 50, "up", "intraday", policy=policy, observed_at=now)
         r2 = alert_coil("AAPL", 70, 50, "up", "short", policy=policy, observed_at=now)
         assert r1.decision == AlertDecision.SENT
@@ -116,13 +127,14 @@ class TestAlertConfluence:
         mock_policy.dispatch.assert_called_once()
 
     def test_uses_multi_timeframe_identity(self, tmp_path):
+        now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
         store = AlertStore(tmp_path / "alerts.db")
-        policy = AlertPolicy(clock=lambda: now, 
+        policy = AlertPolicy(
+            clock=lambda: now,
             store=store,
             transport=lambda s, b, c: {"discord": True},
             is_configured=lambda: True,
         )
-        now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
         r1 = alert_confluence("AAPL", 75, ["intraday"], 100.0, policy=policy, observed_at=now)
         r2 = alert_confluence("AAPL", 75, ["intraday", "short"], 100.0, policy=policy, observed_at=now)
         # Same confluence key; second should be suppressed.
@@ -144,26 +156,28 @@ class TestAlertPattern:
         mock_policy.dispatch.assert_called_once()
 
     def test_runup_decline_do_not_collide(self, tmp_path):
+        now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
         store = AlertStore(tmp_path / "alerts.db")
-        policy = AlertPolicy(clock=lambda: now, 
+        policy = AlertPolicy(
+            clock=lambda: now,
             store=store,
             transport=lambda s, b, c: {"discord": True},
             is_configured=lambda: True,
         )
-        now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
         r1 = alert_pattern_match("NVDA", 80, "runup", "standard", 5, "", policy=policy, observed_at=now)
         r2 = alert_pattern_match("NVDA", 80, "decline", "standard", 5, "", policy=policy, observed_at=now)
         assert r1.decision == AlertDecision.SENT
         assert r2.decision == AlertDecision.SENT
 
     def test_different_profiles_do_not_collide(self, tmp_path):
+        now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
         store = AlertStore(tmp_path / "alerts.db")
-        policy = AlertPolicy(clock=lambda: now, 
+        policy = AlertPolicy(
+            clock=lambda: now,
             store=store,
             transport=lambda s, b, c: {"discord": True},
             is_configured=lambda: True,
         )
-        now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
         r1 = alert_pattern_match("NVDA", 80, "runup", "standard", 5, "", policy=policy, observed_at=now)
         r2 = alert_pattern_match("NVDA", 80, "runup", "volatile", 5, "", policy=policy, observed_at=now)
         assert r1.decision == AlertDecision.SENT
@@ -172,13 +186,14 @@ class TestAlertPattern:
 
 class TestAlertGap:
     def test_gap_up_down_do_not_collide(self, tmp_path):
+        now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
         store = AlertStore(tmp_path / "alerts.db")
-        policy = AlertPolicy(clock=lambda: now, 
+        policy = AlertPolicy(
+            clock=lambda: now,
             store=store,
             transport=lambda s, b, c: {"discord": True},
             is_configured=lambda: True,
         )
-        now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
         r1 = alert_gap("TSLA", 5.0, "up", 100.0, 105.0, policy=policy, observed_at=now)
         r2 = alert_gap("TSLA", -5.0, "down", 100.0, 95.0, policy=policy, observed_at=now)
         assert r1.decision == AlertDecision.SENT
@@ -194,21 +209,28 @@ class TestAlertGap:
 
 class TestRawSendBypass:
     def test_no_policy_uses_raw_send(self, tmp_path, monkeypatch):
+        now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
         store = AlertStore(tmp_path / "alerts.db")
-        policy = AlertPolicy(clock=lambda: now, 
+        policy = AlertPolicy(
+            clock=lambda: now,
             store=store,
             transport=lambda s, b, c: {"discord": True},
             is_configured=lambda: True,
         )
-        now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
         r1 = alert_coil("AAPL", 70, 50, "up", "intraday", policy=policy, observed_at=now)
 
         monkeypatch.setattr(
             "tradex.alerts.notifier._send_discord",
-            lambda s, b, color_key="test": True,
+            lambda s, b, color_key="test", channels=None: True,
         )
-        monkeypatch.setattr("tradex.alerts.notifier._send_email", lambda s, b: True)
-        monkeypatch.setattr("tradex.alerts.notifier.is_alert_configured", lambda: True)
+        monkeypatch.setattr(
+            "tradex.alerts.notifier._send_email",
+            lambda s, b, channels=None: True,
+        )
+        monkeypatch.setattr(
+            "tradex.alerts.notifier.is_alert_configured",
+            lambda settings=None: True,
+        )
 
         r2 = alert_coil("AAPL", 70, 50, "up", "intraday", observed_at=now)
         assert r1.decision == AlertDecision.SENT
@@ -216,17 +238,27 @@ class TestRawSendBypass:
 
     def test_no_policy_no_channels_configured(self, tmp_path, monkeypatch):
         now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
-        monkeypatch.setattr("tradex.alerts.notifier.is_alert_configured", lambda: False)
+        monkeypatch.setattr(
+            "tradex.alerts.notifier.is_alert_configured",
+            lambda settings=None: False,
+        )
         result = alert_coil("AAPL", 70, 50, "up", "intraday", observed_at=now)
         assert result.decision == AlertDecision.NO_CHANNELS_CONFIGURED
 
     def test_no_policy_all_channels_fail(self, tmp_path, monkeypatch):
         now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
         monkeypatch.setattr(
-            "tradex.alerts.notifier._send_discord", lambda s, b, color_key="test": False
+            "tradex.alerts.notifier._send_discord",
+            lambda s, b, color_key="test", channels=None: False,
         )
-        monkeypatch.setattr("tradex.alerts.notifier._send_email", lambda s, b: False)
-        monkeypatch.setattr("tradex.alerts.notifier.is_alert_configured", lambda: True)
+        monkeypatch.setattr(
+            "tradex.alerts.notifier._send_email",
+            lambda s, b, channels=None: False,
+        )
+        monkeypatch.setattr(
+            "tradex.alerts.notifier.is_alert_configured",
+            lambda settings=None: True,
+        )
         result = alert_coil("AAPL", 70, 50, "up", "intraday", observed_at=now)
         assert result.decision == AlertDecision.DELIVERY_FAILED
 
@@ -234,10 +266,16 @@ class TestRawSendBypass:
         now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
         monkeypatch.setattr(
             "tradex.alerts.notifier._send_discord",
-            lambda s, b, color_key="test": "true",
+            lambda s, b, color_key="test", channels=None: "true",
         )
-        monkeypatch.setattr("tradex.alerts.notifier._send_email", lambda s, b: False)
-        monkeypatch.setattr("tradex.alerts.notifier.is_alert_configured", lambda: True)
+        monkeypatch.setattr(
+            "tradex.alerts.notifier._send_email",
+            lambda s, b, channels=None: False,
+        )
+        monkeypatch.setattr(
+            "tradex.alerts.notifier.is_alert_configured",
+            lambda settings=None: True,
+        )
         result = alert_coil("AAPL", 70, 50, "up", "intraday", observed_at=now)
         assert result.decision == AlertDecision.DELIVERY_FAILED
         assert result.channel_results == {}

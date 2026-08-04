@@ -61,7 +61,7 @@ def _mock_client(timeframe: str, candles: list[dict], **resp_overrides) -> Magic
 @pytest.fixture(autouse=True)
 def reset_schwab_client(monkeypatch):
     """Reset the global Schwab client cache before every test."""
-    monkeypatch.setattr(fetcher, "_SCHWAB_CLIENT", None)
+    fetcher._SCHWAB_CLIENTS.clear()
 
 
 @pytest.fixture

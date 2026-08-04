@@ -13,12 +13,12 @@ raise ProviderCapabilityError so callers do not silently fall back to Yahoo.
 from __future__ import annotations
 
 import json
-import os
 from datetime import date, datetime, time, timezone
 
 import pandas as pd
 import yfinance as yf
 
+from tradex.config import TradeXSettings, load_runtime_settings
 from tradex.data.fetcher import (
     ProviderCapabilityError,
     _OHLCV_COLUMNS,
@@ -32,8 +32,10 @@ from tradex.data.fetcher import (
 _HISTORY_PROVIDERS = {"yahoo", "schwab"}
 
 
-def _resolve_history_provider(provider: str | None) -> str:
-    p = resolve_provider(provider)
+def _resolve_history_provider(
+    provider: str | None, *, settings: TradeXSettings | None = None
+) -> str:
+    p = resolve_provider(provider, settings=settings)
     if p not in _HISTORY_PROVIDERS:
         raise ProviderCapabilityError(
             f"Provider '{p}' does not support date-ranged daily OHLCV history"
@@ -101,9 +103,15 @@ def _fetch_yahoo_daily(ticker: str, start_date: date, end_date: date) -> pd.Data
     return _canonicalize_history(df)
 
 
-def _fetch_schwab_daily(ticker: str, start_date: date, end_date: date) -> pd.DataFrame:
+def _fetch_schwab_daily(
+    ticker: str,
+    start_date: date,
+    end_date: date,
+    *,
+    settings: TradeXSettings | None = None,
+) -> pd.DataFrame:
     """Fetch daily bars from Schwab for the requested inclusive date range."""
-    client = _get_schwab_client()
+    client = _get_schwab_client(settings=settings)
 
     start_dt = datetime.combine(start_date, time(), tzinfo=timezone.utc)
     end_dt = datetime.combine(end_date, time(23, 59, 59), tzinfo=timezone.utc)
@@ -138,6 +146,8 @@ def fetch_daily_history(
     start: date | datetime,
     end: date | datetime,
     provider: str | None = None,
+    *,
+    settings: TradeXSettings | None = None,
 ) -> pd.DataFrame:
     """Fetch daily OHLCV bars for ``ticker`` from ``start`` through ``end`` (inclusive).
 
@@ -162,11 +172,12 @@ def fetch_daily_history(
     if end_date < start_date:
         return _empty_history()
 
-    p = _resolve_history_provider(provider)
+    settings = settings or load_runtime_settings()
+    p = _resolve_history_provider(provider, settings=settings)
     if p == "yahoo":
         return _fetch_yahoo_daily(ticker, start_date, end_date)
     if p == "schwab":
-        return _fetch_schwab_daily(ticker, start_date, end_date)
+        return _fetch_schwab_daily(ticker, start_date, end_date, settings=settings)
     # Should be unreachable because _resolve_history_provider raises.
     raise ProviderCapabilityError(
         f"Provider '{p}' does not support date-ranged daily OHLCV history"

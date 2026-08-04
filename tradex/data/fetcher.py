@@ -8,6 +8,7 @@ OHLCV data fetcher supporting four providers:
 
 Set the provider via the DATA_PROVIDER env var or pass it explicitly to fetch().
 """
+import hashlib
 import json
 import os
 import threading
@@ -16,12 +17,12 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import yfinance as yf
-from dotenv import load_dotenv
 
-load_dotenv()
+from tradex.config import TradeXSettings, load_runtime_settings
 
 
 class ProviderError(RuntimeError):
@@ -60,7 +61,7 @@ TIMEFRAMES = {
     "long":     {"period": "2y",  "interval": "1wk"},
 }
 
-DEFAULT_PROVIDER = os.getenv("DATA_PROVIDER", "yahoo")
+DEFAULT_PROVIDER = "yahoo"
 
 
 _MAX_ALLOWED_RETRIES = 3
@@ -88,6 +89,7 @@ class FetchPolicy:
     max_retries: int = 0
     fallback_order: tuple[str, ...] = ()
     backoff: Callable[[int], float] | None = _default_backoff
+    settings: TradeXSettings | None = None
 
     def __post_init__(self) -> None:
         if self.max_retries < 0:
@@ -107,7 +109,7 @@ class FetchPolicy:
         seen: set[str] = set()
         normalized: list[str] = []
         for p in parts:
-            canonical = resolve_provider(p)
+            canonical = resolve_provider(p, settings=self.settings)
             if canonical in seen:
                 continue
             seen.add(canonical)
@@ -120,15 +122,18 @@ class FetchPolicy:
         cls,
         max_retries: int | str | None = None,
         fallback_order: str | tuple[str, ...] | list[str] | None = None,
+        *,
+        settings: TradeXSettings | None = None,
     ) -> "FetchPolicy":
-        """Create a policy from explicit arguments and/or environment variables.
+        """Create a policy from explicit arguments and/or runtime settings.
 
         Explicit arguments override ``OHLCV_MAX_RETRIES`` and ``OHLCV_FALLBACK_ORDER``.
         """
+        settings = settings or load_runtime_settings()
+
         # Resolve max_retries
         if max_retries is None:
-            env_retries = os.getenv("OHLCV_MAX_RETRIES")
-            max_retries = int(env_retries) if env_retries is not None else 0
+            max_retries = settings.data.ohlcv_max_retries
         try:
             retries = int(max_retries)
         except (TypeError, ValueError) as exc:
@@ -137,13 +142,15 @@ class FetchPolicy:
         # Resolve fallback_order
         raw_fallback = fallback_order
         if raw_fallback is None:
-            raw_fallback = os.getenv("OHLCV_FALLBACK_ORDER", "")
+            raw_fallback = settings.data.ohlcv_fallback_order
 
-        return cls(max_retries=retries, fallback_order=raw_fallback)
+        return cls(max_retries=retries, fallback_order=raw_fallback, settings=settings)
 
     def fallback_for(self, primary: str) -> tuple[str, ...]:
         """Return the fallback order with the primary provider removed."""
-        return tuple(p for p in self.fallback_order if p != resolve_provider(primary))
+        return tuple(
+            p for p in self.fallback_order if p != resolve_provider(primary, settings=self.settings)
+        )
 
 
 @dataclass
@@ -202,7 +209,8 @@ def normalize_yahoo_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ── Yahoo Finance ─────────────────────────────────────────────────────────────
-def _fetch_yahoo(ticker: str, timeframe: str) -> pd.DataFrame:
+def _fetch_yahoo(ticker: str, timeframe: str, *, settings: TradeXSettings | None = None) -> pd.DataFrame:
+    _ = settings
     tf = TIMEFRAMES[timeframe]
     df = yf.download(
         ticker,
@@ -229,7 +237,10 @@ _ALPACA_LIMIT_MAP = {
     "long":     104,    # 2 years of weekly bars
 }
 
-def _fetch_alpaca(ticker: str, timeframe: str) -> pd.DataFrame:
+def _fetch_alpaca(ticker: str, timeframe: str, *, settings: TradeXSettings | None = None) -> pd.DataFrame:
+    if settings is None:
+        settings = load_runtime_settings()
+
     try:
         from alpaca.data.historical import StockHistoricalDataClient
         from alpaca.data.requests import StockBarsRequest
@@ -237,10 +248,10 @@ def _fetch_alpaca(ticker: str, timeframe: str) -> pd.DataFrame:
     except ImportError:
         raise ImportError("Install alpaca-py: pip install alpaca-py")
 
-    api_key = os.getenv("ALPACA_API_KEY")
-    secret_key = os.getenv("ALPACA_SECRET_KEY")
+    api_key = settings.data.alpaca_api_key
+    secret_key = settings.data.alpaca_secret_key
     if not api_key or not secret_key:
-        raise OSError("ALPACA_API_KEY and ALPACA_SECRET_KEY must be set in .env")
+        raise OSError("ALPACA_API_KEY and ALPACA_SECRET_KEY must be configured")
 
     client = StockHistoricalDataClient(api_key, secret_key)
 
@@ -283,15 +294,18 @@ _IBKR_DURATION_MAP = {
     "long":     ("2 Y",  "1 week"),
 }
 
-def _fetch_ibkr(ticker: str, timeframe: str) -> pd.DataFrame:
+def _fetch_ibkr(ticker: str, timeframe: str, *, settings: TradeXSettings | None = None) -> pd.DataFrame:
+    if settings is None:
+        settings = load_runtime_settings()
+
     try:
         from ib_insync import IB, Stock, util
     except ImportError:
         raise ImportError("Install ib_insync: pip install ib_insync")
 
-    host = os.getenv("IBKR_HOST", "127.0.0.1")
-    port = int(os.getenv("IBKR_PORT", "7497"))   # 7497 = paper, 7496 = live
-    client_id = int(os.getenv("IBKR_CLIENT_ID", "1"))
+    host = settings.data.ibkr_host
+    port = settings.data.ibkr_port
+    client_id = settings.data.ibkr_client_id
 
     ib = IB()
     try:
@@ -362,10 +376,24 @@ _SCHWAB_TIMEFRAMES = {
 _OHLCV_COLUMNS = ["open", "high", "low", "close", "volume"]
 
 
-# Cache the authenticated client across calls — fetching a watchlist would
-# otherwise reload + decrypt the token file once per ticker.
-_SCHWAB_CLIENT = None
+# Cache authenticated clients keyed by a safe, credential-derived identity.
+# Two different credential sets in the same process never reuse a client.
+_SCHWAB_CLIENTS: dict[str, Any] = {}
 _SCHWAB_LOCK = threading.Lock()
+
+
+def _schwab_client_key(settings: TradeXSettings) -> str:
+    """Return a deterministic, non-reversible key for a Schwab credential set."""
+    payload = json.dumps(
+        [
+            str(settings.data.schwab_token_path),
+            settings.data.schwab_app_key or "",
+            settings.data.schwab_app_secret or "",
+        ],
+        ensure_ascii=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _normalize_schwab_candles(candles: list[dict], drop_any_null: bool = True) -> pd.DataFrame:
@@ -416,8 +444,11 @@ def _normalize_schwab_candles(candles: list[dict], drop_any_null: bool = True) -
     return df.dropna(how="all")
 
 
-def _get_schwab_client():
+def _get_schwab_client(*, settings: TradeXSettings | None = None):
     """Return an authenticated Schwab client, or raise a safe error."""
+    if settings is None:
+        settings = load_runtime_settings()
+
     try:
         from schwab.auth import client_from_token_file
     except ImportError as e:
@@ -426,14 +457,12 @@ def _get_schwab_client():
             "uv pip install -e \".[schwab]\""
         ) from e
 
-    app_key = os.getenv("SCHWAB_APP_KEY", "").strip()
-    app_secret = os.getenv("SCHWAB_APP_SECRET", "").strip()
-    token_path = os.path.expanduser(
-        os.getenv("SCHWAB_TOKEN_PATH", "~/.tradex_schwab_token.json")
-    )
+    app_key = (settings.data.schwab_app_key or "").strip()
+    app_secret = (settings.data.schwab_app_secret or "").strip()
+    token_path = os.path.expanduser(str(settings.data.schwab_token_path))
 
     if not app_key or not app_secret:
-        raise OSError("SCHWAB_APP_KEY and SCHWAB_APP_SECRET must be set in .env")
+        raise OSError("SCHWAB_APP_KEY and SCHWAB_APP_SECRET must be configured")
 
     _assert_token_path_outside_repo(token_path)
 
@@ -443,11 +472,11 @@ def _get_schwab_client():
             "Run `python scripts/schwab_oauth.py` once to generate it."
         )
 
-    global _SCHWAB_CLIENT
+    key = _schwab_client_key(settings)
     with _SCHWAB_LOCK:
-        if _SCHWAB_CLIENT is None:
+        if key not in _SCHWAB_CLIENTS:
             try:
-                _SCHWAB_CLIENT = client_from_token_file(
+                _SCHWAB_CLIENTS[key] = client_from_token_file(
                     token_path=token_path,
                     api_key=app_key,
                     app_secret=app_secret,
@@ -458,10 +487,10 @@ def _get_schwab_client():
                     "app key, and app secret, then re-run the OAuth script."
                 ) from None
 
-    return _SCHWAB_CLIENT
+    return _SCHWAB_CLIENTS[key]
 
 
-def _fetch_schwab(ticker: str, timeframe: str) -> pd.DataFrame:
+def _fetch_schwab(ticker: str, timeframe: str, *, settings: TradeXSettings | None = None) -> pd.DataFrame:
     """Fetch canonical OHLCV data from the Schwab Market Data API.
 
     Raises:
@@ -473,7 +502,7 @@ def _fetch_schwab(ticker: str, timeframe: str) -> pd.DataFrame:
         ProviderTransientError:     Schwab returned a retryable HTTP error (5xx / 429).
         ProviderResponseError:      Schwab returned a non-retryable HTTP error or malformed data.
     """
-    client = _get_schwab_client()
+    client = _get_schwab_client(settings=settings)
 
     if timeframe not in _SCHWAB_TIMEFRAMES:
         raise ValueError(f"Unsupported timeframe for schwab: {timeframe}")
@@ -621,6 +650,8 @@ def fetch_multi_report(
     progress: Callable[[int, int], None] | None = None,
     status: Callable[[str], None] | None = None,
     max_workers: int = 12,
+    *,
+    settings: TradeXSettings | None = None,
 ) -> FetchReport:
     """Fetch OHLCV data for ``tickers`` with retries and whole-batch fallback.
 
@@ -636,8 +667,9 @@ def fetch_multi_report(
     if timeframe not in TIMEFRAMES:
         raise ValueError(f"timeframe must be one of {list(TIMEFRAMES)}")
 
-    policy = policy or FetchPolicy()
-    requested_provider = resolve_provider(provider)
+    settings = settings or load_runtime_settings()
+    policy = policy or FetchPolicy.build(settings=settings)
+    requested_provider = resolve_provider(provider, settings=settings)
     providers_to_try = (requested_provider,) + policy.fallback_for(requested_provider)
 
     total_fetch_attempted = 0
@@ -667,7 +699,7 @@ def fetch_multi_report(
 
         def _fetch_one(ticker: str) -> tuple[str, FetchResult]:
             result = _fetch_with_retry(
-                lambda: provider_func(ticker, timeframe),
+                lambda: provider_func(ticker, timeframe, settings=settings),
                 policy,
                 sleeper=sleeper,
                 ticker=ticker,
@@ -778,12 +810,17 @@ _PROVIDERS = {
 }
 
 
-def resolve_provider(provider: str | None = None) -> str:
+def resolve_provider(
+    provider: str | None = None,
+    *,
+    settings: TradeXSettings | None = None,
+) -> str:
     """
     Resolve and normalize an OHLCV provider name.
 
     Args:
-        provider: Explicit provider name, or None to use ``DATA_PROVIDER`` env var.
+        provider: Explicit provider name, or None to use the configured default.
+        settings: Optional explicit settings; if omitted, runtime settings are loaded.
 
     Returns:
         A normalized lowercase provider string from ``{"yahoo", "alpaca", "ibkr", "schwab"}``.
@@ -791,7 +828,12 @@ def resolve_provider(provider: str | None = None) -> str:
     Raises:
         ValueError: If the provider is missing or not a supported OHLCV provider.
     """
-    p = (provider if provider is not None else DEFAULT_PROVIDER).strip().lower()
+    if provider is not None:
+        p = str(provider).strip().lower()
+    elif settings is not None:
+        p = settings.data.data_provider
+    else:
+        p = load_runtime_settings().data.data_provider
     if p not in _PROVIDERS:
         raise ValueError(
             f"provider must be one of {sorted(_PROVIDERS)}; got {p!r}"
@@ -799,20 +841,28 @@ def resolve_provider(provider: str | None = None) -> str:
     return p
 
 
-def fetch(ticker: str, timeframe: str, provider: str | None = None) -> pd.DataFrame:
+def fetch(
+    ticker: str,
+    timeframe: str,
+    provider: str | None = None,
+    *,
+    settings: TradeXSettings | None = None,
+) -> pd.DataFrame:
     """
     Fetch OHLCV data for a ticker.
 
     Args:
         ticker:    e.g. "NVDA"
         timeframe: "intraday" | "short" | "long"
-        provider:  "yahoo" | "alpaca" | "ibkr" | "schwab" (defaults to DATA_PROVIDER env var, then "yahoo")
+        provider:  "yahoo" | "alpaca" | "ibkr" | "schwab" (defaults to configured default)
+        settings:  Optional explicit settings; if omitted, runtime settings are loaded.
     """
     if timeframe not in TIMEFRAMES:
         raise ValueError(f"timeframe must be one of {list(TIMEFRAMES)}")
 
-    p = resolve_provider(provider)
-    return _PROVIDERS[p](ticker, timeframe)
+    settings = settings or load_runtime_settings()
+    p = resolve_provider(provider, settings=settings)
+    return _PROVIDERS[p](ticker, timeframe, settings=settings)
 
 
 def fetch_multi(
@@ -820,6 +870,8 @@ def fetch_multi(
     timeframe: str,
     provider: str | None = None,
     policy: FetchPolicy | None = None,
+    *,
+    settings: TradeXSettings | None = None,
 ) -> dict[str, pd.DataFrame]:
     """Fetch data for multiple tickers.
 
@@ -828,4 +880,6 @@ def fetch_multi(
     failure details, provenance, or fallback metadata should use
     ``fetch_multi_report`` instead.
     """
-    return fetch_multi_report(tickers, timeframe, provider=provider, policy=policy).data
+    return fetch_multi_report(
+        tickers, timeframe, provider=provider, policy=policy, settings=settings
+    ).data

@@ -11,6 +11,7 @@ from typing import Any
 
 import pandas as pd
 
+from tradex.config import TradeXSettings, load_runtime_settings
 from tradex.data.fetcher import ProviderCapabilityError
 from tradex.earnings.calendar import get_next_earnings
 from tradex.market import MARKET_TIMEZONE
@@ -44,10 +45,12 @@ _HEADLINE_STATUSES = (
 )
 
 
-def _resolve_earnings_source(source: str | None) -> str:
+def _resolve_earnings_source(
+    source: str | None, *, settings: TradeXSettings | None = None
+) -> str:
     from tradex.earnings.calendar import _resolve_earnings_source as _core_resolve
 
-    return _core_resolve(source)
+    return _core_resolve(source, settings=settings)
 
 
 def _resolve_headline_source(source: str | None) -> str:
@@ -193,8 +196,12 @@ def fetch_catalyst_context(
     lookback_hours: float,
     earnings_source: str | None,
     headline_source: str | None,
+    *,
+    settings: TradeXSettings | None = None,
 ) -> GapCatalystContext:
     """Return explicitly sourced catalyst context with no causal inference."""
+    if settings is None:
+        settings = load_runtime_settings()
     requested_earnings_source = earnings_source
     requested_headline_source = headline_source
 
@@ -211,7 +218,7 @@ def fetch_catalyst_context(
     # Default explicit sources when catalyst lookup is requested.
     if include_catalysts or require_catalyst:
         if requested_earnings_source is None:
-            requested_earnings_source = "yahoo"
+            requested_earnings_source = settings.earnings_data_source or "yahoo"
         if requested_headline_source is None:
             requested_headline_source = "yahoo"
 
@@ -232,7 +239,7 @@ def fetch_catalyst_context(
     # Earnings
     if requested_earnings_source:
         try:
-            actual_earnings_source = _resolve_earnings_source(requested_earnings_source)
+            actual_earnings_source = _resolve_earnings_source(requested_earnings_source, settings=settings)
             if historical_replay:
                 # Yahoo's next-earnings calendar is not point-in-time for historical replay.
                 earnings_status = "unavailable"
@@ -242,7 +249,7 @@ def fetch_catalyst_context(
                 )
             else:
                 next_earnings = get_next_earnings(
-                    ticker, source=actual_earnings_source, use_cache=False
+                    ticker, source=actual_earnings_source, use_cache=False, settings=settings
                 )
                 earnings_status, earnings_date, days_until_earnings = _earnings_status(
                     next_earnings, session_date or as_of_ny.date(), lookback_hours

@@ -16,26 +16,41 @@ Fingerprint schema per event_type:
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from tradex.data.fetcher import DEFAULT_PROVIDER
+from tradex.config import TradeXSettings, load_runtime_settings
 from tradex.data.history import _resolve_history_provider
 from tradex.patterns.config import PatternConfig, PROFILES
 
-DB_PATH = os.getenv("TRADEX_FP_DB", os.path.expanduser("~/.tradex/fingerprints.db"))
+DB_PATH: Path = Path("~/.tradex/fingerprints.db")
+_DEFAULT_DB_PATH = DB_PATH  # sentinel for legacy DB_PATH monkeypatch detection
 SERIES_KEYS = ["price_pct", "volume_ratio", "rsi", "macd_diff", "bb_width", "atr"]
 
 
+def _db_path(db_path: Path | None = None) -> str:
+    return str(Path(str(db_path or DB_PATH)).expanduser())
+
+
+def init(db_path: str | Path | None = None, *, settings: TradeXSettings | None = None) -> None:
+    """Initialize the fingerprint store at the given or default path."""
+    if db_path is not None:
+        path = Path(db_path)
+    else:
+        path = _resolve_db_path(settings)
+    _init_db(db_path=path)
+
+
 @contextmanager
-def _conn():
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    con = sqlite3.connect(DB_PATH)
+def _conn(db_path: Path | None = None):
+    path = Path(_db_path(db_path))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(str(path))
     con.row_factory = sqlite3.Row
     try:
         yield con
@@ -44,8 +59,22 @@ def _conn():
         con.close()
 
 
-def _init_db():
-    with _conn() as con:
+def _resolve_db_path(settings: TradeXSettings | None = None) -> Path:
+    """Return the fingerprint database path from explicit settings or runtime env.
+
+    Legacy tests may monkeypatch ``DB_PATH``; if the module constant has been
+    replaced with a different path, that path takes precedence. Otherwise the
+    call-time runtime settings are loaded so ``TRADEX_FP_DB`` is honored.
+    """
+    if settings is not None:
+        return settings.paths.fingerprint_db
+    if DB_PATH is not _DEFAULT_DB_PATH and str(DB_PATH) != str(_DEFAULT_DB_PATH):
+        return DB_PATH
+    return load_runtime_settings().paths.fingerprint_db
+
+
+def _init_db(db_path: Path | None = None):
+    with _conn(db_path=db_path) as con:
         # Create the table if it does not exist. Do NOT create the new
         # source-dependent index here -- on an old schema the `source` column
         # may be missing and the index creation would fail before migration runs.
@@ -88,6 +117,8 @@ def build_fingerprint(
     cfg: PatternConfig | None = None,
     min_events: int | None = None,
     source: str | None = None,
+    *,
+    settings: TradeXSettings | None = None,
 ) -> dict | None:
     """
     Average all events of a given type into a fingerprint dict.
@@ -99,7 +130,10 @@ def build_fingerprint(
     Returns None if there aren't enough events to trust the result.
     Saves to DB automatically.
     """
-    _init_db()
+    db_path = _resolve_db_path(settings)
+    if settings is None:
+        settings = load_runtime_settings()
+    _init_db(db_path=db_path)
     if cfg is None:
         cfg = PROFILES[profile]
     if min_events is None:
@@ -145,7 +179,10 @@ def build_fingerprint(
     if not fingerprint:
         return None
 
-    source = (source or DEFAULT_PROVIDER).lower()
+    if source is not None:
+        source = source.strip().lower()
+    else:
+        source = settings.data.data_provider
 
     fp = {
         "event_type":    event_type,
@@ -161,7 +198,7 @@ def build_fingerprint(
     }
 
     # Persist
-    with _conn() as con:
+    with _conn(db_path=db_path) as con:
         con.execute("""
             INSERT INTO fingerprints
               (event_type, profile, source, created_at, n_events, lookback_days, config_json, data_json)
@@ -185,16 +222,26 @@ def build_fingerprint(
 
 
 def load_fingerprint(
-    event_type: str, profile: str = "standard", source: str | None = None
+    event_type: str,
+    profile: str = "standard",
+    source: str | None = None,
+    *,
+    settings: TradeXSettings | None = None,
 ) -> dict | None:
     """Load a previously built fingerprint from DB. Returns None if not found.
 
-    ``source`` defaults to ``DATA_PROVIDER`` or ``yahoo`` so the fingerprint
-    used for matching comes from the same provider as the live data.
+    ``source`` defaults to the configured data provider (or ``yahoo``) so the
+    fingerprint used for matching comes from the same provider as the live data.
     """
-    source = (source or DEFAULT_PROVIDER).lower()
-    _init_db()
-    with _conn() as con:
+    db_path = _resolve_db_path(settings)
+    if settings is None:
+        settings = load_runtime_settings()
+    if source is not None:
+        source = source.strip().lower()
+    else:
+        source = settings.data.data_provider
+    _init_db(db_path=db_path)
+    with _conn(db_path=db_path) as con:
         row = con.execute("""
             SELECT data_json, created_at, n_events FROM fingerprints
             WHERE event_type = ? AND profile = ? AND source = ?
@@ -207,10 +254,11 @@ def load_fingerprint(
     return fp
 
 
-def list_fingerprints() -> pd.DataFrame:
+def list_fingerprints(*, settings: TradeXSettings | None = None) -> pd.DataFrame:
     """Return a summary of all stored fingerprints."""
-    _init_db()
-    with _conn() as con:
+    db_path = _resolve_db_path(settings)
+    _init_db(db_path=db_path)
+    with _conn(db_path=db_path) as con:
         rows = con.execute("""
             SELECT event_type, profile, source, created_at, n_events, lookback_days
             FROM fingerprints ORDER BY created_at DESC
@@ -224,6 +272,8 @@ def run_full_build(
     event_type: str = "both",
     verbose: bool = True,
     provider: str | None = None,
+    *,
+    settings: TradeXSettings | None = None,
 ) -> dict[str, dict]:
     """
     Convenience function: mine events + build fingerprints in one call.
@@ -234,22 +284,29 @@ def run_full_build(
     not mix.
     """
     from tradex.patterns.miner import mine_events
+    if settings is None:
+        settings = load_runtime_settings()
     cfg = PROFILES[profile]
 
     # Resolve the provider early so the fingerprint source key is explicit.
-    source = _resolve_history_provider(provider)
+    source = _resolve_history_provider(provider, settings=settings)
 
     if verbose:
         print(f"Mining events (profile={profile}, source={source}, {cfg.history_years}yr history)…")
 
     events = mine_events(
-        tickers=tickers, cfg=cfg, event_type=event_type, verbose=verbose, provider=provider
+        tickers=tickers,
+        cfg=cfg,
+        event_type=event_type,
+        verbose=verbose,
+        provider=provider,
+        settings=settings,
     )
 
     results = {}
     types = ["runup", "decline"] if event_type == "both" else [event_type]
     for etype in types:
-        fp = build_fingerprint(events, etype, profile=profile, cfg=cfg, source=source)
+        fp = build_fingerprint(events, etype, profile=profile, cfg=cfg, source=source, settings=settings)
         if fp:
             results[etype] = fp
 

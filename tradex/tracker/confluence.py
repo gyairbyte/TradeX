@@ -16,6 +16,7 @@ from typing import Any
 
 import pandas as pd
 
+from tradex.config import TradeXSettings, load_runtime_settings
 from tradex.data.fetcher import fetch
 from tradex.earnings import days_until_earnings
 from tradex.signals import intraday, long_term, short_term
@@ -75,7 +76,12 @@ def _select_tier(confluence: int, available_tfs: list[str], active_tfs: list[str
     return "weak confluence"
 
 
-def score_confluence(ticker: str, provider: str | None = None) -> dict[str, Any]:
+def score_confluence(
+    ticker: str,
+    provider: str | None = None,
+    *,
+    settings: TradeXSettings | None = None,
+) -> dict[str, Any]:
     """
     Fetch all three timeframes and compute a weighted confluence score.
 
@@ -93,10 +99,13 @@ def score_confluence(ticker: str, provider: str | None = None) -> dict[str, Any]
         "long":     (long_term.score, "long"),
     }
 
+    if settings is None:
+        settings = load_runtime_settings()
+
     for tf in _TIME_FRAME_ORDER:
         scorer, tf_key = fetchers[tf]
         try:
-            df = fetch(ticker, tf_key, provider=provider)
+            df = fetch(ticker, tf_key, provider=provider, settings=settings)
             if len(df) < 30:
                 errors[tf] = "insufficient data"
                 continue
@@ -142,6 +151,8 @@ def run_confluence_screen(
     provider: str | None = None,
     exclude_earnings_within: int | None = None,
     earnings_source: str | None = None,
+    *,
+    settings: TradeXSettings | None = None,
 ) -> pd.DataFrame:
     """
     Run confluence scoring across a watchlist.
@@ -151,10 +162,14 @@ def run_confluence_screen(
     Result rows always include `days_until_earnings` (None if unknown).
     `earnings_source` is passed to `days_until_earnings` and defaults to Yahoo.
     """
+    if settings is None:
+        settings = load_runtime_settings()
     rows = []
     for ticker in tickers:
         try:
-            days_to_er = days_until_earnings(ticker, source=earnings_source)
+            days_to_er = days_until_earnings(
+                ticker, source=earnings_source, settings=settings
+            )
             if (
                 exclude_earnings_within is not None
                 and days_to_er is not None
@@ -163,7 +178,7 @@ def run_confluence_screen(
                 print(f"[skip] {ticker}: earnings in {days_to_er}d")
                 continue
 
-            result = score_confluence(ticker, provider=provider)
+            result = score_confluence(ticker, provider=provider, settings=settings)
             if result["confluence_score"] >= min_confluence:
                 rows.append({
                     "ticker":                    result["ticker"],

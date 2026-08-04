@@ -22,9 +22,10 @@ import sqlite3
 
 import pandas as pd
 
+from tradex.config import TradeXSettings, load_runtime_settings
 from tradex.data.fetcher import ProviderCapabilityError, resolve_provider
 from tradex.data.history import fetch_daily_history
-from tradex.tracker.store import DB_PATH, _conn, _ensure_db_dir, mark_outcome_by_id
+from tradex.tracker.store import _conn, _ensure_db_dir, _resolve_db_path, mark_outcome_by_id
 
 # Days after signal to measure outcome, keyed by timeframe
 OUTCOME_WINDOWS = {
@@ -40,7 +41,12 @@ def _utc_now() -> datetime:
 
 
 def _fetch_close_after(
-    ticker: str, after_date: datetime, days_forward: int, provider: str | None = None
+    ticker: str,
+    after_date: datetime,
+    days_forward: int,
+    provider: str | None = None,
+    *,
+    settings: TradeXSettings | None = None,
 ) -> float | None:
     """
     Fetch the closing price `days_forward` trading sessions after `after_date`.
@@ -51,7 +57,7 @@ def _fetch_close_after(
     trading-session close is available in the daily data.
 
     ``provider`` is passed to the daily-history abstraction. When None, the value
-    of the ``DATA_PROVIDER`` environment variable is used.
+    is read from runtime settings.
 
     Returns None if the required trading session has not occurred yet or its
     close cannot be resolved.
@@ -75,7 +81,9 @@ def _fetch_close_after(
     if end_date < start_date:
         return None
 
-    df = fetch_daily_history(ticker, start_date, end_date, provider=provider)
+    df = fetch_daily_history(
+        ticker, start_date, end_date, provider=provider, settings=settings
+    )
 
     if df.empty:
         return None
@@ -96,9 +104,9 @@ def _fetch_close_after(
     return float(close.iloc[0])
 
 
-def _get_pending_outcomes() -> list[dict]:
+def _get_pending_outcomes(*, settings: TradeXSettings | None = None) -> list[dict]:
     """Return signals that fired long enough ago to have an outcome but haven't been marked yet."""
-    with _conn() as con:
+    with _conn(db_path=_resolve_db_path(settings)) as con:
         rows = con.execute("""
             SELECT id, ticker, timeframe, scan_time, last_close
             FROM signal_history
@@ -108,12 +116,23 @@ def _get_pending_outcomes() -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def _write_outcome(signal: dict, outcome_close: float, outcome_provider: str):
+def _write_outcome(
+    signal: dict,
+    outcome_close: float,
+    outcome_provider: str,
+    *,
+    settings: TradeXSettings | None = None,
+):
     """Persist a resolved outcome and its provider without overwriting signal provider."""
-    mark_outcome_by_id(signal["id"], outcome_close, outcome_provider=outcome_provider)
+    mark_outcome_by_id(signal["id"], outcome_close, outcome_provider=outcome_provider, settings=settings)
 
 
-def run_outcome_pass(verbose: bool = True, provider: str | None = None) -> dict:
+def run_outcome_pass(
+    verbose: bool = True,
+    provider: str | None = None,
+    *,
+    settings: TradeXSettings | None = None,
+) -> dict:
     """
     Check all unresolved signals and mark outcomes for those whose window has closed.
     Returns a summary dict of how many were resolved vs still pending.
@@ -121,9 +140,11 @@ def run_outcome_pass(verbose: bool = True, provider: str | None = None) -> dict:
     ``provider`` is passed to the daily-history abstraction for the close lookup.
     The resolved provider is recorded as ``outcome_provider`` on successful outcomes.
     """
-    _ensure_db_dir()
-    outcome_provider = resolve_provider(provider)
-    pending = _get_pending_outcomes()
+    if settings is None:
+        settings = load_runtime_settings()
+    _ensure_db_dir(_resolve_db_path(settings))
+    outcome_provider = resolve_provider(provider, settings=settings)
+    pending = _get_pending_outcomes(settings=settings)
     resolved = 0
     still_pending = 0
     errors = 0
@@ -137,13 +158,13 @@ def run_outcome_pass(verbose: bool = True, provider: str | None = None) -> dict:
 
         try:
             outcome_close = _fetch_close_after(
-                signal["ticker"], scan_dt, days_forward, provider=outcome_provider
+                signal["ticker"], scan_dt, days_forward, provider=outcome_provider, settings=settings
             )
             if outcome_close is None:
                 still_pending += 1
                 continue
 
-            _write_outcome(signal, outcome_close, outcome_provider)
+            _write_outcome(signal, outcome_close, outcome_provider, settings=settings)
             pct = ((outcome_close - signal["last_close"]) / signal["last_close"]) * 100
             if verbose:
                 direction = "▲" if pct > 0 else "▼"
@@ -166,12 +187,12 @@ def run_outcome_pass(verbose: bool = True, provider: str | None = None) -> dict:
     return summary
 
 
-def get_outcome_stats() -> pd.DataFrame:
+def get_outcome_stats(*, settings: TradeXSettings | None = None) -> pd.DataFrame:
     """
     Aggregate win rate and avg return per timeframe and score bucket.
     Useful for understanding which signals actually work.
     """
-    with _conn() as con:
+    with _conn(db_path=_resolve_db_path(settings)) as con:
         rows = con.execute("""
             SELECT
                 timeframe,

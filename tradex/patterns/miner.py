@@ -18,12 +18,12 @@ This module is compute-heavy on first run. Results are cached to
 """
 from __future__ import annotations
 
-import os
 from datetime import datetime, timedelta, timezone
 
 import numpy as np
 import pandas as pd
 
+from tradex.config import TradeXSettings, load_runtime_settings
 from tradex.data.fetcher import ProviderCapabilityError
 from tradex.data.history import fetch_daily_history
 from tradex.signals.indicators import add_indicators
@@ -53,12 +53,18 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _fetch_history(ticker: str, years: int, provider: str | None = None) -> pd.DataFrame | None:
+def _fetch_history(
+    ticker: str,
+    years: int,
+    provider: str | None = None,
+    *,
+    settings: TradeXSettings | None = None,
+) -> pd.DataFrame | None:
     """Download daily OHLCV for `years` years and compute indicators."""
     end = _utc_now().date()
     start = end - timedelta(days=years * 365)
     try:
-        df = fetch_daily_history(ticker, start, end, provider=provider)
+        df = fetch_daily_history(ticker, start, end, provider=provider, settings=settings)
         if df.empty or len(df) < 60:
             return None
 
@@ -127,12 +133,14 @@ def mine_events(
     event_type: str = "runup",   # "runup" | "decline" | "both"
     verbose: bool = True,
     provider: str | None = None,
+    *,
+    settings: TradeXSettings | None = None,
 ) -> pd.DataFrame:
     """
     Mine historical events from a universe of tickers.
 
     ``provider`` is passed to the daily-history abstraction. When None, the
-    value of the ``DATA_PROVIDER`` environment variable is used.
+    configured default provider is used.
 
     Returns a DataFrame where each row is one pre-event window:
       ticker, event_type, event_date, move_pct, normalized series columns...
@@ -143,6 +151,8 @@ def mine_events(
         cfg = PROFILES["standard"]
     if tickers is None:
         tickers = MINING_UNIVERSE
+    if settings is None:
+        settings = load_runtime_settings()
 
     types = ["runup", "decline"] if event_type == "both" else [event_type]
     all_rows = []
@@ -151,7 +161,7 @@ def mine_events(
         if verbose:
             print(f"  Mining {ticker}…", end=" ", flush=True)
 
-        df = _fetch_history(ticker, cfg.history_years, provider=provider)
+        df = _fetch_history(ticker, cfg.history_years, provider=provider, settings=settings)
         if df is None:
             if verbose:
                 print("skip (no data)")

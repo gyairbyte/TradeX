@@ -18,12 +18,12 @@ def test_resolve_provider_normalizes_case_and_whitespace():
 
 
 def test_resolve_provider_defaults_to_env(monkeypatch):
-    monkeypatch.setattr("tradex.data.fetcher.DEFAULT_PROVIDER", "schwab")
+    monkeypatch.setenv("DATA_PROVIDER", "schwab")
     assert resolve_provider() == "schwab"
 
 
 def test_resolve_provider_defaults_to_yahoo_when_unset(monkeypatch):
-    monkeypatch.setattr("tradex.data.fetcher.DEFAULT_PROVIDER", "yahoo")
+    monkeypatch.delenv("DATA_PROVIDER", raising=False)
     assert resolve_provider() == "yahoo"
 
 
@@ -41,7 +41,7 @@ def test_fetch_uses_resolved_provider(monkeypatch):
     """fetch() should call the correct provider implementation."""
     captured = {}
 
-    def fake_fetch(ticker, timeframe):
+    def fake_fetch(ticker, timeframe, *, settings=None):
         captured["ticker"] = ticker
         captured["timeframe"] = timeframe
         return "placeholder"

@@ -15,7 +15,6 @@ Cache:
 """
 from __future__ import annotations
 
-import os
 import sqlite3
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -23,16 +22,27 @@ from pathlib import Path
 import pandas as pd
 import yfinance as yf
 
+from tradex.config import TradeXSettings, load_runtime_settings
 from tradex.data.fetcher import ProviderCapabilityError
 
-CACHE_DIR = Path(os.path.expanduser("~/.tradex"))
-CACHE_DB = CACHE_DIR / "earnings_cache.db"
+DEFAULT_CACHE_DB = Path("~/.tradex/earnings_cache.db")
 CACHE_TTL_HOURS = 24
 
 
-def _resolve_earnings_source(source: str | None) -> str:
+def _resolve_cache_db(settings: TradeXSettings | None = None) -> Path:
+    """Return the earnings cache path from explicit settings or the runtime default."""
+    if settings is None:
+        settings = load_runtime_settings()
+    return settings.paths.earnings_cache_db
+
+
+def _resolve_earnings_source(
+    source: str | None, *, settings: TradeXSettings | None = None
+) -> str:
     """Return the validated earnings source. Only Yahoo is supported in this PR."""
-    s = (source or os.getenv("EARNINGS_DATA_SOURCE", "yahoo")).lower().strip()
+    if settings is None:
+        settings = load_runtime_settings()
+    s = (source or settings.earnings_data_source).lower().strip()
     if s != "yahoo":
         raise ProviderCapabilityError(
             f"Earnings source '{s}' is not supported; only 'yahoo' is available"
@@ -40,9 +50,11 @@ def _resolve_earnings_source(source: str | None) -> str:
     return s
 
 
-def _conn() -> sqlite3.Connection:
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(CACHE_DB)
+def _conn(cache_db: Path | None = None) -> sqlite3.Connection:
+    db = cache_db or DEFAULT_CACHE_DB
+    db = Path(str(db)).expanduser()
+    db.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(db))
     conn.execute("""
         CREATE TABLE IF NOT EXISTS earnings_cache (
             ticker        TEXT PRIMARY KEY,
@@ -58,9 +70,15 @@ def _conn() -> sqlite3.Connection:
     return conn
 
 
-def _cache_get(ticker: str, source: str) -> tuple[date | None, bool]:
+def _cache_get(
+    ticker: str,
+    source: str,
+    *,
+    cache_db: Path | None = None,
+    settings: TradeXSettings | None = None,
+) -> tuple[date | None, bool]:
     """Return (next_earnings_date_or_None, is_fresh)."""
-    with _conn() as c:
+    with _conn(cache_db or _resolve_cache_db(settings)) as c:
         row = c.execute(
             "SELECT next_earnings, fetched_at FROM earnings_cache WHERE ticker = ? AND source = ?",
             (ticker, source),
@@ -74,8 +92,15 @@ def _cache_get(ticker: str, source: str) -> tuple[date | None, bool]:
     return next_date, is_fresh
 
 
-def _cache_put(ticker: str, source: str, next_earnings: date | None) -> None:
-    with _conn() as c:
+def _cache_put(
+    ticker: str,
+    source: str,
+    next_earnings: date | None,
+    *,
+    cache_db: Path | None = None,
+    settings: TradeXSettings | None = None,
+) -> None:
+    with _conn(cache_db or _resolve_cache_db(settings)) as c:
         c.execute(
             "INSERT OR REPLACE INTO earnings_cache (ticker, source, next_earnings, fetched_at) "
             "VALUES (?, ?, ?, ?)",
@@ -131,6 +156,8 @@ def get_next_earnings(
     force_refresh: bool = False,
     source: str | None = None,
     use_cache: bool = True,
+    *,
+    settings: TradeXSettings | None = None,
 ) -> date | None:
     """Return the next earnings date for `ticker`, or None if unavailable.
 
@@ -141,31 +168,50 @@ def get_next_earnings(
     cache file is read or written. This is the path used by the pre-market gap
     scanner, which must not create persistent database files.
     """
-    source = _resolve_earnings_source(source)
+    if settings is None:
+        settings = load_runtime_settings()
+    source = _resolve_earnings_source(source, settings=settings)
+    cache_db = settings.paths.earnings_cache_db
     if use_cache and not force_refresh:
-        cached, fresh = _cache_get(ticker, source)
+        cached, fresh = _cache_get(ticker, source, cache_db=cache_db, settings=settings)
         if fresh:
             return cached
     next_date = _fetch_from_yahoo(ticker)
     if use_cache:
-        _cache_put(ticker, source, next_date)
+        _cache_put(ticker, source, next_date, cache_db=cache_db, settings=settings)
     return next_date
 
 
-def days_until_earnings(ticker: str, force_refresh: bool = False, source: str | None = None) -> int | None:
-    next_date = get_next_earnings(ticker, force_refresh=force_refresh, source=source)
+def days_until_earnings(
+    ticker: str,
+    force_refresh: bool = False,
+    source: str | None = None,
+    *,
+    settings: TradeXSettings | None = None,
+) -> int | None:
+    next_date = get_next_earnings(
+        ticker, force_refresh=force_refresh, source=source, settings=settings
+    )
     if next_date is None:
         return None
     return (next_date - date.today()).days
 
 
-def is_within_earnings_window(ticker: str, within_days: int, source: str | None = None) -> bool:
+def is_within_earnings_window(
+    ticker: str,
+    within_days: int,
+    source: str | None = None,
+    *,
+    settings: TradeXSettings | None = None,
+) -> bool:
     """True if the ticker has earnings within `within_days` calendar days."""
-    days = days_until_earnings(ticker, source=source)
+    days = days_until_earnings(ticker, source=source, settings=settings)
     return days is not None and 0 <= days <= within_days
 
 
-def annotate(tickers: list[str], source: str | None = None) -> pd.DataFrame:
+def annotate(
+    tickers: list[str], source: str | None = None, *, settings: TradeXSettings | None = None
+) -> pd.DataFrame:
     """
     Return a DataFrame with one row per ticker:
       ticker | next_earnings (date or NaT) | days_until (int or NaN)
@@ -174,7 +220,7 @@ def annotate(tickers: list[str], source: str | None = None) -> pd.DataFrame:
     rows = []
     for t in tickers:
         try:
-            nxt = get_next_earnings(t, source=source)
+            nxt = get_next_earnings(t, source=source, settings=settings)
         except ProviderCapabilityError:
             nxt = None
         rows.append({

@@ -9,6 +9,8 @@ from datetime import UTC, datetime, timedelta
 
 import pandas as pd
 
+from functools import partial
+
 from tradex.alerts.models import (
     AlertCooldownConfig,
     AlertDecision,
@@ -19,6 +21,7 @@ from tradex.alerts.models import (
 )
 from tradex.alerts.notifier import is_alert_configured, send_alert
 from tradex.alerts.store import AlertStateError, AlertStore
+from tradex.config import TradeXSettings, load_runtime_settings
 
 _DEFAULT_LEASE_SECONDS = 120
 
@@ -62,11 +65,23 @@ class AlertPolicy:
         *,
         clock: Callable[[], datetime] | None = None,
         lease_seconds: int = _DEFAULT_LEASE_SECONDS,
+        settings: TradeXSettings | None = None,
     ) -> None:
-        self.config = config or AlertCooldownConfig()
+        self.settings = settings
+        if config is None:
+            if self.settings is None:
+                self.settings = load_runtime_settings()
+            self.config = self.settings.alert_cooldown
+        else:
+            self.config = config
+
+        # Only load runtime settings if we still need defaults for store/transport/is_configured.
+        if self.settings is None and (store is None or transport is None or is_configured is None):
+            self.settings = load_runtime_settings()
+
         self.store = store or AlertStore(self.config.resolved_state_path)
-        self.transport = transport or send_alert
-        self.is_configured = is_configured or is_alert_configured
+        self.transport = transport or partial(send_alert, settings=self.settings)
+        self.is_configured = is_configured or (lambda: is_alert_configured(settings=self.settings))
         self.clock = clock or (lambda: datetime.now(UTC))
         self.lease_seconds = lease_seconds
 

@@ -6,6 +6,8 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import pytest
 
+from tradex.alerts.policy import AlertPolicy
+from tradex.config import settings_from_mapping
 from tradex.data.fetcher import FetchAttempt, ProviderDataUnavailableError, ProviderTransientError
 from tradex.screener.engine import ScanReport
 from tradex.tracker import store, watcher
@@ -278,6 +280,7 @@ def test_start_loop_schedules_run_once_with_provider():
         "market_hours_only": False,
         "alert_policy": mock_run_once.call_args.kwargs["alert_policy"],
         "now": mock_run_once.call_args.kwargs["now"],
+        "settings": mock_run_once.call_args.kwargs["settings"],
     }
     assert isinstance(mock_run_once.call_args.kwargs["now"], datetime)
 
@@ -313,7 +316,7 @@ def test_run_once_persists_screener_provider(fresh_signal_db):
 
 def test_run_once_persists_env_default_provider(fresh_signal_db, monkeypatch):
     """When no provider is supplied, the resolved default provider is persisted."""
-    monkeypatch.setattr("tradex.data.fetcher.DEFAULT_PROVIDER", "alpaca")
+    monkeypatch.setenv("DATA_PROVIDER", "alpaca")
     results = _screener_results("alpaca")
 
     with (
@@ -589,6 +592,7 @@ def test_run_once_uses_new_york_timestamp_format(capsys):
     with (
         patch.object(watcher, "screener_run_with_report", return_value=_scan_report(empty, "yahoo", total_fetched=0, tickers=["AAPL"])),
         patch.object(watcher, "_check_alerts"),
+        patch.object(watcher.store, "record_scan"),
     ):
         watcher.run_once(["AAPL"], timeframe="intraday", now=now)
     captured = capsys.readouterr()
@@ -1043,3 +1047,49 @@ def test_watcher_requested_and_actual_provider_distinct_after_fallback(fresh_sig
     assert run["requested_provider"] == "yahoo"
     assert run["actual_provider"] == "schwab"
     assert run["provider"] == "schwab"
+
+
+def test_start_loop_reuses_provided_settings():
+    """start_loop must not call load_runtime_settings when an explicit settings object is supplied.
+
+    The same settings object must reach the initial run_once, the scheduled
+    interval callback, the daily outcome job, and the daily pre-market job.
+    """
+    settings = settings_from_mapping({"DATA_PROVIDER": "yahoo"})
+    alert_policy = AlertPolicy(settings.alert_cooldown, settings=settings)
+    mock_schedule = MagicMock()
+
+    with (
+        patch.object(watcher, "run_once") as mock_run_once,
+        patch.object(watcher, "load_runtime_settings") as mock_load,
+        patch.object(watcher, "schedule", mock_schedule),
+        patch.object(watcher.time, "sleep", side_effect=SystemExit),
+        pytest.raises(SystemExit),
+    ):
+        watcher.start_loop(
+            ["AAPL"],
+            timeframe="intraday",
+            interval_minutes=5,
+            min_score=30,
+            provider="yahoo",
+            settings=settings,
+            alert_policy=alert_policy,
+        )
+
+    assert mock_load.call_count == 0
+    assert mock_run_once.call_count == 1
+    assert mock_run_once.call_args.kwargs["settings"] is settings
+
+    # Interval callback forwards the same settings object.
+    scheduled_callback = mock_schedule.every.return_value.minutes.do.call_args[0][0]
+    with patch.object(watcher, "run_once") as mock_run_once2:
+        scheduled_callback()
+    assert mock_run_once2.call_args.kwargs["settings"] is settings
+
+    # Daily scheduled jobs are wired with the same settings object.
+    outcome_do = mock_schedule.every.return_value.day.at.return_value.do
+    # Both jobs are scheduled via the same chained mock; collect their calls.
+    calls = outcome_do.call_args_list
+    assert len(calls) == 2
+    for call in calls:
+        assert call.kwargs.get("settings") is settings

@@ -536,14 +536,15 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Centralize configuration and remove import-time env loading
 - **Category:** Architecture
 - **Priority:** Medium
-- **Status:** Proposed
-- **Problem statement:** Several modules call `load_dotenv()` and read `os.getenv` at import time, making tests dependent on the environment.
-- **Recommended action:** Add a typed `tradex.config` module and pass settings explicitly.
-- **Reason:** Makes the codebase testable and avoids accidental coupling to a specific `.env` at import time.
+- **Status:** Completed
+- **Resolved by:** `devin/centralize-config`
+- **Problem statement:** Several modules call `load_dotenv()` and read `os.getenv` at import time, making tests dependent on the environment and causing global state to leak between unit tests.
+- **Recommended action:** Add a typed `tradex.config` module with `TradeXSettings`, expose `settings_from_mapping` (pure) and `load_runtime_settings` (call-time `.env`/env loader), and thread explicit `settings` objects through providers, options, alerts, persistence, and the dashboard.
+- **Reason:** Makes the codebase import-safe, testable, and avoids accidental coupling to a specific `.env` at import time.
 - **Dependencies:** None
-- **Files likely affected:** `tradex/data/fetcher.py`, `tradex/options/flow.py`, `tradex/alerts/notifier.py`, new `tradex/config.py`
-- **Testing requirements:** Unit tests verify behavior changes when config changes.
-- **Acceptance criteria:** No `os.getenv` at module level except in `config.py`.
+- **Files likely affected:** `tradex/config.py`, `tradex/data/fetcher.py`, `tradex/options/flow.py`, `tradex/alerts/notifier.py`, `tradex/alerts/policy.py`, `tradex/tracker/store.py`, `tradex/tracker/watcher.py`, `tradex/tracker/analyzer.py`, `tradex/tracker/outcome_tracker.py`, `tradex/watchlists/store.py`, `tradex/patterns/fingerprint.py`, `tradex/earnings/calendar.py`, `tradex/signals/weights.py`, `tradex/ui/dashboard.py`
+- **Testing requirements:** AST import-safety tests; settings-isolation matrix; A→B→A persistence isolation for signals, watchlists, fingerprints, and earnings cache; mocked Schwab client-cache isolation; runtime loader precedence/parser/path/no-side-effect tests.
+- **Acceptance criteria:** No `load_dotenv`, `os.getenv`, `os.environ`, `Path.home()`, or module-scope path expansion in `tradex/` except in `tradex/config.py`. All public entry points accept an explicit `settings: TradeXSettings | None` and fall back to `load_runtime_settings()` at call time. PR remains draft/unmerged for ChatGPT final review.
 - **Intended pull request:** `devin/centralize-config`
 - **Affects trading behavior:** No
 
@@ -649,7 +650,6 @@ This is the master backlog for recommendations from the Devin review. Items are 
 | Low | 5 | DOC-001: Fix documentation drift |
 
 **Recommended next pull request order:**
-1. `devin/centralize-config` (ARCH-001).
-2. `devin/add-initial-adrs` (DEC-001).
-3. `devin/improve-long-term-score` (LONG-001).
+1. `devin/add-initial-adrs` (DEC-001).
+2. `devin/improve-long-term-score` (LONG-001).
 

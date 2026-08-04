@@ -103,7 +103,7 @@ def test_snapshot_rejects_bad_date_range(tmp_path: Path):
 def test_snapshot_rollback_on_one_ticker_failure(tmp_path: Path):
     out = tmp_path / "dataset"
 
-    def side_effect(ticker, start, end, provider=None):
+    def side_effect(ticker, start, end, provider=None, *, settings=None):
         if ticker == "FAIL":
             raise RuntimeError("provider failure")
         return _make_history()
@@ -192,7 +192,7 @@ def test_snapshot_resolves_provider_from_env(monkeypatch, tmp_path: Path):
     out = tmp_path / "dataset"
     called: dict[str, Any] = {}
 
-    def fake_history(ticker, start, end, provider=None):
+    def fake_history(ticker, start, end, provider=None, *, settings=None):
         called["provider"] = provider
         return _make_history()
 

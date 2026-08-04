@@ -10,6 +10,7 @@ from typing import Any
 
 import pandas as pd
 
+from tradex.config import load_runtime_settings
 from tradex.premarket.config import GapScanConfig
 from tradex.premarket.gap_scanner import scan_gaps_with_report
 from tradex.premarket.models import VALID_TICKER_RE
@@ -130,6 +131,7 @@ def _add_scan_parser(subparsers: Any) -> None:
 
 def _run_scan(args: argparse.Namespace) -> int:
     try:
+        settings = load_runtime_settings()
         config = _build_config(args)
         report = scan_gaps_with_report(
             args.tickers,
@@ -138,6 +140,7 @@ def _run_scan(args: argparse.Namespace) -> int:
             earnings_source=args.earnings_source,
             headline_source=args.headline_source,
             include_catalysts=args.include_catalysts,
+            settings=settings,
         )
     except Exception as exc:  # noqa: BLE001
         print(f"[error] {exc}", file=sys.stderr)

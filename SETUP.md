@@ -104,6 +104,13 @@ Key variables:
 | `ALERT_PATTERN_COOLDOWN_MINUTES` | No | Optional per-type override. Default `ALERT_COOLDOWN_MINUTES`. |
 | `ALERT_GAP_COOLDOWN_MINUTES` | No | Optional per-type override. Default `ALERT_COOLDOWN_MINUTES`. |
 | `ALERT_STATE_PATH` | No | Isolated SQLite alert state database. Default `~/.tradex/alerts.db`. |
+| `TRADEX_DB_PATH` | No | Signal history / scan session SQLite DB. Default `~/.tradex/signals.db`. |
+| `TRADEX_FP_DB` | No | Pattern fingerprint SQLite DB. Default `~/.tradex/fingerprints.db`. |
+| `TRADEX_WATCHLISTS_DB_PATH` | No | Watchlists SQLite DB. Default `~/.tradex/watchlists.db`. |
+| `TRADEX_EARNINGS_CACHE_PATH` | No | Earnings calendar cache SQLite DB. Default `~/.tradex/earnings_cache.db`. |
+| `TRADEX_WEIGHTS_PATH` | No | Custom scoring weights JSON. Default `~/.tradex/weights.json`. |
+
+`tradex/config.py` is the single configuration boundary. `load_runtime_settings()` reads `.env` once, applies `os.environ` overrides, and returns an immutable `TradeXSettings`. Every public entry point accepts an optional `settings` keyword for explicit injection; when omitted it calls `load_runtime_settings()` at call time, so modules can be imported without a `.env` or credentials.
 
 ### 2a. Schwab OAuth bootstrap (only if `DATA_PROVIDER=schwab`)
 

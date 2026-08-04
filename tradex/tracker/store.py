@@ -11,18 +11,20 @@ This is the foundation for:
 from __future__ import annotations
 
 import hashlib
-import os
 import sqlite3
 import uuid
 from collections.abc import Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pandas as pd
 
+from tradex.config import TradeXSettings, load_runtime_settings
 from tradex.market.hours import is_trading_day, normalize_market_datetime
 
-DB_PATH = os.getenv("TRADEX_DB_PATH", os.path.expanduser("~/.tradex/signals.db"))
+DB_PATH: Path = Path("~/.tradex/signals.db")
+_DEFAULT_DB_PATH = DB_PATH  # sentinel for legacy DB_PATH monkeypatch detection
 
 # DB schema version managed by PRAGMA user_version.
 _SCHEMA_VERSION = 3
@@ -32,11 +34,16 @@ class StoreError(Exception):
     """Raised when the persistence layer cannot complete an operation."""
 
 
+def _db_path(db_path: Path | None = None) -> str:
+    return str(Path(str(db_path or DB_PATH)).expanduser())
+
+
 @contextmanager
-def _conn():
+def _conn(db_path: Path | None = None):
     """Yield a managed SQLite connection. Commits on normal exit."""
-    _ensure_db_dir()
-    con = sqlite3.connect(DB_PATH)
+    path = Path(_db_path(db_path))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(str(path))
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")
     try:
@@ -47,10 +54,11 @@ def _conn():
 
 
 @contextmanager
-def _transaction():
+def _transaction(db_path: Path | None = None):
     """Yield a connection with explicit BEGIN / COMMIT / ROLLBACK."""
-    _ensure_db_dir()
-    con = sqlite3.connect(DB_PATH)
+    path = Path(_db_path(db_path))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(str(path))
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")
     con.execute("BEGIN")
@@ -64,8 +72,23 @@ def _transaction():
         con.close()
 
 
-def _ensure_db_dir():
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+def _ensure_db_dir(db_path: Path | None = None):
+    Path(str(db_path or DB_PATH)).expanduser().parent.mkdir(parents=True, exist_ok=True)
+
+
+def _resolve_db_path(settings: TradeXSettings | None = None) -> Path:
+    """Return the signal database path from explicit settings or runtime env.
+
+    Legacy tests may monkeypatch ``DB_PATH``; if the module constant has been
+    replaced with a different path, that path takes precedence. Otherwise the
+    call-time runtime settings are loaded so ``TRADEX_DB_PATH`` is honored.
+    """
+    if settings is not None:
+        return settings.paths.signals_db
+    # Preserve legacy test monkeypatch compatibility.
+    if DB_PATH is not _DEFAULT_DB_PATH and str(DB_PATH) != str(_DEFAULT_DB_PATH):
+        return DB_PATH
+    return load_runtime_settings().paths.signals_db
 
 
 def _table_exists(con: sqlite3.Connection, table: str) -> bool:
@@ -531,9 +554,10 @@ def _migrate_v2_to_v3(con: sqlite3.Connection) -> None:
         )
 
 
-def init():
+def init(db_path: str | Path | None = None, *, settings: TradeXSettings | None = None):
     """Create tables if they don't exist and migrate older schemas atomically."""
-    with _transaction() as con:
+    path = _resolve_db_path(settings) if db_path is None else Path(db_path)
+    with _transaction(db_path=path) as con:
         version = con.execute("PRAGMA user_version").fetchone()[0]
         if version < _SCHEMA_VERSION:
             if version == 0 and _table_exists(con, "signal_history"):
@@ -562,7 +586,12 @@ def _is_missing_provider(value) -> bool:
     return str(value).strip().lower() in _MISSING_PROVIDERS
 
 
-def _resolve_signal_provider(results: pd.DataFrame, provider: str | None = None) -> str:
+def _resolve_signal_provider(
+    results: pd.DataFrame,
+    provider: str | None = None,
+    *,
+    settings: TradeXSettings | None = None,
+) -> str:
     """Return the single canonical OHLCV provider to persist for a scan run.
 
     Precedence:
@@ -576,7 +605,7 @@ def _resolve_signal_provider(results: pd.DataFrame, provider: str | None = None)
     """
     from tradex.data.fetcher import resolve_provider
 
-    explicit = resolve_provider(provider) if provider is not None else None
+    explicit = resolve_provider(provider, settings=settings) if provider is not None else None
 
     df_providers: set[str] = set()
     if "provider" in results.columns:
@@ -584,7 +613,7 @@ def _resolve_signal_provider(results: pd.DataFrame, provider: str | None = None)
             if _is_missing_provider(raw):
                 continue
             try:
-                resolved = resolve_provider(str(raw))
+                resolved = resolve_provider(str(raw), settings=settings)
             except ValueError as e:
                 raise ValueError(f"DataFrame contains invalid provider {raw!r}: {e}") from e
             df_providers.add(resolved)
@@ -842,6 +871,7 @@ def record_scan(
     *,
     scan_time: datetime | None = None,
     session_id: str | None = None,
+    settings: TradeXSettings | None = None,
 ) -> str:
     """Persist a complete scan report, observations, and qualifying signals.
 
@@ -882,7 +912,7 @@ def record_scan(
     status = _status_for_observations(obs)
     observations_complete = 1 if observations_n == requested_n and observations_n > 0 else 0
 
-    with _transaction() as con:
+    with _transaction(db_path=_resolve_db_path(settings)) as con:
         _persist_scan(
             con,
             session_id=session_id,
@@ -911,6 +941,7 @@ def record_signals(
     tickers_scanned: Sequence[str] | int | None = None,
     scan_time: datetime | None = None,
     session_id: str | None = None,
+    settings: TradeXSettings | None = None,
 ) -> None:
     """Persist a screener result DataFrame as a compatibility scan session.
 
@@ -926,7 +957,7 @@ def record_signals(
         # Preserve legacy no-op for empty calls without a known universe.
         return
 
-    scan_provider = _resolve_signal_provider(results, provider=provider)
+    scan_provider = _resolve_signal_provider(results, provider=provider, settings=settings)
     if scan_time is None:
         scan_time = datetime.now(UTC)
     if scan_time.tzinfo is None:
@@ -1038,7 +1069,7 @@ def record_signals(
         min_score=0,
     )
 
-    with _transaction() as con:
+    with _transaction(db_path=_resolve_db_path(settings)) as con:
         _persist_scan(
             con,
             session_id=session_id,
@@ -1057,10 +1088,10 @@ def record_signals(
         )
 
 
-def get_history(ticker: str, timeframe: str, days: int = 14) -> pd.DataFrame:
+def get_history(ticker: str, timeframe: str, days: int = 14, *, settings: TradeXSettings | None = None) -> pd.DataFrame:
     """Return signal history for a ticker over the last N days."""
     since = (datetime.now(UTC) - timedelta(days=days)).isoformat()
-    with _conn() as con:
+    with _conn(db_path=_resolve_db_path(settings)) as con:
         rows = con.execute(
             """
             SELECT * FROM signal_history
@@ -1073,14 +1104,14 @@ def get_history(ticker: str, timeframe: str, days: int = 14) -> pd.DataFrame:
     return pd.DataFrame([dict(r) for r in rows])
 
 
-def get_recent_appearances(timeframe: str, days: int = 7) -> pd.DataFrame:
+def get_recent_appearances(timeframe: str, days: int = 7, *, settings: TradeXSettings | None = None) -> pd.DataFrame:
     """
     Return all tickers that appeared in signals within the last N days,
     with their appearance count and latest score.
     Useful for 'seen N times this week' awareness.
     """
     since = (datetime.now(UTC) - timedelta(days=days)).isoformat()
-    with _conn() as con:
+    with _conn(db_path=_resolve_db_path(settings)) as con:
         rows = con.execute(
             """
             SELECT
@@ -1112,9 +1143,9 @@ def _normalize_outcome_provider(outcome_provider: str | None) -> str:
     return resolve_provider(outcome_provider)
 
 
-def mark_outcome_by_id(signal_id: int, outcome_close: float, outcome_provider: str | None = None):
+def mark_outcome_by_id(signal_id: int, outcome_close: float, outcome_provider: str | None = None, *, settings: TradeXSettings | None = None):
     """Record an outcome for the exact signal_history row by id."""
-    with _conn() as con:
+    with _conn(db_path=_resolve_db_path(settings)) as con:
         row = con.execute(
             "SELECT last_close FROM signal_history WHERE id = ?", (signal_id,)
         ).fetchone()
@@ -1138,13 +1169,15 @@ def mark_outcome(
     scan_time: str,
     outcome_close: float,
     outcome_provider: str | None = None,
+    *,
+    settings: TradeXSettings | None = None,
 ):
     """
     Record what the price did after a signal fired.
     outcome_pct is computed automatically from last_close at signal time.
     outcome_provider is normalized to a canonical provider or 'unknown'.
     """
-    with _conn() as con:
+    with _conn(db_path=_resolve_db_path(settings)) as con:
         row = con.execute(
             """
             SELECT id, last_close FROM signal_history
@@ -1155,14 +1188,14 @@ def mark_outcome(
         ).fetchone()
         if not row:
             return
-    mark_outcome_by_id(row["id"], outcome_close, outcome_provider=outcome_provider)
+    mark_outcome_by_id(row["id"], outcome_close, outcome_provider=outcome_provider, settings=settings)
 
 
-def get_signal_journal(timeframe: str | None = None, min_score: int = 0) -> pd.DataFrame:
+def get_signal_journal(timeframe: str | None = None, min_score: int = 0, *, settings: TradeXSettings | None = None) -> pd.DataFrame:
     """Return all signals that have outcomes recorded — the signal journal."""
     tf_filter = "AND timeframe = ?" if timeframe else ""
     params = ([timeframe] if timeframe else []) + [min_score]
-    with _conn() as con:
+    with _conn(db_path=_resolve_db_path(settings)) as con:
         rows = con.execute(
             f"""
             SELECT
@@ -1195,12 +1228,13 @@ def get_recent_scan_runs(
     limit: int = 20,
     *,
     complete_only: bool = False,
+    settings: TradeXSettings | None = None,
 ) -> pd.DataFrame:
     """Return recent scan-run rows with provenance and completeness metadata."""
     tf_filter = "AND timeframe = ?" if timeframe else ""
     complete_filter = "AND counts_complete = 1" if complete_only else ""
     params = ([timeframe] if timeframe else []) + [limit]
-    with _conn() as con:
+    with _conn(db_path=_resolve_db_path(settings)) as con:
         rows = con.execute(
             f"""
             SELECT
@@ -1239,18 +1273,18 @@ def get_recent_scan_runs(
 
 # ── DATA-001 scan session / observation queries ──────────────────────────────
 
-def get_scan_session(session_id: str) -> dict | None:
+def get_scan_session(session_id: str, *, settings: TradeXSettings | None = None) -> dict | None:
     """Return a scan session as a dict, or None if not found."""
-    with _conn() as con:
+    with _conn(db_path=_resolve_db_path(settings)) as con:
         row = con.execute(
             "SELECT * FROM scan_sessions WHERE session_id = ?", (session_id,)
         ).fetchone()
     return dict(row) if row else None
 
 
-def get_scan_observations(session_id: str) -> pd.DataFrame:
+def get_scan_observations(session_id: str, *, settings: TradeXSettings | None = None) -> pd.DataFrame:
     """Return all observations for a scan session."""
-    with _conn() as con:
+    with _conn(db_path=_resolve_db_path(settings)) as con:
         rows = con.execute(
             "SELECT * FROM scan_observations WHERE session_id = ? ORDER BY ticker",
             (session_id,),
@@ -1258,11 +1292,11 @@ def get_scan_observations(session_id: str) -> pd.DataFrame:
     return pd.DataFrame([dict(r) for r in rows])
 
 
-def get_recent_scan_sessions(timeframe: str | None = None, limit: int = 20) -> pd.DataFrame:
+def get_recent_scan_sessions(timeframe: str | None = None, limit: int = 20, *, settings: TradeXSettings | None = None) -> pd.DataFrame:
     """Return recent scan sessions ordered by scan time."""
     tf_filter = "AND timeframe = ?" if timeframe else ""
     params = ([timeframe] if timeframe else []) + [limit]
-    with _conn() as con:
+    with _conn(db_path=_resolve_db_path(settings)) as con:
         rows = con.execute(
             f"""
             SELECT * FROM scan_sessions
@@ -1275,10 +1309,10 @@ def get_recent_scan_sessions(timeframe: str | None = None, limit: int = 20) -> p
     return pd.DataFrame([dict(r) for r in rows])
 
 
-def get_observation_history(ticker: str, timeframe: str, days: int = 14) -> pd.DataFrame:
+def get_observation_history(ticker: str, timeframe: str, days: int = 14, *, settings: TradeXSettings | None = None) -> pd.DataFrame:
     """Return the complete observation history for a ticker over the last N days."""
     since = (datetime.now(UTC) - timedelta(days=days)).isoformat()
-    with _conn() as con:
+    with _conn(db_path=_resolve_db_path(settings)) as con:
         rows = con.execute(
             """
             SELECT so.*, ss.scan_time, ss.timeframe, ss.trading_date
@@ -1293,7 +1327,7 @@ def get_observation_history(ticker: str, timeframe: str, days: int = 14) -> pd.D
     return pd.DataFrame([dict(r) for r in rows])
 
 
-def get_daily_score_history(ticker: str, timeframe: str, days: int = 14) -> pd.DataFrame:
+def get_daily_score_history(ticker: str, timeframe: str, days: int = 14, *, settings: TradeXSettings | None = None) -> pd.DataFrame:
     """Return one row per distinct XNYS trading session with a score for the ticker.
 
     When a ticker was observed multiple times in one trading session, the latest
@@ -1301,7 +1335,7 @@ def get_daily_score_history(ticker: str, timeframe: str, days: int = 14) -> pd.D
     invariant. Ties are broken by the observation ``id`` (most recent first).
     """
     since = (datetime.now(UTC) - timedelta(days=days)).isoformat()
-    with _conn() as con:
+    with _conn(db_path=_resolve_db_path(settings)) as con:
         rows = con.execute(
             """
             WITH ranked AS (
@@ -1336,13 +1370,13 @@ def get_daily_score_history(ticker: str, timeframe: str, days: int = 14) -> pd.D
     return pd.DataFrame([dict(r) for r in rows])
 
 
-def get_all_daily_scores(timeframe: str, days: int = 14) -> pd.DataFrame:
+def get_all_daily_scores(timeframe: str, days: int = 14, *, settings: TradeXSettings | None = None) -> pd.DataFrame:
     """Return the latest score observation per ticker per trading date.
 
     Ties are broken by observation ``id`` (most recent first).
     """
     since = (datetime.now(UTC) - timedelta(days=days)).isoformat()
-    with _conn() as con:
+    with _conn(db_path=_resolve_db_path(settings)) as con:
         rows = con.execute(
             """
             WITH ranked AS (

@@ -9,6 +9,7 @@ from enum import Enum
 
 import pandas as pd
 
+from tradex.config import TradeXSettings, load_runtime_settings
 from tradex.data.fetcher import (
     FetchAttempt,
     FetchPolicy,
@@ -272,6 +273,8 @@ def run_with_report(
     earnings_source: str | None = None,
     policy: FetchPolicy | None = None,
     sleeper: Callable[[float], None] | None = None,
+    *,
+    settings: TradeXSettings | None = None,
 ) -> ScanReport:
     """Run the screener and return a structured report.
 
@@ -279,12 +282,14 @@ def run_with_report(
     OHLCV provider failures, and scoring failures; tracks the actual provider used
     (including fallback); and preserves accurate provenance on every observation.
     """
+    if settings is None:
+        settings = load_runtime_settings()
     if timeframe not in SIGNAL_MAP:
         raise ValueError(f"timeframe must be one of {list(SIGNAL_MAP)}")
 
     scorer, tf_key = SIGNAL_MAP[timeframe]
-    requested_provider = resolve_provider(provider)
-    effective_policy = policy or FetchPolicy.build()
+    requested_provider = resolve_provider(provider, settings=settings)
+    effective_policy = policy or FetchPolicy.build(settings=settings)
 
     unique_tickers = list(dict.fromkeys(_normalize_ticker(t) for t in tickers))
 
@@ -296,7 +301,9 @@ def run_with_report(
 
     for ticker in unique_tickers:
         try:
-            days_to_er = days_until_earnings(ticker, source=earnings_source)
+            days_to_er = days_until_earnings(
+                ticker, source=earnings_source, settings=settings
+            )
             days_map[ticker] = days_to_er
         except Exception:  # noqa: BLE001
             err = ProviderDataUnavailableError(f"Earnings lookup failed for {ticker}")
@@ -330,6 +337,7 @@ def run_with_report(
         progress=progress,
         status=status,
         max_workers=max_workers,
+        settings=settings,
     )
 
     actual_provider = fetch_report.actual_provider
@@ -491,6 +499,8 @@ def run(
     provider: str | None = None,
     earnings_source: str | None = None,
     policy: FetchPolicy | None = None,
+    *,
+    settings: TradeXSettings | None = None,
 ) -> pd.DataFrame:
     """Compatibility wrapper that returns the signal DataFrame from ``run_with_report``."""
     report = run_with_report(
@@ -503,5 +513,6 @@ def run(
         provider=provider,
         earnings_source=earnings_source,
         policy=policy,
+        settings=settings,
     )
     return report.results

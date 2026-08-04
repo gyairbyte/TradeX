@@ -10,6 +10,7 @@ import pandas as pd
 import pytest
 import requests
 
+from tradex.config import settings_from_mapping
 from tradex.data.fetcher import (
     ProviderCapabilityError,
     ProviderResponseError,
@@ -23,22 +24,32 @@ from tradex.options.models import (
 )
 
 
+def _option_settings(source: str = "auto", *, uw: str | None = None, tradier: str | None = None):
+    """Return a TradeXSettings object configured for options source tests."""
+    return settings_from_mapping(
+        {
+            "OPTIONS_DATA_SOURCE": source,
+            "UNUSUAL_WHALES_API_KEY": uw or "",
+            "TRADIER_API_KEY": tradier or "",
+        }
+    )
+
+
 @pytest.fixture(autouse=True)
 def _no_options_credentials(monkeypatch):
     """Ensure tests never accidentally use real credentials."""
-    monkeypatch.setattr(flow, "UNUSUAL_WHALES_KEY", "")
-    monkeypatch.setattr(flow, "TRADIER_KEY", "")
-    monkeypatch.setenv("OPTIONS_DATA_SOURCE", "auto")
+    for var in ("UNUSUAL_WHALES_API_KEY", "TRADIER_API_KEY", "OPTIONS_DATA_SOURCE"):
+        monkeypatch.delenv(var, raising=False)
 
 
 @pytest.fixture
 def _uw_configured(monkeypatch):
-    monkeypatch.setattr(flow, "UNUSUAL_WHALES_KEY", "uw-test-key")
+    monkeypatch.setenv("UNUSUAL_WHALES_API_KEY", "uw-test-key")
 
 
 @pytest.fixture
 def _tradier_configured(monkeypatch):
-    monkeypatch.setattr(flow, "TRADIER_KEY", "tradier-test-key")
+    monkeypatch.setenv("TRADIER_API_KEY", "tradier-test-key")
 
 
 @pytest.fixture
@@ -185,7 +196,7 @@ def test_resolve_options_source_name_rejects_unknown():
 
 
 def test_resolve_options_source_name_defaults_from_env(monkeypatch):
-    monkeypatch.setattr(flow, "OPTIONS_DATA_SOURCE", "yahoo")
+    monkeypatch.setenv("OPTIONS_DATA_SOURCE", "yahoo")
     assert flow._resolve_options_source_name(None) == "yahoo"
 
 
@@ -327,7 +338,7 @@ def test_scan_unusual_flow_with_report_valid_zero_events():
 
 def test_scan_unusual_flow_with_report_partial_failure(_uw_record):
     with _uw_configured_via_patch():
-        def _fetch(ticker):
+        def _fetch(ticker, **kwargs):
             if ticker == "AAPL":
                 return [_uw_record]
             raise ProviderTransientError("network timeout")
@@ -609,7 +620,7 @@ def test_chain_report_valid_zero_matches():
 def test_chain_report_partial_failure(_tradier_chain_row):
     df = pd.DataFrame([_tradier_chain_row])
     with _tradier_configured_via_patch():
-        def _fetch(ticker):
+        def _fetch(ticker, **kwargs):
             if ticker == "AAPL":
                 return df
             raise ProviderTransientError("network timeout")
@@ -963,7 +974,7 @@ def test_wrapper_does_not_restore_misleading_behavior(_yahoo_chain):
 # ── report count semantics regressions ─────────────────────────────────────────
 def test_scan_unusual_flow_with_report_partial_failure_zero_matches():
     with _uw_configured_via_patch():
-        def _fetch(ticker):
+        def _fetch(ticker, **kwargs):
             if ticker == "AAPL":
                 return []
             raise ProviderTransientError("network timeout")
@@ -987,7 +998,7 @@ def test_chain_report_partial_failure_zero_matches():
     }
     df = pd.DataFrame([row])
     with _tradier_configured_via_patch():
-        def _fetch(ticker):
+        def _fetch(ticker, **kwargs):
             if ticker == "AAPL":
                 return df
             raise ProviderTransientError("network timeout")
@@ -1118,8 +1129,12 @@ def test_fetch_tradier_requests_json_decode_error():
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 def _uw_configured_via_patch():
-    return patch.object(flow, "UNUSUAL_WHALES_KEY", "uw-test-key")
+    return patch.object(
+        flow, "load_runtime_settings", lambda: _option_settings(uw="uw-test-key")
+    )
 
 
 def _tradier_configured_via_patch():
-    return patch.object(flow, "TRADIER_KEY", "tradier-test-key")
+    return patch.object(
+        flow, "load_runtime_settings", lambda: _option_settings(tradier="tradier-test-key")
+    )
