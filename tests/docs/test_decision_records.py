@@ -23,6 +23,12 @@ REQUIRED_SECTIONS = [
     "## References",
 ]
 
+# Placeholders that must not appear in accepted ADRs.
+PLACEHOLDERS = {"TBD", "TODO", "<date>", "<owner>"}
+
+# Glob for four-digit ADR files (excludes the template and README by design).
+ADR_FILE_GLOB = "[0-9][0-9][0-9][0-9]-*.md"
+
 
 @pytest.fixture
 def readme_text() -> str:
@@ -57,6 +63,14 @@ def _parse_index_rows(readme_text: str) -> list[dict]:
     return rows
 
 
+def _accepted_adr_paths(readme_text: str) -> list[Path]:
+    """Return paths for accepted ADRs, excluding the template."""
+    rows = _parse_index_rows(readme_text)
+    paths = [DECISIONS_DIR / r["link"] for r in rows if r["id"] != "0000"]
+    assert paths, "No accepted ADR files found in README index"
+    return paths
+
+
 def test_decisions_directory_has_required_files() -> None:
     assert README.exists(), f"{README} must exist"
     assert (DECISIONS_DIR / "0000-template.md").exists(), "ADR template must exist"
@@ -78,7 +92,7 @@ def test_index_entries_are_unique_and_consistent(readme_text: str) -> None:
 
     for row in rows:
         assert row["link"].startswith(f"{row['id']}-"), (
-            f"ADR-{row['id']} link {row['link']} must start with 'ADR-{row['id']}-'"
+            f"ADR-{row['id']} link {row['link']} must start with '{row['id']}-'"
         )
 
 
@@ -119,6 +133,14 @@ def test_indexed_adr_files_exist_and_match_metadata(readme_text: str) -> None:
             assert section in text, f"{path}: missing required section {section}"
 
 
+def test_accepted_adrs_contain_no_placeholders(readme_text: str) -> None:
+    """Accepted ADRs must not contain template placeholders (TBD, TODO, <date>, <owner>)."""
+    for path in _accepted_adr_paths(readme_text):
+        text = path.read_text(encoding="utf-8")
+        found = {p for p in PLACEHOLDERS if p in text}
+        assert not found, f"{path}: found placeholders {found}"
+
+
 def test_every_adr_file_is_indexed_exactly_once(readme_text: str) -> None:
     rows = _parse_index_rows(readme_text)
     indexed_links = {r["link"] for r in rows}
@@ -129,8 +151,21 @@ def test_every_adr_file_is_indexed_exactly_once(readme_text: str) -> None:
     )
 
 
+def test_four_digit_adr_files_are_non_empty_and_match_convention() -> None:
+    paths = list(DECISIONS_DIR.glob(ADR_FILE_GLOB))
+    assert paths, f"No four-digit ADR files found with glob {ADR_FILE_GLOB!r}"
+    for path in paths:
+        assert path.stat().st_size > 0, f"{path} is empty"
+        assert re.fullmatch(r"\d{4}-.*\.md", path.name), (
+            f"{path.name} does not match the four-digit ADR naming convention"
+        )
+
+
 def test_supersession_links_are_valid(readme_text: str) -> None:
-    for path in DECISIONS_DIR.glob("ADR-*.md"):
+    paths = [p for p in DECISIONS_DIR.glob(ADR_FILE_GLOB) if p.name != "0000-template.md"]
+    assert paths, "No four-digit ADR files to check for supersession links"
+
+    for path in paths:
         text = path.read_text(encoding="utf-8")
         for match in re.finditer(r"Superseded by:\s*\[ADR-(\d{4})\]\(([^)]+\.md)\)", text):
             target = DECISIONS_DIR / match.group(2)
@@ -143,16 +178,18 @@ def test_supersession_links_are_valid(readme_text: str) -> None:
 
 
 def test_adr_internal_links_resolve(readme_text: str) -> None:
-    """Check that relative .md links inside ADR files point to existing files."""
+    """Check that relative .md links inside accepted ADR files point to existing files."""
     rows = _parse_index_rows(readme_text)
-    indexed_files = {DECISIONS_DIR / r["link"] for r in rows}
+    indexed_files = {DECISIONS_DIR / r["link"] for r in rows if r["id"] != "0000"}
     indexed_files.add(README)
 
-    for path in DECISIONS_DIR.glob("ADR-*.md"):
+    paths = [p for p in DECISIONS_DIR.glob(ADR_FILE_GLOB) if p.name != "0000-template.md"]
+    assert paths, "No four-digit ADR files to check for internal links"
+
+    for path in paths:
         text = path.read_text(encoding="utf-8")
         for match in re.finditer(r"\]\(([^)]+\.md)\)", text):
             link = match.group(1)
-            # Resolve relative to the decisions directory.
             target = (DECISIONS_DIR / link).resolve()
             assert target in {p.resolve() for p in indexed_files}, (
                 f"{path}: broken relative link {link}"

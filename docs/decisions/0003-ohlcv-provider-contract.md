@@ -23,24 +23,26 @@ Provider-specific index/timestamp guarantees differ:
 - **Alpaca**: converts bars to lowercase OHLCV columns, drops null rows, and converts a MultiIndex index by dropping the symbol level.
 - **IBKR**: converts `ib_insync` bar output to lowercase columns and drops null rows; the `date` index is converted with `pd.to_datetime`.
 
-Therefore, the universal cross-provider contract is: lowercase OHLCV columns and dropped all-null rows. Schwab additionally guarantees sorted, de-duplicated, UTC-indexed output. Providers may differ in timestamp conventions, adjustment policies, coverage, freshness, and feeds; callers must not assume these are uniform.
+Therefore, the universal cross-provider contract is: lowercase OHLCV columns and rows with any missing OHLCV field dropped (the provider adapters call `dropna()` or otherwise exclude rows missing required values; Schwab date-history normalization drops rows with null OHLCV by default). Schwab additionally guarantees sorted, de-duplicated, UTC-indexed output. Providers may differ in timestamp conventions, adjustment policies, coverage, freshness, and feeds; callers must not assume these are uniform.
 
 Supported canonical providers: `yahoo`, `alpaca`, `ibkr`, `schwab`. Provider selection precedence: explicit `provider` argument > `settings.data.data_provider` > runtime `DATA_PROVIDER` env var > `yahoo` default (`DEFAULT_PROVIDER`).
+
+Unknown provider names and unsupported `timeframe` strings are rejected with `ValueError` at the `resolve_provider`/`fetch` boundary before any provider implementation runs.
 
 Error taxonomy (all subclasses of `ProviderError`):
 
 - `ProviderTransientError`: retryable network/connection timeouts.
 - `ProviderAuthenticationError`: missing credentials/tokens or auth failure.
 - `ProviderConfigurationError`: missing packages, unsafe local settings.
-- `ProviderCapabilityError`: unsupported provider, timeframe, or capability.
+- `ProviderCapabilityError`: unsupported provider capability in a specialized adapter.
 - `ProviderDataUnavailableError`: empty or unusable symbol/date data.
 - `ProviderResponseError`: malformed non-retryable response.
 
 Retries are disabled by default (`OHLCV_MAX_RETRIES` defaults to 0), capped at 3 extra attempts, and applied only to `ProviderTransientError`.
 
-Fallback is disabled unless configured via `OHLCV_FALLBACK_ORDER` or the `fallback_order` argument. `FetchPolicy.build` normalizes the fallback order and removes the primary provider. `fetch_multi_report` operates at whole-scan level: if the primary provider produces zero usable data for all fetch-eligible tickers, the next fallback provider is tried. Fallback stops at the first provider that returns any usable data. Remaining failed tickers are reported in `fetch_failures`; they are not mixed from later providers once a fallback provider has produced usable data.
+Fallback is disabled unless configured via `OHLCV_FALLBACK_ORDER` or the `fallback_order` argument. `FetchPolicy.build` normalizes the fallback order and removes the primary provider. `fetch_multi_report` operates at whole-scan level: if the primary provider produces zero usable data for all fetch-eligible tickers, the next fallback provider is tried. Fallback stops at the first provider that returns any usable data. `FetchReport.failures` maps the tickers that still failed after the last attempted provider; these are not mixed from later providers once a fallback provider has produced usable data. `ScanReport` exposes the same information as `fetch_failures`.
 
-Provenance: `FetchReport` and `ScanReport` record `requested_provider`, `actual_provider`, `fallback_used`, and `providers_attempted`.
+Provenance: `FetchReport` records `requested_provider`, `actual_provider`, `fallback_used`, and `providers_attempted`.
 
 ## Consequences
 

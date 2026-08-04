@@ -16,9 +16,16 @@ TradeX targets US-listed equities. Scheduled jobs, market-open checks, and times
 
 - The canonical market timezone is `America/New_York`.
 - The canonical exchange calendar is the NYSE (`XNYS`) from the `exchange_calendars` package.
-- Functions that accept `datetime` boundaries require timezone-aware input and reject naive datetimes with `ValueError`. These include `normalize_market_datetime`, `get_market_session` (when called with a datetime), `market_status`, `previous_trading_session`, `next_trading_session`, and any function that routes through `_as_market_timezone`.
-- Functions that accept `date` arguments (e.g., `get_market_session(day: date)`) use the `date` directly against the XNYS calendar without converting to a datetime.
-- A regular session is considered open between `session_open` and `session_close` returned by the XNYS calendar.
+- The following public functions take `datetime` arguments and reject naive inputs by routing through `_as_market_timezone`, which raises `ValueError`:
+  - `normalize_market_datetime(value: datetime)`
+  - `market_status(at: datetime)`
+  - `is_regular_market_open(at: datetime)` (delegates to `market_status`)
+  - `next_trading_session(at: datetime)`
+- The following public functions take `date` arguments and consume the calendar directly; they do not route through `_as_market_timezone` and do not reject naive datetimes:
+  - `get_market_session(day: date)`
+  - `is_trading_day(day: date)`
+  - `previous_trading_session(day: date)`
+- A regular session is considered open on the half-open interval `[session_open, session_close)` returned by the XNYS calendar.
 - An early close is detected when `session_close.time() < time(16, 0)`.
 - The daily pre-market scan job is scheduled at 08:00 `America/New_York`.
 - The daily outcome-resolution job is scheduled at 16:30 `America/New_York`.
