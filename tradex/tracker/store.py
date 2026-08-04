@@ -20,10 +20,11 @@ from pathlib import Path
 
 import pandas as pd
 
-from tradex.config import TradeXSettings
+from tradex.config import TradeXSettings, load_runtime_settings
 from tradex.market.hours import is_trading_day, normalize_market_datetime
 
 DB_PATH: Path = Path("~/.tradex/signals.db")
+_DEFAULT_DB_PATH = DB_PATH  # sentinel for legacy DB_PATH monkeypatch detection
 
 # DB schema version managed by PRAGMA user_version.
 _SCHEMA_VERSION = 3
@@ -76,10 +77,18 @@ def _ensure_db_dir(db_path: Path | None = None):
 
 
 def _resolve_db_path(settings: TradeXSettings | None = None) -> Path:
-    """Return the signal database path from explicit settings or the module default."""
-    if settings is None:
+    """Return the signal database path from explicit settings or runtime env.
+
+    Legacy tests may monkeypatch ``DB_PATH``; if the module constant has been
+    replaced with a different path, that path takes precedence. Otherwise the
+    call-time runtime settings are loaded so ``TRADEX_DB_PATH`` is honored.
+    """
+    if settings is not None:
+        return settings.paths.signals_db
+    # Preserve legacy test monkeypatch compatibility.
+    if DB_PATH is not _DEFAULT_DB_PATH and str(DB_PATH) != str(_DEFAULT_DB_PATH):
         return DB_PATH
-    return settings.paths.signals_db
+    return load_runtime_settings().paths.signals_db
 
 
 def _table_exists(con: sqlite3.Connection, table: str) -> bool:

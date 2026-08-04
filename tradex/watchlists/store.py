@@ -13,9 +13,10 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-from tradex.config import TradeXSettings
+from tradex.config import TradeXSettings, load_runtime_settings
 
 DB_PATH: Path = Path("~/.tradex/watchlists.db")
+_DEFAULT_DB_PATH = DB_PATH  # sentinel for legacy DB_PATH monkeypatch detection
 DEFAULT_NAME = "Default"
 
 
@@ -30,10 +31,17 @@ def _conn(db_path: Path | None = None) -> sqlite3.Connection:
 
 
 def _resolve_db_path(settings: TradeXSettings | None = None) -> Path:
-    """Return the watchlist database path from explicit settings or the module default."""
-    if settings is None:
+    """Return the watchlist database path from explicit settings or runtime env.
+
+    Legacy tests may monkeypatch ``DB_PATH``; if the module constant has been
+    replaced with a different path, that path takes precedence. Otherwise the
+    call-time runtime settings are loaded so ``TRADEX_WATCHLISTS_DB_PATH`` is honored.
+    """
+    if settings is not None:
+        return settings.paths.watchlists_db
+    if DB_PATH is not _DEFAULT_DB_PATH and str(DB_PATH) != str(_DEFAULT_DB_PATH):
         return DB_PATH
-    return settings.paths.watchlists_db
+    return load_runtime_settings().paths.watchlists_db
 
 
 def init(db_path: str | Path | None = None, *, settings: TradeXSettings | None = None) -> None:

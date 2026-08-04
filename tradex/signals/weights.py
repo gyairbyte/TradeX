@@ -15,9 +15,10 @@ import json
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
-from tradex.config import TradeXSettings
+from tradex.config import TradeXSettings, load_runtime_settings
 
 WEIGHTS_PATH = Path("~/.tradex/weights.json")
+_DEFAULT_WEIGHTS_PATH = WEIGHTS_PATH  # sentinel for legacy WEIGHTS_PATH monkeypatch detection
 
 
 @dataclass
@@ -131,10 +132,18 @@ def _field_names(cls) -> list[str]:
 
 
 def _resolve_weights_path(settings: TradeXSettings | None = None) -> Path:
-    """Return the weights file path from explicit settings or the module default."""
-    if settings is None:
+    """Return the weights file path from explicit settings or runtime env.
+
+    Legacy tests may monkeypatch ``WEIGHTS_PATH``; if the module constant has
+    been replaced with a different path, that path takes precedence. Otherwise
+    the call-time runtime settings are loaded so ``TRADEX_WEIGHTS_PATH`` is
+    honored.
+    """
+    if settings is not None:
+        return settings.paths.weights
+    if WEIGHTS_PATH is not _DEFAULT_WEIGHTS_PATH and str(WEIGHTS_PATH) != str(_DEFAULT_WEIGHTS_PATH):
         return WEIGHTS_PATH
-    return settings.paths.weights
+    return load_runtime_settings().paths.weights
 
 
 def load(*, settings: TradeXSettings | None = None) -> Weights:

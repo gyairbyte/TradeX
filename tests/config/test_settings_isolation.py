@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import sys
-from datetime import UTC
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -373,3 +373,156 @@ def test_load_runtime_settings_precedence_and_parser_matrix(tmp_path, monkeypatc
     monkeypatch.setenv("ALERT_COIL_THRESHOLD", "not-a-number")
     with pytest.raises(ValueError, match="ALERT_COIL_THRESHOLD"):
         load_runtime_settings()
+
+
+def test_store_env_path_no_arg_controls_db_and_avoids_home(tmp_path, monkeypatch):
+    """TRADEX_DB_PATH controls store calls with no settings argument and no module reload."""
+    home_dir = tmp_path / "home"
+    home_dir.mkdir()
+    monkeypatch.setenv("HOME", str(home_dir))
+
+    a_db = tmp_path / "a" / "signals.db"
+    b_db = tmp_path / "b" / "signals.db"
+    default_db = Path("~/.tradex/signals.db").expanduser()
+
+    monkeypatch.setenv("TRADEX_DB_PATH", str(a_db))
+    store.init()
+    assert a_db.exists()
+    assert not default_db.exists()
+
+    now = datetime.now(UTC)
+    store.record_signals(
+        _signal_results("AAPL", 70),
+        "intraday",
+        tickers_scanned=["AAPL"],
+        scan_time=now,
+    )
+    assert len(store.get_history("AAPL", "intraday")) == 1
+
+    monkeypatch.setenv("TRADEX_DB_PATH", str(b_db))
+    store.init()
+    store.record_signals(
+        _signal_results("MSFT", 65),
+        "intraday",
+        tickers_scanned=["MSFT"],
+        scan_time=now,
+    )
+    assert store.get_history("AAPL", "intraday").empty
+    assert len(store.get_history("MSFT", "intraday")) == 1
+
+    monkeypatch.setenv("TRADEX_DB_PATH", str(a_db))
+    assert len(store.get_history("AAPL", "intraday")) == 1
+    assert not default_db.exists()
+
+
+def test_watchlists_env_path_no_arg_controls_db_and_avoids_home(tmp_path, monkeypatch):
+    """TRADEX_WATCHLISTS_DB_PATH controls watchlist calls with no settings argument."""
+    from tradex.watchlists import store as wl_store
+
+    home_dir = tmp_path / "home"
+    home_dir.mkdir()
+    monkeypatch.setenv("HOME", str(home_dir))
+
+    a_db = tmp_path / "a" / "watchlists.db"
+    b_db = tmp_path / "b" / "watchlists.db"
+    default_db = Path("~/.tradex/watchlists.db").expanduser()
+
+    monkeypatch.setenv("TRADEX_WATCHLISTS_DB_PATH", str(a_db))
+    wl_store.init()
+    wl_store.save("foo", ["AAPL"])
+    assert a_db.exists()
+    assert not default_db.exists()
+    assert wl_store.load("foo") == ["AAPL"]
+
+    monkeypatch.setenv("TRADEX_WATCHLISTS_DB_PATH", str(b_db))
+    wl_store.init()
+    wl_store.save("bar", ["MSFT"])
+    assert wl_store.load("foo") is None
+    assert wl_store.load("bar") == ["MSFT"]
+
+    monkeypatch.setenv("TRADEX_WATCHLISTS_DB_PATH", str(a_db))
+    assert wl_store.load("foo") == ["AAPL"]
+    assert not default_db.exists()
+
+
+def test_fingerprint_env_path_no_arg_controls_db_and_avoids_home(tmp_path, monkeypatch):
+    """TRADEX_FP_DB controls fingerprint persistence with no settings argument."""
+    from tradex.patterns import fingerprint
+    from tradex.patterns.config import PatternConfig
+
+    home_dir = tmp_path / "home"
+    home_dir.mkdir()
+    monkeypatch.setenv("HOME", str(home_dir))
+
+    a_db = tmp_path / "a" / "fingerprints.db"
+    b_db = tmp_path / "b" / "fingerprints.db"
+    default_db = Path("~/.tradex/fingerprints.db").expanduser()
+
+    cfg = PatternConfig(min_events=1, lookback_days=3)
+    series = [0.0, 0.0, 0.0]
+    events = pd.DataFrame([
+        {"event_type": "runup", "event_date": "2024-01-01", "price_pct": series},
+        {"event_type": "runup", "event_date": "2024-01-02", "price_pct": series},
+    ])
+
+    monkeypatch.setenv("TRADEX_FP_DB", str(a_db))
+    fingerprint.build_fingerprint(events, "runup", cfg=cfg)
+    assert a_db.exists()
+    assert not default_db.exists()
+    assert len(fingerprint.list_fingerprints()) == 1
+
+    monkeypatch.setenv("TRADEX_FP_DB", str(b_db))
+    assert fingerprint.list_fingerprints().empty
+
+    monkeypatch.setenv("TRADEX_FP_DB", str(a_db))
+    assert len(fingerprint.list_fingerprints()) == 1
+    assert not default_db.exists()
+
+
+def test_weights_env_path_no_arg_controls_file_and_avoids_home(tmp_path, monkeypatch):
+    """TRADEX_WEIGHTS_PATH controls weights persistence with no settings argument."""
+    from tradex.signals.weights import Weights, load, save
+
+    home_dir = tmp_path / "home"
+    home_dir.mkdir()
+    monkeypatch.setenv("HOME", str(home_dir))
+
+    a_path = tmp_path / "a" / "weights.json"
+    b_path = tmp_path / "b" / "weights.json"
+    default_path = Path("~/.tradex/weights.json").expanduser()
+
+    monkeypatch.setenv("TRADEX_WEIGHTS_PATH", str(a_path))
+    save(Weights.defaults())
+    assert a_path.exists()
+    assert not default_path.exists()
+    assert load().intraday.volume_surge == 30
+
+    monkeypatch.setenv("TRADEX_WEIGHTS_PATH", str(b_path))
+    custom = Weights.defaults()
+    custom.intraday.volume_surge = 99
+    save(custom)
+    assert load().intraday.volume_surge == 99
+
+    monkeypatch.setenv("TRADEX_WEIGHTS_PATH", str(a_path))
+    assert load().intraday.volume_surge == 30
+    assert not default_path.exists()
+
+
+def test_earnings_env_path_no_arg_controls_cache_and_avoids_home(tmp_path, monkeypatch):
+    """TRADEX_EARNINGS_CACHE_PATH controls earnings cache with no settings argument."""
+    from tradex.earnings import calendar as earnings
+
+    home_dir = tmp_path / "home"
+    home_dir.mkdir()
+    monkeypatch.setenv("HOME", str(home_dir))
+
+    a_db = tmp_path / "a" / "earnings_cache.db"
+    default_db = Path("~/.tradex/earnings_cache.db").expanduser()
+
+    monkeypatch.setenv("TRADEX_EARNINGS_CACHE_PATH", str(a_db))
+    monkeypatch.setattr(earnings, "_fetch_from_yahoo", lambda ticker: date(2026, 8, 1))
+
+    result = earnings.get_next_earnings("AAPL")
+    assert result == date(2026, 8, 1)
+    assert a_db.exists()
+    assert not default_db.exists()

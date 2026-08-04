@@ -511,6 +511,7 @@ if __name__ == "__main__":
             args.provider, max_retries=args.max_retries, fallback_order=args.fallback_order,
             market_hours_only=args.market_hours_only,
             alert_policy=alert_policy,
+            settings=settings,
         )
     else:
         run_once(
