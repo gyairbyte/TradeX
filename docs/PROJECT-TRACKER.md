@@ -600,7 +600,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Dependencies:** VAL-001
 - **Files likely affected:** `tradex/research/long_term_evaluation/`, `tests/research/test_long_term_evaluation.py`, `docs/research/artifacts/LONG-001/`
 - **Testing requirements:** Locked, point-in-time, split-respecting, provider-aware research study comparing `long_term.score` to a 40-week MA baseline; deterministic credential-free unit tests.
-- **Acceptance criteria:** Research study concludes `supported`, `rejected`, `inconclusive`, or `data_inadequate` based on validation and holdout performance; no production scorer or dashboard changes made.
+- **Acceptance criteria:** Research study concludes `supports_further_research`, `reject_or_deprioritize`, or `inconclusive` based on validation and holdout performance; no production scorer or dashboard changes made.
 - **Intended pull request:** `devin/evaluate-long-term-score`
 - **Affects trading behavior:** No
 

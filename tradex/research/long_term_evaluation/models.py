@@ -13,65 +13,64 @@ from typing import Any, Literal
 import numpy as np
 import pandas as pd
 
+from tradex.market.hours import get_market_session
 from tradex.signals.weights import LongWeights
 
 LONG_TERM_STOCK_UNIVERSE: tuple[str, ...] = (
     "AAPL",
     "MSFT",
-    "GOOGL",
     "AMZN",
+    "GOOGL",
     "NVDA",
-    "TSLA",
-    "META",
     "JPM",
-    "V",
-    "MA",
-    "HD",
-    "UNH",
-    "PG",
-    "JNJ",
+    "BAC",
+    "GS",
     "XOM",
     "CVX",
-    "LLY",
-    "ABBV",
+    "JNJ",
     "MRK",
-    "PEP",
+    "PFE",
+    "UNH",
+    "PG",
     "KO",
-    "BAC",
-    "WFC",
-    "CSCO",
-    "ADBE",
-    "NFLX",
-    "CRM",
-    "ACN",
+    "WMT",
     "COST",
+    "HD",
+    "CAT",
+    "HON",
+    "IBM",
+    "CSCO",
+    "ORCL",
+    "MCD",
+    "NKE",
     "DIS",
+    "BA",
+    "MMM",
+    "UPS",
 )
 
 LONG_TERM_ETF_UNIVERSE: tuple[str, ...] = (
     "QQQ",
     "IWM",
     "DIA",
-    "XLF",
-    "XLK",
-    "XLE",
-    "XLU",
-    "XLI",
-    "XLP",
     "XLB",
-    "XRT",
-    "VTI",
+    "XLE",
+    "XLF",
+    "XLI",
+    "XLK",
+    "XLP",
+    "XLU",
+    "XLV",
+    "XLY",
 )
 
 LONG_TERM_BENCHMARK: str = "SPY"
 LONG_TERM_UNIVERSE: tuple[str, ...] = LONG_TERM_STOCK_UNIVERSE + LONG_TERM_ETF_UNIVERSE
 
 CONCLUSION_ORDER: tuple[str, ...] = (
-    "supported",
-    "rejected",
+    "supports_further_research",
+    "reject_or_deprioritize",
     "inconclusive",
-    "data_inadequate",
-    "methodology_inadequate",
 )
 
 
@@ -109,14 +108,23 @@ class DatasetManifest:
     schema_version: int = 1
     dataset_name: str = "long-term-evaluation"
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    provider: str = "yahoo"
+    timeframe: str = "1d"
+    adjustment_policy: str = "provider_adjusted"
+    package_version: str = "unknown"
+    request_metadata: dict[str, Any] = field(default_factory=dict)
     source_description: str = (
         "Yahoo Finance daily adjusted OHLCV via fetch_daily_history, auto_adjust=True, "
-        "weekly XNYS W-FRI aggregation"
+        "weekly XNYS market-calendar aggregation"
     )
     requested_start: date | None = None
     requested_end: date | None = None
     requested_universe: tuple[str, ...] = field(default_factory=tuple)
     benchmark_ticker: str | None = None
+    successful_tickers: tuple[str, ...] = field(default_factory=tuple)
+    missing_tickers: tuple[str, ...] = field(default_factory=tuple)
+    failed_tickers: tuple[str, ...] = field(default_factory=tuple)
+    failure_policy: str = "record_and_continue"
     entries: tuple[ManifestEntry, ...] = field(default_factory=tuple)
     splits: dict[str, dict[str, date | str]] = field(default_factory=dict)
 
@@ -125,11 +133,20 @@ class DatasetManifest:
             "schema_version": self.schema_version,
             "dataset_name": self.dataset_name,
             "created_at": _iso(self.created_at),
+            "provider": self.provider,
+            "timeframe": self.timeframe,
+            "adjustment_policy": self.adjustment_policy,
+            "package_version": self.package_version,
+            "request_metadata": self.request_metadata,
             "source_description": self.source_description,
             "requested_start": _iso_date(self.requested_start),
             "requested_end": _iso_date(self.requested_end),
             "requested_universe": list(self.requested_universe),
             "benchmark_ticker": self.benchmark_ticker,
+            "successful_tickers": list(self.successful_tickers),
+            "missing_tickers": list(self.missing_tickers),
+            "failed_tickers": list(self.failed_tickers),
+            "failure_policy": self.failure_policy,
             "entries": [e.to_dict() for e in self.entries],
             "splits": {
                 name: {"start": _iso_date(s["start"]), "end": _iso_date(s["end"])}
@@ -144,7 +161,7 @@ class DatasetManifest:
         ).hexdigest()
 
     def verify_data_files(self, data_dir: Path) -> bool:
-        """Return True if all on-disk CSV files match their manifest hashes."""
+        """Return True if all on-disk CSV files match their manifest hashes and rows."""
         data_dir = Path(data_dir)
         for entry in self.entries:
             if entry.failure:
@@ -154,10 +171,19 @@ class DatasetManifest:
                 return False
             if _file_sha256(path) != entry.sha256:
                 return False
+            df = pd.read_csv(path, index_col="datetime", parse_dates=True)
+            if len(df) != entry.rows:
+                return False
         return True
 
     def verify_metadata(self, spec: LongTermStudySpec) -> bool:
         """Fail-closed check that manifest metadata matches the locked spec."""
+        if self.provider != spec.provider:
+            return False
+        if self.timeframe != spec.timeframe:
+            return False
+        if self.adjustment_policy != spec.adjustment_policy:
+            return False
         if self.requested_start != spec.start:
             return False
         if self.requested_end != spec.end:
@@ -176,6 +202,13 @@ class DatasetManifest:
                 return False
             if self.splits[name]["end"] != split["end"]:
                 return False
+        expected_successful = set(spec.universe) | {spec.benchmark_ticker}
+        if set(self.successful_tickers) != expected_successful:
+            return False
+        if self.failure_policy != "record_and_continue":
+            return False
+        if not self.package_version or self.package_version == "unknown":
+            return False
         return True
 
 
@@ -291,6 +324,8 @@ class StudyResult:
 
     spec: LongTermStudySpec
     manifest: DatasetManifest
+    protocol_sha256: str
+    protocol_commit: str | None
     weight_snapshot: dict[str, Any]
     events: pd.DataFrame
     trades: pd.DataFrame
@@ -300,11 +335,9 @@ class StudyResult:
     data_quality: pd.DataFrame
     report_markdown: str
     conclusion: Literal[
-        "supported",
-        "rejected",
+        "supports_further_research",
+        "reject_or_deprioritize",
         "inconclusive",
-        "data_inadequate",
-        "methodology_inadequate",
     ]
     production_promotion_eligible: bool = False
     generated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
@@ -317,6 +350,8 @@ class StudyResult:
             "production_promotion_eligible": self.production_promotion_eligible,
             "event_count": len(self.events),
             "trade_count": len(self.trades),
+            "protocol_sha256": self.protocol_sha256,
+            "protocol_commit": self.protocol_commit,
             "spec": self.spec.to_dict(),
             "manifest": self.manifest.to_dict(),
             "weight_snapshot": self.weight_snapshot,
@@ -358,24 +393,32 @@ class LongTermStudySpec:
     validation_end: date = field(default_factory=lambda: date(2020, 12, 31))
     hold_weeks: tuple[int, ...] = (13, 26)
     score_thresholds: tuple[int, ...] = (40,)
-    score_bucket_edges: tuple[int, ...] = (0, 20, 40, 60, 80, 101)
-    slippage_scenarios_bps: tuple[float, ...] = (0.0, 5.0, 10.0, 25.0)
+    score_bucket_edges: tuple[int, ...] = (0, 25, 40, 60, 80, 101)
+    slippage_scenarios_bps: tuple[float, ...] = (0.0, 10.0, 25.0)
     commission_bps: float = 0.0
+    decision_slippage_bps: float = 5.0
     min_events_per_group: int = 20
+    min_ticker_trades_for_cohort_gate: int = 5
     entry_delay_bars: int = 1
     universe: tuple[str, ...] = LONG_TERM_UNIVERSE
     benchmark_ticker: str = LONG_TERM_BENCHMARK
-    warmup_weeks: int = 50
-    min_required_weekly_bars: int = 50
-    decision_slippage_bps: float = 10.0
+    warmup_weeks: int = 60
+    min_required_weekly_bars: int = 60
     bootstrap_seed: int = 20260805
     bootstrap_resamples: int = 5_000
-    minimum_signals: int = 100
-    minimum_tickers: int = 15
-    max_ticker_concentration: float = 0.20
-    minimum_lift_bps: float = 25.0
-    ticker_positive_fraction: float = 0.55
+    minimum_signals: int = 200
+    minimum_stock_tickers: int = 20
+    minimum_etf_tickers: int = 8
+    minimum_lift_bps: float = 50.0
+    q10_support_max_worse_bps: float = 100.0
+    q10_reject_worse_bps: float = 200.0
+    reject_point_estimate_worse_bps: float = 50.0
+    ticker_positive_fraction_stock: float = 0.6
+    ticker_positive_fraction_etf: float = 0.6
+    cost_sensitivity_slippage_bps: float = 25.0
     weights: LongWeights = field(default_factory=LongWeights)
+    protocol_source: str = "PR #25 comment 5182648133"
+    protocol_path: str = "docs/research/LONG-001.json"
 
     def __post_init__(self) -> None:
         if self.warmup_weeks < self.min_required_weekly_bars:
@@ -393,9 +436,16 @@ class LongTermStudySpec:
         _require_finite_nonnegative(
             "slippage_scenarios_bps", self.slippage_scenarios_bps
         )
+        _require_finite_nonnegative(
+            "decision_slippage_bps", (self.decision_slippage_bps,)
+        )
         if self.min_events_per_group < 1:
             raise StudyError(
                 f"min_events_per_group must be positive; got {self.min_events_per_group}"
+            )
+        if self.min_ticker_trades_for_cohort_gate < 1:
+            raise StudyError(
+                f"min_ticker_trades_for_cohort_gate must be positive; got {self.min_ticker_trades_for_cohort_gate}"
             )
         if self.entry_delay_bars < 0:
             raise StudyError("entry_delay_bars must be >= 0")
@@ -405,6 +455,8 @@ class LongTermStudySpec:
             )
         if not self.universe:
             raise StudyError("universe must not be empty")
+        if self.minimum_lift_bps < 0:
+            raise StudyError(f"minimum_lift_bps must be nonnegative; got {self.minimum_lift_bps}")
 
         # Defensive-copy mutable inputs without coercion.
         object.__setattr__(self, "hold_weeks", tuple(int(h) for h in self.hold_weeks))
@@ -414,6 +466,7 @@ class LongTermStudySpec:
             self, "slippage_scenarios_bps", tuple(float(s) for s in self.slippage_scenarios_bps)
         )
         object.__setattr__(self, "commission_bps", float(self.commission_bps))
+        object.__setattr__(self, "decision_slippage_bps", float(self.decision_slippage_bps))
         object.__setattr__(self, "universe", tuple(str(t).upper() for t in self.universe))
 
     def cohort_for(self, ticker: str) -> str:
@@ -675,25 +728,86 @@ def _validate_bars(
 def _aggregate_daily_to_weekly(df: pd.DataFrame) -> pd.DataFrame:
     """Deterministic XNYS weekly aggregation from daily UTC index.
 
-    The returned index is the Friday close of each XNYS week.
+    Each weekly bar is built from the actual XNYS sessions in that calendar
+    week (Mon-Sun).  The bar is indexed by the final session's closing
+    timestamp in UTC and carries an extra ``first_session_open_time`` column
+    for the following week's executable open.
     """
+    from exchange_calendars import get_calendar
+
     if df.empty:
-        return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+        return pd.DataFrame(columns=["open", "high", "low", "close", "volume", "first_session_open_time"])
+
+    cal = get_calendar("XNYS")
     df = df.copy()
     if df.index.tz is None:
         df.index = df.index.tz_localize("UTC")
-    # Resample to week ending Friday, right-closed/right-labeled.
-    weekly = pd.DataFrame(
-        {
-            "open": df["open"].resample("W-FRI", closed="right", label="right").first(),
-            "high": df["high"].resample("W-FRI", closed="right", label="right").max(),
-            "low": df["low"].resample("W-FRI", closed="right", label="right").min(),
-            "close": df["close"].resample("W-FRI", closed="right", label="right").last(),
-            "volume": df["volume"].resample("W-FRI", closed="right", label="right").sum(),
-        }
-    )
-    weekly.index = weekly.index.tz_convert("UTC")
-    weekly = weekly.dropna()
+
+    # Map each daily bar to an XNYS session date.  Bars on non-sessions
+    # (unexpected data) are mapped to the previous session so they do not
+    # create phantom weeks.
+    session_dates: list[date] = []
+    keep = []
+    for ts in df.index:
+        d = ts.to_pydatetime().astimezone(UTC).date()
+        if not cal.is_session(d):
+            try:
+                d = cal.date_to_session(d, direction="previous").date()
+            except ValueError:
+                keep.append(False)
+                session_dates.append(d)
+                continue
+        keep.append(True)
+        session_dates.append(d)
+    df = df.loc[keep].copy()
+    if df.empty:
+        return pd.DataFrame(columns=["open", "high", "low", "close", "volume", "first_session_open_time"])
+    df["session_date"] = session_dates[: len(df)]
+    df = df.set_index("session_date").sort_index()
+
+    # Determine the last XNYS session of the calendar week (Mon-Sun) for each
+    # session date.  The calendar week ends on Sunday; its last trading
+    # session is the Friday (or Thursday/holiday-shortened) session.
+    def _week_end(d: date) -> date:
+        sunday = d + timedelta(days=(6 - d.weekday()))
+        return cal.date_to_session(sunday, direction="previous").date()
+
+    df["week_end"] = df.index.map(_week_end)
+
+    # The trailing week is incomplete if its expected week-end session has not
+    # yet appeared in the dataset.
+    max_session = df.index.max()
+    present_sessions = set(df.index)
+    df = df[df["week_end"].isin(present_sessions) & (df["week_end"] <= max_session)].copy()
+    if df.empty:
+        return pd.DataFrame(columns=["open", "high", "low", "close", "volume", "first_session_open_time"])
+
+    records: list[dict[str, Any]] = []
+    for week_end, sub in df.groupby("week_end", sort=True):
+        sub = sub.sort_index()
+        first_session = sub.index[0]
+        last_session = sub.index[-1]
+        first_market = get_market_session(first_session)
+        last_market = get_market_session(last_session)
+        if first_market is None or last_market is None:
+            continue
+        records.append({
+            "open": float(sub["open"].iloc[0]),
+            "high": float(sub["high"].max()),
+            "low": float(sub["low"].min()),
+            "close": float(sub["close"].iloc[-1]),
+            "volume": float(sub["volume"].sum()),
+            "first_session_open_time": first_market.opens_at.astimezone(UTC),
+            "last_session_close_time": last_market.closes_at.astimezone(UTC),
+        })
+
+    if not records:
+        return pd.DataFrame(columns=["open", "high", "low", "close", "volume", "first_session_open_time"])
+
+    weekly = pd.DataFrame(records)
+    weekly.index = pd.DatetimeIndex(weekly["last_session_close_time"], tz="UTC")
+    weekly = weekly.sort_index()
+    weekly = weekly[["open", "high", "low", "close", "volume", "first_session_open_time"]]
     return weekly
 
 
@@ -727,11 +841,20 @@ def load_manifest(path: Path) -> DatasetManifest:
         schema_version=raw.get("schema_version", 1),
         dataset_name=raw.get("dataset_name", "unknown"),
         created_at=datetime.fromisoformat(raw["created_at"]),
+        provider=raw.get("provider", "unknown"),
+        timeframe=raw.get("timeframe", "unknown"),
+        adjustment_policy=raw.get("adjustment_policy", "unknown"),
+        package_version=raw.get("package_version", "unknown"),
+        request_metadata=raw.get("request_metadata", {}),
         source_description=raw.get("source_description", ""),
         requested_start=date.fromisoformat(raw["requested_start"]) if raw.get("requested_start") else None,
         requested_end=date.fromisoformat(raw["requested_end"]) if raw.get("requested_end") else None,
         requested_universe=tuple(raw.get("requested_universe", [])),
         benchmark_ticker=raw.get("benchmark_ticker"),
+        successful_tickers=tuple(raw.get("successful_tickers", [])),
+        missing_tickers=tuple(raw.get("missing_tickers", [])),
+        failed_tickers=tuple(raw.get("failed_tickers", [])),
+        failure_policy=raw.get("failure_policy", "unknown"),
         entries=tuple(entries),
         splits=splits,
     )

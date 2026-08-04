@@ -24,6 +24,14 @@ from .models import (
 )
 
 
+def _package_version() -> str:
+    try:
+        from importlib.metadata import version
+        return version("tradex")
+    except Exception:  # noqa: BLE001
+        return "unknown"
+
+
 def snapshot_dataset(
     spec: LongTermStudySpec,
     output_dir: Path,
@@ -53,6 +61,16 @@ def snapshot_dataset(
 
     all_tickers = list(spec.universe) + [spec.benchmark_ticker]
     entries: list[ManifestEntry] = []
+    successful: list[str] = []
+    missing: list[str] = []
+    failed: list[str] = []
+
+    request_metadata: dict[str, Any] = {
+        "auto_adjust": True,
+        "interval": "1d",
+        "timestamp": datetime.now(UTC).isoformat(),
+        "fetch_function": "fetch_daily_history" if fetch_fn is None else "injected_fetch_fn",
+    }
 
     for ticker in all_tickers:
         path = data_dir / f"{ticker}.csv"
@@ -92,7 +110,9 @@ def snapshot_dataset(
                     },
                 )
             )
+            successful.append(ticker)
         except Exception as exc:  # noqa: BLE001
+            failure_msg = str(exc)
             entries.append(
                 ManifestEntry(
                     ticker=ticker,
@@ -103,18 +123,30 @@ def snapshot_dataset(
                     end=datetime.min.replace(tzinfo=UTC),
                     data_source=spec.provider,
                     adjustment_policy=spec.adjustment_policy,
-                    failure=str(exc),
+                    failure=failure_msg,
                     quality={},
-                    warnings=[str(exc)],
+                    warnings=[failure_msg],
                 )
             )
+            failed.append(ticker)
+            if "no data" in failure_msg.lower():
+                missing.append(ticker)
 
     manifest = DatasetManifest(
         created_at=datetime.now(UTC),
+        provider=spec.provider,
+        timeframe=spec.timeframe,
+        adjustment_policy=spec.adjustment_policy,
+        package_version=_package_version(),
+        request_metadata=request_metadata,
         requested_start=spec.start,
         requested_end=spec.end,
         requested_universe=spec.universe,
         benchmark_ticker=spec.benchmark_ticker,
+        successful_tickers=tuple(successful),
+        missing_tickers=tuple(missing),
+        failed_tickers=tuple(failed),
+        failure_policy="record_and_continue",
         entries=tuple(entries),
         splits=_build_split_dates(spec),
     )

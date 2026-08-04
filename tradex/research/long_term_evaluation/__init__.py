@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from .cli import main
-from .evaluate import _derive_conclusion, evaluate_study
+from .evaluate import _derive_conclusion, _load_ticker_df, _score_bar, _score_vectorized, evaluate_study
 from .models import (
     CONCLUSION_ORDER,
     LONG_TERM_BENCHMARK,
@@ -41,6 +41,9 @@ __all__ = [
     "_aggregate_daily_to_weekly",
     "_derive_conclusion",
     "_file_sha256",
+    "_load_ticker_df",
+    "_score_bar",
+    "_score_vectorized",
     "_validate_bars",
     "evaluate_study",
     "load_manifest",
