@@ -1,0 +1,804 @@
+{
+  "schema_version": 1,
+  "dataset_name": "long-term-evaluation",
+  "created_at": "2026-08-04T19:56:13.192275+00:00",
+  "source_description": "Yahoo Finance daily adjusted OHLCV via fetch_daily_history, auto_adjust=True, weekly XNYS W-FRI aggregation",
+  "requested_start": "2007-01-01",
+  "requested_end": "2025-12-19",
+  "requested_universe": [
+    "AAPL",
+    "MSFT",
+    "GOOGL",
+    "AMZN",
+    "NVDA",
+    "TSLA",
+    "META",
+    "JPM",
+    "V",
+    "MA",
+    "HD",
+    "UNH",
+    "PG",
+    "JNJ",
+    "XOM",
+    "CVX",
+    "LLY",
+    "ABBV",
+    "MRK",
+    "PEP",
+    "KO",
+    "BAC",
+    "WFC",
+    "CSCO",
+    "ADBE",
+    "NFLX",
+    "CRM",
+    "ACN",
+    "COST",
+    "DIS",
+    "QQQ",
+    "IWM",
+    "DIA",
+    "XLF",
+    "XLK",
+    "XLE",
+    "XLU",
+    "XLI",
+    "XLP",
+    "XLB",
+    "XRT",
+    "VTI"
+  ],
+  "benchmark_ticker": "SPY",
+  "entries": [
+    {
+      "ticker": "AAPL",
+      "path": "data/AAPL.csv",
+      "sha256": "abede26b8ffbb4c7541746d5e89212d25d7116999ad79aaa8ed16f38d777597b",
+      "rows": 4773,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 0,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "MSFT",
+      "path": "data/MSFT.csv",
+      "sha256": "cded6e00374701b48d20eb87403352e5dda4655e3160d1d50df315dac943589b",
+      "rows": 4773,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 0,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "GOOGL",
+      "path": "data/GOOGL.csv",
+      "sha256": "d4750a2889f738259ee5e2385e8ff4972887c1cbcf12e0511b9259f202e654f4",
+      "rows": 4773,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 0,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "AMZN",
+      "path": "data/AMZN.csv",
+      "sha256": "c1a3388c792cc302066b8f1e54e484cd90f2c164c44941bc20823ec7a067b2a8",
+      "rows": 4773,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 0,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "NVDA",
+      "path": "data/NVDA.csv",
+      "sha256": "0d71ea49dbdc91c44e87ea5fa5a2dd753ab4c8b7f420723cd4f4f8a444f0a0e6",
+      "rows": 4773,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 0,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "TSLA",
+      "path": "data/TSLA.csv",
+      "sha256": "e0e8a0cf1f8f64631800f7f1a5e0192644441c2960f74c191fc053464c18c01e",
+      "rows": 3895,
+      "start": "2010-06-29T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 0,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "META",
+      "path": "data/META.csv",
+      "sha256": "5037915de5a8b10a9e1dbf1510bf582096ffef713c9ee8ad981feff539bd27b7",
+      "rows": 3418,
+      "start": "2012-05-18T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 0,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "JPM",
+      "path": "data/JPM.csv",
+      "sha256": "77427374056915758af0d271a218954dc287ad11c1f8cc3d9994eaae7de47bee",
+      "rows": 4770,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 3,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "V",
+      "path": "data/V.csv",
+      "sha256": "2c6454dab4e929fb15d5913ffda18f91b16f319edd2a219ba4ef4b962f8fe0d5",
+      "rows": 4468,
+      "start": "2008-03-19T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 1,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "MA",
+      "path": "data/MA.csv",
+      "sha256": "fda8877da9aa780ca68b47c4b00e4120a8124a7fdd2c2c0e287bec8a57eac2d5",
+      "rows": 4773,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 0,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "HD",
+      "path": "data/HD.csv",
+      "sha256": "bd2814f1cd756bffa1b78b034c835d901009b36763ddc56c40560b4ef0c87f74",
+      "rows": 4771,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 2,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "UNH",
+      "path": "data/UNH.csv",
+      "sha256": "c6b83c4455905db30dc7f9ca3c54164306cec096de23bd8cde2f6599c56dd14f",
+      "rows": 4772,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 1,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "PG",
+      "path": "data/PG.csv",
+      "sha256": "de2681f85b59c9b7aea3380882f5a8ba5358a65562ff9cce60ff7646cef5ab76",
+      "rows": 4768,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 5,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "JNJ",
+      "path": "data/JNJ.csv",
+      "sha256": "ba69099feaae991d387cc18edeb113e3fb9a2e0e654194aaaaff37a6af373637",
+      "rows": 4771,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 2,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "XOM",
+      "path": "data/XOM.csv",
+      "sha256": "4ee2969b3f8ba6c79f553a66120c61cdfd707b2741d1690abc4c379fa9f4960c",
+      "rows": 4756,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 17,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "CVX",
+      "path": "data/CVX.csv",
+      "sha256": "441b3ef76f4f8f67a934aefba4bfb2d75660a0b306b491d530c39e2e8af030b3",
+      "rows": 4768,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 5,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "LLY",
+      "path": "data/LLY.csv",
+      "sha256": "921de3356212d4507c5caa01e9597b304d7dbdb2fc2b574797359a7cc7cb84e6",
+      "rows": 4770,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 3,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "ABBV",
+      "path": "data/ABBV.csv",
+      "sha256": "ed66b6440a50971e4f239492f306407ef4ed133ce645273b6d5f092470aa8a2f",
+      "rows": 3262,
+      "start": "2013-01-02T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 1,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "MRK",
+      "path": "data/MRK.csv",
+      "sha256": "8f10cbaec009d3be9cdcf33bde5fb54f3ba057b71e0677fd4bc627393f0c844e",
+      "rows": 4767,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 6,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "PEP",
+      "path": "data/PEP.csv",
+      "sha256": "d9645c21a4bce3132cbc0230e4b0714222f1a8c9d42e205f6dae4053c3c9de9a",
+      "rows": 4771,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 2,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "KO",
+      "path": "data/KO.csv",
+      "sha256": "fb1acc33e8582e1e97ff904fccbe7192b995b83dd07a9885bf544cb2ca4c1eed",
+      "rows": 4763,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 10,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "BAC",
+      "path": "data/BAC.csv",
+      "sha256": "db5d1d4fce2763bed2ad23c4e09c8a68f3df1cc1c3be78ef4a8e7eed73751f2a",
+      "rows": 4771,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 2,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "WFC",
+      "path": "data/WFC.csv",
+      "sha256": "de16a80ec4613360bcea186af0821e56515b987c4aba3ca655ba9c802a867756",
+      "rows": 4772,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 1,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "CSCO",
+      "path": "data/CSCO.csv",
+      "sha256": "554e33a280ef986791201aed5c0599b8e6f1a09aa4a8005bfa60c1d744148e22",
+      "rows": 4768,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 5,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "ADBE",
+      "path": "data/ADBE.csv",
+      "sha256": "81ef615802efddcf6ea24c0556ad99fd2bf44f5d4dcdd0d57f1f151eca20e0ac",
+      "rows": 4773,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 0,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "NFLX",
+      "path": "data/NFLX.csv",
+      "sha256": "55cc598f292bd1f310285d36de4170c7815ead6a2d9850dcedd0afa3399572c2",
+      "rows": 4773,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 0,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "CRM",
+      "path": "data/CRM.csv",
+      "sha256": "1b9489fad8d4290c08f4775efd142525865440e3ace392a2d5a142bafdeaf0f0",
+      "rows": 4773,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 0,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "ACN",
+      "path": "data/ACN.csv",
+      "sha256": "33da9cbd1a22e4a39be7709db441a20448963b809522ec9226f4c2f2c6897f96",
+      "rows": 4767,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 6,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "COST",
+      "path": "data/COST.csv",
+      "sha256": "93c616387fc89d6e0110658c3301d4ad7e45cbddf70c2df62d157ff0290bcb4a",
+      "rows": 4772,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 1,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "DIS",
+      "path": "data/DIS.csv",
+      "sha256": "8baaffc4070d6bb77ebdb58c49d546b55a8b48f6047b22f45a9078393ae87fc2",
+      "rows": 4773,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 0,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "QQQ",
+      "path": "data/QQQ.csv",
+      "sha256": "a504774083d45f2a0311e2c596ceb1c2fa5dfa7a46b5712fd5e4f89a043b2e66",
+      "rows": 4773,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 0,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "IWM",
+      "path": "data/IWM.csv",
+      "sha256": "7963ee094ded081897a97273b177592f13d64413089f214009319962e822af2a",
+      "rows": 4771,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 2,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "DIA",
+      "path": "data/DIA.csv",
+      "sha256": "569f3113edfef9e4fa4a87f6aaae49a12ca57b638be08bee732dece862088aa3",
+      "rows": 4769,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 4,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "XLF",
+      "path": "data/XLF.csv",
+      "sha256": "8064983f56de083c2a5aabcff194aca229b85e78d04ff43eabccbd4c07ab78e3",
+      "rows": 4770,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 3,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "XLK",
+      "path": "data/XLK.csv",
+      "sha256": "ea9644626d31f9dfea5d020fbb25f1cf32718f16b074240388cdf27d31db5285",
+      "rows": 4773,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 0,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "XLE",
+      "path": "data/XLE.csv",
+      "sha256": "084d5a09077a71fe1e8683d6e95e708f0dc229266b6385b348065aa6d6dcb0c6",
+      "rows": 4768,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 5,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "XLU",
+      "path": "data/XLU.csv",
+      "sha256": "18b2e2ca77515f8af099fd18cd17a9b46a5528ac5f818ff97a8e9bda298f42f2",
+      "rows": 4759,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 14,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "XLI",
+      "path": "data/XLI.csv",
+      "sha256": "917718ce70e5b4389af74bfc276b093a2b94c5b70578ef968de6ece56760935b",
+      "rows": 4769,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 4,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "XLP",
+      "path": "data/XLP.csv",
+      "sha256": "c9901202a4fa3e63507f5c974e49ad9f3ef52a672f40faccd099362459365574",
+      "rows": 4762,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 11,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "XLB",
+      "path": "data/XLB.csv",
+      "sha256": "50da53d3d2144e5810036ddd6167de223d713a3f624d6292d566b30006e4cd28",
+      "rows": 4769,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 4,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "XRT",
+      "path": "data/XRT.csv",
+      "sha256": "4a224c5dc0b2193143208a79a69b48ac831b5423be37e770cde79361efa1d6f7",
+      "rows": 4772,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 1,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "VTI",
+      "path": "data/VTI.csv",
+      "sha256": "0c0aa2cae0789ba40176bf112e6dbad97c9c718c72e18c3e6aa1d64f0ac66701",
+      "rows": 4770,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 3,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    },
+    {
+      "ticker": "SPY",
+      "path": "data/SPY.csv",
+      "sha256": "09c771ea1cd9ba5e4725cb8108c36c1bc066dfda2c20a553dda2b7d693b970bc",
+      "rows": 4773,
+      "start": "2007-01-03T00:00:00+00:00",
+      "end": "2025-12-19T00:00:00+00:00",
+      "data_source": "yahoo",
+      "adjustment_policy": "provider_adjusted",
+      "failure": null,
+      "quality": {
+        "missing_required_values": 0,
+        "invalid_ohlc_rows": 0,
+        "duplicate_timestamps": 0
+      },
+      "warnings": []
+    }
+  ],
+  "splits": {
+    "warmup": {
+      "start": "2007-01-01",
+      "end": "2009-12-31"
+    },
+    "development": {
+      "start": "2010-01-01",
+      "end": "2016-12-31"
+    },
+    "validation": {
+      "start": "2017-01-01",
+      "end": "2020-12-31"
+    },
+    "holdout": {
+      "start": "2021-01-01",
+      "end": "2025-12-19"
+    }
+  }
+}
