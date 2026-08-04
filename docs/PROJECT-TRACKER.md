@@ -587,22 +587,23 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Intended pull request:** `devin/add-ai-development-governance`
 - **Affects trading behavior:** No
 
-### LONG-001: Redesign or deprioritize long-term scorer
+### LONG-001: Evaluate long-term scorer against 40-week MA (research-only)
 
 - **ID:** LONG-001
-- **Title:** Redesign or deprioritize long-term scorer
+- **Title:** Evaluate long-term scorer against 40-week MA (research-only)
 - **Category:** Long-term trading
 - **Priority:** Low
-- **Status:** Proposed
+- **Status:** In Progress
 - **Problem statement:** The long-term score is a weekly-bar version of the short-term score and lacks fundamental or relative-strength context.
-- **Recommended action:** Either define a clear long-term trend-following setup (price > 40-week MA, relative strength, sector) or remove the long-term tab.
+- **Recommended action:** Run a locked, point-in-time research study comparing the current production `long_term.score` to a simple 40-week moving-average baseline. Do not redesign production scoring or the dashboard until a follow-up promotion assignment is explicitly approved.
 - **Reason:** A "long-term" screen should not simply be a slower momentum score.
 - **Dependencies:** VAL-001
-- **Files likely affected:** `tradex/signals/long_term.py`, `tradex/ui/dashboard.py`
-- **Testing requirements:** Backtest comparing long-term score to a simple 40-week MA rule.
-- **Acceptance criteria:** Long-term score adds value beyond the simple benchmark, or is deprioritized.
-- **Intended pull request:** `devin/improve-long-term-score`
-- **Affects trading behavior:** Yes
+- **Files likely affected:** `tradex/research/long_term_evaluation/`, `tests/research/test_long_term_evaluation.py`, `docs/research/artifacts/LONG-001/`
+- **Testing requirements:** Locked, point-in-time, split-respecting, provider-aware research study comparing `long_term.score` to a 40-week MA baseline; deterministic credential-free unit tests.
+- **Acceptance criteria:** Research study concludes `supports_further_research`, `reject_or_deprioritize`, or `inconclusive` based on validation and holdout performance; no production scorer or dashboard changes made.
+- **Latest result:** `inconclusive` on untouched holdout (2021-01-01 through 2025-12-19). Locked artifacts and report at `docs/research/artifacts/LONG-001/2026-08-04-fc015c8f13e1/`.
+- **Intended pull request:** `devin/evaluate-long-term-score`
+- **Affects trading behavior:** No
 
 ### GAP-001: Improve pre-market gap scanner
 
@@ -651,5 +652,5 @@ This is the master backlog for recommendations from the Devin review. Items are 
 | Low | 5 | DOC-001: Fix documentation drift |
 
 **Recommended next pull request order:**
-1. `devin/improve-long-term-score` (LONG-001).
+1. `devin/evaluate-long-term-score` (LONG-001, research-only evaluation).
 
