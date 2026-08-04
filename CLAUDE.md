@@ -126,3 +126,4 @@ df = run(["AAPL", "NVDA", "AMD"], timeframe="intraday", min_score=40)
 - **Streamlit for UI** — fastest to iterate on, no frontend knowledge needed. Can replace with React later if needed.
 - **Score-based not rule-based** — a pure rule-based "buy/sell" signal is brittle; scores let Gary apply judgment.
 - **Three separate scorers vs. one unified** — timeframes have fundamentally different signal logic; keeping them separate avoids messy conditionals.
+- **Architecture Decision Records** — major design decisions (coil detection, confluence scoring, provider contract, market timezone) are recorded in `docs/decisions/` with a template, status lifecycle, and integrity tests. New ADRs follow `docs/decisions/0000-template.md`.
