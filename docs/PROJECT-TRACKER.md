@@ -628,7 +628,8 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Adopt Architectural Decision Records
 - **Category:** Documentation
 - **Priority:** Low
-- **Status:** Proposed
+- **Status:** Completed
+- **Resolved by:** `devin/add-initial-adrs`
 - **Problem statement:** Major decisions (what is a coil, confluence weights, provider contract) are not recorded.
 - **Recommended action:** Create `docs/decisions/` and seed it with ADRs for the most important current decisions.
 - **Reason:** Future developers and agents need to understand why key choices were made.
@@ -650,6 +651,5 @@ This is the master backlog for recommendations from the Devin review. Items are 
 | Low | 5 | DOC-001: Fix documentation drift |
 
 **Recommended next pull request order:**
-1. `devin/add-initial-adrs` (DEC-001).
-2. `devin/improve-long-term-score` (LONG-001).
+1. `devin/improve-long-term-score` (LONG-001).
 
