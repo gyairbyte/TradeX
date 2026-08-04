@@ -56,6 +56,11 @@ tradex/
 │   ├── earnings/calendar.py       # Next-earnings lookup + 24h SQLite cache
 │   ├── watchlists/store.py        # Named watchlist persistence
 │   └── ui/dashboard.py            # Streamlit dashboard (10 tabs)
+├── docs/
+│   ├── PROJECT-TRACKER.md
+│   ├── AI-DEVELOPMENT-WORKFLOW.md
+│   ├── RESEARCH-PROTOCOL.md
+│   └── decisions/            # Architecture Decision Records (ADRs)
 ├── pyproject.toml
 ├── .env.example
 ├── README.md
@@ -435,6 +440,12 @@ The watcher uses a persistent SQLite alert state database (default `~/.tradex/al
 - Manual one-off scans (`--interval 0`, the default) still run at any time unless `--market-hours-only` is also supplied.
 - The daily pre-market gap scan is scheduled for `08:00 America/New_York`; the outcome resolution pass is scheduled for `16:30 America/New_York`. Both remain at the same New York wall-clock time across DST changes and skip non-trading days.
 - Pre-market gap filtering uses the actual regular-session open from the exchange calendar and keeps only bars from `04:00` ET up to (but not including) the open on the intended session date. It excludes bars after the injected `as_of` timestamp, so historical/replay scans are point-in-time.
+
+---
+
+## Architecture Decision Records
+
+Major architectural and policy decisions are recorded in [`docs/decisions/`](docs/decisions/). The index at [`docs/decisions/README.md`](docs/decisions/README.md) lists accepted ADRs for coil detection, confluence scoring, the OHLCV provider contract, and market-timezone handling. New ADRs follow the template at [`docs/decisions/0000-template.md`](docs/decisions/0000-template.md).
 
 ---
 
