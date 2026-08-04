@@ -30,6 +30,13 @@ CACHE_DB = CACHE_DIR / "earnings_cache.db"
 CACHE_TTL_HOURS = 24
 
 
+def _resolve_cache_db(settings: TradeXSettings | None = None) -> Path:
+    """Return the earnings cache path from explicit settings or the module default."""
+    if settings is None:
+        return CACHE_DB
+    return settings.paths.earnings_cache_db
+
+
 def _resolve_earnings_source(
     source: str | None, *, settings: TradeXSettings | None = None
 ) -> str:
@@ -44,9 +51,10 @@ def _resolve_earnings_source(
     return s
 
 
-def _conn() -> sqlite3.Connection:
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(CACHE_DB)
+def _conn(cache_db: Path | None = None) -> sqlite3.Connection:
+    db = cache_db or CACHE_DB
+    db.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(db))
     conn.execute("""
         CREATE TABLE IF NOT EXISTS earnings_cache (
             ticker        TEXT PRIMARY KEY,
@@ -62,9 +70,11 @@ def _conn() -> sqlite3.Connection:
     return conn
 
 
-def _cache_get(ticker: str, source: str) -> tuple[date | None, bool]:
+def _cache_get(
+    ticker: str, source: str, *, settings: TradeXSettings | None = None
+) -> tuple[date | None, bool]:
     """Return (next_earnings_date_or_None, is_fresh)."""
-    with _conn() as c:
+    with _conn(_resolve_cache_db(settings)) as c:
         row = c.execute(
             "SELECT next_earnings, fetched_at FROM earnings_cache WHERE ticker = ? AND source = ?",
             (ticker, source),
@@ -78,8 +88,10 @@ def _cache_get(ticker: str, source: str) -> tuple[date | None, bool]:
     return next_date, is_fresh
 
 
-def _cache_put(ticker: str, source: str, next_earnings: date | None) -> None:
-    with _conn() as c:
+def _cache_put(
+    ticker: str, source: str, next_earnings: date | None, *, settings: TradeXSettings | None = None
+) -> None:
+    with _conn(_resolve_cache_db(settings)) as c:
         c.execute(
             "INSERT OR REPLACE INTO earnings_cache (ticker, source, next_earnings, fetched_at) "
             "VALUES (?, ?, ?, ?)",
@@ -147,14 +159,16 @@ def get_next_earnings(
     cache file is read or written. This is the path used by the pre-market gap
     scanner, which must not create persistent database files.
     """
+    if settings is None:
+        settings = load_runtime_settings()
     source = _resolve_earnings_source(source, settings=settings)
     if use_cache and not force_refresh:
-        cached, fresh = _cache_get(ticker, source)
+        cached, fresh = _cache_get(ticker, source, settings=settings)
         if fresh:
             return cached
     next_date = _fetch_from_yahoo(ticker)
     if use_cache:
-        _cache_put(ticker, source, next_date)
+        _cache_put(ticker, source, next_date, settings=settings)
     return next_date
 
 

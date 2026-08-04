@@ -301,11 +301,13 @@ class PathSettings:
     signals_db: Path = field(default_factory=lambda: Path("~/.tradex/signals.db"))
     fingerprint_db: Path = field(default_factory=lambda: Path("~/.tradex/fingerprints.db"))
     watchlists_db: Path = field(default_factory=lambda: Path("~/.tradex/watchlists.db"))
+    earnings_cache_db: Path = field(default_factory=lambda: Path("~/.tradex/earnings_cache.db"))
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "signals_db", _parse_path(self.signals_db, Path("~/.tradex/signals.db"), "TRADEX_DB_PATH"))
         object.__setattr__(self, "fingerprint_db", _parse_path(self.fingerprint_db, Path("~/.tradex/fingerprints.db"), "TRADEX_FP_DB"))
         object.__setattr__(self, "watchlists_db", _parse_path(self.watchlists_db, Path("~/.tradex/watchlists.db"), "TRADEX_WATCHLISTS_DB_PATH"))
+        object.__setattr__(self, "earnings_cache_db", _parse_path(self.earnings_cache_db, Path("~/.tradex/earnings_cache.db"), "TRADEX_EARNINGS_CACHE_PATH"))
 
 
 def _default_cooldown():
@@ -366,6 +368,7 @@ class TradeXSettings:
             "signals_db": str(self.paths.signals_db),
             "fingerprint_db": str(self.paths.fingerprint_db),
             "watchlists_db": str(self.paths.watchlists_db),
+            "earnings_cache_db": str(self.paths.earnings_cache_db),
         }
 
 
@@ -426,6 +429,7 @@ def settings_from_mapping(values: Mapping[str, str]) -> TradeXSettings:
         signals_db=v.get("TRADEX_DB_PATH", "~/.tradex/signals.db"),
         fingerprint_db=v.get("TRADEX_FP_DB", "~/.tradex/fingerprints.db"),
         watchlists_db=v.get("TRADEX_WATCHLISTS_DB_PATH", "~/.tradex/watchlists.db"),
+        earnings_cache_db=v.get("TRADEX_EARNINGS_CACHE_PATH", "~/.tradex/earnings_cache.db"),
     )
 
     return TradeXSettings(

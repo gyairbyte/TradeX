@@ -6,14 +6,17 @@ from unittest.mock import Mock, patch
 import pandas as pd
 import pytest
 
+from tradex.config import settings_from_mapping
 from tradex.data.fetcher import ProviderCapabilityError
 from tradex.earnings import calendar
 
 
 def _make_earnings_db(tmp_path: Path):
     """Point the earnings cache at a temporary SQLite path for the test."""
+    db_path = tmp_path / "earnings_cache.db"
     calendar.CACHE_DIR = tmp_path
-    calendar.CACHE_DB = tmp_path / "earnings_cache.db"
+    calendar.CACHE_DB = db_path
+    return settings_from_mapping({"TRADEX_EARNINGS_CACHE_PATH": str(db_path)})
 
 
 def test_resolve_earnings_source_defaults_to_yahoo(monkeypatch):
@@ -27,7 +30,7 @@ def test_resolve_earnings_source_rejects_unsupported():
 
 
 def test_get_next_earnings_yahoo_and_cache(tmp_path):
-    _make_earnings_db(tmp_path)
+    settings = _make_earnings_db(tmp_path)
     future = date(2026, 8, 15)
     df = pd.DataFrame(
         {"Reported EPS": [1.0]},
@@ -36,8 +39,8 @@ def test_get_next_earnings_yahoo_and_cache(tmp_path):
     fake_ticker = Mock(get_earnings_dates=Mock(return_value=df))
 
     with patch.object(calendar.yf, "Ticker", return_value=fake_ticker):
-        result1 = calendar.get_next_earnings("AAPL", source="yahoo")
-        result2 = calendar.get_next_earnings("AAPL", source="yahoo")
+        result1 = calendar.get_next_earnings("AAPL", source="yahoo", settings=settings)
+        result2 = calendar.get_next_earnings("AAPL", source="yahoo", settings=settings)
 
     assert result1 == future
     assert result2 == future
