@@ -86,11 +86,13 @@ def fake_dashboard_st(monkeypatch, tmp_path):
     monkeypatch.setitem(sys.modules, "streamlit", st)
 
     # Avoid touching ~/.tradex during the dashboard run.
-    from tradex.tracker import store
     from tradex.watchlists import store as wl_store
 
-    monkeypatch.setattr(store, "init", lambda *args, **kwargs: None)
-    monkeypatch.setattr(wl_store, "init", lambda *args, **kwargs: None)
+    monkeypatch.setenv("TRADEX_DB_PATH", str(tmp_path / "signals.db"))
+    monkeypatch.setenv("TRADEX_WATCHLISTS_DB_PATH", str(tmp_path / "watchlists.db"))
+    monkeypatch.setenv("TRADEX_WEIGHTS_PATH", str(tmp_path / "weights.json"))
+    monkeypatch.setenv("TRADEX_FP_DB", str(tmp_path / "fingerprints.db"))
+    monkeypatch.setenv("TRADEX_EARNINGS_CACHE_PATH", str(tmp_path / "earnings_cache.db"))
     # list_all is called at module load; skip the real DB.
     monkeypatch.setattr(wl_store, "list_all", lambda *, settings: [])
     monkeypatch.setattr(wl_store, "load", lambda *args, **kwargs: None)

@@ -581,7 +581,7 @@ def test_run_once_skip_does_not_touch_store_or_alerts(fresh_signal_db, capsys):
     assert mock_alerts.call_count == 0
 
 
-def test_run_once_uses_new_york_timestamp_format(capsys):
+def test_run_once_uses_new_york_timestamp_format(fresh_signal_db, capsys):
     """Timestamps are printed in New York time with a timezone abbreviation."""
     empty = pd.DataFrame(columns=[
         "ticker", "score", "last_close", "volume_ratio", "rsi",
