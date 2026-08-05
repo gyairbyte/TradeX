@@ -61,6 +61,7 @@ tradex/
 │   ├── ui/tabs/coil_detector.py  # Coil Detector tab renderer
 │   ├── ui/tabs/confluence.py      # Confluence tab renderer
 │   ├── ui/tabs/help.py            # Help tab renderer
+│   ├── ui/tabs/scanner.py         # Signal Scanner tab renderer
 │   ├── ui/tabs/signal_journal.py  # Signal Journal tab renderer
 │   └── ui/tabs/weights.py         # Scoring Weights tab renderer
 ├── docs/
@@ -585,7 +586,7 @@ Save and switch between named ticker lists (e.g. "Semis", "Crypto-adjacent", "Ea
 - [x] Scoring weight customization — per-signal sliders in the Weights tab, persisted to ~/.tradex/weights.json
 
 ### Still on the list
-- [~] Split `dashboard.py` into tab and component modules (UI-001 — Phases 1–2 done; remaining six tabs pending in later phases)
+- [~] Split `dashboard.py` into tab and component modules (UI-001 — Phases 1–4 done; remaining three tabs pending in later phases)
 - [ ] Portfolio-level risk view
 
 ### Nice-to-have enhancements

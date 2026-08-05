@@ -78,6 +78,7 @@ Scanner runs → results DataFrame
 | `tradex/ui/tabs/coil_detector.py` | Coil Detector tab renderer (extracted from `dashboard.py` in UI-001 Phase 3). |
 | `tradex/ui/tabs/confluence.py` | Confluence tab renderer (extracted from `dashboard.py` in UI-001 Phase 3). |
 | `tradex/ui/tabs/help.py` | Help tab renderer (extracted from `dashboard.py` in UI-001 Phase 2). |
+| `tradex/ui/tabs/scanner.py` | Signal Scanner tab renderer (extracted from `dashboard.py` in UI-001 Phase 4). |
 | `tradex/ui/tabs/signal_journal.py` | Signal Journal tab renderer (extracted from `dashboard.py` in UI-001 Phase 1). |
 | `tradex/ui/tabs/weights.py` | Scoring Weights tab renderer (extracted from `dashboard.py` in UI-001 Phase 1). |
 | `pyproject.toml` | Python 3.11+ project, deps: yfinance, pandas, ta, streamlit, plotly |
