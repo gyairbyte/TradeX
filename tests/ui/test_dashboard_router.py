@@ -91,6 +91,9 @@ def fake_dashboard_st(monkeypatch, tmp_path):
 
     monkeypatch.setattr(store, "init", lambda *args, **kwargs: None)
     monkeypatch.setattr(wl_store, "init", lambda *args, **kwargs: None)
+    # list_all is called at module load; skip the real DB.
+    monkeypatch.setattr(wl_store, "list_all", lambda *, settings: [])
+    monkeypatch.setattr(wl_store, "load", lambda *args, **kwargs: None)
 
     # Suppress network/data fetches in tabs that have not yet been extracted.
     monkeypatch.setattr("tradex.screener.engine.run_with_report", MagicMock())
