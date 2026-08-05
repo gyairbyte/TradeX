@@ -101,7 +101,7 @@ Key variables:
 | `ALERT_COOLDOWN_MINUTES` | No | Default cooldown in minutes, `1` to `10080`. Default `60`. |
 | `ALERT_COIL_COOLDOWN_MINUTES` | No | Optional per-type override. Default `ALERT_COOLDOWN_MINUTES`. |
 | `ALERT_CONFLUENCE_COOLDOWN_MINUTES` | No | Optional per-type override. Default `ALERT_COOLDOWN_MINUTES`. |
-| `ALERT_PATTERN_COOLDOWN_MINUTES` | No | Optional per-type override. Default `ALERT_COOLDOWN_MINUTES`. |
+| `ALERT_PATTERN_COOLDOWN_MINUTES` | No | Optional per-type override. Default `ALERT_COOLDOWN_MINUTES`. Parsed for backward compatibility; pattern matching is research-only and is not dispatched by automatic watcher alerts. |
 | `ALERT_GAP_COOLDOWN_MINUTES` | No | Optional per-type override. Default `ALERT_COOLDOWN_MINUTES`. |
 | `ALERT_STATE_PATH` | No | Isolated SQLite alert state database. Default `~/.tradex/alerts.db`. |
 | `TRADEX_DB_PATH` | No | Signal history / scan session SQLite DB. Default `~/.tradex/signals.db`. |
@@ -224,7 +224,7 @@ If the dashboard fails to start, check the log at `~/.tradex/dashboard.log` (Mac
 
 ## 6. Optional: scheduled background scanner
 
-The watcher runs the screener on an interval and writes results to `~/.tradex/signals.db`. This is what powers the **Coil Detector** and **Signal Journal** tabs over time. It also evaluates automatic alerts for coil, confluence, pattern, and pre-market gap setups, using a separate `~/.tradex/alerts.db` state database for cooldown and deduplication.
+The watcher runs the screener on an interval and writes results to `~/.tradex/signals.db`. This is what powers the **Coil Detector** and **Signal Journal** tabs over time. It evaluates automatic alerts for coil, confluence, and pre-market gap setups, using a separate `~/.tradex/alerts.db` state database for cooldown and deduplication. Pattern matching is research-only and is quarantined from automatic watcher alerts.
 
 ```bash
 # macOS / Linux
@@ -466,7 +466,7 @@ Once the dashboard is running at `http://localhost:8501`:
 | **Scanner** | Pick a watchlist in the sidebar, pick a timeframe (intraday / short / long), set `min_score` (try 40), click Scan. |
 | **Coil Detector** | Needs scan history across several NYSE trading sessions to detect coiling stocks; appears count distinct sessions, not scan rows. |
 | **Confluence** | Stocks scoring well across all three timeframes simultaneously. Missing timeframes contribute zero and are shown as `0/3`–`3/3` coverage. `all timeframes aligned` requires 3/3 coverage and all active. |
-| **Pattern Match** | Compares current 10-day windows against historical run-up / decline fingerprints. |
+| **Pattern Similarity — Experimental Research** | Compares current 10-day windows against historical run-up / decline fingerprints. Research-only; not used in production scoring or automatic alerts. |
 | **Pre-Market** | Gap-up / gap-down detection vs. previous close with optional liquidity, spread, catalyst, and freshness filters. All new filters are off by default. |
 | **Options Activity** | Two separate sections: true options-flow events (Unusual Whales) and options-chain snapshots (Tradier/Yahoo). Chain volume/OI is non-directional. The true-flow scanner is disabled if no Unusual Whales key is configured. |
 | **Alerts** | Configure Discord / email thresholds, view effective cooldown durations, and inspect recent persistent alert state. Requires `.env` credentials for notifications. |

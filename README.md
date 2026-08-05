@@ -34,6 +34,7 @@ tradex/
 │   │   ├── fingerprint.py         # Averages mined windows into fingerprints
 │   │   └── matcher.py             # Weighted Pearson similarity vs. live 10-day windows
 │   ├── research/
+│   │   ├── long_term_evaluation/  # LONG-001 long-term scorer vs. 40-week MA
 │   │   ├── pattern_validation/    # PATTERN-001 point-in-time pattern-similarity validation
 │   │   ├── score_validation/      # VAL-002 reproducible score-validation study
 │   │   └── short_context/         # SHORT-001 market-context research pipeline
@@ -101,7 +102,7 @@ These conditions together suggest a stock that has been "coiling" and is ready f
 | **Scanner** | Score every ticker in the active watchlist, drill into candlestick + volume chart |
 | **Coil Detector** | Stocks that have scored well across multiple scans without breaking out yet |
 | **Confluence** | Stocks scoring well across intraday + short + long simultaneously; coverage (0/3–3/3) is now explicit |
-| **Pattern Similarity** | Experimental research: compare current 10-day windows against historical run-up/decline fingerprints. Not used in production scoring or automatic alerts. |
+| **Pattern Similarity — Experimental Research** | Compare current 10-day windows against historical run-up/decline fingerprints. Not used in production scoring or automatic alerts. |
 | **Pre-Market** | Gap-up/down detection vs. previous close using pre-market quotes |
 | **Options Activity** | True options-flow events (Unusual Whales) and options-chain snapshots (Tradier/Yahoo), with non-directional put/call volume balance |
 | **Alerts** | Configure Discord/email push and view persistent cooldown state for coil, confluence, and gap alerts. Pattern matching is quarantined from automatic alerts. |
@@ -265,6 +266,27 @@ Key design choices:
 - Studies are deterministic: the same manifest and configuration produce byte-identical CSVs, JSON, and Markdown reports, including `study.json`, `report.md`, and `manifest.lock.json`.
 
 **Valid outcome:** A study may conclude `insufficient evidence to change the production score`. The tool does not automatically select, promote, or mutate production thresholds.
+
+### Long-term scorer evaluation (LONG-001)
+
+`tradex/research/long_term_evaluation` runs a locked, point-in-time study comparing the current production `tradex/signals/long_term.score` (using a fresh `LongWeights()` instance and the default threshold of 40) against a simple `close > 40-week simple moving average` baseline on weekly OHLCV bars.
+
+```bash
+# Build an offline, versioned dataset from the locked protocol (network allowed; credentials optional)
+uv run python -m tradex.research.long_term_evaluation snapshot \
+  --protocol docs/research/LONG-001.json \
+  --output data/long_term_evaluation_snapshot
+
+# Evaluate offline using the same locked protocol (no network, no credentials, no saved weights)
+uv run python -m tradex.research.long_term_evaluation evaluate \
+  --protocol docs/research/LONG-001.json \
+  --manifest data/long_term_evaluation_snapshot/manifest.json \
+  --output results/long_term_evaluation
+```
+
+The study uses the locked protocol in [`docs/research/LONG-001.json`](docs/research/LONG-001.json) and the human-readable protocol in [`docs/research/LONG-001.md`](docs/research/LONG-001.md).
+
+**Completed result:** The locked LONG-001 study concluded **`inconclusive`** on the untouched holdout (`2021-01-01` through `2025-12-19`), with `production_promotion_eligible=false`. The production `long_term.score`, weights, thresholds, rankings, confluence, alerts, and dashboard behavior were not changed. Locked artifacts and the full report are preserved at `docs/research/artifacts/LONG-001/2026-08-04-fc015c8f13e1/`.
 
 ### Pattern similarity validation (PATTERN-001)
 
@@ -544,8 +566,9 @@ Save and switch between named ticker lists (e.g. "Semis", "Crypto-adjacent", "Ea
 - [x] Signal state tracking (SQLite history, coil detection, confluence scoring)
 - [x] Automated outcome tracking (1d/3d/5d price fetch, win rate, expectancy by score bucket)
 - [x] Signal journal with quality breakdown by score range and timeframe
-- [x] Historical pattern fingerprinting (mine run-ups/declines, average pre-event windows, match live stocks)
-- [x] Alert system (Discord bot + email when coil / confluence / pattern / gap thresholds crossed)
+- [x] Historical pattern fingerprinting (mine run-ups/declines, average pre-event windows, match live stocks; research-only)
+- [x] Alert system (Discord bot + email when coil / confluence / gap thresholds crossed; pattern matching is quarantined from automatic alerts)
+- [x] Long-term scorer evaluation (LONG-001) — locked 40-week MA comparison; concluded `inconclusive` with `production_promotion_eligible=false`
 - [x] Persistent alert cooldown, deduplication, and audit state
 - [x] Pre-market gap scanner
 - [x] Quality-aware pre-market gap scanner with structured reports, liquidity metrics, spread/catalyst filters, and point-in-time replay (GAP-001)
@@ -556,20 +579,12 @@ Save and switch between named ticker lists (e.g. "Semis", "Crypto-adjacent", "Ea
 - [x] Scoring weight customization — per-signal sliders in the Weights tab, persisted to ~/.tradex/weights.json
 
 ### Still on the list
-- [x] Add provider/source provenance persistence to signal history and outcomes (PROVIDER-004)
-- [x] Define provider failure and fallback policy (PROVIDER-005)
-- [x] Add market-hours and timezone handling (COR-005)
-- [x] Redesign signal-history storage and access patterns (DATA-001)
-- [x] Fix scan audit to accurately distinguish requested, observed, qualifying, and failed scans (COR-012)
-- [x] Backtesting module to validate signal quality historically (VAL-001)
-- [x] Reproducible, point-in-time score validation study (VAL-002)
-- [x] Short-term market context research pipeline and holdout gates (SHORT-001 — research infrastructure complete; production integration blocked pending real-data gates)
+- [ ] Split `dashboard.py` into tab and component modules (UI-001)
 - [ ] Portfolio-level risk view
 
 ### Nice-to-have enhancements
 - [ ] Sector/industry grouping — show signals rolled up by sector to spot rotations
 - [ ] Correlation-aware confluence — penalize confluence across highly correlated tickers
-- [x] Live alerts triggered by the watcher with persistent cooldown and deduplication
 - [ ] Mobile-friendly dashboard view
 - [ ] Export scan results to CSV / Notion
 - [ ] Walk-forward optimization for signal weights (once backtesting exists)

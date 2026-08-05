@@ -552,21 +552,21 @@ This is the master backlog for recommendations from the Devin review. Items are 
 
 ## Low priority
 
-### DOC-001: Fix documentation drift
+### DOC-001: Close LONG-001 and restore documentation and tracker consistency
 
 - **ID:** DOC-001
-- **Title:** Fix documentation drift
+- **Title:** Close LONG-001 and restore documentation and tracker consistency
 - **Category:** Documentation
 - **Priority:** Low
-- **Status:** Proposed
-- **Problem statement:** `README.md` and `CLAUDE.md` disagree on tabs/completed features; `SETUP.md` has a wrong Discord env variable name.
-- **Recommended action:** Sync docs; fix env variable; establish one canonical source per topic.
-- **Reason:** New users and future agents should not get conflicting instructions.
-- **Dependencies:** None
-- **Files likely affected:** `README.md`, `CLAUDE.md`, `SETUP.md`
-- **Testing requirements:** Doc review checklist.
-- **Acceptance criteria:** Tab counts and feature statuses are consistent; `SETUP.md` uses `ALERT_DISCORD_TOKEN`.
-- **Intended pull request:** `devin/fix-doc-drift`
+- **Status:** Completed
+- **Resolved by:** `devin/close-long-001-docs` (PR #27)
+- **Problem statement:** After LONG-001 merged, `docs/PROJECT-TRACKER.md` still listed it as `In Progress` and recommended the already-completed `devin/evaluate-long-term-score` branch as the next PR. `README.md`, `CLAUDE.md`, and `SETUP.md` contained stale references: missing LONG-001 result, inconsistent dashboard tab names/order, a "Next Features to Build" list with already-delivered capabilities, and language in `SETUP.md` implying pattern similarity generated automatic alerts.
+- **Recommended action:** Mark LONG-001 completed with its `inconclusive` result and `production_promotion_eligible=false`; set the tracker’s next-recommended engineering task to UI-001; synchronize `README.md`, `CLAUDE.md`, and `SETUP.md` with the current dashboard tab names, research packages, automatic-alert categories, and LONG-001 status.
+- **Reason:** Canonical sources of truth must agree before starting UI-001.
+- **Dependencies:** LONG-001
+- **Files likely affected:** `README.md`, `CLAUDE.md`, `SETUP.md`, `docs/PROJECT-TRACKER.md`
+- **Testing requirements:** `git diff --check`; `uv run ruff check tests scripts`; targeted `rg` searches; `uv run pytest tests -q`.
+- **Acceptance criteria:** LONG-001 is marked completed; the tracker no longer recommends the completed LONG-001 branch; UI-001 is listed as the next engineering task; README/CLAUDE/SETUP agree on tab names, pattern-similarity research-only status, automatic-alert categories, and LONG-001 result.
 - **Affects trading behavior:** No
 
 ### DOC-002: Establish canonical AI-development and research-governance documentation
@@ -593,7 +593,12 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Evaluate long-term scorer against 40-week MA (research-only)
 - **Category:** Long-term trading
 - **Priority:** Low
-- **Status:** In Progress
+- **Status:** Completed
+- **Resolved by:** `devin/evaluate-long-term-score` (PR #26)
+- **Result:** `inconclusive`
+- **Production promotion:** Not eligible (`production_promotion_eligible=false`)
+- **Trading behavior:** Unchanged
+- **Artifact location:** `docs/research/artifacts/LONG-001/2026-08-04-fc015c8f13e1/`
 - **Problem statement:** The long-term score is a weekly-bar version of the short-term score and lacks fundamental or relative-strength context.
 - **Recommended action:** Run a locked, point-in-time research study comparing the current production `long_term.score` to a simple 40-week moving-average baseline. Do not redesign production scoring or the dashboard until a follow-up promotion assignment is explicitly approved.
 - **Reason:** A "long-term" screen should not simply be a slower momentum score.
@@ -601,8 +606,6 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Files likely affected:** `tradex/research/long_term_evaluation/`, `tests/research/test_long_term_evaluation.py`, `docs/research/artifacts/LONG-001/`
 - **Testing requirements:** Locked, point-in-time, split-respecting, provider-aware research study comparing `long_term.score` to a 40-week MA baseline; deterministic credential-free unit tests.
 - **Acceptance criteria:** Research study concludes `supports_further_research`, `reject_or_deprioritize`, or `inconclusive` based on validation and holdout performance; no production scorer or dashboard changes made.
-- **Latest result:** `inconclusive` on untouched holdout (2021-01-01 through 2025-12-19). Locked artifacts and report at `docs/research/artifacts/LONG-001/2026-08-04-fc015c8f13e1/`.
-- **Intended pull request:** `devin/evaluate-long-term-score`
 - **Affects trading behavior:** No
 
 ### GAP-001: Improve pre-market gap scanner
@@ -649,8 +652,8 @@ This is the master backlog for recommendations from the Devin review. Items are 
 |---|---|---|
 | High | 15 | DATA-001: Redesign signal history to record all scan observations |
 | Medium | 12 | SHORT-001: Add market regime and relative strength to short-term scorer |
-| Low | 5 | DOC-001: Fix documentation drift |
+| Low | 5 | DOC-001: Close LONG-001 and restore documentation and tracker consistency |
 
 **Recommended next pull request order:**
-1. `devin/evaluate-long-term-score` (LONG-001, research-only evaluation).
+1. `devin/refactor-dashboard-boundaries` (UI-001, split `dashboard.py` into tab and component modules — production-facing refactor that preserves all current behavior and trading logic).
 
