@@ -85,6 +85,7 @@ def test_initial_render_shows_subheader_caption_and_slider(confluence_module, fa
 
     assert fake_st.expander.call_count == 1
     assert fake_st.slider.call_count == 1
+    assert fake_st.slider.call_args.args == ("Min confluence score", 0, 100, 50)
     assert fake_st.slider.call_args.kwargs.get("key") == "min_conf"
 
     confluence_module.run_confluence_screen.assert_not_called()
@@ -191,6 +192,22 @@ def test_populated_result_stores_exact_dataframe(confluence_module, fake_st):
     assert all("earnings" not in t.lower() for t in success_texts)
 
     assert fake_st.dataframe.call_count == 1
+    _, df_kwargs = fake_st.dataframe.call_args
+    expected_config_keys = {
+        "ticker",
+        "confluence_score",
+        "tier",
+        "timeframe_coverage",
+        "available_timeframes",
+        "missing_timeframes",
+        "active_timeframes",
+        "score_intraday",
+        "score_short",
+        "score_long",
+        "days_until_earnings",
+        "last_close",
+    }
+    assert set(df_kwargs.get("column_config", {}).keys()) == expected_config_keys
     assert fake_st.session_state["conf_results"] is results
 
 
@@ -243,10 +260,14 @@ def test_existing_session_state_drill_down(confluence_module, fake_st, monkeypat
     assert kwargs["range_color"] == [0, 100]
 
     assert fake_st.plotly_chart.call_count == 1
+    _, plot_kwargs = fake_st.plotly_chart.call_args
+    assert plot_kwargs.get("use_container_width") is True
+    bar_mock.update_layout.assert_called_once_with(height=350, showlegend=False)
+    assert fake_st.plotly_chart.call_args[0][0] is bar_mock
 
 
 def test_widget_keys_preserved(confluence_module, fake_st):
-    """All expected Confluence widget keys are rendered."""
+    """All expected Confluence widget keys, labels, ranges, and defaults are rendered."""
     settings = _default_settings()
 
     confluence_module.render_confluence_tab(
@@ -258,6 +279,7 @@ def test_widget_keys_preserved(confluence_module, fake_st):
     )
 
     assert fake_st.slider.call_count == 1
+    assert fake_st.slider.call_args.args == ("Min confluence score", 0, 100, 50)
     assert fake_st.slider.call_args.kwargs.get("key") == "min_conf"
 
     button_keys = {call.kwargs.get("key") for call in fake_st.button.call_args_list}

@@ -57,6 +57,15 @@ def _ticker_state() -> dict:
     }
 
 
+def _slider_calls(fake_st):
+    """Return every st.slider/column.slider call captured by the fake Streamlit."""
+    calls = list(fake_st.slider.call_args_list)
+    for col_list in fake_st._column_returns:
+        for col in col_list:
+            calls.extend(col.slider.call_args_list)
+    return calls
+
+
 @pytest.fixture
 def coil_detector_module(fake_st, monkeypatch):
     """Import the Coil Detector tab fresh with mocked Streamlit and analyzer."""
@@ -111,13 +120,12 @@ def test_initial_render_shows_subheader_caption_and_sliders(coil_detector_module
 
     assert fake_st.expander.call_count == 1
 
-    slider_keys = {call.kwargs.get("key") for call in fake_st.slider.call_args_list}
-    for col_list in fake_st._column_returns:
-        for col in col_list:
-            for call in col.slider.call_args_list:
-                slider_keys.add(call.kwargs.get("key"))
-    assert "coil_days" in slider_keys
-    assert "coil_apps" in slider_keys
+    slider_calls = _slider_calls(fake_st)
+    by_key = {c.kwargs.get("key"): c for c in slider_calls}
+    assert "coil_days" in by_key
+    assert by_key["coil_days"].args == ("Look-back window (days)", 3, 21, 7)
+    assert "coil_apps" in by_key
+    assert by_key["coil_apps"].args == ("Min appearances", 2, 10, 2)
 
     coil_detector_module.analyzer.detect_coils.assert_not_called()
     coil_detector_module.analyzer.detect_fading_setups.assert_not_called()
@@ -143,11 +151,15 @@ def test_detect_coils_empty_result(coil_detector_module, fake_st):
     coil_detector_module.analyzer.get_ticker_state.assert_not_called()
 
 
-def test_detect_coils_populated_result(coil_detector_module, fake_st):
+def test_detect_coils_populated_result(coil_detector_module, fake_st, monkeypatch):
     """Clicking Detect Coils renders the results table and drill-down."""
     settings = _default_settings()
     fake_st._active_button_keys = {"btn_coil"}
     coil_detector_module.analyzer.detect_coils.return_value = _coil_df()
+
+    fig_mock = MagicMock()
+    line_mock = MagicMock(return_value=fig_mock)
+    monkeypatch.setattr(coil_detector_module.px, "line", line_mock)
 
     coil_detector_module.render_coil_detector_tab(settings=settings, timeframe="short")
 
@@ -183,6 +195,21 @@ def test_detect_coils_populated_result(coil_detector_module, fake_st):
     assert kwargs["days"] == 7
 
     assert fake_st.plotly_chart.call_count == 1
+    _, plot_kwargs = fake_st.plotly_chart.call_args
+    assert plot_kwargs.get("use_container_width") is True
+
+    fig_mock = fake_st.plotly_chart.call_args[0][0]
+    line_mock.assert_called_once()
+    line_kwargs = line_mock.call_args.kwargs
+    assert line_kwargs["y"] == [45, 50, 55]
+    assert line_kwargs["labels"] == {"x": "Session #", "y": "Score"}
+    assert line_kwargs["markers"] is True
+    assert "AAPL" in line_kwargs["title"] and "short" in line_kwargs["title"]
+
+    fig_mock.add_hline.assert_called_once_with(
+        y=50, line_dash="dot", line_color="yellow", annotation_text="Signal threshold (50)"
+    )
+    fig_mock.update_layout.assert_called_once_with(height=300)
 
     info_texts = [str(c[0][0]) for c in fake_st.info.call_args_list]
     assert any("building pressure" in t.lower() for t in info_texts)
@@ -241,7 +268,7 @@ def test_detect_fading_populated_result(coil_detector_module, fake_st):
 
 
 def test_widget_keys_preserved(coil_detector_module, fake_st):
-    """All expected Coil Detector widget keys are rendered."""
+    """All expected Coil Detector widget keys, labels, ranges, and defaults are rendered."""
     settings = _default_settings()
     fake_st._active_button_keys = {"btn_coil"}
     coil_detector_module.analyzer.detect_coils.return_value = _coil_df()
@@ -251,12 +278,10 @@ def test_widget_keys_preserved(coil_detector_module, fake_st):
     button_keys = {call.kwargs.get("key") for call in fake_st.button.call_args_list}
     assert button_keys == {"btn_coil", "btn_fade"}
 
-    slider_keys = set()
-    for col_list in fake_st._column_returns:
-        for col in col_list:
-            for call in col.slider.call_args_list:
-                slider_keys.add(call.kwargs.get("key"))
-    assert slider_keys == {"coil_days", "coil_apps"}
+    slider_calls = _slider_calls(fake_st)
+    by_key = {c.kwargs.get("key"): c for c in slider_calls}
+    assert by_key["coil_days"].args == ("Look-back window (days)", 3, 21, 7)
+    assert by_key["coil_apps"].args == ("Min appearances", 2, 10, 2)
 
     selectbox_keys = {call.kwargs.get("key") for call in fake_st.selectbox.call_args_list}
     assert selectbox_keys == {"sel_coil"}

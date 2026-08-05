@@ -54,6 +54,12 @@ def _make_fake_st():
                 return arg[0]
         return None
 
+    def _slider(*args, **kwargs):
+        # Streamlit slider signature: st.slider(label, min, max, value, ...)
+        if len(args) >= 4:
+            return args[3]
+        return kwargs.get("value", 0)
+
     def _columns(spec, *args, **kwargs):
         n = spec if isinstance(spec, int) else len(spec)
         cols = []
@@ -64,14 +70,14 @@ def _make_fake_st():
             col.checkbox.return_value = False
             col.text_input.return_value = ""
             col.text_area.return_value = ""
-            col.slider.return_value = 40
+            col.slider.side_effect = _slider
             cols.append(col)
         return cols
 
     st.button.side_effect = _button
     st.selectbox.side_effect = _selectbox
     st.columns.side_effect = _columns
-    st.slider.return_value = 40
+    st.slider.side_effect = _slider
     st.text_input.return_value = ""
     st.text_area.return_value = ""
     st.checkbox.return_value = False
@@ -172,7 +178,7 @@ def test_dashboard_routes_to_extracted_renderers(fake_dashboard_st, monkeypatch)
     assert len(co_kwargs["watchlist"]) == 20
     assert "AAPL" in co_kwargs["watchlist"]
     assert co_kwargs["watchlist"] == list(dict.fromkeys(co_kwargs["watchlist"]))
-    assert "earnings_buffer" in co_kwargs
+    assert co_kwargs["earnings_buffer"] == 0
     assert co_kwargs["provider"] == "yahoo"
     assert co_kwargs["earnings_source"] == "yahoo"
 
