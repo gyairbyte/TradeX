@@ -363,6 +363,148 @@ gatherUsageStats = false
 
 Do not launch a real Streamlit server during unit tests.
 
+## Streamlit UI smoke test
+
+For pull requests that modify `tradex/ui/dashboard.py`, `tradex/ui/tabs/`, `tradex/ui/components/`, tab routing, tab labels/order, shared Streamlit widgets, or UI persistence wiring, run a real Streamlit smoke test in addition to the mocked unit tests.
+
+A documentation-only change that does not affect UI instructions does not require this smoke test unless specifically requested.
+
+### Unit-test boundary
+
+* Do not launch a real Streamlit server from pytest.
+* Unit tests must continue to mock Streamlit and backend boundaries.
+* Real Streamlit verification is a separate manual or testing-agent step.
+* Do not introduce sleeps, subprocess servers, Playwright, Selenium, or browser dependencies into the normal unit-test suite merely to perform this smoke test.
+
+### Temporary persistence setup
+
+Create a unique temporary directory for each smoke-test run and redirect all TradeX persistence paths away from the real `~/.tradex` directory:
+
+```bash
+TMP_BASE="$(mktemp -d)"
+export TRADEX_DB_PATH="$TMP_BASE/signals.db"
+export TRADEX_WATCHLISTS_DB_PATH="$TMP_BASE/watchlists.db"
+export TRADEX_WEIGHTS_PATH="$TMP_BASE/weights.json"
+export TRADEX_FP_DB="$TMP_BASE/fingerprints.db"
+export TRADEX_EARNINGS_CACHE_PATH="$TMP_BASE/earnings_cache.db"
+export ALERT_STATE_PATH="$TMP_BASE/alerts.db"
+```
+
+* Use a new directory for each smoke-test run.
+* Tests must not use the real files under `~/.tradex`.
+* Record the temporary directory in the completion report.
+* Do not commit temporary DBs, weights files, credentials, screenshots, traces, or test reports.
+
+### Launch command
+
+```bash
+uv run streamlit run tradex/ui/dashboard.py \
+  --server.headless true \
+  --server.port 8502
+```
+
+* Port `8502` is the preferred default; choose another unused port if necessary.
+* Stop the process after verification.
+* Do not leave the server running after the task.
+* The smoke test must use no provider credentials and must not intentionally trigger live market-data calls.
+
+### Canonical tab verification
+
+Confirm the dashboard renders the ten canonical tabs in this exact order:
+
+```text
+Scanner
+Coil Detector
+Confluence
+Pattern Similarity — Experimental Research
+Pre-Market
+Options Activity
+Alerts
+Signal Journal
+Weights
+Help
+```
+
+Do not treat a successful HTTP response from Streamlit as sufficient verification. Confirm that:
+
+* All ten labels render in the canonical order.
+* The dashboard produces no uncaught exception or traceback.
+* Any tab modified or extracted by the current PR renders its expected subheader.
+* Expected empty-state widgets render without errors.
+* Buttons that initiate scans, market-data retrieval, notifications, persistence writes, OAuth, or credentials are not clicked unless the task explicitly authorizes that action.
+
+### Headless browser and Playwright guidance
+
+Mouse-coordinate clicking is unreliable in headless environments. Select tabs by stable visible text instead.
+
+An accessible-role selector such as Playwright's `getByRole("tab", { name: ... })` is preferred when Streamlit exposes stable tab roles. As a generic fallback, use JavaScript that finds the element by its text and clicks it:
+
+```javascript
+const label = "Signal Journal";
+const candidates = [...document.querySelectorAll('[role="tab"], button, div')];
+const target = candidates.find(
+  (element) => element.textContent?.trim() === label
+);
+if (!target) {
+  throw new Error(`Tab not found: ${label}`);
+}
+target.click();
+```
+
+Do not prescribe browser automation as part of pytest.
+
+### Persistence-isolation verification
+
+Confirm that the smoke test did not modify real user persistence. Use one or both of these approaches:
+
+* Compare `stat` metadata for relevant existing `~/.tradex` files before and after the validation run.
+* Run the smoke test with an isolated temporary home directory in addition to explicit path variables when the environment supports it.
+
+Check likely persistence files such as:
+
+```text
+~/.tradex/signals.db
+~/.tradex/watchlists.db
+~/.tradex/weights.json
+~/.tradex/fingerprints.db
+~/.tradex/earnings_cache.db
+~/.tradex/alerts.db
+```
+
+Report any pre-existing suite isolation issue separately rather than concealing it.
+
+### Process cleanup
+
+Stop the exact Streamlit process first, then remove the temporary directory:
+
+```bash
+# Stop the Streamlit process first.
+# Prefer terminating the exact PID that was started for this smoke test.
+rm -rf "$TMP_BASE"
+unset TMP_BASE
+```
+
+Do not use unsafe process-killing commands that could terminate unrelated Streamlit applications. Prefer capturing the exact process ID when starting Streamlit programmatically and terminating only that process.
+
+### Reporting requirements
+
+Include in the UI smoke-test report:
+
+* Exact commit SHA tested
+* Streamlit command used
+* Temporary persistence directory used
+* Port used
+* Ten-tab order result
+* Modified/extracted tabs inspected
+* Whether exceptions or tracebacks occurred
+* Whether deprecation warnings occurred
+* Confirmation that no credentials or live APIs were used
+* Confirmation that no real `~/.tradex` persistence files changed
+* Confirmation that the Streamlit process was stopped
+* Any limitation in browser/headless verification
+
+Streamlit deprecation warnings should be reported but do not automatically fail an unrelated refactor unless the PR introduces the warning or the warning prevents correct rendering.
+
 ## Deterministic time handling
 
 Watcher functions and market-hours helpers accept injectable aware datetimes for testing.
