@@ -122,16 +122,27 @@ def test_dashboard_creates_tabs_in_exact_order(fake_dashboard_st, monkeypatch):
 
 def test_dashboard_routes_to_extracted_renderers(fake_dashboard_st, monkeypatch):
     """The dashboard invokes each extracted tab renderer exactly once with explicit settings."""
+    alerts_mock = MagicMock()
+    help_mock = MagicMock()
     journal_mock = MagicMock()
     weights_mock = MagicMock()
+    monkeypatch.setattr("tradex.ui.tabs.alerts.render_alerts_tab", alerts_mock)
+    monkeypatch.setattr("tradex.ui.tabs.help.render_help_tab", help_mock)
     monkeypatch.setattr("tradex.ui.tabs.signal_journal.render_signal_journal_tab", journal_mock)
     monkeypatch.setattr("tradex.ui.tabs.weights.render_weights_tab", weights_mock)
 
     sys.modules.pop("tradex.ui.dashboard", None)
     runpy.run_module("tradex.ui.dashboard", run_name="__main__")
 
+    alerts_mock.assert_called_once()
+    help_mock.assert_called_once()
     journal_mock.assert_called_once()
     weights_mock.assert_called_once()
+
+    _, a_kwargs = alerts_mock.call_args
+    assert isinstance(a_kwargs["settings"], TradeXSettings)
+
+    help_mock.assert_called_once_with()
 
     _, j_kwargs = journal_mock.call_args
     assert isinstance(j_kwargs["settings"], TradeXSettings)

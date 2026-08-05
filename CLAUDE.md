@@ -74,6 +74,8 @@ Scanner runs → results DataFrame
 | `tradex/options/models.py` | Typed options source/capability and scan report models (`OptionsDataKind`, `OptionsSourceStatus`, `OptionsActivityReport`). |
 | `tradex/options/flow.py` | Capability-aware options source resolution, true-flow scanning, chain-snapshot scanning, and non-directional put/call balance. |
 | `tradex/ui/dashboard.py` | Streamlit dashboard router: Scanner, Coil Detector, Confluence, Pattern Similarity — Experimental Research, Pre-Market, Options Activity, Alerts, Signal Journal, Weights, Help |
+| `tradex/ui/tabs/alerts.py` | Alerts tab renderer (extracted from `dashboard.py` in UI-001 Phase 2). |
+| `tradex/ui/tabs/help.py` | Help tab renderer (extracted from `dashboard.py` in UI-001 Phase 2). |
 | `tradex/ui/tabs/signal_journal.py` | Signal Journal tab renderer (extracted from `dashboard.py` in UI-001 Phase 1). |
 | `tradex/ui/tabs/weights.py` | Scoring Weights tab renderer (extracted from `dashboard.py` in UI-001 Phase 1). |
 | `pyproject.toml` | Python 3.11+ project, deps: yfinance, pandas, ta, streamlit, plotly |
