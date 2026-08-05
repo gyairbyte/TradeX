@@ -28,6 +28,14 @@ def fake_st(monkeypatch):
 
     st.slider.side_effect = _slider
 
+    def _selectbox(label, *args, **kwargs):
+        for arg in args:
+            if isinstance(arg, (list, tuple)) and arg:
+                return arg[0]
+        return kwargs.get("index")
+
+    st.selectbox.side_effect = _selectbox
+
     def _columns(spec, *args, **kwargs):
         n = spec if isinstance(spec, int) else len(spec)
         cols = []

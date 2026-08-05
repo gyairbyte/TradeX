@@ -58,6 +58,8 @@ tradex/
 │   ├── watchlists/store.py        # Named watchlist persistence
 │   ├── ui/dashboard.py            # Streamlit dashboard router (10 tabs)
 │   ├── ui/tabs/alerts.py          # Alerts tab renderer
+│   ├── ui/tabs/coil_detector.py  # Coil Detector tab renderer
+│   ├── ui/tabs/confluence.py      # Confluence tab renderer
 │   ├── ui/tabs/help.py            # Help tab renderer
 │   ├── ui/tabs/signal_journal.py  # Signal Journal tab renderer
 │   └── ui/tabs/weights.py         # Scoring Weights tab renderer
