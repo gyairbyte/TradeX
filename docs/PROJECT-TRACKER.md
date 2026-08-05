@@ -519,15 +519,17 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Split dashboard.py into tab and component modules
 - **Category:** User interface
 - **Priority:** Medium
-- **Status:** Proposed
-- **Problem statement:** `tradex/ui/dashboard.py` is 1,721 lines and imports every backend module.
-- **Recommended action:** Move each tab into `tradex/ui/tabs/` and reusable widgets into `tradex/ui/components/`; keep `dashboard.py` as a router.
+- **Status:** In progress
+- **Phase 1 (current):** Extracted `Signal Journal` and `Weights` into `tradex/ui/tabs/signal_journal.py` and `tradex/ui/tabs/weights.py` on branch `devin/ui-001-phase-1`.
+- **Problem statement:** `tradex/ui/dashboard.py` was 2,378 lines and imported every backend module. The pre-refactor line count was understated.
+- **Recommended action:** Complete Phase 1 by routing the two extracted tabs through explicit `render_*` functions. Later phases should extract the remaining eight tabs and reusable widgets into `tradex/ui/tabs/` and `tradex/ui/components/` while keeping `dashboard.py` as the router.
 - **Reason:** Improves reviewability and makes the UI testable.
 - **Dependencies:** TEST-001
-- **Files likely affected:** `tradex/ui/dashboard.py`, new `tradex/ui/tabs/*.py`, new `tradex/ui/components/*.py`
-- **Testing requirements:** Component unit tests; smoke test that the dashboard module loads.
-- **Acceptance criteria:** No single UI file exceeds ~300 lines of logic; dashboard still renders all tabs.
-- **Intended pull request:** `devin/refactor-dashboard-boundaries`
+- **Files likely affected:** `tradex/ui/dashboard.py`, `tradex/ui/tabs/__init__.py`, `tradex/ui/tabs/signal_journal.py`, `tradex/ui/tabs/weights.py`, `tests/ui/test_signal_journal_tab.py`, `tests/ui/test_weights_tab.py`
+- **Testing requirements:** Component unit tests for the extracted tab modules; smoke test that the dashboard module loads and routes correctly.
+- **Acceptance criteria:** `dashboard.py` remains the canonical Streamlit entrypoint; all ten tabs still render with unchanged labels, order, and behavior; no import-time side effects from tab modules; no trading logic changed. The remaining eight tabs and component extraction are left for later bounded phases.
+- **Intended pull request:** `devin/ui-001-phase-1`
+- **Next phase:** `devin/ui-001-phase-2` (continue extracting the remaining tabs and reusable widgets in bounded phases; branch name to be assigned when Phase 1 merges).
 - **Affects trading behavior:** No
 
 ### ARCH-001: Centralize configuration and remove import-time env loading
@@ -655,5 +657,5 @@ This is the master backlog for recommendations from the Devin review. Items are 
 | Low | 5 | DOC-001: Close LONG-001 and restore documentation and tracker consistency |
 
 **Recommended next pull request order:**
-1. `devin/refactor-dashboard-boundaries` (UI-001, split `dashboard.py` into tab and component modules — production-facing refactor that preserves all current behavior and trading logic).
+1. `devin/ui-001-phase-2` (UI-001 continuation — extract the next bounded set of tabs or reusable widgets into `tradex/ui/tabs/` / `tradex/ui/components/` while keeping `dashboard.py` as the canonical router).
 

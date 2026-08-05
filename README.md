@@ -56,7 +56,9 @@ tradex/
 │   │   └── store.py               # Isolated SQLite alert cooldown state
 │   ├── earnings/calendar.py       # Next-earnings lookup + 24h SQLite cache
 │   ├── watchlists/store.py        # Named watchlist persistence
-│   └── ui/dashboard.py            # Streamlit dashboard (10 tabs)
+│   ├── ui/dashboard.py            # Streamlit dashboard router (10 tabs)
+│   ├── ui/tabs/signal_journal.py  # Signal Journal tab renderer
+│   └── ui/tabs/weights.py         # Scoring Weights tab renderer
 ├── docs/
 │   ├── PROJECT-TRACKER.md
 │   ├── AI-DEVELOPMENT-WORKFLOW.md
