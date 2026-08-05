@@ -1,13 +1,15 @@
 """
-Streamlit dashboard — eight tabs:
-  1. Scanner       : run screener, view ranked results, drill-down chart
-  2. Coil Detector : stocks building pressure over multiple days (pre-signal)
-  3. Confluence    : stocks scoring well across multiple timeframes
-  4. Pattern Similarity — Experimental Research : experimental shape comparison against historical run-up/decline fingerprints
-  5. Pre-Market    : gap scanner — identify gap-up/down candidates before open
-  6. Options Activity : true options flow and chain-snapshot activity
-  7. Alerts        : configure Discord/email alert thresholds
-  8. Signal Journal: historical signal outcomes (did the move happen?)
+Streamlit dashboard — ten tabs:
+  1. Scanner                                     : run screener, view ranked results, drill-down chart
+  2. Coil Detector                               : stocks building pressure over multiple days (pre-signal)
+  3. Confluence                                  : stocks scoring well across multiple timeframes
+  4. Pattern Similarity — Experimental Research  : experimental shape comparison against historical run-up/decline fingerprints
+  5. Pre-Market                                  : gap scanner — identify gap-up/down candidates before open
+  6. Options Activity                            : true options flow and chain-snapshot activity
+  7. Alerts                                      : configure Discord/email alert thresholds
+  8. Signal Journal                              : historical signal outcomes (did the move happen?)
+  9. Weights                                     : tune signal component point values
+  10. Help                                       : in-app documentation
 
 Run with: streamlit run tradex/ui/dashboard.py
 """
@@ -49,11 +51,9 @@ from tradex.premarket.models import (
     GapScanReport,
 )
 from tradex.screener.engine import run_with_report
-from tradex.signals import weights as signal_weights
 from tradex.signals.indicators import add_indicators
 from tradex.tracker import analyzer, store
 from tradex.tracker.confluence import run_confluence_screen
-from tradex.tracker.outcome_tracker import get_outcome_stats, run_outcome_pass
 from tradex.ui.source_defaults import (
     earnings_source_index,
     earnings_sources,
@@ -62,10 +62,11 @@ from tradex.ui.source_defaults import (
     options_source_index,
     options_sources,
 )
+from tradex.ui.tabs.signal_journal import render_signal_journal_tab
+from tradex.ui.tabs.weights import render_weights_tab
 from tradex.watchlists import DEFAULT_NAME as WL_DEFAULT_NAME
 from tradex.watchlists import presets as wl_presets
 from tradex.watchlists import store as wl_store
-
 
 DEFAULT_TICKERS = [
     "AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "META", "GOOGL",
@@ -1702,185 +1703,17 @@ if __name__ == "__main__":
     # TAB 8 — SIGNAL JOURNAL
     # ══════════════════════════════════════════════════════════════════════════════
     with tab_journal:
-        st.subheader("Signal Journal — Historical Outcomes")
-        st.caption(
-            "Every signal the app has fired, with automated outcome tracking. "
-            "Outcomes are measured at 1d (intraday), 3d (short), and 5d (long) after the signal fires."
+        render_signal_journal_tab(
+            settings=settings,
+            timeframe=timeframe,
+            provider=provider,
         )
-    
-        with st.expander("How to use the Signal Journal", expanded=False):
-            st.markdown("""
-    The Signal Journal is your feedback loop. It answers the only question that actually matters:
-    **do the signals work?**
-    
-    Every time you run a scan and a stock scores above your min score threshold, that signal is recorded.
-    After the outcome window closes (1, 3, or 5 days later depending on timeframe), TradeX automatically
-    fetches the price and records what happened.
-    
-    **Key metrics:**
-    - **Win Rate** — % of signals where the stock moved in the expected direction. Above 50% is positive edge.
-    - **Avg Win / Avg Loss** — how big the wins and losses are on average.
-    - **Expectancy** — the most important number. Calculated as: `(win rate × avg win) + (loss rate × avg loss)`. Positive expectancy means the strategy has mathematical edge over time.
-    
-    **Signal Quality by Score Bucket:**
-    This chart is how you calibrate. If 80+ signals have a 68% win rate but 40–59 signals have a 43% win rate,
-    you should raise your min score to 80. Use the data to tune your thresholds — don't guess.
-    
-    **Outcome windows:**
-    | Timeframe | Outcome measured at |
-    |---|---|
-    | Intraday | 1 trading day after signal |
-    | Short | 3 trading days after signal |
-    | Long | 5 trading days after signal |
-    
-    Outcomes are refreshed automatically at 4:30pm ET when the watcher is running.
-            """)
-    
-        outcome_provider = resolve_provider(provider, settings=settings)
-        col_refresh, col_info = st.columns([1, 4])
-        with col_refresh:
-            if st.button("Refresh Outcomes Now", key="btn_outcomes",
-                         help="Manually trigger outcome fetching for all unresolved signals whose window has closed."):
-                with st.spinner("Fetching price outcomes for pending signals…"):
-                    summary = run_outcome_pass(verbose=False, provider=provider, settings=settings)
-                st.success(
-                    f"Resolved {summary['resolved']} — "
-                    f"{summary['pending']} pending (window not closed yet) — "
-                    f"{summary['errors']} errors."
-                )
-        with col_info:
-            st.caption(f"Outcome provider: **{outcome_provider}**  ·  Refreshes automatically at 4:30pm ET when the watcher is running.")
-    
-        journal = store.get_signal_journal(timeframe=timeframe if timeframe else None, settings=settings)
-    
-        if journal.empty:
-            st.info("No outcomes yet. Run the Scanner, wait 1–5 days, then click Refresh Outcomes.")
-        else:
-            wins   = journal[journal["outcome_pct"] > 0]
-            losses = journal[journal["outcome_pct"] <= 0]
-            avg_win  = wins["outcome_pct"].mean()   if not wins.empty   else 0
-            avg_loss = losses["outcome_pct"].mean() if not losses.empty else 0
-            expectancy = (len(wins) / len(journal)) * avg_win + (len(losses) / len(journal)) * avg_loss
-    
-            known = journal[
-                (journal["signal_provider"].notna()) &
-                (journal["outcome_provider"].notna()) &
-                (journal["signal_provider"] != "unknown") &
-                (journal["outcome_provider"] != "unknown")
-            ]
-            mismatched = known[known["signal_provider"] != known["outcome_provider"]]
-            if not mismatched.empty:
-                st.caption(
-                    f"{len(mismatched)} signals were resolved with a different OHLCV provider than they were scanned with."
-                )
-    
-            m1, m2, m3, m4, m5 = st.columns(5)
-            m1.metric("Total Signals", len(journal))
-            m2.metric("Win Rate",      f"{len(wins)/len(journal)*100:.0f}%",
-                      help="% of signals where the stock moved up after the signal fired.")
-            m3.metric("Avg Win",       f"+{avg_win:.1f}%",
-                      help="Average % gain on winning signals.")
-            m4.metric("Avg Loss",      f"{avg_loss:.1f}%",
-                      help="Average % loss on losing signals.")
-            m5.metric("Expectancy",    f"{expectancy:+.2f}%",
-                      delta_color="normal" if expectancy >= 0 else "inverse",
-                      help="(Win rate × Avg win) + (Loss rate × Avg loss). Positive = mathematical edge.")
-    
-            st.dataframe(
-                journal,
-                use_container_width=True,
-                column_config={
-                    "signal_provider":  st.column_config.TextColumn("Signal Provider"),
-                    "outcome_provider": st.column_config.TextColumn("Outcome Provider"),
-                },
-            )
-    
-            outcome_fig = px.histogram(journal, x="outcome_pct", nbins=30,
-                                       title="Distribution of Outcome Returns",
-                                       color_discrete_sequence=["steelblue"])
-            outcome_fig.add_vline(x=0, line_color="red", line_dash="dash")
-            outcome_fig.update_layout(height=300)
-            st.plotly_chart(outcome_fig, use_container_width=True)
-    
-            st.divider()
-            st.subheader("Signal Quality by Score Bucket")
-            st.caption("Use this to calibrate your min score threshold — find the score range that actually produces moves.")
-            stats = get_outcome_stats()
-            if not stats.empty:
-                st.dataframe(stats, use_container_width=True)
-                quality_fig = px.bar(
-                    stats, x="score_bucket", y="avg_return_pct",
-                    color="win_rate_pct", facet_col="timeframe",
-                    color_continuous_scale="RdYlGn", range_color=[0, 100],
-                    title="Avg Return % by Score Bucket and Timeframe",
-                    labels={"avg_return_pct": "Avg Return %", "score_bucket": "Score Range"},
-                )
-                quality_fig.update_layout(height=350)
-                st.plotly_chart(quality_fig, use_container_width=True)
-    
+
     # ══════════════════════════════════════════════════════════════════════════════
     # TAB 9 — WEIGHTS
     # ══════════════════════════════════════════════════════════════════════════════
     with tab_weights:
-        st.subheader("Scoring Weights — Tune Signal Contributions")
-        st.caption(
-            "Adjust how many points each signal component awards when it fires. "
-            "Changes apply to every Scanner and Confluence run after Save. Persisted to ~/.tradex/weights.json."
-        )
-    
-        with st.expander("How weighting works", expanded=False):
-            st.markdown("""
-    Each timeframe scorer is composed of several **components** (volume surge, RSI momentum, MACD crossover, etc.).
-    When a component condition is met, it contributes its configured points to the total score. The final score
-    is capped at 100, so the sum of weights *can* exceed 100 — that just makes individual components count for more.
-    
-    **Tiered signals** (intraday volume + RSI) award full credit for the strong tier and a reduced share for the
-    weaker tier (50% for elevated volume, 75% for oversold-bounce RSI). The ratios scale with your configured weight.
-    
-    **Tips:**
-    - If you trust volume more than indicators, raise volume weights and lower MACD / RSI.
-    - If you want every clean setup to clear 50, keep the sum of your top 2–3 components ≥ 50.
-    - Use **Reset to defaults** to get back the original 30/20/30/20-style scoring at any time.
-            """)
-    
-        current = signal_weights.load(settings=settings)
-        section_meta = [
-            ("Intraday (5-min bars)", "intraday", current.intraday),
-            ("Short-term (daily bars)", "short", current.short),
-            ("Long-term (weekly bars)", "long", current.long),
-        ]
-    
-        new_values: dict[str, dict[str, int]] = {"intraday": {}, "short": {}, "long": {}}
-    
-        for title, key, section in section_meta:
-            st.markdown(f"### {title}")
-            st.caption(f"Max possible score (uncapped sum): **{signal_weights.max_possible(section)}**")
-            for field_name in section.__dataclass_fields__:
-                meta = signal_weights.COMPONENT_LABELS.get((key, field_name), {"label": field_name, "help": ""})
-                new_values[key][field_name] = st.slider(
-                    meta["label"],
-                    0, 50, getattr(section, field_name),
-                    key=f"w_{key}_{field_name}",
-                    help=meta["help"],
-                )
-            st.divider()
-    
-        col_save, col_reset = st.columns([1, 1])
-        if col_save.button("Save weights", type="primary", key="weights_save",
-                           help="Persist these weights to ~/.tradex/weights.json. All future scans will use them."):
-            updated = signal_weights.Weights(
-                intraday=signal_weights.IntradayWeights(**new_values["intraday"]),
-                short=signal_weights.ShortWeights(**new_values["short"]),
-                long=signal_weights.LongWeights(**new_values["long"]),
-            )
-            signal_weights.save(updated, settings=settings)
-            st.success("Weights saved. Re-run any Scanner or Confluence scan to see the effect.")
-    
-        if col_reset.button("Reset to defaults", key="weights_reset",
-                            help="Restore original built-in weights (matches the scoring shown in CLAUDE.md and the README)."):
-            signal_weights.reset_to_defaults(settings=settings)
-            st.success("Weights reset to defaults.")
-            st.rerun()
+        render_weights_tab(settings=settings)
     
     # ══════════════════════════════════════════════════════════════════════════════
     # TAB 10 — HELP
