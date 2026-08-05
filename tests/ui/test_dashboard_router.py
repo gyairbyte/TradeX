@@ -1,6 +1,7 @@
 """Dashboard routing regression: st.tabs labels and extracted tab renderer calls."""
 from __future__ import annotations
 
+import importlib
 import runpy
 import sys
 from unittest.mock import MagicMock
@@ -93,6 +94,7 @@ def fake_dashboard_st(monkeypatch, tmp_path):
     monkeypatch.setenv("TRADEX_WEIGHTS_PATH", str(tmp_path / "weights.json"))
     monkeypatch.setenv("TRADEX_FP_DB", str(tmp_path / "fingerprints.db"))
     monkeypatch.setenv("TRADEX_EARNINGS_CACHE_PATH", str(tmp_path / "earnings_cache.db"))
+    monkeypatch.setenv("ALERT_STATE_PATH", str(tmp_path / "alerts.db"))
     # list_all is called at module load; skip the real DB.
     monkeypatch.setattr(wl_store, "list_all", lambda *, settings: [])
     monkeypatch.setattr(wl_store, "load", lambda *args, **kwargs: None)
@@ -122,16 +124,27 @@ def test_dashboard_creates_tabs_in_exact_order(fake_dashboard_st, monkeypatch):
 
 def test_dashboard_routes_to_extracted_renderers(fake_dashboard_st, monkeypatch):
     """The dashboard invokes each extracted tab renderer exactly once with explicit settings."""
+    alerts_mock = MagicMock()
+    help_mock = MagicMock()
     journal_mock = MagicMock()
     weights_mock = MagicMock()
+    monkeypatch.setattr("tradex.ui.tabs.alerts.render_alerts_tab", alerts_mock)
+    monkeypatch.setattr("tradex.ui.tabs.help.render_help_tab", help_mock)
     monkeypatch.setattr("tradex.ui.tabs.signal_journal.render_signal_journal_tab", journal_mock)
     monkeypatch.setattr("tradex.ui.tabs.weights.render_weights_tab", weights_mock)
 
     sys.modules.pop("tradex.ui.dashboard", None)
     runpy.run_module("tradex.ui.dashboard", run_name="__main__")
 
+    alerts_mock.assert_called_once()
+    help_mock.assert_called_once()
     journal_mock.assert_called_once()
     weights_mock.assert_called_once()
+
+    _, a_kwargs = alerts_mock.call_args
+    assert isinstance(a_kwargs["settings"], TradeXSettings)
+
+    help_mock.assert_called_once_with()
 
     _, j_kwargs = journal_mock.call_args
     assert isinstance(j_kwargs["settings"], TradeXSettings)
@@ -141,3 +154,28 @@ def test_dashboard_routes_to_extracted_renderers(fake_dashboard_st, monkeypatch)
     _, w_kwargs = weights_mock.call_args
     assert isinstance(w_kwargs["settings"], TradeXSettings)
     assert set(w_kwargs.keys()) == {"settings"}
+    assert a_kwargs["settings"] is j_kwargs["settings"] is w_kwargs["settings"]
+
+
+def test_dashboard_import_without_main_does_not_call_st_tabs_or_renderers(monkeypatch):
+    """A normal ``import tradex.ui.dashboard`` must not render any tab UI."""
+    st_mock = MagicMock(name="streamlit")
+    alerts_mock = MagicMock(name="render_alerts_tab")
+    help_mock = MagicMock(name="render_help_tab")
+    journal_mock = MagicMock(name="render_signal_journal_tab")
+    weights_mock = MagicMock(name="render_weights_tab")
+
+    monkeypatch.setitem(sys.modules, "streamlit", st_mock)
+    monkeypatch.setattr("tradex.ui.tabs.alerts.render_alerts_tab", alerts_mock)
+    monkeypatch.setattr("tradex.ui.tabs.help.render_help_tab", help_mock)
+    monkeypatch.setattr("tradex.ui.tabs.signal_journal.render_signal_journal_tab", journal_mock)
+    monkeypatch.setattr("tradex.ui.tabs.weights.render_weights_tab", weights_mock)
+
+    sys.modules.pop("tradex.ui.dashboard", None)
+    importlib.import_module("tradex.ui.dashboard")
+
+    st_mock.tabs.assert_not_called()
+    alerts_mock.assert_not_called()
+    help_mock.assert_not_called()
+    journal_mock.assert_not_called()
+    weights_mock.assert_not_called()

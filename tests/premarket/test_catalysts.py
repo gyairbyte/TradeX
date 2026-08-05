@@ -151,8 +151,7 @@ def test_fetch_catalyst_context_require_catalyst_filters_no_earnings():
 
 def test_fetch_catalyst_context_no_earnings_cache_db(tmp_path, monkeypatch):
     """The pre-market scanner must not create the earnings cache database."""
-    monkeypatch.setattr("tradex.earnings.calendar.CACHE_DIR", tmp_path)
-    monkeypatch.setattr("tradex.earnings.calendar.CACHE_DB", tmp_path / "earnings_cache.db")
+    monkeypatch.setenv("TRADEX_EARNINGS_CACHE_PATH", str(tmp_path / "earnings_cache.db"))
 
     as_of = datetime(2024, 1, 3, 13, 0, tzinfo=UTC)
     with (

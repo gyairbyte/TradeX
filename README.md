@@ -57,6 +57,8 @@ tradex/
 │   ├── earnings/calendar.py       # Next-earnings lookup + 24h SQLite cache
 │   ├── watchlists/store.py        # Named watchlist persistence
 │   ├── ui/dashboard.py            # Streamlit dashboard router (10 tabs)
+│   ├── ui/tabs/alerts.py          # Alerts tab renderer
+│   ├── ui/tabs/help.py            # Help tab renderer
 │   ├── ui/tabs/signal_journal.py  # Signal Journal tab renderer
 │   └── ui/tabs/weights.py         # Scoring Weights tab renderer
 ├── docs/
@@ -581,7 +583,7 @@ Save and switch between named ticker lists (e.g. "Semis", "Crypto-adjacent", "Ea
 - [x] Scoring weight customization — per-signal sliders in the Weights tab, persisted to ~/.tradex/weights.json
 
 ### Still on the list
-- [ ] Split `dashboard.py` into tab and component modules (UI-001)
+- [~] Split `dashboard.py` into tab and component modules (UI-001 — Phases 1–2 done; remaining six tabs pending in later phases)
 - [ ] Portfolio-level risk view
 
 ### Nice-to-have enhancements
