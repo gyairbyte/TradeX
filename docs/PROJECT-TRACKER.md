@@ -522,15 +522,17 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Status:** In progress
 - **Phase 1 (done):** Extracted `Signal Journal` and `Weights` into `tradex/ui/tabs/signal_journal.py` and `tradex/ui/tabs/weights.py` on branch `devin/ui-001-phase-1`.
 - **Phase 2 (done):** Extracted `Alerts` and `Help` into `tradex/ui/tabs/alerts.py` and `tradex/ui/tabs/help.py` on branch `devin/ui-001-phase-2`.
-- **Problem statement:** `tradex/ui/dashboard.py` was 2,378 lines and imported every backend module. After Phase 2 it is under 1,600 lines.
-- **Recommended action:** Continue extracting the remaining six tabs and reusable widgets into `tradex/ui/tabs/` and `tradex/ui/components/` while keeping `dashboard.py` as the router.
+- **Phase 3 (in progress):** Extract `Coil Detector` and `Confluence` into `tradex/ui/tabs/coil_detector.py` and `tradex/ui/tabs/confluence.py` on branch `devin/ui-001-phase-3`.
+- **Problem statement:** `tradex/ui/dashboard.py` was 2,378 lines and imported every backend module. Before Phase 3 it is 1,585 lines; after Phase 3 it is approximately 1,361 lines.
+- **Recommended action:** Continue extracting the remaining four tabs and reusable widgets into `tradex/ui/tabs/` and `tradex/ui/components/` while keeping `dashboard.py` as the router.
 - **Reason:** Improves reviewability and makes the UI testable.
 - **Dependencies:** TEST-001
-- **Files likely affected:** `tradex/ui/dashboard.py`, `tradex/ui/tabs/__init__.py`, `tradex/ui/tabs/signal_journal.py`, `tradex/ui/tabs/weights.py`, `tradex/ui/tabs/alerts.py`, `tradex/ui/tabs/help.py`, `tests/ui/test_signal_journal_tab.py`, `tests/ui/test_weights_tab.py`, `tests/ui/test_alerts_tab.py`, `tests/ui/test_help_tab.py`
+- **Files likely affected:** `tradex/ui/dashboard.py`, `tradex/ui/tabs/__init__.py`, `tradex/ui/tabs/signal_journal.py`, `tradex/ui/tabs/weights.py`, `tradex/ui/tabs/alerts.py`, `tradex/ui/tabs/help.py`, `tradex/ui/tabs/coil_detector.py`, `tradex/ui/tabs/confluence.py`, `tests/ui/test_signal_journal_tab.py`, `tests/ui/test_weights_tab.py`, `tests/ui/test_alerts_tab.py`, `tests/ui/test_help_tab.py`, `tests/ui/test_coil_detector_tab.py`, `tests/ui/test_confluence_tab.py`
 - **Testing requirements:** Component unit tests for each extracted tab module; smoke test that the dashboard module loads and routes correctly.
-- **Acceptance criteria:** `dashboard.py` remains the canonical Streamlit entrypoint; all ten tabs still render with unchanged labels, order, and behavior; no import-time side effects from tab modules; no trading logic changed. The remaining six tabs and component extraction are left for later bounded phases.
-- **Intended pull request:** `devin/ui-001-phase-2`
-- **Next phase:** `devin/ui-001-phase-3` (continue extracting the remaining tabs in bounded phases; branch name to be assigned after Phase 2 merges).
+- **Acceptance criteria:** `dashboard.py` remains the canonical Streamlit entrypoint; all ten tabs still render with unchanged labels, order, and behavior; no import-time side effects from tab modules; no trading logic changed. The remaining four tabs and component extraction are left for later bounded phases.
+- **Intended pull request:** `devin/ui-001-phase-3`
+- **Next phase:** `devin/ui-001-phase-4` (extract the next bounded group of tabs; branch name assigned after Phase 3 merges).
+- **Remaining inline tabs:** Scanner, Pattern Similarity — Experimental Research, Pre-Market, Options Activity.
 - **Affects trading behavior:** No
 
 ### ARCH-001: Centralize configuration and remove import-time env loading

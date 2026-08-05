@@ -49,8 +49,7 @@ from tradex.premarket.models import (
 )
 from tradex.screener.engine import run_with_report
 from tradex.signals.indicators import add_indicators
-from tradex.tracker import analyzer, store
-from tradex.tracker.confluence import run_confluence_screen
+from tradex.tracker import store
 from tradex.ui.source_defaults import (
     earnings_source_index,
     earnings_sources,
@@ -64,6 +63,8 @@ from tradex.ui.tabs.alerts import (
     _effective_cooldowns,  # noqa: F401
     render_alerts_tab,
 )
+from tradex.ui.tabs.coil_detector import render_coil_detector_tab
+from tradex.ui.tabs.confluence import render_confluence_tab
 from tradex.ui.tabs.help import render_help_tab
 from tradex.ui.tabs.signal_journal import render_signal_journal_tab
 from tradex.ui.tabs.weights import render_weights_tab
@@ -719,247 +720,22 @@ if __name__ == "__main__":
     # TAB 2 — COIL DETECTOR
     # ══════════════════════════════════════════════════════════════════════════════
     with tab_coil:
-        st.subheader("Coil Detector — Pre-Breakout Setups")
-        st.caption(
-            "Finds stocks that have appeared in multiple scans over several days without breaking out yet. "
-            "These are the setups building pressure before a move — caught *before* the crowd sees them."
+        render_coil_detector_tab(
+            settings=settings,
+            timeframe=timeframe,
         )
-    
-        with st.expander("What is a coil and how does it work?", expanded=False):
-            st.markdown("""
-    A **coil** is a stock that is quietly building technical pressure without yet making a large price move.
-    Think of it like a spring being compressed — the longer it builds, the bigger the potential release.
-    
-    **TradeX defines a coil as a stock that:**
-    1. Has appeared in scans at least N times within the look-back window
-    2. Still has a score above the signal threshold (45+)
-    3. Has NOT already made a large price move (≥3% would mean it already broke out)
-    4. Has a score that is stable or rising (not fading)
-    
-    **Why this matters:** Standard screeners show you what happened. The coil detector shows you what's *building*.
-    By the time a stock appears on Finviz or TradingView's trending list, thousands of traders already see it.
-    Coils let you get positioned before the obvious move.
-    
-    **Coil Strength score** combines:
-    - How many times the stock appeared (more = stronger conviction)
-    - The latest signal score (higher = more conditions met)
-    - The slope of the score trend (accelerating = higher strength)
-    
-    **Score trend directions:**
-    - 🟢 **Building** — score is rising each scan. Best setups.
-    - 🟡 **Stable** — holding steady. Still valid, not accelerating.
-    - 🔴 **Fading** — score declining. Setup may be breaking down.
-            """)
-    
-        col1, col2 = st.columns(2)
-        coil_days = col1.slider(
-            "Look-back window (days)", 3, 21, 7, key="coil_days",
-            help=(
-                "How many calendar days of scan history to search through.\n\n"
-                "• **Shorter (3–5 days)** — only recent setups. Misses slower-building coils.\n"
-                "• **7 days (default)** — one trading week. Good balance.\n"
-                "• **Longer (10–21 days)** — catches slower accumulation patterns. "
-                "More history required (watcher must have been running for that many days)."
-            ),
-        )
-        min_appearances = col2.slider(
-            "Min appearances", 2, 10, 2, key="coil_apps",
-            help=(
-                "Minimum number of scan sessions where a stock must have scored above threshold "
-                "to be considered a coil.\n\n"
-                "• **2 (default)** — appeared at least twice. Low bar, catches early setups.\n"
-                "• **3–5** — repeated pattern. More reliable signal.\n"
-                "• **6–10** — long-duration coil. Very persistent setup — could resolve soon.\n\n"
-                "Note: this requires the watcher to have run enough sessions to accumulate that history."
-            ),
-        )
-    
-        if st.button("Detect Coils", key="btn_coil", type="primary",
-                     help="Search signal history for stocks matching the coil definition."):
-            coils = analyzer.detect_coils(timeframe, days=coil_days, min_appearances=min_appearances, settings=settings)
-            if coils.empty:
-                st.info("No active coiling setups found. Run the Scanner a few times over multiple days to build history.")
-            else:
-                st.success(f"{len(coils)} coiling setups detected")
-                display_cols = ["ticker", "coil_strength", "appearances", "active_sessions",
-                                "latest_score", "score_trend", "trend_direction", "last_close"]
-                st.dataframe(
-                    coils[display_cols],
-                    use_container_width=True,
-                    column_config={
-                        "ticker":          st.column_config.TextColumn("Ticker"),
-                        "coil_strength":   st.column_config.ProgressColumn("Coil Strength", min_value=0, max_value=100, help="Combined score of duration, signal level, and trend acceleration."),
-                        "appearances":     st.column_config.NumberColumn("Distinct Sessions", help="How many distinct trading sessions this stock has shown up in."),
-                        "active_sessions": st.column_config.NumberColumn("Active Sessions", help="Sessions where the score was at or above the coil threshold."),
-                        "latest_score":    st.column_config.ProgressColumn("Latest Score", min_value=0, max_value=100),
-                        "score_trend":     st.column_config.NumberColumn("Trend Slope", help="Positive = score rising each session. Negative = fading."),
-                        "trend_direction": st.column_config.TextColumn("Direction"),
-                        "last_close":      st.column_config.NumberColumn("Last Close", format="$%.2f"),
-                    },
-                )
-    
-                st.divider()
-                st.subheader("Score History")
-                st.caption("Shows how this stock's signal score has evolved across distinct sessions.")
-                selected_coil = st.selectbox("Select ticker to inspect", coils["ticker"].tolist(), key="sel_coil")
-                state = analyzer.get_ticker_state(selected_coil, timeframe, days=coil_days)
-    
-                if state["score_history"]:
-                    score_fig = px.line(
-                        y=state["score_history"],
-                        labels={"x": "Session #", "y": "Score"},
-                        title=f"{selected_coil} — Score History ({timeframe})",
-                        markers=True,
-                    )
-                    score_fig.add_hline(y=50, line_dash="dot", line_color="yellow",
-                                        annotation_text="Signal threshold (50)")
-                    score_fig.update_layout(height=300)
-                    st.plotly_chart(score_fig, use_container_width=True)
-    
-                st.info(f"**{state['status'].upper()}** — {state['summary']}")
-    
-        if st.button("Detect Fading Setups", key="btn_fade", type="secondary",
-                     help="Search signal history for stocks that were coiling but are now fading."):
-            fading = analyzer.detect_fading_setups(timeframe, days=coil_days, min_appearances=min_appearances, settings=settings)
-            if fading.empty:
-                st.info("No fading setups found.")
-            else:
-                st.warning(f"{len(fading)} fading setups detected")
-                display_cols = ["ticker", "fade_strength", "appearances", "active_sessions",
-                                "latest_score", "peak_score", "score_trend", "trend_direction", "last_close"]
-                st.dataframe(
-                    fading[display_cols],
-                    use_container_width=True,
-                    column_config={
-                        "ticker":          st.column_config.TextColumn("Ticker"),
-                        "fade_strength":   st.column_config.ProgressColumn("Fade Strength", min_value=0, max_value=100, help="How strongly the setup is fading from its prior peak."),
-                        "appearances":     st.column_config.NumberColumn("Distinct Sessions", help="How many distinct trading sessions this stock has shown up in."),
-                        "active_sessions": st.column_config.NumberColumn("Active Sessions", help="Sessions where the score was at or above the coil threshold."),
-                        "latest_score":    st.column_config.ProgressColumn("Latest Score", min_value=0, max_value=100),
-                        "peak_score":      st.column_config.ProgressColumn("Peak Score", min_value=0, max_value=100),
-                        "score_trend":     st.column_config.NumberColumn("Trend Slope", help="Negative = score declining."),
-                        "trend_direction": st.column_config.TextColumn("Direction"),
-                        "last_close":      st.column_config.NumberColumn("Last Close", format="$%.2f"),
-                    },
-                )
-    
+
     # ══════════════════════════════════════════════════════════════════════════════
     # TAB 3 — CONFLUENCE
     # ══════════════════════════════════════════════════════════════════════════════
     with tab_confluence:
-        st.subheader("Confluence Scanner — Multi-Timeframe Alignment")
-        st.caption(
-            "Finds stocks scoring well across intraday, short-term, AND long-term simultaneously. "
-            "Missing timeframes are penalized; only a true 3/3 result can be labeled 'all timeframes aligned'."
+        render_confluence_tab(
+            settings=settings,
+            watchlist=watchlist,
+            earnings_buffer=earnings_buffer,
+            provider=provider,
+            earnings_source=earnings_source,
         )
-    
-        with st.expander("Why confluence matters", expanded=False):
-            st.markdown("""
-    Most screeners only look at one timeframe. A stock can look great on a 5-minute chart but be
-    in a downtrend on the daily — that's a low-conviction trade fighting the bigger trend.
-    
-    **Confluence means all timeframes are telling the same story:**
-    - The intraday chart (5-min) shows a momentum setup
-    - The daily chart (short-term) shows an uptrend structure
-    - The weekly chart (long-term) shows the stock in a healthy secular trend
-    
-    **Confluence score weights (fixed denominator — missing timeframes contribute zero):**
-    | Timeframe | Weight | Why |
-    |---|---|---|
-    | Intraday (5m) | 30% | Noisiest — good confirmation but not the driver |
-    | Short-term (1d) | 40% | Most actionable timeframe for swing trades |
-    | Long-term (1wk) | 30% | Establishes whether the broader trend supports the trade |
-    
-    **Coverage:**
-    - `3/3` — All three timeframes fetched and scored successfully.
-    - `2/3` — Two timeframes contributed. Strong or moderate tiers are possible if the corrected score and active-timeframe count support it.
-    - `1/3` — Single timeframe only, always treated as weak/single-timeframe.
-    - `0/3` — No usable data.
-    
-    **Confluence tiers:**
-    - 🟢 **90+ and 3/3 active** — `all timeframes aligned`. Rare and high conviction.
-    - 🟡 **70+ with at least two active timeframes** — `strong confluence`.
-    - 🟠 **50–69 with at least two active timeframes** — `moderate confluence`.
-    - 🔴 **<50 or only one/three timeframes active** — Weak confluence or weak/incomplete timeframes.
-    
-    A stock scoring 80+ on intraday alone is interesting, but it is not multi-timeframe confluence. The same stock also scoring 70+ on short and long is a fundamentally different — and better — trade.
-            """)
-    
-        min_confluence = st.slider(
-            "Min confluence score", 0, 100, 50, key="min_conf",
-            help=(
-                "Filters results to stocks where the fixed-denominator weighted score across the "
-                "three configured timeframes exceeds this value. Missing timeframes contribute zero, "
-                "so a single 100-score timeframe cannot pass a 70 threshold.\n\n"
-                "• **Lower (30–50)** — more results, includes partial alignments.\n"
-                "• **50–70** — meaningful alignment across at least two timeframes.\n"
-                "• **Higher (70–100)** — only the strongest multi-timeframe setups. Fewer but higher quality."
-            ),
-        )
-    
-        if st.button("Run Confluence Scan", key="btn_conf", type="primary",
-                     help="Score each watchlist ticker across all three timeframes simultaneously. Takes ~3x longer than a single-timeframe scan."):
-            with st.spinner(f"Scoring {len(watchlist)} tickers across all timeframes…"):
-                conf_results = run_confluence_screen(
-                    watchlist,
-                    settings=settings,
-                    min_confluence=min_confluence,
-                    exclude_earnings_within=earnings_buffer if earnings_buffer > 0 else None,
-                    provider=provider,
-                    earnings_source=earnings_source,
-                )
-            if conf_results.empty:
-                st.warning("No confluence setups found. Lower the min confluence score.")
-            else:
-                if earnings_buffer > 0:
-                    st.success(f"{len(conf_results)} multi-timeframe setups found (excluded tickers with earnings within {earnings_buffer}d)")
-                else:
-                    st.success(f"{len(conf_results)} multi-timeframe setups found")
-                st.dataframe(
-                    conf_results,
-                    use_container_width=True,
-                    column_config={
-                        "ticker":              st.column_config.TextColumn("Ticker"),
-                        "confluence_score":    st.column_config.ProgressColumn("Confluence", min_value=0, max_value=100, help="Fixed-denominator weighted score across intraday (30%), short (40%), and long (30%). Missing timeframes contribute zero."),
-                        "tier":                st.column_config.TextColumn("Tier"),
-                        "timeframe_coverage":  st.column_config.TextColumn("Coverage", help="Fraction of timeframes that successfully contributed (0/3, 1/3, 2/3, or 3/3)."),
-                        "available_timeframes": st.column_config.TextColumn("Available TFs", help="Timeframes that fetched and scored successfully."),
-                        "missing_timeframes":  st.column_config.TextColumn("Missing TFs", help="Timeframes that did not contribute due to missing data, insufficient bars, or scorer errors."),
-                        "active_timeframes":   st.column_config.TextColumn("Active TFs", help="Timeframes where score ≥ 50."),
-                        "score_intraday":      st.column_config.ProgressColumn("Intraday", min_value=0, max_value=100),
-                        "score_short":         st.column_config.ProgressColumn("Short", min_value=0, max_value=100),
-                        "score_long":          st.column_config.ProgressColumn("Long", min_value=0, max_value=100),
-                        "days_until_earnings": st.column_config.NumberColumn(
-                            "Earnings In",
-                            format="%d d",
-                            help="Calendar days until the next scheduled earnings report. Blank = none scheduled or unknown.",
-                        ),
-                        "last_close":          st.column_config.NumberColumn("Last Close", format="$%.2f"),
-                    },
-                )
-                st.session_state["conf_results"] = conf_results
-    
-        if "conf_results" in st.session_state and not st.session_state["conf_results"].empty:
-            st.divider()
-            selected_conf = st.selectbox("Drill down", st.session_state["conf_results"]["ticker"].tolist(), key="sel_conf")
-            row = st.session_state["conf_results"][
-                st.session_state["conf_results"]["ticker"] == selected_conf
-            ].iloc[0]
-            scores = {
-                "Intraday": row.get("score_intraday", 0),
-                "Short":    row.get("score_short", 0),
-                "Long":     row.get("score_long", 0),
-            }
-            bar_fig = px.bar(
-                x=list(scores.keys()), y=list(scores.values()),
-                labels={"x": "Timeframe", "y": "Score"},
-                title=f"{selected_conf} — Confluence Score: {row['confluence_score']} ({row['tier']})",
-                color=list(scores.values()),
-                color_continuous_scale="RdYlGn",
-                range_color=[0, 100],
-            )
-            bar_fig.update_layout(height=350, showlegend=False)
-            st.plotly_chart(bar_fig, use_container_width=True)
     
     # ══════════════════════════════════════════════════════════════════════════════
     # TAB 4 — PATTERN MATCH

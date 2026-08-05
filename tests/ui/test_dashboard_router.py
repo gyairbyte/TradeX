@@ -49,8 +49,9 @@ def _make_fake_st():
             return "Default"
         if label == "Preset":
             return args[0][0]
-        if args and isinstance(args[0], (list, tuple)) and args[0]:
-            return args[0][0]
+        for arg in args:
+            if isinstance(arg, (list, tuple)) and arg:
+                return arg[0]
         return None
 
     def _columns(spec, *args, **kwargs):
@@ -125,10 +126,14 @@ def test_dashboard_creates_tabs_in_exact_order(fake_dashboard_st, monkeypatch):
 def test_dashboard_routes_to_extracted_renderers(fake_dashboard_st, monkeypatch):
     """The dashboard invokes each extracted tab renderer exactly once with explicit settings."""
     alerts_mock = MagicMock()
+    coil_mock = MagicMock()
+    confluence_mock = MagicMock()
     help_mock = MagicMock()
     journal_mock = MagicMock()
     weights_mock = MagicMock()
     monkeypatch.setattr("tradex.ui.tabs.alerts.render_alerts_tab", alerts_mock)
+    monkeypatch.setattr("tradex.ui.tabs.coil_detector.render_coil_detector_tab", coil_mock)
+    monkeypatch.setattr("tradex.ui.tabs.confluence.render_confluence_tab", confluence_mock)
     monkeypatch.setattr("tradex.ui.tabs.help.render_help_tab", help_mock)
     monkeypatch.setattr("tradex.ui.tabs.signal_journal.render_signal_journal_tab", journal_mock)
     monkeypatch.setattr("tradex.ui.tabs.weights.render_weights_tab", weights_mock)
@@ -137,6 +142,8 @@ def test_dashboard_routes_to_extracted_renderers(fake_dashboard_st, monkeypatch)
     runpy.run_module("tradex.ui.dashboard", run_name="__main__")
 
     alerts_mock.assert_called_once()
+    coil_mock.assert_called_once()
+    confluence_mock.assert_called_once()
     help_mock.assert_called_once()
     journal_mock.assert_called_once()
     weights_mock.assert_called_once()
@@ -154,19 +161,38 @@ def test_dashboard_routes_to_extracted_renderers(fake_dashboard_st, monkeypatch)
     _, w_kwargs = weights_mock.call_args
     assert isinstance(w_kwargs["settings"], TradeXSettings)
     assert set(w_kwargs.keys()) == {"settings"}
-    assert a_kwargs["settings"] is j_kwargs["settings"] is w_kwargs["settings"]
+
+    _, c_kwargs = coil_mock.call_args
+    assert isinstance(c_kwargs["settings"], TradeXSettings)
+    assert c_kwargs["timeframe"] == "short"
+
+    _, co_kwargs = confluence_mock.call_args
+    assert isinstance(co_kwargs["settings"], TradeXSettings)
+    assert isinstance(co_kwargs["watchlist"], list)
+    assert len(co_kwargs["watchlist"]) == 20
+    assert "AAPL" in co_kwargs["watchlist"]
+    assert co_kwargs["watchlist"] == list(dict.fromkeys(co_kwargs["watchlist"]))
+    assert "earnings_buffer" in co_kwargs
+    assert co_kwargs["provider"] == "yahoo"
+    assert co_kwargs["earnings_source"] == "yahoo"
+
+    assert a_kwargs["settings"] is j_kwargs["settings"] is w_kwargs["settings"] is c_kwargs["settings"] is co_kwargs["settings"]
 
 
 def test_dashboard_import_without_main_does_not_call_st_tabs_or_renderers(monkeypatch):
     """A normal ``import tradex.ui.dashboard`` must not render any tab UI."""
     st_mock = MagicMock(name="streamlit")
     alerts_mock = MagicMock(name="render_alerts_tab")
+    coil_mock = MagicMock(name="render_coil_detector_tab")
+    confluence_mock = MagicMock(name="render_confluence_tab")
     help_mock = MagicMock(name="render_help_tab")
     journal_mock = MagicMock(name="render_signal_journal_tab")
     weights_mock = MagicMock(name="render_weights_tab")
 
     monkeypatch.setitem(sys.modules, "streamlit", st_mock)
     monkeypatch.setattr("tradex.ui.tabs.alerts.render_alerts_tab", alerts_mock)
+    monkeypatch.setattr("tradex.ui.tabs.coil_detector.render_coil_detector_tab", coil_mock)
+    monkeypatch.setattr("tradex.ui.tabs.confluence.render_confluence_tab", confluence_mock)
     monkeypatch.setattr("tradex.ui.tabs.help.render_help_tab", help_mock)
     monkeypatch.setattr("tradex.ui.tabs.signal_journal.render_signal_journal_tab", journal_mock)
     monkeypatch.setattr("tradex.ui.tabs.weights.render_weights_tab", weights_mock)
@@ -176,6 +202,8 @@ def test_dashboard_import_without_main_does_not_call_st_tabs_or_renderers(monkey
 
     st_mock.tabs.assert_not_called()
     alerts_mock.assert_not_called()
+    coil_mock.assert_not_called()
+    confluence_mock.assert_not_called()
     help_mock.assert_not_called()
     journal_mock.assert_not_called()
     weights_mock.assert_not_called()
