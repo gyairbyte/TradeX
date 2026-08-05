@@ -529,6 +529,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Testing requirements:** Component unit tests for the extracted tab modules; smoke test that the dashboard module loads and routes correctly.
 - **Acceptance criteria:** `dashboard.py` remains the canonical Streamlit entrypoint; all ten tabs still render with unchanged labels, order, and behavior; no import-time side effects from tab modules; no trading logic changed. The remaining eight tabs and component extraction are left for later bounded phases.
 - **Intended pull request:** `devin/ui-001-phase-1`
+- **Next phase:** `devin/ui-001-phase-2` (continue extracting the remaining tabs and reusable widgets in bounded phases; branch name to be assigned when Phase 1 merges).
 - **Affects trading behavior:** No
 
 ### ARCH-001: Centralize configuration and remove import-time env loading
@@ -656,5 +657,5 @@ This is the master backlog for recommendations from the Devin review. Items are 
 | Low | 5 | DOC-001: Close LONG-001 and restore documentation and tracker consistency |
 
 **Recommended next pull request order:**
-1. `devin/ui-001-phase-1` (UI-001 Phase 1, extract Signal Journal and Weights into `tradex/ui/tabs/` while keeping `dashboard.py` as the canonical router — preserves all current behavior and trading logic).
+1. `devin/ui-001-phase-2` (UI-001 continuation — extract the next bounded set of tabs or reusable widgets into `tradex/ui/tabs/` / `tradex/ui/components/` while keeping `dashboard.py` as the canonical router).
 

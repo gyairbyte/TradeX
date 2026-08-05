@@ -17,41 +17,44 @@ def _default_settings() -> TradeXSettings:
 
 @pytest.fixture
 def signal_journal_module(fake_st, monkeypatch):
-    """Import the Signal Journal tab with a mocked Streamlit and patched store."""
-    from tradex.ui import tabs
-
-    mod = importlib.reload(tabs.signal_journal)
-    monkeypatch.setattr(mod, "st", fake_st)
+    """Import the Signal Journal tab fresh with a mocked Streamlit and safe backends."""
+    mod_name = "tradex.ui.tabs.signal_journal"
+    sys.modules.pop(mod_name, None)
+    monkeypatch.setitem(sys.modules, "streamlit", fake_st)
+    monkeypatch.setattr("tradex.data.fetcher.resolve_provider", lambda provider, **kwargs: provider or "yahoo")
+    monkeypatch.setattr(
+        "tradex.tracker.outcome_tracker.run_outcome_pass",
+        MagicMock(return_value={"resolved": 0, "pending": 0, "errors": 0}),
+    )
+    monkeypatch.setattr("tradex.tracker.outcome_tracker.get_outcome_stats", MagicMock(return_value=pd.DataFrame()))
+    monkeypatch.setattr(
+        "tradex.tracker.store.get_signal_journal",
+        lambda *, timeframe, settings: pd.DataFrame(columns=["outcome_pct", "signal_provider", "outcome_provider"]),
+    )
+    mod = importlib.import_module(mod_name)
+    # Decouple the tab module from the real store module for focused tests.
+    monkeypatch.setattr(mod, "store", MagicMock(name="store"))
+    mod.store.get_signal_journal = MagicMock(
+        return_value=pd.DataFrame(columns=["outcome_pct", "signal_provider", "outcome_provider"])
+    )
     return mod
 
 
-def test_import_has_no_side_effects(fake_st, monkeypatch):
+def test_import_has_no_side_effects(signal_journal_module, fake_st):
     """Importing the tab module must not touch Streamlit widgets or backend logic."""
-    monkeypatch.setattr("sys.modules", dict(sys.modules, streamlit=fake_st))
-    mock_store = MagicMock()
-    mock_store.get_signal_journal.return_value = pd.DataFrame()
-    monkeypatch.setattr("tradex.ui.tabs.signal_journal.store", mock_store)
-    monkeypatch.setattr("tradex.ui.tabs.signal_journal.run_outcome_pass", MagicMock())
-    monkeypatch.setattr("tradex.ui.tabs.signal_journal.get_outcome_stats", MagicMock())
-    monkeypatch.setattr("tradex.ui.tabs.signal_journal.resolve_provider", MagicMock(return_value="yahoo"))
-
-    mod = importlib.import_module("tradex.ui.tabs.signal_journal")
-
     assert fake_st.subheader.call_count == 0
-    assert mock_store.get_signal_journal.call_count == 0
-    assert mod.run_outcome_pass.call_count == 0
-    assert mod.get_outcome_stats.call_count == 0
+    assert signal_journal_module.store.get_signal_journal.call_count == 0
+    assert signal_journal_module.run_outcome_pass.call_count == 0
+    assert signal_journal_module.get_outcome_stats.call_count == 0
 
 
 def test_empty_journal_shows_info(signal_journal_module, fake_st, monkeypatch):
     """An empty journal displays the existing empty-state message."""
     settings = _default_settings()
-    monkeypatch.setattr(
-        signal_journal_module.store,
-        "get_signal_journal",
-        lambda *, timeframe, settings: pd.DataFrame(columns=["outcome_pct", "signal_provider", "outcome_provider"]),
-    )
     monkeypatch.setattr(signal_journal_module, "resolve_provider", lambda provider, **kwargs: provider or "yahoo")
+    signal_journal_module.store.get_signal_journal.return_value = pd.DataFrame(
+        columns=["outcome_pct", "signal_provider", "outcome_provider"]
+    )
 
     signal_journal_module.render_signal_journal_tab(settings=settings, timeframe="short", provider="yahoo")
 
@@ -68,10 +71,8 @@ def test_refresh_button_calls_run_outcome_pass(signal_journal_module, fake_st, m
     run_mock = MagicMock(return_value={"resolved": 3, "pending": 1, "errors": 0})
     monkeypatch.setattr(signal_journal_module, "run_outcome_pass", run_mock)
     monkeypatch.setattr(signal_journal_module, "resolve_provider", lambda provider, **kwargs: provider or "yahoo")
-    monkeypatch.setattr(
-        signal_journal_module.store,
-        "get_signal_journal",
-        lambda *, timeframe, settings: pd.DataFrame(columns=["outcome_pct", "signal_provider", "outcome_provider"]),
+    signal_journal_module.store.get_signal_journal.return_value = pd.DataFrame(
+        columns=["outcome_pct", "signal_provider", "outcome_provider"]
     )
 
     signal_journal_module.render_signal_journal_tab(settings=settings, timeframe="short", provider="yahoo")
@@ -90,10 +91,8 @@ def test_no_refresh_button_does_not_call_run_outcome_pass(signal_journal_module,
     run_mock = MagicMock(return_value={"resolved": 0, "pending": 0, "errors": 0})
     monkeypatch.setattr(signal_journal_module, "run_outcome_pass", run_mock)
     monkeypatch.setattr(signal_journal_module, "resolve_provider", lambda provider, **kwargs: provider or "yahoo")
-    monkeypatch.setattr(
-        signal_journal_module.store,
-        "get_signal_journal",
-        lambda *, timeframe, settings: pd.DataFrame(columns=["outcome_pct", "signal_provider", "outcome_provider"]),
+    signal_journal_module.store.get_signal_journal.return_value = pd.DataFrame(
+        columns=["outcome_pct", "signal_provider", "outcome_provider"]
     )
 
     signal_journal_module.render_signal_journal_tab(settings=settings, timeframe="short", provider="yahoo")
@@ -111,11 +110,7 @@ def test_nonempty_journal_renders_metrics(signal_journal_module, fake_st, monkey
         "signal_provider": ["yahoo", "yahoo", "yahoo", "yahoo"],
         "outcome_provider": ["yahoo", "yahoo", "yahoo", "yahoo"],
     })
-    monkeypatch.setattr(
-        signal_journal_module.store,
-        "get_signal_journal",
-        lambda *, timeframe, settings: journal,
-    )
+    signal_journal_module.store.get_signal_journal.return_value = journal
 
     signal_journal_module.render_signal_journal_tab(settings=settings, timeframe="short", provider="yahoo")
 
@@ -143,11 +138,7 @@ def test_provider_mismatch_caption(signal_journal_module, fake_st, monkeypatch):
         "signal_provider": ["yahoo"],
         "outcome_provider": ["alpaca"],
     })
-    monkeypatch.setattr(
-        signal_journal_module.store,
-        "get_signal_journal",
-        lambda *, timeframe, settings: journal,
-    )
+    signal_journal_module.store.get_signal_journal.return_value = journal
 
     signal_journal_module.render_signal_journal_tab(settings=settings, timeframe="short", provider="yahoo")
 
@@ -174,11 +165,7 @@ def test_score_bucket_stats_render(signal_journal_module, fake_st, monkeypatch):
         "signal_provider": ["yahoo"],
         "outcome_provider": ["yahoo"],
     })
-    monkeypatch.setattr(
-        signal_journal_module.store,
-        "get_signal_journal",
-        lambda *, timeframe, settings: journal,
-    )
+    signal_journal_module.store.get_signal_journal.return_value = journal
 
     signal_journal_module.render_signal_journal_tab(settings=settings, timeframe="short", provider="yahoo")
 
