@@ -56,6 +56,12 @@ def test_dashboard_scan_passes_normalized_watchlist_to_record_scan(fresh_signal_
     monkeypatch.setenv("TRADEX_WATCHLISTS_DB_PATH", str(tmp_path / "watchlists.db"))
     monkeypatch.setattr(wl_store, "DB_PATH", tmp_path / "watchlists.db")
 
+    # Also isolate the other persistence paths the dashboard may touch.
+    monkeypatch.setenv("TRADEX_FP_DB", str(tmp_path / "fingerprints.db"))
+    monkeypatch.setenv("TRADEX_EARNINGS_CACHE_PATH", str(tmp_path / "earnings_cache.db"))
+    monkeypatch.setenv("TRADEX_WEIGHTS_PATH", str(tmp_path / "weights.json"))
+    monkeypatch.setenv("ALERT_STATE_PATH", str(tmp_path / "alerts.db"))
+
     # Replace the real Streamlit UI with deterministic mocks before importing dashboard.
     st = MagicMock(name="streamlit")
     st.__version__ = "0.0.0"
