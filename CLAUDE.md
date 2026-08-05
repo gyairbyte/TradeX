@@ -67,12 +67,13 @@ Scanner runs → results DataFrame
 | `tradex/premarket/catalysts.py` | Earnings + headline context (explicitly sourced, no causal inference). |
 | `tradex/premarket/gap_scanner.py` | Public orchestration layer (`scan_gaps_with_report`) and backward-compatible `scan_gaps` wrapper. |
 | `tradex/premarket/cli.py` | Pre-market scanner CLI (`python -m tradex.premarket scan ...`). |
+| `tradex/research/long_term_evaluation/` | Locked, point-in-time long-term scorer evaluation (LONG-001). Not used in production. |
 | `tradex/research/pattern_validation/` | Locked, point-in-time pattern-similarity validation study (PATTERN-001). Not used in production. |
 | `tradex/research/score_validation/` | Reproducible score-validation event study (VAL-002). |
 | `tradex/research/short_context/` | Short-term market-regime context research (SHORT-001). |
 | `tradex/options/models.py` | Typed options source/capability and scan report models (`OptionsDataKind`, `OptionsSourceStatus`, `OptionsActivityReport`). |
 | `tradex/options/flow.py` | Capability-aware options source resolution, true-flow scanning, chain-snapshot scanning, and non-directional put/call balance. |
-| `tradex/ui/dashboard.py` | Streamlit UI: Scanner, Coil Detector, Confluence, Pattern Similarity (experimental research), Pre-Market, Signal Journal, Weights, Alerts, Options Activity, Help |
+| `tradex/ui/dashboard.py` | Streamlit UI: Scanner, Coil Detector, Confluence, Pattern Similarity — Experimental Research, Pre-Market, Options Activity, Alerts, Signal Journal, Weights, Help |
 | `pyproject.toml` | Python 3.11+ project, deps: yfinance, pandas, ta, streamlit, plotly |
 | `.env.example` | Template for all provider credentials (Yahoo needs none; Alpaca needs API keys; IBKR needs TWS running; Schwab needs OAuth app + token file) |
 
@@ -101,14 +102,9 @@ df = run(["AAPL", "NVDA", "AMD"], timeframe="intraday", min_score=40)
 
 ---
 
-## Next Features to Build (in priority order)
+## Current Backlog
 
-1. **Alert system** — push notification or Slack webhook when coil or confluence threshold is crossed
-2. **Earnings awareness** — flag or filter stocks with earnings within N days
-3. **Options activity dashboard** — true options-flow events (Unusual Whales) and chain-snapshot activity (Tradier/Yahoo) are displayed separately, not mixed as directional signals
-4. **Watchlist persistence** — save/load named watchlists to disk or DB
-5. **Scoring weight customization** — let user tune signal weights in UI
-6. **Long-term score validation** — compare the long-term scorer to a simple 40-week MA benchmark
+See [`docs/PROJECT-TRACKER.md`](docs/PROJECT-TRACKER.md) for the authoritative current backlog and next recommended engineering task. Do not maintain a second competing priority list in this file.
 
 ---
 
@@ -123,6 +119,8 @@ df = run(["AAPL", "NVDA", "AMD"], timeframe="intraday", min_score=40)
 - **Provider propagation** — `screener/engine.py`, `tracker/watcher.py`, `ui/dashboard.py`, and public persistence/alert/options entry points thread `settings` through to `fetch()` and other configurable paths.
 - **Pre-market gap scanner is source-aware** — `tradex/premarket/sources.py` resolves the OHLCV provider once and rejects unsupported providers with `ProviderCapabilityError`. Spread and catalyst sources are explicit and never silently fall back.
 - **Options activity is separated from directional signals** — `tradex/options/flow.py` distinguishes true transaction-level flow (Unusual Whales) from delayed/aggregate options-chain snapshots (Tradier/Yahoo). Chain volume/OI is labeled `chain_snapshot`, is never presented as "unusual options flow," and the put/call volume balance is explicitly non-directional.
+- **Pattern similarity is research-only** — `tradex/patterns/matcher` output and the dashboard *Pattern Similarity — Experimental Research* tab are quarantined from production scoring, ranking, eligibility, confluence, and automatic alerts. The watcher dispatches coil, confluence, and gap alerts only.
+- **Long-term scorer evaluation (LONG-001)** — A locked, point-in-time study compared `tradex/signals/long_term.score` (fresh `LongWeights()`, threshold 40) to a simple `close > 40-week SMA` baseline. The result on the untouched holdout was `inconclusive` with `production_promotion_eligible=false`; no production scorer, weight, threshold, ranking, confluence, alert, or dashboard changes were made.
 - **Streamlit for UI** — fastest to iterate on, no frontend knowledge needed. Can replace with React later if needed.
 - **Score-based not rule-based** — a pure rule-based "buy/sell" signal is brittle; scores let Gary apply judgment.
 - **Three separate scorers vs. one unified** — timeframes have fundamentally different signal logic; keeping them separate avoids messy conditionals.
