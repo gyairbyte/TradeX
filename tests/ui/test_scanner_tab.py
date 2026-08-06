@@ -732,12 +732,28 @@ def test_price_and_volume_chart_contracts(scanner_module, fake_st):
     price_fig = fake_st.plotly_chart.call_args_list[0][0][0]
     volume_fig = fake_st.plotly_chart.call_args_list[1][0][0]
 
+    assert fake_st.plotly_chart.call_args_list[0].kwargs.get("use_container_width") is True
+    assert fake_st.plotly_chart.call_args_list[1].kwargs.get("use_container_width") is True
+
     trace_types = [t.type for t in price_fig.data]
     trace_names = [t.name for t in price_fig.data]
     assert trace_types == ["candlestick", "scatter", "scatter", "scatter", "scatter"]
     assert trace_names == ["Price", "EMA20", "EMA50", "BB Upper", "BB Lower"]
     assert price_fig.layout.xaxis.rangeslider.visible is False
     assert price_fig.layout.height == 500
+
+    assert price_fig.data[1].line.color == "orange"
+    assert price_fig.data[1].line.width == 1
+    assert price_fig.data[2].line.color == "blue"
+    assert price_fig.data[2].line.width == 1
+    assert price_fig.data[3].line.color == "gray"
+    assert price_fig.data[3].line.dash == "dot"
+    assert price_fig.data[3].line.width == 1
+    assert price_fig.data[4].line.color == "gray"
+    assert price_fig.data[4].line.dash == "dot"
+    assert price_fig.data[4].line.width == 1
+    assert price_fig.data[4].fill == "tonexty"
+    assert price_fig.data[4].fillcolor == "rgba(200,200,200,0.1)"
 
     vol_types = [t.type for t in volume_fig.data]
     vol_names = [t.name for t in volume_fig.data]
@@ -746,6 +762,8 @@ def test_price_and_volume_chart_contracts(scanner_module, fake_st):
     assert volume_fig.layout.height == 200
     marker_colors = volume_fig.data[0].marker.color
     assert list(marker_colors) == ["green", "green", "green"]
+    assert volume_fig.data[1].line.color == "white"
+    assert volume_fig.data[1].line.width == 1.5
 
 
 def test_retry_and_fallback_caption(scanner_module, fake_st):
@@ -784,3 +802,63 @@ def test_fallback_disabled_caption(scanner_module, fake_st):
 
     caption_texts = [str(c[0][0]) for c in fake_st.caption.call_args_list]
     assert any("Fallback disabled" in t for t in caption_texts)
+
+
+def test_volume_bar_colors_include_red_when_close_below_open(scanner_module, fake_st):
+    """Volume bars are red when the close is below the open."""
+    settings = _default_settings()
+    fake_st.session_state["scan_results"] = _scan_results_df()
+    fake_st.session_state["scan_timeframe"] = "short"
+
+    red_df = pd.DataFrame(
+        {
+            "open": [1.0, 2.0, 3.0],
+            "high": [1.1, 2.1, 3.1],
+            "low": [0.9, 1.9, 2.9],
+            "close": [0.95, 2.05, 2.5],
+            "volume": [1000, 2000, 3000],
+            "ema_20": [1.0, 2.0, 3.0],
+            "ema_50": [1.0, 2.0, 3.0],
+            "bb_upper": [1.2, 2.2, 3.2],
+            "bb_lower": [0.8, 1.8, 2.8],
+            "volume_sma20": [1000.0, 2000.0, 3000.0],
+        }
+    )
+    scanner_module.fetch.return_value = red_df
+    scanner_module.add_indicators.return_value = red_df
+
+    scanner_module.render_scanner_tab(
+        settings=settings,
+        watchlist=["AAPL", "MSFT"],
+        timeframe="short",
+        min_score=40,
+        earnings_buffer=0,
+        provider="yahoo",
+        earnings_source="yahoo",
+    )
+
+    volume_fig = fake_st.plotly_chart.call_args_list[1][0][0]
+    marker_colors = volume_fig.data[0].marker.color
+    assert "red" in marker_colors
+    assert "green" in marker_colors
+
+
+def test_retry_caption_uses_singular_when_max_retries_is_one(scanner_module, fake_st):
+    """The retry caption reads '1 retry' when max_retries is exactly one."""
+    settings = _default_settings()
+    fake_st._active_button_keys = {"btn_scan"}
+    scanner_module.FetchPolicy.build.return_value.max_retries = 1
+    scanner_module.FetchPolicy.build.return_value.fallback_order = ()
+
+    scanner_module.render_scanner_tab(
+        settings=settings,
+        watchlist=["AAPL"],
+        timeframe="short",
+        min_score=40,
+        earnings_buffer=0,
+        provider="yahoo",
+        earnings_source="yahoo",
+    )
+
+    caption_texts = [str(c[0][0]) for c in fake_st.caption.call_args_list]
+    assert any("Retries: 1 retry" in t for t in caption_texts)

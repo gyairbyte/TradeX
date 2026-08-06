@@ -520,10 +520,10 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Category:** User interface
 - **Priority:** Medium
 - **Status:** In progress
-- **Phase 1 (done):** Extracted `Signal Journal` and `Weights` into `tradex/ui/tabs/signal_journal.py` and `tradex/ui/tabs/weights.py` on branch `devin/ui-001-phase-1`.
-- **Phase 2 (done):** Extracted `Alerts` and `Help` into `tradex/ui/tabs/alerts.py` and `tradex/ui/tabs/help.py` on branch `devin/ui-001-phase-2`.
+- **Phase 1 (done):** Extracted `Signal Journal` and `Weights` into `tradex/ui/tabs/signal_journal.py` and `tradex/ui/tabs/weights.py` on branch `devin/ui-001-phase-1` through PR #28.
+- **Phase 2 (done):** Extracted `Alerts` and `Help` into `tradex/ui/tabs/alerts.py` and `tradex/ui/tabs/help.py` on branch `devin/ui-001-phase-2` through PR #30.
 - **Phase 3 (done):** Extracted `Coil Detector` and `Confluence` into `tradex/ui/tabs/coil_detector.py` and `tradex/ui/tabs/confluence.py` on branch `devin/ui-001-phase-3` through PR #31.
-- **Phase 4 (done):** Extracted `Scanner` into `tradex/ui/tabs/scanner.py` on branch `devin/ui-001-phase-4`.
+- **Phase 4 (done):** Extracted `Scanner` into `tradex/ui/tabs/scanner.py` on branch `devin/ui-001-phase-4` through PR #32.
 - **Problem statement:** `tradex/ui/dashboard.py` was 2,378 lines and imported every backend module. Before Phase 4 it is 1,361 lines; after Phase 4 it is 1,138 lines (`tradex/ui/tabs/scanner.py` is 254 lines).
 - **Recommended action:** Continue extracting the remaining three tabs and reusable widgets into `tradex/ui/tabs/` and `tradex/ui/components/` while keeping `dashboard.py` as the router.
 - **Reason:** Improves reviewability and makes the UI testable.
