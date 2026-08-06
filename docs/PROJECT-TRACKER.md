@@ -688,7 +688,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 The original engineering-foundation and UI-refactor backlog is substantially complete. The `INTRA-001` research specification is locked in `docs/research/INTRA-001-SPEC.md`; `INTRA-001B` remains paused until the `SHORT-001` Schwab data-quality issue is resolved and the locked real-data study can be reattempted. Production strategy changes remain promotion-gated.
 
 **Remaining non-completed items:**
-- `SHORT-001`: Blocked (data invalid; v1 Schwab real-data study found 23 malformed OHLC candles across 19 of 45 pre-registered symbols out of 82,035 rows).
+- `SHORT-001`: Blocked (data invalid; v1 Schwab real-data study found 23 malformed OHLC candles across 19 of 45 pre-registered symbols out of 82,035 rows, 0.028%).
 - `INTRA-001`: In progress — research specification complete; implementation and study not started; INTRA-001B paused until the `SHORT-001` Schwab data-quality issue is resolved.
 
 **Recommended next work order:**
