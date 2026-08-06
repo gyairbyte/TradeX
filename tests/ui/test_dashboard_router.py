@@ -117,6 +117,8 @@ def fake_dashboard_st(monkeypatch, tmp_path):
     monkeypatch.setattr("tradex.premarket.gap_scanner.scan_gaps_with_report", MagicMock())
     monkeypatch.setattr("tradex.options.flow.scan_unusual_flow_with_report", MagicMock())
     monkeypatch.setattr("tradex.options.flow.scan_chain_activity_with_report", MagicMock())
+    monkeypatch.setattr("tradex.options.flow.resolve_flow_source", MagicMock())
+    monkeypatch.setattr("tradex.options.flow.resolve_chain_source", MagicMock())
 
     return st
 
@@ -138,14 +140,18 @@ def test_dashboard_routes_to_extracted_renderers(fake_dashboard_st, monkeypatch)
     confluence_mock = MagicMock()
     help_mock = MagicMock()
     journal_mock = MagicMock()
+    options_mock = MagicMock()
     pattern_mock = MagicMock()
+    premarket_mock = MagicMock()
     scanner_mock = MagicMock()
     weights_mock = MagicMock()
     monkeypatch.setattr("tradex.ui.tabs.alerts.render_alerts_tab", alerts_mock)
     monkeypatch.setattr("tradex.ui.tabs.coil_detector.render_coil_detector_tab", coil_mock)
     monkeypatch.setattr("tradex.ui.tabs.confluence.render_confluence_tab", confluence_mock)
     monkeypatch.setattr("tradex.ui.tabs.help.render_help_tab", help_mock)
+    monkeypatch.setattr("tradex.ui.tabs.options_activity.render_options_activity_tab", options_mock)
     monkeypatch.setattr("tradex.ui.tabs.pattern_similarity.render_pattern_similarity_tab", pattern_mock)
+    monkeypatch.setattr("tradex.ui.tabs.premarket.render_premarket_tab", premarket_mock)
     monkeypatch.setattr("tradex.ui.tabs.scanner.render_scanner_tab", scanner_mock)
     monkeypatch.setattr("tradex.ui.tabs.signal_journal.render_signal_journal_tab", journal_mock)
     monkeypatch.setattr("tradex.ui.tabs.weights.render_weights_tab", weights_mock)
@@ -158,7 +164,9 @@ def test_dashboard_routes_to_extracted_renderers(fake_dashboard_st, monkeypatch)
     confluence_mock.assert_called_once()
     help_mock.assert_called_once()
     journal_mock.assert_called_once()
+    options_mock.assert_called_once()
     pattern_mock.assert_called_once()
+    premarket_mock.assert_called_once()
     scanner_mock.assert_called_once()
     weights_mock.assert_called_once()
 
@@ -208,7 +216,30 @@ def test_dashboard_routes_to_extracted_renderers(fake_dashboard_st, monkeypatch)
     assert len(p_kwargs["watchlist"]) == 20
     assert p_kwargs["provider"] == "yahoo"
 
-    assert a_kwargs["settings"] is j_kwargs["settings"] is w_kwargs["settings"] is c_kwargs["settings"] is co_kwargs["settings"] is s_kwargs["settings"] is p_kwargs["settings"]
+    _, pm_kwargs = premarket_mock.call_args
+    assert isinstance(pm_kwargs["settings"], TradeXSettings)
+    assert isinstance(pm_kwargs["watchlist"], list)
+    assert len(pm_kwargs["watchlist"]) == 20
+    assert pm_kwargs["provider"] == "yahoo"
+    assert pm_kwargs["earnings_source"] == "yahoo"
+
+    _, o_kwargs = options_mock.call_args
+    assert isinstance(o_kwargs["settings"], TradeXSettings)
+    assert isinstance(o_kwargs["watchlist"], list)
+    assert len(o_kwargs["watchlist"]) == 20
+    assert o_kwargs["options_source"] == "auto"
+
+    assert (
+        a_kwargs["settings"]
+        is j_kwargs["settings"]
+        is w_kwargs["settings"]
+        is c_kwargs["settings"]
+        is co_kwargs["settings"]
+        is s_kwargs["settings"]
+        is p_kwargs["settings"]
+        is pm_kwargs["settings"]
+        is o_kwargs["settings"]
+    )
 
 
 def test_dashboard_import_without_main_does_not_call_st_tabs_or_renderers(monkeypatch):
@@ -219,7 +250,9 @@ def test_dashboard_import_without_main_does_not_call_st_tabs_or_renderers(monkey
     confluence_mock = MagicMock(name="render_confluence_tab")
     help_mock = MagicMock(name="render_help_tab")
     journal_mock = MagicMock(name="render_signal_journal_tab")
+    options_mock = MagicMock(name="render_options_activity_tab")
     pattern_mock = MagicMock(name="render_pattern_similarity_tab")
+    premarket_mock = MagicMock(name="render_premarket_tab")
     scanner_mock = MagicMock(name="render_scanner_tab")
     weights_mock = MagicMock(name="render_weights_tab")
 
@@ -228,7 +261,9 @@ def test_dashboard_import_without_main_does_not_call_st_tabs_or_renderers(monkey
     monkeypatch.setattr("tradex.ui.tabs.coil_detector.render_coil_detector_tab", coil_mock)
     monkeypatch.setattr("tradex.ui.tabs.confluence.render_confluence_tab", confluence_mock)
     monkeypatch.setattr("tradex.ui.tabs.help.render_help_tab", help_mock)
+    monkeypatch.setattr("tradex.ui.tabs.options_activity.render_options_activity_tab", options_mock)
     monkeypatch.setattr("tradex.ui.tabs.pattern_similarity.render_pattern_similarity_tab", pattern_mock)
+    monkeypatch.setattr("tradex.ui.tabs.premarket.render_premarket_tab", premarket_mock)
     monkeypatch.setattr("tradex.ui.tabs.scanner.render_scanner_tab", scanner_mock)
     monkeypatch.setattr("tradex.ui.tabs.signal_journal.render_signal_journal_tab", journal_mock)
     monkeypatch.setattr("tradex.ui.tabs.weights.render_weights_tab", weights_mock)
@@ -242,6 +277,8 @@ def test_dashboard_import_without_main_does_not_call_st_tabs_or_renderers(monkey
     confluence_mock.assert_not_called()
     help_mock.assert_not_called()
     journal_mock.assert_not_called()
+    options_mock.assert_not_called()
     pattern_mock.assert_not_called()
+    premarket_mock.assert_not_called()
     scanner_mock.assert_not_called()
     weights_mock.assert_not_called()
