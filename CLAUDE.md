@@ -70,7 +70,7 @@ Scanner runs → results DataFrame
 | `tradex/research/long_term_evaluation/` | Locked, point-in-time long-term scorer evaluation (LONG-001). Not used in production. |
 | `tradex/research/pattern_validation/` | Locked, point-in-time pattern-similarity validation study (PATTERN-001). Not used in production. |
 | `tradex/research/score_validation/` | Reproducible score-validation event study (VAL-002). |
-| `tradex/research/short_context/` | Short-term market-regime context research (SHORT-001; Blocked after the pre-registered Schwab real-data study failed bar-quality validation on 22 of 45 symbols). |
+| `tradex/research/short_context/` | Short-term market-regime context research (SHORT-001; v1 real-data study blocked on 19 of 45 symbols due to 23 malformed Schwab OHLC rows; remediation/rerun required). |
 | `docs/research/INTRA-001-SPEC.md` | Pre-registered research specification for the long open-drive VWAP pullback continuation study; implementation is paused until the `SHORT-001` Schwab data-quality issue is resolved. |
 | `docs/research/specs/INTRA-001-v1.json` | Machine-readable locked specification for `INTRA-001`; future artifacts must record its SHA-256. |
 | `tradex/options/models.py` | Typed options source/capability and scan report models (`OptionsDataKind`, `OptionsSourceStatus`, `OptionsActivityReport`). |

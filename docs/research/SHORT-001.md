@@ -179,24 +179,9 @@ candidate_selection.json:   3b5f6580341e12a545a520f0c35d8a0b3e459f6bdf0cf7b373a1
 
 ## 9. Real-data evidence inventory
 
-A repository-wide search found **no** committed, manifest-locked SHORT-001 real-data study containing all of the following:
+A committed, manifest-locked SHORT-001 real-data v1 study now exists at `docs/research/artifacts/SHORT-001/2026-08-01-5ae8a420/` and is recorded in `docs/research/SHORT-001-SCHWAB-STUDY.md`. It contains the pre-registered context spec, per-symbol fetch audit, and a list of hard-invalid OHLCV rows. It does **not** contain a complete `manifest.lock.json`, `study.json`, event-study, paired-backtest, or candidate-selection output because the snapshot failed before a manifest could be generated. The data-ingestion failure is documented as **Outcome E — Invalid study**.
 
-- Real provider-backed OHLCV
-- Manifest-locked inputs and provider provenance
-- Predefined universe and proxy mappings
-- Predefined development, validation, and untouched holdout periods
-- Locked context specification
-- Complete event-study, paired-backtest, and data-quality outputs
-- Gate outcomes and reproducible checksums
-
-Searched:
-
-- `docs/research/` and `docs/research/artifacts/` (only `LONG-001` and `PATTERN-001` artifacts exist)
-- `tradex/research/short_context/` (code and tests; no real-data snapshots)
-- Git history for `SHORT-001`, `short_context`, and related commits (PR #18 introduced the package)
-- PR #18 body and discussion attachments (no durable real-data bundle referenced)
-
-Therefore, the synthetic workflow is the only complete end-to-end SHORT-001 outcome in the repository.
+The only complete end-to-end SHORT-001 outcome with all gate artifacts remains the deterministic synthetic run.
 
 ## 10. What the evidence supports
 
@@ -223,13 +208,13 @@ A synthetic one-ticker run cannot validate or reject the market hypothesis. It v
 - **Survivorship/delisting:** Not addressed because the synthetic fixture has no delistings.
 - **Parameter fishing:** The rerun used fixed spec values; no threshold, sample minimum, or split was tuned after seeing results.
 - **Determinism:** Two identical-input runs produced byte-identical outputs.
-- **Real-data bias:** Not applicable — no real data were used.
+- **Real-data bias:** Real Schwab daily OHLCV data were fetched in the v1 study, but the snapshot failed before any model was fit or evaluated, so no signal/outcome bias was introduced. The ingestion gate rejected malformed rows rather than hiding them.
 
 ## 13. Final disposition
 
-`SHORT-001` status: **Deferred**.
+`SHORT-001` status: **Blocked** (data invalid; v1 real-data attempt failed ingestion).
 
-Reason: research infrastructure and methodology are implemented and verified, but the only completed evidence is a deterministic synthetic run. A real-data study is required to evaluate the market hypothesis. The engineering work is done; the remaining dependency is a future research decision, not active engineering.
+Reason: research infrastructure and methodology are implemented and verified, and a locked real-data v1 study was attempted. The Schwab daily OHLCV data for the locked 45-symbol panel contained 23 hard-invalid OHLC rows across 19 symbols (0.028% of 82,035 rows), preventing snapshot generation. The v1 attempt is invalid (Outcome E), but this is not the end of SHORT-001. A separate, approved research-only data-ingestion remediation PR is required to drop hard-invalid rows using the PATTERN-001 precedent, preserve the locked panel, and rerun the unchanged snapshot/evaluation before the hypothesis can be evaluated.
 
 ## 14. Requirements to reopen
 
