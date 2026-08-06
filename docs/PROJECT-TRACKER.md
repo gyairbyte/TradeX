@@ -344,7 +344,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
   - A valid outcome is `insufficient evidence to change the production score`; the study does not force a recommendation.
 - **Intended pull request:** `devin/reevaluate-scores-with-validated-data`
 - **Affects trading behavior:** No
-- **Next recommended PR:** `devin/improve-short-term-context` (SHORT-001)
+- **Next recommended PR:** `devin/intra-001-spec` (INTRA-001 research specification)
 
 ---
 

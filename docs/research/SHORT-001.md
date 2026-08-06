@@ -259,10 +259,12 @@ No promotion may occur in this disposition PR.
 
 - `git diff --check` clean.
 - `uv run ruff check tests scripts` clean.
-- `uv run pytest tests/market tests/research/short_context -q` passed.
-- `uv run pytest tests -q` passed (full isolated suite with `HOME` redirected).
-- `uv run python -m tradex.research.short_context --help` works offline.
-- The synthetic rerun produced the outputs and checksums listed in section 8 with no real `~/.tradex` files created or modified.
+- `uv run pytest tests/market tests/research/short_context -q` → 80 passed.
+- `uv run pytest tests -q` with `HOME` redirected and all six canonical persistence paths (`TRADEX_DB_PATH`, `TRADEX_WATCHLISTS_DB_PATH`, `TRADEX_WEIGHTS_PATH`, `TRADEX_FP_DB`, `TRADEX_EARNINGS_CACHE_PATH`, `ALERT_STATE_PATH`) redirected to a temporary directory → 1229 passed, 5 pre-existing `datetime.utcnow()` deprecation warnings.
+- Real `~/.tradex/signals.db`, `~/.tradex/watchlists.db`, `~/.tradex/fingerprints.db`, `~/.tradex/earnings_cache.db`, and `~/.tradex/alerts.db` mtimes were unchanged; `~/.tradex/weights.json` was absent both before and after.
+- `uv run python -m tradex.research.short_context --help`, `snapshot --help`, and `evaluate --help` work offline.
+- Focused documentation/search audit of `README.md`, `SETUP.md`, `CLAUDE.md`, `docs/PROJECT-TRACKER.md`, and `docs/research/SHORT-001.md` found no stale or contradictory SHORT-001 status claims.
+- The synthetic rerun produced the outputs and checksums listed in section 8.
 - Production boundary verified: no `context_policy`, `ShortContextPolicy`, or `short_context` references found in `tradex/screener`, `tradex/tracker`, `tradex/ui`, or `tradex/alerts`.
 
 ## 17. Known limitations
