@@ -18,11 +18,11 @@ Study design was locked before any Schwab data were fetched or any split metrics
 
 ## 5. Pre-registration commit SHA
 
-To be inserted after the pre-registration commit is made.
+`4d696729a10288bb239988c4255f3d9cf3677191`
 
 ## 6. Context-spec SHA-256
 
-To be inserted after the pre-registration commit is made.
+`5ae8a420be97d3665c48ed82401cb4d9b0f0d71610898b7036f72453755acb45`
 
 ## 7. Locked targets and mappings
 
