@@ -587,9 +587,10 @@ Save and switch between named ticker lists (e.g. "Semis", "Crypto-adjacent", "Ea
 - [x] Earnings awareness — filter + flag stocks with earnings within N days
 - [x] Watchlist persistence — save/load/delete named watchlists
 - [x] Scoring weight customization — per-signal sliders in the Weights tab, persisted to ~/.tradex/weights.json
+- [x] Split `dashboard.py` into tab and component modules (UI-001 — Completed, PR #34)
+- [x] Deterministic credential-free test foundation with over 1,200 tests covering providers, persistence, backtesting, research, and UI
 
 ### Still on the list
-- [x] Split `dashboard.py` into tab and component modules (UI-001 — Completed, PR #34)
 - [ ] Portfolio-level risk view
 
 ### Nice-to-have enhancements

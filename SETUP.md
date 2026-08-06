@@ -485,5 +485,6 @@ Before reporting success to the user, the agent should verify:
 - [ ] `streamlit run tradex/ui/dashboard.py` (via the venv) starts a server on port 8501 without crashing in the first 10 seconds
 - [ ] On macOS: `launchers/macos/TradeX.app/Contents/MacOS/tradex-launcher` is executable (`-rwxr-xr-x`)
 - [ ] On Windows: `launchers\windows\TradeX.bat` has CRLF line endings (open in Notepad → no jumbled-onto-one-line text)
+- [ ] `uv run pytest tests -q` reports over 1,200 credential-free tests (no credentials or network required)
 
 Report any failures. Do not silently skip.

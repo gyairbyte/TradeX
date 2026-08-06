@@ -171,15 +171,19 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Complete test foundation and fixtures
 - **Category:** Testing
 - **Priority:** High
-- **Status:** In progress
-- **Problem statement:** The initial local and CI test foundation is now established (`1` passing test, `7` strict `xfail`s tied to COR/DATA/COIL items, GitHub Actions running `ruff check tests` and `pytest tests -q`). Provider-contract tests and broader unit/integration coverage remain to be added.
-- **Recommended action:** Add provider-contract tests for each data provider, expand unit/integration tests, and document how to run the suite. Ensure every existing `xfail` test references a specific tracker/correctness item and uses `strict=True`.
+- **Status:** Completed
+- **Resolved by:** `devin/close-test-001-tracker`
+- **Problem statement:** The task began with one passing test and seven strict `xfail`s tied to COR/DATA/COIL items. The repository now has broad deterministic unit, integration, provider-contract, persistence, research, and UI coverage.
+- **Recommended action:** Close TEST-001 and keep the tracker aligned with the actual remaining work; no further production or test source changes are required.
 - **Reason:** Tests are a prerequisite for safely fixing correctness and redesigning trading logic.
 - **Dependencies:** None
-- **Files likely affected:** `tests/conftest.py`, `tests/**/*.py`
-- **Testing requirements:** Local `pytest` passes; all `xfail` tests are tracked against COR/DATA/COIL IDs and use `strict=True`.
-- **Acceptance criteria:** `pytest` passes locally and in CI; a provider-contract test exists; DB tests use temp files; no `xfail` test can XPASS for an unrelated reason.
-- **Intended pull request:** `devin/add-ci`
+- **Files likely affected:** `docs/PROJECT-TRACKER.md`
+- **Testing requirements:** `uv run pytest tests -q` passes locally and in CI; focused provider, config, tracker, and UI suites pass.
+- **Acceptance criteria:** `pytest` passes locally and in CI; provider-contract coverage exists for TEST-001's scope; DB tests use temp files, isolated `TradeXSettings`, or redirected environment paths; no active `xfail` remains; CI enforces `ruff check tests scripts` and the complete test suite; the isolated full suite does not create or modify real `~/.tradex/` files.
+- **Current verified result:** `1229 passed` in ~2 minutes with `5` pre-existing `datetime.utcnow()` deprecation warnings; `0` xfailed, `0` xpassed, `0` skipped.
+- **Active xfails:** `0`.
+- **Provider-contract coverage:** Complete for TEST-001's scope (provider resolution and normalization, retry/fallback policy, canonical OHLCV schema, empty/malformed/missing-credential handling, Schwab contract tests, provenance, and no live API calls in CI).
+- **Intended pull request:** `devin/close-test-001-tracker`
 - **Affects trading behavior:** No
 
 ### TEST-002: Add CI workflow
@@ -661,6 +665,26 @@ This is the master backlog for recommendations from the Devin review. Items are 
 | Medium | 12 | SHORT-001: Add market regime and relative strength to short-term scorer |
 | Low | 5 | DOC-001: Close LONG-001 and restore documentation and tracker consistency |
 
+## Summary by status
+
+| Status | Count |
+|---|---|
+| Completed | 30 |
+| Blocked | 1 |
+| Proposed | 1 |
+| In progress | 0 |
+
+The original engineering-foundation and UI-refactor backlog is substantially complete; remaining work is primarily research disposition (`SHORT-001`) and new intraday hypothesis development (`INTRA-001`). Production strategy changes remain promotion-gated.
+
+**Remaining non-completed items:**
+- `SHORT-001`: Blocked (infrastructure complete; gate not passed on synthetic data).
+- `INTRA-001`: Proposed.
+
+**Recommended next work order:**
+1. **SHORT-001 disposition review** — Determine whether it should remain blocked, become deferred pending a locked real-data study, or be closed as a non-promoted research result. No production behavior change.
+2. **INTRA-001 research specification** — Define one exact intraday setup and locked study methodology before implementing any production scorer change. Research-only first.
+
 **Recommended next pull request order:**
-1. `devin/ui-001-phase-2` (UI-001 continuation — extract the next bounded set of tabs or reusable widgets into `tradex/ui/tabs/` / `tradex/ui/components/` while keeping `dashboard.py` as the canonical router).
+1. `devin/short-001-disposition` (SHORT-001 disposition review — decide whether to keep blocked, defer pending a locked real-data study, or close as a non-promoted research result).
+2. `devin/intra-001-spec` (INTRA-001 research specification — define one exact intraday setup and locked study methodology before any production implementation).
 
