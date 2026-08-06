@@ -344,7 +344,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
   - A valid outcome is `insufficient evidence to change the production score`; the study does not force a recommendation.
 - **Intended pull request:** `devin/reevaluate-scores-with-validated-data`
 - **Affects trading behavior:** No
-- **Next recommended PR:** `devin/improve-short-term-context` (SHORT-001)
+- **Next recommended PR:** `devin/intra-001-spec` (INTRA-001 research specification)
 
 ---
 
@@ -444,13 +444,14 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Add market regime and relative strength to short-term scorer
 - **Category:** Short-term trading
 - **Priority:** Medium
-- **Status:** Blocked (infrastructure complete; gate not passed on synthetic data)
+- **Status:** Deferred (infrastructure complete; gate not passed on synthetic data; real-data study required)
 - **Resolved by:** `devin/improve-short-term-context`
+- **Disposition reviewed by:** `devin/short-001-disposition`
 - **Problem statement:** The short-term score does not account for whether the broad market or sector is trending.
-- **Recommended action:** Add point-in-time market-regime and relative-strength filters evaluated through a reproducible research pipeline. Expose to production only if both the event-study and paired-backtest holdout gates pass.
+- **Recommended action:** Engineering and research infrastructure are complete. Reopen SHORT-001 only with an approved, predefined, manifest-locked real-data study. No production behavior change until both holdout gates pass and a separate Gary-approved production-integration assignment is completed.
 - **Reason:** Buying pullbacks in a bear market or weak sector is a different proposition than in a strong bull market.
 - **Dependencies:** VAL-001 (backtesting harness), VAL-002 (score validation study)
-- **Files affected:** `tradex/market/__init__.py`, `tradex/market/context.py`, `tradex/market/models.py`, `tradex/signals/short_term.py`, `tradex/screener/engine.py`, `tradex/research/short_context/*`, `tests/market/test_context.py`, `tests/research/short_context/*`, `README.md`, `SETUP.md`, `.agents/skills/tradex-local-testing/SKILL.md`, `docs/PROJECT-TRACKER.md`
+- **Files affected:** `tradex/market/__init__.py`, `tradex/market/context.py`, `tradex/market/models.py`, `tradex/signals/short_term.py`, `tradex/screener/engine.py`, `tradex/research/short_context/*`, `tests/market/test_context.py`, `tests/research/short_context/*`, `README.md`, `SETUP.md`, `.agents/skills/tradex-local-testing/SKILL.md`, `docs/PROJECT-TRACKER.md`, `docs/research/SHORT-001.md`
 - **Testing requirements:** Unit tests for context computation, eligibility, spec validation, event generation, candidate selection, paired backtests, report generation, and CLI help; synthetic end-to-end workflow; focused and full pytest suites.
 - **Acceptance criteria:**
   - `short_term.score` accepts optional `context` and `context_policy` kwargs, preserves the existing numeric `score` as `base_score`, and adds `context_eligible`, `context_status`, `context_reasons`, and `market_context`.
@@ -458,6 +459,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
   - Candidate selection uses only `development` + `validation`; `holdout` does not influence any decision.
   - Both the event-study and paired-backtest promotion gates must pass before production exposure.
   - On synthetic data the gate did not pass, so the candidate policy was not exposed and production behavior remains unchanged.
+  - No manifest-locked real-data study exists; the hypothesis cannot be evaluated or promoted until one is run.
 - **Intended pull request:** `devin/improve-short-term-context`
 - **Affects trading behavior:** No; the production screener does not expose context filtering. Research output is promotion-gated, and a candidate policy is only integrated after both holdout gates pass.
 
@@ -670,21 +672,22 @@ This is the master backlog for recommendations from the Devin review. Items are 
 | Status | Count |
 |---|---|
 | Completed | 30 |
-| Blocked | 1 |
+| Deferred | 1 |
 | Proposed | 1 |
 | In progress | 0 |
+| Blocked | 0 |
 
-The original engineering-foundation and UI-refactor backlog is substantially complete; remaining work is primarily research disposition (`SHORT-001`) and new intraday hypothesis development (`INTRA-001`). Production strategy changes remain promotion-gated.
+The original engineering-foundation and UI-refactor backlog is substantially complete. Remaining work is primarily a new intraday hypothesis specification (`INTRA-001`) and a future real-data study for the deferred short-term context hypothesis (`SHORT-001`). Production strategy changes remain promotion-gated.
 
 **Remaining non-completed items:**
-- `SHORT-001`: Blocked (infrastructure complete; gate not passed on synthetic data).
+- `SHORT-001`: Deferred (infrastructure complete; gate not passed on synthetic data; real-data study required).
 - `INTRA-001`: Proposed.
 
 **Recommended next work order:**
-1. **SHORT-001 disposition review** — Determine whether it should remain blocked, become deferred pending a locked real-data study, or be closed as a non-promoted research result. No production behavior change.
-2. **INTRA-001 research specification** — Define one exact intraday setup and locked study methodology before implementing any production scorer change. Research-only first.
+1. **INTRA-001 research specification** — Define one exact intraday setup and locked study methodology before implementing any production scorer change. Research-only first.
+2. **SHORT-001 real-data study** — Reopen only with an approved, predefined, manifest-locked real-data study if and when Gary prioritizes it.
 
 **Recommended next pull request order:**
-1. `devin/short-001-disposition` (SHORT-001 disposition review — decide whether to keep blocked, defer pending a locked real-data study, or close as a non-promoted research result).
-2. `devin/intra-001-spec` (INTRA-001 research specification — define one exact intraday setup and locked study methodology before any production implementation).
+1. `devin/intra-001-spec` (INTRA-001 research specification — define one exact intraday setup and locked study methodology before any production implementation).
+2. `devin/short-001-real-data-study` (future real-data study for SHORT-001; not started until explicitly approved).
 

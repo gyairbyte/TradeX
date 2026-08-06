@@ -369,7 +369,7 @@ uv run python -m tradex.research.short_context snapshot --help
 uv run python -m tradex.research.short_context evaluate --help
 ```
 
-A failed or inconclusive study leaves the existing short-term score, weights, thresholds, and production behavior unchanged.
+**Current status:** The research pipeline is complete and the synthetic verification run confirmed the gates work as designed, but the selected `market_sector_rs` candidate failed both the event-study and paired-backtest holdout gates on synthetic data. No manifest-locked real-data study exists. SHORT-001 is therefore **Deferred** pending a future approved real-data study; the existing short-term score, weights, thresholds, and production behavior remain unchanged. See [`docs/research/SHORT-001.md`](docs/research/SHORT-001.md) for the full disposition.
 
 ---
 
