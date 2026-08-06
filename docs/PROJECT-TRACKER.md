@@ -445,7 +445,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Category:** Short-term trading
 - **Priority:** Medium
 - **Status:** Deferred (infrastructure complete; gate not passed on synthetic data; real-data study required)
-- **Resolved by:** `devin/short-001-disposition`
+- **Resolved by:** `devin/improve-short-term-context`
 - **Disposition reviewed by:** `devin/short-001-disposition`
 - **Problem statement:** The short-term score does not account for whether the broad market or sector is trending.
 - **Recommended action:** Engineering and research infrastructure are complete. Reopen SHORT-001 only with an approved, predefined, manifest-locked real-data study. No production behavior change until both holdout gates pass and a separate Gary-approved production-integration assignment is completed.

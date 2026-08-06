@@ -113,7 +113,7 @@ A deterministic end-to-end rerun was executed using the synthetic fixture patter
 
 - Command: `uv run python /tmp/run_short_context_synthetic.py` (temp harness; not committed).
 - Source: one target (`AAPL`), one market proxy (`SPY`), one sector proxy (`XLK`), 252 synthetic daily bars, splits `development 2020-01-01–2020-06-30`, `validation 2020-07-01–2020-09-30`, `holdout 2020-10-01–2020-12-31`.
-- Reduced minimums were used for the synthetic rerun so a candidate could be selected and the gates could be fully exercised (`minimum_holdout_events=5`, `minimum_holdout_tickers=1`, `minimum_event_retention_pct=10.0`, `minimum_ticker_coverage_pct=10.0`).
+- Reduced minimums were used for the synthetic rerun so a candidate could be selected and the gates could be fully exercised. These values (`minimum_holdout_events=5`, `minimum_holdout_tickers=1`, `minimum_event_retention_pct=10.0`, `minimum_ticker_coverage_pct=10.0`) are the pre-existing values in the canonical repository fixture (`tests/research/short_context/conftest.py`) and were reused unchanged; they were not selected or tuned after observing this rerun.
 
 Outputs were byte-identical across two consecutive runs with the same inputs.
 
