@@ -444,7 +444,15 @@ The candidate policies are `off` (baseline), `market_rs`, and `market_sector_rs`
 
 ---
 
-## 11. Known caveats and gotchas
+## 12. Intraday open-drive VWAP pullback specification (optional)
+
+`docs/research/INTRA-001-SPEC.md` pre-registers a concrete, research-only intraday setup. It defines the candidate long open-drive VWAP pullback continuation strategy, two baselines (current production `intraday.score` and a simple VWAP reclaim), locked 2022–2025 splits, sample minimums, validation/holdout gates, and a provider-feasibility review.
+
+No `INTRA-001` implementation code exists yet. The current production intraday scorer remains unchanged. Implementation is paused until the approved `SHORT-001` Schwab real-data study is completed, after which the phased plan in the spec resumes (`INTRA-001B` data infrastructure, `INTRA-001C` research engine, `INTRA-001D` locked real-data study). A separate Gary-approved production PR is required before any production scorer, weight, threshold, ranking, screener, UI, or alert change.
+
+---
+
+## 13. Known caveats and gotchas
 
 1. **macOS Gatekeeper blocks the first launch** of `TradeX.app`. Right-click → Open the first time. Subsequent double-clicks work normally.
 2. **The launcher needs `~/.tradex/config`** (or `$TRADEX_HOME`) when run from outside the repo (e.g. from `/Applications`). If you see "Could not locate the TradeX project directory," go back to step 3.
@@ -459,7 +467,7 @@ The candidate policies are `off` (baseline), `market_rs`, and `market_sector_rs`
 
 ---
 
-## 12. Navigation cheat-sheet for the user
+## 14. Navigation cheat-sheet for the user
 
 Once the dashboard is running at `http://localhost:8501`:
 
@@ -478,7 +486,7 @@ Once the dashboard is running at `http://localhost:8501`:
 
 ---
 
-## 13. After-setup sanity checks (agent should run these)
+## 15. After-setup sanity checks (agent should run these)
 
 Before reporting success to the user, the agent should verify:
 - [ ] `.venv/` exists and contains `streamlit`
