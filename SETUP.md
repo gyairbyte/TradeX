@@ -440,6 +440,8 @@ uv run pytest tests/market tests/research/short_context -q
 
 The candidate policies are `off` (baseline), `market_rs`, and `market_sector_rs`. A candidate becomes eligible for a future production-integration PR if both the event-study and paired-backtest holdout gates pass; until then, the production screener does not expose context filtering and the existing short-term score, weights, and thresholds remain unchanged.
 
+**Current status:** The synthetic verification run confirmed the pipeline is deterministic and the gates are enforced, but the selected `market_sector_rs` candidate failed both holdout gates on synthetic data. No manifest-locked real-data study exists, so SHORT-001 is **Deferred** pending a future approved study. See `docs/research/SHORT-001.md` for the full disposition.
+
 ---
 
 ## 11. Known caveats and gotchas
