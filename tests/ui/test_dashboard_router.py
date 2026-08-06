@@ -6,6 +6,7 @@ import runpy
 import sys
 from unittest.mock import MagicMock
 
+import pandas as pd
 import pytest
 
 from tradex.config import TradeXSettings
@@ -111,6 +112,7 @@ def fake_dashboard_st(monkeypatch, tmp_path):
     monkeypatch.setattr("tradex.tracker.store.record_scan", MagicMock())
     monkeypatch.setattr("tradex.tracker.analyzer.detect_coils", MagicMock(return_value=[]))
     monkeypatch.setattr("tradex.tracker.confluence.run_confluence_screen", MagicMock())
+    monkeypatch.setattr("tradex.patterns.fingerprint.list_fingerprints", MagicMock(return_value=pd.DataFrame()))
     monkeypatch.setattr("tradex.patterns.matcher.run_match_screen", MagicMock())
     monkeypatch.setattr("tradex.premarket.gap_scanner.scan_gaps_with_report", MagicMock())
     monkeypatch.setattr("tradex.options.flow.scan_unusual_flow_with_report", MagicMock())
@@ -136,12 +138,14 @@ def test_dashboard_routes_to_extracted_renderers(fake_dashboard_st, monkeypatch)
     confluence_mock = MagicMock()
     help_mock = MagicMock()
     journal_mock = MagicMock()
+    pattern_mock = MagicMock()
     scanner_mock = MagicMock()
     weights_mock = MagicMock()
     monkeypatch.setattr("tradex.ui.tabs.alerts.render_alerts_tab", alerts_mock)
     monkeypatch.setattr("tradex.ui.tabs.coil_detector.render_coil_detector_tab", coil_mock)
     monkeypatch.setattr("tradex.ui.tabs.confluence.render_confluence_tab", confluence_mock)
     monkeypatch.setattr("tradex.ui.tabs.help.render_help_tab", help_mock)
+    monkeypatch.setattr("tradex.ui.tabs.pattern_similarity.render_pattern_similarity_tab", pattern_mock)
     monkeypatch.setattr("tradex.ui.tabs.scanner.render_scanner_tab", scanner_mock)
     monkeypatch.setattr("tradex.ui.tabs.signal_journal.render_signal_journal_tab", journal_mock)
     monkeypatch.setattr("tradex.ui.tabs.weights.render_weights_tab", weights_mock)
@@ -154,6 +158,7 @@ def test_dashboard_routes_to_extracted_renderers(fake_dashboard_st, monkeypatch)
     confluence_mock.assert_called_once()
     help_mock.assert_called_once()
     journal_mock.assert_called_once()
+    pattern_mock.assert_called_once()
     scanner_mock.assert_called_once()
     weights_mock.assert_called_once()
 
@@ -197,7 +202,13 @@ def test_dashboard_routes_to_extracted_renderers(fake_dashboard_st, monkeypatch)
     assert s_kwargs["provider"] == "yahoo"
     assert s_kwargs["earnings_source"] == "yahoo"
 
-    assert a_kwargs["settings"] is j_kwargs["settings"] is w_kwargs["settings"] is c_kwargs["settings"] is co_kwargs["settings"] is s_kwargs["settings"]
+    _, p_kwargs = pattern_mock.call_args
+    assert isinstance(p_kwargs["settings"], TradeXSettings)
+    assert isinstance(p_kwargs["watchlist"], list)
+    assert len(p_kwargs["watchlist"]) == 20
+    assert p_kwargs["provider"] == "yahoo"
+
+    assert a_kwargs["settings"] is j_kwargs["settings"] is w_kwargs["settings"] is c_kwargs["settings"] is co_kwargs["settings"] is s_kwargs["settings"] is p_kwargs["settings"]
 
 
 def test_dashboard_import_without_main_does_not_call_st_tabs_or_renderers(monkeypatch):
@@ -208,6 +219,7 @@ def test_dashboard_import_without_main_does_not_call_st_tabs_or_renderers(monkey
     confluence_mock = MagicMock(name="render_confluence_tab")
     help_mock = MagicMock(name="render_help_tab")
     journal_mock = MagicMock(name="render_signal_journal_tab")
+    pattern_mock = MagicMock(name="render_pattern_similarity_tab")
     scanner_mock = MagicMock(name="render_scanner_tab")
     weights_mock = MagicMock(name="render_weights_tab")
 
@@ -216,6 +228,7 @@ def test_dashboard_import_without_main_does_not_call_st_tabs_or_renderers(monkey
     monkeypatch.setattr("tradex.ui.tabs.coil_detector.render_coil_detector_tab", coil_mock)
     monkeypatch.setattr("tradex.ui.tabs.confluence.render_confluence_tab", confluence_mock)
     monkeypatch.setattr("tradex.ui.tabs.help.render_help_tab", help_mock)
+    monkeypatch.setattr("tradex.ui.tabs.pattern_similarity.render_pattern_similarity_tab", pattern_mock)
     monkeypatch.setattr("tradex.ui.tabs.scanner.render_scanner_tab", scanner_mock)
     monkeypatch.setattr("tradex.ui.tabs.signal_journal.render_signal_journal_tab", journal_mock)
     monkeypatch.setattr("tradex.ui.tabs.weights.render_weights_tab", weights_mock)
@@ -229,5 +242,6 @@ def test_dashboard_import_without_main_does_not_call_st_tabs_or_renderers(monkey
     confluence_mock.assert_not_called()
     help_mock.assert_not_called()
     journal_mock.assert_not_called()
+    pattern_mock.assert_not_called()
     scanner_mock.assert_not_called()
     weights_mock.assert_not_called()
