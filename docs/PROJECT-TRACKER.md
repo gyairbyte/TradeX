@@ -524,16 +524,17 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Phase 2 (done):** Extracted `Alerts` and `Help` into `tradex/ui/tabs/alerts.py` and `tradex/ui/tabs/help.py` on branch `devin/ui-001-phase-2` through PR #30.
 - **Phase 3 (done):** Extracted `Coil Detector` and `Confluence` into `tradex/ui/tabs/coil_detector.py` and `tradex/ui/tabs/confluence.py` on branch `devin/ui-001-phase-3` through PR #31.
 - **Phase 4 (done):** Extracted `Scanner` into `tradex/ui/tabs/scanner.py` on branch `devin/ui-001-phase-4` through PR #32.
-- **Problem statement:** `tradex/ui/dashboard.py` was 2,378 lines and imported every backend module. Before Phase 4 it is 1,361 lines; after Phase 4 it is 1,138 lines (`tradex/ui/tabs/scanner.py` is 254 lines).
-- **Recommended action:** Continue extracting the remaining three tabs and reusable widgets into `tradex/ui/tabs/` and `tradex/ui/components/` while keeping `dashboard.py` as the router.
+- **Phase 5 (done):** Extracted `Pattern Similarity — Experimental Research` into `tradex/ui/tabs/pattern_similarity.py` on branch `devin/ui-001-phase-5` through PR #33.
+- **Problem statement:** `tradex/ui/dashboard.py` was 2,378 lines and imported every backend module. After Phase 4 it is 1,138 lines; after Phase 5 it is 920 lines (`tradex/ui/tabs/pattern_similarity.py` is 240 lines).
+- **Recommended action:** Continue extracting the remaining two tabs and reusable widgets into `tradex/ui/tabs/` and `tradex/ui/components/` while keeping `dashboard.py` as the router.
 - **Reason:** Improves reviewability and makes the UI testable.
 - **Dependencies:** TEST-001
-- **Files likely affected:** `tradex/ui/dashboard.py`, `tradex/ui/tabs/__init__.py`, `tradex/ui/tabs/signal_journal.py`, `tradex/ui/tabs/weights.py`, `tradex/ui/tabs/alerts.py`, `tradex/ui/tabs/help.py`, `tradex/ui/tabs/coil_detector.py`, `tradex/ui/tabs/confluence.py`, `tradex/ui/tabs/scanner.py`, `tests/ui/test_signal_journal_tab.py`, `tests/ui/test_weights_tab.py`, `tests/ui/test_alerts_tab.py`, `tests/ui/test_help_tab.py`, `tests/ui/test_coil_detector_tab.py`, `tests/ui/test_confluence_tab.py`, `tests/ui/test_scanner_tab.py`
+- **Files likely affected:** `tradex/ui/dashboard.py`, `tradex/ui/tabs/__init__.py`, `tradex/ui/tabs/signal_journal.py`, `tradex/ui/tabs/weights.py`, `tradex/ui/tabs/alerts.py`, `tradex/ui/tabs/help.py`, `tradex/ui/tabs/coil_detector.py`, `tradex/ui/tabs/confluence.py`, `tradex/ui/tabs/scanner.py`, `tradex/ui/tabs/pattern_similarity.py`, `tests/ui/test_signal_journal_tab.py`, `tests/ui/test_weights_tab.py`, `tests/ui/test_alerts_tab.py`, `tests/ui/test_help_tab.py`, `tests/ui/test_coil_detector_tab.py`, `tests/ui/test_confluence_tab.py`, `tests/ui/test_scanner_tab.py`, `tests/ui/test_pattern_similarity_tab.py`
 - **Testing requirements:** Component unit tests for each extracted tab module; smoke test that the dashboard module loads and routes correctly.
-- **Acceptance criteria:** `dashboard.py` remains the canonical Streamlit entrypoint; all ten tabs still render with unchanged labels, order, and behavior; no import-time side effects from tab modules; no trading logic changed. The remaining three tabs and component extraction are left for later bounded phases.
-- **Intended pull request:** `devin/ui-001-phase-4`
-- **Next phase:** `devin/ui-001-phase-5` (extract `Pattern Similarity — Experimental Research` only; branch name assigned after Phase 4 merges).
-- **Remaining inline tabs:** Pattern Similarity — Experimental Research, Pre-Market, Options Activity.
+- **Acceptance criteria:** `dashboard.py` remains the canonical Streamlit entrypoint; all ten tabs still render with unchanged labels, order, and behavior; no import-time side effects from tab modules; no trading logic changed. The remaining two tabs and component extraction are left for later bounded phases.
+- **Intended pull request:** `devin/ui-001-phase-5`
+- **Next phase:** `devin/ui-001-phase-6` (extract `Pre-Market` and `Options Activity` only; branch name assigned after Phase 5 merges).
+- **Remaining inline tabs:** Pre-Market, Options Activity.
 - **Affects trading behavior:** No
 
 ### ARCH-001: Centralize configuration and remove import-time env loading

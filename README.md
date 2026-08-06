@@ -61,6 +61,7 @@ tradex/
 │   ├── ui/tabs/coil_detector.py  # Coil Detector tab renderer
 │   ├── ui/tabs/confluence.py      # Confluence tab renderer
 │   ├── ui/tabs/help.py            # Help tab renderer
+│   ├── ui/tabs/pattern_similarity.py  # Pattern Similarity — Experimental Research tab renderer
 │   ├── ui/tabs/scanner.py         # Signal Scanner tab renderer
 │   ├── ui/tabs/signal_journal.py  # Signal Journal tab renderer
 │   └── ui/tabs/weights.py         # Scoring Weights tab renderer
