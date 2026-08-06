@@ -4,7 +4,7 @@ This file is the human-readable research specification for `INTRA-001`. The cano
 
 **Status:** `pre_registered_not_executed`  
 **Spec version:** `1`  
-**JSON SHA-256:** `239274cc650b21e215c91085d2a89e671e05d504200ac6daa4b70be60b8c81ef`
+**JSON SHA-256:** `09394d038928433529ec4c5f5ba5ff0392c764d5b59f1af71d95f4f3957c0464`
 
 This PR does **not** implement the setup, the intraday backtester, the data snapshotter, the production scorer, any dashboard change, or any trading integration. It locks exactly what a future study must do and the evidence it must produce.
 
@@ -329,11 +329,11 @@ The candidate may proceed to holdout evaluation only when all of the following p
 2. Candidate pooled net expectancy (pooled mean net R multiple) at 5 bps per side is positive.
 3. Candidate median per-symbol net expectancy (median of per-symbol mean net R) exceeds the current-score baseline by at least `0.05R`.
 4. Candidate median per-symbol net expectancy exceeds the simple-VWAP baseline by at least `0.03R`.
-5. Candidate median per-symbol profit factor is at least `1.05` (`no_loss_positive` ranks as `+∞` and passes; `no_profit` (0.0) fails; `no_trade` symbols excluded; median computable only when at least half of candidate-represented symbols have a computable per-symbol profit factor).
-6. Candidate median per-symbol profit factor is not below either baseline (`no_loss_positive` beats any finite value; equal medians pass; `no_trade` symbols excluded).
+5. Candidate median per-symbol profit factor is at least `1.05` (`no_loss_positive` ranks as `+∞` and passes; `break_even`/`no_profit` (0.0) fail; `no_trade` symbols excluded; median computable only when at least half of candidate-represented symbols have a computable per-symbol profit factor).
+6. Candidate median per-symbol profit factor is not below either baseline (`no_loss_positive` beats any finite or `0.0` value; equal medians pass; `no_trade` symbols excluded; if candidate or baseline median is not computable the split is `inconclusive`).
 7. At least `55%` of represented symbols have positive candidate mean net expectancy.
 8. At least `55%` of paired symbols (with both candidate and current-score baseline trades) outperform the current-score baseline by mean net expectancy, and the paired-symbol overlap is at least `15`.
-9. Candidate **median per-symbol maximum drawdown** is not worse than the current-score baseline by more than `2` percentage points.
+9. Candidate **median per-symbol maximum drawdown** is not worse than the current-score baseline by more than `2` percentage points: `baseline_median_mdd_pct - candidate_median_mdd_pct <= 2.0` (equivalently `candidate_median_mdd_pct >= baseline_median_mdd_pct - 2.0`), where both values are non-positive percentages.
 10. Both stock and ETF strata have nonnegative pooled expectancy (pooled mean net R \>= 0).
 11. Candidate pooled expectancy remains nonnegative at 10 bps per side.
 12. Concentration limits are met.
@@ -404,23 +404,33 @@ All metrics use a **per-symbol research ledger** and a single fixed risk unit pe
 - `median_per_symbol_expectancy` = median of per-symbol mean `net_R_multiple` across represented symbols.
 - `equal_weighted_per_symbol_mean_expectancy` = mean of per-symbol mean `net_R_multiple` across represented symbols.
 - `positive_symbol_rate` = fraction of represented symbols with mean `net_R_multiple` > 0.
-- `outperform_baseline_symbol_rate` = fraction of paired symbols (with both candidate and baseline trades) whose candidate mean `net_R_multiple` exceeds the baseline mean.
 - `median_per_symbol_total_return` = median of per-symbol `total_return_R`.
 - `median_per_symbol_maximum_drawdown` = median of per-symbol `maximum_drawdown_pct`.
 - `overall_maximum_drawdown` = maximum drawdown of the pooled global ledger, reported for diagnostics only.
-- Validation gate 9 uses **median per-symbol maximum drawdown**; the candidate is not worse than the current-score baseline by more than 2 percentage points (`candidate - baseline <= 2.0` pp).
+- Validation gate 9 uses **median per-symbol maximum drawdown**; the candidate is not worse than the current-score baseline by more than 2 percentage points: `baseline_median_mdd_pct - candidate_median_mdd_pct <= 2.0` (equivalently `candidate_median_mdd_pct >= baseline_median_mdd_pct - 2.0`).
 
 ### Profit factor
 
-- `gross_profit` = sum of positive `net_R_multiple` values for the symbol.
-- `gross_loss` = sum of negative `net_R_multiple` values for the symbol.
-- **Finite case:** `profit_factor = gross_profit / abs(gross_loss)` when `gross_loss < 0`. If `gross_profit == 0` and `gross_loss < 0`, the value is `0.0` (no-winner case).
-- **No-loss-positive case:** `gross_loss == 0` and `gross_profit > 0`. `profit_factor` is `null` (JSON-safe). It is treated as `+∞` for comparison and median ranking, so it passes any positive finite threshold and any "not below baseline" comparison against a finite or other no-loss-positive value.
-- **No-trade case:** `gross_profit == 0` and `gross_loss == 0`. `profit_factor` is `null`; the symbol is excluded from median and from paired/overlap computations and does not count toward computable-symbol minimums.
-- **Median computability:** at least half of candidate-represented symbols (rounded up) must have a computable per-symbol profit factor (finite or no-loss-positive). If this is not met, the profit-factor gate is not computable and the split is `inconclusive`.
-- **Ordering for gates 5 and 6:** `no_profit (0.0) < finite positive values < no_loss_positive (+∞)`, with `no_trade` excluded.
-- **Gate 5:** passes if the median ordered value is `no_loss_positive` or a finite value >= `1.05`. `no_profit (0.0)` fails.
-- **Gate 6:** passes if the candidate median ordered value is >= the baseline median ordered value. `no_loss_positive` beats any finite value; equal medians pass.
+Profit factor is computed per symbol from `gross_profit` (sum of positive `net_R_multiple` values) and `gross_loss` (sum of negative `net_R_multiple` values). The symbol's `trade_count` is used to distinguish executed break-even trades from no-trade.
+
+- **No trade:** `trade_count == 0`. `profit_factor` is `null`. The symbol is excluded from median, paired/overlap computations, and computable-symbol minimums. `profit_factor_case` = `no_trade`.
+- **Break even:** `trade_count > 0` and `gross_profit == 0` and `gross_loss == 0` (all executed trades net to exactly `0R`). `profit_factor` = `0.0`; `profit_factor_case` = `break_even`. The symbol is represented and included in median. Ordered below any positive finite value; fails gate 5; ties with another `0.0`/`break_even`/`no_profit` baseline for gate 6.
+- **No profit:** `trade_count > 0` and `gross_profit == 0` and `gross_loss < 0`. `profit_factor` = `0.0`; `profit_factor_case` = `no_profit`. Ordered below any positive finite value; fails gate 5; ties with another `0.0`/`break_even`/`no_profit` baseline for gate 6.
+- **Finite:** `trade_count > 0` and `gross_profit > 0` and `gross_loss < 0`. `profit_factor = gross_profit / abs(gross_loss)`; `profit_factor_case` = `finite`. Compared numerically.
+- **No loss positive:** `trade_count > 0` and `gross_loss == 0` and `gross_profit > 0`. `profit_factor` is `null` (JSON-safe); `profit_factor_case` = `no_loss_positive`. Treated as `+∞` for comparison and median ranking. Passes any positive finite threshold and any "not below baseline" comparison against `finite`, `break_even`, `no_profit`, or another `no_loss_positive` value.
+
+Each symbol carries three fields:
+- `profit_factor_value`: JSON-safe numeric for `finite`, `break_even`, and `no_profit`; `null` for `no_loss_positive` and `no_trade`.
+- `profit_factor_case`: one of `finite`, `no_loss_positive`, `no_profit`, `break_even`, `no_trade`.
+- `profit_factor_order`: rank used for comparison and median (`no_trade` excluded, `break_even`/`no_profit` = `0.0`, `finite` = its value, `no_loss_positive` = `+∞`).
+
+**Median computability:**
+- At least half of candidate-represented symbols (rounded up) must have a computable `profit_factor_case` (`finite`, `no_loss_positive`, `no_profit`, or `break_even`); `no_trade` symbols do not count.
+- For gate 6, the same minimum must be met by each baseline whose median is being compared. If a required baseline median is not computable, the profit-factor gate is not computable and the split is `inconclusive`.
+
+**Ordering for gates 5 and 6:** `break_even`/`no_profit` (`0.0`) < finite positive values < `no_loss_positive` (`+∞`), with `no_trade` excluded.
+- **Gate 5:** passes if the median ordered value is `no_loss_positive` or a finite value >= `1.05`. `break_even` and `no_profit` (`0.0`) fail.
+- **Gate 6:** passes if the candidate median ordered value is >= the baseline median ordered value. `no_loss_positive` beats any finite or `0.0` value; equal medians pass. If either median is not computable, the split is `inconclusive`.
 
 ### Concentration
 
@@ -627,7 +637,7 @@ Must then define exact changes to the production scorer, scores or eligibility, 
 The canonical locked values are in `docs/research/specs/INTRA-001-v1.json`.
 
 ```text
-JSON SHA-256: 239274cc650b21e215c91085d2a89e671e05d504200ac6daa4b70be60b8c81ef
+JSON SHA-256: 09394d038928433529ec4c5f5ba5ff0392c764d5b59f1af71d95f4f3957c0464
 ```
 
 Future study artifacts must record this SHA-256 and the commit that first added it.

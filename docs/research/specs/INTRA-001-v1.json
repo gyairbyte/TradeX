@@ -239,11 +239,11 @@
     "Candidate pooled net expectancy (pooled mean net_r_multiple) at 5 bps per side is positive",
     "Candidate median per-symbol net expectancy (median of per-symbol mean net_r_multiple) exceeds current-score baseline by at least 0.05R",
     "Candidate median per-symbol net expectancy exceeds simple-VWAP baseline by at least 0.03R",
-    "Candidate median per-symbol profit factor is at least 1.05 (no_loss_positive case ranks as +\u221e and passes; no_profit (0.0) fails; no_trade symbols excluded; median computable only when at least half of represented symbols have a computable per-symbol profit factor)",
-    "Candidate median per-symbol profit factor is not below either baseline (no_loss_positive beats finite; equal medians pass; no_trade symbols excluded)",
+    "Candidate median per-symbol profit factor is at least 1.05 (no_loss_positive case ranks as +\u221e and passes; break_even/no_profit (0.0) fail; no_trade excluded; median computable only when at least half of candidate-represented symbols have a computable per-symbol profit factor)",
+    "Candidate median per-symbol profit factor is not below either baseline (no_loss_positive beats finite and 0.0; equal medians pass; no_trade excluded; if candidate or baseline median is not computable the split is inconclusive)",
     "At least 55% of represented symbols have positive candidate mean net expectancy",
     "At least 55% of paired symbols (with both candidate and current-score baseline trades) outperform the current-score baseline by mean net expectancy, and paired-symbol overlap is at least 15",
-    "Candidate median per-symbol maximum drawdown is not worse than current-score baseline by more than 2 percentage points",
+    "Candidate median per-symbol maximum drawdown is not worse than current-score baseline by more than 2 percentage points (baseline_median_mdd_pct - candidate_median_mdd_pct <= 2.0, where both values are non-positive percentages)",
     "Both stock and ETF strata have nonnegative pooled expectancy (pooled mean net_r_multiple >= 0)",
     "Candidate pooled expectancy remains nonnegative at 10 bps per side",
     "Concentration limits are met"
@@ -504,12 +504,11 @@
       "median_per_symbol_expectancy": "median of per-symbol mean net_r_multiple across represented symbols",
       "pooled_expectancy": "mean net_r_multiple across all executed trades in the split",
       "positive_symbol_rate": "count(represented_symbols with mean net_r_multiple > 0) / count(represented_symbols)",
-      "outperform_baseline_symbol_rate": "count(represented_symbols with candidate mean net_r_multiple > baseline mean net_r_multiple) / count(represented_symbols)",
       "total_return_per_symbol": "sum of net_r_multiple for that symbol's trades in the split",
       "median_per_symbol_total_return": "median of per-symbol total return across represented symbols",
       "median_per_symbol_maximum_drawdown": "median of per-symbol maximum_drawdown_pct across represented symbols",
       "overall_maximum_drawdown": "maximum_drawdown_pct computed from the pooled chronological global trade ledger, reported for diagnostics only",
-      "gate_9_drawdown_definition": "median per-symbol maximum drawdown; candidate not worse than current-score baseline by more than 2 percentage points (difference = candidate - baseline; difference <= 2.0 pp)",
+      "gate_9_drawdown_definition": "median per-symbol maximum drawdown; candidate is not worse than current-score baseline by more than 2 percentage points: baseline_median_mdd_pct - candidate_median_mdd_pct <= 2.0 (equivalently candidate_median_mdd_pct >= baseline_median_mdd_pct - 2.0); values are non-positive percentages",
       "gate_8_paired_symbol_comparison": {
         "population": "represented symbols that have at least one executed candidate trade AND at least one executed corresponding baseline trade for the baseline being compared",
         "minimum_paired_symbol_overlap": 15,
@@ -521,38 +520,68 @@
     "profit_factor": {
       "gross_profit": "sum of positive net_r_multiple values",
       "gross_loss": "sum of negative net_r_multiple values",
-      "profit_factor": "gross_profit / abs(gross_loss) when gross_loss < 0",
-      "when_no_losing_trades": "profit_factor is reported as null and the case is 'no_loss_positive'; the profit-factor gate is treated as passed if gross_profit > 0 and the symbol is ordered above any finite value",
-      "per_symbol_profit_factor": "computed per symbol using the same case/value rules; median per-symbol profit factor uses only represented symbols with a non-null profit factor (finite or no_loss_positive)",
+      "profit_factor": "gross_profit / abs(gross_loss) for the finite case only; other cases use case metadata and profit_factor_order for comparison",
+      "when_no_losing_trades": "profit_factor_case becomes no_loss_positive; profit_factor_value is null; ordered as +\u221e and the profit-factor gate is treated as passed for that symbol",
+      "per_symbol_profit_factor": "computed per symbol using the trade_count/gross_profit/gross_loss case rules; median per-symbol profit factor uses only represented symbols whose profit_factor_case is not no_trade; ordering for comparison and median is break_even/no_profit (0.0) < finite (value) < no_loss_positive (+\u221e)",
       "cases": {
+        "no_trade": {
+          "condition": "trade_count == 0",
+          "profit_factor_value": "null",
+          "profit_factor_case": "no_trade",
+          "profit_factor_order": "excluded",
+          "gate_treatment": "excluded from median, paired/overlap computations, and computable-symbol minimums; does not count as represented for profit-factor purposes"
+        },
+        "break_even": {
+          "condition": "trade_count > 0 and gross_profit == 0 and gross_loss == 0 (all executed trades net to exactly 0R)",
+          "profit_factor_value": "0.0",
+          "profit_factor_case": "break_even",
+          "profit_factor_order": "0.0",
+          "gate_treatment": "represented and included in median; ordered below any positive finite value; fails gate 5; ties with another 0.0/break_even/no_profit baseline for gate 6"
+        },
+        "no_profit": {
+          "condition": "trade_count > 0 and gross_profit == 0 and gross_loss < 0",
+          "profit_factor_value": "0.0",
+          "profit_factor_case": "no_profit",
+          "profit_factor_order": "0.0",
+          "gate_treatment": "represented and included in median; ordered below any positive finite value; fails gate 5; ties with another 0.0/break_even/no_profit baseline for gate 6"
+        },
         "finite": {
-          "condition": "gross_loss < 0 and gross_profit > 0 (including gross_profit == 0 and gross_loss < 0 yields 0.0)",
-          "value": "gross_profit / abs(gross_loss) when gross_loss < 0",
-          "notes": "If gross_profit == 0 and gross_loss < 0, value is 0.0 (no_winner case)."
+          "condition": "trade_count > 0 and gross_profit > 0 and gross_loss < 0",
+          "profit_factor_value": "gross_profit / abs(gross_loss)",
+          "profit_factor_case": "finite",
+          "profit_factor_order": "the finite value",
+          "gate_treatment": "compared numerically"
         },
         "no_loss_positive": {
-          "condition": "gross_loss == 0 and gross_profit > 0",
-          "value": "null (JSON-safe)",
-          "ordering": "treated as positive infinity for gate comparisons and median ranking",
-          "gate_treatment": "passes any finite threshold >= 0 and any 'not below baseline' comparison against a finite or other no_loss_positive baseline"
-        },
-        "no_trade": {
-          "condition": "gross_profit == 0 and gross_loss == 0",
-          "value": "null",
-          "ordering": "excluded from median and from paired/overlap computations",
-          "gate_treatment": "does not count toward computable-symbol minimums"
+          "condition": "trade_count > 0 and gross_loss == 0 and gross_profit > 0",
+          "profit_factor_value": "null (JSON-safe)",
+          "profit_factor_case": "no_loss_positive",
+          "profit_factor_order": "+\u221e (treated as larger than any finite value for comparisons and median ranking)",
+          "gate_treatment": "passes any positive finite threshold and any 'not below baseline' comparison against finite, break_even, no_profit, or another no_loss_positive value"
         }
       },
-      "when_no_profit": "profit_factor = 0.0 and the case is 'finite'; ordered below any positive finite value",
-      "median_computability": "At least half of candidate-represented symbols (rounded up) must have a computable per-symbol profit factor (finite or no_loss_positive). If this minimum is not met, the profit-factor gate is not computable and the split is inconclusive.",
+      "when_no_profit": "profit_factor_case becomes no_profit; profit_factor_value is 0.0; ordered as 0.0",
+      "median_computability": {
+        "candidate": "At least half of candidate-represented symbols (rounded up) must have a computable profit_factor_case (finite, no_loss_positive, no_profit, or break_even). no_trade symbols do not count.",
+        "baseline_for_gate_6": "For each baseline compared in gate 6, at least half of that baseline's represented symbols (rounded up) must have a computable profit factor. If a required baseline median is not computable, gate 6 is not computable and the split is inconclusive.",
+        "when_not_computable": "the profit-factor gate is not computable and the split is inconclusive"
+      },
       "gate_5_and_6_comparison": {
         "ordering_rule": [
-          "no_profit (value 0.0) < finite positive values < no_loss_positive (treated as +\u221e)",
+          "break_even and no_profit are treated as 0.0",
+          "finite positive values are compared numerically",
+          "no_loss_positive is treated as +\u221e (greater than any finite or 0.0 value)",
           "no_trade symbols are excluded"
         ],
-        "gate_5": "Median ordered value is no_loss_positive OR (finite and >= 1.05). no_profit (0.0) fails gate 5.",
-        "gate_6": "Candidate median ordered value is >= baseline median ordered value. no_loss_positive beats any finite value; equal medians pass."
-      }
+        "gate_5": "Median ordered value is no_loss_positive OR a finite value >= 1.05. break_even and no_profit (0.0) fail.",
+        "gate_6": "Candidate median ordered value >= baseline median ordered value. no_loss_positive beats any finite or 0.0 value; equal medians pass. If either candidate or baseline median is not computable, the split is inconclusive."
+      },
+      "profit_factor_field_definitions": {
+        "profit_factor_value": "JSON-safe numeric value for finite cases and for break_even/no_profit (0.0); null for no_loss_positive and no_trade cases",
+        "profit_factor_case": "one of finite, no_loss_positive, no_profit, break_even, no_trade",
+        "profit_factor_order": "rank used for comparison and median: no_trade=excluded; break_even=0; no_profit=0; finite=its value; no_loss_positive=+\u221e"
+      },
+      "when_break_even": "profit_factor_case becomes break_even; profit_factor_value is 0.0; ordered as 0.0"
     },
     "concentration_rules": {
       "trade_count": {
