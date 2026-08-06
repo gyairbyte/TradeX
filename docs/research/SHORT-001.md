@@ -2,9 +2,9 @@
 
 ## 1. Decision summary
 
-`SHORT-001` is **Deferred** pending an approved, predefined, manifest-locked real-data study.
+`SHORT-001` is **Blocked** after the locked v1 Schwab real-data attempt failed data ingestion.
 
-The engineering and research infrastructure is complete and verified: point-in-time market-regime and relative-strength context, candidate policies, development/validation candidate selection, untouched holdout event-study gate, and paired executable-backtest gate all exist and work as designed. The only complete end-to-end run to date used deterministic synthetic data. That run validated pipeline behavior, determinism, holdout isolation, and gate enforcement; it did not establish whether the context filters improve real-market short-term trading outcomes.
+The engineering and research infrastructure is complete and verified: point-in-time market-regime and relative-strength context, candidate policies, development/validation candidate selection, untouched holdout event-study gate, and paired executable-backtest gate all exist and work as designed. The only complete end-to-end run with all gate artifacts remains the deterministic synthetic study. The locked v1 real-data study was attempted on Schwab daily OHLCV for the pre-registered 45-symbol panel; it produced `23` hard-invalid OHLC rows across `19` symbols (`0.028%` of approximately `82,035` rows), preventing snapshot generation. This v1 attempt is **Outcome E — Invalid study** and is not the end of `SHORT-001`; a separate, approved research-only data-ingestion remediation PR is required to drop malformed rows using the PATTERN-001 precedent, preserve the locked panel, record pre/post-clean counts and hashes, and rerun the unchanged snapshot/evaluation.
 
 No production score, weight, threshold, rank, eligibility, alert, or screener behavior was changed. No context policy is exposed in production.
 
