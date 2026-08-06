@@ -4,7 +4,7 @@ This file is the human-readable research specification for `INTRA-001`. The cano
 
 **Status:** `pre_registered_not_executed`  
 **Spec version:** `1`  
-**JSON SHA-256:** `dc5db43239ec46d62fc93e77b05e4146ea445d46d9405e82a30f274f48876966`
+**JSON SHA-256:** `239274cc650b21e215c91085d2a89e671e05d504200ac6daa4b70be60b8c81ef`
 
 This PR does **not** implement the setup, the intraday backtester, the data snapshotter, the production scorer, any dashboard change, or any trading integration. It locks exactly what a future study must do and the evidence it must produce.
 
@@ -291,8 +291,16 @@ Validation and holdout must each contain:
 | Represented ETFs | 8 |
 | Candidate trades in the stock stratum | 100 |
 | Candidate trades in the ETF stratum | 75 |
+| Paired-symbol overlap for gate 8 | >= 15 |
 | Single ticker share of candidate trades | \<= 10% |
 | Single ticker share of candidate net profit | \<= 20% |
+
+A **represented symbol** has at least one executed candidate trade in the split. Symbols with zero trades do not count toward the represented-symbol minimums, toward paired-symbol overlap, or toward per-symbol aggregations.
+
+Concentration rules use **per-symbol aggregated contributions**, not individual trades:
+- Trade-count concentration = maximum per-symbol trade count / total candidate trades.
+- Net-profit concentration (when total net R > 0) = maximum positive per-symbol total net R / total net R across the split. Losing symbols cannot be the numerator.
+- Absolute-loss concentration (when total net R \<= 0) = maximum absolute negative per-symbol total net R / sum of absolute per-symbol total net R for losing symbols. Profitable symbols cannot be the numerator.
 
 Failure to meet any sample minimum produces an `inconclusive` outcome.
 
@@ -307,7 +315,9 @@ The data contract for a split must also satisfy:
 | Duplicate-bar rate per symbol | \<= 1% of expected regular-session bars |
 | Symbols rejected for data quality | \<= 5% of the monthly universe |
 
-Exceeding these thresholds makes the split `inconclusive` (if the issue is sample-size or quality) or `invalid` (if the issue is a provider contract or provenance violation).
+Exceeding these **data-sufficiency** thresholds (missing bars, zero-volume bars, duplicate bars, or too many symbols rejected for data quality) makes the split `inconclusive`.
+
+**Provider or provenance violations** — silent provider substitution, missing manifest/provenance, material timestamp errors, manifest mismatch, or any other data-contract violation — make the split `invalid`, not `inconclusive`.
 
 ---
 
@@ -319,10 +329,10 @@ The candidate may proceed to holdout evaluation only when all of the following p
 2. Candidate pooled net expectancy (pooled mean net R multiple) at 5 bps per side is positive.
 3. Candidate median per-symbol net expectancy (median of per-symbol mean net R) exceeds the current-score baseline by at least `0.05R`.
 4. Candidate median per-symbol net expectancy exceeds the simple-VWAP baseline by at least `0.03R`.
-5. Candidate median per-symbol profit factor is at least `1.05`.
-6. Candidate median per-symbol profit factor is not below either baseline.
+5. Candidate median per-symbol profit factor is at least `1.05` (`no_loss_positive` ranks as `+∞` and passes; `no_profit` (0.0) fails; `no_trade` symbols excluded; median computable only when at least half of candidate-represented symbols have a computable per-symbol profit factor).
+6. Candidate median per-symbol profit factor is not below either baseline (`no_loss_positive` beats any finite value; equal medians pass; `no_trade` symbols excluded).
 7. At least `55%` of represented symbols have positive candidate mean net expectancy.
-8. At least `55%` of represented symbols outperform the current-score baseline by mean net expectancy.
+8. At least `55%` of paired symbols (with both candidate and current-score baseline trades) outperform the current-score baseline by mean net expectancy, and the paired-symbol overlap is at least `15`.
 9. Candidate **median per-symbol maximum drawdown** is not worse than the current-score baseline by more than `2` percentage points.
 10. Both stock and ETF strata have nonnegative pooled expectancy (pooled mean net R \>= 0).
 11. Candidate pooled expectancy remains nonnegative at 10 bps per side.
@@ -348,8 +358,8 @@ Evidence supports promotion consideration only if every validation gate also pas
 |---|---|
 | **Supported for promotion consideration** | All sample/data-sufficiency rules are met and all validation and holdout gates pass. |
 | **Not supported** | All sample and data-sufficiency rules are met, but one or more predefined performance gates fail. |
-| **Inconclusive** | One or more sample minimums are not met; or data-sufficiency thresholds are exceeded; or the split does not contain at least one executed candidate trade in both the stock and ETF strata; or a required median per-symbol statistic cannot be computed because fewer than half of represented symbols have at least one valid trade. |
-| **Invalid** | Holdout leakage, future-bar use, post-hoc threshold or rule changes, validation gates changed after viewing results, holdout evaluated before validation gates passed, silent provider substitution, material timestamp errors, unresolved split/corporate-action errors, missing required provenance, or non-reproducible outputs. |
+| **Inconclusive** | One or more sample minimums are not met; or data-sufficiency thresholds (missing-bar, zero-volume, duplicate-bar, or symbol-rejection rates) are exceeded; or the split does not contain at least one executed candidate trade in both the stock and ETF strata; or a required median per-symbol statistic cannot be computed because fewer than half of represented symbols have a computable value; or the profit-factor median is not computable because fewer than half of represented symbols have a computable per-symbol profit factor; or gate 8 paired-symbol overlap is below `15`. |
+| **Invalid** | Holdout leakage, future-bar use, post-hoc threshold or rule changes, validation gates changed after viewing results, holdout evaluated before validation gates passed, silent provider substitution, missing required provenance or manifest, material timestamp errors, manifest or data-contract violation, unresolved split/corporate-action errors, or non-reproducible outputs. |
 
 A result of `supported` is research-only and does not itself authorize production promotion.
 
@@ -379,22 +389,22 @@ All metrics use a **per-symbol research ledger** and a single fixed risk unit pe
 - `profit_per_trade = exit_fill - entry_fill`
 - `risk_per_trade = entry_fill - stop_price`
 - `net_R_multiple = profit_per_trade / risk_per_trade`
-- `total_return_R = chronological cumulative sum of net_R_multiple` for a ledger
-- `total_return_pct = 100 * total_return_R`
-- `equity_curve = 100 + total_return_pct`
-- `running_peak = cumulative maximum of equity_curve`
-- `drawdown_series = (equity_curve - running_peak) / running_peak`
-- `maximum_drawdown_pct = minimum value of drawdown_series` (<= 0)
+- `total_return_R = chronological cumulative sum of net_R_multiple` for a ledger.
+- Because the account is 100 units and `1R = 1%`, `total_return_pct = total_return_R`.
+- `equity_curve = 100 + total_return_R`.
+- `running_peak = cumulative maximum of equity_curve`.
+- `drawdown_series = 100 * (equity_curve - running_peak) / running_peak`.
+- `maximum_drawdown_pct = minimum value of drawdown_series` (<= 0).
 
 ### Per-symbol and pooled aggregation
 
-- A **represented symbol** has at least one executed trade in the split.
-- Symbols with zero trades are excluded from per-symbol statistics and from equal-weighted/median aggregations, but they still count toward represented-symbol sample minimums.
+- A **represented symbol** has at least one executed trade in the split. Only represented symbols count toward `represented_stock_symbols_min` and `represented_etfs_min`.
+- Symbols with zero trades are excluded from per-symbol statistics, from equal-weighted/median aggregations, and from represented-symbol sample-minimum counts.
 - `pooled_expectancy` = mean `net_R_multiple` across all executed trades in the split.
 - `median_per_symbol_expectancy` = median of per-symbol mean `net_R_multiple` across represented symbols.
 - `equal_weighted_per_symbol_mean_expectancy` = mean of per-symbol mean `net_R_multiple` across represented symbols.
 - `positive_symbol_rate` = fraction of represented symbols with mean `net_R_multiple` > 0.
-- `outperform_baseline_symbol_rate` = fraction of represented symbols whose candidate mean `net_R_multiple` exceeds the baseline mean.
+- `outperform_baseline_symbol_rate` = fraction of paired symbols (with both candidate and baseline trades) whose candidate mean `net_R_multiple` exceeds the baseline mean.
 - `median_per_symbol_total_return` = median of per-symbol `total_return_R`.
 - `median_per_symbol_maximum_drawdown` = median of per-symbol `maximum_drawdown_pct`.
 - `overall_maximum_drawdown` = maximum drawdown of the pooled global ledger, reported for diagnostics only.
@@ -402,18 +412,29 @@ All metrics use a **per-symbol research ledger** and a single fixed risk unit pe
 
 ### Profit factor
 
-- `gross_profit` = sum of positive `net_R_multiple` values.
-- `gross_loss` = sum of negative `net_R_multiple` values.
-- `profit_factor = gross_profit / abs(gross_loss)` when `gross_loss < 0`.
-- If there are no losing trades, `profit_factor` is reported as `null` (JSON-safe) and the profit-factor gate is treated as passed when `gross_profit > 0`.
-- If there are no trades or no winning trades, the profit-factor gate is not applicable and reported as `null`.
-- Median per-symbol profit factor uses only represented symbols with a non-null profit factor.
+- `gross_profit` = sum of positive `net_R_multiple` values for the symbol.
+- `gross_loss` = sum of negative `net_R_multiple` values for the symbol.
+- **Finite case:** `profit_factor = gross_profit / abs(gross_loss)` when `gross_loss < 0`. If `gross_profit == 0` and `gross_loss < 0`, the value is `0.0` (no-winner case).
+- **No-loss-positive case:** `gross_loss == 0` and `gross_profit > 0`. `profit_factor` is `null` (JSON-safe). It is treated as `+∞` for comparison and median ranking, so it passes any positive finite threshold and any "not below baseline" comparison against a finite or other no-loss-positive value.
+- **No-trade case:** `gross_profit == 0` and `gross_loss == 0`. `profit_factor` is `null`; the symbol is excluded from median and from paired/overlap computations and does not count toward computable-symbol minimums.
+- **Median computability:** at least half of candidate-represented symbols (rounded up) must have a computable per-symbol profit factor (finite or no-loss-positive). If this is not met, the profit-factor gate is not computable and the split is `inconclusive`.
+- **Ordering for gates 5 and 6:** `no_profit (0.0) < finite positive values < no_loss_positive (+∞)`, with `no_trade` excluded.
+- **Gate 5:** passes if the median ordered value is `no_loss_positive` or a finite value >= `1.05`. `no_profit (0.0)` fails.
+- **Gate 6:** passes if the candidate median ordered value is >= the baseline median ordered value. `no_loss_positive` beats any finite value; equal medians pass.
 
 ### Concentration
 
-- **Trade-count concentration**: single-ticker trade count / total executed trades in the split \<= 10%.
-- **Net-profit concentration** (when total net profit across the split is positive): single-ticker net R / total net R across the split \<= 20%.
-- **Absolute-loss concentration** (when total net profit across the split is zero or negative): single-ticker `abs(net_R)` / sum of `abs(net_R)` for all losing trades in the split \<= 20%.
+- **Trade-count concentration**: maximum per-symbol executed trade count / total executed trades in the split \<= 10%.
+- **Net-profit concentration** (when total net R across the split is positive): maximum per-symbol total net R among symbols with positive per-symbol total net R / total net R across the split \<= 20%. Losing symbols cannot be the numerator.
+- **Absolute-loss concentration** (when total net R across the split is zero or negative): maximum absolute per-symbol total net R among symbols with negative per-symbol total net R / sum of absolute per-symbol total net R for all symbols with negative per-symbol total net R in the split \<= 20%. Profitable symbols cannot be the numerator.
+- All concentration numerators use **per-symbol aggregated contributions**, not individual trades.
+
+### Gate 8 paired-symbol comparison
+
+- Population = represented symbols that have at least one executed candidate trade **and** at least one executed corresponding baseline trade for the baseline being compared.
+- Minimum paired-symbol overlap = 15. If overlap is below this, gate 8 is not computable and the split is `inconclusive`.
+- `outperform_baseline_symbol_rate` = count of paired symbols with candidate mean `net_R_multiple` > baseline mean `net_R_multiple` / count of paired symbols.
+- If a symbol has no baseline trade, it is excluded from the paired comparison for that baseline.
 
 ---
 
@@ -439,6 +460,17 @@ The locked study must require:
 - SHA-256 hash for every source file
 - No silent provider fallback
 - No mixing providers within one locked study
+
+Data-sufficiency thresholds are locked in `INTRA-001-v1.json`:
+
+| Quality check | Maximum allowed |
+|---|---|
+| Missing-bar rate per symbol | \<= 5% of expected regular-session bars |
+| Zero-volume-bar rate per symbol | \<= 10% of expected regular-session bars |
+| Duplicate-bar rate per symbol | \<= 1% of expected regular-session bars |
+| Symbols rejected for data quality | \<= 5% of the monthly universe |
+
+Exceeding these **data-sufficiency** thresholds makes the split `inconclusive`. Provider or provenance violations (silent provider substitution, missing manifest/provenance, material timestamp errors, manifest mismatch, etc.) make the split `invalid`.
 
 ---
 
@@ -595,7 +627,7 @@ Must then define exact changes to the production scorer, scores or eligibility, 
 The canonical locked values are in `docs/research/specs/INTRA-001-v1.json`.
 
 ```text
-JSON SHA-256: dc5db43239ec46d62fc93e77b05e4146ea445d46d9405e82a30f274f48876966
+JSON SHA-256: 239274cc650b21e215c91085d2a89e671e05d504200ac6daa4b70be60b8c81ef
 ```
 
 Future study artifacts must record this SHA-256 and the commit that first added it.

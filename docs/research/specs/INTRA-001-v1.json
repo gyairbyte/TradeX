@@ -232,17 +232,17 @@
     "single_ticker_max_pct_of_candidate_trades": 10.0,
     "single_ticker_max_pct_of_candidate_net_profit": 20.0,
     "failure_to_meet_sample_minimums_produces": "inconclusive",
-    "data_contract_failure_produces": "inconclusive"
+    "paired_symbol_overlap_for_gate_8_min": 15
   },
   "validation_gates": [
     "Sample and data-sufficiency minimums are met",
     "Candidate pooled net expectancy (pooled mean net_r_multiple) at 5 bps per side is positive",
     "Candidate median per-symbol net expectancy (median of per-symbol mean net_r_multiple) exceeds current-score baseline by at least 0.05R",
     "Candidate median per-symbol net expectancy exceeds simple-VWAP baseline by at least 0.03R",
-    "Candidate median per-symbol profit factor is at least 1.05",
-    "Candidate median per-symbol profit factor is not below either baseline",
+    "Candidate median per-symbol profit factor is at least 1.05 (no_loss_positive case ranks as +\u221e and passes; no_profit (0.0) fails; no_trade symbols excluded; median computable only when at least half of represented symbols have a computable per-symbol profit factor)",
+    "Candidate median per-symbol profit factor is not below either baseline (no_loss_positive beats finite; equal medians pass; no_trade symbols excluded)",
     "At least 55% of represented symbols have positive candidate mean net expectancy",
-    "At least 55% of represented symbols outperform the current-score baseline by mean net expectancy",
+    "At least 55% of paired symbols (with both candidate and current-score baseline trades) outperform the current-score baseline by mean net expectancy, and paired-symbol overlap is at least 15",
     "Candidate median per-symbol maximum drawdown is not worse than current-score baseline by more than 2 percentage points",
     "Both stock and ETF strata have nonnegative pooled expectancy (pooled mean net_r_multiple >= 0)",
     "Candidate pooled expectancy remains nonnegative at 10 bps per side",
@@ -261,21 +261,24 @@
     "not_supported": "All sample and data-sufficiency rules are met, but one or more predefined performance gates fail",
     "inconclusive": [
       "One or more sample minimums in sample_minimums is not met for the split",
-      "Data contract sufficiency thresholds are not met for the split (e.g., missing-bar rate, zero-volume rate, duplicate-bar rate, or data-quality rejection rate exceeds the locked thresholds)",
+      "Data-sufficiency thresholds (missing-bar, zero-volume, duplicate-bar, or symbol-rejection rates) are exceeded for the split",
       "The split does not contain at least one executed candidate trade in both the stock stratum and the ETF stratum",
-      "The study cannot compute a required median per-symbol statistic because fewer than half of represented symbols have at least one valid trade"
+      "A required median per-symbol statistic cannot be computed because fewer than half of represented symbols have a computable value",
+      "Profit-factor median is not computable because fewer than half of represented symbols have a computable per-symbol profit factor",
+      "Gate 8 paired-symbol overlap is below the minimum of 15"
     ],
     "invalid": [
       "Holdout leakage",
       "Future-bar use",
       "Post-hoc threshold or rule changes",
+      "Validation gates changed after viewing results",
+      "Holdout evaluated before validation gates passed",
       "Silent provider substitution",
+      "Missing required provenance or manifest",
       "Material timestamp errors",
       "Unresolved split or corporate-action errors",
-      "Missing required provenance",
       "Non-reproducible outputs",
-      "Holdout was evaluated before validation gates passed",
-      "Validation gates were changed after viewing results"
+      "Provider or data-contract violation (not merely a sample-size or data-quality shortfall)"
     ]
   },
   "metrics": {
@@ -349,7 +352,9 @@
       "max_zero_volume_bar_rate_pct_per_symbol": 10.0,
       "max_duplicate_bar_rate_pct_per_symbol": 1.0,
       "max_symbols_rejected_for_data_quality_pct": 5.0,
-      "data_contract_failure_produces": "inconclusive or invalid, depending on whether the failure is a provider/documentation issue (invalid) or a sample-size issue (inconclusive)"
+      "data_sufficiency_failure_produces": "inconclusive",
+      "provider_or_provenance_failure_produces": "invalid",
+      "distinction": "Missing/zero-volume/duplicate-bar rate or symbol-rejection rate exceeding these thresholds produces inconclusive. Provider substitution, missing provenance, material timestamp errors, manifest mismatch, or other contract violations produce invalid."
     }
   },
   "required_artifacts": [
@@ -479,21 +484,22 @@
       "risk_per_trade": "entry_fill_price - stop_price",
       "net_r_multiple": "profit_per_trade / risk_per_trade",
       "rejected_unexecutable_trade": "not included in any ledger",
-      "total_return_r": "chronological cumulative sum of net_r_multiple across all executed trades in the ledger",
-      "total_return_pct": "100 * total_return_r",
-      "equity_curve": "100 + total_return_pct",
+      "total_return_r": "chronological cumulative sum of net_r_multiple across all executed trades in the ledger (in units of R)",
+      "total_return_pct": "total_return_r (because 1R is defined as 1% of the notional 100-unit account)",
+      "equity_curve": "100 + total_return_r",
       "running_peak": "cumulative maximum of equity_curve",
-      "drawdown_series": "(equity_curve - running_peak) / running_peak",
-      "maximum_drawdown_pct": "minimum value of drawdown_series, reported as a percentage (<= 0)"
+      "drawdown_series": "100 * (equity_curve - running_peak) / running_peak",
+      "maximum_drawdown_pct": "minimum value of drawdown_series (<= 0, expressed as a percentage)"
     },
     "per_symbol_ledger": {
       "separate_ledger_per_symbol": true,
       "trades_sorted_by": "signal_time (reclaim-bar completion for candidate, signal-bar completion for Baseline A)",
       "equity_curve_per_symbol": "computed from the symbol's chronological net_r_multiple series using the same 100-unit account convention",
-      "symbols_with_zero_trades": "excluded from per-symbol statistics and from equal-weighted/median aggregations; still counted toward represented-symbol sample minimums"
+      "symbols_with_zero_trades": "excluded from per-symbol statistics, from equal-weighted/median aggregations, and from represented-symbol sample-minimum counts",
+      "represented_symbols": "symbols with at least one executed trade in the split (zero-trade symbols do not count toward represented-symbol minimums)"
     },
     "aggregation_rules": {
-      "represented_symbols": "symbols with at least one executed trade in the split",
+      "represented_symbols": "symbols with at least one executed trade in the split; these are the only symbols that count toward represented_stock_symbols_min and represented_etfs_min",
       "equal_weighted_per_symbol_mean_expectancy": "mean of per-symbol mean net_r_multiple across represented symbols",
       "median_per_symbol_expectancy": "median of per-symbol mean net_r_multiple across represented symbols",
       "pooled_expectancy": "mean net_r_multiple across all executed trades in the split",
@@ -503,30 +509,72 @@
       "median_per_symbol_total_return": "median of per-symbol total return across represented symbols",
       "median_per_symbol_maximum_drawdown": "median of per-symbol maximum_drawdown_pct across represented symbols",
       "overall_maximum_drawdown": "maximum_drawdown_pct computed from the pooled chronological global trade ledger, reported for diagnostics only",
-      "gate_9_drawdown_definition": "median per-symbol maximum drawdown; candidate not worse than current-score baseline by more than 2 percentage points (difference = candidate - baseline; difference <= 2.0 pp)"
+      "gate_9_drawdown_definition": "median per-symbol maximum drawdown; candidate not worse than current-score baseline by more than 2 percentage points (difference = candidate - baseline; difference <= 2.0 pp)",
+      "gate_8_paired_symbol_comparison": {
+        "population": "represented symbols that have at least one executed candidate trade AND at least one executed corresponding baseline trade for the baseline being compared",
+        "minimum_paired_symbol_overlap": 15,
+        "outperform_baseline_symbol_rate": "count(paired symbols with candidate mean net_r_multiple > baseline mean net_r_multiple) / count(paired symbols)",
+        "when_overlap_below_minimum": "gate 8 is not computable and the split is inconclusive",
+        "zero_trade_baseline_for_symbol": "the symbol is excluded from the paired comparison for that baseline"
+      }
     },
     "profit_factor": {
       "gross_profit": "sum of positive net_r_multiple values",
       "gross_loss": "sum of negative net_r_multiple values",
       "profit_factor": "gross_profit / abs(gross_loss) when gross_loss < 0",
-      "when_no_losing_trades": "profit_factor is reported as null (JSON-safe); the profit-factor gate is treated as passed if gross_profit > 0; if there are no trades or no winning trades, the gate is not applicable and reported as null",
-      "per_symbol_profit_factor": "computed per symbol using the same rule; median per-symbol profit factor uses only represented symbols with a non-null profit factor"
+      "when_no_losing_trades": "profit_factor is reported as null and the case is 'no_loss_positive'; the profit-factor gate is treated as passed if gross_profit > 0 and the symbol is ordered above any finite value",
+      "per_symbol_profit_factor": "computed per symbol using the same case/value rules; median per-symbol profit factor uses only represented symbols with a non-null profit factor (finite or no_loss_positive)",
+      "cases": {
+        "finite": {
+          "condition": "gross_loss < 0 and gross_profit > 0 (including gross_profit == 0 and gross_loss < 0 yields 0.0)",
+          "value": "gross_profit / abs(gross_loss) when gross_loss < 0",
+          "notes": "If gross_profit == 0 and gross_loss < 0, value is 0.0 (no_winner case)."
+        },
+        "no_loss_positive": {
+          "condition": "gross_loss == 0 and gross_profit > 0",
+          "value": "null (JSON-safe)",
+          "ordering": "treated as positive infinity for gate comparisons and median ranking",
+          "gate_treatment": "passes any finite threshold >= 0 and any 'not below baseline' comparison against a finite or other no_loss_positive baseline"
+        },
+        "no_trade": {
+          "condition": "gross_profit == 0 and gross_loss == 0",
+          "value": "null",
+          "ordering": "excluded from median and from paired/overlap computations",
+          "gate_treatment": "does not count toward computable-symbol minimums"
+        }
+      },
+      "when_no_profit": "profit_factor = 0.0 and the case is 'finite'; ordered below any positive finite value",
+      "median_computability": "At least half of candidate-represented symbols (rounded up) must have a computable per-symbol profit factor (finite or no_loss_positive). If this minimum is not met, the profit-factor gate is not computable and the split is inconclusive.",
+      "gate_5_and_6_comparison": {
+        "ordering_rule": [
+          "no_profit (value 0.0) < finite positive values < no_loss_positive (treated as +\u221e)",
+          "no_trade symbols are excluded"
+        ],
+        "gate_5": "Median ordered value is no_loss_positive OR (finite and >= 1.05). no_profit (0.0) fails gate 5.",
+        "gate_6": "Candidate median ordered value is >= baseline median ordered value. no_loss_positive beats any finite value; equal medians pass."
+      }
     },
     "concentration_rules": {
       "trade_count": {
+        "numerator": "maximum per-symbol executed trade count in the split",
         "denominator": "total_executed_trades_in_split",
         "max_ticker_share_pct": 10.0
       },
       "net_profit_share": {
-        "applies_when": "total_net_profit_across_split > 0",
-        "denominator": "total_net_profit_across_split (sum of net_r_multiple across all executed trades in the split)",
+        "applies_when": "total_net_r_across_split > 0",
+        "numerator": "maximum per-symbol total net_r_multiple among symbols with positive per-symbol total net R",
+        "denominator": "total_net_r_across_split (sum of net_r_multiple across all executed trades in the split)",
         "max_ticker_share_pct": 20.0,
-        "when_total_not_positive": "use absolute_loss_concentration instead"
+        "when_total_not_positive": "use absolute_loss_concentration instead",
+        "losing_symbols_cannot_be_numerator": true
       },
       "absolute_loss_concentration": {
-        "denominator": "sum of abs(net_r_multiple) for all trades with net_r_multiple < 0 in the split",
+        "applies_when": "total_net_r_across_split <= 0",
+        "numerator": "maximum absolute per-symbol total net_r_multiple among symbols with negative per-symbol total net R",
+        "denominator": "sum of abs(per-symbol total net_r_multiple) for all symbols with negative per-symbol total net R in the split",
         "max_ticker_share_pct": 20.0,
-        "note": "used only when total_net_profit_across_split <= 0"
+        "profitable_symbols_cannot_be_numerator": true,
+        "note": "per-symbol aggregated contributions, not individual trades"
       }
     }
   },
