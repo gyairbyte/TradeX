@@ -71,6 +71,8 @@ Scanner runs → results DataFrame
 | `tradex/research/pattern_validation/` | Locked, point-in-time pattern-similarity validation study (PATTERN-001). Not used in production. |
 | `tradex/research/score_validation/` | Reproducible score-validation event study (VAL-002). |
 | `tradex/research/short_context/` | Short-term market-regime context research (SHORT-001; Deferred pending a real-data study). |
+| `docs/research/INTRA-001-SPEC.md` | Pre-registered research specification for the long open-drive VWAP pullback continuation study. |
+| `docs/research/specs/INTRA-001-v1.json` | Machine-readable locked specification for `INTRA-001`; future artifacts must record its SHA-256. |
 | `tradex/options/models.py` | Typed options source/capability and scan report models (`OptionsDataKind`, `OptionsSourceStatus`, `OptionsActivityReport`). |
 | `tradex/options/flow.py` | Capability-aware options source resolution, true-flow scanning, chain-snapshot scanning, and non-directional put/call balance. |
 | `tradex/ui/dashboard.py` | Streamlit dashboard router: Scanner, Coil Detector, Confluence, Pattern Similarity — Experimental Research, Pre-Market, Options Activity, Alerts, Signal Journal, Weights, Help |

@@ -344,7 +344,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
   - A valid outcome is `insufficient evidence to change the production score`; the study does not force a recommendation.
 - **Intended pull request:** `devin/reevaluate-scores-with-validated-data`
 - **Affects trading behavior:** No
-- **Next recommended PR:** `devin/intra-001-spec` (INTRA-001 research specification)
+- **Next recommended PR:** `devin/intra-001-b-intraday-data` (INTRA-001B data and manifest infrastructure)
 
 ---
 
@@ -469,16 +469,20 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Redesign intraday scorer around a specific setup
 - **Category:** Intraday trading
 - **Priority:** Medium
-- **Status:** Proposed
+- **Status:** In progress — research specification complete; implementation and study not started
+- **Research specification:** `docs/research/INTRA-001-SPEC.md`
+- **Locked machine-readable spec:** `docs/research/specs/INTRA-001-v1.json`
+- **Specification branch:** `devin/intra-001-spec`
 - **Problem statement:** The intraday score is a loose bundle of indicators without VWAP, time-of-day, or liquidity context.
-- **Recommended action:** Define a concrete setup (e.g., "VWAP-based open-drive pullback") and rebuild the scorer around it.
-- **Reason:** A generic score is not actionable for intraday trading.
+- **Recommended action:** Execute the phased plan locked in `docs/research/INTRA-001-SPEC.md`: build five-minute intraday data infrastructure, implement the research detector and execution engine, then run a locked real-data study. Rebuild the production scorer only if the study passes and a separate Gary-approved production PR is authorized.
+- **Reason:** A generic score is not actionable for intraday trading. The concrete open-drive VWAP pullback setup and its two baselines are pre-registered before any code changes.
 - **Dependencies:** VAL-001
-- **Files likely affected:** `tradex/signals/intraday.py`, `tradex/signals/indicators.py`, `tradex/data/fetcher.py`
-- **Testing requirements:** Backtest; unit tests for VWAP/time-of-day indicators.
-- **Acceptance criteria:** New score outperforms the current score on a hold-out period with explicit entry/exit rules.
-- **Intended pull request:** `devin/redesign-intraday-score`
-- **Affects trading behavior:** Yes
+- **Files likely affected:** `docs/research/INTRA-001-SPEC.md`, `docs/research/specs/INTRA-001-v1.json`, `docs/PROJECT-TRACKER.md` (this specification PR changes no `tradex/` or test code)
+- **Testing requirements:** JSON schema validation; full test suite; documentation/search audit.
+- **Acceptance criteria:** One candidate setup, two baselines, locked universe/splits/costs, sample minimums, validation gates, holdout gates, outcome definitions, provider feasibility review, and phased implementation plan are documented and agreed before `INTRA-001B` begins.
+- **Intended pull request:** `devin/intra-001-spec`
+- **Affects trading behavior:** Yes — this specification describes a future trading-behavior change, but the current PR changes no production code, scores, weights, thresholds, rankings, or eligibility.
+- **This specification PR changes no trading behavior.**
 
 ### PATTERN-001: Validate pattern matcher before dashboard promotion
 
@@ -673,21 +677,26 @@ This is the master backlog for recommendations from the Devin review. Items are 
 |---|---|
 | Completed | 30 |
 | Deferred | 1 |
-| Proposed | 1 |
-| In progress | 0 |
+| Proposed | 0 |
+| In progress | 1 |
 | Blocked | 0 |
 
-The original engineering-foundation and UI-refactor backlog is substantially complete. Remaining work is primarily a new intraday hypothesis specification (`INTRA-001`) and a future real-data study for the deferred short-term context hypothesis (`SHORT-001`). Production strategy changes remain promotion-gated.
+The original engineering-foundation and UI-refactor backlog is substantially complete. The `INTRA-001` research specification is now in `docs/research/INTRA-001-SPEC.md`; remaining work is the phased implementation (INTRA-001B/C/D) and a future real-data study for the deferred short-term context hypothesis (`SHORT-001`). Production strategy changes remain promotion-gated.
 
 **Remaining non-completed items:**
 - `SHORT-001`: Deferred (infrastructure complete; gate not passed on synthetic data; real-data study required).
-- `INTRA-001`: Proposed.
+- `INTRA-001`: In progress — research specification complete; implementation and study not started.
 
 **Recommended next work order:**
-1. **INTRA-001 research specification** — Define one exact intraday setup and locked study methodology before implementing any production scorer change. Research-only first.
-2. **SHORT-001 real-data study** — Reopen only with an approved, predefined, manifest-locked real-data study if and when Gary prioritizes it.
+1. **INTRA-001B data and manifest infrastructure** — Approved provider integration, date-ranged five-minute snapshot, point-in-time universe manifest, session normalization, data-quality validation.
+2. **INTRA-001C research detector and execution engine** — Session VWAP, opening-drive state, pullback/reclaim detector, intraday execution model, current-score and simple-VWAP baselines, synthetic tests only.
+3. **INTRA-001D locked real-data study** — Build manifest from approved source, run development/validation, run holdout only if validation gates pass, commit safe reproducibility artifacts, record outcome.
+4. **Separate Gary-approved production PR** — Only if all gates pass and methodology remains valid; must define exact scorer, score, weight, threshold, ranking, screener, UI, alert, and rollback changes.
+5. **SHORT-001 real-data study** — Reopen only with an approved, predefined, manifest-locked real-data study if and when Gary prioritizes it.
 
 **Recommended next pull request order:**
-1. `devin/intra-001-spec` (INTRA-001 research specification — define one exact intraday setup and locked study methodology before any production implementation).
-2. `devin/short-001-real-data-study` (future real-data study for SHORT-001; not started until explicitly approved).
+1. `devin/intra-001-b-intraday-data` (INTRA-001B data and manifest infrastructure).
+2. `devin/intra-001-c-research-engine` (INTRA-001C research detector and execution engine).
+3. `devin/intra-001-d-locked-study` (INTRA-001D locked real-data study).
+4. `devin/short-001-real-data-study` (future real-data study for SHORT-001; not started until explicitly approved).
 

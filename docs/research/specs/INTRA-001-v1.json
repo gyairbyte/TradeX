@@ -1,0 +1,422 @@
+{
+  "schema_version": "1.0",
+  "task_id": "INTRA-001",
+  "spec_version": 1,
+  "study_name": "INTRA-001: Long open-drive VWAP pullback continuation",
+  "status": "pre_registered_not_executed",
+  "hypothesis": "Among sufficiently liquid U.S.-listed equities and ETFs exhibiting a confirmed bullish opening drive, a first regular-session pullback to and reclaim of session VWAP between 10:00 AM and 11:30 AM Eastern produces superior net expectancy and comparable or better drawdown than both the existing production intraday score and a simple VWAP-reclaim baseline.",
+  "direction": "long_only",
+  "bar_interval": "5m",
+  "exchange_calendar": "XNYS",
+  "timezone": "America/New_York",
+  "session": {
+    "regular_session_start": "09:30",
+    "regular_session_end": "16:00",
+    "exclude_early_close_sessions": true,
+    "exclude_premarket_bars": true,
+    "exclude_after_hours_bars": true,
+    "session_vwap_resets": "beginning_of_every_regular_session",
+    "decisions_use_only_completed_bars": true,
+    "timestamp_semantics": {
+      "provider_timestamps_must_be_documented": true,
+      "normalize_to": "bar_start",
+      "availability_rule": "A five-minute bar beginning at T is not available until T+5 minutes",
+      "example": "A five-minute bar beginning at 10:00 AM is not available until 10:05 AM Eastern"
+    }
+  },
+  "vwap_formula": {
+    "typical_price": "(high + low + close) / 3",
+    "cumulative_price_volume": "cumulative_sum(typical_price * volume)",
+    "cumulative_volume": "cumulative_sum(volume)",
+    "session_vwap": "cumulative_price_volume / cumulative_volume",
+    "zero_volume_sessions": "reject_or_explicitly_flag"
+  },
+  "liquidity": {
+    "prior_close_min_usd": 5.0,
+    "prior_20_sessions_median_dollar_volume_min_usd": 50000000.0,
+    "prior_sessions_for_time_of_day_baseline": 20,
+    "current_session_volume_nonzero": true,
+    "security_type_exclusions": [
+      "OTC",
+      "warrant",
+      "right",
+      "unit",
+      "preferred_stock"
+    ],
+    "security_type_source_required": true,
+    "all_ohlcv_bars_must_validate": true
+  },
+  "opening_drive_qualification": {
+    "evaluation_time": "10:00 AM Eastern",
+    "completed_bars_required": 6,
+    "return_from_session_open_to_10am_close_min_pct": 0.75,
+    "close_at_10am_above_session_vwap": true,
+    "cumulative_volume_930_to_10am_min_multiple_of_prior_20_same_window_median": 1.5,
+    "no_missing_bars_between_930_and_10am": true,
+    "all_input_bars_pass_ohlcv_validation": true,
+    "state_fixed_at": "10:00 AM Eastern"
+  },
+  "pullback_and_reclaim": {
+    "search_window_start": "first completed five-minute bar after 10:00 AM Eastern",
+    "search_window_end": "five-minute bar completing at 11:30 AM Eastern",
+    "reclaim_bar_definition": {
+      "low_less_than_or_equal_to_session_vwap_for_this_bar": true,
+      "close_strictly_above_session_vwap_for_this_bar": true,
+      "close_greater_than_open": true,
+      "close_at_or_above_session_open_930": true,
+      "opening_drive_qualification_remains_valid": true,
+      "no_prior_bar_in_window_already_satisfied_reclaim": true
+    },
+    "signal_known_at": "reclaim bar completion"
+  },
+  "entry": {
+    "entry_price": "next available five-minute bar open",
+    "no_assumption_of_entry_on_reclaim_bar": true,
+    "skip_if_next_bar_missing": true,
+    "reject_if_next_bar_open_at_or_below_stop": true,
+    "max_one_trade_per_ticker_per_session": true,
+    "no_overlapping_positions_for_same_ticker": true
+  },
+  "stop": {
+    "stop_buffer": "max(0.01, reclaim_close * 0.0005)",
+    "stop_price": "reclaim_low - stop_buffer",
+    "must_be_strictly_below_anticipated_entry": true,
+    "fixed_after_entry": true
+  },
+  "target": {
+    "risk_per_share": "entry_fill - stop_price",
+    "target_price": "entry_fill + (1.5 * risk_per_share)",
+    "reject_nonpositive_or_invalid_risk": true
+  },
+  "exit_policy": {
+    "priority": [
+      "gap_through_stop_at_bar_open_exit_at_open",
+      "gap_through_target_at_bar_open_exit_at_open",
+      "intrabar_stop_or_target_touch",
+      "both_stop_and_target_touched_in_one_bar_use_stop_first",
+      "time_exit_at_close_of_bar_ending_at_1545_Eastern",
+      "if_expected_time_exit_bar_missing_exit_at_last_valid_regular_session_close_before_exchange_close",
+      "never_hold_overnight"
+    ],
+    "intrabar_policy": "stop_first",
+    "time_exit_time": "15:45 Eastern"
+  },
+  "costs": {
+    "primary": {
+      "entry_slippage_bps": 5.0,
+      "exit_slippage_bps": 5.0,
+      "commission_bps": 0.0
+    },
+    "sensitivity_scenarios_bps_per_side": [
+      0.0,
+      2.5,
+      5.0,
+      10.0
+    ],
+    "slippage_direction": "adverse_on_both_entry_and_exit"
+  },
+  "baselines": {
+    "current_production_intraday_score": {
+      "name": "Baseline A - Current production intraday score",
+      "scorer": "tradex.signals.intraday.score",
+      "weights": "fresh IntradayWeights() instance",
+      "load_saved_weights": false,
+      "use_completed_five_minute_bars_only": true,
+      "signal_window": "10:00 AM through 11:30 AM Eastern",
+      "trigger": "first score of at least 40 per ticker-session",
+      "entry": "next five-minute bar open",
+      "liquidity_rules": "same_as_candidate",
+      "stop_formula": "same_as_candidate",
+      "target": "same_as_candidate",
+      "costs": "same_as_candidate",
+      "one_trade_per_session": true,
+      "time_exit": "same_as_candidate",
+      "purpose": "measure whether the concrete setup adds value beyond the existing generic score"
+    },
+    "simple_vwap_reclaim": {
+      "name": "Baseline B - Simple VWAP reclaim",
+      "liquidity_rules": "same_as_candidate",
+      "pullback_window": "same_as_candidate",
+      "reclaim_bar_definition": "same_as_candidate",
+      "entry": "same_as_candidate",
+      "stop": "same_as_candidate",
+      "target": "same_as_candidate",
+      "costs": "same_as_candidate",
+      "exit_rules": "same_as_candidate",
+      "do_not_require": [
+        "opening_drive_return_>=_+0.75%",
+        "1.50x_opening_volume_condition"
+      ],
+      "purpose": "measure whether the opening-drive requirements add value beyond a generic VWAP reclaim"
+    }
+  },
+  "universe": {
+    "etfs": [
+      "SPY",
+      "QQQ",
+      "IWM",
+      "DIA",
+      "XLK",
+      "XLF",
+      "XLE",
+      "XLV",
+      "XLI",
+      "XLY",
+      "XLP",
+      "XLU",
+      "SMH"
+    ],
+    "stocks": {
+      "reconstitution_frequency": "monthly",
+      "selection_time": "beginning_of_each_calendar_month",
+      "information_cutoff": "before_first_session_of_that_month",
+      "rank_metric": "median regular-session dollar volume over previous 20 complete sessions",
+      "rank_top_n": 50,
+      "prior_close_min_usd": 5.0,
+      "point_in_time_membership_manifest": true,
+      "include_delisted_if_data_source_supports": true,
+      "do_not_construct_from_todays_index_constituents": true,
+      "security_type_exclusions": "same_as_liquidity"
+    }
+  },
+  "date_range": {
+    "dataset_start": "2022-01-03",
+    "dataset_end": "2025-12-31",
+    "splits": {
+      "development": {
+        "start": "2022-01-03",
+        "end": "2023-06-30"
+      },
+      "validation": {
+        "start": "2023-07-03",
+        "end": "2024-06-28"
+      },
+      "holdout": {
+        "start": "2024-07-01",
+        "end": "2025-12-31"
+      }
+    },
+    "splits_are_chronological_and_non_overlapping": true,
+    "holdout_must_not_be_inspected_during_implementation_or_candidate_debugging": true
+  },
+  "sample_minimums": {
+    "applies_to": ["validation", "holdout"],
+    "executed_candidate_trades_min": 300,
+    "represented_stock_symbols_min": 25,
+    "represented_etfs_min": 8,
+    "stock_stratum_trades_min": 100,
+    "etf_stratum_trades_min": 75,
+    "single_ticker_max_pct_of_candidate_trades": 10.0,
+    "single_ticker_max_pct_of_candidate_net_profit": 20.0,
+    "failure_to_meet_sample_minimums_produces": "inconclusive"
+  },
+  "validation_gates": [
+    "Sample minimums are met",
+    "Candidate pooled net expectancy at 5 bps per side is positive",
+    "Candidate median per-symbol net expectancy exceeds current-score baseline by at least 0.05R",
+    "Candidate median per-symbol net expectancy exceeds simple-VWAP baseline by at least 0.03R",
+    "Candidate median per-symbol profit factor is at least 1.05",
+    "Candidate median per-symbol profit factor is not below either baseline",
+    "At least 55% of represented symbols have positive candidate expectancy",
+    "At least 55% of represented symbols outperform the current-score baseline",
+    "Candidate maximum drawdown is not worse than current-score baseline by more than 2 percentage points",
+    "Both stock and ETF strata have nonnegative pooled expectancy",
+    "Candidate pooled expectancy remains nonnegative at 10 bps per side",
+    "Concentration limits are met"
+  ],
+  "holdout_gates": {
+    "description": "All validation gates must pass unchanged on the untouched holdout",
+    "additional_rules": [
+      "No threshold, setup rule, universe rule, entry, stop, target, exit, or cost assumption may change after validation results are reviewed",
+      "The holdout may be run only once for this locked specification",
+      "A passing holdout does not authorize production integration"
+    ]
+  },
+  "outcome_definitions": {
+    "supported_for_promotion_consideration": "All validation and holdout gates pass",
+    "not_supported": "Data and sample requirements are met, but one or more predefined performance gates fail",
+    "inconclusive": "One or more sample minimums are not met, stock and ETF strata materially disagree, or uncertainty is too high to support or reject the hypothesis",
+    "invalid": [
+      "Holdout leakage",
+      "Future-bar use",
+      "Post-hoc threshold changes",
+      "Silent provider substitution",
+      "Material timestamp errors",
+      "Unresolved split/corporate-action errors",
+      "Missing required provenance",
+      "Non-reproducible outputs"
+    ]
+  },
+  "metrics": {
+    "report_for": [
+      "Candidate",
+      "Current-score baseline",
+      "Simple-VWAP-reclaim baseline",
+      "Stock stratum",
+      "ETF stratum",
+      "Pooled observations",
+      "Equal-weighted per-symbol results",
+      "Development",
+      "Validation",
+      "Holdout",
+      "Every cost scenario"
+    ],
+    "required": [
+      "Eligible sessions",
+      "Signals",
+      "Executed trades",
+      "Rejected/unexecutable trades",
+      "Unique symbols",
+      "Trades per symbol",
+      "Net return per trade",
+      "Net R multiple per trade",
+      "Mean expectancy",
+      "Median expectancy",
+      "Equal-weighted mean per-symbol expectancy",
+      "Median per-symbol expectancy",
+      "Positive-trade rate",
+      "Profit factor",
+      "Total return",
+      "Maximum drawdown",
+      "Average holding time",
+      "Stop exits",
+      "Target exits",
+      "Time exits",
+      "Same-bar ambiguity count",
+      "Missing-bar count",
+      "Duplicate-bar count",
+      "Zero-volume count",
+      "Contribution by symbol",
+      "Contribution by month",
+      "Contribution by opening-gap bucket",
+      "Cost sensitivity"
+    ]
+  },
+  "data_contract": {
+    "required": [
+      "Five-minute OHLCV bars",
+      "Complete regular-session history",
+      "Provider provenance",
+      "Explicit consolidated-versus-venue-specific volume disclosure",
+      "Timestamp convention",
+      "Timezone",
+      "Corporate-action and adjustment policy",
+      "Duplicate-bar reporting",
+      "Missing-bar reporting",
+      "Zero-volume reporting",
+      "Exchange calendar version",
+      "Security-type provenance",
+      "Point-in-time universe membership",
+      "Delisted-symbol handling",
+      "Dataset manifest",
+      "SHA-256 hash for every source file",
+      "No silent provider fallback",
+      "No mixing providers within one locked study"
+    ]
+  },
+  "required_artifacts": [
+    "study.json",
+    "spec.lock.json",
+    "manifest.lock.json",
+    "universe_manifest.csv",
+    "data_quality.csv",
+    "session_features.csv",
+    "signals.csv",
+    "trades.csv",
+    "candidate_metrics.csv",
+    "baseline_metrics.csv",
+    "ticker_comparison.csv",
+    "monthly_comparison.csv",
+    "cost_sensitivity.csv",
+    "report.md"
+  ],
+  "research_integrity_requirements": [
+    "Lookahead bias",
+    "Same-bar ambiguity",
+    "Timestamp semantics",
+    "Session boundaries",
+    "DST changes",
+    "Early-close sessions",
+    "Missing bars",
+    "Duplicate bars",
+    "Zero-volume bars",
+    "Trading halts",
+    "Corporate actions",
+    "Adjusted versus unadjusted prices",
+    "Survivorship bias",
+    "Delisting bias",
+    "Point-in-time universe membership",
+    "Venue-specific versus consolidated volume",
+    "Provider changes",
+    "Slippage",
+    "Liquidity and capacity",
+    "Overlapping positions",
+    "Multiple comparisons",
+    "Parameter fishing",
+    "Regime dependence",
+    "Saved user weights",
+    "Hidden local configuration",
+    "Determinism"
+  ],
+  "future_implementation_phases": {
+    "INTRA-001B": {
+      "title": "Intraday data and manifest infrastructure",
+      "deliverables": [
+        "Approved provider integration",
+        "Date-ranged five-minute snapshot",
+        "Point-in-time universe manifest",
+        "Session normalization",
+        "Data-quality validation"
+      ],
+      "out_of_scope": "Strategy evaluation"
+    },
+    "INTRA-001C": {
+      "title": "Research detector and execution engine",
+      "deliverables": [
+        "Session VWAP",
+        "Opening-drive state",
+        "Pullback/reclaim detector",
+        "Intraday execution model",
+        "Current-score and simple-VWAP baselines",
+        "Synthetic tests only"
+      ],
+      "out_of_scope": "No real holdout evaluation"
+    },
+    "INTRA-001D": {
+      "title": "Locked real-data study",
+      "deliverables": [
+        "Build manifest from approved source",
+        "Run development and validation",
+        "Run holdout only if validation gates pass",
+        "Commit safe reproducibility artifacts",
+        "Record supported, rejected, inconclusive, or invalid outcome"
+      ]
+    },
+    "production_prerequisite": {
+      "title": "Separate production PR",
+      "conditions": [
+        "Both validation and holdout gates pass",
+        "Methodology remains valid",
+        "Gary explicitly approves production consideration"
+      ],
+      "must_define": [
+        "Production scorer changes",
+        "Scores or eligibility changes",
+        "Weights",
+        "Thresholds",
+        "Ranking",
+        "Screener behavior",
+        "UI",
+        "Alerts",
+        "Rollback"
+      ]
+    }
+  },
+  "production_boundary": {
+    "this_pr_changes_production_code": false,
+    "this_pr_changes_trading_behavior": false,
+    "this_pr_adds_research_implementation": false,
+    "this_pr_retrieves_real_market_data": false,
+    "production_promotion_requires": "separate Gary-approved production PR after INTRA-001D gates pass"
+  }
+}
