@@ -526,7 +526,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Phase 4 (done):** Extracted `Scanner` into `tradex/ui/tabs/scanner.py` on branch `devin/ui-001-phase-4` through PR #32.
 - **Phase 5 (done):** Extracted `Pattern Similarity — Experimental Research` into `tradex/ui/tabs/pattern_similarity.py` on branch `devin/ui-001-phase-5` through PR #33.
 - **Phase 6 (done):** Extracted `Pre-Market` into `tradex/ui/tabs/premarket.py` and `Options Activity` into `tradex/ui/tabs/options_activity.py` on branch `devin/ui-001-phase-6` through PR #34.
-- **Problem statement:** `tradex/ui/dashboard.py` was 2,378 lines and imported every backend module. After Phase 6 it is 444 lines; `tradex/ui/tabs/premarket.py` is ~260 lines and `tradex/ui/tabs/options_activity.py` is ~195 lines. All ten tabs are now routed through `tradex/ui/tabs/` modules; no tabs remain inline in `dashboard.py`.
+- **Problem statement:** `tradex/ui/dashboard.py` was 2,378 lines and imported every backend module. After Phase 6 it is 444 lines; `tradex/ui/tabs/premarket.py` is 260 lines and `tradex/ui/tabs/options_activity.py` is 262 lines. All ten tabs are now routed through `tradex/ui/tabs/` modules; no tabs remain inline in `dashboard.py`.
 - **Recommended action:** No further UI-001 phases required. Future UI work should use `tradex/ui/tabs/<name>.py` and keep `dashboard.py` as the router.
 - **Reason:** Improves reviewability and makes the UI testable.
 - **Dependencies:** TEST-001
