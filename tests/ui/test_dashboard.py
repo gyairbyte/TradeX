@@ -129,6 +129,8 @@ def test_dashboard_scan_passes_normalized_watchlist_to_record_scan(fresh_signal_
     report.fallback_used = False
     report.requested_provider = "yahoo"
     report.actual_provider = "yahoo"
+    report.providers_attempted = ()
+    report.attempt_log = []
 
     run_mock = MagicMock(return_value=report)
     record_mock = MagicMock(return_value="session-123")
@@ -137,6 +139,8 @@ def test_dashboard_scan_passes_normalized_watchlist_to_record_scan(fresh_signal_
 
     # Execute the Streamlit UI as __main__ to trigger the scan.
     import runpy
+    sys.modules.pop("tradex.ui.tabs.scanner", None)
+    sys.modules.pop("tradex.ui.dashboard", None)
     runpy.run_module("tradex.ui.dashboard", run_name="__main__")
 
     assert run_mock.call_count == 1
