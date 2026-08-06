@@ -202,7 +202,7 @@ No source, test, gate, or production code was changed. Verification results:
 - `git diff --check` clean
 - `uv run ruff check tests scripts` clean
 - `uv run python -m json.tool docs/research/specs/SHORT-001-schwab-v1.json` valid
-- `uv run pytest tests/data tests/market tests/backtest tests/research/short_context tests/research/score_validation -q` — 351 passed
-- Full isolated suite with temporary `HOME` and redirected persistence paths — 1229 passed, 5 pre-existing `datetime.utcnow()` deprecation warnings
-- `uv run python -m tradex.research.short_context --help`, `snapshot --help`, and `evaluate --help` work offline
-- Real `~/.tradex` db files (alerts.db, earnings_cache.db, fingerprints.db, signals.db, watchlists.db) were not modified by tests
+- `uv run pytest tests/data tests/market tests/backtest tests/research/short_context tests/research/score_validation -q` passes
+- Full isolated suite with temporary `HOME` and redirected persistence paths passes
+- `uv run python -m tradex.research.short_context --help` works offline
+- Real `~/.tradex` files unchanged

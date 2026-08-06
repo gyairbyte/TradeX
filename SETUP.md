@@ -440,7 +440,7 @@ uv run pytest tests/market tests/research/short_context -q
 
 The candidate policies are `off` (baseline), `market_rs`, and `market_sector_rs`. A candidate becomes eligible for a future production-integration PR if both the event-study and paired-backtest holdout gates pass; until then, the production screener does not expose context filtering and the existing short-term score, weights, and thresholds remain unchanged.
 
-**Current status:** The synthetic verification run confirmed the pipeline is deterministic and the gates are enforced, but the selected `market_sector_rs` candidate failed both holdout gates on synthetic data. No manifest-locked real-data study exists, so SHORT-001 is **Deferred** pending a future approved study. See `docs/research/SHORT-001.md` for the full disposition.
+**Current status:** The synthetic verification run confirmed the pipeline is deterministic and the gates are enforced, but the selected `market_sector_rs` candidate failed both holdout gates on synthetic data. The pre-registered real-data study was attempted on Schwab daily OHLCV, but 22 of 45 locked symbols returned candles that violate elementary OHLC invariants (e.g., `low > open` or `high < open`), so the snapshot failed before a manifest could be generated. SHORT-001 is therefore **Blocked** (data invalid); no candidate was selected, no holdout gate was reached, and the production short-term score, weights, thresholds, and behavior remain unchanged. See `docs/research/SHORT-001.md` for the disposition and `docs/research/SHORT-001-SCHWAB-STUDY.md` for the real-data audit.
 
 ---
 
@@ -448,7 +448,7 @@ The candidate policies are `off` (baseline), `market_rs`, and `market_sector_rs`
 
 `docs/research/INTRA-001-SPEC.md` pre-registers a concrete, research-only intraday setup. It defines the candidate long open-drive VWAP pullback continuation strategy, two baselines (current production `intraday.score` and a simple VWAP reclaim), locked 2022–2025 splits, sample minimums, validation/holdout gates, and a provider-feasibility review.
 
-No `INTRA-001` implementation code exists yet. The current production intraday scorer remains unchanged. Implementation is paused until the approved `SHORT-001` Schwab real-data study is completed, after which the phased plan in the spec resumes (`INTRA-001B` data infrastructure, `INTRA-001C` research engine, `INTRA-001D` locked real-data study). A separate Gary-approved production PR is required before any production scorer, weight, threshold, ranking, screener, UI, or alert change.
+No `INTRA-001` implementation code exists yet. The current production intraday scorer remains unchanged. Implementation is paused until the `SHORT-001` Schwab data-quality issue is resolved, after which the phased plan in the spec resumes (`INTRA-001B` data infrastructure, `INTRA-001C` research engine, `INTRA-001D` locked real-data study). A separate Gary-approved production PR is required before any production scorer, weight, threshold, ranking, screener, UI, or alert change.
 
 ---
 
