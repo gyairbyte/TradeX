@@ -4,7 +4,7 @@ This file is the human-readable research specification for `INTRA-001`. The cano
 
 **Status:** `pre_registered_not_executed`  
 **Spec version:** `1`  
-**JSON SHA-256:** `f858b634ce35919a277e9a88e7ef4caf3947e7e6dc047e9eacd8d7bf23540d9b`
+**JSON SHA-256:** `dc5db43239ec46d62fc93e77b05e4146ea445d46d9405e82a30f274f48876966`
 
 This PR does **not** implement the setup, the intraday backtester, the data snapshotter, the production scorer, any dashboard change, or any trading integration. It locks exactly what a future study must do and the evidence it must produce.
 
@@ -16,7 +16,7 @@ This PR does **not** implement the setup, the intraday backtester, the data snap
 
 This specification is the source of truth for the future implementation of:
 
-- `INTRA-001B` — intraday data and manifest infrastructure
+- `INTRA-001B` — intraday data and manifest infrastructure (begins after the approved `SHORT-001` Schwab real-data study is completed)
 - `INTRA-001C` — research detector and execution engine
 - `INTRA-001D` — locked real-data study
 
@@ -108,7 +108,7 @@ The specification requires a documented security-type source to enforce these ex
 
 ### 5.4 Opening-drive qualification
 
-Evaluate after the first six completed five-minute bars, at 10:00 AM Eastern. The ticker qualifies when all of the following are true:
+Evaluate after the first six completed five-minute bars, at 10:00 AM Eastern. The opening-drive state is computed from those six bars and is then frozen. It must not be recomputed using any bar after 10:00 AM. The ticker qualifies when all of the following are true:
 
 - Return from the 9:30 AM session open to the 10:00 AM close is at least `+0.75%`.
 - The 10:00 AM close is above session VWAP.
@@ -116,7 +116,7 @@ Evaluate after the first six completed five-minute bars, at 10:00 AM Eastern. Th
 - No required bar from 9:30 AM through 10:00 AM is missing.
 - All input bars pass OHLCV validation.
 
-The opening-drive state becomes fixed at 10:00 AM and must not be recomputed using later information.
+The frozen opening-drive qualification is referenced by the pullback/reclaim logic; it is never recomputed after 10:00 AM.
 
 ### 5.5 Pullback and VWAP reclaim
 
@@ -129,7 +129,7 @@ Search from the first completed bar after 10:00 AM through the bar completing at
 - The opening-drive qualification remains valid.
 - No prior bar in the pullback window already satisfied the reclaim definition.
 
-The signal becomes known only at the reclaim bar’s completion.
+The signal becomes known only at the reclaim bar’s completion. The reclaim logic uses the frozen 10:00 AM opening-drive qualification; it must not recompute that qualification from post-10:00 AM bars.
 
 ### 5.6 Entry
 
@@ -199,35 +199,42 @@ Slippage is adverse on both entry and exit.
 
 ### 6.1 Baseline A — Current production intraday score
 
-Use the current production `tradex.signals.intraday.score`:
+Use the current production `tradex.signals.intraday.score` with an explicit fresh `IntradayWeights()` instance and **no** `~/.tradex/weights.json`:
 
-- Pass an explicit fresh `IntradayWeights()` instance.
-- Never load `~/.tradex/weights.json`.
 - Evaluate completed five-minute bars only.
 - Restrict potential signals to 10:00 AM through 11:30 AM Eastern.
-- Use the first score of at least `40` per ticker-session.
+- The **signal bar** is the first completed five-minute bar in that window on which `intraday.score` reaches at least `40` for the ticker-session.
 - Enter at the next five-minute bar open.
-- Apply the same liquidity rules, stop formula, 1.5R target, costs, one-trade-per-session rule, and time exit as the candidate.
+- Stop is derived from the signal bar, not a reclaim bar:
+  ```text
+  stop_buffer = max(0.01, signal_bar_close * 0.0005)
+  stop_price  = signal_bar_low - stop_buffer
+  ```
+- Target is the same 1.5R formula as the candidate:
+  ```text
+  risk_per_share = entry_fill - stop_price
+  target_price   = entry_fill + (1.5 * risk_per_share)
+  ```
+- Apply the same liquidity rules, costs, one-trade-per-session rule, and time-exit rules as the candidate.
+- Skip the trade if the next bar is missing or its open is at or below the stop.
 
 This baseline measures whether the concrete setup adds value beyond the existing generic score.
 
 ### 6.2 Baseline B — Simple VWAP reclaim
 
-Use the same:
+Use the same liquidity rules, pullback window, entry, stop, target, costs, one-trade-per-session rule, and exit rules as the candidate. The reclaim bar must satisfy the same price and VWAP conditions as the candidate:
 
-- Liquidity requirements
-- Pullback window
-- Reclaim-bar definition
-- Entry
-- Stop
-- Target
-- Costs
-- Exit rules
+- Bar low \<= session VWAP for that completed bar.
+- Bar close strictly above that VWAP.
+- Bar close \> bar open.
+- Bar close remains at or above the 9:30 AM session open.
+- No prior bar in the pullback window already satisfied the reclaim definition.
 
-But do **not** require:
+Baseline B does **not** require:
 
-- The `+0.75%` opening-drive return
-- The `1.50×` opening-volume condition
+- The `+0.75%` opening-drive return.
+- The `1.50×` opening-volume condition.
+- Any ongoing opening-drive qualification check during the pullback window.
 
 This baseline measures whether the opening-drive requirements add value beyond a generic VWAP reclaim.
 
@@ -271,7 +278,9 @@ The splits are chronological and non-overlapping. The holdout must not be inspec
 
 ---
 
-## 9. Sample minimums
+## 9. Sample minimums and data sufficiency
+
+### 9.1 Sample minimums
 
 Validation and holdout must each contain:
 
@@ -285,24 +294,37 @@ Validation and holdout must each contain:
 | Single ticker share of candidate trades | \<= 10% |
 | Single ticker share of candidate net profit | \<= 20% |
 
-Failure to meet sample minimums produces an `inconclusive` outcome, not a pass.
+Failure to meet any sample minimum produces an `inconclusive` outcome.
+
+### 9.2 Data-sufficiency thresholds
+
+The data contract for a split must also satisfy:
+
+| Quality check | Maximum allowed |
+|---|---|
+| Missing-bar rate per symbol | \<= 5% of expected regular-session bars |
+| Zero-volume-bar rate per symbol | \<= 10% of expected regular-session bars |
+| Duplicate-bar rate per symbol | \<= 1% of expected regular-session bars |
+| Symbols rejected for data quality | \<= 5% of the monthly universe |
+
+Exceeding these thresholds makes the split `inconclusive` (if the issue is sample-size or quality) or `invalid` (if the issue is a provider contract or provenance violation).
 
 ---
 
 ## 10. Validation gates
 
-The candidate may proceed to holdout evaluation only when all of the following pass on validation:
+The candidate may proceed to holdout evaluation only when all of the following pass on validation. Expectancy, profit factor, and drawdown are computed under the locked `calculation_policy` in `INTRA-001-v1.json`.
 
-1. Sample minimums are met.
-2. Candidate pooled net expectancy at 5 bps per side is positive.
-3. Candidate median per-symbol net expectancy exceeds the current-score baseline by at least `0.05R`.
+1. Sample and data-sufficiency minimums are met.
+2. Candidate pooled net expectancy (pooled mean net R multiple) at 5 bps per side is positive.
+3. Candidate median per-symbol net expectancy (median of per-symbol mean net R) exceeds the current-score baseline by at least `0.05R`.
 4. Candidate median per-symbol net expectancy exceeds the simple-VWAP baseline by at least `0.03R`.
 5. Candidate median per-symbol profit factor is at least `1.05`.
 6. Candidate median per-symbol profit factor is not below either baseline.
-7. At least `55%` of represented symbols have positive candidate expectancy.
-8. At least `55%` of represented symbols outperform the current-score baseline.
-9. Candidate maximum drawdown is not worse than the current-score baseline by more than `2` percentage points.
-10. Both stock and ETF strata have nonnegative pooled expectancy.
+7. At least `55%` of represented symbols have positive candidate mean net expectancy.
+8. At least `55%` of represented symbols outperform the current-score baseline by mean net expectancy.
+9. Candidate **median per-symbol maximum drawdown** is not worse than the current-score baseline by more than `2` percentage points.
+10. Both stock and ETF strata have nonnegative pooled expectancy (pooled mean net R \>= 0).
 11. Candidate pooled expectancy remains nonnegative at 10 bps per side.
 12. Concentration limits are met.
 
@@ -324,12 +346,74 @@ Evidence supports promotion consideration only if every validation gate also pas
 
 | Outcome | Condition |
 |---|---|
-| **Supported for promotion consideration** | All validation and holdout gates pass. |
-| **Not supported** | Data and sample requirements are met, but one or more predefined performance gates fail. |
-| **Inconclusive** | One or more sample minimums are not met, stock and ETF strata materially disagree, or uncertainty is too high to support or reject the hypothesis. |
-| **Invalid** | Holdout leakage, future-bar use, post-hoc threshold changes, silent provider substitution, material timestamp errors, unresolved split/corporate-action errors, missing required provenance, or non-reproducible outputs. |
+| **Supported for promotion consideration** | All sample/data-sufficiency rules are met and all validation and holdout gates pass. |
+| **Not supported** | All sample and data-sufficiency rules are met, but one or more predefined performance gates fail. |
+| **Inconclusive** | One or more sample minimums are not met; or data-sufficiency thresholds are exceeded; or the split does not contain at least one executed candidate trade in both the stock and ETF strata; or a required median per-symbol statistic cannot be computed because fewer than half of represented symbols have at least one valid trade. |
+| **Invalid** | Holdout leakage, future-bar use, post-hoc threshold or rule changes, validation gates changed after viewing results, holdout evaluated before validation gates passed, silent provider substitution, material timestamp errors, unresolved split/corporate-action errors, missing required provenance, or non-reproducible outputs. |
 
 A result of `supported` is research-only and does not itself authorize production promotion.
+
+---
+
+## 12.5 Calculation and aggregation rules
+
+All metrics use a **per-symbol research ledger** and a single fixed risk unit per trade. The same rules apply to the candidate, Baseline A, and Baseline B.
+
+### Position sizing
+
+- Each executed trade is sized to **one risk unit**.
+- `risk_per_share = net_entry_price - stop_price`.
+- `shares = 1 / risk_per_share`.
+- No account compounding; each trade is evaluated against a notional 100-unit account where `1R = 1%`.
+- Simultaneous trades across different symbols are allowed; each symbol has its own ledger and no cross-symbol capital allocation is modeled.
+
+### Net price formulas
+
+- `entry_fill = entry_open * (1 + entry_slippage_bps/10000 + entry_commission_bps/10000)`
+- `exit_fill = exit_price * (1 - exit_slippage_bps/10000 - exit_commission_bps/10000)`
+- Slippage and commission (if any) are adverse on both entry and exit.
+- The primary cost scenario has `commission_bps = 0`, so the per-side cost is the adverse slippage only.
+
+### Net R multiple and return
+
+- `profit_per_trade = exit_fill - entry_fill`
+- `risk_per_trade = entry_fill - stop_price`
+- `net_R_multiple = profit_per_trade / risk_per_trade`
+- `total_return_R = chronological cumulative sum of net_R_multiple` for a ledger
+- `total_return_pct = 100 * total_return_R`
+- `equity_curve = 100 + total_return_pct`
+- `running_peak = cumulative maximum of equity_curve`
+- `drawdown_series = (equity_curve - running_peak) / running_peak`
+- `maximum_drawdown_pct = minimum value of drawdown_series` (<= 0)
+
+### Per-symbol and pooled aggregation
+
+- A **represented symbol** has at least one executed trade in the split.
+- Symbols with zero trades are excluded from per-symbol statistics and from equal-weighted/median aggregations, but they still count toward represented-symbol sample minimums.
+- `pooled_expectancy` = mean `net_R_multiple` across all executed trades in the split.
+- `median_per_symbol_expectancy` = median of per-symbol mean `net_R_multiple` across represented symbols.
+- `equal_weighted_per_symbol_mean_expectancy` = mean of per-symbol mean `net_R_multiple` across represented symbols.
+- `positive_symbol_rate` = fraction of represented symbols with mean `net_R_multiple` > 0.
+- `outperform_baseline_symbol_rate` = fraction of represented symbols whose candidate mean `net_R_multiple` exceeds the baseline mean.
+- `median_per_symbol_total_return` = median of per-symbol `total_return_R`.
+- `median_per_symbol_maximum_drawdown` = median of per-symbol `maximum_drawdown_pct`.
+- `overall_maximum_drawdown` = maximum drawdown of the pooled global ledger, reported for diagnostics only.
+- Validation gate 9 uses **median per-symbol maximum drawdown**; the candidate is not worse than the current-score baseline by more than 2 percentage points (`candidate - baseline <= 2.0` pp).
+
+### Profit factor
+
+- `gross_profit` = sum of positive `net_R_multiple` values.
+- `gross_loss` = sum of negative `net_R_multiple` values.
+- `profit_factor = gross_profit / abs(gross_loss)` when `gross_loss < 0`.
+- If there are no losing trades, `profit_factor` is reported as `null` (JSON-safe) and the profit-factor gate is treated as passed when `gross_profit > 0`.
+- If there are no trades or no winning trades, the profit-factor gate is not applicable and reported as `null`.
+- Median per-symbol profit factor uses only represented symbols with a non-null profit factor.
+
+### Concentration
+
+- **Trade-count concentration**: single-ticker trade count / total executed trades in the split \<= 10%.
+- **Net-profit concentration** (when total net profit across the split is positive): single-ticker net R / total net R across the split \<= 20%.
+- **Absolute-loss concentration** (when total net profit across the split is zero or negative): single-ticker `abs(net_R)` / sum of `abs(net_R)` for all losing trades in the split \<= 20%.
 
 ---
 
@@ -418,35 +502,44 @@ The specification explicitly addresses:
 
 ## 16. Provider feasibility review
 
-### 16.1 Capability table
+### 16.1 Conclusion
 
-| Provider / source | Historical 5m date coverage | Full regular-session OHLCV | Consolidated vs. venue volume | Security-master availability | Delisted-symbol availability | Corporate-action behavior | Rate limits / pagination | Engineering impact | Satisfies full locked contract? | Evidence source |
+**None of the current TradeX providers satisfies the full locked `INTRA-001` data contract on its own.** A separate point-in-time U.S. equity universe and security-type master is required before the real-data study can be promotion-eligible. This data-source decision is an `INTRA-001B` prerequisite.
+
+### 16.2 Capability table
+
+Evidence type is marked **documented** for items taken directly from an official API contract or library documentation, and **empirical** for items observed from testing the current wrapper or endpoint behavior. Empirical observations may change.
+
+| Provider / source | Historical 5m date coverage | Full regular-session OHLCV | Consolidated vs. venue volume | Security-master availability | Delisted-symbol availability | Corporate-action behavior | Rate limits / pagination | Engineering impact | Satisfies full locked contract? | Evidence type and citations |
 |---|---|---|---|---|---|---|---|---|---|---|
-| **Yahoo Finance (yfinance)** | Last ~60 days for 5m; intraday not available for the full 2022–2025 range. | Yes, but only via `period`/`interval` presets with no date-ranged 5m support. | Volume is provider-aggregated; consolidated/venue status not exposed. | No security master; no point-in-time membership. | Delisted symbols are not reliably queryable. | `auto_adjust=True` applies provider adjustments; no explicit split/dividend policy flag. | No authentication, but rate-limited and undocumented. | Small, but insufficient data depth. | **No** — 60-day 5m limit violates the dataset requirement. | yfinance `history()` docstring and issue #1389: 5m data must be within the last 60 days. |
-| **Alpaca Market Data API** | Historical bars since 2016; end must be at least 15 minutes old for SIP without Algo Trader Plus. | Yes; supports 5m aggregations and date-ranged `start`/`end` with `feed=iex` or `feed=sip`. | Explicit `feed` parameter (`iex` or `sip`) and `stock_adjustment` parameter disclose volume/adjustment source. | Assets API lists current active assets; no historical-point-in-time membership. | Delisted / merged symbols may be queried if the symbol is known, but no guaranteed historical constituent list. | `stock_adjustment` supports `raw`, `split`, `dividend`, `spin-off`, `all`; `asof` maps symbol renames. | Basic: 200 req/min; Algo Trader Plus: 10,000 req/min; `limit` max 10,000 per page with `next_page_token` pagination. | Moderate: requires API keys, optional paid SIP tier, and pagination for multi-year 5m data. | **No alone** — lacks point-in-time universe membership and guaranteed delisted coverage, but best current candidate for OHLCV. | Alpaca Market Data API docs (`about-market-data-api`, `stockbars` reference). |
-| **Interactive Brokers (TWS API)** | Varies by subscription; API requires Level 1 streaming data. Historical 5m requests are duration- and bar-size constrained. | Yes, for subscribed instruments using `whatToShow=TRADES` and `useRTH=True`. | Volume from historical bar data is filtered (excludes off-NBBO trades); VWAP may differ from real time. | No security master via TWS API; contracts must be constructed manually. | No historical data for securities that are no longer trading. | `TRADES` returns split-adjusted values depending on TWS settings; limited control. | Max 50 simultaneous historical requests; pacing violations for small bars; 5m typically limited to ~1 week per request by the bar-size/duration table. | High: requires local TWS/IB Gateway, market-data subscriptions, and request pacing logic. | **No** — no delisted data, no point-in-time universe, and 5m duration limits make multi-year collection impractical. | TWS API `historical_data.html` and `historical_limitations.html`. |
-| **Schwab Market Data API** | `get_price_history_every_five_minutes` appears to return roughly nine months of 5m candles; `periodType=day` with `frequencyType=minute` is limited to period `<= 10`. | Yes, for U.S. equities and ETFs; `need_extended_hours_data=False` can restrict to regular session. | Volume source and consolidation policy are not explicitly documented. | `searchInstruments` supports symbol/CUSIP search but is not a point-in-time security master. | No documented support for delisted symbols. | `auto_adjust` / provider adjustment behavior not configurable through `schwab-py` wrapper. | Undocumented; OAuth token and app registration required; 5m date bounds are not reliably honored. | Moderate: requires Schwab brokerage account and OAuth app. | **No** — 5m coverage is too shallow, date bounds are unreliable, and no point-in-time universe/delisted support. | `schwab-py` docs (`get_price_history_every_five_minutes` description) and Schwab OpenAPI price-history parameters. |
-| **External point-in-time universe / security master (e.g., CRSP/Compustat, QuantRocket, Polygon.io SIP)** | Not an OHLCV provider by itself; provides historical constituents, delisted symbols, and security-type provenance. | N/A — OHLCV must come from another source. | N/A | Yes — this is the category that can provide point-in-time membership and security-type provenance. | Yes — purpose-built for survivorship-bias and delisting control. | Varies by vendor; must be locked and disclosed. | Varies by vendor. | Moderate to high: may require paid vendor access or manual construction. | **Partial** — satisfies the universe/constituent contract but must be combined with a 5m OHLCV provider. | Domain knowledge of vendor offerings; no single current TradeX provider provides this. |
+| **Yahoo Finance (yfinance)** | Last ~60 days for 5m; intraday not available for the full 2022-2025 range. | Yes via `period`/`interval` presets; no date-ranged 5m support. | Provider-aggregated; consolidated/venue status not exposed. | No security master; no point-in-time membership. | Delisted symbols not reliably queryable. | `auto_adjust=True` applies provider adjustments; no explicit split/dividend policy flag. | No auth, but rate-limited and undocumented. | Small, but insufficient depth. | **No** - 60-day 5m limit violates the dataset. | Documented library limitation: [yfinance `history()` wiki](https://github.com/ranaroussi/yfinance/wiki/Ticker#history), [yfinance issue tracker](https://github.com/ranaroussi/yfinance/issues). |
+| **Alpaca Market Data API** | Historical bars since 2016; end must be at least 15 minutes old for SIP without Algo Trader Plus subscription.[^alpaca-sip] | Yes; supports 5m aggregations and date-ranged `start`/`end` with `feed=iex` or `feed=sip`. | Explicit `feed` (`iex` or `sip`) and `stock_adjustment` disclose volume/adjustment source. | Assets API lists current active assets; no historical-point-in-time membership. | Delisted/merged symbols may be queried if the symbol is known, but no guaranteed historical constituent list. | `stock_adjustment` supports `raw`, `split`, `dividend`, `spin-off`, `all`; `asof` maps symbol renames.[^alpaca-adj] | Basic: 200 req/min; Algo Trader Plus: 10,000 req/min; `limit` max 10,000 per page with `next_page_token` pagination.[^alpaca-rate] | Moderate: requires API keys, optional paid SIP tier, pagination for multi-year 5m data. | **No alone** - best current OHLCV candidate, but lacks point-in-time universe and guaranteed delisted coverage. | Documented API capability: [Alpaca Market Data API](https://docs.alpaca.markets/docs/about-market-data-api), [Stock Bars reference](https://docs.alpaca.markets/reference/stockbars). |
+| **Interactive Brokers (TWS API)** | Requires Level 1 streaming subscription and running TWS/IB Gateway; 5m duration constrained by bar-size/duration table. | Yes for subscribed instruments with `whatToShow=TRADES` and `useRTH=True`. | Volume from historical bars is filtered (excludes off-NBBO trades); VWAP may differ from real time. | No security master via TWS API; contracts built manually. | No historical data for securities no longer trading. | `TRADES` split-adjustment depends on TWS settings; limited programmatic control. | Max 50 simultaneous historical requests; pacing; 5m typically limited to ~1 week per request. | High: requires local TWS/IB Gateway, subscriptions, pacing logic. | **No** - no delisted data, no point-in-time universe, 5m duration limits make multi-year collection impractical. | Documented API capability/constraint: [TWS API Historical Data](https://interactivebrokers.github.io/tws-api/historical_data.html), [Historical Limitations](https://interactivebrokers.github.io/tws-api/historical_limitations.html). |
+| **Schwab Market Data API** | `get_price_history_every_five_minutes` appears to return roughly nine months of 5m candles; `periodType=day` with `frequencyType=minute` limited to period `<= 10`. Date-bound filtering is not reliably honored.[^schwab-empirical] | Yes for U.S. equities/ETFs; `need_extended_hours_data=False` can restrict to regular session. | Volume source and consolidation policy not explicitly documented. | `searchInstruments` supports symbol/CUSIP search; not a point-in-time security master. | No documented delisted support. | `auto_adjust` / provider adjustment behavior not configurable through `schwab-py`. | Undocumented; OAuth token and app registration required. | Moderate: requires Schwab brokerage account and OAuth app. | **No** - 5m coverage too shallow, date bounds unreliable, no point-in-time universe/delisted support. | Documented parameter limits: [Schwab Market Data API](https://developer.schwab.com/products/market-data-api), [schwab-py docs](https://github.com/jfernandrez/schwab-py). The nine-month depth and unreliable date-bound filtering are **empirical observations** from wrapper testing and are not guaranteed by Schwab. |
+| **External point-in-time universe / security master** | Not an OHLCV provider; provides historical constituents and security-type provenance. | N/A | N/A | Can provide point-in-time membership and security-type provenance if the source contract supports it. | Can provide delisted-symbol coverage if the source contract supports it. | Varies by source; must be locked and disclosed. | Varies by source. | Moderate to high: may require paid vendor access or manual construction. | **Partial** - satisfies the universe/constituent contract only when combined with a 5m OHLCV provider. | This specification does **not** name a specific vendor. `INTRA-001B` must cite the selected source's contract and methodology and demonstrate that it provides historical monthly constituents, security-type provenance, delisted coverage, and point-in-time membership as of the first session of each calendar month. |
 
-### 16.2 Recommended data-source decision
+[^alpaca-sip]: SIP feed and 15-minute non-subscriber delay are described in Alpaca Market Data documentation; the Algo Trader Plus subscription is required for live SIP.
+[^alpaca-adj]: `stock_adjustment` and `asof` parameters are documented in the Alpaca Stock Bars reference.
+[^alpaca-rate]: Rate limits and `next_page_token` pagination are documented in the Alpaca Market Data API documentation.
+[^schwab-empirical]: The ~9-month depth and unreliable date-bound filtering are empirical observations from testing `schwab-py` and are not guaranteed by Schwab.
 
-**None of the current TradeX providers satisfies the full locked `INTRA-001` data contract on its own.** The data-source decision is therefore an `INTRA-001B` prerequisite, not something this specification can hide or bypass.
+### 16.3 Recommended data-source decision
+
+**None of the current TradeX providers satisfies the full locked `INTRA-001` data contract on its own.** The data-source decision is therefore an `INTRA-001B` prerequisite.
 
 The most feasible path is:
 
-1. Use **Alpaca Market Data API with the Algo Trader Plus SIP feed** for consolidated 5m OHLCV from 2022–2025, with explicit `feed=sip` and `stock_adjustment` locked to `all` or `split`.
-2. Source a **separate point-in-time U.S. equity universe and security-type master** (e.g., CRSP/Compustat, a vendor such as QuantRocket, or a manually maintained historical constituent list) to define the monthly top-50 stock stratum, enforce security-type exclusions, and handle delisted symbols.
+1. Use **Alpaca Market Data API with the Algo Trader Plus SIP feed** for consolidated 5m OHLCV from 2022-2025, with explicit `feed=sip` and `stock_adjustment` locked to `all` or `split`.
+2. Source a **separate point-in-time U.S. equity universe and security-type master** that can demonstrate historical monthly constituents, security-type provenance, delisted-symbol coverage, and point-in-time membership as of the first session of each calendar month.
 3. If no feasible point-in-time universe/delisted source is available, the real-data study must be declared **not promotion-eligible** and the outcome recorded as `inconclusive` or `invalid`.
 
-Do not weaken the 2022–2025 five-minute requirement merely to fit the current `fetcher.py` five-day intraday preset.
-
----
+Do not weaken the 2022-2025 five-minute requirement merely to fit the current `fetcher.py` five-day intraday preset.
 
 ## 17. Implementation phases
 
-The following phases are defined but not implemented in this PR.
+The following phases are defined but not implemented in this PR. INTRA-001B resumes after the approved `SHORT-001` Schwab real-data study is completed.
 
-### 17.1 INTRA-001B — Intraday data and manifest infrastructure
+### 17.1 INTRA-001B - Intraday data and manifest infrastructure
 
 - Approved provider integration
 - Date-ranged five-minute snapshot
@@ -454,6 +547,7 @@ The following phases are defined but not implemented in this PR.
 - Session normalization
 - Data-quality validation
 - No strategy evaluation
+- **Note:** This phase begins after the approved `SHORT-001` Schwab real-data study; the data-source decision is a prerequisite and must be locked before any INTRA-001 detector code is written
 
 ### 17.2 INTRA-001C — Research detector and execution engine
 
@@ -501,7 +595,7 @@ Must then define exact changes to the production scorer, scores or eligibility, 
 The canonical locked values are in `docs/research/specs/INTRA-001-v1.json`.
 
 ```text
-JSON SHA-256: f858b634ce35919a277e9a88e7ef4caf3947e7e6dc047e9eacd8d7bf23540d9b
+JSON SHA-256: dc5db43239ec46d62fc93e77b05e4146ea445d46d9405e82a30f274f48876966
 ```
 
 Future study artifacts must record this SHA-256 and the commit that first added it.

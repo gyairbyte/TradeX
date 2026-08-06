@@ -54,7 +54,7 @@
     "cumulative_volume_930_to_10am_min_multiple_of_prior_20_same_window_median": 1.5,
     "no_missing_bars_between_930_and_10am": true,
     "all_input_bars_pass_ohlcv_validation": true,
-    "state_fixed_at": "10:00 AM Eastern"
+    "state_fixed_at": "10:00 AM Eastern; frozen after the first six bars and not recomputed using any bars after 10:00 AM; later pullback/reclaim checks use the frozen qualification state only"
   },
   "pullback_and_reclaim": {
     "search_window_start": "first completed five-minute bar after 10:00 AM Eastern",
@@ -67,7 +67,7 @@
       "opening_drive_qualification_remains_valid": true,
       "no_prior_bar_in_window_already_satisfied_reclaim": true
     },
-    "signal_known_at": "reclaim bar completion"
+    "signal_known_at": "completion of the reclaim bar; the opening-drive state used for qualification is the frozen 10:00 AM state"
   },
   "entry": {
     "entry_price": "next available five-minute bar open",
@@ -123,31 +123,51 @@
       "load_saved_weights": false,
       "use_completed_five_minute_bars_only": true,
       "signal_window": "10:00 AM through 11:30 AM Eastern",
-      "trigger": "first score of at least 40 per ticker-session",
-      "entry": "next five-minute bar open",
+      "trigger": "signal_bar score >= 40",
+      "entry": {
+        "price": "next five-minute bar open",
+        "skip_if_next_bar_missing": true,
+        "reject_if_next_bar_open_at_or_below_stop": true
+      },
       "liquidity_rules": "same_as_candidate",
-      "stop_formula": "same_as_candidate",
-      "target": "same_as_candidate",
       "costs": "same_as_candidate",
       "one_trade_per_session": true,
-      "time_exit": "same_as_candidate",
-      "purpose": "measure whether the concrete setup adds value beyond the existing generic score"
+      "purpose": "measure whether the concrete setup adds value beyond the existing generic score",
+      "signal_bar": "the first completed five-minute bar between 10:00 AM and 11:30 AM Eastern on which `tradex.signals.intraday.score` first reaches at least 40 using a fresh `IntradayWeights()` instance",
+      "stop": {
+        "stop_buffer": "max(0.01, signal_bar_close * 0.0005)",
+        "stop_price": "signal_bar_low - stop_buffer",
+        "must_be_strictly_below_anticipated_entry": true,
+        "fixed_after_entry": true
+      },
+      "target": {
+        "risk_per_share": "entry_fill - stop_price",
+        "target_price": "entry_fill + (1.5 * risk_per_share)",
+        "reject_nonpositive_or_invalid_risk": true
+      },
+      "exit_policy": "same_as_candidate"
     },
     "simple_vwap_reclaim": {
       "name": "Baseline B - Simple VWAP reclaim",
       "liquidity_rules": "same_as_candidate",
       "pullback_window": "same_as_candidate",
-      "reclaim_bar_definition": "same_as_candidate",
+      "reclaim_bar_definition": {
+        "search_window": "same as candidate",
+        "low_less_than_or_equal_to_session_vwap_for_this_bar": true,
+        "close_strictly_above_session_vwap_for_this_bar": true,
+        "close_greater_than_open": true,
+        "close_at_or_above_session_open_930": true,
+        "no_prior_bar_in_window_already_satisfied_reclaim": true,
+        "opening_drive_qualification_required": false,
+        "note": "All price/VWAP/bullish-bar and first-reclaim conditions are identical to the candidate; the opening-drive return and volume conditions are omitted"
+      },
       "entry": "same_as_candidate",
       "stop": "same_as_candidate",
       "target": "same_as_candidate",
       "costs": "same_as_candidate",
-      "exit_rules": "same_as_candidate",
-      "do_not_require": [
-        "opening_drive_return_>=_+0.75%",
-        "1.50x_opening_volume_condition"
-      ],
-      "purpose": "measure whether the opening-drive requirements add value beyond a generic VWAP reclaim"
+      "purpose": "measure whether the opening-drive requirements add value beyond a generic VWAP reclaim",
+      "exit_policy": "same_as_candidate",
+      "one_trade_per_session": true
     }
   },
   "universe": {
@@ -200,7 +220,10 @@
     "holdout_must_not_be_inspected_during_implementation_or_candidate_debugging": true
   },
   "sample_minimums": {
-    "applies_to": ["validation", "holdout"],
+    "applies_to": [
+      "validation",
+      "holdout"
+    ],
     "executed_candidate_trades_min": 300,
     "represented_stock_symbols_min": 25,
     "represented_etfs_min": 8,
@@ -208,19 +231,20 @@
     "etf_stratum_trades_min": 75,
     "single_ticker_max_pct_of_candidate_trades": 10.0,
     "single_ticker_max_pct_of_candidate_net_profit": 20.0,
-    "failure_to_meet_sample_minimums_produces": "inconclusive"
+    "failure_to_meet_sample_minimums_produces": "inconclusive",
+    "data_contract_failure_produces": "inconclusive"
   },
   "validation_gates": [
-    "Sample minimums are met",
-    "Candidate pooled net expectancy at 5 bps per side is positive",
-    "Candidate median per-symbol net expectancy exceeds current-score baseline by at least 0.05R",
+    "Sample and data-sufficiency minimums are met",
+    "Candidate pooled net expectancy (pooled mean net_r_multiple) at 5 bps per side is positive",
+    "Candidate median per-symbol net expectancy (median of per-symbol mean net_r_multiple) exceeds current-score baseline by at least 0.05R",
     "Candidate median per-symbol net expectancy exceeds simple-VWAP baseline by at least 0.03R",
     "Candidate median per-symbol profit factor is at least 1.05",
     "Candidate median per-symbol profit factor is not below either baseline",
-    "At least 55% of represented symbols have positive candidate expectancy",
-    "At least 55% of represented symbols outperform the current-score baseline",
-    "Candidate maximum drawdown is not worse than current-score baseline by more than 2 percentage points",
-    "Both stock and ETF strata have nonnegative pooled expectancy",
+    "At least 55% of represented symbols have positive candidate mean net expectancy",
+    "At least 55% of represented symbols outperform the current-score baseline by mean net expectancy",
+    "Candidate median per-symbol maximum drawdown is not worse than current-score baseline by more than 2 percentage points",
+    "Both stock and ETF strata have nonnegative pooled expectancy (pooled mean net_r_multiple >= 0)",
     "Candidate pooled expectancy remains nonnegative at 10 bps per side",
     "Concentration limits are met"
   ],
@@ -233,18 +257,25 @@
     ]
   },
   "outcome_definitions": {
-    "supported_for_promotion_consideration": "All validation and holdout gates pass",
-    "not_supported": "Data and sample requirements are met, but one or more predefined performance gates fail",
-    "inconclusive": "One or more sample minimums are not met, stock and ETF strata materially disagree, or uncertainty is too high to support or reject the hypothesis",
+    "supported_for_promotion_consideration": "All sample/data-sufficiency rules are met and all validation and holdout gates pass",
+    "not_supported": "All sample and data-sufficiency rules are met, but one or more predefined performance gates fail",
+    "inconclusive": [
+      "One or more sample minimums in sample_minimums is not met for the split",
+      "Data contract sufficiency thresholds are not met for the split (e.g., missing-bar rate, zero-volume rate, duplicate-bar rate, or data-quality rejection rate exceeds the locked thresholds)",
+      "The split does not contain at least one executed candidate trade in both the stock stratum and the ETF stratum",
+      "The study cannot compute a required median per-symbol statistic because fewer than half of represented symbols have at least one valid trade"
+    ],
     "invalid": [
       "Holdout leakage",
       "Future-bar use",
-      "Post-hoc threshold changes",
+      "Post-hoc threshold or rule changes",
       "Silent provider substitution",
       "Material timestamp errors",
-      "Unresolved split/corporate-action errors",
+      "Unresolved split or corporate-action errors",
       "Missing required provenance",
-      "Non-reproducible outputs"
+      "Non-reproducible outputs",
+      "Holdout was evaluated before validation gates passed",
+      "Validation gates were changed after viewing results"
     ]
   },
   "metrics": {
@@ -312,7 +343,14 @@
       "SHA-256 hash for every source file",
       "No silent provider fallback",
       "No mixing providers within one locked study"
-    ]
+    ],
+    "sufficiency_thresholds": {
+      "max_missing_bar_rate_pct_per_symbol": 5.0,
+      "max_zero_volume_bar_rate_pct_per_symbol": 10.0,
+      "max_duplicate_bar_rate_pct_per_symbol": 1.0,
+      "max_symbols_rejected_for_data_quality_pct": 5.0,
+      "data_contract_failure_produces": "inconclusive or invalid, depending on whether the failure is a provider/documentation issue (invalid) or a sample-size issue (inconclusive)"
+    }
   },
   "required_artifacts": [
     "study.json",
@@ -368,7 +406,8 @@
         "Session normalization",
         "Data-quality validation"
       ],
-      "out_of_scope": "Strategy evaluation"
+      "out_of_scope": "Strategy evaluation",
+      "note": "INTRA-001B begins after the approved SHORT-001 Schwab real-data study is completed; the data-source decision is a prerequisite and must be locked before any INTRA-001 detector code is written."
     },
     "INTRA-001C": {
       "title": "Research detector and execution engine",
@@ -418,5 +457,227 @@
     "this_pr_adds_research_implementation": false,
     "this_pr_retrieves_real_market_data": false,
     "production_promotion_requires": "separate Gary-approved production PR after INTRA-001D gates pass"
+  },
+  "calculation_policy": {
+    "position_sizing": {
+      "risk_unit_per_trade": 1,
+      "shares_formula": "1 / risk_per_share",
+      "risk_per_share": "net_entry_price - stop_price",
+      "notional_per_trade": "shares * net_entry_price",
+      "account_compounding": "None; each trade is sized to one risk unit against a notional 100-unit account. 1R is defined as 1% of the notional account.",
+      "simultaneous_trades_across_symbols": "Allowed; each symbol has its own ledger. No cross-symbol capital allocation is modeled."
+    },
+    "net_price_formulas": {
+      "entry_fill_price": "entry_open * (1 + entry_slippage_bps/10000 + entry_commission_bps/10000)",
+      "exit_fill_price": "exit_price * (1 - exit_slippage_bps/10000 - exit_commission_bps/10000)",
+      "adverse_slippage": true,
+      "slippage_and_commission_applied_to_entry_and_exit": true,
+      "note": "For the primary cost scenario, commission_bps is 0; the per-side cost is the adverse slippage only."
+    },
+    "return_and_r_multiple": {
+      "profit_per_trade": "exit_fill_price - entry_fill_price",
+      "risk_per_trade": "entry_fill_price - stop_price",
+      "net_r_multiple": "profit_per_trade / risk_per_trade",
+      "rejected_unexecutable_trade": "not included in any ledger",
+      "total_return_r": "chronological cumulative sum of net_r_multiple across all executed trades in the ledger",
+      "total_return_pct": "100 * total_return_r",
+      "equity_curve": "100 + total_return_pct",
+      "running_peak": "cumulative maximum of equity_curve",
+      "drawdown_series": "(equity_curve - running_peak) / running_peak",
+      "maximum_drawdown_pct": "minimum value of drawdown_series, reported as a percentage (<= 0)"
+    },
+    "per_symbol_ledger": {
+      "separate_ledger_per_symbol": true,
+      "trades_sorted_by": "signal_time (reclaim-bar completion for candidate, signal-bar completion for Baseline A)",
+      "equity_curve_per_symbol": "computed from the symbol's chronological net_r_multiple series using the same 100-unit account convention",
+      "symbols_with_zero_trades": "excluded from per-symbol statistics and from equal-weighted/median aggregations; still counted toward represented-symbol sample minimums"
+    },
+    "aggregation_rules": {
+      "represented_symbols": "symbols with at least one executed trade in the split",
+      "equal_weighted_per_symbol_mean_expectancy": "mean of per-symbol mean net_r_multiple across represented symbols",
+      "median_per_symbol_expectancy": "median of per-symbol mean net_r_multiple across represented symbols",
+      "pooled_expectancy": "mean net_r_multiple across all executed trades in the split",
+      "positive_symbol_rate": "count(represented_symbols with mean net_r_multiple > 0) / count(represented_symbols)",
+      "outperform_baseline_symbol_rate": "count(represented_symbols with candidate mean net_r_multiple > baseline mean net_r_multiple) / count(represented_symbols)",
+      "total_return_per_symbol": "sum of net_r_multiple for that symbol's trades in the split",
+      "median_per_symbol_total_return": "median of per-symbol total return across represented symbols",
+      "median_per_symbol_maximum_drawdown": "median of per-symbol maximum_drawdown_pct across represented symbols",
+      "overall_maximum_drawdown": "maximum_drawdown_pct computed from the pooled chronological global trade ledger, reported for diagnostics only",
+      "gate_9_drawdown_definition": "median per-symbol maximum drawdown; candidate not worse than current-score baseline by more than 2 percentage points (difference = candidate - baseline; difference <= 2.0 pp)"
+    },
+    "profit_factor": {
+      "gross_profit": "sum of positive net_r_multiple values",
+      "gross_loss": "sum of negative net_r_multiple values",
+      "profit_factor": "gross_profit / abs(gross_loss) when gross_loss < 0",
+      "when_no_losing_trades": "profit_factor is reported as null (JSON-safe); the profit-factor gate is treated as passed if gross_profit > 0; if there are no trades or no winning trades, the gate is not applicable and reported as null",
+      "per_symbol_profit_factor": "computed per symbol using the same rule; median per-symbol profit factor uses only represented symbols with a non-null profit factor"
+    },
+    "concentration_rules": {
+      "trade_count": {
+        "denominator": "total_executed_trades_in_split",
+        "max_ticker_share_pct": 10.0
+      },
+      "net_profit_share": {
+        "applies_when": "total_net_profit_across_split > 0",
+        "denominator": "total_net_profit_across_split (sum of net_r_multiple across all executed trades in the split)",
+        "max_ticker_share_pct": 20.0,
+        "when_total_not_positive": "use absolute_loss_concentration instead"
+      },
+      "absolute_loss_concentration": {
+        "denominator": "sum of abs(net_r_multiple) for all trades with net_r_multiple < 0 in the split",
+        "max_ticker_share_pct": 20.0,
+        "note": "used only when total_net_profit_across_split <= 0"
+      }
+    }
+  },
+  "provider_feasibility": {
+    "conclusion": "None of the current TradeX providers satisfies the full locked INTRA-001 data contract on its own.",
+    "data_source_decision_is_prerequisite_for": "INTRA-001B",
+    "providers": [
+      {
+        "name": "Yahoo Finance (yfinance)",
+        "verdict": "No",
+        "key_blockers": [
+          "5-minute data limited to roughly the last 60 days",
+          "No security master or point-in-time membership",
+          "No reliable delisted-symbol coverage"
+        ],
+        "historical_5m_date_coverage": {
+          "statement": "Last ~60 days for 5m; intraday not available for the full 2022-2025 range.",
+          "evidence_type": "documented library limitation"
+        },
+        "regular_session_ohlcv": "Yes via `period`/`interval` presets; no date-ranged 5m support.",
+        "consolidated_venue_volume": "Volume is provider-aggregated; consolidated/venue status is not exposed.",
+        "security_master": "No security master; no point-in-time membership.",
+        "delisted_symbols": "Delisted symbols are not reliably queryable.",
+        "corporate_actions": "`auto_adjust=True` applies provider adjustments; no explicit split/dividend policy flag.",
+        "rate_limits_pagination": "No authentication, but rate-limited and undocumented.",
+        "engineering_impact": "Small, but insufficient data depth.",
+        "citations": [
+          {
+            "source": "yfinance history() docstring",
+            "note": "60-day intraday limit for 5m",
+            "url": "https://github.com/ranaroussi/yfinance/wiki/Ticker#history"
+          },
+          {
+            "source": "yfinance issue tracker discussion",
+            "note": "5m interval is limited to the last 60 trading days",
+            "url": "https://github.com/ranaroussi/yfinance/issues"
+          }
+        ]
+      },
+      {
+        "name": "Alpaca Market Data API",
+        "verdict": "No alone; best current OHLCV candidate",
+        "key_blockers": [
+          "No point-in-time universe membership",
+          "No guaranteed historical delisted coverage"
+        ],
+        "historical_5m_date_coverage": {
+          "statement": "Historical bars since 2016; end must be at least 15 minutes old for SIP without Algo Trader Plus subscription.",
+          "evidence_type": "documented API capability"
+        },
+        "regular_session_ohlcv": "Yes; supports 5m aggregations and date-ranged start/end with `feed=iex` or `feed=sip`.",
+        "consolidated_venue_volume": "Explicit `feed` parameter (iex or sip) and `stock_adjustment` parameter disclose volume/adjustment source.",
+        "security_master": "Assets API lists current active assets; no historical-point-in-time membership.",
+        "delisted_symbols": "Delisted/merged symbols may be queried if the symbol is known, but no guaranteed historical constituent list.",
+        "corporate_actions": "`stock_adjustment` supports raw, split, dividend, spin-off, all; `asof` maps symbol renames.",
+        "rate_limits_pagination": "Basic: 200 req/min; Algo Trader Plus: 10,000 req/min; `limit` max 10,000 per page with `next_page_token` pagination.",
+        "engineering_impact": "Moderate: requires API keys, optional paid SIP tier, and pagination for multi-year 5m data.",
+        "citations": [
+          {
+            "source": "Alpaca Market Data API documentation",
+            "note": "Historical bars, 5m aggregates, feed and stock_adjustment parameters",
+            "url": "https://docs.alpaca.markets/docs/about-market-data-api"
+          },
+          {
+            "source": "Alpaca Stock Bars reference",
+            "note": "Pagination and parameters",
+            "url": "https://docs.alpaca.markets/reference/stockbars"
+          }
+        ]
+      },
+      {
+        "name": "Interactive Brokers (TWS API)",
+        "verdict": "No",
+        "key_blockers": [
+          "No delisted historical data",
+          "No point-in-time universe or security master",
+          "5m historical requests constrained by bar-size/duration table"
+        ],
+        "historical_5m_date_coverage": {
+          "statement": "Requires Level 1 streaming data subscription and running TWS/IB Gateway; 5m duration limited by the bar-size/duration table.",
+          "evidence_type": "documented API capability and constraint"
+        },
+        "regular_session_ohlcv": "Yes for subscribed instruments using `whatToShow=TRADES` and `useRTH=True`.",
+        "consolidated_venue_volume": "Volume from historical bar data is filtered (excludes off-NBBO trades); VWAP may differ from real time.",
+        "security_master": "No security master via TWS API; contracts must be constructed manually.",
+        "delisted_symbols": "No historical data for securities that are no longer trading.",
+        "corporate_actions": "`TRADES` returns split-adjusted values depending on TWS settings; limited programmatic control.",
+        "rate_limits_pagination": "Max 50 simultaneous historical requests; pacing; 5m typically limited to ~1 week per request by the bar-size/duration table.",
+        "engineering_impact": "High: requires local TWS/IB Gateway, market-data subscriptions, and request pacing logic.",
+        "citations": [
+          {
+            "source": "Interactive Brokers TWS API Historical Data",
+            "note": "Bar size and duration constraints",
+            "url": "https://interactivebrokers.github.io/tws-api/historical_data.html"
+          },
+          {
+            "source": "Interactive Brokers TWS API Historical Limitations",
+            "note": "Pacing and request limits",
+            "url": "https://interactivebrokers.github.io/tws-api/historical_limitations.html"
+          }
+        ]
+      },
+      {
+        "name": "Schwab Market Data API",
+        "verdict": "No",
+        "key_blockers": [
+          "5-minute history depth appears limited to roughly nine months",
+          "Date-bound filtering is not reliable",
+          "No point-in-time universe or delisted support"
+        ],
+        "historical_5m_date_coverage": {
+          "statement": "`get_price_history_every_five_minutes` appears to return roughly nine months of 5m candles; `periodType=day` with `frequencyType=minute` is limited to period <= 10. Date-bound filtering is not reliably honored.",
+          "evidence_type": "empirical observation from API testing; documented period limit"
+        },
+        "regular_session_ohlcv": "Yes for U.S. equities and ETFs; `need_extended_hours_data=False` can restrict to regular session.",
+        "consolidated_venue_volume": "Volume source and consolidation policy are not explicitly documented.",
+        "security_master": "`searchInstruments` supports symbol/CUSIP search but is not a point-in-time security master.",
+        "delisted_symbols": "No documented support for delisted symbols.",
+        "corporate_actions": "`auto_adjust` / provider adjustment behavior is not configurable through the schwab-py wrapper.",
+        "rate_limits_pagination": "Undocumented; OAuth token and app registration required.",
+        "engineering_impact": "Moderate: requires Schwab brokerage account and OAuth app.",
+        "citations": [
+          {
+            "source": "schwab-py documentation",
+            "note": "get_price_history_every_five_minutes and periodType/day/frequencyType/minute period<=10",
+            "url": "https://github.com/jfernandrez/schwab-py"
+          },
+          {
+            "source": "Schwab Developer API price-history parameters",
+            "note": "periodType and frequencyType definitions",
+            "url": "https://developer.schwab.com/products/market-data-api"
+          }
+        ],
+        "notes": "The nine-month depth and unreliable date-bound filtering are empirical observations from testing the schwab-py wrapper; they are not guaranteed by the Schwab API documentation and may change."
+      }
+    ],
+    "external_universe_source_requirements": {
+      "description": "A separate point-in-time U.S. equity universe and security-type master is required before the INTRA-001 real-data study can be promotion-eligible.",
+      "this_specification_names_no_specific_vendor": true,
+      "required_capabilities": [
+        "Historical monthly constituents",
+        "Security-type provenance (common stock, ETF, ADR, etc.)",
+        "Delisted-symbol coverage",
+        "Point-in-time membership as of the first session of each calendar month"
+      ],
+      "note": "No single current TradeX provider provides this. INTRA-001B must cite the selected source's contract and methodology and demonstrate that the selected source satisfies these requirements."
+    },
+    "recommended_path": [
+      "Use Alpaca Market Data API with the Algo Trader Plus SIP feed for consolidated 5m OHLCV from 2022-2025, with explicit `feed=sip` and `stock_adjustment` locked to `all` or `split`.",
+      "Source a separate point-in-time U.S. equity universe and security-type master that meets the external_universe_source_requirements above.",
+      "If no feasible point-in-time universe/delisted source is available, the real-data study must be declared not promotion-eligible and the outcome recorded as inconclusive or invalid."
+    ]
   }
 }

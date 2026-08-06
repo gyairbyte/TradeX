@@ -378,10 +378,10 @@ uv run python -m tradex.research.short_context evaluate --help
 - **Candidate:** Long open-drive VWAP pullback continuation on five-minute `XNYS` regular-session bars.
 - **Trigger:** A bullish 9:30–10:00 AM opening drive (\>= +0.75%, close above session VWAP, volume \>= 1.5× the prior-20-session median for the same window), followed by a first pullback to and reclaim of session VWAP between 10:00 and 11:30 AM Eastern.
 - **Entry / stop / target:** Enter at the next bar open; stop at `reclaim_low - max($0.01, reclaim_close * 0.0005)`; target at `entry_fill + 1.5 * (entry_fill - stop_price)`; exit by stop, target, or 3:45 PM Eastern time.
-- **Baselines:** The current production `intraday.score` (first score \>= 40 in the window, same execution rules) and a simple VWAP reclaim (no opening-drive filters).
+- **Baselines:** The current production `intraday.score` (first score \>= 40 in the window, with an explicit signal-bar stop and 1.5R target) and a simple VWAP reclaim (no opening-drive filters).
 - **Data contract:** Five-minute OHLCV, point-in-time monthly top-50 stock universe + fixed ETF list, locked 2022–2025 splits, manifest-locked inputs, and explicit consolidated/venue volume disclosure.
 
-No `INTRA-001` detector, execution engine, backtester, or production scorer exists yet. The current production intraday score remains the four-component additive score described above. Implementation follows the phased plan in the spec: `INTRA-001B` data infrastructure, `INTRA-001C` research engine with synthetic tests, `INTRA-001D` locked real-data study, and only then a separate Gary-approved production PR if all gates pass.
+No `INTRA-001` detector, execution engine, backtester, or production scorer exists yet. The current production intraday score remains the four-component additive score described above. The locked implementation plan (`INTRA-001B` data infrastructure, `INTRA-001C` research engine, `INTRA-001D` real-data study) is paused until the approved `SHORT-001` Schwab real-data study is completed, after which `INTRA-001B` resumes. A separate Gary-approved production PR is required only if all gates pass.
 
 ---
 

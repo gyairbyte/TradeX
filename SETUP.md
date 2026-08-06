@@ -448,7 +448,7 @@ The candidate policies are `off` (baseline), `market_rs`, and `market_sector_rs`
 
 `docs/research/INTRA-001-SPEC.md` pre-registers a concrete, research-only intraday setup. It defines the candidate long open-drive VWAP pullback continuation strategy, two baselines (current production `intraday.score` and a simple VWAP reclaim), locked 2022–2025 splits, sample minimums, validation/holdout gates, and a provider-feasibility review.
 
-No `INTRA-001` implementation code exists yet. The current production intraday scorer remains unchanged. Future work follows the phased plan in the spec (`INTRA-001B` data infrastructure, `INTRA-001C` research engine, `INTRA-001D` locked real-data study), and a separate Gary-approved production PR is required before any production scorer, weight, threshold, ranking, screener, UI, or alert change.
+No `INTRA-001` implementation code exists yet. The current production intraday scorer remains unchanged. Implementation is paused until the approved `SHORT-001` Schwab real-data study is completed, after which the phased plan in the spec resumes (`INTRA-001B` data infrastructure, `INTRA-001C` research engine, `INTRA-001D` locked real-data study). A separate Gary-approved production PR is required before any production scorer, weight, threshold, ranking, screener, UI, or alert change.
 
 ---
 
