@@ -204,7 +204,7 @@ No production trading behavior is modified. The production `short_term.score` pa
 
 ## 31. Safe artifact location
 
-Safe audit artifacts are committed under `docs/research/artifacts/SHORT-001/2026-08-01-5ae8a420/`. Raw Schwab OHLCV CSVs, the OAuth token, and row-level provider-derived output are excluded.
+Safe audit artifacts are committed under `docs/research/artifacts/SHORT-001/2026-08-01-5ae8a420/` and are the evidence bundle for PR #38. Raw Schwab OHLCV CSVs, the OAuth token, and row-level provider-derived output are excluded.
 
 ## 32. Test and CI evidence
 
