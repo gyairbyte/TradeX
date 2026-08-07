@@ -444,12 +444,14 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Add market regime and relative strength to short-term scorer
 - **Category:** Short-term trading
 - **Priority:** Medium
-- **Status:** Blocked (data invalid; v1 Schwab real-data study found 23 malformed OHLC candles across 19 of 45 pre-registered symbols out of 82,035 rows)
+- **Status:** In progress — v2 ingestion policy and implementation locked; real-data snapshot/evaluation pending
 - **Resolved by:** `devin/improve-short-term-context`
 - **Disposition reviewed by:** `devin/short-001-disposition`
-- **Real-data study branch:** `devin/short-001-real-data-study`
-- **Real-data report:** `docs/research/SHORT-001-SCHWAB-STUDY.md`
-- **Safe artifacts:** `docs/research/artifacts/SHORT-001/2026-08-01-5ae8a420/`
+- **V1 real-data study branch:** `devin/short-001-real-data-study`
+- **V1 real-data report:** `docs/research/SHORT-001-SCHWAB-STUDY.md`
+- **V2 remediation branch:** `devin/short-001-data-ingestion`
+- **V2 real-data report:** `docs/research/SHORT-001-SCHWAB-STUDY-V2.md`
+- **Safe artifacts:** `docs/research/artifacts/SHORT-001/2026-08-01-5ae8a420/` (v1, preserved unchanged)
 - **Problem statement:** The short-term score does not account for whether the broad market or sector is trending.
 - **Recommended action:** Complete the locked v1 SHORT-001 real-data audit (PR #38), then open a separate, approved research-only data-ingestion remediation PR that drops hard-invalid OHLC rows using the PATTERN-001 precedent, preserves the complete 45-symbol panel, records pre/post-clean row counts and hashes, and reruns the same snapshot/evaluation unchanged. Reopen SHORT-001 only when a clean, predefined, manifest-locked real-data study is completed. No production behavior change until both holdout gates pass and a separate Gary-approved production-integration assignment is completed.
 - **Next recommended PR:** `devin/short-001-data-ingestion` (proposed; research-only malformed-row exclusion using PATTERN-001 precedent)
