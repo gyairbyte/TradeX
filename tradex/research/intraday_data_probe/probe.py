@@ -500,6 +500,22 @@ def _probe_kind(probe_id: str) -> str:
     return "bounded"
 
 
+_METHOD_PARITY_CONFLICTS = {"same_timestamps_different_values", "different_timestamps"}
+
+
+def _window_id_from_probe_id(probe_id: str, window_ids: set[str]) -> str | None:
+    """Return the locked window.id for a bounded probe_id, or None if not found."""
+    base = probe_id.rsplit("-rep", 1)[0]
+    for wid in window_ids:
+        if base.startswith(f"{wid}-"):
+            return wid
+    # Fallback for the canonical {window.id}-{symbol}-{method} shape.
+    parts = base.rsplit("-", 2)
+    if len(parts) >= 3 and parts[0] in window_ids:
+        return parts[0]
+    return None
+
+
 def _request_plan(spec: IntradayProbeSpec) -> list[dict[str, Any]]:
     plan: list[dict[str, Any]] = []
     for method in spec.methods:
@@ -859,75 +875,94 @@ def _build_decision(
     pre_registration_commit: str,
     schwab_py_version: str,
 ) -> ProbeDecision:
-    """Apply the locked decision policy."""
+    """Apply the locked at-least-one-request-method decision policy."""
     blockers: list[str] = []
     limitations: list[str] = [
         "This is an as-of observation using the locked symbol set and sample windows; Schwab behavior/entitlements may change.",
         "The probe does not resolve point-in-time universe, security-master, delisted-symbol, or volume-provenance requirements.",
     ]
 
-    expected_full_combos = {
-        (symbol, method)
-        for symbol in spec.full_range_probe["symbols"]
-        for method in spec.methods
-    }
-    full_passing_combos: set[tuple[str, str]] = set()
+    window_ids = {w.id for w in spec.bounded_window_probes}
+    expected_full_symbols = set(spec.full_range_probe["symbols"])
+    expected_bounded_keys = {(w.id, s) for w in spec.bounded_window_probes for s in spec.symbols}
+
+    def _record_passes(rec: ProbeRequestRecord) -> bool:
+        return (
+            rec.threshold_result == "passed"
+            and rec.date_bound_classification in ("honored_exactly", "superset_with_complete_requested_range")
+        )
+
+    full_passing_symbols: dict[str, set[str]] = {m: set() for m in spec.methods}
+    bounded_passing_keys: dict[str, set[tuple[str, str]]] = {m: set() for m in spec.methods}
     for rec in records:
-        if _probe_kind(rec.probe_id) != "full":
+        if not _record_passes(rec):
             continue
-        if rec.threshold_result == "passed" and rec.date_bound_classification in ("honored_exactly", "superset_with_complete_requested_range"):
-            full_passing_combos.add((rec.symbol, rec.method))
+        kind = _probe_kind(rec.probe_id)
+        if kind == "full":
+            full_passing_symbols[rec.method].add(rec.symbol)
+        elif kind == "bounded":
+            wid = _window_id_from_probe_id(rec.probe_id, window_ids)
+            if wid:
+                bounded_passing_keys[rec.method].add((wid, rec.symbol))
 
-    expected_bounded_combos = {
-        (window.id, symbol, method)
-        for window in spec.bounded_window_probes
-        for symbol in spec.symbols
-        for method in spec.methods
-    }
-    bounded_passing_combos: set[tuple[str, str, str]] = set()
-    for rec in records:
-        if _probe_kind(rec.probe_id) != "bounded":
-            continue
-        # The window key is the probe_id with the trailing "-<method>-rep<N>" removed.
-        base = rec.probe_id.rsplit("-rep", 1)[0]
-        window_id = base.rsplit("-", 1)[0]
-        if rec.threshold_result == "passed" and rec.date_bound_classification in ("honored_exactly", "superset_with_complete_requested_range"):
-            bounded_passing_combos.add((window_id, rec.symbol, rec.method))
+    repeatability_by_method: dict[str, list[bool]] = {m: [] for m in spec.methods}
+    for r in repeatability_rows:
+        m = r.get("method")
+        if m in repeatability_by_method:
+            repeatability_by_method[m].append(r["repeat_hash_match"])
 
-    repeatability_passed = all(r["repeat_hash_match"] for r in repeatability_rows) if repeatability_rows else False
-    # Method parity is required for genuinely comparable data-bearing pairs; empty/empty or
-    # error/error pairs are not comparable and do not constitute a method discrepancy.
-    method_parity_passed = all(r["classification"] in ("identical", "not_comparable") for r in parity_rows) if parity_rows else False
-    chunk_overlap_passed = all(r["classification"] == "match" for r in overlap_rows) if overlap_rows else False
+    overlap_by_method: dict[str, list[bool]] = {m: [] for m in spec.methods}
+    for r in overlap_rows:
+        m = r.get("method")
+        if m in overlap_by_method:
+            overlap_by_method[m].append(r["classification"] == "match")
 
-    full_range_ok = expected_full_combos <= full_passing_combos
-    bounded_windows_ok = expected_bounded_combos <= bounded_passing_combos
+    def _repeatable(method: str) -> bool:
+        rows = repeatability_by_method.get(method, [])
+        return all(rows) if rows else False
 
-    direct_full_range_supported = full_range_ok and repeatability_passed and method_parity_passed
-    chunked_historical_windows_supported = (
-        bounded_windows_ok
-        and repeatability_passed
-        and chunk_overlap_passed
-        and method_parity_passed
-    )
+    def _chunk_overlap_ok(method: str) -> bool:
+        rows = overlap_by_method.get(method, [])
+        return all(rows) if rows else False
 
-    if direct_full_range_supported:
-        windowing = "direct_full_range"
-    elif chunked_historical_windows_supported:
-        windowing = "bounded_monthly_chunks"
-    else:
-        windowing = "none"
+    def _parity_conflict(prefix: str) -> bool:
+        return any(
+            (p.get("window") or "").startswith(prefix) and p.get("classification") in _METHOD_PARITY_CONFLICTS
+            for p in parity_rows
+        )
+
+    direct_candidates = [
+        m for m in spec.methods
+        if expected_full_symbols <= full_passing_symbols[m] and _repeatable(m)
+    ]
+    chunked_candidates = [
+        m for m in spec.methods
+        if expected_bounded_keys <= bounded_passing_keys[m] and _repeatable(m) and _chunk_overlap_ok(m)
+    ]
 
     selected_method = "none"
-    if direct_full_range_supported:
-        available_methods = {m for _, m in full_passing_combos}
-        selected_method = "convenience_every_five_minutes" if "convenience_every_five_minutes" in available_methods else "raw_price_history_five_minutes"
-    elif chunked_historical_windows_supported:
-        available_methods = {m for _, _, m in bounded_passing_combos}
-        selected_method = "convenience_every_five_minutes" if "convenience_every_five_minutes" in available_methods else "raw_price_history_five_minutes"
+    windowing = "none"
+    direct_full_range_supported = False
+    chunked_historical_windows_supported = False
+
+    if direct_candidates and not _parity_conflict("full-"):
+        direct_full_range_supported = True
+        windowing = "direct_full_range"
+        selected_method = (
+            "convenience_every_five_minutes"
+            if "convenience_every_five_minutes" in direct_candidates
+            else "raw_price_history_five_minutes"
+        )
+    elif chunked_candidates and not _parity_conflict("window-"):
+        chunked_historical_windows_supported = True
+        windowing = "bounded_monthly_chunks"
+        selected_method = (
+            "convenience_every_five_minutes"
+            if "convenience_every_five_minutes" in chunked_candidates
+            else "raw_price_history_five_minutes"
+        )
 
     approved = bool(direct_full_range_supported or chunked_historical_windows_supported) and selected_method != "none"
-
     coverage_threshold_passed = direct_full_range_supported or chunked_historical_windows_supported
 
     date_filtering_required = any(
@@ -935,18 +970,46 @@ def _build_decision(
         for r in records
     )
 
-    if not approved:
-        blockers.append("Schwab did not satisfy the locked coverage, repeatability, method parity, or chunk-overlap requirements.")
-    if parity_rows and not method_parity_passed:
-        blockers.append("Convenience and raw methods produced different requested-range candles for at least one comparable window.")
-    if overlap_rows and not chunk_overlap_passed:
+    if overlap_rows and not all(r["classification"] == "match" for r in overlap_rows):
         if any(r["classification"] == "mismatch" for r in overlap_rows):
             blockers.append("Chunk overlap mismatch prevents deterministic stitching.")
         else:
-            blockers.append("Chunk overlap test was not comparable because one or both overlap windows contained no requested-range data; deterministic stitching could not be verified.")
+            period = "configured"
+            if overlap_rows and overlap_rows[0].get("overlap_start"):
+                period = str(overlap_rows[0]["overlap_start"])[:7]
+            blockers.append(
+                f"Chunk overlap could not be verified because the {period} overlap windows contained no requested-range data; deterministic stitching could not be verified."
+            )
+
+    if not approved:
+        direct_parity_conflict = bool(direct_candidates and _parity_conflict("full-"))
+        chunked_parity_conflict = bool(chunked_candidates and _parity_conflict("window-"))
+        if direct_parity_conflict or chunked_parity_conflict:
+            if direct_parity_conflict:
+                blockers.append(
+                    "Convenience and raw methods produced different requested-range candles for at least one comparable full-range window, so no method could be selected."
+                )
+            if chunked_parity_conflict:
+                blockers.append(
+                    "Convenience and raw methods produced different requested-range candles for at least one comparable bounded window, so no method could be selected."
+                )
+        elif not direct_candidates and not chunked_candidates:
+            blockers.append(
+                "Full-range and bounded-window coverage did not meet the required thresholds; the provider returned insufficient or empty five-minute history."
+            )
+        else:
+            blockers.append(
+                "Repeatability or chunk-overlap requirements were not met for the access methods that otherwise had sufficient coverage."
+            )
 
     timestamp_semantics = _aggregate_timestamp_semantics(records)
     timestamp_normalization_required = timestamp_semantics in ("bar_start", "bar_end")
+
+    repeatability_passed = all(r["repeat_hash_match"] for r in repeatability_rows) if repeatability_rows else False
+    method_parity_passed = not any(
+        p.get("classification") in _METHOD_PARITY_CONFLICTS for p in parity_rows
+    ) if parity_rows else False
+    chunk_overlap_passed = all(r["classification"] == "match" for r in overlap_rows) if overlap_rows else False
 
     outcome = _outcome_from_support(direct_full_range_supported, chunked_historical_windows_supported, records)
     recommended = (

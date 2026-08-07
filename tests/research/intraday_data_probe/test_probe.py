@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, date, datetime
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -502,9 +503,9 @@ def test_artifact_bundle_excludes_full_ohlcv(spec: IntradayProbeSpec, tmp_path: 
         spec=spec,
         probe_spec_bytes=spec_bytes,
         strategy_spec_path=strategy_spec_path,
-        output_dir=tmp_path / "out",
         artifact_dir=artifact_dir,
         pre_registration_commit="abc123",
+        repo_root=tmp_path,
     )
     run_dirs = list(artifact_dir.iterdir())
     assert run_dirs
@@ -698,9 +699,12 @@ def test_chunked_support_false_when_expected_window_missing(spec: IntradayProbeS
             date_bound_classification="honored_exactly", primary_session_bars=78,
         ),
     ]
-    repeat_rows = [{"repeat_hash_match": True}]
-    parity_rows = [{"classification": "identical"}]
-    overlap_rows = [{"classification": "match"}]
+    repeat_rows = [
+        {"repeat_hash_match": True, "method": "convenience_every_five_minutes"},
+        {"repeat_hash_match": True, "method": "raw_price_history_five_minutes"},
+    ]
+    parity_rows = [{"window": "window-2025-12-SPY", "classification": "identical"}]
+    overlap_rows = [{"classification": "match", "method": "convenience_every_five_minutes"}]
     decision = _build_decision(
         spec, records, repeat_rows, parity_rows, overlap_rows, "a" * 64, "b" * 64, "abc123", "1.5.1",
     )
@@ -742,12 +746,196 @@ def test_selected_request_method_is_none_when_not_supported(spec: IntradayProbeS
             date_bound_classification="clipped_to_recent_history", primary_session_bars=10, expected_regular_session_bars=1000,
         ),
     ]
-    repeat_rows = [{"repeat_hash_match": True}]
-    parity_rows = [{"classification": "not_comparable"}]
-    overlap_rows = [{"classification": "not_comparable"}]
+    repeat_rows = [{"repeat_hash_match": True, "method": "convenience_every_five_minutes"}]
+    parity_rows = [{"window": "full-SPY", "classification": "not_comparable"}]
+    overlap_rows = [{"classification": "not_comparable", "method": "convenience_every_five_minutes", "overlap_start": "2024-06-10T13:30:00.000000+0000"}]
     decision = _build_decision(
         spec, records, repeat_rows, parity_rows, overlap_rows, "a" * 64, "b" * 64, "abc123", "1.5.1",
     )
     assert decision.selected_request_method == "none"
     assert decision.selected_windowing_policy == "none"
     assert not decision.approved_for_intra_001_five_minute_ohlcv
+
+
+def _make_full_record(method: str, probe_id: str, symbol: str = "SPY", passed: bool = True) -> ProbeRequestRecord:
+    return _base_record(
+        probe_id=probe_id,
+        symbol=symbol,
+        method=method,
+        threshold_result="passed" if passed else "failed",
+        date_bound_classification="honored_exactly" if passed else "empty",
+        primary_session_bars=78,
+    )
+
+
+def _full_records(method: str, passed: bool = True) -> list[ProbeRequestRecord]:
+    return [_make_full_record(method, f"full-SPY-{method}-rep1", "SPY", passed=passed)]
+
+
+def _bounded_records(method: str, spec: IntradayProbeSpec, passed: bool = True) -> list[ProbeRequestRecord]:
+    records: list[ProbeRequestRecord] = []
+    for window in spec.bounded_window_probes:
+        for symbol in spec.symbols:
+            records.append(_make_full_record(method, f"{window.id}-{symbol}-{method}-rep1", symbol, passed=passed))
+    return records
+
+
+def _repeat_row(method: str, match: bool = True) -> dict[str, Any]:
+    return {"repeat_hash_match": match, "method": method}
+
+
+def _parity_row(window: str, classification: str = "identical") -> dict[str, Any]:
+    return {"window": window, "classification": classification}
+
+
+def _overlap_row(method: str, classification: str = "match") -> dict[str, Any]:
+    return {"classification": classification, "method": method, "overlap_start": "2024-06-10T13:30:00.000000+0000"}
+
+
+def test_direct_support_raw_only(spec: IntradayProbeSpec):
+    """A passing raw full-range request with a failing convenience method selects raw."""
+    records = _full_records("raw_price_history_five_minutes") + _full_records("convenience_every_five_minutes", passed=False)
+    repeat_rows = [_repeat_row("raw_price_history_five_minutes"), _repeat_row("convenience_every_five_minutes")]
+    parity_rows = [_parity_row("full-SPY", "one_method_empty")]
+    overlap_rows = []
+    decision = _build_decision(spec, records, repeat_rows, parity_rows, overlap_rows, "a" * 64, "b" * 64, "abc123", "1.5.1")
+    assert decision.direct_full_range_supported is True
+    assert decision.chunked_historical_windows_supported is False
+    assert decision.selected_request_method == "raw_price_history_five_minutes"
+    assert decision.selected_windowing_policy == "direct_full_range"
+    assert decision.approved_for_intra_001_five_minute_ohlcv is True
+
+
+def test_direct_support_convenience_only(spec: IntradayProbeSpec):
+    """A passing convenience full-range request with a failing raw method selects convenience."""
+    records = _full_records("convenience_every_five_minutes") + _full_records("raw_price_history_five_minutes", passed=False)
+    repeat_rows = [_repeat_row("convenience_every_five_minutes"), _repeat_row("raw_price_history_five_minutes")]
+    parity_rows = [_parity_row("full-SPY", "one_method_empty")]
+    overlap_rows = []
+    decision = _build_decision(spec, records, repeat_rows, parity_rows, overlap_rows, "a" * 64, "b" * 64, "abc123", "1.5.1")
+    assert decision.direct_full_range_supported is True
+    assert decision.chunked_historical_windows_supported is False
+    assert decision.selected_request_method == "convenience_every_five_minutes"
+    assert decision.selected_windowing_policy == "direct_full_range"
+    assert decision.approved_for_intra_001_five_minute_ohlcv is True
+
+
+def test_chunked_support_raw_only(spec: IntradayProbeSpec):
+    """A raw method that covers every bounded window and passes overlap selects raw + bounded chunks."""
+    records = _bounded_records("raw_price_history_five_minutes", spec) + _bounded_records("convenience_every_five_minutes", spec, passed=False)
+    repeat_rows = [_repeat_row("raw_price_history_five_minutes"), _repeat_row("convenience_every_five_minutes")]
+    parity_rows = [_parity_row(f"{w.id}-{s}", "one_method_empty") for w in spec.bounded_window_probes for s in spec.symbols]
+    overlap_rows = [_overlap_row("raw_price_history_five_minutes", "match")]
+    decision = _build_decision(spec, records, repeat_rows, parity_rows, overlap_rows, "a" * 64, "b" * 64, "abc123", "1.5.1")
+    assert decision.direct_full_range_supported is False
+    assert decision.chunked_historical_windows_supported is True
+    assert decision.selected_request_method == "raw_price_history_five_minutes"
+    assert decision.selected_windowing_policy == "bounded_monthly_chunks"
+    assert decision.approved_for_intra_001_five_minute_ohlcv is True
+
+
+def test_chunked_support_convenience_only(spec: IntradayProbeSpec):
+    """A convenience method that covers every bounded window and passes overlap selects convenience + bounded chunks."""
+    records = _bounded_records("convenience_every_five_minutes", spec) + _bounded_records("raw_price_history_five_minutes", spec, passed=False)
+    repeat_rows = [_repeat_row("convenience_every_five_minutes"), _repeat_row("raw_price_history_five_minutes")]
+    parity_rows = [_parity_row(f"{w.id}-{s}", "one_method_empty") for w in spec.bounded_window_probes for s in spec.symbols]
+    overlap_rows = [_overlap_row("convenience_every_five_minutes", "match")]
+    decision = _build_decision(spec, records, repeat_rows, parity_rows, overlap_rows, "a" * 64, "b" * 64, "abc123", "1.5.1")
+    assert decision.direct_full_range_supported is False
+    assert decision.chunked_historical_windows_supported is True
+    assert decision.selected_request_method == "convenience_every_five_minutes"
+    assert decision.selected_windowing_policy == "bounded_monthly_chunks"
+    assert decision.approved_for_intra_001_five_minute_ohlcv is True
+
+
+def test_chunked_support_both_methods_matching_selects_convenience(spec: IntradayProbeSpec):
+    """Both methods cover all bounded windows with identical data; convenience is preferred."""
+    records = _bounded_records("convenience_every_five_minutes", spec) + _bounded_records("raw_price_history_five_minutes", spec)
+    repeat_rows = [_repeat_row("convenience_every_five_minutes"), _repeat_row("raw_price_history_five_minutes")]
+    parity_rows = [_parity_row(f"{w.id}-{s}", "identical") for w in spec.bounded_window_probes for s in spec.symbols]
+    overlap_rows = [_overlap_row("convenience_every_five_minutes", "match"), _overlap_row("raw_price_history_five_minutes", "match")]
+    decision = _build_decision(spec, records, repeat_rows, parity_rows, overlap_rows, "a" * 64, "b" * 64, "abc123", "1.5.1")
+    assert decision.direct_full_range_supported is False
+    assert decision.chunked_historical_windows_supported is True
+    assert decision.selected_request_method == "convenience_every_five_minutes"
+    assert decision.selected_windowing_policy == "bounded_monthly_chunks"
+    assert decision.approved_for_intra_001_five_minute_ohlcv is True
+
+
+def test_both_methods_data_bearing_but_different_blocks_support(spec: IntradayProbeSpec):
+    """If both methods produce data but disagree materially, no method or access pattern is selected."""
+    records = _full_records("convenience_every_five_minutes") + _full_records("raw_price_history_five_minutes")
+    repeat_rows = [_repeat_row("convenience_every_five_minutes"), _repeat_row("raw_price_history_five_minutes")]
+    parity_rows = [_parity_row("full-SPY", "same_timestamps_different_values")]
+    overlap_rows = []
+    decision = _build_decision(spec, records, repeat_rows, parity_rows, overlap_rows, "a" * 64, "b" * 64, "abc123", "1.5.1")
+    assert decision.direct_full_range_supported is False
+    assert decision.chunked_historical_windows_supported is False
+    assert decision.selected_request_method == "none"
+    assert decision.selected_windowing_policy == "none"
+    assert decision.approved_for_intra_001_five_minute_ohlcv is False
+
+
+def test_safe_artifact_bundle_contains_no_absolute_paths(spec: IntradayProbeSpec, tmp_path: Path, strategy_spec_path: Path):
+    """Generated safe artifacts must not embed /tmp/, /home/, Windows drive, or other absolute local paths."""
+    def handler(method, symbol, kwargs):
+        start = kwargs["start_datetime"]
+        end = kwargs["end_datetime"]
+        return _make_full_response(symbol, start, end)
+
+    client = FakeClient(handler)
+    report = run_probe(
+        spec=spec,
+        strategy_spec_sha256="a" * 64,
+        probe_spec_sha256="b" * 64,
+        output_dir=tmp_path / "out",
+        pre_registration_commit="a" * 40,
+        schwab_py_version="1.5.1",
+        client=client,
+        sleeper=lambda _: None,
+    )
+    artifact_dir = tmp_path / "artifacts"
+    spec_bytes = json.dumps(spec.to_dict()).encode()
+    write_probe_artifacts(
+        report=report,
+        spec=spec,
+        probe_spec_bytes=spec_bytes,
+        strategy_spec_path=strategy_spec_path,
+        artifact_dir=artifact_dir,
+        pre_registration_commit="a" * 40,
+        repo_root=tmp_path,
+    )
+    safe_dirs = [p for p in artifact_dir.iterdir() if p.is_dir()]
+    assert safe_dirs
+    safe_dir = safe_dirs[0]
+
+    forbidden_patterns = [
+        "/tmp/",
+        "/home/",
+        "/Users/",
+        "C:\\\\",
+        "C:/",
+        "D:\\\\",
+        ":\\\\",
+    ]
+    failures: list[str] = []
+    for p in safe_dir.iterdir():
+        if not p.is_file():
+            continue
+        text = p.read_text(encoding="utf-8")
+        for pat in forbidden_patterns:
+            if pat in text:
+                failures.append(f"{p.name} contains forbidden path pattern {pat!r}")
+    assert not failures, "\n".join(failures)
+    ref = json.loads((safe_dir / "strategy_spec_reference.json").read_text())
+    ref_path = Path(ref["file"])
+    assert not ref_path.is_absolute(), f"strategy_spec_reference path must be relative, got {ref['file']!r}"
+
+
+def test_decision_records_full_pre_registration_commit(spec: IntradayProbeSpec):
+    """The pre-registration commit stored in the decision must be a 40-character SHA."""
+    full_sha = "09fdbc4290705f3ecd175ba40bbc5f5cdc42ac74"
+    records = _full_records("convenience_every_five_minutes", passed=False)
+    decision = _build_decision(spec, records, [], [], [], "a" * 64, "b" * 64, full_sha, "1.5.1")
+    assert decision.pre_registration_commit == full_sha
+    assert len(decision.pre_registration_commit) == 40

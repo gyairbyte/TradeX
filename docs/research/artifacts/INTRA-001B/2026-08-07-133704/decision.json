@@ -1,10 +1,10 @@
 {
   "approved_as_complete_intra_001_data_source": false,
   "approved_for_intra_001_five_minute_ohlcv": false,
-  "artifact_bundle_created_at": "2026-08-07T12:35:49.872423+00:00",
+  "artifact_bundle_created_at": "2026-08-07T13:37:04.612302+00:00",
   "blockers": [
-    "Schwab did not satisfy the locked coverage, repeatability, method parity, or chunk-overlap requirements.",
-    "Chunk overlap test was not comparable because one or both overlap windows contained no requested-range data; deterministic stitching could not be verified."
+    "Chunk overlap could not be verified because the 2024-06 overlap windows contained no requested-range data; deterministic stitching could not be verified.",
+    "Full-range and bounded-window coverage did not meet the required thresholds; the provider returned insufficient or empty five-minute history."
   ],
   "chunk_overlap_passed": false,
   "chunked_historical_windows_supported": false,
@@ -17,7 +17,7 @@
   ],
   "method_parity_passed": true,
   "outcome": "not_supported",
-  "pre_registration_commit": "09fdbc4",
+  "pre_registration_commit": "09fdbc4290705f3ecd175ba40bbc5f5cdc42ac74",
   "probe_spec_sha256": "e97a5a9c99d7b203efcbbc6961777e0adfa4345868f03fe33dd35f483eb41dce",
   "production_behavior_changed": false,
   "provider": "schwab",
@@ -27,7 +27,7 @@
   "remaining_universe_source_required": true,
   "remaining_volume_provenance_disclosure_required": true,
   "repeatability_passed": true,
-  "run_id": "2026-08-07-123144",
+  "run_id": "2026-08-07-133704",
   "schwab_py_version": "1.5.1",
   "selected_request_method": "none",
   "selected_windowing_policy": "none",

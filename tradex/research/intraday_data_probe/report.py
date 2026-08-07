@@ -69,9 +69,19 @@ def _coverage_summary_rows(report: ProbeReport) -> list[dict[str, Any]]:
     return rows
 
 
-def _strategy_reference(strategy_spec_path: Path, strategy_spec_sha256: str) -> dict[str, Any]:
+def _strategy_reference(
+    strategy_spec_path: Path,
+    strategy_spec_sha256: str,
+    repo_root: Path | None = None,
+) -> dict[str, Any]:
+    rel_path = strategy_spec_path
+    if repo_root is not None:
+        try:
+            rel_path = strategy_spec_path.relative_to(repo_root)
+        except ValueError:
+            rel_path = strategy_spec_path
     return {
-        "file": str(strategy_spec_path),
+        "file": str(rel_path),
         "sha256": strategy_spec_sha256,
         "note": "SHA-256 of the locked INTRA-001-v1.json strategy specification; not included in bundle.",
     }
@@ -83,13 +93,12 @@ def write_probe_artifacts(
     spec: IntradayProbeSpec,
     probe_spec_bytes: bytes,
     strategy_spec_path: Path,
-    output_dir: Path,
     artifact_dir: Path,
     pre_registration_commit: str,
     report_md_path: Path | None = None,
+    repo_root: Path | None = None,
 ) -> None:
     """Write the safe aggregate artifact bundle to `artifact_dir`."""
-    output_dir = Path(output_dir).expanduser().resolve()
     artifact_dir = Path(artifact_dir).expanduser().resolve()
     run_id = _run_id()
     safe_dir = artifact_dir / run_id
@@ -104,7 +113,7 @@ def write_probe_artifacts(
     )
     (safe_dir / "decision.json").write_text(json.dumps(decision, indent=2, sort_keys=True), encoding="utf-8")
     (safe_dir / "strategy_spec_reference.json").write_text(
-        json.dumps(_strategy_reference(strategy_spec_path, decision["strategy_spec_sha256"]), indent=2, sort_keys=True),
+        json.dumps(_strategy_reference(strategy_spec_path, decision["strategy_spec_sha256"], repo_root), indent=2, sort_keys=True),
         encoding="utf-8",
     )
 
@@ -131,8 +140,8 @@ def write_probe_artifacts(
         f"Run ID: {run_id}\n"
         f"Created: {datetime.now(UTC).isoformat()}\n"
         f"This bundle contains only aggregated, non-sensitive probe metadata.\n"
-        f"Full raw/normalized OHLCV candles and OAuth tokens are excluded.\n"
-        f"Private full outputs are at: {output_dir}\n",
+        f"Full raw/normalized OHLCV candles, provider payloads, and OAuth tokens are excluded.\n"
+        f"They are retained outside the repository and intentionally omitted from this safe bundle.\n",
         encoding="utf-8",
     )
 
@@ -280,7 +289,7 @@ def _method_section(spec: IntradayProbeSpec) -> str:
 def _credential_section() -> str:
     return (
         "Schwab OAuth tokens and app credentials are loaded from environment variables and the token file "
-        "configured by `SCHWAB_TOKEN_PATH` (default `~/.tradex_schwab_token.json`). "
+        "configured by `SCHWAB_TOKEN_PATH` outside the repository. "
         "No credentials, tokens, or HTTP headers are committed or written into this report."
     )
 
@@ -352,7 +361,7 @@ def _extra_sections(report: ProbeReport, spec: IntradayProbeSpec) -> list[tuple[
         ("34. Non-five-minute intervals", f"{len(nonzero_non5)} requests contained returned timestamps within market hours that did not fall on the expected five-minute grid. Missing expected bars are reflected as reduced coverage; genuinely off-grid timestamps are reported here."),
         ("35. Zero-volume and invalid OHLC", f"{len(nonzero_zero_vol)} requests had zero-volume bars; {sum(r.invalid_ohlc_rows for r in records)} requests had invalid OHLC rows. The returned Schwab data were structurally well-formed."),
         ("36. Convenience vs raw method comparison", "The convenience and raw Schwab methods produced identical requested-range normalized hashes for every comparable, data-bearing window."),
-        ("37. Operational environment", "Probe executed via `uv run python -m tradex.research.intraday_data_probe run` on the Devin box, using the locked spec, `schwab-py==1.5.1`, and the Schwab OAuth token at the default `~/.tradex_schwab_token.json` path."),
+        ("37. Operational environment", "Probe executed via `uv run python -m tradex.research.intraday_data_probe run` on the Devin box, using the locked spec, `schwab-py==1.5.1`, and the Schwab OAuth token loaded from the path configured outside the repository."),
         ("38. Security and confidentiality", "OAuth tokens, app keys, headers, full OHLCV CSVs, and payload JSONs remain outside the repo. Only safe aggregate CSVs and decision metadata are committed."),
         ("39. Reproducibility and next steps", f"Re-run with `python -m tradex.research.intraday_data_probe run --spec docs/research/specs/INTRA-001B-schwab-probe-v1.json --strategy-spec docs/research/specs/INTRA-001-v1.json`. Recommended next assignment: `{d.recommended_next_assignment}`."),
     ]

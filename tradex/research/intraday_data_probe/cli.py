@@ -11,6 +11,29 @@ from .probe import run_probe
 from .report import write_probe_artifacts, write_probe_report
 from .spec import load_probe_spec
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+def _is_full_sha(ref: str) -> bool:
+    return len(ref) == 40 and all(c in "0123456789abcdef" for c in ref.lower())
+
+
+def _resolve_commit(ref: str) -> str:
+    """Return a 40-character commit SHA, resolving a short SHA or git ref if needed."""
+    ref = ref.strip()
+    if _is_full_sha(ref):
+        return ref
+    import subprocess
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "--verify", f"{ref}^{{commit}}"],
+            cwd=REPO_ROOT,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except Exception:  # noqa: BLE001
+        raise ValueError(f"Could not resolve pre-registration commit {ref!r} to a full SHA")
+
 
 def _schwab_py_version() -> str:
     try:
@@ -29,7 +52,7 @@ def _pre_registration_commit() -> str:
     try:
         return subprocess.check_output(
             ["git", "rev-parse", "HEAD"],
-            cwd=Path(__file__).resolve().parents[3],
+            cwd=REPO_ROOT,
             text=True,
             stderr=subprocess.DEVNULL,
         ).strip()
@@ -56,7 +79,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
     spec, spec_bytes = load_probe_spec(spec_path)
     strategy_spec_sha = _strategy_spec_sha256(strategy_spec_path)
     probe_spec_sha = hashlib.sha256(spec_bytes).hexdigest()
-    pre_reg_commit = args.pre_registration_commit or _pre_registration_commit()
+    pre_reg_commit_input = args.pre_registration_commit or _pre_registration_commit()
+    pre_reg_commit = _resolve_commit(pre_reg_commit_input)
 
     report = run_probe(
         spec=spec,
@@ -77,9 +101,9 @@ def _cmd_run(args: argparse.Namespace) -> int:
             spec=spec,
             probe_spec_bytes=spec_bytes,
             strategy_spec_path=strategy_spec_path,
-            output_dir=output_dir,
             artifact_dir=artifact_dir,
             pre_registration_commit=pre_reg_commit,
+            repo_root=REPO_ROOT,
         )
 
     if args.report_path:
