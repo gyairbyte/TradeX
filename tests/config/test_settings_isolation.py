@@ -346,6 +346,44 @@ def test_schwab_client_cache_isolation_with_mocked_auth(tmp_path, monkeypatch):
     assert keys == {"key-a", "key-b"}
 
 
+def test_reference_provider_keys_stay_none_when_missing():
+    """Missing Alpha Vantage / Massive keys remain None, not the literal string 'None'."""
+    empty = TradeXSettings()
+    assert empty.data.alpha_vantage_api_key is None
+    assert empty.data.massive_api_key is None
+    # Whitespace-only values should also become None.
+    blank = settings_from_mapping({
+        "ALPHA_VANTAGE_API_KEY": "   ",
+        "MASSIVE_API_KEY": "  \t  ",
+    })
+    assert blank.data.alpha_vantage_api_key is None
+    assert blank.data.massive_api_key is None
+
+
+def test_massive_api_key_takes_precedence_over_polygon_alias():
+    """MASSIVE_API_KEY wins over legacy POLYGON_API_KEY when both are present."""
+    settings = settings_from_mapping({
+        "MASSIVE_API_KEY": "massive-key",
+        "POLYGON_API_KEY": "polygon-key",
+    })
+    assert settings.data.massive_api_key == "massive-key"
+
+    # Legacy alias is used when MASSIVE_API_KEY is absent.
+    legacy = settings_from_mapping({"POLYGON_API_KEY": "polygon-key"})
+    assert legacy.data.massive_api_key == "polygon-key"
+
+
+def test_reference_provider_keys_are_secret_safe():
+    """API keys do not appear in repr or safe_summary."""
+    settings = settings_from_mapping({
+        "ALPHA_VANTAGE_API_KEY": "alpha-secret",
+        "MASSIVE_API_KEY": "massive-secret",
+    })
+    text = repr(settings) + str(settings.safe_summary())
+    assert "alpha-secret" not in text
+    assert "massive-secret" not in text
+
+
 def test_load_runtime_settings_precedence_and_parser_matrix(tmp_path, monkeypatch):
     """dotenv values are overridden by process env; invalid values raise without leaking secrets."""
     env_file = tmp_path / ".env"

@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "task_id": "INTRA-001B-REFERENCE-V3",
+  "probe_version": 3,
+  "provider": "reference",
+  "study_parent": "INTRA-001",
+  "amendment_path": "docs/research/specs/INTRA-001-data-contract-amendment-v2.json",
+  "original_strategy_spec_path": "docs/research/specs/INTRA-001-v1.json",
+  "expected_original_strategy_spec_sha256": "09394d038928433529ec4c5f5ba5ff0392c764d5b59f1af71d95f4f3957c0464",
+  "alpaca_v2_artifact_path": "docs/research/artifacts/INTRA-001B-ALPACA-V2/2026-08-07-175845/decision.json",
+  "probe_dates": [
+    "2022-01-31",
+    "2023-07-31",
+    "2024-05-31",
+    "2025-11-30"
+  ],
+  "fallback_probe_dates": [
+    "2024-01-31",
+    "2024-07-31",
+    "2025-01-31",
+    "2025-11-30"
+  ],
+  "fallback_dataset_start": "2024-01-02",
+  "fallback_dataset_end": "2025-12-31",
+  "candidate_selection_order": [
+    "alpha_vantage",
+    "massive"
+  ],
+  "no_paid_upgrade": true,
+  "no_composite_reference_stack": true,
+  "alpha_vantage": {
+    "endpoint": "LISTING_STATUS",
+    "states": ["active", "delisted"],
+    "expected_columns": ["symbol", "name", "exchange", "assetType", "ipoDate", "delistingDate", "status"],
+    "security_type_exclusions_required": ["OTC", "warrant", "right", "unit", "preferred_stock"]
+  },
+  "massive": {
+    "tickers_endpoint": "/v3/reference/tickers",
+    "types_endpoint": "/v3/reference/tickers/types",
+    "filters": {
+      "active": [true, false],
+      "market": "stocks",
+      "locale": "us"
+    },
+    "pagination": {
+      "page_size": 1000,
+      "exhaust_to_terminal": true,
+      "safety_max_pages": 10000,
+      "detect_repeated_cursor": true,
+      "detect_cycles": true
+    },
+    "security_type_exclusions_required": ["OTC", "warrant", "right", "unit", "preferred_stock"]
+  },
+  "mandatory_gates": [
+    "pit_date_support_for_all_probe_dates",
+    "active_state_complete",
+    "inactive_or_delisted_state_complete",
+    "pagination_exhausted_to_terminal",
+    "no_pagination_cycles_or_repeated_cursors",
+    "exact_historical_date_semantics",
+    "common_stock_classification",
+    "etf_classification",
+    "warrant_exclusion",
+    "right_exclusion",
+    "unit_exclusion",
+    "preferred_stock_exclusion",
+    "otc_exclusion",
+    "primary_listing_provenance",
+    "symbol_presence_and_determinism",
+    "lifecycle_evidence",
+    "duplicate_symbol_behavior_and_resolution",
+    "repeatability",
+    "hashability",
+    "no_present_day_reconstruction",
+    "historical_2022_entitlement_under_current_plan",
+    "feasible_for_all_48_monthly_pit_snapshots"
+  ],
+  "safe_artifact_schema_version": 1,
+  "expected_safe_artifacts": [
+    "README.txt",
+    "artifact_manifest.json",
+    "checksums.sha256",
+    "probe_spec.lock.json",
+    "strategy_spec_reference.json",
+    "alpaca_v2_reference.json",
+    "request_audit.csv",
+    "provider_capability_matrix.csv",
+    "security_type_mapping.csv",
+    "security_type_taxonomy.csv",
+    "historical_coverage.csv",
+    "pagination_audit.csv",
+    "repeatability.csv",
+    "decision.json",
+    "report.md"
+  ]
+}
