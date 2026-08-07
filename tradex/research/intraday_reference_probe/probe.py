@@ -91,29 +91,34 @@ def _capability_matrix(result: ProviderCandidateResult) -> tuple[CapabilityEvide
     has_type_field = bool(
         result.security_type_field and any(result.security_type_counts.values())
     )
-    # Does the observed vocabulary let us exclude the five unwanted types?
     observed_types = set(result.security_type_counts.keys())
-    unwanted_lower = {"otc", "warrant", "right", "unit", "preferred_stock", "pfd"}
-    can_exclude = any(u in {t.lower() for t in observed_types} for u in unwanted_lower) or len(observed_types) > 1
-    security_pass = has_type_field and can_exclude
+    observed_lower = {t.lower() for t in observed_types}
+    unwanted_markers = {"otc", "warrant", "right", "unit", "preferred", "preferred_stock", "pfd"}
+    explicit_unwanted_seen = bool(observed_lower & unwanted_markers)
+    # A provider with only Stock/ETF cannot distinguish common vs preferred, OTC, warrants, etc.
+    only_stock_etf = observed_lower <= {"stock", "etf"}
+    taxonomy_granular = has_type_field and explicit_unwanted_seen and not only_stock_etf
+    exclusions_feasible = has_type_field and not only_stock_etf
     rows.append(
         CapabilityEvidence(
             provider=result.provider,
             capability="security_type_exclusions_feasible",
-            supported=security_pass,
+            supported=exclusions_feasible,
             evidence_class="live_evidence",
-            note=f"Observed type values: {sorted(observed_types)}." if observed_types else "No security type values observed.",
+            note=f"Observed type values: {sorted(observed_types)}."
+            if observed_types
+            else "No security type values observed.",
         )
     )
     rows.append(
         CapabilityEvidence(
             provider=result.provider,
             capability="security_type_taxonomy_granular",
-            supported=security_pass,
+            supported=taxonomy_granular,
             evidence_class="live_evidence",
-            note="Provider exposes a type field with more than one value."
-            if security_pass
-            else "Provider does not expose granular security-type labels.",
+            note="Provider exposes labels that distinguish the five unwanted security types."
+            if taxonomy_granular
+            else "Provider does not expose granular security-type labels for all five exclusions.",
         )
     )
 
@@ -236,6 +241,53 @@ def _evaluate_candidate(result: ProviderCandidateResult) -> ReferenceProbeDecisi
     )
 
 
+def _probe_provider(
+    provider: str,
+    spec: ReferenceProbeSpec,
+    settings: Any,
+    pit_dates: tuple[str, ...],
+    v1_pre_registration_commit: str,
+    final_head: str,
+    branch: str,
+) -> tuple[ProviderCandidateResult | None, ReferenceProbeDecision | None]:
+    if provider == "alpha_vantage":
+        key = settings.data.alpha_vantage_api_key
+        if not key:
+            return None, None
+        from .alpha_vantage import AlphaVantageReferenceClient
+
+        client = AlphaVantageReferenceClient(key)
+        states = tuple(spec.alpha_vantage.get("states", ["active", "delisted"]))
+        result = client.probe_provider(pit_dates, states)
+        result = ProviderCandidateResult(
+            **{**result.__dict__, "capability_rows": _capability_matrix(result)}
+        )
+        decision = _evaluate_candidate(result)
+        decision = ReferenceProbeDecision(
+            **{**decision.__dict__, "v1_pre_registration_commit": v1_pre_registration_commit, "final_head": final_head, "branch": branch}
+        )
+        return result, decision
+
+    if provider == "massive":
+        key = settings.data.massive_api_key
+        if not key:
+            return None, None
+        from .massive import MassiveReferenceClient
+
+        client = MassiveReferenceClient(key)
+        result = client.probe_provider(pit_dates, (True, False))
+        result = ProviderCandidateResult(
+            **{**result.__dict__, "capability_rows": _capability_matrix(result)}
+        )
+        decision = _evaluate_candidate(result)
+        decision = ReferenceProbeDecision(
+            **{**decision.__dict__, "v1_pre_registration_commit": v1_pre_registration_commit, "final_head": final_head, "branch": branch}
+        )
+        return result, decision
+
+    return None, None
+
+
 def run_reference_probe(
     spec: ReferenceProbeSpec,
     settings: Any,
@@ -245,7 +297,11 @@ def run_reference_probe(
     final_head: str | None = None,
     only_provider: str | None = None,
 ) -> tuple[ProviderCandidateResult | None, ReferenceProbeDecision]:
-    """Run the locked candidate-evaluation order and return a decision."""
+    """Run the locked candidate-evaluation order and return a decision.
+
+    First try the original four-year reference dates. If no provider passes,
+    attempt the approved two-year fallback dates (methodology amendment).
+    """
     if final_head is None:
         final_head = _current_head()
     if branch is None:
@@ -262,67 +318,62 @@ def run_reference_probe(
     if only_provider:
         candidate_order = [only_provider]
 
-    first_error: str | None = None
+    attempts: list[tuple[str, tuple[str, ...], ProviderCandidateResult | None, ReferenceProbeDecision | None]] = []
 
-    for provider in candidate_order:
-        if provider == "alpha_vantage":
-            key = settings.data.alpha_vantage_api_key
-            if not key:
-                first_error = first_error or "alpha_vantage: no API key configured"
-                continue
-            from .alpha_vantage import AlphaVantageReferenceClient
-
-            client = AlphaVantageReferenceClient(key)
-            states = tuple(spec.alpha_vantage.get("states", ["active", "delisted"]))
-            result = client.probe_provider(spec.probe_dates, states)
-            result = ProviderCandidateResult(
-                **{**result.__dict__, "capability_rows": _capability_matrix(result)}
+    for pit_dates, dataset_label in (
+        (spec.probe_dates, "original"),
+        (spec.fallback_probe_dates, "fallback"),
+    ):
+        for provider in candidate_order:
+            result, decision = _probe_provider(
+                provider, spec, settings, pit_dates,
+                v1_pre_registration_commit, final_head, branch,
             )
-            decision = _evaluate_candidate(result)
-            decision = ReferenceProbeDecision(
-                **{**decision.__dict__, "v1_pre_registration_commit": v1_pre_registration_commit, "final_head": final_head, "branch": branch}
-            )
-            if decision.approved_as_reference_provider:
-                return result, decision
-            first_error = first_error or decision.reason
-            if len(candidate_order) == 1:
-                return result, decision
-            continue
+            attempts.append((provider, pit_dates, result, decision))
+            if decision is not None and decision.approved_as_reference_provider:
+                return result, ReferenceProbeDecision(
+                        **{
+                            **decision.__dict__,
+                            "pit_dates": pit_dates,
+                            "fallback_probe_dates": spec.fallback_probe_dates,
+                            "dataset_used": dataset_label,
+                        }
+                    )
 
-        if provider == "massive":
-            key = settings.data.massive_api_key
-            if not key:
-                first_error = first_error or "massive: no API key configured"
-                continue
-            from .massive import MassiveReferenceClient
+    # No candidate satisfied either dataset.
+    last_result = attempts[-1][2] if attempts else None
+    last_decision = attempts[-1][3] if attempts else None
+    dispositions = [
+        (name, decision.reason if decision else "not attempted")
+        for name, _pit_dates, _result, decision in attempts
+    ]
+    if last_decision is not None:
+        return last_result, ReferenceProbeDecision(
+            **{
+                **last_decision.__dict__,
+                "provider": None,
+                "approved_as_reference_provider": False,
+                "outcome": "no_currently_free_complete_reference_source",
+                "reason": f"No candidate satisfied all mandatory gates. Dispositions: {dispositions}",
+                "candidate_dispositions": tuple(dispositions),
+                "fallback_probe_dates": spec.fallback_probe_dates,
+                "dataset_used": "none",
+            }
+        )
 
-            client = MassiveReferenceClient(key)
-            result = client.probe_provider(spec.probe_dates, (True, False))
-            result = ProviderCandidateResult(
-                **{**result.__dict__, "capability_rows": _capability_matrix(result)}
-            )
-            decision = _evaluate_candidate(result)
-            decision = ReferenceProbeDecision(
-                **{**decision.__dict__, "v1_pre_registration_commit": v1_pre_registration_commit, "final_head": final_head, "branch": branch}
-            )
-            if decision.approved_as_reference_provider:
-                return result, decision
-            first_error = first_error or decision.reason
-            if len(candidate_order) == 1:
-                return result, decision
-            continue
-
-    # No candidate satisfied the contract.
     return None, ReferenceProbeDecision(
         probe_version=spec.probe_version,
         task_id=spec.task_id,
         provider=None,
         outcome="no_currently_free_complete_reference_source",
         approved_as_reference_provider=False,
-        reason=first_error or "All candidate providers failed mandatory gates.",
+        reason="No candidate provider could be evaluated.",
         candidate_order=tuple(candidate_order),
-        pit_dates=spec.probe_dates,
+        pit_dates=(),
+        fallback_probe_dates=spec.fallback_probe_dates,
+        dataset_used="none",
         v1_pre_registration_commit=v1_pre_registration_commit,
         final_head=final_head,
         branch=branch,
+        candidate_dispositions=tuple(dispositions),
     )

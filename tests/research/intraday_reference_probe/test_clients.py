@@ -1,14 +1,12 @@
 """Credential-free tests for Alpha Vantage and Massive clients."""
 from __future__ import annotations
 
-import io
 from unittest.mock import patch
 
 import pytest
 
 from tradex.research.intraday_reference_probe.alpha_vantage import (
     AlphaVantageReferenceClient,
-    _EXPECTED_COLUMNS,
 )
 from tradex.research.intraday_reference_probe.massive import MassiveReferenceClient
 
@@ -39,9 +37,9 @@ def test_alpha_vantage_client_requires_key() -> None:
 def test_alpha_vantage_fetch_listing_parses_csv() -> None:
     client = AlphaVantageReferenceClient("test-key")
     csv_body = (
-        "symbol,name,exchange,assetType,ipoDate,delistingDate,status\n"
-        "AAPL,Apple Inc,NASDAQ,Stock,1980-12-12,none,Active\n"
-    ).encode("utf-8")
+        b"symbol,name,exchange,assetType,ipoDate,delistingDate,status\n"
+        b"AAPL,Apple Inc,NASDAQ,Stock,1980-12-12,none,Active\n"
+    )
     with patch("urllib.request.urlopen", return_value=_FakeResponse(csv_body, 200)):
         rows, obs = client.fetch_listing("2024-05-31", "active")
     assert obs.row_count == 1
@@ -55,7 +53,7 @@ def test_alpha_vantage_handles_json_error() -> None:
     client = AlphaVantageReferenceClient("test-key")
     body = b'{"Information": "API rate limit exceeded"}'
     with patch("urllib.request.urlopen", return_value=_FakeResponse(body, 200)):
-        rows, obs = client.fetch_listing("2024-05-31", "active")
+        _rows, obs = client.fetch_listing("2024-05-31", "active")
     assert obs.error
     assert obs.row_count == 0
 
@@ -63,13 +61,15 @@ def test_alpha_vantage_handles_json_error() -> None:
 def test_alpha_vantage_probe_provider_counts() -> None:
     client = AlphaVantageReferenceClient("test-key")
     csv = (
-        "symbol,name,exchange,assetType,ipoDate,delistingDate,status\n"
-        "AAPL,Apple Inc,NASDAQ,Stock,1980-12-12,none,Active\n"
-        "MSFT,Microsoft Corp,NASDAQ,Stock,1986-03-13,none,Active\n"
-    ).encode("utf-8")
-    with patch("urllib.request.urlopen", return_value=_FakeResponse(csv, 200)):
-        with patch("time.sleep"):
-            result = client.probe_provider(("2024-05-31",), states=("active",))
+        b"symbol,name,exchange,assetType,ipoDate,delistingDate,status\n"
+        b"AAPL,Apple Inc,NASDAQ,Stock,1980-12-12,none,Active\n"
+        b"MSFT,Microsoft Corp,NASDAQ,Stock,1986-03-13,none,Active\n"
+    )
+    with (
+        patch("urllib.request.urlopen", return_value=_FakeResponse(csv, 200)),
+        patch("time.sleep"),
+    ):
+        result = client.probe_provider(("2024-05-31",), states=("active",))
     assert result.provider == "alpha_vantage"
     assert result.security_type_counts.get("Stock") == 2
 

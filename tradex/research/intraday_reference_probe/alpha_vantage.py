@@ -14,7 +14,7 @@ from typing import Any
 from .models import PITObservation, ProviderCandidateResult
 
 _BASE_URL = "https://www.alphavantage.co/query"
-_RATE_LIMIT_SECONDS = 12.1  # free-tier limit: 5 calls per minute
+_MIN_INTERVAL_SECONDS = 12.1  # free-tier limit: 5 calls per minute
 _EXPECTED_COLUMNS = {"symbol", "name", "exchange", "assetType", "ipoDate", "delistingDate", "status"}
 
 
@@ -25,6 +25,7 @@ class AlphaVantageReferenceClient:
         self.api_key = api_key.strip()
         if not self.api_key:
             raise ValueError("Alpha Vantage API key is required")
+        self._last_request_time: float = 0.0
 
     def _url(self, pit_date: str, state: str) -> str:
         params = {
@@ -36,8 +37,15 @@ class AlphaVantageReferenceClient:
         query = "&".join(f"{k}={urllib.parse.quote(str(v))}" for k, v in params.items())
         return f"{_BASE_URL}?{query}"
 
+    def _wait_for_rate_limit(self) -> None:
+        elapsed = time.monotonic() - self._last_request_time
+        if elapsed < _MIN_INTERVAL_SECONDS:
+            time.sleep(_MIN_INTERVAL_SECONDS - elapsed)
+
     def _fetch_once(self, url: str) -> tuple[bytes, int | None, str | None]:
+        self._wait_for_rate_limit()
         try:
+            self._last_request_time = time.monotonic()
             with urllib.request.urlopen(url, timeout=60) as response:
                 return response.read(), response.getcode(), None
         except urllib.error.HTTPError as exc:
@@ -46,11 +54,19 @@ class AlphaVantageReferenceClient:
         except Exception as exc:  # noqa: BLE001
             return b"", None, str(exc)
 
+    def _fetch_with_retry(self, url: str) -> tuple[bytes, int | None, str | None]:
+        body, status, error = self._fetch_once(url)
+        if error and status in (429, 503):
+            # Free tier rate limit or temporary unavailability; wait and retry once.
+            time.sleep(60)
+            body, status, error = self._fetch_once(url)
+        return body, status, error
+
     def fetch_listing(self, pit_date: str, state: str) -> tuple[list[dict[str, Any]], PITObservation]:
         """Fetch one LISTING_STATUS CSV snapshot and parse it."""
         url = self._url(pit_date, state)
         start = datetime.now(UTC)
-        body, status, error = self._fetch_once(url)
+        body, status, error = self._fetch_with_retry(url)
         elapsed = (datetime.now(UTC) - start).total_seconds()
 
         if error and status != 200:
@@ -122,9 +138,6 @@ class AlphaVantageReferenceClient:
         )
         return rows, obs
 
-    def _wait(self) -> None:
-        time.sleep(_RATE_LIMIT_SECONDS)
-
     def probe_provider(
         self,
         pit_dates: tuple[str, ...],
@@ -150,7 +163,7 @@ class AlphaVantageReferenceClient:
                         if exchange:
                             exchange_counts[exchange] = exchange_counts.get(exchange, 0) + 1
                     # Repeat once for reproducibility.
-                    self._wait()
+                    time.sleep(_MIN_INTERVAL_SECONDS)
                     _repeat_rows, repeat_obs = self.fetch_listing(pit_date, state)
                     repeat_obs = PITObservation(
                         provider=repeat_obs.provider,
@@ -170,9 +183,8 @@ class AlphaVantageReferenceClient:
                     observations.append(repeat_obs)
                     if repeat_obs.error:
                         errors.append(f"{pit_date}/{state} repeat: {repeat_obs.error}")
-                self._wait()
+                time.sleep(_MIN_INTERVAL_SECONDS)
 
-        # Wait after last call not needed, but keep it clean.
         return ProviderCandidateResult(
             provider="alpha_vantage",
             target_entitlement="free LISTING_STATUS",

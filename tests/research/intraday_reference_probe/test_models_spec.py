@@ -4,8 +4,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from tradex.research.intraday_reference_probe.models import (
     PITObservation,
     ProviderCandidateResult,
@@ -19,7 +17,6 @@ from tradex.research.intraday_reference_probe.spec import (
     ReferenceProbeSpec,
     load_probe_spec,
 )
-
 
 PROBE_SPEC = Path("docs/research/specs/INTRA-001B-reference-probe-v1.json")
 AMENDMENT = Path("docs/research/specs/INTRA-001-data-contract-amendment-v2.json")

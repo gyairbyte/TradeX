@@ -11,26 +11,29 @@ from typing import Any
 
 from .models import PITObservation, ProviderCandidateResult
 
-_BASE_URL = "https://api.polygon.io"
-_RATE_LIMIT_SECONDS = 0.2
+_BASE_URL = "https://api.massive.com"
+_MIN_INTERVAL_SECONDS = 12.1
 
 
 class MassiveReferenceClient:
-    """Minimal reference client for Polygon/Massive v3 reference tickers."""
+    """Minimal reference client for Massive v3 reference tickers."""
 
     def __init__(self, api_key: str, base_url: str | None = None) -> None:
         self.api_key = api_key.strip()
         if not self.api_key:
             raise ValueError("Massive/Polygon API key is required")
         self.base_url = (base_url or _BASE_URL).rstrip("/")
+        self._last_request_time: float = 0.0
 
-    def _url(self, path: str, params: dict[str, Any]) -> str:
-        query = urllib.parse.urlencode({k: v for k, v in params.items() if v is not None})
-        sep = "&" if query else ""
-        return f"{self.base_url}{path}?{query}{sep}apiKey={self.api_key}"
+    def _wait_for_rate_limit(self) -> None:
+        elapsed = time.monotonic() - self._last_request_time
+        if elapsed < _MIN_INTERVAL_SECONDS:
+            time.sleep(_MIN_INTERVAL_SECONDS - elapsed)
 
     def _fetch_once(self, url: str) -> tuple[bytes, int | None, str | None]:
+        self._wait_for_rate_limit()
         try:
+            self._last_request_time = time.monotonic()
             req = urllib.request.Request(url, headers={"Accept": "application/json"})
             with urllib.request.urlopen(req, timeout=60) as response:
                 return response.read(), response.getcode(), None
@@ -42,6 +45,10 @@ class MassiveReferenceClient:
 
     def _fetch_json(self, url: str) -> tuple[dict[str, Any] | None, int | None, str | None]:
         body, status, error = self._fetch_once(url)
+        if error and status == 429:
+            # Free tier rate limit; wait and retry once.
+            time.sleep(60)
+            body, status, error = self._fetch_once(url)
         if error:
             return None, status, error
         try:
@@ -53,27 +60,36 @@ class MassiveReferenceClient:
         self,
         path: str,
         base_params: dict[str, Any],
+        *,
+        max_pages: int | None = None,
+        state_label: str | None = None,
     ) -> tuple[list[dict[str, Any]], PITObservation]:
-        """Paginate through a Polygon v3 endpoint and return merged results."""
+        """Paginate through a Massive v3 endpoint and return merged results.
+
+        ``max_pages`` caps the number of pages fetched per PIT snapshot. When
+        ``None`` the client follows the API pagination until exhausted.
+        """
         start = datetime.now(UTC)
         all_results: list[dict[str, Any]] = []
         pages = 0
-        cursor: str | None = None
+        next_url: str | None = None
+        state_label = state_label or str(base_params.get("active", ""))
         while True:
-            params = dict(base_params)
-            if cursor:
-                params["cursor"] = cursor
-            url = self._url(path, params)
+            if next_url:
+                url = next_url
+            else:
+                params = dict(base_params)
+                url = self._url(path, params)
             data, status, error = self._fetch_json(url)
             elapsed = (datetime.now(UTC) - start).total_seconds()
             if error:
                 return all_results, PITObservation(
                     provider="massive",
                     pit_date=str(base_params.get("date", "")),
-                    state=str(base_params.get("active", "")),
+                    state=state_label,
                     requested_at=start.isoformat(timespec="microseconds"),
                     elapsed_seconds=elapsed,
-                    row_count=len(all_results),
+                    row_count=0,
                     column_headers=(),
                     raw_sha256="",
                     http_status=status,
@@ -82,10 +98,11 @@ class MassiveReferenceClient:
             results = data.get("results", []) if isinstance(data, dict) else []
             all_results.extend(results)
             pages += 1
-            cursor = data.get("next_cursor") if isinstance(data, dict) else None
-            if not cursor:
+            next_url = data.get("next_url") if isinstance(data, dict) else None
+            if not next_url:
                 break
-            time.sleep(_RATE_LIMIT_SECONDS)
+            if max_pages is not None and pages >= max_pages:
+                break
             if pages > 500:
                 break
 
@@ -95,7 +112,7 @@ class MassiveReferenceClient:
         obs = PITObservation(
             provider="massive",
             pit_date=str(base_params.get("date", "")),
-            state=str(base_params.get("active", "")),
+            state=state_label,
             requested_at=start.isoformat(timespec="microseconds"),
             elapsed_seconds=elapsed,
             row_count=len(all_results),
@@ -105,8 +122,17 @@ class MassiveReferenceClient:
         )
         return all_results, obs
 
+    def _url(self, path: str, params: dict[str, Any]) -> str:
+        query = urllib.parse.urlencode({k: v for k, v in params.items() if v is not None})
+        sep = "&" if query else ""
+        return f"{self.base_url}{path}?{query}{sep}apiKey={self.api_key}"
+
     def fetch_tickers(
-        self, pit_date: str, active: bool
+        self,
+        pit_date: str,
+        active: bool,
+        *,
+        max_pages: int | None = None,
     ) -> tuple[list[dict[str, Any]], PITObservation]:
         params = {
             "market": "stocks",
@@ -117,7 +143,8 @@ class MassiveReferenceClient:
             "sort": "ticker",
             "order": "asc",
         }
-        return self._paginated_results("/v3/reference/tickers", params)
+        state_label = "active" if active else "inactive"
+        return self._paginated_results("/v3/reference/tickers", params, max_pages=max_pages, state_label=state_label)
 
     def fetch_ticker_types(self) -> tuple[list[dict[str, Any]], str | None]:
         params = {"asset_class": "stocks", "locale": "us"}
@@ -131,6 +158,8 @@ class MassiveReferenceClient:
         self,
         pit_dates: tuple[str, ...],
         states: tuple[bool, ...] = (True, False),
+        *,
+        max_pages: int = 1,
     ) -> ProviderCandidateResult:
         observations: list[PITObservation] = []
         security_type_counts: dict[str, int] = {}
@@ -140,7 +169,7 @@ class MassiveReferenceClient:
         for pit_date in pit_dates:
             for active in states:
                 state_label = "active" if active else "inactive"
-                rows, obs = self.fetch_tickers(pit_date, active)
+                rows, obs = self.fetch_tickers(pit_date, active, max_pages=max_pages)
                 if obs.error:
                     errors.append(f"{pit_date}/{state_label}: {obs.error}")
                 else:
@@ -152,8 +181,8 @@ class MassiveReferenceClient:
                         if exchange:
                             exchange_counts[exchange] = exchange_counts.get(exchange, 0) + 1
                     # Repeat once for reproducibility.
-                    time.sleep(_RATE_LIMIT_SECONDS)
-                    _repeat_rows, repeat_obs = self.fetch_tickers(pit_date, active)
+                    time.sleep(_MIN_INTERVAL_SECONDS)
+                    _repeat_rows, repeat_obs = self.fetch_tickers(pit_date, active, max_pages=max_pages)
                     repeat_obs = PITObservation(
                         provider=repeat_obs.provider,
                         pit_date=repeat_obs.pit_date,
@@ -172,7 +201,7 @@ class MassiveReferenceClient:
                     observations.append(repeat_obs)
                     if repeat_obs.error:
                         errors.append(f"{pit_date}/{state_label} repeat: {repeat_obs.error}")
-                time.sleep(_RATE_LIMIT_SECONDS)
+                time.sleep(_MIN_INTERVAL_SECONDS)
 
         return ProviderCandidateResult(
             provider="massive",

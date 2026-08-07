@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -23,12 +23,15 @@ class ReferenceProbeSpec:
     alpaca_v2_artifact_path: str
     probe_dates: tuple[str, ...]
     candidate_selection_order: tuple[str, ...]
-    no_paid_upgrade: bool
-    no_composite_reference_stack: bool
-    alpha_vantage: dict[str, Any]
-    massive: dict[str, Any]
-    safe_artifact_schema_version: int
-    expected_safe_artifacts: tuple[str, ...]
+    fallback_probe_dates: tuple[str, ...] = ()
+    fallback_dataset_start: str | None = None
+    fallback_dataset_end: str | None = None
+    no_paid_upgrade: bool = True
+    no_composite_reference_stack: bool = True
+    alpha_vantage: dict[str, Any] = field(default_factory=dict)
+    massive: dict[str, Any] = field(default_factory=dict)
+    safe_artifact_schema_version: int = 1
+    expected_safe_artifacts: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -42,6 +45,9 @@ class ReferenceProbeSpec:
             "expected_original_strategy_spec_sha256": self.expected_original_strategy_spec_sha256,
             "alpaca_v2_artifact_path": self.alpaca_v2_artifact_path,
             "probe_dates": list(self.probe_dates),
+            "fallback_probe_dates": list(self.fallback_probe_dates),
+            "fallback_dataset_start": self.fallback_dataset_start,
+            "fallback_dataset_end": self.fallback_dataset_end,
             "candidate_selection_order": list(self.candidate_selection_order),
             "no_paid_upgrade": self.no_paid_upgrade,
             "no_composite_reference_stack": self.no_composite_reference_stack,
@@ -106,6 +112,9 @@ def load_probe_spec(path: str | Path) -> tuple[ReferenceProbeSpec, bytes]:
         alpaca_v2_artifact_path=str(data.get("alpaca_v2_artifact_path", "")),
         probe_dates=_as_tuple(data["probe_dates"], "probe_dates"),
         candidate_selection_order=_as_tuple(data["candidate_selection_order"], "candidate_selection_order"),
+        fallback_probe_dates=_as_tuple(data.get("fallback_probe_dates", []), "fallback_probe_dates"),
+        fallback_dataset_start=data.get("fallback_dataset_start"),
+        fallback_dataset_end=data.get("fallback_dataset_end"),
         no_paid_upgrade=bool(data["no_paid_upgrade"]),
         no_composite_reference_stack=bool(data["no_composite_reference_stack"]),
         alpha_vantage=dict(data.get("alpha_vantage", {})),

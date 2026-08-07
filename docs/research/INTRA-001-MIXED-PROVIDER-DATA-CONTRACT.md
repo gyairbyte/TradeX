@@ -65,11 +65,18 @@ The locked evaluation order is:
 
 A third provider is not permitted for this amendment. Alpha Vantage and Massive may not be combined into a composite reference stack.
 
+## Locked historical reference dataset
+
+- Original approved reference dataset: **2022-01-03 through 2025-12-31** (four years).
+- Approved fallback reference dataset: **2024-01-02 through 2025-12-31** (two years). This fallback is a fixed methodology amendment. It may be used only if the original 2022–2025 reference contract cannot be satisfied under the current free entitlement. The fallback is not permission to move the start date after observing provider limitations.
+- All strategy rules, universe rules, costs, thresholds, sample minimums, validation gates, and holdout discipline remain unchanged for either dataset. Sample minimums are not reduced for the shorter fallback window.
+
 ## Amendment status
 
 - Current amendment: `docs/research/specs/INTRA-001-data-contract-amendment-v2.json`
 - Status: `approved_mixed_model_reference_provider_pending` until `INTRA-001B-REFERENCE` selects and locks a reference provider.
 - Once a reference provider is selected, the amendment status moves to `locked_ready_for_snapshot_implementation`.
+- If only the two-year fallback dataset can be satisfied, the status remains locked for the fallback but the original four-year contract is explicitly documented as unsatisfied.
 
 ## What this amendment does NOT do
 

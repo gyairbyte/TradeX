@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "task_id": "INTRA-001B-REFERENCE",
+  "probe_version": 2,
+  "provider": "reference",
+  "study_parent": "INTRA-001",
+  "amendment_path": "docs/research/specs/INTRA-001-data-contract-amendment-v2.json",
+  "original_strategy_spec_path": "docs/research/specs/INTRA-001-v1.json",
+  "expected_original_strategy_spec_sha256": "09394d038928433529ec4c5f5ba5ff0392c764d5b59f1af71d95f4f3957c0464",
+  "alpaca_v2_artifact_path": "docs/research/artifacts/INTRA-001B-ALPACA-V2/2026-08-07-175845/decision.json",
+  "probe_dates": [
+    "2022-01-31",
+    "2023-07-31",
+    "2024-05-31",
+    "2025-11-30"
+  ],
+  "fallback_probe_dates": [
+    "2024-01-31",
+    "2024-07-31",
+    "2025-01-31",
+    "2025-11-30"
+  ],
+  "fallback_dataset_start": "2024-01-02",
+  "fallback_dataset_end": "2025-12-31",
+  "candidate_selection_order": [
+    "alpha_vantage",
+    "massive"
+  ],
+  "no_paid_upgrade": true,
+  "no_composite_reference_stack": true,
+  "alpha_vantage": {
+    "endpoint": "LISTING_STATUS",
+    "states": ["active", "delisted"],
+    "expected_columns": ["symbol", "name", "exchange", "assetType", "ipoDate", "delistingDate", "status"],
+    "security_type_exclusions_required": ["OTC", "warrant", "right", "unit", "preferred_stock"]
+  },
+  "massive": {
+    "endpoints": ["All Tickers reference", "Ticker Types"],
+    "filters": {
+      "active": [true, false],
+      "market": "stocks",
+      "locale": "us"
+    },
+    "security_type_exclusions_required": ["OTC", "warrant", "right", "unit", "preferred_stock"]
+  },
+  "safe_artifact_schema_version": 1,
+  "expected_safe_artifacts": [
+    "README.txt",
+    "artifact_manifest.json",
+    "checksums.sha256",
+    "probe_spec.lock.json",
+    "strategy_spec_reference.json",
+    "alpaca_v2_reference.json",
+    "request_audit.csv",
+    "provider_capability_matrix.csv",
+    "security_type_mapping.csv",
+    "historical_coverage.csv",
+    "repeatability.csv",
+    "decision.json",
+    "report.md"
+  ]
+}

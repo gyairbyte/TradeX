@@ -32,6 +32,19 @@
     "symbol/reference identity required for monthly membership"
   ],
   "reference_provider": null,
+  "original_dataset_start": "2022-01-03",
+  "original_dataset_end": "2025-12-31",
+  "fallback_dataset": {
+    "start": "2024-01-02",
+    "end": "2025-12-31",
+    "pit_probe_dates": [
+      "2024-01-31",
+      "2024-07-31",
+      "2025-01-31",
+      "2025-11-30"
+    ]
+  },
+  "fallback_dataset_rule": "If the original 2022-01-03 through 2025-12-31 reference contract cannot be satisfied under the current free entitlement, the locked two-year fallback dataset 2024-01-02 through 2025-12-31 is approved. The fallback is a fixed methodology amendment, not permission to move the start date after observing provider limitations. All strategy rules, universe rules, costs, thresholds, sample minimums, validation gates, and holdout discipline remain unchanged; sample minimums are not reduced for the shorter window.",
   "cross_provider_join_policy": {
     "preferred_join_key_hierarchy": [
       "stable provider-supported identifier when demonstrably available and historically valid",

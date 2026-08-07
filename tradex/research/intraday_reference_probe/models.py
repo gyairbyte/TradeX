@@ -125,6 +125,9 @@ class ReferenceProbeDecision:
     v1_pre_registration_commit: str | None = None
     final_head: str | None = None
     branch: str | None = None
+    candidate_dispositions: tuple[tuple[str, str], ...] = ()
+    fallback_probe_dates: tuple[str, ...] = ()
+    dataset_used: str | None = None
     ran_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat(timespec="microseconds"))
 
     def to_dict(self) -> dict[str, Any]:
@@ -152,6 +155,9 @@ class ReferenceProbeDecision:
             "v1_pre_registration_commit": self.v1_pre_registration_commit,
             "final_head": self.final_head,
             "branch": self.branch,
+            "candidate_dispositions": [list(t) for t in self.candidate_dispositions],
+            "fallback_probe_dates": list(self.fallback_probe_dates),
+            "dataset_used": self.dataset_used,
             "ran_at": self.ran_at,
         }
 
