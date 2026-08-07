@@ -2,13 +2,28 @@
 
 **Task ID:** INTRA-001B-ALPACA
 **Provider:** alpaca
-**Outcome:** `supported_ohlcv_only`
-**Approved for INTRA-001 five-minute OHLCV:** True
+**v1 Outcome (frozen):** `supported_ohlcv_only`
+**v1 Disposition (post-review):** `invalid` — not promotion-decision-grade
+**Approved for INTRA-001 five-minute OHLCV:** v1 implementation asserts `true`; review found this assertion is invalid because the probe violated its own timestamp and pagination requirements.
 **Approved as complete INTRA-001 data source:** False
 **Pre-registration commit:** `286493eceeffd6aec872ce7516bed5d1b0cd304f`
 
 
-## 1. Decision summary
+## 0. v1 disposition
+
+This report and the frozen safe artifact bundle at `docs/research/artifacts/INTRA-001B-ALPACA/2026-08-07-153429/` record the **v1** live Alpaca probe run. The raw provider evidence is preserved outside the repository at `~/.tradex/research/INTRA-001B/alpaca-free-probe/`.
+
+A post-run audit identified material implementation defects in the v1 probe:
+
+- `timestamp_semantics` was classified as `inconsistent` for every SIP request because `_classify_timestamp_semantics` counted the 16:00 close timestamp as a bar-end vote while `_analyze_request` correctly excluded it from the bar-start grid. The locked INTRA-001 spec treats material timestamp errors as invalid, so a decision cannot be `approved_for...=true` while evidence says `inconsistent`.
+- Pagination completeness and non-cyclic token handling were not enforced in the request-support gate or in repeatability, and the expected `pagination_summary.csv` was not produced.
+- `chunked_historical_windows_supported` was set to `false` only because the code used `if direct ... elif chunked`; the two capability booleans should be independent.
+- Provider-contract conclusions over-stated what the live API calls actually proved (point-in-time universe, inactive/delisted listing, and `no_provider_mixing_contract_satisfied` semantics were not evidence-aligned).
+
+Therefore the v1 empirical data strongly suggest that Alpaca SIP contains the required 2022-01-03 through 2025-12-31 five-minute OHLCV, but the **v1 research disposition is invalid / not promotion-decision-grade**. A bounded v2 proposal that corrects these audit defects is in `docs/research/INTRA-001B-ALPACA-DATA-PROBE-V2-PROPOSAL.md`. No new Alpaca calls will be made until the v2 scope is approved.
+
+
+## 1. v1 Decision summary (frozen for audit)
 
 - Direct full range supported: True
 - Chunked historical windows supported: False
@@ -434,6 +449,11 @@ Probe executed via `uv run python -m tradex.research.intraday_data_probe run` on
 API keys, tokens, headers, full OHLCV CSVs, and payload JSONs remain outside the repo. Only safe aggregate CSVs and decision metadata are committed.
 
 
-## 39. Reproducibility and next steps
+## 39. v2 proposal
 
-Re-run with the locked probe spec and strategy spec. Recommended next assignment: `gary-decision-intra-001-provider-mixing`.
+Because the v1 probe implementation contains the audit defects described in section 0, the v1 disposition is invalid. A bounded v2 proposal that keeps the same provider, symbols, windows, feeds, thresholds, and research-only boundary and corrects the v1 audit defects is documented in `docs/research/INTRA-001B-ALPACA-DATA-PROBE-V2-PROPOSAL.md`. No new Alpaca calls will be made until the v2 scope is approved.
+
+
+## 40. Reproducibility and next steps
+
+Re-run with the locked probe spec and strategy spec. The v1 next-assignment field remains `gary-decision-intra-001-provider-mixing`; the review-corrected next step is v2 approval (`docs/research/INTRA-001B-ALPACA-DATA-PROBE-V2-PROPOSAL.md`).

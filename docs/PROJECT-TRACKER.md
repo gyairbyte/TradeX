@@ -487,9 +487,11 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Alpaca probe spec:** `docs/research/specs/INTRA-001B-alpaca-probe-v1.json`
 - **Alpaca probe report:** `docs/research/INTRA-001B-ALPACA-DATA-PROBE.md`
 - **Alpaca safe artifacts:** `docs/research/artifacts/INTRA-001B-ALPACA/2026-08-07-153429/`
-- **Alpaca outcome:** `supported_ohlcv_only` — Alpaca Basic/free historical SIP supplies the 2022-01-03 through 2025-12-31 five-minute OHLCV for SPY with full regular-session coverage and repeatable hashes; it does not satisfy the complete single-provider data contract (security-type provenance, consolidated-versus-venue volume disclosure)
+- **Alpaca v1 outcome (frozen):** `supported_ohlcv_only` in the v1 artifact bundle
+- **Alpaca v1 disposition (post-review):** `invalid` / not promotion-decision-grade — the v1 probe implementation violated its own timestamp, pagination, and contract-evidence gating requirements, so the `approved_for_intra_001_five_minute_ohlcv=true` assertion is not valid. The underlying empirical evidence still strongly suggests Alpaca SIP contains the required 2022-01-03 through 2025-12-31 five-minute OHLCV.
+- **v2 proposal:** `docs/research/INTRA-001B-ALPACA-DATA-PROBE-V2-PROPOSAL.md`
 - **Problem statement:** The intraday score is a loose bundle of indicators without VWAP, time-of-day, or liquidity context.
-- **Recommended action:** Gary must decide whether to proceed with Alpaca for OHLCV and a separate provider for the remaining contract dimensions (`gary-decision-intra-001-provider-mixing`) before any `INTRA-001` production trading-behavior change. Continue the phased plan in `docs/research/INTRA-001-SPEC.md` only after the data-source decision is locked.
+- **Recommended action:** Review and approve the bounded v2 proposal. Do not re-run the live Alpaca probe or make any `INTRA-001` production trading-behavior change until v2 pre-registration is approved and executed.
 - **Reason:** A generic score is not actionable for intraday trading. The concrete open-drive VWAP pullback setup and its two baselines are pre-registered before any code changes.
 - **Dependencies:** VAL-001
 - **Files likely affected:** `docs/research/INTRA-001-SPEC.md`, `docs/research/specs/INTRA-001-v1.json`, `docs/PROJECT-TRACKER.md` (this specification PR changes no `tradex/` or test code)
@@ -696,21 +698,24 @@ This is the master backlog for recommendations from the Devin review. Items are 
 | In progress | 1 |
 | Blocked | 0 |
 
-The original engineering-foundation and UI-refactor backlog is substantially complete. The `SHORT-001` Schwab real-data study is closed as Completed — Not supported. The `INTRA-001B` Alpaca probe produced `supported_ohlcv_only`: Alpaca Basic/free historical SIP can supply 2022-01-03 through 2025-12-31 five-minute OHLCV with full coverage and repeatable hashes, but it does not satisfy the complete single-provider data contract.
+The original engineering-foundation and UI-refactor backlog is substantially complete. The `SHORT-001` Schwab real-data study is closed as Completed — Not supported. The `INTRA-001B` Alpaca v1 live probe produced promising empirical evidence that Alpaca SIP can supply 2022-01-03 through 2025-12-31 five-minute OHLCV, but the v1 research disposition is `invalid` / not promotion-decision-grade because the probe implementation violated its own timestamp, pagination, and contract-evidence gating requirements. A bounded v2 proposal is at `docs/research/INTRA-001B-ALPACA-DATA-PROBE-V2-PROPOSAL.md`.
 
 **Remaining non-completed items:**
-- `INTRA-001`: In progress — research specification complete; `INTRA-001B` Alpaca probe complete with `supported_ohlcv_only`; implementation and study are not started; Gary must decide on provider mixing before the next phase.
+- `INTRA-001`: In progress — research specification complete; `INTRA-001B` Alpaca v1 probe complete but disposition is `invalid`; v2 proposal pending approval; implementation and study are not started.
 
 **Recommended next work order:**
-1. **Gary decision on provider mixing** — Decide whether Alpaca OHLCV can be combined with another provider for point-in-time universe, security-type provenance, delisted-symbol handling, corporate-action provenance, and consolidated/volume disclosure, or whether a different single provider must be probed.
-2. **INTRA-001B data and manifest infrastructure** — After the provider decision, approved provider integration, date-ranged five-minute snapshot, point-in-time universe manifest, session normalization, data-quality validation.
-3. **INTRA-001C research detector and execution engine** — Session VWAP, opening-drive state, pullback/reclaim detector, intraday execution model, current-score and simple-VWAP baselines, synthetic tests only.
-4. **INTRA-001D locked real-data study** — Build manifest from approved source, run development/validation, run holdout only if validation gates pass, commit safe reproducibility artifacts, record outcome.
-5. **Separate Gary-approved production PR** — Only if all gates pass and methodology remains valid; must define exact scorer, score, weight, threshold, ranking, screener, UI, alert, and rollback changes.
+1. **Approve `INTRA-001B-ALPACA` v2 proposal** — Review the bounded v2 probe plan that keeps the same provider/symbols/windows/feeds/thresholds and corrects the v1 audit defects. No new Alpaca calls until approved.
+2. **Implement and pre-register v2** — Update probe/audit logic, add credential-free tests, commit v2 pre-registration.
+3. **Run v2 live Alpaca probe** — Execute only after v2 pre-registration is approved.
+4. **INTRA-001B data and manifest infrastructure** — After an approved v2 data-source decision, provider integration, snapshot, session normalization, data-quality validation.
+5. **INTRA-001C research detector and execution engine** — Session VWAP, opening-drive state, pullback/reclaim detector, baselines, synthetic tests only.
+6. **INTRA-001D locked real-data study** — Build manifest, run dev/validation, holdout only if gates pass, commit safe artifacts.
+7. **Separate Gary-approved production PR** — Only if all gates pass and methodology remains valid.
 
 **Recommended next pull request order:**
-1. `gary-decision-intra-001-provider-mixing` (decision record and, if approved, provider-mixing contract design).
-2. `devin/intra-001-b-intraday-data` (INTRA-001B data and manifest infrastructure).
-3. `devin/intra-001-c-research-engine` (INTRA-001C research detector and execution engine).
-4. `devin/intra-001-d-locked-study` (INTRA-001D locked real-data study).
+1. `devin/intra-001b-alpaca-probe-v2-proposal` (or update existing PR #41 with v2 proposal/docs only).
+2. `devin/intra-001b-alpaca-probe-v2` (implementation and pre-registration, pending approval).
+3. `devin/intra-001-b-intraday-data` (INTRA-001B data and manifest infrastructure).
+4. `devin/intra-001-c-research-engine` (INTRA-001C research detector and execution engine).
+5. `devin/intra-001-d-locked-study` (INTRA-001D locked real-data study).
 
