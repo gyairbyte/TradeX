@@ -456,7 +456,7 @@ Credential-free regression tests: passed. Full isolated suite with temporary HOM
 
 ## 55. Exact CI merge-ref evidence
 
-CI workflow ID: `31211100887`. CI job ID: `92973850931`. Merge ref: `1a5c9e93ea923cc2e2cb1edc0e3e104d348997a6`
+CI workflow ID: `31211547593`. CI job ID: `92975307581`. Merge ref: `40a32d2533e3478b07b9975da17b3fb80acd28af`
 
 
 ## 56. Production boundary
@@ -465,7 +465,7 @@ No production trading behavior changed. `tradex/data/fetcher.py` and `tradex/dat
 
 ## 57. Post-live derived-output corrections and pre/post audit
 
-This report and ``decision.json`` were regenerated on 2026-08-07T19:27:05.428423+00:00 from the frozen v2 provider evidence only.
+This report and ``decision.json`` were regenerated on 2026-08-07T19:33:20.015195+00:00 from the frozen v2 provider evidence only.
 No new Alpaca market-data or reference API calls were made.
 
 - Frozen private evidence SHA-256: ``c294cac09a68f1991cb5ba51a2a37668582efccfa191e3fb077dfa68c2bc2182``

@@ -2,7 +2,7 @@
   "alpaca_client_or_rest_version": "requests==2.34.2",
   "approved_as_complete_intra_001_data_source": false,
   "approved_for_intra_001_five_minute_ohlcv": true,
-  "artifact_bundle_created_at": "2026-08-07T19:27:05.421361+00:00",
+  "artifact_bundle_created_at": "2026-08-07T19:33:20.008298+00:00",
   "blockers": [],
   "candidate_duplicate_threshold_passed": true,
   "candidate_feed": "sip",
