@@ -18,6 +18,7 @@ import pandas as pd
 import pytest
 
 from tradex.research.intraday_data_probe.alpaca_client import (
+    AlpacaRestClient,
     _token_hash,
     _token_sequence_hash,
 )
@@ -811,3 +812,105 @@ def test_sha256_candles_hides_raw_sensitive_metadata():
     h = _sha256_candles(candles, None)
     assert len(h) == 64
     assert "100" not in h
+
+
+# ---------------------------------------------------------------------------
+# v2 review corrections (PR #41)
+# ---------------------------------------------------------------------------
+
+
+def test_v2_decision_schema_fields_populated(v2_spec: IntradayProbeSpec):
+    r = _base_v2()
+    decision = _build_decision(v2_spec, [r], [_repeat_row("sip")], [], [], "a" * 64, "b" * 64, "x" * 40, "")
+    assert decision.probe_version == 2
+    assert decision.target_entitlement == "basic_free"
+    assert decision.v1_pre_registration_commit == "286493eceeffd6aec872ce7516bed5d1b0cd304f"
+    assert decision.v2_pre_registration_commit == "x" * 40
+    assert decision.client_version  # non-empty string (requests==...)
+    assert decision.excluded_security_types_supported is False
+
+
+def test_sip_bar_start_iex_ambiguous_candidate_summary_bar_start_decision_unchanged(v2_spec: IntradayProbeSpec):
+    """IEX comparison feed returning ambiguous timestamps must not pull the candidate summary away from bar_start or change core gates."""
+    sip = _base_v2(probe_id="full-SPY-sip-rep1", method="sip", timestamp_semantics_classification="bar_start")
+    iex = _base_v2(probe_id="full-SPY-iex-rep1", method="iex", timestamp_semantics_classification="ambiguous")
+    decision = _build_decision(
+        v2_spec,
+        [sip, iex],
+        [_repeat_row("sip"), _repeat_row("iex")],
+        [],
+        [],
+        "a" * 64,
+        "b" * 64,
+        "x" * 40,
+        "",
+    )
+    assert decision.candidate_timestamp_semantics == "bar_start"
+    assert decision.timestamp_semantics_passed is True
+    assert decision.approved_for_intra_001_five_minute_ohlcv is True
+    assert decision.direct_full_range_supported is True
+    # outcome stays supported_ohlcv_only because provider-contract rows are empty (single-provider contract not met)
+    assert decision.outcome == "supported_ohlcv_only"
+
+
+def test_inactive_asset_listing_supported_uses_inactive_master_row():
+    """inactive_asset_listing_supported must be driven by the current_inactive_asset_master contract row."""
+    from tradex.research.intraday_data_probe.spec import load_probe_spec
+    spec, _ = load_probe_spec("docs/research/specs/INTRA-001B-alpaca-probe-v2.json")
+    r = _base_v2()
+    provider_rows = [
+        {"requirement": "current_active_asset_master", "supported": True, "evidence_type": "live_evidence", "limitation": "", "source": ""},
+        {"requirement": "current_inactive_asset_master", "supported": False, "evidence_type": "live_evidence", "limitation": "", "source": ""},
+    ]
+    decision = _build_decision(spec, [r], [_repeat_row("sip")], [], [], "a" * 64, "b" * 64, "x" * 40, "", provider_contract_rows=provider_rows)
+    assert decision.inactive_asset_listing_supported is False
+
+
+def test_inactive_asset_listing_supported_true_when_inactive_master_true():
+    spec, _ = load_probe_spec("docs/research/specs/INTRA-001B-alpaca-probe-v2.json")
+    r = _base_v2()
+    provider_rows = [
+        {"requirement": "current_active_asset_master", "supported": True, "evidence_type": "live_evidence", "limitation": "", "source": ""},
+        {"requirement": "current_inactive_asset_master", "supported": True, "evidence_type": "live_evidence", "limitation": "", "source": ""},
+    ]
+    decision = _build_decision(spec, [r], [_repeat_row("sip")], [], [], "a" * 64, "b" * 64, "x" * 40, "", provider_contract_rows=provider_rows)
+    assert decision.inactive_asset_listing_supported is True
+
+
+def test_v2_no_provider_mixing_legacy_field_deprecated(v2_spec: IntradayProbeSpec):
+    """The legacy no_provider_mixing_contract_satisfied field must not appear in v2 decision serialization."""
+    r = _base_v2()
+    decision = _build_decision(v2_spec, [r], [_repeat_row("sip")], [], [], "a" * 64, "b" * 64, "x" * 40, "")
+    assert decision.probe_did_not_mix_providers is True
+    assert decision.single_provider_contract_satisfied is False
+    assert "no_provider_mixing_contract_satisfied" not in decision.to_dict()
+
+
+def test_v2_method_parity_not_applicable_for_alpaca(v2_spec: IntradayProbeSpec):
+    """Alpaca has no Schwab-style method pairs; method_parity_passed must be None, not True."""
+    r = _base_v2()
+    decision = _build_decision(v2_spec, [r], [_repeat_row("sip")], [], [], "a" * 64, "b" * 64, "x" * 40, "")
+    assert decision.method_parity_applicable is False
+    assert decision.method_parity_passed is None
+
+
+def test_v2_provider_contract_documented_capability_cites_alpaca_docs(v2_spec: IntradayProbeSpec):
+    """Rows classified as documented_capability must include official Alpaca doc URLs and a review date."""
+    client = AlpacaRestClient("PKDUMMY", "dummy_secret")
+
+    def _trading_get(path: str, params: dict[str, Any] | None = None) -> tuple[int, Any]:
+        if path == "/v2/assets":
+            return 200, [{"symbol": "SPY", "asset_class": "us_equity"}]
+        if path == "/v1/corporate-actions":
+            return 200, {"actions": []}
+        return 0, {}
+
+    client._trading_get = _trading_get  # type: ignore[assignment]
+    r = _base_v2()
+    _, rows = _evaluate_alpaca_provider_contract(client, v2_spec, records=[r], feed_comparison_rows=[])
+    by_req = {row["requirement"]: row for row in rows}
+    for req in ("adjustment_raw", "symbol_mapping_asof"):
+        row = by_req[req]
+        assert row["evidence_type"] == "documented_capability"
+        assert "docs.alpaca.markets/us/reference/stockbars" in row["source"]
+        assert "reviewed" in row["source"]

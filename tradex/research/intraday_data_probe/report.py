@@ -117,12 +117,18 @@ def write_probe_artifacts(
     pre_registration_commit: str,
     report_md_path: Path | None = None,
     repo_root: Path | None = None,
+    **write_probe_report_kwargs: Any,
 ) -> None:
     """Write the safe aggregate artifact bundle to `artifact_dir`."""
     artifact_dir = Path(artifact_dir).expanduser().resolve()
     run_id = _run_id()
     safe_dir = artifact_dir / run_id
     safe_dir.mkdir(parents=True, exist_ok=True)
+
+    # Remove stale manifest/checksum from a previous run so bundled_files and
+    # checksums reflect only the files we are about to write.
+    for stale in ("artifact_manifest.json", "checksums.sha256"):
+        (safe_dir / stale).unlink(missing_ok=True)
 
     decision = report.decision.to_dict()
     decision["run_id"] = run_id
@@ -160,6 +166,7 @@ def write_probe_artifacts(
             strategy_spec_sha256=decision["strategy_spec_sha256"],
             pre_registration_commit=pre_registration_commit,
             report_path=report_md_path,
+            **write_probe_report_kwargs,
         )
 
     is_alpaca = spec.provider == "alpaca"
@@ -174,15 +181,6 @@ def write_probe_artifacts(
         encoding="utf-8",
     )
 
-    bundled_files = sorted(p.name for p in safe_dir.iterdir() if p.is_file())
-    checksums_path = safe_dir / "checksums.sha256"
-    lines: list[str] = []
-    for p in sorted(safe_dir.iterdir()):
-        if p.is_file() and p.name != "checksums.sha256":
-            h = _sha256_file(p)
-            lines.append(f"{h}  {p.name}")
-    checksums_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
     excluded = [
         "Full raw and normalized OHLCV CSVs and payload JSONs",
         "API keys, tokens, headers, and secrets",
@@ -190,6 +188,11 @@ def write_probe_artifacts(
     ]
     if not is_alpaca:
         excluded.append("OAuth tokens and app keys")
+
+    # Manifest and checksums are written last so they can describe and verify the
+    # complete bundle. bundled_files explicitly includes the manifest and checksums.
+    data_files = sorted(p.name for p in safe_dir.iterdir() if p.is_file())
+    bundled_files = sorted(set(data_files + ["artifact_manifest.json", "checksums.sha256"]))
 
     manifest = {
         "schema_version": spec.safe_artifact_schema_version or 1,
@@ -203,6 +206,14 @@ def write_probe_artifacts(
         "created_at": datetime.now(UTC).isoformat(),
     }
     (safe_dir / "artifact_manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+
+    checksums_path = safe_dir / "checksums.sha256"
+    lines: list[str] = []
+    for p in sorted(safe_dir.iterdir()):
+        if p.is_file() and p.name != "checksums.sha256":
+            h = _sha256_file(p)
+            lines.append(f"{h}  {p.name}")
+    checksums_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _method_signature(method: str, spec: IntradayProbeSpec | None = None) -> str:
@@ -449,12 +460,17 @@ def _extra_sections(report: ProbeReport, spec: IntradayProbeSpec) -> list[tuple[
 
 def _feed_parity_observations(report: ProbeReport, spec: IntradayProbeSpec) -> str:
     if spec.provider == "alpaca":
+        method_note = (
+            "Method parity is not applicable for Alpaca v2 (only one candidate feed is approved); "
+            f"`method_parity_applicable={report.decision.method_parity_applicable}`, "
+            f"`method_parity_passed={report.decision.method_parity_passed}`. "
+        )
         if not report.feed_comparison_rows:
-            return "No SIP/IEX feed comparison rows were produced."
+            return method_note + "No SIP/IEX feed comparison rows were produced."
         conflicts = [r for r in report.feed_comparison_rows if r.get("classification") in ("different_timestamps", "one_feed_error")]
         if conflicts:
-            return f"SIP and IEX feeds differ for {len(conflicts)} window/repetition groups. This is expected because IEX is venue-specific while SIP is consolidated; comparison feed is diagnostic and not used for approval."
-        return "SIP and IEX feeds produced comparable timestamps for every window/repetition group; volume differences are recorded in `feed_comparison.csv`."
+            return method_note + f"SIP and IEX feeds differ for {len(conflicts)} window/repetition groups. This is expected because IEX is venue-specific while SIP is consolidated; comparison feed is diagnostic and not used for approval."
+        return method_note + "SIP and IEX feeds produced comparable timestamps for every window/repetition group; volume differences are recorded in `feed_comparison.csv`."
     if not report.method_parity_rows:
         return "No method parity rows were produced."
     conflicts = [r for r in report.method_parity_rows if r.get("classification") not in ("identical",)]
@@ -565,7 +581,10 @@ def _v2_sections(
 
     def _row_note(req: str) -> str:
         row = _contract_row(report.provider_contract_rows, req)
-        return f"supported={row.get('supported')}; evidence_type={row.get('evidence_type')}; limitation={row.get('limitation', '')}"
+        note = f"supported={row.get('supported')}; evidence_type={row.get('evidence_type')}; limitation={row.get('limitation', '')}"
+        if row.get("evidence_type") == "documented_capability" and row.get("source"):
+            note += f"; source={row.get('source')}"
+        return note
 
     sections: list[tuple[str, str]] = [
         ("1. Executive decision", f"Outcome: `{d.outcome}`. Approved for INTRA-001 five-minute OHLCV: {d.approved_for_intra_001_five_minute_ohlcv}. Approved as complete single-provider data source: {d.approved_as_complete_intra_001_data_source}. Selected feed: `{d.selected_feed}`. Selected windowing: `{d.selected_windowing_policy}`."),

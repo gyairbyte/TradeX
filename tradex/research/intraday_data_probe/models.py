@@ -147,9 +147,10 @@ class ProbeDecision:
     timestamp_semantics: str
     timestamp_normalization_required: bool
     repeatability_passed: bool
-    method_parity_passed: bool
     chunk_overlap_passed: bool
     coverage_threshold_passed: bool
+    method_parity_applicable: bool = True
+    method_parity_passed: bool | None = None
     remaining_universe_source_required: bool = True
     remaining_security_master_required: bool = True
     remaining_delisted_symbol_support_required: bool = True
@@ -158,6 +159,12 @@ class ProbeDecision:
     limitations: list[str] = field(default_factory=list)
     recommended_next_assignment: str = ""
     production_behavior_changed: bool = False
+    # v2 provenance and schema fields
+    probe_version: int = 2
+    target_entitlement: str = ""
+    v1_pre_registration_commit: str = ""
+    v2_pre_registration_commit: str = ""
+    client_version: str = ""
     # Alpaca-specific decision fields
     alpaca_client_or_rest_version: str = ""
     candidate_feed: str = ""
@@ -172,7 +179,8 @@ class ProbeDecision:
     delisted_symbol_handling_supported: bool = False
     corporate_action_endpoint_supported: bool = False
     symbol_mapping_asof_supported: bool = False
-    no_provider_mixing_contract_satisfied: bool = True
+    no_provider_mixing_contract_satisfied: bool | None = None
+    excluded_security_types_supported: bool = False
     # v2 audit/contract fields
     candidate_timestamp_semantics: str = ""
     timestamp_semantics_passed: bool = False
@@ -191,7 +199,7 @@ class ProbeDecision:
     methodology_decision_reason: str = ""
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data = {
             "task_id": self.task_id,
             "outcome": self.outcome,
             "provider": self.provider,
@@ -209,6 +217,7 @@ class ProbeDecision:
             "timestamp_semantics": self.timestamp_semantics,
             "timestamp_normalization_required": self.timestamp_normalization_required,
             "repeatability_passed": self.repeatability_passed,
+            "method_parity_applicable": self.method_parity_applicable,
             "method_parity_passed": self.method_parity_passed,
             "chunk_overlap_passed": self.chunk_overlap_passed,
             "coverage_threshold_passed": self.coverage_threshold_passed,
@@ -235,6 +244,12 @@ class ProbeDecision:
             "corporate_action_endpoint_supported": self.corporate_action_endpoint_supported,
             "symbol_mapping_asof_supported": self.symbol_mapping_asof_supported,
             "no_provider_mixing_contract_satisfied": self.no_provider_mixing_contract_satisfied,
+            "excluded_security_types_supported": self.excluded_security_types_supported,
+            "probe_version": self.probe_version,
+            "target_entitlement": self.target_entitlement,
+            "v1_pre_registration_commit": self.v1_pre_registration_commit,
+            "v2_pre_registration_commit": self.v2_pre_registration_commit,
+            "client_version": self.client_version,
             "candidate_timestamp_semantics": self.candidate_timestamp_semantics,
             "timestamp_semantics_passed": self.timestamp_semantics_passed,
             "pagination_repeatability_passed": self.pagination_repeatability_passed,
@@ -250,6 +265,11 @@ class ProbeDecision:
             "methodology_decision_required": self.methodology_decision_required,
             "methodology_decision_reason": self.methodology_decision_reason,
         }
+        # For v2 the legacy field is intentionally deprecated in favor of
+        # ``probe_did_not_mix_providers`` and ``single_provider_contract_satisfied``.
+        if self.probe_version == 2:
+            data.pop("no_provider_mixing_contract_satisfied", None)
+        return data
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> ProbeDecision:

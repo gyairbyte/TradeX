@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from .probe import run_probe
+from .probe import V1_PRE_REGISTRATION_COMMIT, run_probe, validate_pre_registration_commit
 from .report import write_probe_artifacts, write_probe_report
 from .spec import IntradayProbeSpec, load_probe_spec
 
@@ -52,6 +52,32 @@ def _pre_registration_commit() -> str:
         return "unknown"
 
 
+def _current_head() -> str:
+    import subprocess
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=REPO_ROOT,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except Exception:  # noqa: BLE001
+        return "unknown"
+
+
+def _current_branch() -> str:
+    import subprocess
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=REPO_ROOT,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except Exception:  # noqa: BLE001
+        return "unknown"
+
+
 def _add_run_parser(subparsers: argparse._SubParsersAction) -> None:  # type: ignore[name-defined]
     parser = subparsers.add_parser("run", help="Execute the locked five-minute probe")
     parser.add_argument("--spec", required=True, help="Path to the locked probe spec JSON")
@@ -60,6 +86,11 @@ def _add_run_parser(subparsers: argparse._SubParsersAction) -> None:  # type: ig
     parser.add_argument("--artifact-dir", default=None, help="Directory for the safe aggregate artifact bundle (inside repo)")
     parser.add_argument("--report-path", default=None, help="Path to the human-readable probe report")
     parser.add_argument("--pre-registration-commit", default=None, help="SHA of the pre-registration commit")
+    parser.add_argument("--v1-pre-registration-commit", default=V1_PRE_REGISTRATION_COMMIT, help="SHA of the v1 pre-registration commit")
+    parser.add_argument("--starting-head", default=None, help="Approved starting head for the probe run")
+    parser.add_argument("--branch", default=None, help="Git branch the probe was executed on")
+    parser.add_argument("--ci-workflow-id", default="", help="CI workflow ID to record in the report")
+    parser.add_argument("--ci-job-id", default="", help="CI job ID to record in the report")
     parser.set_defaults(func=_cmd_run)
 
 
@@ -87,6 +118,12 @@ def _cmd_run(args: argparse.Namespace) -> int:
     probe_spec_sha = hashlib.sha256(spec_bytes).hexdigest()
     pre_reg_commit_input = args.pre_registration_commit or _pre_registration_commit()
     pre_reg_commit = _resolve_commit(pre_reg_commit_input)
+    final_head = _current_head()
+    pre_reg_commit = validate_pre_registration_commit(
+        pre_reg_commit,
+        repo_root=REPO_ROOT,
+        final_head=final_head,
+    )
 
     report = run_probe(
         spec=spec,
@@ -100,6 +137,14 @@ def _cmd_run(args: argparse.Namespace) -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "report.json").write_text(json.dumps(report.to_dict(), indent=2, default=str), encoding="utf-8")
 
+    report_kwargs = {
+        "v1_pre_registration_commit": args.v1_pre_registration_commit,
+        "branch": args.branch or _current_branch(),
+        "starting_head": args.starting_head or final_head,
+        "ci_workflow_id": args.ci_workflow_id,
+        "ci_job_id": args.ci_job_id,
+    }
+
     if args.artifact_dir:
         artifact_dir = Path(args.artifact_dir).expanduser().resolve()
         write_probe_artifacts(
@@ -110,6 +155,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
             artifact_dir=artifact_dir,
             pre_registration_commit=pre_reg_commit,
             repo_root=REPO_ROOT,
+            **report_kwargs,
         )
 
     report_path = args.report_path
@@ -121,7 +167,15 @@ def _cmd_run(args: argparse.Namespace) -> int:
                 report_path = str(REPO_ROOT / "docs" / "research" / f"{spec.task_id}-DATA-PROBE.md")
         else:
             report_path = str(REPO_ROOT / "docs" / "research" / "INTRA-001B-SCHWAB-DATA-PROBE.md")
-    write_probe_report(report, spec, probe_spec_sha, strategy_spec_sha, pre_reg_commit, Path(report_path))
+    write_probe_report(
+        report,
+        spec,
+        probe_spec_sha,
+        strategy_spec_sha,
+        pre_reg_commit,
+        Path(report_path),
+        **report_kwargs,
+    )
 
     print(json.dumps(report.decision.to_dict(), indent=2))
     return 0

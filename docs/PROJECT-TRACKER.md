@@ -492,7 +492,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Alpaca v2 probe report:** `docs/research/INTRA-001B-ALPACA-DATA-PROBE-V2.md`
 - **Alpaca v2 safe artifacts:** `docs/research/artifacts/INTRA-001B-ALPACA-V2/2026-08-07-175845/`
 - **Alpaca v2 outcome:** `supported_ohlcv_only` — Alpaca Basic/free SIP supplies the locked 2022-01-03 through 2025-12-31 five-minute regular-session OHLCV, but cannot by itself satisfy the complete INTRA-001 single-provider data contract (point-in-time universe, security-master, delisted handling, volume provenance).
-- **v2 pre-registration commit:** `340e0921b31e40b6d9ef67aaedb8b6b8ec7a4185`
+- **v2 pre-registration commit:** `340e0921065fc17767cd882393fb3fe543cfcc0b`
 - **v2 decision A:** `approved_for_intra_001_five_minute_ohlcv = true` (Alpaca SIP bar-start timestamps, 100% eligible coverage, repeatable, paginated, within quality thresholds)
 - **v2 decision B:** `approved_as_complete_intra_001_data_source = false` (`supported_ohlcv_only`; remaining dimensions require a provider-mixing or supplement decision)
 - **Problem statement:** The intraday score is a loose bundle of indicators without VWAP, time-of-day, or liquidity context.

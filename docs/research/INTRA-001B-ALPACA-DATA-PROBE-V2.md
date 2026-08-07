@@ -5,7 +5,7 @@
 **Outcome:** `supported_ohlcv_only`
 **Approved for INTRA-001 five-minute OHLCV:** True
 **Approved as complete INTRA-001 data source:** False
-**Pre-registration commit:** `340e0921b31e40b6d9ef67aaedb8b6b8ec7a4185`
+**Pre-registration commit:** `340e0921065fc17767cd882393fb3fe543cfcc0b`
 
 
 ## 1. Executive decision
@@ -25,7 +25,7 @@ v2 implementation approved via assignment `pasted-1786122058624.md`: corrected t
 
 ## 4. Starting branch/head
 
-Branch: `devin/intra-001b-alpaca-probe`. Starting head: `unknown`.
+Branch: `devin/intra-001b-alpaca-probe`. Starting head: `bb1730c598c252d4fc6ac5125bf348766a6455f9`.
 
 
 ## 5. v1 preregistration SHA
@@ -35,7 +35,7 @@ Branch: `devin/intra-001b-alpaca-probe`. Starting head: `unknown`.
 
 ## 6. v2 preregistration SHA
 
-`340e0921b31e40b6d9ef67aaedb8b6b8ec7a4185`
+`340e0921065fc17767cd882393fb3fe543cfcc0b`
 
 
 ## 7. Strategy spec SHA
@@ -369,7 +369,7 @@ supported=False; evidence_type=unproven; limitation=asof parameter maps symbol a
 
 ## 42. Symbol/asof mapping
 
-supported=True; evidence_type=documented_capability; limitation=asof is a query parameter, not a historical security master.
+supported=True; evidence_type=documented_capability; limitation=asof is a query parameter, not a historical security master.; source=Alpaca Stock Bars API reference, https://docs.alpaca.markets/us/reference/stockbars (reviewed 2026-08-08) (asof parameter); request used asof=2025-12-31
 
 
 ## 43. Consolidated-volume provenance
@@ -384,7 +384,7 @@ supported=False; evidence_type=live_evidence; limitation=Paired SIP/IEX volume d
 | ohlcv_five_minute_history | GET /v2/stocks/{symbol}/bars | 200 | True | live_evidence |  | probe bars requests |
 | regular_session_history | GET /v2/stocks/{symbol}/bars | 200 | True | live_evidence | Requires bar-start timestamps and complete regular-session coverage. | probe bars requests |
 | timestamp_convention | GET /v2/stocks/{symbol}/bars | 200 | True | live_evidence | Classified from returned timestamps; documentation not audited. | probe bars requests |
-| adjustment_raw | GET /v2/stocks/{symbol}/bars | 200 | False | documented_capability | Parameter was sent; actual adjustment basis not independently verified. | probe request parameters |
+| adjustment_raw | GET /v2/stocks/{symbol}/bars | 200 | False | documented_capability | Parameter was sent; actual adjustment basis not independently verified. | Alpaca Stock Bars API reference, https://docs.alpaca.markets/us/reference/stockbars (reviewed 2026-08-08) (adjustment parameter) |
 | consolidated_volume_provenance | GET /v2/stocks/{symbol}/bars?feed=sip|iex | 200 | False | live_evidence | Paired SIP/IEX volume differs; explicit consolidated/venue disclosure not captured. | probe feed comparison |
 | venue_volume_iex_historical | GET /v2/stocks/{symbol}/bars?feed=iex | 200 | True | live_evidence | IEX is a diagnostic comparison feed only. | probe bars requests |
 | point_in_time_universe | GET /v2/assets | 200 | False | live_evidence | Active snapshot is not a historical point-in-time universe. | active_assets_count=14202 |
@@ -392,7 +392,7 @@ supported=False; evidence_type=live_evidence; limitation=Paired SIP/IEX volume d
 | current_active_asset_master | GET /v2/assets?status=active | 200 | True | live_evidence | Current listing only. | active_assets_count=14202 |
 | current_inactive_asset_master | GET /v2/assets?status=inactive | 200 | True | live_evidence | Inactive listing is current, not historical PIT. | inactive_assets_count=19202 |
 | delisted_symbol_handling | GET /v2/stocks/{symbol}/bars | 0 | False | unproven | asof parameter maps symbol at asof date; does not reconstruct historical security master. |  |
-| symbol_mapping_asof | GET /v2/stocks/{symbol}/bars | 200 | True | documented_capability | asof is a query parameter, not a historical security master. | asof=2025-12-31 |
+| symbol_mapping_asof | GET /v2/stocks/{symbol}/bars | 200 | True | documented_capability | asof is a query parameter, not a historical security master. | Alpaca Stock Bars API reference, https://docs.alpaca.markets/us/reference/stockbars (reviewed 2026-08-08) (asof parameter); request used asof=2025-12-31 |
 | security_type_stock_etf | GET /v2/assets | 200 | False | unproven | asset_class=us_equity does not distinguish stocks from ETFs. |  |
 | security_type_warrant_right_unit_preferred | GET /v2/assets | 200 | False | unproven | asset_class=us_equity does not expose warrant/right/unit/preferred classification. |  |
 | historical_security_type | GET /v2/assets | 200 | False | unproven | Assets API returns current classification only. |  |
@@ -456,9 +456,50 @@ Credential-free regression tests: passed. Full isolated suite with temporary HOM
 
 ## 55. Exact CI merge-ref evidence
 
-CI workflow ID: ``. CI job ID: ``. Merge ref: `to be recorded after CI`
+CI workflow ID: `31206223710`. CI job ID: `92957843244`. Merge ref: `to be recorded after CI`
 
 
 ## 56. Production boundary
 
 No production trading behavior changed. `tradex/data/fetcher.py` and `tradex/data/history.py` were not modified. No broker account, balance, position, order, transfer, or transaction endpoints were called. The v2 probe is research-only and does not promote Alpaca to a production data source without Gary's explicit approval.
+
+## 57. Post-live derived-output corrections and pre/post audit
+
+This report and ``decision.json`` were regenerated on 2026-08-07T19:15:21.021588+00:00 from the frozen v2 provider evidence only.
+No new Alpaca market-data or reference API calls were made.
+
+- Frozen private evidence SHA-256: ``c294cac09a68f1991cb5ba51a2a37668582efccfa191e3fb077dfa68c2bc2182``
+- v1 pre-registration commit: ``286493eceeffd6aec872ce7516bed5d1b0cd304f`` (preserved byte-for-byte)
+- v2 pre-registration commit: ``340e0921065fc17767cd882393fb3fe543cfcc0b`` (resolved and verified as ancestor of final head)
+- Approved starting head: ``bb1730c598c252d4fc6ac5125bf348766a6455f9``
+- Final head at regeneration: ``340e0921065fc17767cd882393fb3fe543cfcc0b``
+
+### Corrections applied
+
+1. ``candidate_timestamp_semantics`` is now aggregated over candidate SIP records only; the comparison IEX feed is excluded from the candidate summary.
+2. ``method_parity_passed`` is now ``null`` / not applicable for Alpaca v2 because Alpaca has no Schwab-style method-pair comparison; SIP/IEX diagnostics remain in ``feed_comparison.csv``.
+3. ``inactive_asset_listing_supported`` now derives from the ``current_inactive_asset_master`` provider-contract row instead of the active-assets row.
+4. The legacy ``no_provider_mixing_contract_satisfied`` field is omitted from v2 ``decision.json`` in favor of ``probe_did_not_mix_providers`` (true) and ``single_provider_contract_satisfied`` (false).
+5. The v2 decision schema now includes ``probe_version``, ``target_entitlement``, ``v1_pre_registration_commit``, ``v2_pre_registration_commit``, ``client_version``, and ``excluded_security_types_supported``.
+6. Official Alpaca documentation titles/links and review date are recorded for rows classified as ``documented_capability``.
+
+### Pre/post audit
+
+- Aggregate timestamp semantics over **all** records: ``ambiguous``
+- Aggregate timestamp semantics over **candidate SIP** records: ``bar_start``
+- Core gate/outcome unchanged by corrections: ``True``
+
+Core gate comparison (old → new):
+
+- `outcome`: `supported_ohlcv_only` → `supported_ohlcv_only`
+- `approved_for_intra_001_five_minute_ohlcv`: `True` → `True`
+- `approved_as_complete_intra_001_data_source`: `False` → `False`
+- `direct_full_range_supported`: `True` → `True`
+- `chunked_historical_windows_supported`: `True` → `True`
+- `single_provider_contract_satisfied`: `False` → `False`
+- `selected_request_method`: `sip` → `sip`
+- `selected_windowing_policy`: `direct_full_range` → `direct_full_range`
+- `timestamp_semantics_passed`: `True` → `True`
+- `candidate_timestamp_semantics`: `bar_start` → `bar_start`
+
+**AUDIT PASS**: the post-live derived-output corrections did not change the preregistered core support gates or the empirical disposition ``supported_ohlcv_only``.

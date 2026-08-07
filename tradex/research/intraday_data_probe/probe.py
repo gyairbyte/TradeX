@@ -29,6 +29,51 @@ from .alpaca_client import AlpacaRestClient, make_alpaca_client
 from .models import ProbeDecision, ProbeReport, ProbeRequestRecord
 from .spec import IntradayProbeSpec
 
+V1_PRE_REGISTRATION_COMMIT = "286493eceeffd6aec872ce7516bed5d1b0cd304f"
+V2_PRE_REGISTRATION_COMMIT = "340e0921065fc17767cd882393fb3fe543cfcc0b"
+
+
+def validate_pre_registration_commit(
+    commit: str,
+    repo_root: Path | str | None = None,
+    final_head: str | None = None,
+) -> str:
+    """Resolve ``commit`` to a full SHA and verify it is an ancestor of ``final_head``.
+
+    The frozen v2 preregistration commit must be a real, reachable git object and an
+    ancestor of the live-result/final head. This function returns the 40-character SHA.
+    """
+    import subprocess
+
+    ref = (commit or "").strip()
+    if not ref:
+        raise ValueError("pre-registration commit is empty")
+    cwd = str(repo_root) if repo_root else None
+    try:
+        full = subprocess.check_output(
+            ["git", "rev-parse", "--verify", f"{ref}^{{commit}}"],
+            cwd=cwd,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except subprocess.CalledProcessError as exc:
+        raise ValueError(f"pre-registration commit {ref!r} does not resolve to a real commit") from exc
+    if len(full) != 40:
+        raise ValueError(f"resolved pre-registration commit is not a 40-character SHA: {full!r}")
+    if final_head:
+        try:
+            subprocess.check_call(
+                ["git", "merge-base", "--is-ancestor", full, final_head],
+                cwd=cwd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except subprocess.CalledProcessError as exc:
+            raise ValueError(
+                f"pre-registration commit {full} is not an ancestor of final head {final_head}"
+            ) from exc
+    return full
+
 
 def _format_utc(dt: datetime | None) -> str | None:
     if dt is None:
@@ -1305,6 +1350,9 @@ def _evaluate_alpaca_provider_contract(
         "volume_provenance_disclosure_complete": volume_provenance_disclosure_complete,
     }
 
+    review_date = "2026-08-08"
+    stockbars_doc = f"Alpaca Stock Bars API reference, https://docs.alpaca.markets/us/reference/stockbars (reviewed {review_date})"
+
     rows: list[dict[str, Any]] = [
         {
             "requirement": "ohlcv_five_minute_history",
@@ -1340,7 +1388,7 @@ def _evaluate_alpaca_provider_contract(
             "supported": booleans["adjustment_raw_supported"],
             "evidence_type": "documented_capability" if any_candidate_data else "unproven",
             "limitation": "Parameter was sent; actual adjustment basis not independently verified.",
-            "source": "probe request parameters",
+            "source": stockbars_doc + " (adjustment parameter)",
         },
         {
             "requirement": "consolidated_volume_provenance",
@@ -1412,7 +1460,7 @@ def _evaluate_alpaca_provider_contract(
             "supported": booleans["symbol_mapping_asof_supported"],
             "evidence_type": "documented_capability" if any_candidate_data else "unproven",
             "limitation": "asof is a query parameter, not a historical security master.",
-            "source": f"asof={spec.asof}",
+            "source": stockbars_doc + f" (asof parameter); request used asof={spec.asof}",
         },
         {
             "requirement": "security_type_stock_etf",
@@ -1775,9 +1823,13 @@ def _build_decision(
     timestamp_normalization_required = timestamp_semantics in ("bar_start", "bar_end")
 
     repeatability_passed = all(r["repeat_hash_match"] for r in repeatability_rows) if repeatability_rows else False
-    method_parity_passed = not any(
-        p.get("classification") in _METHOD_PARITY_CONFLICTS for p in parity_rows
-    ) if parity_rows else True
+    method_parity_applicable = bool(parity_rows)
+    if method_parity_applicable:
+        method_parity_passed = not any(
+            p.get("classification") in _METHOD_PARITY_CONFLICTS for p in parity_rows
+        )
+    else:
+        method_parity_passed = None  # No comparable method-pairs exist (Alpaca v2).
     chunk_overlap_passed = all(r["classification"] == "match" for r in relevant_overlap) if relevant_overlap else False
 
     timestamp_semantics_passed = (
@@ -1877,6 +1929,10 @@ def _build_decision(
             else "devin/intra-001b-alternative-ohlcv-source"
         )
 
+    probe_version = int(getattr(spec, "schema_version", 2) or 2)
+    target_entitlement = spec.target_entitlement or ("basic_free" if is_alpaca else "")
+    client_version = _alpaca_rest_version() if is_alpaca else schwab_py_version
+
     return ProbeDecision(
         task_id=spec.task_id,
         outcome=outcome,
@@ -1885,6 +1941,11 @@ def _build_decision(
         strategy_spec_sha256=strategy_spec_sha256,
         probe_spec_sha256=probe_spec_sha256,
         pre_registration_commit=pre_registration_commit,
+        probe_version=probe_version,
+        target_entitlement=target_entitlement,
+        v1_pre_registration_commit=V1_PRE_REGISTRATION_COMMIT,
+        v2_pre_registration_commit=pre_registration_commit,
+        client_version=client_version,
         direct_full_range_supported=direct_full_range_supported,
         chunked_historical_windows_supported=chunked_historical_windows_supported,
         selected_request_method=selected_method,
@@ -1895,6 +1956,7 @@ def _build_decision(
         timestamp_semantics=timestamp_semantics,
         timestamp_normalization_required=timestamp_normalization_required,
         repeatability_passed=repeatability_passed,
+        method_parity_applicable=method_parity_applicable,
         method_parity_passed=method_parity_passed,
         chunk_overlap_passed=chunk_overlap_passed,
         candidate_timestamp_semantics=candidate_timestamp_semantics,
@@ -1934,7 +1996,7 @@ def _build_decision(
             r.get("requirement") == "security_type_stock_etf" and r.get("supported") for r in provider_contract_rows
         ),
         inactive_asset_listing_supported=any(
-            r.get("requirement") == "current_active_asset_master" and r.get("supported") for r in provider_contract_rows
+            r.get("requirement") == "current_inactive_asset_master" and r.get("supported") for r in provider_contract_rows
         ),
         delisted_symbol_handling_supported=any(
             r.get("requirement") == "delisted_symbol_handling" and r.get("supported") for r in provider_contract_rows
@@ -1945,7 +2007,10 @@ def _build_decision(
         symbol_mapping_asof_supported=any(
             r.get("requirement") == "symbol_mapping_asof" and r.get("supported") for r in provider_contract_rows
         ),
-        no_provider_mixing_contract_satisfied=True,
+        excluded_security_types_supported=any(
+            r.get("requirement") == "security_type_warrant_right_unit_preferred" and r.get("supported") for r in provider_contract_rows
+        ),
+        no_provider_mixing_contract_satisfied=None if probe_version == 2 else True,
         probe_did_not_mix_providers=True,
         single_provider_contract_satisfied=single_provider_contract_satisfied,
         methodology_decision_required=is_alpaca and outcome == "supported_ohlcv_only",

@@ -15,14 +15,14 @@
     "request_audit.csv",
     "strategy_spec_reference.json"
   ],
-  "created_at": "2026-08-07T17:58:45.917628+00:00",
-  "decision_sha256": "5b350da3d95cf8ea2c43679890626dc57769002649adf4626c30724dac6d7966",
+  "created_at": "2026-08-07T19:15:21.020084+00:00",
+  "decision_sha256": "319522d757e839dd8b06e5755827485316005c4b99c92c6ede0b00b25f5497d1",
   "excluded_files": [
-    "Full raw/normalized OHLCV CSVs and payload JSONs",
+    "Full raw and normalized OHLCV CSVs and payload JSONs",
     "API keys, tokens, headers, and secrets",
     "Per-request intermediate state"
   ],
-  "pre_registration_commit": "340e0921b31e40b6d9ef67aaedb8b6b8ec7a4185",
+  "pre_registration_commit": "340e0921065fc17767cd882393fb3fe543cfcc0b",
   "probe_spec_sha256": "f0ee4f8bfca77eae39432974064d3335ae50f1fbd4b57db2ee97dbb553b8fd1e",
   "run_id": "2026-08-07-175845",
   "schema_version": 2,

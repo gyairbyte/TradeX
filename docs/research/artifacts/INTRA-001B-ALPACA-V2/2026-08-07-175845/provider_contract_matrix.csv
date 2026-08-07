@@ -2,7 +2,7 @@ requirement,endpoint,http_status,supported,evidence_type,limitation,source
 ohlcv_five_minute_history,GET /v2/stocks/{symbol}/bars,200,True,live_evidence,,probe bars requests
 regular_session_history,GET /v2/stocks/{symbol}/bars,200,True,live_evidence,Requires bar-start timestamps and complete regular-session coverage.,probe bars requests
 timestamp_convention,GET /v2/stocks/{symbol}/bars,200,True,live_evidence,Classified from returned timestamps; documentation not audited.,probe bars requests
-adjustment_raw,GET /v2/stocks/{symbol}/bars,200,False,documented_capability,Parameter was sent; actual adjustment basis not independently verified.,probe request parameters
+adjustment_raw,GET /v2/stocks/{symbol}/bars,200,False,documented_capability,Parameter was sent; actual adjustment basis not independently verified.,"Alpaca Stock Bars API reference, https://docs.alpaca.markets/us/reference/stockbars (reviewed 2026-08-08) (adjustment parameter)"
 consolidated_volume_provenance,GET /v2/stocks/{symbol}/bars?feed=sip|iex,200,False,live_evidence,Paired SIP/IEX volume differs; explicit consolidated/venue disclosure not captured.,probe feed comparison
 venue_volume_iex_historical,GET /v2/stocks/{symbol}/bars?feed=iex,200,True,live_evidence,IEX is a diagnostic comparison feed only.,probe bars requests
 point_in_time_universe,GET /v2/assets,200,False,live_evidence,Active snapshot is not a historical point-in-time universe.,active_assets_count=14202
@@ -10,7 +10,7 @@ monthly_pit_reproducibility,GET /v2/assets,200,False,unproven,No historical PIT 
 current_active_asset_master,GET /v2/assets?status=active,200,True,live_evidence,Current listing only.,active_assets_count=14202
 current_inactive_asset_master,GET /v2/assets?status=inactive,200,True,live_evidence,"Inactive listing is current, not historical PIT.",inactive_assets_count=19202
 delisted_symbol_handling,GET /v2/stocks/{symbol}/bars,0,False,unproven,asof parameter maps symbol at asof date; does not reconstruct historical security master.,
-symbol_mapping_asof,GET /v2/stocks/{symbol}/bars,200,True,documented_capability,"asof is a query parameter, not a historical security master.",asof=2025-12-31
+symbol_mapping_asof,GET /v2/stocks/{symbol}/bars,200,True,documented_capability,"asof is a query parameter, not a historical security master.","Alpaca Stock Bars API reference, https://docs.alpaca.markets/us/reference/stockbars (reviewed 2026-08-08) (asof parameter); request used asof=2025-12-31"
 security_type_stock_etf,GET /v2/assets,200,False,unproven,asset_class=us_equity does not distinguish stocks from ETFs.,
 security_type_warrant_right_unit_preferred,GET /v2/assets,200,False,unproven,asset_class=us_equity does not expose warrant/right/unit/preferred classification.,
 historical_security_type,GET /v2/assets,200,False,unproven,Assets API returns current classification only.,
