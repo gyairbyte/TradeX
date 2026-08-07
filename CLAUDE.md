@@ -71,7 +71,7 @@ Scanner runs → results DataFrame
 | `tradex/research/pattern_validation/` | Locked, point-in-time pattern-similarity validation study (PATTERN-001). Not used in production. |
 | `tradex/research/score_validation/` | Reproducible score-validation event study (VAL-002). |
 | `tradex/research/short_context/` | Short-term market-regime context research (SHORT-001; v2 rerun dropped the 23 malformed Schwab OHLC rows and produced a 'not supported' result; `production_promotion_eligible=false`). |
-| `docs/research/INTRA-001-SPEC.md` | Pre-registered research specification for the long open-drive VWAP pullback continuation study; `INTRA-001B` is unblocked now that the `SHORT-001` data-quality issue is resolved. |
+| `docs/research/INTRA-001-SPEC.md` | Pre-registered research specification for the long open-drive VWAP pullback continuation study. `INTRA-001B` probe found Schwab does not supply multi-year five-minute history; `INTRA-001` is pending an alternative data source. |
 | `docs/research/specs/INTRA-001-v1.json` | Machine-readable locked specification for `INTRA-001`; future artifacts must record its SHA-256. |
 | `tradex/options/models.py` | Typed options source/capability and scan report models (`OptionsDataKind`, `OptionsSourceStatus`, `OptionsActivityReport`). |
 | `tradex/options/flow.py` | Capability-aware options source resolution, true-flow scanning, chain-snapshot scanning, and non-directional put/call balance. |

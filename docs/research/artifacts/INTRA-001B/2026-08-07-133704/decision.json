@@ -1,0 +1,38 @@
+{
+  "approved_as_complete_intra_001_data_source": false,
+  "approved_for_intra_001_five_minute_ohlcv": false,
+  "artifact_bundle_created_at": "2026-08-07T13:37:04.612302+00:00",
+  "blockers": [
+    "Chunk overlap could not be verified because the 2024-06 overlap windows contained no requested-range data; deterministic stitching could not be verified.",
+    "Full-range and bounded-window coverage did not meet the required thresholds; the provider returned insufficient or empty five-minute history."
+  ],
+  "chunk_overlap_passed": false,
+  "chunked_historical_windows_supported": false,
+  "coverage_threshold_passed": false,
+  "date_filtering_required": false,
+  "direct_full_range_supported": false,
+  "limitations": [
+    "This is an as-of observation using the locked symbol set and sample windows; Schwab behavior/entitlements may change.",
+    "The probe does not resolve point-in-time universe, security-master, delisted-symbol, or volume-provenance requirements."
+  ],
+  "method_parity_passed": true,
+  "outcome": "not_supported",
+  "pre_registration_commit": "09fdbc4290705f3ecd175ba40bbc5f5cdc42ac74",
+  "probe_spec_sha256": "e97a5a9c99d7b203efcbbc6961777e0adfa4345868f03fe33dd35f483eb41dce",
+  "production_behavior_changed": false,
+  "provider": "schwab",
+  "recommended_next_assignment": "devin/intra-001b-alternative-ohlcv-source",
+  "remaining_delisted_symbol_support_required": true,
+  "remaining_security_master_required": true,
+  "remaining_universe_source_required": true,
+  "remaining_volume_provenance_disclosure_required": true,
+  "repeatability_passed": true,
+  "run_id": "2026-08-07-133704",
+  "schwab_py_version": "1.5.1",
+  "selected_request_method": "none",
+  "selected_windowing_policy": "none",
+  "strategy_spec_sha256": "09394d038928433529ec4c5f5ba5ff0392c764d5b59f1af71d95f4f3957c0464",
+  "task_id": "INTRA-001B-PROBE",
+  "timestamp_normalization_required": true,
+  "timestamp_semantics": "bar_start"
+}

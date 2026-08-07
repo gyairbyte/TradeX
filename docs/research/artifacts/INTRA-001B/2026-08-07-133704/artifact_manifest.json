@@ -1,0 +1,26 @@
+{
+  "bundled_files": [
+    "README.txt",
+    "chunk_overlap.csv",
+    "coverage_summary.csv",
+    "decision.json",
+    "method_parity.csv",
+    "probe_spec.lock.json",
+    "repeatability_summary.csv",
+    "report.md",
+    "request_audit.csv",
+    "strategy_spec_reference.json"
+  ],
+  "created_at": "2026-08-07T13:37:04.616508+00:00",
+  "decision_sha256": "05334e08c7a36b6fc33ec333a5c95914eb93bb1781f807fb88e4ecb35f6efd0a",
+  "excluded_files": [
+    "Full raw and normalized Schwab OHLCV CSVs and payload JSONs",
+    "OAuth tokens, app keys, and secrets",
+    "Per-request intermediate state"
+  ],
+  "pre_registration_commit": "09fdbc4290705f3ecd175ba40bbc5f5cdc42ac74",
+  "probe_spec_sha256": "e97a5a9c99d7b203efcbbc6961777e0adfa4345868f03fe33dd35f483eb41dce",
+  "run_id": "2026-08-07-133704",
+  "schema_version": 1,
+  "task_id": "INTRA-001B-PROBE"
+}
