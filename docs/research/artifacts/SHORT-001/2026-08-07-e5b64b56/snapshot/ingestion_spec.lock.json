@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "policy_id": "short-001-hard-invalid-row-exclusion-v2",
+  "action": "drop",
+  "structural_failures_remain_fatal": true,
+  "repair_values": false,
+  "require_all_symbols": true,
+  "required_symbol_count": 45,
+  "max_total_invalid_rows": 50,
+  "max_total_invalid_rate_pct": 0.10,
+  "max_invalid_rows_per_ticker": 5,
+  "max_invalid_rate_pct_per_ticker": 0.30,
+  "max_consecutive_invalid_rows_per_ticker": 1,
+  "allow_first_or_last_row_removal": false,
+  "minimum_pre_development_warmup_bars": 60,
+  "hard_row_invariants": [
+    "required OHLCV value is missing, non-numeric, NaN, or non-finite",
+    "open, high, low, or close is nonpositive",
+    "volume is negative",
+    "high is below low",
+    "high is below open",
+    "high is below close",
+    "low is above open",
+    "low is above close"
+  ]
+}

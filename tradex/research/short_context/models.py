@@ -397,6 +397,8 @@ class ContextStudyResult:
     data_quality: pd.DataFrame
     report_markdown: str
     generated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    ingestion_spec_sha256: str | None = None
+    snapshot_audit_sha256: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         from tradex.research.score_validation.models import _config_to_dict
@@ -408,6 +410,8 @@ class ContextStudyResult:
             "manifest_path": str(self.manifest_path),
             "manifest_sha256": self.manifest_sha256,
             "context_spec_sha256": self.context_spec_sha256,
+            "ingestion_spec_sha256": self.ingestion_spec_sha256,
+            "snapshot_audit_sha256": self.snapshot_audit_sha256,
             "weight_snapshot": self.weight_snapshot,
             "events": _df_records(self.events) if not self.events.empty else [],
             "candidate_comparison": _df_records(self.candidate_comparison) if not self.candidate_comparison.empty else [],

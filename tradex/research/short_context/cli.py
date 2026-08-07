@@ -2,9 +2,15 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import sys
 from datetime import date
+from pathlib import Path
 
+from tradex.research.score_validation.cleaning import (
+    load_ingestion_policy,
+    verify_snapshot_sidecars,
+)
 from tradex.research.score_validation.models import ScoreValidationConfig
 from tradex.research.score_validation.snapshot import create_snapshot
 from tradex.research.short_context.report import run_study
@@ -37,6 +43,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Fetch and lock a manifest containing targets and required proxies.",
     )
     snap.add_argument("--context-spec", required=True, help="Path to context-study spec JSON")
+    snap.add_argument("--ingestion-spec", default=None, help="Path to locked ingestion-policy JSON")
     snap.add_argument("--targets", default=None, help="Comma-separated targets (default: from spec)")
     snap.add_argument("--start", required=True, type=_parse_date, help="Start date (YYYY-MM-DD)")
     snap.add_argument("--end", required=True, type=_parse_date, help="End date (YYYY-MM-DD)")
@@ -54,6 +61,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     eval_.add_argument("--manifest", required=True, help="Path to manifest.json")
     eval_.add_argument("--context-spec", required=True, help="Path to context-study spec JSON")
+    eval_.add_argument("--ingestion-spec", default=None, help="Path to locked ingestion-policy JSON (required for v2 snapshots)")
     eval_.add_argument("--output-dir", required=True, help="Directory for study outputs")
     eval_.add_argument("--overwrite", action="store_true")
     eval_.add_argument("--warmup-bars", type=int, default=60)
@@ -85,7 +93,8 @@ def _comma_floats(value: str) -> tuple[float, ...]:
 
 
 def _handle_snapshot(args: argparse.Namespace) -> int:
-    spec, _ = load_spec(args.context_spec)
+    spec, spec_bytes = load_spec(args.context_spec)
+    context_spec_sha256 = hashlib.sha256(spec_bytes).hexdigest()
     if args.targets:
         raw = {t.strip().upper() for t in args.targets.split(",") if t.strip()}
         if not raw:
@@ -103,16 +112,23 @@ def _handle_snapshot(args: argparse.Namespace) -> int:
         "validation": args.validation_split,
         "holdout": args.holdout_split,
     }
-    create_snapshot(
-        tickers=all_tickers,
-        start=args.start,
-        end=args.end,
-        output_dir=args.output_dir,
-        splits=splits,
-        provider=args.provider,
-        overwrite=args.overwrite,
-        dataset_name=args.dataset_name,
-    )
+    kwargs: dict = {
+        "tickers": all_tickers,
+        "start": args.start,
+        "end": args.end,
+        "output_dir": args.output_dir,
+        "splits": splits,
+        "provider": args.provider,
+        "overwrite": args.overwrite,
+        "dataset_name": args.dataset_name,
+        "context_spec_sha256": context_spec_sha256,
+    }
+    if args.ingestion_spec:
+        kwargs["ingestion_spec"] = args.ingestion_spec
+        # Validate the policy file now; create_snapshot recomputes its hash.
+        load_ingestion_policy(args.ingestion_spec)
+        kwargs["context_spec_sha256"] = context_spec_sha256
+    create_snapshot(**kwargs)
     return 0
 
 
@@ -125,13 +141,27 @@ def _handle_evaluate(args: argparse.Namespace) -> int:
         slippage_scenarios_bps=slippage,
         commission_bps=args.commission_bps,
     )
-    run_study(
-        manifest_path=args.manifest,
-        spec_path=args.context_spec,
-        output_dir=args.output_dir,
-        config=config,
-        overwrite=args.overwrite,
-    )
+    kwargs: dict = {
+        "manifest_path": args.manifest,
+        "spec_path": args.context_spec,
+        "output_dir": args.output_dir,
+        "config": config,
+        "overwrite": args.overwrite,
+    }
+    if args.ingestion_spec:
+        _, spec_bytes = load_ingestion_policy(args.ingestion_spec)
+        expected_ingestion_sha = hashlib.sha256(spec_bytes).hexdigest()
+        snapshot_dir = Path(args.manifest).expanduser().resolve().parent
+        _, spec_bytes = load_spec(args.context_spec)
+        expected_context_sha = hashlib.sha256(spec_bytes).hexdigest()
+        verify_snapshot_sidecars(
+            snapshot_dir,
+            expected_ingestion_sha,
+            expected_context_sha256=expected_context_sha,
+            expected_manifest_path=args.manifest,
+        )
+        kwargs["ingestion_spec"] = args.ingestion_spec
+    run_study(**kwargs)
     return 0
 
 

@@ -11,6 +11,10 @@ from typing import Any
 
 import pandas as pd
 
+from tradex.research.score_validation.cleaning import (
+    load_ingestion_policy,
+    verify_snapshot_sidecars,
+)
 from tradex.research.score_validation.models import ScoreValidationConfig
 from tradex.research.score_validation.report import (
     _atomic_publish_dir,
@@ -45,6 +49,7 @@ def run_study(
     *,
     config: ScoreValidationConfig | None = None,
     overwrite: bool = False,
+    ingestion_spec: str | Path | None = None,
 ) -> ContextStudyResult:
     """Run the full short-term market-context study and write results."""
     if config is None:
@@ -57,6 +62,21 @@ def run_study(
         manifest_sha = sha256_file(manifest_path)
     spec_bytes = Path(spec_path).read_bytes()
     spec_sha = hashlib.sha256(spec_bytes).hexdigest()
+
+    ingestion_spec_sha256: str | None = None
+    snapshot_audit_sha256: str | None = None
+    snapshot_audit: dict[str, Any] | None = None
+    if ingestion_spec is not None:
+        _, ingestion_bytes = load_ingestion_policy(ingestion_spec)
+        ingestion_spec_sha256 = hashlib.sha256(ingestion_bytes).hexdigest()
+        snapshot_dir = Path(manifest_path).expanduser().resolve().parent
+        snapshot_audit = verify_snapshot_sidecars(
+            snapshot_dir,
+            ingestion_spec_sha256,
+            expected_context_sha256=spec_sha,
+            expected_manifest_path=manifest_path,
+        )
+        snapshot_audit_sha256 = sha256_file(snapshot_dir / "snapshot_audit.json")
 
     events, quality_rows = generate_context_events(manifest_path, spec, config)
     events_df = build_event_dataframe(events, spec)
@@ -83,7 +103,6 @@ def run_study(
 
     report_md = _render_report(
         spec=spec,
-        manifest_path=manifest_path,
         manifest_sha=manifest_sha,
         spec_sha=spec_sha,
         weight_snapshot=weight_snapshot,
@@ -95,6 +114,8 @@ def run_study(
         ticker_comparison=ticker_comparison,
         data_quality=data_quality,
         generated_at=generated_at,
+        ingestion_spec_sha256=ingestion_spec_sha256,
+        snapshot_audit=snapshot_audit,
     )
 
     generated_at = manifest.created_at
@@ -105,6 +126,8 @@ def run_study(
         manifest_path=Path(manifest_path).expanduser().resolve(),
         manifest_sha256=manifest_sha,
         context_spec_sha256=spec_sha,
+        ingestion_spec_sha256=ingestion_spec_sha256,
+        snapshot_audit_sha256=snapshot_audit_sha256,
         weight_snapshot=weight_snapshot,
         events=events_df,
         candidate_comparison=candidate_comparison,
@@ -174,6 +197,15 @@ def _write_study_files(study: ContextStudyResult, tmp_dir: Path) -> dict[str, Pa
     paths["context_spec.lock.json"] = _write_json(_spec_lock(study), tmp_dir / "context_spec.lock.json")
     paths["study.json"] = _write_json(study.to_dict(), tmp_dir / "study.json")
     paths["report.md"] = _write_text(study.report_markdown, tmp_dir / "report.md")
+
+    if study.ingestion_spec_sha256 is not None:
+        snapshot_dir = study.manifest_path.parent
+        if (snapshot_dir / "ingestion_spec.lock.json").is_file():
+            shutil.copy2(snapshot_dir / "ingestion_spec.lock.json", tmp_dir / "ingestion_spec.lock.json")
+            paths["ingestion_spec.lock.json"] = tmp_dir / "ingestion_spec.lock.json"
+        if (snapshot_dir / "snapshot_audit.json").is_file():
+            shutil.copy2(snapshot_dir / "snapshot_audit.json", tmp_dir / "snapshot_audit.lock.json")
+            paths["snapshot_audit.lock.json"] = tmp_dir / "snapshot_audit.lock.json"
     return paths
 
 
@@ -339,7 +371,6 @@ def _comparison_metrics_to_dict(m: PolicySplitMetrics) -> dict[str, Any]:
 
 def _render_report(
     spec: ShortContextSpec,
-    manifest_path: Any,
     manifest_sha: str | None,
     spec_sha: str,
     weight_snapshot: dict[str, Any],
@@ -351,14 +382,25 @@ def _render_report(
     ticker_comparison: pd.DataFrame,
     data_quality: pd.DataFrame,
     generated_at: datetime,
+    ingestion_spec_sha256: str | None = None,
+    snapshot_audit: dict[str, Any] | None = None,
 ) -> str:
     """Build the Markdown report."""
+    # The report is part of the safe artifact bundle; use relative paths and
+    # a v2 label when the locked ingestion policy was applied to the v1 spec.
+    if ingestion_spec_sha256 is not None and spec.study_name.endswith(" v1"):
+        study_label = f"{spec.study_name[:-3]} v2"
+    elif ingestion_spec_sha256 is not None:
+        study_label = f"{spec.study_name} (v2)"
+    else:
+        study_label = spec.study_name
+    manifest_label = "snapshot/manifest.json" if ingestion_spec_sha256 is not None else "manifest.json"
     lines: list[str] = []
     lines.append("# Short-Term Market Context Study")
     lines.append("")
     lines.append("## 1. Study identity")
-    lines.append(f"- Study: {spec.study_name}")
-    lines.append(f"- Manifest: {manifest_path}")
+    lines.append(f"- Study: {study_label}")
+    lines.append(f"- Manifest: {manifest_label}")
     lines.append(f"- Generated: {generated_at.isoformat()}")
     lines.append("")
 
@@ -375,42 +417,71 @@ def _render_report(
     lines.append(f"- Context-spec SHA-256: `{spec_sha}`")
     lines.append("")
 
-    lines.append("## 5. Target universe")
+    section_number = 5
+    if ingestion_spec_sha256 is not None and snapshot_audit is not None:
+        lines.append(f"## {section_number}. Ingestion policy and cleaning audit")
+        section_number += 1
+        lines.append(f"- Ingestion policy ID: `{snapshot_audit.get('policy_id')}`")
+        lines.append(f"- Ingestion-spec SHA-256: `{ingestion_spec_sha256}`")
+        lines.append(f"- Provider: `{snapshot_audit.get('provider')}`")
+        lines.append(f"- Price repair: `{snapshot_audit.get('price_repair')}`")
+        lines.append(f"- Raw total rows: `{snapshot_audit.get('raw_total_rows')}`")
+        lines.append(f"- Cleaned total rows: `{snapshot_audit.get('cleaned_total_rows')}`")
+        lines.append(f"- Invalid rows removed: `{snapshot_audit.get('invalid_rows_removed')}`")
+        lines.append(f"- Total invalid row rate (%): `{snapshot_audit.get('total_invalid_row_rate_pct')}`")
+        lines.append(f"- Affected symbols: `{snapshot_audit.get('affected_symbols')}`")
+        lines.append(f"- Max invalid rows per symbol: `{snapshot_audit.get('max_invalid_rows_per_symbol')}`")
+        lines.append(f"- Max consecutive invalid rows: `{snapshot_audit.get('max_consecutive_invalid_rows')}`")
+        lines.append(f"- Threshold result: `{snapshot_audit.get('threshold_result')}`")
+        removed_reasons = snapshot_audit.get("removed_reason_summary") or {}
+        if removed_reasons:
+            lines.append("- Removed-row reason summary:")
+            for code, count in sorted(removed_reasons.items()):
+                lines.append(f"  - `{code}`: {count}")
+        else:
+            lines.append("- Removed-row reason summary: (none)")
+        lines.append("")
+
+    lines.append(f"## {section_number}. Target universe")
+    section_number += 1
     lines.append(f"- Targets: {', '.join(spec.target_tickers)}")
     lines.append(f"- Target count: {len(spec.target_tickers)}")
     lines.append("")
 
-    lines.append("## 6. Proxy mappings")
+    lines.append(f"## {section_number}. Proxy mappings")
+    section_number += 1
     for t in spec.target_tickers:
         ctx = spec.ticker_context[t]
         sector = ctx.get("sector_proxy") or "(none)"
         lines.append(f"- {t}: market={ctx['market_proxy']}, sector={sector}")
     lines.append("")
 
-    lines.append("## 7. Existing baseline score")
+    lines.append(f"## {section_number}. Existing baseline score")
+    section_number += 1
     lines.append("The existing short-term component score and weights were not changed.")
     lines.append(f"- Baseline score threshold: {spec.baseline_score_threshold}")
     lines.append(f"- Weight snapshot: {json.dumps(weight_snapshot, indent=2)}")
     lines.append("")
 
-    lines.append("## 8. Context formulas")
+    lines.append(f"## {section_number}. Context formulas")
+    section_number += 1
     lines.append("- Bullish market regime: close > EMA20, EMA20 > EMA50, EMA20 today > EMA20 five bars earlier.")
     lines.append("- Bullish sector regime: same rule on the sector proxy.")
     lines.append("- Market relative strength: ticker_close / market_close; positive when ratio > EMA20(ratio) and 20-bar change > 0.")
     lines.append("- Sector relative strength: ticker_close / sector_close; same rule.")
     lines.append("")
 
-    lines.append("## 9. Point-in-time alignment")
+    lines.append(f"## {section_number}. Point-in-time alignment")
+    section_number += 1
     lines.append("- Context is computed from the most recent market/sector bar <= signal time.")
     lines.append("- Context is rejected as stale when it is more than one expected trading session behind.")
     lines.append("- Future market, sector, or ticker rows cannot influence an earlier context.")
     lines.append("")
 
-    lines.append("## 10. Candidate policies")
+    lines.append(f"## {section_number}. Candidate policies")
+    section_number += 1
     lines.append(f"- Candidate policies: {[p.value for p in spec.candidate_policies]}")
     lines.append("")
-
-    section_number = 11
     for split in ("development", "validation"):
         lines.append(f"## {section_number}. {split.capitalize()} results")
         section_number += 1
