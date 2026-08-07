@@ -31,8 +31,8 @@ Files:
   context_spec.lock.json              locked copy of SHORT-001-schwab-v1.json
   ingestion_spec.lock.json            locked copy of SHORT-001-ingestion-v2.json
   snapshot/
-    manifest.json                     locked snapshot manifest
-    AAPL.csv ... XOM.csv              cleaned, manifest-locked OHLCV CSVs
+    manifest.json                     locked snapshot manifest (provenance record;
+                                      the full cleaned OHLCV CSVs it references are intentionally excluded)
     snapshot_audit.json               snapshot-level cleaning audit
     invalid_rows.csv                  the 23 rows that were dropped
     snapshot_data_quality.csv         per-ticker raw/cleaned row counts
@@ -52,7 +52,8 @@ Files:
     snapshot_audit.lock.json          snapshot audit reference copied into result
 
 Excluded (per provider terms and repository policy):
-  - Raw Schwab OHLCV CSVs (cleaned, manifest-locked OHLCV CSVs are included)
+  - Full raw and cleaned Schwab OHLCV CSVs (the locked manifest records their per-ticker hashes;
+    the cleaned CSVs are provider-derived calculation inputs and are intentionally not bundled)
   - OAuth tokens and credentials
   - Row-level provider-derived output beyond the 23 invalid rows
   - context_events.csv and study.json (large, reproducible from the locked manifest + spec)
