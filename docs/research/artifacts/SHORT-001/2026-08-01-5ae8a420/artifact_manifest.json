@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "run_id": "2026-08-01-5ae8a420",
+  "study": "SHORT-001",
+  "provider": "schwab",
+  "pre_registration_commit": "4d696729a10288bb239988c4255f3d9cf3677191",
+  "context_spec_sha256": "5ae8a420be97d3665c48ed82401cb4d9b0f0d71610898b7036f72453755acb45",
+  "snapshot_status": "failed",
+  "snapshot_failure_reason": "Schwab daily OHLCV candles failed repository canonicalize_bars invariants on 23 candles across 19 of 45 pre-registered symbols (0.028% of approximately 82035 fetched rows); no manifest generated",
+  "files": {
+    "README.txt": "safe bundle readme",
+    "artifact_manifest.json": "this manifest",
+    "context_spec.lock.json": "locked copy of the pre-registered context spec",
+    "report.md": "final SHORT-001-SCHWAB-STUDY report",
+    "data_quality.csv": "per-symbol fetch and bar-validation status",
+    "bad_candles.csv": "candles that violated OHLC invariants"
+  },
+  "excluded_files": [
+    "manifest.lock.json (not produced: snapshot failed before manifest generation)",
+    "context_events.csv (row-level provider output)",
+    "candidate_comparison.csv (not produced)",
+    "candidate_selection.json (not produced)",
+    "holdout_evaluation.csv (not produced)",
+    "paired_backtests.csv (not produced)",
+    "ticker_comparison.csv (not produced)"
+  ],
+  "outcome": "Invalid v1 attempt (Outcome E); not the end of SHORT-001",
+  "production_promotion_eligible": false
+}

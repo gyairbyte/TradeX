@@ -1,0 +1,46 @@
+ticker,status,rows,error,bad_date
+AAPL,ok,1823,,
+MSFT,ok,1823,,
+NVDA,ok,1823,,
+GOOGL,ok,1823,,
+META,ok,1823,,
+VZ,ok,1823,,
+AMZN,ok,1823,,
+HD,ok,1823,,
+MCD,bar_validation_failed,1823,"BacktestDataError: low above open or close at 2023-01-24 06:00:00+00:00: low=236.77, open=236.42, close=269.56",2023-01-24
+WMT,bar_validation_failed,1823,"BacktestDataError: low above open or close at 2023-06-05 05:00:00+00:00: low=49.88, open=49.79, close=49.9333333333333",2023-06-05
+COST,ok,1823,,
+PG,ok,1823,,
+JPM,bar_validation_failed,1823,"BacktestDataError: high below open or close at 2023-06-05 05:00:00+00:00: high=139.31, open=140.11, close=139.09",2023-06-05
+BAC,bar_validation_failed,1823,"BacktestDataError: high below open or close at 2023-06-05 05:00:00+00:00: high=28.71, open=28.82, close=28.54",2023-06-05
+GS,ok,1823,,
+JNJ,bar_validation_failed,1823,"BacktestDataError: low above open or close at 2023-06-05 05:00:00+00:00: low=156.97, open=156.75, close=158.32",2023-06-05
+UNH,ok,1823,,
+MRK,ok,1823,,
+CAT,bar_validation_failed,1823,"BacktestDataError: high below open or close at 2023-06-05 05:00:00+00:00: high=226.28, open=226.99, close=222.47",2023-06-05
+HON,bar_validation_failed,1823,"BacktestDataError: low above open or close at 2018-11-14 06:00:00+00:00: low=138.696137593804, open=140.052855467149, close=138.225054998893",2018-11-14
+UPS,bar_validation_failed,1823,"BacktestDataError: high below open or close at 2023-06-05 05:00:00+00:00: high=169.11, open=169.95, close=167.85",2023-06-05
+XOM,bar_validation_failed,1823,"BacktestDataError: high below open or close at 2023-06-05 05:00:00+00:00: high=107.025, open=107.19, close=105.29",2023-06-05
+CVX,bar_validation_failed,1823,"BacktestDataError: high below open or close at 2023-06-05 05:00:00+00:00: high=157.89, open=158.45, close=155.51",2023-06-05
+COP,bar_validation_failed,1823,"BacktestDataError: high below open or close at 2023-06-05 05:00:00+00:00: high=102.37, open=103.05, close=100.87",2023-06-05
+NEE,ok,1823,,
+DUK,ok,1823,,
+SO,bar_validation_failed,1823,"BacktestDataError: high below open or close at 2023-01-24 06:00:00+00:00: high=71.18, open=74.93, close=66.7",2023-01-24
+LIN,ok,1823,,
+APD,bar_validation_failed,1823,"BacktestDataError: low above open or close at 2020-10-21 05:00:00+00:00: low=293.27, open=294.04, close=293.26",2020-10-21
+NEM,ok,1823,,
+AMT,ok,1823,,
+PLD,bar_validation_failed,1823,"BacktestDataError: low above open or close at 2023-01-24 06:00:00+00:00: low=115.5, open=110.0, close=126.4",2023-01-24
+SPG,ok,1823,,
+SPY,ok,1823,,
+XLB,bar_validation_failed,1823,"BacktestDataError: low above open or close at 2018-11-15 06:00:00+00:00: low=26.955, open=26.885, close=27.345",2018-11-15
+XLC,bar_validation_failed,1823,"BacktestDataError: low above open or close at 2023-06-05 05:00:00+00:00: low=63.08, open=62.92, close=63.32",2023-06-05
+XLE,bar_validation_failed,1823,"BacktestDataError: low above open or close at 2018-11-15 06:00:00+00:00: low=30.928791, open=30.713791, close=31.403791",2018-11-15
+XLF,bar_validation_failed,1823,"BacktestDataError: high below open or close at 2023-06-05 05:00:00+00:00: high=32.75, open=32.84, close=32.63",2023-06-05
+XLI,bar_validation_failed,1823,"BacktestDataError: high below open or close at 2023-06-05 05:00:00+00:00: high=100.92, open=101.15, close=100.24",2023-06-05
+XLK,ok,1823,,
+XLP,ok,1823,,
+XLRE,ok,1823,,
+XLU,ok,1823,,
+XLV,ok,1823,,
+XLY,ok,1823,,

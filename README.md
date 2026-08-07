@@ -369,7 +369,7 @@ uv run python -m tradex.research.short_context snapshot --help
 uv run python -m tradex.research.short_context evaluate --help
 ```
 
-**Current status:** The research pipeline is complete and the synthetic verification run confirmed the gates work as designed, but the selected `market_sector_rs` candidate failed both the event-study and paired-backtest holdout gates on synthetic data. No manifest-locked real-data study exists. SHORT-001 is therefore **Deferred** pending a future approved real-data study; the existing short-term score, weights, thresholds, and production behavior remain unchanged. See [`docs/research/SHORT-001.md`](docs/research/SHORT-001.md) for the full disposition.
+**Current status:** The research pipeline is complete and the synthetic verification run confirmed the gates work as designed, but the selected `market_sector_rs` candidate failed both the event-study and paired-backtest holdout gates on synthetic data. The pre-registered real-data v1 study was attempted on Schwab daily OHLCV, but `23` malformed candles across `19` of 45 locked symbols violated hard OHLC invariants (e.g., `low > open` or `high < open`) out of approximately `82,035` fetched rows (`0.028%`), so the snapshot failed before a manifest could be generated. The clustering suggests provider-side historical-adjustment or split/dividend-basis inconsistencies, not confirmed corporate actions for every affected symbol. SHORT-001 is therefore **Blocked** (data invalid for v1); the existing short-term score, weights, thresholds, and production behavior remain unchanged. A narrowly scoped data-ingestion remediation followed by a fresh locked rerun is the recommended next step. See [`docs/research/SHORT-001.md`](docs/research/SHORT-001.md) for the disposition and [`docs/research/SHORT-001-SCHWAB-STUDY.md`](docs/research/SHORT-001-SCHWAB-STUDY.md) for the real-data audit report.
 
 ### Intraday open-drive VWAP pullback research (INTRA-001)
 
@@ -381,7 +381,7 @@ uv run python -m tradex.research.short_context evaluate --help
 - **Baselines:** The current production `intraday.score` (first score \>= 40 in the window, with an explicit signal-bar stop and 1.5R target) and a simple VWAP reclaim (no opening-drive filters).
 - **Data contract:** Five-minute OHLCV, point-in-time monthly top-50 stock universe + fixed ETF list, locked 2022–2025 splits, manifest-locked inputs, and explicit consolidated/venue volume disclosure.
 
-No `INTRA-001` detector, execution engine, backtester, or production scorer exists yet. The current production intraday score remains the four-component additive score described above. The locked implementation plan (`INTRA-001B` data infrastructure, `INTRA-001C` research engine, `INTRA-001D` real-data study) is paused until the approved `SHORT-001` Schwab real-data study is completed, after which `INTRA-001B` resumes. A separate Gary-approved production PR is required only if all gates pass.
+No `INTRA-001` detector, execution engine, backtester, or production scorer exists yet. The current production intraday score remains the four-component additive score described above. The locked implementation plan (`INTRA-001B` data infrastructure, `INTRA-001C` research engine, `INTRA-001D` real-data study) is paused until the `SHORT-001` Schwab data-quality issue is resolved, after which `INTRA-001B` resumes. A separate Gary-approved production PR is required only if all gates pass.
 
 ---
 
