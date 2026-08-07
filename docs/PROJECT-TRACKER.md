@@ -475,22 +475,24 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Redesign intraday scorer around a specific setup
 - **Category:** Intraday trading
 - **Priority:** Medium
-- **Status:** In progress — mixed-provider data contract locked; reference provider selected (`massive`); awaiting `INTRA-001C` snapshot implementation pre-registration before production promotion
+- **Status:** In progress — mixed-provider data contract approved; reference provider **pending** (`INTRA-001B-REFERENCE` v2 first-page evidence is preserved as an audit record but is not decision-grade)
 - **Research specification:** `docs/research/INTRA-001-SPEC.md`
 - **Locked machine-readable strategy spec:** `docs/research/specs/INTRA-001-v1.json` (SHA-256 unchanged)
 - **Locked mixed-provider amendment:** `docs/research/specs/INTRA-001-data-contract-amendment-v2.json` and `docs/research/INTRA-001-MIXED-PROVIDER-DATA-CONTRACT.md`
 - **Reference probe branch:** `devin/intra-001b-reference-source`
-- **Reference probe spec:** `docs/research/specs/INTRA-001B-reference-probe-v2.json`
-- **Reference probe report:** `docs/research/INTRA-001B-REFERENCE-SOURCE-DECISION.md`
-- **Reference probe safe artifacts:** `docs/research/artifacts/INTRA-001B-REFERENCE/2026-08-07-222404/`
-- **Reference probe outcome:** `supported` — Massive/Polygon `v3/reference/tickers` satisfies all mandatory reference-provider gates for the original 2022-01-03 through 2025-12-31 PIT dates under the current free entitlement
+- **Reference probe v2 spec (frozen/invalid):** `docs/research/specs/INTRA-001B-reference-probe-v2.json`
+- **Reference probe v2 report (disposition):** `docs/research/INTRA-001B-REFERENCE-SOURCE-DECISION.md`
+- **Reference probe v2 safe artifacts (frozen):** `docs/research/artifacts/INTRA-001B-REFERENCE/2026-08-07-222404/`
+- **Reference probe v2 outcome:** `invalid` / not decision-grade — the v2 Massive probe fetched only the first page per PIT snapshot (`row_count=1000` for every observation) and did not prove complete PIT universe reconstruction, full taxonomy, or all 20 mandatory reference-provider gates
 - **Reference provider role:** point-in-time monthly active listings, stock vs ETF classification, security-type exclusions, primary exchange provenance, inactive/delisted status, IPO/delisting dates where available
 - **OHLCV provider role:** Alpaca SIP (already locked by `INTRA-001B-ALPACA-V2`)
-- **Fallback dataset:** 2024-01-02 through 2025-12-31, approved but not required because the original four-year PIT dates passed
+- **Fallback dataset:** 2024-01-02 through 2025-12-31, approved but not yet required
 - **No paid upgrade, no composite reference stack, no silent fallback:** confirmed
+- **v1 pre-registration commit:** `e4d123e5ecca80ab8ba1fa09ff397d4f0a3d67dc`
 - **v2 pre-registration commit:** `d5b2ba5d14151fd007c89cc5fc9c6ae7fec6f299`
+- **v2 live run head:** `d5b2ba5d14151fd007c89cc5fc9c6ae7fec6f299`
 - **Problem statement:** The intraday score is a loose bundle of indicators without VWAP, time-of-day, or liquidity context.
-- **Recommended action:** Pre-register `INTRA-001C` snapshot construction (build monthly point-in-time Alpaca+Massive joined snapshots) before any production promotion. Do not begin real `INTRA-001` implementation without a separate pre-registered PR.
+- **Recommended action:** Pre-register `INTRA-001B-REFERENCE-V3` with complete pagination, Ticker Types taxonomy lock, all 20 mandatory gates, full audit preservation, and the corrected decision/artifact provenance schema before any new live provider calls. After a valid reference-provider decision, the next phase is `devin/intra-001b-intraday-snapshot` (the `INTRA-001B` data and manifest infrastructure phase per `INTRA-001-v1.json`), not `INTRA-001C`.
 - **Reason:** A generic score is not actionable for intraday trading. The concrete open-drive VWAP pullback setup and its two baselines are pre-registered before any code changes.
 - **Dependencies:** VAL-001
 - **Files likely affected:** `docs/research/INTRA-001-SPEC.md`, `docs/research/specs/INTRA-001-v1.json`, `docs/PROJECT-TRACKER.md` (this specification PR changes no `tradex/` or test code)

@@ -31,6 +31,8 @@ SUPPORTED_MARKET_CAP_SOURCES = ("yahoo", "schwab")
 # Pure parsing helpers (no env / .env / I/O side effects)
 # ═══════════════════════════════════════════════════════════════════════════════
 def _strip_text(raw: Any) -> str:
+    if raw is None:
+        return ""
     return str(raw).strip()
 
 

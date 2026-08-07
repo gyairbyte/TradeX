@@ -74,7 +74,8 @@ A third provider is not permitted for this amendment. Alpha Vantage and Massive 
 ## Amendment status
 
 - Current amendment: `docs/research/specs/INTRA-001-data-contract-amendment-v2.json`
-- Status: `approved_mixed_model_reference_provider_pending` until `INTRA-001B-REFERENCE` selects and locks a reference provider.
+- Status: `approved_mixed_model_reference_provider_pending` until `INTRA-001B-REFERENCE` selects and locks a reference provider with decision-grade evidence.
+- `INTRA-001B-REFERENCE` v2 first-page evidence (`2026-08-07-222404`) is preserved as an audit record but is explicitly not decision-grade; no reference provider is locked by v2.
 - Once a reference provider is selected, the amendment status moves to `locked_ready_for_snapshot_implementation`.
 - If only the two-year fallback dataset can be satisfied, the status remains locked for the fallback but the original four-year contract is explicitly documented as unsatisfied.
 
