@@ -1,0 +1,6 @@
+requirement,endpoint,http_status,supported,evidence
+point_in_time_universe,GET /v2/assets,200,True,Returns active US equity listing snapshot.
+security_type_provenance,GET /v2/assets,200,False,asset_class=us_equity does not distinguish stock vs ETF; no historical asset-class endpoint.
+inactive_delisted_symbol_listing,GET /v2/assets,200,True,Endpoint supports status=inactive query parameter; historical point-in-time listing not guaranteed.
+corporate_action_provenance,GET /v1/corporate-actions,200,True,Endpoint exists; data coverage and timeliness not audited in this probe.
+delisted_symbol_mapping,GET /v2/stocks/{symbol}/bars,0,False,asof parameter maps symbol changes at the asof date but does not reconstruct historical security master.

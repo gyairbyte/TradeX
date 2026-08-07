@@ -1,0 +1,72 @@
+{
+  "adjustment": "raw",
+  "approve_only_candidate_feed": true,
+  "asof": "2025-12-31",
+  "bar_interval": "5Min",
+  "bounded_window_probes": [
+    {
+      "end_date": "2022-02-28",
+      "id": "window-2022-02",
+      "start_date": "2022-02-01"
+    },
+    {
+      "end_date": "2023-08-31",
+      "id": "window-2023-08",
+      "start_date": "2023-08-01"
+    },
+    {
+      "end_date": "2024-06-28",
+      "id": "window-2024-06",
+      "start_date": "2024-06-03"
+    },
+    {
+      "end_date": "2025-12-31",
+      "id": "window-2025-12",
+      "start_date": "2025-12-01"
+    }
+  ],
+  "candidate_feed": "sip",
+  "comparison_feed": "iex",
+  "decision_requires_chunk_overlap_match": true,
+  "decision_requires_method_overlap_match": false,
+  "decision_requires_repeat_hash_match": true,
+  "exchange_calendar": "XNYS",
+  "exclude_early_close_sessions_from_primary_coverage": true,
+  "full_range_probe": {
+    "end_date": "2025-12-31",
+    "start_date": "2022-01-03",
+    "symbols": [
+      "SPY"
+    ]
+  },
+  "maximum_duplicate_bar_rate_pct": 1.0,
+  "maximum_persistent_retry_count": 1,
+  "maximum_zero_volume_bar_rate_pct": 10.0,
+  "methods": [
+    "sip",
+    "iex"
+  ],
+  "minimum_regular_session_coverage_pct": 95.0,
+  "need_extended_hours_data": false,
+  "overlap_probe": {
+    "left_end_date": "2024-06-14",
+    "left_start_date": "2024-06-03",
+    "right_end_date": "2024-06-28",
+    "right_start_date": "2024-06-10",
+    "symbol": "SPY"
+  },
+  "page_limit": 10000,
+  "provider": "alpaca",
+  "repeat_count": 2,
+  "request_delay_seconds": 0.5,
+  "schema_version": 1,
+  "sort": "asc",
+  "symbols": [
+    "SPY",
+    "AAPL",
+    "JPM"
+  ],
+  "target_entitlement": "basic_free",
+  "task_id": "INTRA-001B-ALPACA",
+  "timezone": "America/New_York"
+}

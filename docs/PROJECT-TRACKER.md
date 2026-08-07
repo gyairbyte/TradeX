@@ -475,17 +475,21 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Redesign intraday scorer around a specific setup
 - **Category:** Intraday trading
 - **Priority:** Medium
-- **Status:** In progress — INTRA-001B probe complete; Schwab does not support the required multi-year five-minute history, so `INTRA-001` remains In progress pending an alternative data source
+- **Status:** In progress — INTRA-001B Alpaca probe complete; `supported_ohlcv_only`
 - **Research specification:** `docs/research/INTRA-001-SPEC.md`
 - **Locked machine-readable spec:** `docs/research/specs/INTRA-001-v1.json`
 - **Specification branch:** `devin/intra-001-spec`
-- **Probe branch:** `devin/intra-001b-schwab-probe`
-- **Probe spec:** `docs/research/specs/INTRA-001B-schwab-probe-v1.json`
-- **Probe report:** `docs/research/INTRA-001B-SCHWAB-DATA-PROBE.md`
-- **Safe artifacts:** `docs/research/artifacts/INTRA-001B/2026-08-07-133704/`
-- **Outcome:** `not_supported` — Schwab returned only the most recent ~30 regular sessions for a four-year full-range request and returned empty payloads for all bounded 2022–2024 windows; direct full range and bounded monthly chunking both fail the locked coverage thresholds
+- **Schwab probe branch:** `devin/intra-001b-schwab-probe`
+- **Schwab probe report:** `docs/research/INTRA-001B-SCHWAB-DATA-PROBE.md`
+- **Schwab safe artifacts:** `docs/research/artifacts/INTRA-001B/2026-08-07-133704/`
+- **Schwab outcome:** `not_supported` — Schwab returned only the most recent ~30 regular sessions for a four-year full-range request and empty 2022–2024 windows
+- **Alpaca probe branch:** `devin/intra-001b-alpaca-probe`
+- **Alpaca probe spec:** `docs/research/specs/INTRA-001B-alpaca-probe-v1.json`
+- **Alpaca probe report:** `docs/research/INTRA-001B-ALPACA-DATA-PROBE.md`
+- **Alpaca safe artifacts:** `docs/research/artifacts/INTRA-001B-ALPACA/2026-08-07-153429/`
+- **Alpaca outcome:** `supported_ohlcv_only` — Alpaca Basic/free historical SIP supplies the 2022-01-03 through 2025-12-31 five-minute OHLCV for SPY with full regular-session coverage and repeatable hashes; it does not satisfy the complete single-provider data contract (security-type provenance, consolidated-versus-venue volume disclosure)
 - **Problem statement:** The intraday score is a loose bundle of indicators without VWAP, time-of-day, or liquidity context.
-- **Recommended action:** Begin an alternative five-minute OHLCV source investigation (`devin/intra-001b-alternative-ohlcv-source`). Continue the phased plan in `docs/research/INTRA-001-SPEC.md` only after a data source that can supply 2022–2025 five-minute regular-session bars is locked.
+- **Recommended action:** Gary must decide whether to proceed with Alpaca for OHLCV and a separate provider for the remaining contract dimensions (`gary-decision-intra-001-provider-mixing`) before any `INTRA-001` production trading-behavior change. Continue the phased plan in `docs/research/INTRA-001-SPEC.md` only after the data-source decision is locked.
 - **Reason:** A generic score is not actionable for intraday trading. The concrete open-drive VWAP pullback setup and its two baselines are pre-registered before any code changes.
 - **Dependencies:** VAL-001
 - **Files likely affected:** `docs/research/INTRA-001-SPEC.md`, `docs/research/specs/INTRA-001-v1.json`, `docs/PROJECT-TRACKER.md` (this specification PR changes no `tradex/` or test code)
@@ -692,19 +696,21 @@ This is the master backlog for recommendations from the Devin review. Items are 
 | In progress | 1 |
 | Blocked | 0 |
 
-The original engineering-foundation and UI-refactor backlog is substantially complete. The `SHORT-001` Schwab real-data study is now closed as Completed — Not supported: the data-quality issue was resolved, the 45-symbol panel was preserved, and the predefined candidate-selection gate produced no qualifying policy. The `INTRA-001` research specification is locked in `docs/research/INTRA-001-SPEC.md`; `INTRA-001B` is now unblocked and is the recommended next research work.
+The original engineering-foundation and UI-refactor backlog is substantially complete. The `SHORT-001` Schwab real-data study is closed as Completed — Not supported. The `INTRA-001B` Alpaca probe produced `supported_ohlcv_only`: Alpaca Basic/free historical SIP can supply 2022-01-03 through 2025-12-31 five-minute OHLCV with full coverage and repeatable hashes, but it does not satisfy the complete single-provider data contract.
 
 **Remaining non-completed items:**
-- `INTRA-001`: In progress — research specification complete; implementation and study not started; `INTRA-001B` is unblocked now that the `SHORT-001` Schwab data-quality issue is resolved.
+- `INTRA-001`: In progress — research specification complete; `INTRA-001B` Alpaca probe complete with `supported_ohlcv_only`; implementation and study are not started; Gary must decide on provider mixing before the next phase.
 
 **Recommended next work order:**
-1. **INTRA-001B data and manifest infrastructure** — Approved provider integration, date-ranged five-minute snapshot, point-in-time universe manifest, session normalization, data-quality validation.
-2. **INTRA-001C research detector and execution engine** — Session VWAP, opening-drive state, pullback/reclaim detector, intraday execution model, current-score and simple-VWAP baselines, synthetic tests only.
-3. **INTRA-001D locked real-data study** — Build manifest from approved source, run development/validation, run holdout only if validation gates pass, commit safe reproducibility artifacts, record outcome.
-4. **Separate Gary-approved production PR** — Only if all gates pass and methodology remains valid; must define exact scorer, score, weight, threshold, ranking, screener, UI, alert, and rollback changes.
+1. **Gary decision on provider mixing** — Decide whether Alpaca OHLCV can be combined with another provider for point-in-time universe, security-type provenance, delisted-symbol handling, corporate-action provenance, and consolidated/volume disclosure, or whether a different single provider must be probed.
+2. **INTRA-001B data and manifest infrastructure** — After the provider decision, approved provider integration, date-ranged five-minute snapshot, point-in-time universe manifest, session normalization, data-quality validation.
+3. **INTRA-001C research detector and execution engine** — Session VWAP, opening-drive state, pullback/reclaim detector, intraday execution model, current-score and simple-VWAP baselines, synthetic tests only.
+4. **INTRA-001D locked real-data study** — Build manifest from approved source, run development/validation, run holdout only if validation gates pass, commit safe reproducibility artifacts, record outcome.
+5. **Separate Gary-approved production PR** — Only if all gates pass and methodology remains valid; must define exact scorer, score, weight, threshold, ranking, screener, UI, alert, and rollback changes.
 
 **Recommended next pull request order:**
-1. `devin/intra-001-b-intraday-data` (INTRA-001B data and manifest infrastructure).
-2. `devin/intra-001-c-research-engine` (INTRA-001C research detector and execution engine).
-3. `devin/intra-001-d-locked-study` (INTRA-001D locked real-data study).
+1. `gary-decision-intra-001-provider-mixing` (decision record and, if approved, provider-mixing contract design).
+2. `devin/intra-001-b-intraday-data` (INTRA-001B data and manifest infrastructure).
+3. `devin/intra-001-c-research-engine` (INTRA-001C research detector and execution engine).
+4. `devin/intra-001-d-locked-study` (INTRA-001D locked real-data study).
 
