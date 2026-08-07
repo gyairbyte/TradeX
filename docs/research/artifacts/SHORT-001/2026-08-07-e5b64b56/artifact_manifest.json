@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "run_id": "2026-08-07-e5b64b56",
+  "study": "SHORT-001 Schwab real-data v2",
+  "context_spec_sha256": "5ae8a420be97d3665c48ed82401cb4d9b0f0d71610898b7036f72453755acb45",
+  "ingestion_spec_sha256": "f9a3f473fe14620984caca34cd6386000b87fea47a44e32d83bd05852c3ef23e",
+  "snapshot_manifest_sha256": "e5b64b56328c4de588ff7b126f8aedd73c81951b61bde915b7e410afb1f6813b",
+  "created_at": "2026-08-07T01:13:42+00:00",
+  "outcome": "Inconclusive (Outcome I)",
+  "promotion_eligible": false,
+  "bundled_files": [
+    "README.txt",
+    "artifact_manifest.json",
+    "checksums.sha256",
+    "context_spec.lock.json",
+    "ingestion_spec.lock.json",
+    "snapshot/manifest.json",
+    "snapshot/snapshot_audit.json",
+    "snapshot/invalid_rows.csv",
+    "snapshot/snapshot_data_quality.csv",
+    "snapshot/snapshot_checksums.sha256",
+    "snapshot/ingestion_spec.lock.json",
+    "evaluation/report.md",
+    "evaluation/candidate_selection.json",
+    "evaluation/holdout_evaluation.csv",
+    "evaluation/paired_backtests.csv",
+    "evaluation/ticker_comparison.csv",
+    "evaluation/data_quality.csv",
+    "evaluation/manifest.lock.json",
+    "evaluation/context_spec.lock.json",
+    "evaluation/ingestion_spec.lock.json",
+    "evaluation/snapshot_audit.lock.json"
+  ],
+  "excluded_files": [
+    "Raw Schwab OHLCV CSVs",
+    "OAuth tokens and credentials",
+    "context_events.csv",
+    "study.json"
+  ]
+}

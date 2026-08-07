@@ -2,11 +2,11 @@
 
 ## 1. Decision summary
 
-`SHORT-001` is **Blocked** after the locked v1 Schwab real-data attempt failed data ingestion.
+`SHORT-001` is **Inconclusive (Outcome I)** after the v2 ingestion remediation and rerun.
 
-The engineering and research infrastructure is complete and verified: point-in-time market-regime and relative-strength context, candidate policies, development/validation candidate selection, untouched holdout event-study gate, and paired executable-backtest gate all exist and work as designed. The only complete end-to-end run with all gate artifacts remains the deterministic synthetic study.
+The engineering and research infrastructure is complete and verified: point-in-time market-regime and relative-strength context, candidate policies, development/validation candidate selection, untouched holdout event-study gate, and paired executable-backtest gate all exist and work as designed.
 
-The locked v1 real-data study was attempted on Schwab daily OHLCV for the pre-registered 45-symbol panel; it produced `23` hard-invalid OHLC rows across `19` symbols (`0.028%` of approximately `82,035` rows), preventing snapshot generation. This v1 attempt is **Outcome E — Invalid study** and is not the end of `SHORT-001`. A separate, approved research-only data-ingestion remediation PR is required to drop malformed rows using the PATTERN-001 precedent, preserve the locked panel, record pre/post-clean counts and hashes, and rerun the unchanged snapshot/evaluation.
+The locked v1 real-data attempt (PR #38) failed data ingestion with `23` hard-invalid OHLC rows across `19` symbols, so it was **Outcome E — Invalid study**. The v2 rerun used the locked `short-001-hard-invalid-row-exclusion-v2` ingestion policy to drop those `23` rows (`0.028%` of `82,035`) while preserving the complete 45-symbol panel and recording deterministic audit evidence. The unchanged evaluation then produced no candidate that passed the predefined development/validation criteria (`selected_policy: null`; `selection_reason: "no policy passed development and validation criteria"`).
 
 No production score, weight, threshold, rank, eligibility, alert, or screener behavior was changed. No context policy is exposed in production.
 
@@ -260,3 +260,21 @@ No promotion may occur in this disposition PR.
 - The synthetic fixture uses a single target ticker, so robustness criteria that require multiple tickers (e.g., "at least half improved") are mechanically failed in the rerun.
 - A meaningful real-market test needs a representative, point-in-time universe with sector proxies and adequate holdout sample size.
 - Provider data quality, survivorship bias, delisting bias, corporate actions, and liquidity capacity are not modeled in the synthetic run.
+
+## 18. v2 ingestion remediation rerun
+
+On 2026-08-07 the locked `short-001-hard-invalid-row-exclusion-v2` ingestion policy was applied to the unchanged `SHORT-001-schwab-v1.json` context specification and the same 45-symbol Schwab panel.
+
+- Ingestion policy: `docs/research/specs/SHORT-001-ingestion-v2.json` (SHA-256 `f9a3f473fe14620984caca34cd6386000b87fea47a44e32d83bd05852c3ef23e`).
+- Snapshot manifest SHA-256: `e5b64b56328c4de588ff7b126f8aedd73c81951b61bde915b7e410afb1f6813b`.
+- Raw rows: `82,035`; cleaned rows: `82,012`; invalid rows removed: `23` (`0.028037%`) across `19` symbols.
+- All predefined data-quality thresholds passed; the complete 45-symbol panel was retained.
+- No OHLCV values were repaired, clamped, interpolated, substituted, or inferred.
+- The unchanged evaluation was run with `--warmup-bars 60 --horizons 1,3,5 --slippage-bps 0.0,5.0,10.0 --commission-bps 0.0`.
+- Result: `selected_policy: null`; `selection_reason: "no policy passed development and validation criteria"`.
+- No holdout event-study or paired-backtest evaluation of a candidate was performed because no candidate was selected.
+- Outcome: **Inconclusive (Outcome I)**. The data-quality remediation succeeded, but the predefined candidate-selection gate did not identify a policy worth evaluating on holdout.
+- Safe artifact bundle: `docs/research/artifacts/SHORT-001/2026-08-07-e5b64b56/`.
+- Full report: `docs/research/SHORT-001-SCHWAB-STUDY-V2.md`.
+
+No production behavior changed. The production default `ShortContextPolicy.OFF` remains in effect.

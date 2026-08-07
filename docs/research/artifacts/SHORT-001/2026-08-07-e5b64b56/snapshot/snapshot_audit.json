@@ -1,0 +1,34 @@
+{
+  "affected_symbols": 19,
+  "all_symbols_retained": true,
+  "cleaned_total_rows": 82012,
+  "context_spec_sha256": "5ae8a420be97d3665c48ed82401cb4d9b0f0d71610898b7036f72453755acb45",
+  "ingestion_spec_sha256": "f9a3f473fe14620984caca34cd6386000b87fea47a44e32d83bd05852c3ef23e",
+  "invalid_rows_removed": 23,
+  "manifest_sha256": "e5b64b56328c4de588ff7b126f8aedd73c81951b61bde915b7e410afb1f6813b",
+  "max_consecutive_invalid_rows": 1,
+  "max_invalid_row_rate_pct_per_symbol": 0.219419,
+  "max_invalid_rows_per_symbol": 4,
+  "policy_id": "short-001-hard-invalid-row-exclusion-v2",
+  "price_repair": false,
+  "provider": "schwab",
+  "raw_total_rows": 82035,
+  "removed_reason_summary": {
+    "high_below_open": 11,
+    "low_above_close": 5,
+    "low_above_open": 7
+  },
+  "requested_end": "2025-12-31",
+  "requested_start": "2018-10-01",
+  "required_symbol_count": 45,
+  "retrieved_symbol_count": 45,
+  "schema_version": 1,
+  "sidecar_sha256": {
+    "ingestion_spec.lock.json": "f9a3f473fe14620984caca34cd6386000b87fea47a44e32d83bd05852c3ef23e",
+    "invalid_rows.csv": "fb240a9065735ec8c845720546d61901b8a7ce5d96cf0588afce8fda2b358c87",
+    "snapshot_audit.json": "6d56ccc6263de2be83157fe90485091da9593496cc8c77bf80ccbc94b6c24101",
+    "snapshot_data_quality.csv": "f439be34c8ec2acd88b52520b53605d9ac1bd09fad8e46372b3d271c670b91db"
+  },
+  "threshold_result": "passed",
+  "total_invalid_row_rate_pct": 0.028037
+}

@@ -1,0 +1,16 @@
+{
+  "context_spec_sha256": "5ae8a420be97d3665c48ed82401cb4d9b0f0d71610898b7036f72453755acb45",
+  "manifest_sha256": "e5b64b56328c4de588ff7b126f8aedd73c81951b61bde915b7e410afb1f6813b",
+  "weight_snapshot": {
+    "short_term": {
+      "source": "explicit ShortWeights() default",
+      "weights": {
+        "ema_structure": 25,
+        "macd_positive": 20,
+        "pullback_ema": 15,
+        "rsi_momentum": 20,
+        "volume_confirmation": 20
+      }
+    }
+  }
+}

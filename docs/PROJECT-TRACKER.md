@@ -444,17 +444,17 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Add market regime and relative strength to short-term scorer
 - **Category:** Short-term trading
 - **Priority:** Medium
-- **Status:** In progress — v2 ingestion policy and implementation locked; real-data snapshot/evaluation pending
+- **Status:** Inconclusive (Outcome I) — v2 ingestion remediation succeeded (23 malformed rows dropped, 45-symbol panel preserved), but no candidate policy passed the predefined development/validation criteria
 - **Resolved by:** `devin/improve-short-term-context`
 - **Disposition reviewed by:** `devin/short-001-disposition`
 - **V1 real-data study branch:** `devin/short-001-real-data-study`
 - **V1 real-data report:** `docs/research/SHORT-001-SCHWAB-STUDY.md`
 - **V2 remediation branch:** `devin/short-001-data-ingestion`
 - **V2 real-data report:** `docs/research/SHORT-001-SCHWAB-STUDY-V2.md`
-- **Safe artifacts:** `docs/research/artifacts/SHORT-001/2026-08-01-5ae8a420/` (v1, preserved unchanged)
+- **Safe artifacts:** `docs/research/artifacts/SHORT-001/2026-08-01-5ae8a420/` (v1, preserved unchanged); `docs/research/artifacts/SHORT-001/2026-08-07-e5b64b56/` (v2)
 - **Problem statement:** The short-term score does not account for whether the broad market or sector is trending.
-- **Recommended action:** Complete the locked v1 SHORT-001 real-data audit (PR #38), then open a separate, approved research-only data-ingestion remediation PR that drops hard-invalid OHLC rows using the PATTERN-001 precedent, preserves the complete 45-symbol panel, records pre/post-clean row counts and hashes, and reruns the same snapshot/evaluation unchanged. Reopen SHORT-001 only when a clean, predefined, manifest-locked real-data study is completed. No production behavior change until both holdout gates pass and a separate Gary-approved production-integration assignment is completed.
-- **Next recommended PR:** `devin/short-001-data-ingestion` (proposed; research-only malformed-row exclusion using PATTERN-001 precedent)
+- **Recommended action:** The v2 ingestion remediation and rerun are complete. The data-quality issue was resolved by dropping 23 malformed rows and producing deterministic audit evidence. The unchanged candidate-selection gate produced no qualifying policy, so SHORT-001 is closed as inconclusive and no production integration is warranted. The next research priority is to resume INTRA-001B: empirically probe Schwab multi-year five-minute history and lock the intraday data-source decision.
+- **Next recommended PR:** `devin/intra-001b-data-source` (empirically probe Schwab multi-year five-minute history and lock the intraday data-source decision)
 - **Reason:** Buying pullbacks in a bear market or weak sector is a different proposition than in a strong bull market.
 - **Dependencies:** VAL-001 (backtesting harness), VAL-002 (score validation study)
 - **Files affected:** `tradex/market/__init__.py`, `tradex/market/context.py`, `tradex/market/models.py`, `tradex/signals/short_term.py`, `tradex/screener/engine.py`, `tradex/research/short_context/*`, `tests/market/test_context.py`, `tests/research/short_context/*`, `README.md`, `SETUP.md`, `.agents/skills/tradex-local-testing/SKILL.md`, `docs/PROJECT-TRACKER.md`, `docs/research/SHORT-001.md`
@@ -475,12 +475,12 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Redesign intraday scorer around a specific setup
 - **Category:** Intraday trading
 - **Priority:** Medium
-- **Status:** In progress — research specification complete; implementation and study not started; INTRA-001B paused until the `SHORT-001` Schwab data-quality issue is resolved
+- **Status:** In progress — research specification complete; SHORT-001 data-quality issue resolved, so `INTRA-001B` is unblocked
 - **Research specification:** `docs/research/INTRA-001-SPEC.md`
 - **Locked machine-readable spec:** `docs/research/specs/INTRA-001-v1.json`
 - **Specification branch:** `devin/intra-001-spec`
 - **Problem statement:** The intraday score is a loose bundle of indicators without VWAP, time-of-day, or liquidity context.
-- **Recommended action:** The spec is locked. Implementation is paused until the `SHORT-001` Schwab data-quality issue is resolved and the locked real-data study can be reattempted, then execute the phased plan in `docs/research/INTRA-001-SPEC.md`: build five-minute intraday data infrastructure, implement the research detector and execution engine, then run a locked real-data study. Rebuild the production scorer only if the study passes and a separate Gary-approved production PR is authorized.
+- **Recommended action:** Begin `INTRA-001B`: empirically probe Schwab multi-year five-minute history and lock the intraday data-source decision. Continue the phased plan in `docs/research/INTRA-001-SPEC.md` after the data-source decision is locked.
 - **Reason:** A generic score is not actionable for intraday trading. The concrete open-drive VWAP pullback setup and its two baselines are pre-registered before any code changes.
 - **Dependencies:** VAL-001
 - **Files likely affected:** `docs/research/INTRA-001-SPEC.md`, `docs/research/specs/INTRA-001-v1.json`, `docs/PROJECT-TRACKER.md` (this specification PR changes no `tradex/` or test code)

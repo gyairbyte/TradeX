@@ -1,0 +1,130 @@
+{
+  "policy_metrics": {
+    "market_rs": {
+      "development": {
+        "baseline_event_count": 13948,
+        "baseline_unique_tickers": 33,
+        "coverage_pct": 100.0,
+        "event_count": 6163,
+        "mean_net_return_pct": 0.03762154296207908,
+        "mean_ticker_event_return_pct": 0.004869908629646681,
+        "median_net_return_pct": 0.07692683403341949,
+        "median_ticker_event_return_pct": -0.03047347610533781,
+        "policy": "market_rs",
+        "positive_return_rate_pct": 51.679376926821355,
+        "retention_pct": 44.18554631488386,
+        "split": "development",
+        "unique_tickers": 33
+      },
+      "development_baseline": {
+        "baseline_event_count": 13948,
+        "baseline_unique_tickers": 33,
+        "coverage_pct": 100.0,
+        "event_count": 13948,
+        "mean_net_return_pct": 0.043360901346963854,
+        "mean_ticker_event_return_pct": 0.026723355094781624,
+        "median_net_return_pct": 0.06681677762513383,
+        "median_ticker_event_return_pct": 0.025410400354431963,
+        "policy": "baseline",
+        "positive_return_rate_pct": 51.268999139661595,
+        "retention_pct": 100.0,
+        "split": "development",
+        "unique_tickers": 33
+      },
+      "validation": {
+        "baseline_event_count": 7142,
+        "baseline_unique_tickers": 33,
+        "coverage_pct": 100.0,
+        "event_count": 2163,
+        "mean_net_return_pct": 0.12320460119711937,
+        "mean_ticker_event_return_pct": 0.047019159554898556,
+        "median_net_return_pct": 0.05291921751442441,
+        "median_ticker_event_return_pct": 0.05789089583523316,
+        "policy": "market_rs",
+        "positive_return_rate_pct": 51.27138233934351,
+        "retention_pct": 30.285634276113132,
+        "split": "validation",
+        "unique_tickers": 33
+      },
+      "validation_baseline": {
+        "baseline_event_count": 7142,
+        "baseline_unique_tickers": 33,
+        "coverage_pct": 100.0,
+        "event_count": 7142,
+        "mean_net_return_pct": 0.051574380810642424,
+        "mean_ticker_event_return_pct": 0.033792073972307525,
+        "median_net_return_pct": 0.08957989543173506,
+        "median_ticker_event_return_pct": -0.061392236570123604,
+        "policy": "baseline",
+        "positive_return_rate_pct": 51.55418650238028,
+        "retention_pct": 100.0,
+        "split": "validation",
+        "unique_tickers": 33
+      }
+    },
+    "market_sector_rs": {
+      "development": {
+        "baseline_event_count": 13948,
+        "baseline_unique_tickers": 33,
+        "coverage_pct": 100.0,
+        "event_count": 5158,
+        "mean_net_return_pct": -0.005293368829072689,
+        "mean_ticker_event_return_pct": -0.0613443508715355,
+        "median_net_return_pct": 0.03384661926387755,
+        "median_ticker_event_return_pct": -0.12461804477925892,
+        "policy": "market_sector_rs",
+        "positive_return_rate_pct": 50.562233423807676,
+        "retention_pct": 36.98021221680528,
+        "split": "development",
+        "unique_tickers": 33
+      },
+      "development_baseline": {
+        "baseline_event_count": 13948,
+        "baseline_unique_tickers": 33,
+        "coverage_pct": 100.0,
+        "event_count": 13948,
+        "mean_net_return_pct": 0.043360901346963854,
+        "mean_ticker_event_return_pct": 0.026723355094781624,
+        "median_net_return_pct": 0.06681677762513383,
+        "median_ticker_event_return_pct": 0.025410400354431963,
+        "policy": "baseline",
+        "positive_return_rate_pct": 51.268999139661595,
+        "retention_pct": 100.0,
+        "split": "development",
+        "unique_tickers": 33
+      },
+      "validation": {
+        "baseline_event_count": 7142,
+        "baseline_unique_tickers": 33,
+        "coverage_pct": 100.0,
+        "event_count": 1519,
+        "mean_net_return_pct": 0.13041794903690984,
+        "mean_ticker_event_return_pct": -0.04024353399568189,
+        "median_net_return_pct": -0.0006458003602438644,
+        "median_ticker_event_return_pct": 0.028943225452394618,
+        "policy": "market_sector_rs",
+        "positive_return_rate_pct": 49.9670836076366,
+        "retention_pct": 21.26855222626715,
+        "split": "validation",
+        "unique_tickers": 33
+      },
+      "validation_baseline": {
+        "baseline_event_count": 7142,
+        "baseline_unique_tickers": 33,
+        "coverage_pct": 100.0,
+        "event_count": 7142,
+        "mean_net_return_pct": 0.051574380810642424,
+        "mean_ticker_event_return_pct": 0.033792073972307525,
+        "median_net_return_pct": 0.08957989543173506,
+        "median_ticker_event_return_pct": -0.061392236570123604,
+        "policy": "baseline",
+        "positive_return_rate_pct": 51.55418650238028,
+        "retention_pct": 100.0,
+        "split": "validation",
+        "unique_tickers": 33
+      }
+    }
+  },
+  "selected_policy": null,
+  "selection_reason": "no policy passed development and validation criteria"
+}
