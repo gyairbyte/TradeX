@@ -586,8 +586,12 @@ def _base_record(**kwargs):
         "returned_regular_session_bars": 0, "primary_session_bars": 0, "early_close_session_bars": 0, "extended_hours_bars": 0,
         "regular_session_coverage_pct": 0.0, "missing_regular_session_bars": 0, "duplicate_timestamps": 0, "duplicate_bar_rate_pct": 0.0,
         "zero_volume_bars": 0, "zero_volume_rate_pct": 0.0, "invalid_ohlc_rows": 0, "non_five_minute_intervals": 0,
-        "candle_payload_sha256": "", "requested_range_normalized_sha256": "", "date_bound_classification": "empty",
-        "timestamp_semantics_classification": "undetermined", "threshold_result": "failed", "retry_after_seconds": None, "notes": "",
+        "candle_payload_sha256": "", "requested_range_normalized_sha256": "", "date_bound_classification": "honored_exactly",
+        "timestamp_semantics_classification": "bar_start", "threshold_result": "failed", "retry_after_seconds": None, "notes": "",
+        "page_count": 1, "next_page_token_present": False, "pagination_complete": True,
+        "repeated_page_token": False, "pagination_cycle_detected": False, "page_bar_counts": (), "token_sequence_sha256": "",
+        "regular_session_zero_volume_bars": 0, "regular_session_zero_volume_rate_pct": 0.0,
+        "regular_session_invalid_ohlc_rows": 0, "regular_session_duplicate_timestamps": 0, "regular_session_duplicate_bar_rate_pct": 0.0,
     }
     return ProbeRequestRecord(**{**defaults, **kwargs})
 
@@ -766,6 +770,10 @@ def _make_full_record(method: str, probe_id: str, symbol: str = "SPY", passed: b
         threshold_result="passed" if passed else "failed",
         date_bound_classification="honored_exactly" if passed else "empty",
         primary_session_bars=78,
+        raw_candle_count=78 if passed else 0,
+        normalized_candle_count=78 if passed else 0,
+        returned_regular_session_bars=78 if passed else 0,
+        regular_session_coverage_pct=100.0 if passed else 0.0,
     )
 
 

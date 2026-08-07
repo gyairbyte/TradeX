@@ -54,6 +54,14 @@ class ProbeRequestRecord:
     pagination_complete: bool = False
     repeated_page_token: bool = False
     pagination_cycle_detected: bool = False
+    page_bar_counts: tuple[int, ...] = ()
+    token_sequence_sha256: str = ""
+    # v2: quality metrics restricted to the eligible regular-session expected grid
+    regular_session_zero_volume_bars: int = 0
+    regular_session_zero_volume_rate_pct: float = 0.0
+    regular_session_invalid_ohlc_rows: int = 0
+    regular_session_duplicate_timestamps: int = 0
+    regular_session_duplicate_bar_rate_pct: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -101,11 +109,21 @@ class ProbeRequestRecord:
             "pagination_complete": self.pagination_complete,
             "repeated_page_token": self.repeated_page_token,
             "pagination_cycle_detected": self.pagination_cycle_detected,
+            "page_bar_counts": list(self.page_bar_counts),
+            "token_sequence_sha256": self.token_sequence_sha256,
+            "regular_session_zero_volume_bars": self.regular_session_zero_volume_bars,
+            "regular_session_zero_volume_rate_pct": self.regular_session_zero_volume_rate_pct,
+            "regular_session_invalid_ohlc_rows": self.regular_session_invalid_ohlc_rows,
+            "regular_session_duplicate_timestamps": self.regular_session_duplicate_timestamps,
+            "regular_session_duplicate_bar_rate_pct": self.regular_session_duplicate_bar_rate_pct,
         }
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> ProbeRequestRecord:
-        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
+        filtered = {k: v for k, v in d.items() if k in cls.__dataclass_fields__}
+        if "page_bar_counts" in filtered and isinstance(filtered["page_bar_counts"], list):
+            filtered["page_bar_counts"] = tuple(filtered["page_bar_counts"])
+        return cls(**filtered)
 
 
 @dataclass
@@ -145,7 +163,6 @@ class ProbeDecision:
     candidate_feed: str = ""
     comparison_feed: str = ""
     selected_feed: str = ""
-    pagination_verified: bool = False
     consolidated_volume_supported: bool = False
     iex_historical_available: bool = False
     point_in_time_universe_supported: bool = False
@@ -156,6 +173,20 @@ class ProbeDecision:
     corporate_action_endpoint_supported: bool = False
     symbol_mapping_asof_supported: bool = False
     no_provider_mixing_contract_satisfied: bool = True
+    # v2 audit/contract fields
+    candidate_timestamp_semantics: str = ""
+    timestamp_semantics_passed: bool = False
+    pagination_verified: bool = False
+    pagination_repeatability_passed: bool = False
+    candidate_zero_volume_threshold_passed: bool = False
+    candidate_invalid_ohlc_threshold_passed: bool = False
+    candidate_duplicate_threshold_passed: bool = False
+    volume_provenance_disclosure_complete: bool = False
+    monthly_pit_membership_reproducible: bool = False
+    corporate_action_historical_completeness_supported: bool = False
+    current_inactive_asset_master_supported: bool = False
+    probe_did_not_mix_providers: bool = True
+    single_provider_contract_satisfied: bool = False
     methodology_decision_required: bool = False
     methodology_decision_reason: str = ""
 
@@ -204,6 +235,18 @@ class ProbeDecision:
             "corporate_action_endpoint_supported": self.corporate_action_endpoint_supported,
             "symbol_mapping_asof_supported": self.symbol_mapping_asof_supported,
             "no_provider_mixing_contract_satisfied": self.no_provider_mixing_contract_satisfied,
+            "candidate_timestamp_semantics": self.candidate_timestamp_semantics,
+            "timestamp_semantics_passed": self.timestamp_semantics_passed,
+            "pagination_repeatability_passed": self.pagination_repeatability_passed,
+            "candidate_zero_volume_threshold_passed": self.candidate_zero_volume_threshold_passed,
+            "candidate_invalid_ohlc_threshold_passed": self.candidate_invalid_ohlc_threshold_passed,
+            "candidate_duplicate_threshold_passed": self.candidate_duplicate_threshold_passed,
+            "volume_provenance_disclosure_complete": self.volume_provenance_disclosure_complete,
+            "monthly_pit_membership_reproducible": self.monthly_pit_membership_reproducible,
+            "corporate_action_historical_completeness_supported": self.corporate_action_historical_completeness_supported,
+            "current_inactive_asset_master_supported": self.current_inactive_asset_master_supported,
+            "probe_did_not_mix_providers": self.probe_did_not_mix_providers,
+            "single_provider_contract_satisfied": self.single_provider_contract_satisfied,
             "methodology_decision_required": self.methodology_decision_required,
             "methodology_decision_reason": self.methodology_decision_reason,
         }

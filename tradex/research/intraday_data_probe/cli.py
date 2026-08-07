@@ -115,7 +115,10 @@ def _cmd_run(args: argparse.Namespace) -> int:
     report_path = args.report_path
     if report_path is None:
         if spec.provider == "alpaca":
-            report_path = str(REPO_ROOT / "docs" / "research" / f"{spec.task_id}-DATA-PROBE.md")
+            if getattr(spec, "schema_version", 1) >= 2:
+                report_path = str(REPO_ROOT / "docs" / "research" / f"{spec.task_id}-DATA-PROBE-V2.md")
+            else:
+                report_path = str(REPO_ROOT / "docs" / "research" / f"{spec.task_id}-DATA-PROBE.md")
         else:
             report_path = str(REPO_ROOT / "docs" / "research" / "INTRA-001B-SCHWAB-DATA-PROBE.md")
     write_probe_report(report, spec, probe_spec_sha, strategy_spec_sha, pre_reg_commit, Path(report_path))

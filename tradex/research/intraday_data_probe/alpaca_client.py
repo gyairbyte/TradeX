@@ -5,6 +5,7 @@ control over every query parameter, pagination token, and HTTP status code.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import time
 from collections.abc import Callable
@@ -19,6 +20,17 @@ from tradex.config import TradeXSettings, load_runtime_settings
 logger = logging.getLogger(__name__)
 
 _OHLCV_COLUMNS = ["open", "high", "low", "close", "volume"]
+
+
+def _token_hash(token: str | None) -> str:
+    """Return a short, safe SHA-256 digest of a pagination token (or a null token)."""
+    raw = "null" if token is None else str(token)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def _token_sequence_hash(token_hashes: list[str]) -> str:
+    """Return a SHA-256 digest of the ordered page-token hash sequence."""
+    return hashlib.sha256("".join(token_hashes).encode("utf-8")).hexdigest()
 
 
 def _alpaca_paper_host_from_key(api_key: str) -> str:
@@ -200,7 +212,8 @@ class AlpacaRestClient:
         Bars are returned as raw Alpaca records (``t``, ``o``, ``h``, ``l``,
         ``c``, ``v``).  Pagination metadata contains ``page_count``,
         ``next_page_token_present``, ``pagination_complete``,
-        ``repeated_page_token``, and ``pagination_cycle_detected``.
+        ``repeated_page_token``, ``pagination_cycle_detected``,
+        per-page bar counts, and token hashes (never raw tokens).
         """
         url = f"{self.market_data_host}/v2/stocks/{symbol.upper()}/bars"
         params: dict[str, Any] = {
@@ -225,12 +238,16 @@ class AlpacaRestClient:
         retry_after: float | None = None
         safe_error = "none"
         page_token: str | None = None
+        page_bar_counts: list[int] = []
+        token_hashes: list[str] = []
 
         while True:
             if page_token:
                 params["page_token"] = page_token
             elif "page_token" in params:
                 del params["page_token"]
+
+            token_hashes.append(_token_hash(page_token))
 
             try:
                 resp, retry_after, _, _ = self._get(url, params, sleeper=sleeper)
@@ -243,6 +260,9 @@ class AlpacaRestClient:
                     "pagination_cycle_detected": pagination_cycle_detected,
                     "retry_after_seconds": None,
                     "safe_error_classification": "network_error",
+                    "page_bar_counts": page_bar_counts,
+                    "token_hashes": token_hashes,
+                    "token_sequence_sha256": _token_sequence_hash(token_hashes),
                 }
 
             page_count += 1
@@ -258,6 +278,7 @@ class AlpacaRestClient:
                 break
 
             bars = _extract_bars(data, symbol)
+            page_bar_counts.append(len(bars))
             all_bars.extend(bars)
 
             token = data.get("next_page_token") if isinstance(data, dict) else None
@@ -271,6 +292,7 @@ class AlpacaRestClient:
                 seen_tokens.add(token)
                 page_token = token
                 continue
+            token_hashes.append(_token_hash(None))
             break
 
         return last_status, all_bars, {
@@ -281,6 +303,9 @@ class AlpacaRestClient:
             "pagination_cycle_detected": pagination_cycle_detected,
             "retry_after_seconds": retry_after,
             "safe_error_classification": safe_error,
+            "page_bar_counts": page_bar_counts,
+            "token_hashes": token_hashes,
+            "token_sequence_sha256": _token_sequence_hash(token_hashes),
         }
 
     def _trading_get(self, path: str, params: dict[str, Any] | None = None) -> tuple[int, Any]:

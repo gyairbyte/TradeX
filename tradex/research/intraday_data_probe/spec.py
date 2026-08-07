@@ -59,6 +59,17 @@ class IntradayProbeSpec:
     sort: str | None = None
     page_limit: int | None = None
     approve_only_candidate_feed: bool = False
+    # v2 audit/contract fields
+    candidate_approval_timestamp_semantics: str = "bar_start"
+    pagination_complete_required: bool = True
+    pagination_cycle_forbidden: bool = True
+    repeat_page_count_agreement_required: bool = True
+    direct_and_chunked_capability_independent: bool = True
+    expected_grid_quality_scope: str = "regular_session_only"
+    sip_iex_comparator_scope: str = "paired_regular_session_expected_grid"
+    provider_contract_evidence_classification_required: bool = True
+    safe_artifact_schema_version: int = 1
+    expected_safe_artifacts: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         result = {
@@ -103,10 +114,28 @@ class IntradayProbeSpec:
             "sort",
             "page_limit",
             "approve_only_candidate_feed",
+            "candidate_approval_timestamp_semantics",
+            "pagination_complete_required",
+            "pagination_cycle_forbidden",
+            "repeat_page_count_agreement_required",
+            "direct_and_chunked_capability_independent",
+            "expected_grid_quality_scope",
+            "sip_iex_comparator_scope",
+            "provider_contract_evidence_classification_required",
+            "safe_artifact_schema_version",
         ):
             value = getattr(self, key)
-            if value is not None or key == "approve_only_candidate_feed":
+            if value is not None or key in (
+                "approve_only_candidate_feed",
+                "pagination_complete_required",
+                "pagination_cycle_forbidden",
+                "repeat_page_count_agreement_required",
+                "direct_and_chunked_capability_independent",
+                "provider_contract_evidence_classification_required",
+            ):
                 result[key] = value
+        if self.expected_safe_artifacts:
+            result["expected_safe_artifacts"] = list(self.expected_safe_artifacts)
         return result
 
 
@@ -185,8 +214,26 @@ def load_probe_spec(path: str | Path) -> tuple[IntradayProbeSpec, bytes]:
     if comparison_feed is None and len(methods) == 2:
         comparison_feed = methods[1]
 
+    schema_version = int(data["schema_version"])
+    if schema_version >= 2:
+        required_v2 = {
+            "candidate_approval_timestamp_semantics",
+            "pagination_complete_required",
+            "pagination_cycle_forbidden",
+            "repeat_page_count_agreement_required",
+            "direct_and_chunked_capability_independent",
+            "expected_grid_quality_scope",
+            "sip_iex_comparator_scope",
+            "provider_contract_evidence_classification_required",
+            "safe_artifact_schema_version",
+            "expected_safe_artifacts",
+        }
+        missing = required_v2 - set(data.keys())
+        if missing:
+            raise SpecValidationError(f"v2 probe spec missing locked audit fields: {sorted(missing)}")
+
     spec = IntradayProbeSpec(
-        schema_version=int(data["schema_version"]),
+        schema_version=schema_version,
         task_id=str(data["task_id"]),
         provider=str(data["provider"]),
         bar_interval=str(data["bar_interval"]),
@@ -222,6 +269,16 @@ def load_probe_spec(path: str | Path) -> tuple[IntradayProbeSpec, bytes]:
         sort=data.get("sort"),
         page_limit=int(data["page_limit"]) if data.get("page_limit") is not None else None,
         approve_only_candidate_feed=bool(data.get("approve_only_candidate_feed", False)),
+        candidate_approval_timestamp_semantics=str(data.get("candidate_approval_timestamp_semantics", "bar_start")),
+        pagination_complete_required=bool(data.get("pagination_complete_required", True)),
+        pagination_cycle_forbidden=bool(data.get("pagination_cycle_forbidden", True)),
+        repeat_page_count_agreement_required=bool(data.get("repeat_page_count_agreement_required", True)),
+        direct_and_chunked_capability_independent=bool(data.get("direct_and_chunked_capability_independent", True)),
+        expected_grid_quality_scope=str(data.get("expected_grid_quality_scope", "regular_session_only")),
+        sip_iex_comparator_scope=str(data.get("sip_iex_comparator_scope", "paired_regular_session_expected_grid")),
+        provider_contract_evidence_classification_required=bool(data.get("provider_contract_evidence_classification_required", True)),
+        safe_artifact_schema_version=int(data.get("safe_artifact_schema_version", schema_version)),
+        expected_safe_artifacts=_as_tuple(data.get("expected_safe_artifacts", []), "expected_safe_artifacts"),
     )
     return spec, raw
 
