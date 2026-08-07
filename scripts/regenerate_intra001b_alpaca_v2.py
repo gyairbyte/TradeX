@@ -27,8 +27,9 @@ V1_PRE_REGISTRATION_COMMIT = "286493eceeffd6aec872ce7516bed5d1b0cd304f"
 V2_PRE_REGISTRATION_COMMIT = "340e0921065fc17767cd882393fb3fe543cfcc0b"
 STARTING_HEAD = "bb1730c598c252d4fc6ac5125bf348766a6455f9"
 BRANCH = "devin/intra-001b-alpaca-probe"
-CI_WORKFLOW_ID = "31206223710"
-CI_JOB_ID = "92957843244"
+CI_WORKFLOW_ID = "31211100887"
+CI_JOB_ID = "92973850931"
+CI_MERGE_REF = "1a5c9e93ea923cc2e2cb1edc0e3e104d348997a6"
 PRIVATE_REPORT_JSON = Path.home() / ".tradex/research/INTRA-001B/alpaca-free-probe-v2/report.json"
 
 
@@ -200,6 +201,7 @@ def main() -> int:
         "starting_head": STARTING_HEAD,
         "ci_workflow_id": CI_WORKFLOW_ID,
         "ci_job_id": CI_JOB_ID,
+        "ci_merge_ref": CI_MERGE_REF,
         "focused_tests": "passed",
         "full_tests": "passed",
         "ruff_status": "clean",
