@@ -206,6 +206,8 @@ class DataProviderSettings:
     schwab_app_secret: str | None = _secret_field(None)
     schwab_token_path: Path = field(default_factory=lambda: Path("~/.tradex_schwab_token.json"))
     schwab_smoke_symbol: str = "SPY"
+    alpha_vantage_api_key: str | None = _secret_field(None)
+    massive_api_key: str | None = _secret_field(None)
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -238,6 +240,8 @@ class DataProviderSettings:
         )
         object.__setattr__(self, "schwab_token_path", _parse_path(self.schwab_token_path, Path("~/.tradex_schwab_token.json"), "SCHWAB_TOKEN_PATH"))
         object.__setattr__(self, "schwab_smoke_symbol", _strip_text(self.schwab_smoke_symbol) or "SPY")
+        object.__setattr__(self, "alpha_vantage_api_key", _strip_text(self.alpha_vantage_api_key) or None)
+        object.__setattr__(self, "massive_api_key", _strip_text(self.massive_api_key) or None)
 
 
 @dataclass(frozen=True)
@@ -400,6 +404,8 @@ def settings_from_mapping(values: Mapping[str, str]) -> TradeXSettings:
         schwab_app_secret=v.get("SCHWAB_APP_SECRET") or None,
         schwab_token_path=v.get("SCHWAB_TOKEN_PATH", "~/.tradex_schwab_token.json"),
         schwab_smoke_symbol=v.get("SCHWAB_SMOKE_SYMBOL", "SPY"),
+        alpha_vantage_api_key=v.get("ALPHA_VANTAGE_API_KEY") or None,
+        massive_api_key=v.get("MASSIVE_API_KEY") or v.get("POLYGON_API_KEY") or None,
     )
 
     options = OptionsSettings(

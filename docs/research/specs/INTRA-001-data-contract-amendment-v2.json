@@ -1,0 +1,63 @@
+{
+  "schema_version": "1.0",
+  "task_id": "INTRA-001",
+  "amendment_id": "INTRA-001-data-contract-amendment-v2",
+  "amendment_version": 2,
+  "amendment_type": "data_contract_methodology",
+  "status": "approved_mixed_model_reference_provider_pending",
+  "authority": "Gary explicitly approved role-locked mixed-provider research data for INTRA-001 after Alpaca v2 proved OHLCV capability but not the complete reference contract.",
+  "original_strategy_spec": "docs/research/specs/INTRA-001-v1.json",
+  "original_strategy_spec_sha256": "09394d038928433529ec4c5f5ba5ff0392c764d5b59f1af71d95f4f3957c0464",
+  "note": "This amendment changes ONLY the data-provider methodology. Every non-data-source rule in INTRA-001-v1 remains unchanged.",
+  "provider_role_principle": "Provider mixing is allowed ONLY across explicitly assigned roles. A field may not silently switch providers during the study. No fallback provider is allowed inside either authoritative role.",
+  "authoritative_ohlcv_provider": "alpaca",
+  "authoritative_ohlcv_feed": "sip",
+  "ohlcv_provider_role": [
+    "five-minute OHLCV",
+    "prior closes used for liquidity/ranking",
+    "prior 20 regular-session dollar-volume calculations",
+    "session VWAP inputs",
+    "opening-drive volume",
+    "execution prices"
+  ],
+  "secondary_provider_cannot_supply_ohlcv": true,
+  "reference_provider_role": [
+    "monthly point-in-time active listings",
+    "stock vs ETF classification",
+    "security-type eligibility/exclusion",
+    "primary listing/exchange provenance where available",
+    "inactive/delisted status",
+    "IPO/listing date where available",
+    "delisting date where available",
+    "symbol/reference identity required for monthly membership"
+  ],
+  "reference_provider": null,
+  "cross_provider_join_policy": {
+    "preferred_join_key_hierarchy": [
+      "stable provider-supported identifier when demonstrably available and historically valid",
+      "exact ticker + effective date when no stable cross-provider ID is available"
+    ],
+    "ticker_only_timeless_joins_sufficient": false,
+    "symbol_change_collision_policy": "Any unresolved identifier collision makes the affected symbol ineligible and must be surfaced."
+  },
+  "no_silent_fallback": true,
+  "no_ohlcv_provider_mixing": true,
+  "reference_provider_fallback_allowed": false,
+  "allowed_reference_provider_candidates": [
+    {
+      "name": "Alpha Vantage",
+      "target_entitlement": "free LISTING_STATUS",
+      "order": 1
+    },
+    {
+      "name": "Massive / Polygon",
+      "target_entitlement": "current Gary entitlement",
+      "order": 2
+    }
+  ],
+  "expected_amendment_statuses": {
+    "before_reference_provider_passes": "approved_mixed_model_reference_provider_pending",
+    "locked_ready_for_snapshot_implementation": "locked_ready_for_snapshot_implementation",
+    "blocked_reference_source": "approved_mixed_model_blocked_reference_source"
+  }
+}
