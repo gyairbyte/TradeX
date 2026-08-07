@@ -92,6 +92,10 @@ class ProbeRequestRecord:
             "notes": self.notes,
         }
 
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> ProbeRequestRecord:
+        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
+
 
 @dataclass
 class ProbeDecision:
@@ -158,6 +162,10 @@ class ProbeDecision:
             "production_behavior_changed": self.production_behavior_changed,
         }
 
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> ProbeDecision:
+        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
+
 
 @dataclass
 class ProbeReport:
@@ -179,3 +187,14 @@ class ProbeReport:
             "chunk_overlap": self.chunk_overlap_rows,
             "summary": self.summary_rows,
         }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> ProbeReport:
+        return cls(
+            records=[ProbeRequestRecord.from_dict(r) for r in d["records"]],
+            decision=ProbeDecision.from_dict(d["decision"]),
+            method_parity_rows=d.get("method_parity", []),
+            repeatability_rows=d.get("repeatability", []),
+            chunk_overlap_rows=d.get("chunk_overlap", []),
+            summary_rows=d.get("summary", []),
+        )

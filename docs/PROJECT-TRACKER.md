@@ -454,7 +454,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Safe artifacts:** `docs/research/artifacts/SHORT-001/2026-08-01-5ae8a420/` (v1, preserved unchanged); `docs/research/artifacts/SHORT-001/2026-08-07-e5b64b56/` (v2)
 - **Problem statement:** The short-term score does not account for whether the broad market or sector is trending.
 - **Recommended action:** The v2 ingestion remediation and rerun are complete. The data-quality issue was resolved by dropping 23 malformed rows and producing deterministic audit evidence. The unchanged candidate-selection gate produced no qualifying policy, so SHORT-001 is closed as Completed — Not supported and no production integration is warranted. The next research priority is to resume INTRA-001B: empirically probe Schwab multi-year five-minute history and lock the intraday data-source decision.
-- **Next recommended PR:** `devin/intra-001b-data-source` (empirically probe Schwab multi-year five-minute history and lock the intraday data-source decision)
+- **Next recommended PR:** `devin/intra-001b-alternative-ohlcv-source` (Schwab cannot supply the required multi-year five-minute history; evaluate Alpaca, IBKR, Polygon, or other provider for 2022–2025 five-minute regular-session OHLCV)
 - **Reason:** Buying pullbacks in a bear market or weak sector is a different proposition than in a strong bull market.
 - **Dependencies:** VAL-001 (backtesting harness), VAL-002 (score validation study)
 - **Files affected:** `tradex/market/__init__.py`, `tradex/market/context.py`, `tradex/market/models.py`, `tradex/signals/short_term.py`, `tradex/screener/engine.py`, `tradex/research/short_context/*`, `tests/market/test_context.py`, `tests/research/short_context/*`, `README.md`, `SETUP.md`, `.agents/skills/tradex-local-testing/SKILL.md`, `docs/PROJECT-TRACKER.md`, `docs/research/SHORT-001.md`
@@ -475,12 +475,17 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Redesign intraday scorer around a specific setup
 - **Category:** Intraday trading
 - **Priority:** Medium
-- **Status:** In progress — research specification complete; SHORT-001 data-quality issue resolved, so `INTRA-001B` is unblocked
+- **Status:** In progress — INTRA-001B probe complete; Schwab does not support the required multi-year five-minute history, so `INTRA-001` remains In progress pending an alternative data source
 - **Research specification:** `docs/research/INTRA-001-SPEC.md`
 - **Locked machine-readable spec:** `docs/research/specs/INTRA-001-v1.json`
 - **Specification branch:** `devin/intra-001-spec`
+- **Probe branch:** `devin/intra-001b-schwab-probe`
+- **Probe spec:** `docs/research/specs/INTRA-001B-schwab-probe-v1.json`
+- **Probe report:** `docs/research/INTRA-001B-SCHWAB-DATA-PROBE.md`
+- **Safe artifacts:** `docs/research/artifacts/INTRA-001B/2026-08-07-044434/`
+- **Outcome:** `not_supported` — Schwab returned only the most recent ~30 regular sessions for a four-year full-range request and returned empty payloads for all bounded 2022–2024 windows; direct full range and bounded monthly chunking both fail the locked coverage thresholds
 - **Problem statement:** The intraday score is a loose bundle of indicators without VWAP, time-of-day, or liquidity context.
-- **Recommended action:** Begin `INTRA-001B`: empirically probe Schwab multi-year five-minute history and lock the intraday data-source decision. Continue the phased plan in `docs/research/INTRA-001-SPEC.md` after the data-source decision is locked.
+- **Recommended action:** Begin an alternative five-minute OHLCV source investigation (`devin/intra-001b-alternative-ohlcv-source`). Continue the phased plan in `docs/research/INTRA-001-SPEC.md` only after a data source that can supply 2022–2025 five-minute regular-session bars is locked.
 - **Reason:** A generic score is not actionable for intraday trading. The concrete open-drive VWAP pullback setup and its two baselines are pre-registered before any code changes.
 - **Dependencies:** VAL-001
 - **Files likely affected:** `docs/research/INTRA-001-SPEC.md`, `docs/research/specs/INTRA-001-v1.json`, `docs/PROJECT-TRACKER.md` (this specification PR changes no `tradex/` or test code)

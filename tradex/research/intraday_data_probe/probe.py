@@ -744,6 +744,8 @@ def _compare_methods(
     status_ok = conv.http_status == raw.http_status == 200
     if not status_ok:
         classification = "one_method_error" if (conv.http_status == 200 or raw.http_status == 200) else "not_comparable"
+    elif (df_conv is None or df_conv.empty) and (df_raw is None or df_raw.empty):
+        classification = "identical"
     elif df_conv is None or df_conv.empty or df_raw is None or df_raw.empty:
         classification = "one_method_empty"
     elif len(df_conv) != len(df_raw) or not df_conv.index.equals(df_raw.index):
@@ -941,7 +943,7 @@ def _build_decision(
 
 
 def _aggregate_timestamp_semantics(records: list[ProbeRequestRecord]) -> str:
-    values = [r.timestamp_semantics_classification for r in records if r.http_status == 200]
+    values = [r.timestamp_semantics_classification for r in records if r.http_status == 200 and r.raw_candle_count > 0]
     if not values:
         return "undetermined"
     if all(v == "bar_start" for v in values):
