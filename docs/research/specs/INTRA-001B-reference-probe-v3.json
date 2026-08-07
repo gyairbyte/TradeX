@@ -14,6 +14,8 @@
     "2024-05-31",
     "2025-11-30"
   ],
+  "original_dataset_start": "2022-01-03",
+  "original_dataset_end": "2025-12-31",
   "fallback_probe_dates": [
     "2024-01-31",
     "2024-07-31",
@@ -22,12 +24,32 @@
   ],
   "fallback_dataset_start": "2024-01-02",
   "fallback_dataset_end": "2025-12-31",
+  "no_silent_fallback": true,
+  "fallback_only_for_historical_depth_or_entitlement_limitation": true,
   "candidate_selection_order": [
     "alpha_vantage",
     "massive"
   ],
   "no_paid_upgrade": true,
   "no_composite_reference_stack": true,
+  "reference_provider_role": [
+    "monthly point-in-time active listings",
+    "common-stock vs ETF classification",
+    "warrant exclusion",
+    "right exclusion",
+    "unit exclusion",
+    "preferred-stock exclusion",
+    "OTC exclusion",
+    "primary listing/exchange provenance",
+    "deterministic symbol identity",
+    "duplicate handling",
+    "lifecycle evidence",
+    "later-delisted/inactive securities",
+    "reproducible historical snapshots",
+    "complete pagination",
+    "historical 2022 access",
+    "feasible for all 48 monthly PIT snapshots"
+  ],
   "alpha_vantage": {
     "endpoint": "LISTING_STATUS",
     "states": ["active", "delisted"],

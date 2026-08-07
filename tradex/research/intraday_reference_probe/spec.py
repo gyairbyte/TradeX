@@ -23,6 +23,8 @@ class ReferenceProbeSpec:
     alpaca_v2_artifact_path: str
     probe_dates: tuple[str, ...]
     candidate_selection_order: tuple[str, ...]
+    original_dataset_start: str | None = "2022-01-03"
+    original_dataset_end: str | None = "2025-12-31"
     fallback_probe_dates: tuple[str, ...] = ()
     fallback_dataset_start: str | None = None
     fallback_dataset_end: str | None = None
@@ -32,6 +34,8 @@ class ReferenceProbeSpec:
     massive: dict[str, Any] = field(default_factory=dict)
     safe_artifact_schema_version: int = 1
     expected_safe_artifacts: tuple[str, ...] = ()
+    mandatory_gates: tuple[str, ...] = ()
+    reference_provider_role: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -45,6 +49,8 @@ class ReferenceProbeSpec:
             "expected_original_strategy_spec_sha256": self.expected_original_strategy_spec_sha256,
             "alpaca_v2_artifact_path": self.alpaca_v2_artifact_path,
             "probe_dates": list(self.probe_dates),
+            "original_dataset_start": self.original_dataset_start,
+            "original_dataset_end": self.original_dataset_end,
             "fallback_probe_dates": list(self.fallback_probe_dates),
             "fallback_dataset_start": self.fallback_dataset_start,
             "fallback_dataset_end": self.fallback_dataset_end,
@@ -55,6 +61,8 @@ class ReferenceProbeSpec:
             "massive": self.massive,
             "safe_artifact_schema_version": self.safe_artifact_schema_version,
             "expected_safe_artifacts": list(self.expected_safe_artifacts),
+            "mandatory_gates": list(self.mandatory_gates),
+            "reference_provider_role": list(self.reference_provider_role),
         }
 
 
@@ -68,6 +76,14 @@ def _as_tuple(value: Any, name: str) -> tuple[str, ...]:
     if isinstance(value, list):
         return tuple(str(v) for v in value)
     raise SpecValidationError(f"{name} must be a list of strings")
+
+
+def _as_str_tuple(value: Any, name: str) -> tuple[str, ...]:
+    if isinstance(value, str):
+        return _as_tuple(value, name)
+    if isinstance(value, list):
+        return tuple(str(v) for v in value)
+    return ()
 
 
 def load_probe_spec(path: str | Path) -> tuple[ReferenceProbeSpec, bytes]:
@@ -100,6 +116,18 @@ def load_probe_spec(path: str | Path) -> tuple[ReferenceProbeSpec, bytes]:
     if missing:
         raise SpecValidationError(f"Probe spec missing fields: {sorted(missing)}")
 
+    _ = {
+        "original_dataset_start",
+        "original_dataset_end",
+        "fallback_probe_dates",
+        "fallback_dataset_start",
+        "fallback_dataset_end",
+        "mandatory_gates",
+        "reference_provider_role",
+        "no_silent_fallback",
+        "fallback_only_for_historical_depth_or_entitlement_limitation",
+    }
+
     spec = ReferenceProbeSpec(
         schema_version=int(data["schema_version"]),
         task_id=str(data["task_id"]),
@@ -112,6 +140,8 @@ def load_probe_spec(path: str | Path) -> tuple[ReferenceProbeSpec, bytes]:
         alpaca_v2_artifact_path=str(data.get("alpaca_v2_artifact_path", "")),
         probe_dates=_as_tuple(data["probe_dates"], "probe_dates"),
         candidate_selection_order=_as_tuple(data["candidate_selection_order"], "candidate_selection_order"),
+        original_dataset_start=data.get("original_dataset_start", "2022-01-03"),
+        original_dataset_end=data.get("original_dataset_end", "2025-12-31"),
         fallback_probe_dates=_as_tuple(data.get("fallback_probe_dates", []), "fallback_probe_dates"),
         fallback_dataset_start=data.get("fallback_dataset_start"),
         fallback_dataset_end=data.get("fallback_dataset_end"),
@@ -121,6 +151,8 @@ def load_probe_spec(path: str | Path) -> tuple[ReferenceProbeSpec, bytes]:
         massive=dict(data.get("massive", {})),
         safe_artifact_schema_version=int(data["safe_artifact_schema_version"]),
         expected_safe_artifacts=_as_tuple(data["expected_safe_artifacts"], "expected_safe_artifacts"),
+        mandatory_gates=_as_str_tuple(data.get("mandatory_gates"), "mandatory_gates"),
+        reference_provider_role=_as_str_tuple(data.get("reference_provider_role"), "reference_provider_role"),
     )
     return spec, raw
 
