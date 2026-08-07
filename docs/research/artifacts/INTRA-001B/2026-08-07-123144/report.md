@@ -5,19 +5,19 @@
 **Outcome:** `not_supported`
 **Approved for INTRA-001 five-minute OHLCV:** False
 **Approved as complete INTRA-001 data source:** False
-**Pre-registration commit:** `09fdbc4290705f3ecd175ba40bbc5f5cdc42ac74`
+**Pre-registration commit:** `09fdbc4`
 
 
 ## 1. Decision summary
 
 - Direct full range supported: False
 - Chunked historical windows supported: False
-- Selected request method: `convenience_every_five_minutes`
+- Selected request method: `none`
 - Selected windowing policy: `none`
 - Repeatability passed: True
 - Method parity passed: True
 - Chunk overlap passed: False
-- Coverage threshold passed: True
+- Coverage threshold passed: False
 
 
 
@@ -30,7 +30,7 @@ This is a research-only data-capability probe (INTRA-001B-PROBE). It does not im
 
 - INTRA-001B probe spec SHA-256: `e97a5a9c99d7b203efcbbc6961777e0adfa4345868f03fe33dd35f483eb41dce`
 - INTRA-001 strategy spec SHA-256: `09394d038928433529ec4c5f5ba5ff0392c764d5b59f1af71d95f4f3957c0464`
-- Pre-registration commit: `09fdbc4290705f3ecd175ba40bbc5f5cdc42ac74`
+- Pre-registration commit: `09fdbc4`
 
 
 
@@ -66,11 +66,11 @@ See `request_audit.csv` in the safe artifact bundle.
 
 | probe_id | symbol | method | repetition | requested_eastern_start | requested_eastern_end | requested_utc_start | requested_utc_end | http_status | safe_error_classification | raw_candle_count | normalized_candle_count | raw_earliest_timestamp | raw_latest_timestamp | requested_range_earliest | requested_range_latest | out_of_range_candles | unique_regular_sessions | expected_eligible_sessions | expected_regular_session_bars | returned_regular_session_bars | primary_session_bars | early_close_session_bars | extended_hours_bars | regular_session_coverage_pct | missing_regular_session_bars | duplicate_timestamps | duplicate_bar_rate_pct | zero_volume_bars | zero_volume_rate_pct | invalid_ohlc_rows | non_five_minute_intervals | candle_payload_sha256 | requested_range_normalized_sha256 | date_bound_classification | timestamp_semantics_classification | threshold_result | retry_after_seconds | notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| full-SPY-convenience_every_five_minutes-rep1 | SPY | convenience_every_five_minutes | 1 | 2022-01-03T00:00:00.000000-0500 | 2025-12-31T23:59:59.999999-0500 | 2022-01-03T05:00:00.000000+0000 | 2026-01-01T04:59:59.999999+0000 | 200 | none | 2262 | 2262 | 2025-11-19T14:30:00.000000+0000 | 2025-12-31T20:55:00.000000+0000 | 2025-11-19T14:30:00.000000+0000 | 2025-12-31T20:55:00.000000+0000 | 0 | 29 | 994 | 77532 | 2192 | 2106 | 86 | 70 | 2.716297786720322 | 75426 | 0 | 0.0 | 0 | 0.0 | 0 | 0 | 4f41780e13e06617096988d1e142e9e4a4b4281c2a69a0cf76c1c7abdba23415 | 6124ab869547181cbbfc1ba44d8579a84865e5a4304900f0477b0499ee44f38d | clipped_to_recent_history | bar_start | failed | None |  |
-| full-SPY-convenience_every_five_minutes-rep2 | SPY | convenience_every_five_minutes | 2 | 2022-01-03T00:00:00.000000-0500 | 2025-12-31T23:59:59.999999-0500 | 2022-01-03T05:00:00.000000+0000 | 2026-01-01T04:59:59.999999+0000 | 200 | none | 2262 | 2262 | 2025-11-19T14:30:00.000000+0000 | 2025-12-31T20:55:00.000000+0000 | 2025-11-19T14:30:00.000000+0000 | 2025-12-31T20:55:00.000000+0000 | 0 | 29 | 994 | 77532 | 2192 | 2106 | 86 | 70 | 2.716297786720322 | 75426 | 0 | 0.0 | 0 | 0.0 | 0 | 0 | 4f41780e13e06617096988d1e142e9e4a4b4281c2a69a0cf76c1c7abdba23415 | 6124ab869547181cbbfc1ba44d8579a84865e5a4304900f0477b0499ee44f38d | clipped_to_recent_history | bar_start | failed | None |  |
-| full-SPY-raw_price_history_five_minutes-rep1 | SPY | raw_price_history_five_minutes | 1 | 2022-01-03T00:00:00.000000-0500 | 2025-12-31T23:59:59.999999-0500 | 2022-01-03T05:00:00.000000+0000 | 2026-01-01T04:59:59.999999+0000 | 200 | none | 2262 | 2262 | 2025-11-19T14:30:00.000000+0000 | 2025-12-31T20:55:00.000000+0000 | 2025-11-19T14:30:00.000000+0000 | 2025-12-31T20:55:00.000000+0000 | 0 | 29 | 994 | 77532 | 2192 | 2106 | 86 | 70 | 2.716297786720322 | 75426 | 0 | 0.0 | 0 | 0.0 | 0 | 0 | 4f41780e13e06617096988d1e142e9e4a4b4281c2a69a0cf76c1c7abdba23415 | 6124ab869547181cbbfc1ba44d8579a84865e5a4304900f0477b0499ee44f38d | clipped_to_recent_history | bar_start | failed | None |  |
-| full-SPY-raw_price_history_five_minutes-rep2 | SPY | raw_price_history_five_minutes | 2 | 2022-01-03T00:00:00.000000-0500 | 2025-12-31T23:59:59.999999-0500 | 2022-01-03T05:00:00.000000+0000 | 2026-01-01T04:59:59.999999+0000 | 200 | none | 2262 | 2262 | 2025-11-19T14:30:00.000000+0000 | 2025-12-31T20:55:00.000000+0000 | 2025-11-19T14:30:00.000000+0000 | 2025-12-31T20:55:00.000000+0000 | 0 | 29 | 994 | 77532 | 2192 | 2106 | 86 | 70 | 2.716297786720322 | 75426 | 0 | 0.0 | 0 | 0.0 | 0 | 0 | 4f41780e13e06617096988d1e142e9e4a4b4281c2a69a0cf76c1c7abdba23415 | 6124ab869547181cbbfc1ba44d8579a84865e5a4304900f0477b0499ee44f38d | clipped_to_recent_history | bar_start | failed | None |  |
-| window-2022-02-SPY-convenience_every_five_minutes-rep1 | SPY | convenience_every_five_minutes | 1 | 2022-02-01T00:00:00.000000-0500 | 2022-02-28T23:59:59.999999-0500 | 2022-02-01T05:00:00.000000+0000 | 2022-03-01T04:59:59.999999+0000 | 200 | none | 0 | 0 | None | None | None | None | 0 | 0 | 19 | 1482 | 0 | 0 | 0 | 0 | 0.0 | 1482 | 0 | 0.0 | 0 | 0.0 | 0 | 0 | cf6083798411369dbd4e61a4b2aef8289b9bfccd4443e861a5a87b91fbabb0d0 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | empty | undetermined | failed | None |  |
+| full-SPY-convenience_every_five_minutes-rep1 | SPY | convenience_every_five_minutes | 1 | 2022-01-03T00:00:00.000000-0500 | 2025-12-31T23:59:59.999999-0500 | 2022-01-03T05:00:00.000000+0000 | 2026-01-01T04:59:59.999999+0000 | 200 | none | 2262 | 2262 | 2025-11-19T14:30:00.000000+0000 | 2025-12-31T20:55:00.000000+0000 | 2025-11-19T14:30:00.000000+0000 | 2025-12-31T20:55:00.000000+0000 | 0 | 27 | 994 | 77532 | 2106 | 2106 | 84 | 72 | 2.716297786720322 | 75426 | 0 | 0.0 | 0 | 0.0 | 0 | 0 | 385a716dc174b5e4e5ea756a4532d84a898de1be76c5207ef3422b7bfbe58a4b | 6124ab869547181cbbfc1ba44d8579a84865e5a4304900f0477b0499ee44f38d | clipped_to_recent_history | bar_start | failed | None |  |
+| full-SPY-convenience_every_five_minutes-rep2 | SPY | convenience_every_five_minutes | 2 | 2022-01-03T00:00:00.000000-0500 | 2025-12-31T23:59:59.999999-0500 | 2022-01-03T05:00:00.000000+0000 | 2026-01-01T04:59:59.999999+0000 | 200 | none | 2262 | 2262 | 2025-11-19T14:30:00.000000+0000 | 2025-12-31T20:55:00.000000+0000 | 2025-11-19T14:30:00.000000+0000 | 2025-12-31T20:55:00.000000+0000 | 0 | 27 | 994 | 77532 | 2106 | 2106 | 84 | 72 | 2.716297786720322 | 75426 | 0 | 0.0 | 0 | 0.0 | 0 | 0 | 385a716dc174b5e4e5ea756a4532d84a898de1be76c5207ef3422b7bfbe58a4b | 6124ab869547181cbbfc1ba44d8579a84865e5a4304900f0477b0499ee44f38d | clipped_to_recent_history | bar_start | failed | None |  |
+| full-SPY-raw_price_history_five_minutes-rep1 | SPY | raw_price_history_five_minutes | 1 | 2022-01-03T00:00:00.000000-0500 | 2025-12-31T23:59:59.999999-0500 | 2022-01-03T05:00:00.000000+0000 | 2026-01-01T04:59:59.999999+0000 | 200 | none | 2262 | 2262 | 2025-11-19T14:30:00.000000+0000 | 2025-12-31T20:55:00.000000+0000 | 2025-11-19T14:30:00.000000+0000 | 2025-12-31T20:55:00.000000+0000 | 0 | 27 | 994 | 77532 | 2106 | 2106 | 84 | 72 | 2.716297786720322 | 75426 | 0 | 0.0 | 0 | 0.0 | 0 | 0 | 385a716dc174b5e4e5ea756a4532d84a898de1be76c5207ef3422b7bfbe58a4b | 6124ab869547181cbbfc1ba44d8579a84865e5a4304900f0477b0499ee44f38d | clipped_to_recent_history | bar_start | failed | None |  |
+| full-SPY-raw_price_history_five_minutes-rep2 | SPY | raw_price_history_five_minutes | 2 | 2022-01-03T00:00:00.000000-0500 | 2025-12-31T23:59:59.999999-0500 | 2022-01-03T05:00:00.000000+0000 | 2026-01-01T04:59:59.999999+0000 | 200 | none | 2262 | 2262 | 2025-11-19T14:30:00.000000+0000 | 2025-12-31T20:55:00.000000+0000 | 2025-11-19T14:30:00.000000+0000 | 2025-12-31T20:55:00.000000+0000 | 0 | 27 | 994 | 77532 | 2106 | 2106 | 84 | 72 | 2.716297786720322 | 75426 | 0 | 0.0 | 0 | 0.0 | 0 | 0 | 385a716dc174b5e4e5ea756a4532d84a898de1be76c5207ef3422b7bfbe58a4b | 6124ab869547181cbbfc1ba44d8579a84865e5a4304900f0477b0499ee44f38d | clipped_to_recent_history | bar_start | failed | None |  |
+| window-2022-02-SPY-convenience_every_five_minutes-rep1 | SPY | convenience_every_five_minutes | 1 | 2022-02-01T00:00:00.000000-0500 | 2022-02-28T23:59:59.999999-0500 | 2022-02-01T05:00:00.000000+0000 | 2022-03-01T04:59:59.999999+0000 | 200 | none | 0 | 0 | None | None | None | None | 0 | 0 | 19 | 1482 | 0 | 0 | 0 | 0 | 0.0 | 1482 | 0 | 0.0 | 0 | 0.0 | 0 | 0 | 8a52b0a2a9208177e6b75a950b7a60fcb4c1ac0f264bba6694391cfe45dc866e | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | empty | undetermined | failed | None |  |
 
 
 
@@ -122,14 +122,14 @@ See `request_audit.csv` in the safe artifact bundle.
 | window-2025-12-SPY-convenience_every_five_minutes-rep2 | honored_exactly | passed |
 | window-2025-12-SPY-raw_price_history_five_minutes-rep1 | honored_exactly | passed |
 | window-2025-12-SPY-raw_price_history_five_minutes-rep2 | honored_exactly | passed |
-| window-2025-12-AAPL-convenience_every_five_minutes-rep1 | honored_exactly | failed |
-| window-2025-12-AAPL-convenience_every_five_minutes-rep2 | honored_exactly | failed |
-| window-2025-12-AAPL-raw_price_history_five_minutes-rep1 | honored_exactly | failed |
-| window-2025-12-AAPL-raw_price_history_five_minutes-rep2 | honored_exactly | failed |
-| window-2025-12-JPM-convenience_every_five_minutes-rep1 | honored_exactly | failed |
-| window-2025-12-JPM-convenience_every_five_minutes-rep2 | honored_exactly | failed |
-| window-2025-12-JPM-raw_price_history_five_minutes-rep1 | honored_exactly | failed |
-| window-2025-12-JPM-raw_price_history_five_minutes-rep2 | honored_exactly | failed |
+| window-2025-12-AAPL-convenience_every_five_minutes-rep1 | honored_exactly | passed |
+| window-2025-12-AAPL-convenience_every_five_minutes-rep2 | honored_exactly | passed |
+| window-2025-12-AAPL-raw_price_history_five_minutes-rep1 | honored_exactly | passed |
+| window-2025-12-AAPL-raw_price_history_five_minutes-rep2 | honored_exactly | passed |
+| window-2025-12-JPM-convenience_every_five_minutes-rep1 | honored_exactly | passed |
+| window-2025-12-JPM-convenience_every_five_minutes-rep2 | honored_exactly | passed |
+| window-2025-12-JPM-raw_price_history_five_minutes-rep1 | honored_exactly | passed |
+| window-2025-12-JPM-raw_price_history_five_minutes-rep2 | honored_exactly | passed |
 | overlap-left-SPY-convenience_every_five_minutes-rep1 | empty | failed |
 | overlap-left-SPY-convenience_every_five_minutes-rep2 | empty | failed |
 | overlap-left-SPY-raw_price_history_five_minutes-rep1 | empty | failed |
@@ -145,8 +145,8 @@ See `request_audit.csv` in the safe artifact bundle.
 
 | base_probe_id | symbol | method | requested_eastern_start | requested_eastern_end | expected_eligible_sessions | expected_regular_session_bars | returned_regular_session_bars | primary_session_bars | early_close_session_bars | extended_hours_bars | regular_session_coverage_pct | missing_regular_session_bars | duplicate_bar_rate_pct | zero_volume_rate_pct | invalid_ohlc_rows | non_five_minute_intervals | timestamp_semantics_classification | date_bound_classification | threshold_result |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| full-SPY-convenience_every_five_minutes | SPY | convenience_every_five_minutes | 2022-01-03T00:00:00.000000-0500 | 2025-12-31T23:59:59.999999-0500 | 994 | 77532 | 2192 | 2106 | 86 | 70 | 2.7163 | 75426 | 0.0 | 0.0 | 0 | 0 | bar_start | clipped_to_recent_history | failed |
-| full-SPY-raw_price_history_five_minutes | SPY | raw_price_history_five_minutes | 2022-01-03T00:00:00.000000-0500 | 2025-12-31T23:59:59.999999-0500 | 994 | 77532 | 2192 | 2106 | 86 | 70 | 2.7163 | 75426 | 0.0 | 0.0 | 0 | 0 | bar_start | clipped_to_recent_history | failed |
+| full-SPY-convenience_every_five_minutes | SPY | convenience_every_five_minutes | 2022-01-03T00:00:00.000000-0500 | 2025-12-31T23:59:59.999999-0500 | 994 | 77532 | 2106 | 2106 | 84 | 72 | 2.7163 | 75426 | 0.0 | 0.0 | 0 | 0 | bar_start | clipped_to_recent_history | failed |
+| full-SPY-raw_price_history_five_minutes | SPY | raw_price_history_five_minutes | 2022-01-03T00:00:00.000000-0500 | 2025-12-31T23:59:59.999999-0500 | 994 | 77532 | 2106 | 2106 | 84 | 72 | 2.7163 | 75426 | 0.0 | 0.0 | 0 | 0 | bar_start | clipped_to_recent_history | failed |
 | window-2022-02-SPY-convenience_every_five_minutes | SPY | convenience_every_five_minutes | 2022-02-01T00:00:00.000000-0500 | 2022-02-28T23:59:59.999999-0500 | 19 | 1482 | 0 | 0 | 0 | 0 | 0.0 | 1482 | 0.0 | 0.0 | 0 | 0 | undetermined | empty | failed |
 | window-2022-02-SPY-raw_price_history_five_minutes | SPY | raw_price_history_five_minutes | 2022-02-01T00:00:00.000000-0500 | 2022-02-28T23:59:59.999999-0500 | 19 | 1482 | 0 | 0 | 0 | 0 | 0.0 | 1482 | 0.0 | 0.0 | 0 | 0 | undetermined | empty | failed |
 | window-2022-02-AAPL-convenience_every_five_minutes | AAPL | convenience_every_five_minutes | 2022-02-01T00:00:00.000000-0500 | 2022-02-28T23:59:59.999999-0500 | 19 | 1482 | 0 | 0 | 0 | 0 | 0.0 | 1482 | 0.0 | 0.0 | 0 | 0 | undetermined | empty | failed |
@@ -190,10 +190,10 @@ See `request_audit.csv` in the safe artifact bundle.
 | window-2024-06-JPM-raw_price_history_five_minutes | JPM | raw_price_history_five_minutes | 2024-06-03T00:00:00.000000-0400 to 2024-06-28T23:59:59.999999-0400 | True | 200 | 200 | 0 | 0 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | failed | failed |
 | window-2025-12-SPY-convenience_every_five_minutes | SPY | convenience_every_five_minutes | 2025-12-01T00:00:00.000000-0500 to 2025-12-31T23:59:59.999999-0500 | True | 200 | 200 | 1716 | 1716 | 27d1b7b09d5a89db8bbd6b42ee5b313f12e3fb2842adbc391011094e4cab0f1e | 27d1b7b09d5a89db8bbd6b42ee5b313f12e3fb2842adbc391011094e4cab0f1e | passed | passed |
 | window-2025-12-SPY-raw_price_history_five_minutes | SPY | raw_price_history_five_minutes | 2025-12-01T00:00:00.000000-0500 to 2025-12-31T23:59:59.999999-0500 | True | 200 | 200 | 1716 | 1716 | 27d1b7b09d5a89db8bbd6b42ee5b313f12e3fb2842adbc391011094e4cab0f1e | 27d1b7b09d5a89db8bbd6b42ee5b313f12e3fb2842adbc391011094e4cab0f1e | passed | passed |
-| window-2025-12-AAPL-convenience_every_five_minutes | AAPL | convenience_every_five_minutes | 2025-12-01T00:00:00.000000-0500 to 2025-12-31T23:59:59.999999-0500 | True | 200 | 200 | 1712 | 1712 | 2338711e8261d551a0282f8359b3113d23d3623ea3bb9703e5df6a756bc8f6f8 | 2338711e8261d551a0282f8359b3113d23d3623ea3bb9703e5df6a756bc8f6f8 | failed | failed |
-| window-2025-12-AAPL-raw_price_history_five_minutes | AAPL | raw_price_history_five_minutes | 2025-12-01T00:00:00.000000-0500 to 2025-12-31T23:59:59.999999-0500 | True | 200 | 200 | 1712 | 1712 | 2338711e8261d551a0282f8359b3113d23d3623ea3bb9703e5df6a756bc8f6f8 | 2338711e8261d551a0282f8359b3113d23d3623ea3bb9703e5df6a756bc8f6f8 | failed | failed |
-| window-2025-12-JPM-convenience_every_five_minutes | JPM | convenience_every_five_minutes | 2025-12-01T00:00:00.000000-0500 to 2025-12-31T23:59:59.999999-0500 | True | 200 | 200 | 1696 | 1696 | abf69a2845bb54b00431de254841d48d3f45345d64ff13656b9fd414fbb1b971 | abf69a2845bb54b00431de254841d48d3f45345d64ff13656b9fd414fbb1b971 | failed | failed |
-| window-2025-12-JPM-raw_price_history_five_minutes | JPM | raw_price_history_five_minutes | 2025-12-01T00:00:00.000000-0500 to 2025-12-31T23:59:59.999999-0500 | True | 200 | 200 | 1696 | 1696 | abf69a2845bb54b00431de254841d48d3f45345d64ff13656b9fd414fbb1b971 | abf69a2845bb54b00431de254841d48d3f45345d64ff13656b9fd414fbb1b971 | failed | failed |
+| window-2025-12-AAPL-convenience_every_five_minutes | AAPL | convenience_every_five_minutes | 2025-12-01T00:00:00.000000-0500 to 2025-12-31T23:59:59.999999-0500 | True | 200 | 200 | 1712 | 1712 | 2338711e8261d551a0282f8359b3113d23d3623ea3bb9703e5df6a756bc8f6f8 | 2338711e8261d551a0282f8359b3113d23d3623ea3bb9703e5df6a756bc8f6f8 | passed | passed |
+| window-2025-12-AAPL-raw_price_history_five_minutes | AAPL | raw_price_history_five_minutes | 2025-12-01T00:00:00.000000-0500 to 2025-12-31T23:59:59.999999-0500 | True | 200 | 200 | 1712 | 1712 | 2338711e8261d551a0282f8359b3113d23d3623ea3bb9703e5df6a756bc8f6f8 | 2338711e8261d551a0282f8359b3113d23d3623ea3bb9703e5df6a756bc8f6f8 | passed | passed |
+| window-2025-12-JPM-convenience_every_five_minutes | JPM | convenience_every_five_minutes | 2025-12-01T00:00:00.000000-0500 to 2025-12-31T23:59:59.999999-0500 | True | 200 | 200 | 1696 | 1696 | abf69a2845bb54b00431de254841d48d3f45345d64ff13656b9fd414fbb1b971 | abf69a2845bb54b00431de254841d48d3f45345d64ff13656b9fd414fbb1b971 | passed | passed |
+| window-2025-12-JPM-raw_price_history_five_minutes | JPM | raw_price_history_five_minutes | 2025-12-01T00:00:00.000000-0500 to 2025-12-31T23:59:59.999999-0500 | True | 200 | 200 | 1696 | 1696 | abf69a2845bb54b00431de254841d48d3f45345d64ff13656b9fd414fbb1b971 | abf69a2845bb54b00431de254841d48d3f45345d64ff13656b9fd414fbb1b971 | passed | passed |
 | overlap-left-SPY-convenience_every_five_minutes | SPY | convenience_every_five_minutes | 2024-06-03T00:00:00.000000-0400 to 2024-06-14T23:59:59.999999-0400 | True | 200 | 200 | 0 | 0 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | failed | failed |
 | overlap-left-SPY-raw_price_history_five_minutes | SPY | raw_price_history_five_minutes | 2024-06-03T00:00:00.000000-0400 to 2024-06-14T23:59:59.999999-0400 | True | 200 | 200 | 0 | 0 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | failed | failed |
 | overlap-right-SPY-convenience_every_five_minutes | SPY | convenience_every_five_minutes | 2024-06-10T00:00:00.000000-0400 to 2024-06-28T23:59:59.999999-0400 | True | 200 | 200 | 0 | 0 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | failed | failed |
@@ -207,34 +207,34 @@ See `request_audit.csv` in the safe artifact bundle.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | full-SPY | SPY | 1 | full-SPY-convenience_every_five_minutes-rep1 | full-SPY-raw_price_history_five_minutes-rep1 | 6124ab869547181cbbfc1ba44d8579a84865e5a4304900f0477b0499ee44f38d | 6124ab869547181cbbfc1ba44d8579a84865e5a4304900f0477b0499ee44f38d | identical |
 | full-SPY | SPY | 2 | full-SPY-convenience_every_five_minutes-rep2 | full-SPY-raw_price_history_five_minutes-rep2 | 6124ab869547181cbbfc1ba44d8579a84865e5a4304900f0477b0499ee44f38d | 6124ab869547181cbbfc1ba44d8579a84865e5a4304900f0477b0499ee44f38d | identical |
-| window-2022-02-SPY | SPY | 1 | window-2022-02-SPY-convenience_every_five_minutes-rep1 | window-2022-02-SPY-raw_price_history_five_minutes-rep1 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | identical |
-| window-2022-02-SPY | SPY | 2 | window-2022-02-SPY-convenience_every_five_minutes-rep2 | window-2022-02-SPY-raw_price_history_five_minutes-rep2 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | identical |
-| window-2022-02-AAPL | AAPL | 1 | window-2022-02-AAPL-convenience_every_five_minutes-rep1 | window-2022-02-AAPL-raw_price_history_five_minutes-rep1 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | identical |
-| window-2022-02-AAPL | AAPL | 2 | window-2022-02-AAPL-convenience_every_five_minutes-rep2 | window-2022-02-AAPL-raw_price_history_five_minutes-rep2 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | identical |
-| window-2022-02-JPM | JPM | 1 | window-2022-02-JPM-convenience_every_five_minutes-rep1 | window-2022-02-JPM-raw_price_history_five_minutes-rep1 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | identical |
-| window-2022-02-JPM | JPM | 2 | window-2022-02-JPM-convenience_every_five_minutes-rep2 | window-2022-02-JPM-raw_price_history_five_minutes-rep2 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | identical |
-| window-2023-08-SPY | SPY | 1 | window-2023-08-SPY-convenience_every_five_minutes-rep1 | window-2023-08-SPY-raw_price_history_five_minutes-rep1 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | identical |
-| window-2023-08-SPY | SPY | 2 | window-2023-08-SPY-convenience_every_five_minutes-rep2 | window-2023-08-SPY-raw_price_history_five_minutes-rep2 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | identical |
-| window-2023-08-AAPL | AAPL | 1 | window-2023-08-AAPL-convenience_every_five_minutes-rep1 | window-2023-08-AAPL-raw_price_history_five_minutes-rep1 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | identical |
-| window-2023-08-AAPL | AAPL | 2 | window-2023-08-AAPL-convenience_every_five_minutes-rep2 | window-2023-08-AAPL-raw_price_history_five_minutes-rep2 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | identical |
-| window-2023-08-JPM | JPM | 1 | window-2023-08-JPM-convenience_every_five_minutes-rep1 | window-2023-08-JPM-raw_price_history_five_minutes-rep1 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | identical |
-| window-2023-08-JPM | JPM | 2 | window-2023-08-JPM-convenience_every_five_minutes-rep2 | window-2023-08-JPM-raw_price_history_five_minutes-rep2 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | identical |
-| window-2024-06-SPY | SPY | 1 | window-2024-06-SPY-convenience_every_five_minutes-rep1 | window-2024-06-SPY-raw_price_history_five_minutes-rep1 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | identical |
-| window-2024-06-SPY | SPY | 2 | window-2024-06-SPY-convenience_every_five_minutes-rep2 | window-2024-06-SPY-raw_price_history_five_minutes-rep2 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | identical |
-| window-2024-06-AAPL | AAPL | 1 | window-2024-06-AAPL-convenience_every_five_minutes-rep1 | window-2024-06-AAPL-raw_price_history_five_minutes-rep1 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | identical |
-| window-2024-06-AAPL | AAPL | 2 | window-2024-06-AAPL-convenience_every_five_minutes-rep2 | window-2024-06-AAPL-raw_price_history_five_minutes-rep2 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | identical |
-| window-2024-06-JPM | JPM | 1 | window-2024-06-JPM-convenience_every_five_minutes-rep1 | window-2024-06-JPM-raw_price_history_five_minutes-rep1 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | identical |
-| window-2024-06-JPM | JPM | 2 | window-2024-06-JPM-convenience_every_five_minutes-rep2 | window-2024-06-JPM-raw_price_history_five_minutes-rep2 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | identical |
+| window-2022-02-SPY | SPY | 1 | window-2022-02-SPY-convenience_every_five_minutes-rep1 | window-2022-02-SPY-raw_price_history_five_minutes-rep1 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | not_comparable |
+| window-2022-02-SPY | SPY | 2 | window-2022-02-SPY-convenience_every_five_minutes-rep2 | window-2022-02-SPY-raw_price_history_five_minutes-rep2 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | not_comparable |
+| window-2022-02-AAPL | AAPL | 1 | window-2022-02-AAPL-convenience_every_five_minutes-rep1 | window-2022-02-AAPL-raw_price_history_five_minutes-rep1 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | not_comparable |
+| window-2022-02-AAPL | AAPL | 2 | window-2022-02-AAPL-convenience_every_five_minutes-rep2 | window-2022-02-AAPL-raw_price_history_five_minutes-rep2 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | not_comparable |
+| window-2022-02-JPM | JPM | 1 | window-2022-02-JPM-convenience_every_five_minutes-rep1 | window-2022-02-JPM-raw_price_history_five_minutes-rep1 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | not_comparable |
+| window-2022-02-JPM | JPM | 2 | window-2022-02-JPM-convenience_every_five_minutes-rep2 | window-2022-02-JPM-raw_price_history_five_minutes-rep2 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | not_comparable |
+| window-2023-08-SPY | SPY | 1 | window-2023-08-SPY-convenience_every_five_minutes-rep1 | window-2023-08-SPY-raw_price_history_five_minutes-rep1 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | not_comparable |
+| window-2023-08-SPY | SPY | 2 | window-2023-08-SPY-convenience_every_five_minutes-rep2 | window-2023-08-SPY-raw_price_history_five_minutes-rep2 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | not_comparable |
+| window-2023-08-AAPL | AAPL | 1 | window-2023-08-AAPL-convenience_every_five_minutes-rep1 | window-2023-08-AAPL-raw_price_history_five_minutes-rep1 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | not_comparable |
+| window-2023-08-AAPL | AAPL | 2 | window-2023-08-AAPL-convenience_every_five_minutes-rep2 | window-2023-08-AAPL-raw_price_history_five_minutes-rep2 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | not_comparable |
+| window-2023-08-JPM | JPM | 1 | window-2023-08-JPM-convenience_every_five_minutes-rep1 | window-2023-08-JPM-raw_price_history_five_minutes-rep1 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | not_comparable |
+| window-2023-08-JPM | JPM | 2 | window-2023-08-JPM-convenience_every_five_minutes-rep2 | window-2023-08-JPM-raw_price_history_five_minutes-rep2 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | not_comparable |
+| window-2024-06-SPY | SPY | 1 | window-2024-06-SPY-convenience_every_five_minutes-rep1 | window-2024-06-SPY-raw_price_history_five_minutes-rep1 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | not_comparable |
+| window-2024-06-SPY | SPY | 2 | window-2024-06-SPY-convenience_every_five_minutes-rep2 | window-2024-06-SPY-raw_price_history_five_minutes-rep2 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | not_comparable |
+| window-2024-06-AAPL | AAPL | 1 | window-2024-06-AAPL-convenience_every_five_minutes-rep1 | window-2024-06-AAPL-raw_price_history_five_minutes-rep1 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | not_comparable |
+| window-2024-06-AAPL | AAPL | 2 | window-2024-06-AAPL-convenience_every_five_minutes-rep2 | window-2024-06-AAPL-raw_price_history_five_minutes-rep2 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | not_comparable |
+| window-2024-06-JPM | JPM | 1 | window-2024-06-JPM-convenience_every_five_minutes-rep1 | window-2024-06-JPM-raw_price_history_five_minutes-rep1 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | not_comparable |
+| window-2024-06-JPM | JPM | 2 | window-2024-06-JPM-convenience_every_five_minutes-rep2 | window-2024-06-JPM-raw_price_history_five_minutes-rep2 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | not_comparable |
 | window-2025-12-SPY | SPY | 1 | window-2025-12-SPY-convenience_every_five_minutes-rep1 | window-2025-12-SPY-raw_price_history_five_minutes-rep1 | 27d1b7b09d5a89db8bbd6b42ee5b313f12e3fb2842adbc391011094e4cab0f1e | 27d1b7b09d5a89db8bbd6b42ee5b313f12e3fb2842adbc391011094e4cab0f1e | identical |
 | window-2025-12-SPY | SPY | 2 | window-2025-12-SPY-convenience_every_five_minutes-rep2 | window-2025-12-SPY-raw_price_history_five_minutes-rep2 | 27d1b7b09d5a89db8bbd6b42ee5b313f12e3fb2842adbc391011094e4cab0f1e | 27d1b7b09d5a89db8bbd6b42ee5b313f12e3fb2842adbc391011094e4cab0f1e | identical |
 | window-2025-12-AAPL | AAPL | 1 | window-2025-12-AAPL-convenience_every_five_minutes-rep1 | window-2025-12-AAPL-raw_price_history_five_minutes-rep1 | 2338711e8261d551a0282f8359b3113d23d3623ea3bb9703e5df6a756bc8f6f8 | 2338711e8261d551a0282f8359b3113d23d3623ea3bb9703e5df6a756bc8f6f8 | identical |
 | window-2025-12-AAPL | AAPL | 2 | window-2025-12-AAPL-convenience_every_five_minutes-rep2 | window-2025-12-AAPL-raw_price_history_five_minutes-rep2 | 2338711e8261d551a0282f8359b3113d23d3623ea3bb9703e5df6a756bc8f6f8 | 2338711e8261d551a0282f8359b3113d23d3623ea3bb9703e5df6a756bc8f6f8 | identical |
 | window-2025-12-JPM | JPM | 1 | window-2025-12-JPM-convenience_every_five_minutes-rep1 | window-2025-12-JPM-raw_price_history_five_minutes-rep1 | abf69a2845bb54b00431de254841d48d3f45345d64ff13656b9fd414fbb1b971 | abf69a2845bb54b00431de254841d48d3f45345d64ff13656b9fd414fbb1b971 | identical |
 | window-2025-12-JPM | JPM | 2 | window-2025-12-JPM-convenience_every_five_minutes-rep2 | window-2025-12-JPM-raw_price_history_five_minutes-rep2 | abf69a2845bb54b00431de254841d48d3f45345d64ff13656b9fd414fbb1b971 | abf69a2845bb54b00431de254841d48d3f45345d64ff13656b9fd414fbb1b971 | identical |
-| overlap-left-SPY | SPY | 1 | overlap-left-SPY-convenience_every_five_minutes-rep1 | overlap-left-SPY-raw_price_history_five_minutes-rep1 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | identical |
-| overlap-left-SPY | SPY | 2 | overlap-left-SPY-convenience_every_five_minutes-rep2 | overlap-left-SPY-raw_price_history_five_minutes-rep2 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | identical |
-| overlap-right-SPY | SPY | 1 | overlap-right-SPY-convenience_every_five_minutes-rep1 | overlap-right-SPY-raw_price_history_five_minutes-rep1 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | identical |
-| overlap-right-SPY | SPY | 2 | overlap-right-SPY-convenience_every_five_minutes-rep2 | overlap-right-SPY-raw_price_history_five_minutes-rep2 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | identical |
+| overlap-left-SPY | SPY | 1 | overlap-left-SPY-convenience_every_five_minutes-rep1 | overlap-left-SPY-raw_price_history_five_minutes-rep1 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | not_comparable |
+| overlap-left-SPY | SPY | 2 | overlap-left-SPY-convenience_every_five_minutes-rep2 | overlap-left-SPY-raw_price_history_five_minutes-rep2 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | not_comparable |
+| overlap-right-SPY | SPY | 1 | overlap-right-SPY-convenience_every_five_minutes-rep1 | overlap-right-SPY-raw_price_history_five_minutes-rep1 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | not_comparable |
+| overlap-right-SPY | SPY | 2 | overlap-right-SPY-convenience_every_five_minutes-rep2 | overlap-right-SPY-raw_price_history_five_minutes-rep2 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 | not_comparable |
 
 
 
@@ -255,17 +255,20 @@ See `request_audit.csv` in the safe artifact bundle.
   "approved_for_intra_001_five_minute_ohlcv": false,
   "blockers": [
     "Schwab did not satisfy the locked coverage, repeatability, method parity, or chunk-overlap requirements.",
-    "Chunk overlap mismatch prevents deterministic stitching."
+    "Chunk overlap test was not comparable because one or both overlap windows contained no requested-range data; deterministic stitching could not be verified."
   ],
   "chunk_overlap_passed": false,
   "chunked_historical_windows_supported": false,
-  "coverage_threshold_passed": true,
-  "date_filtering_required": true,
+  "coverage_threshold_passed": false,
+  "date_filtering_required": false,
   "direct_full_range_supported": false,
-  "limitations": [],
+  "limitations": [
+    "This is an as-of observation using the locked symbol set and sample windows; Schwab behavior/entitlements may change.",
+    "The probe does not resolve point-in-time universe, security-master, delisted-symbol, or volume-provenance requirements."
+  ],
   "method_parity_passed": true,
   "outcome": "not_supported",
-  "pre_registration_commit": "09fdbc4290705f3ecd175ba40bbc5f5cdc42ac74",
+  "pre_registration_commit": "09fdbc4",
   "probe_spec_sha256": "e97a5a9c99d7b203efcbbc6961777e0adfa4345868f03fe33dd35f483eb41dce",
   "production_behavior_changed": false,
   "provider": "schwab",
@@ -276,7 +279,7 @@ See `request_audit.csv` in the safe artifact bundle.
   "remaining_volume_provenance_disclosure_required": true,
   "repeatability_passed": true,
   "schwab_py_version": "1.5.1",
-  "selected_request_method": "convenience_every_five_minutes",
+  "selected_request_method": "none",
   "selected_windowing_policy": "none",
   "strategy_spec_sha256": "09394d038928433529ec4c5f5ba5ff0392c764d5b59f1af71d95f4f3957c0464",
   "task_id": "INTRA-001B-PROBE",
@@ -289,12 +292,13 @@ See `request_audit.csv` in the safe artifact bundle.
 ## 17. Blockers
 
 - Schwab did not satisfy the locked coverage, repeatability, method parity, or chunk-overlap requirements.
-- Chunk overlap mismatch prevents deterministic stitching.
+- Chunk overlap test was not comparable because one or both overlap windows contained no requested-range data; deterministic stitching could not be verified.
 
 
 ## 18. Limitations
 
-None.
+- This is an as-of observation using the locked symbol set and sample windows; Schwab behavior/entitlements may change.
+- The probe does not resolve point-in-time universe, security-master, delisted-symbol, or volume-provenance requirements.
 
 
 ## 19. Final outcome
@@ -367,7 +371,7 @@ The convenience and raw Schwab methods produced identical requested-range normal
 
 ## 30. Chunk overlap observations
 
-Overlap windows from 2024-06 were empty because Schwab did not return candles for that range. Consequently, left/right overlap could not be compared and is classified `not_comparable`.
+Overlap windows from 2024-06 were empty because Schwab did not return candles for that range. Consequently, left/right overlap could not be compared and is classified `not_comparable`; this is a missing-data limitation, not a timestamp/value mismatch.
 
 
 ## 31. Multi-year history capability
@@ -387,7 +391,7 @@ The probe requested `need_extended_hours_data=False`. Returned payloads still co
 
 ## 34. Non-five-minute intervals
 
-8 requests had non-five-minute intervals. Most were overnight/session gaps; some AAPL/JPM 2025-12 windows showed intra-session gaps, failing the strict no-gap threshold.
+0 requests contained returned timestamps within market hours that did not fall on the expected five-minute grid. Missing expected bars are reflected as reduced coverage; genuinely off-grid timestamps are reported here.
 
 
 ## 35. Zero-volume and invalid OHLC
@@ -397,7 +401,7 @@ The probe requested `need_extended_hours_data=False`. Returned payloads still co
 
 ## 36. Convenience vs raw method comparison
 
-No difference was observed between `get_price_history_every_five_minutes` and the explicit `get_price_history` five-minute call in terms of returned timestamps, counts, or normalized hashes.
+The convenience and raw Schwab methods produced identical requested-range normalized hashes for every comparable, data-bearing window.
 
 
 ## 37. Operational environment

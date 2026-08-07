@@ -10,14 +10,18 @@ import pytest
 
 from tradex.data.fetcher import ProviderAuthenticationError
 from tradex.research.intraday_data_probe.cli import main
-from tradex.research.intraday_data_probe.models import ProbeReport
+from tradex.research.intraday_data_probe.models import ProbeReport, ProbeRequestRecord
 from tradex.research.intraday_data_probe.probe import (
+    _analyze_request,
+    _build_decision,
     _classify_date_bound,
+    _compare_methods,
     _count_duplicate_timestamps,
     _eastern_bounds,
     _expected_primary_sessions_and_bars,
     _is_early_close,
     _is_full_session,
+    _load_calendar,
     _probe_kind,
     _sha256_dataframe,
     run_probe,
@@ -568,3 +572,182 @@ def test_probe_kind():
     assert _probe_kind("full-SPY-convenience_every_five_minutes-rep1") == "full"
     assert _probe_kind("window-2022-02-AAPL-convenience_every_five_minutes-rep1") == "bounded"
     assert _probe_kind("overlap-left-SPY-convenience_every_five_minutes-rep1") == "overlap"
+
+
+def _base_record(**kwargs):
+    defaults = {
+        "probe_id": "test", "symbol": "SPY", "method": "convenience_every_five_minutes", "repetition": 1,
+        "requested_eastern_start": "", "requested_eastern_end": "", "requested_utc_start": "", "requested_utc_end": "",
+        "http_status": 200, "safe_error_classification": "none", "raw_candle_count": 0, "normalized_candle_count": 0,
+        "raw_earliest_timestamp": None, "raw_latest_timestamp": None, "requested_range_earliest": None, "requested_range_latest": None,
+        "out_of_range_candles": 0, "unique_regular_sessions": 0, "expected_eligible_sessions": 0, "expected_regular_session_bars": 0,
+        "returned_regular_session_bars": 0, "primary_session_bars": 0, "early_close_session_bars": 0, "extended_hours_bars": 0,
+        "regular_session_coverage_pct": 0.0, "missing_regular_session_bars": 0, "duplicate_timestamps": 0, "duplicate_bar_rate_pct": 0.0,
+        "zero_volume_bars": 0, "zero_volume_rate_pct": 0.0, "invalid_ohlc_rows": 0, "non_five_minute_intervals": 0,
+        "candle_payload_sha256": "", "requested_range_normalized_sha256": "", "date_bound_classification": "empty",
+        "timestamp_semantics_classification": "undetermined", "threshold_result": "failed", "retry_after_seconds": None, "notes": "",
+    }
+    return ProbeRequestRecord(**{**defaults, **kwargs})
+
+
+def test_grid_coverage_complete_session(spec: IntradayProbeSpec):
+    cal = _load_calendar(spec.exchange_calendar)
+    start_date = date(2024, 6, 3)
+    end_date = date(2024, 6, 3)
+    start_utc, end_utc = _eastern_bounds(start_date, end_date, spec.timezone)
+    candles = _make_candles("SPY", start_utc, end_utc)
+    rec = _analyze_request(
+        None, 200, candles, "SPY", "convenience_every_five_minutes", start_utc, end_utc,
+        start_date, end_date, cal, spec, "test", 1, None, "none",
+    )
+    assert rec.primary_session_bars == 78
+    assert rec.regular_session_coverage_pct == 100.0
+    assert rec.missing_regular_session_bars == 0
+    assert rec.non_five_minute_intervals == 0
+
+
+def test_grid_coverage_1600_extra_bar_does_not_inflate(spec: IntradayProbeSpec):
+    cal = _load_calendar(spec.exchange_calendar)
+    start_date = date(2024, 6, 3)
+    end_date = date(2024, 6, 3)
+    start_utc, end_utc = _eastern_bounds(start_date, end_date, spec.timezone)
+    candles = _make_candles("SPY", start_utc, end_utc)
+    close_ts = pd.Timestamp("2024-06-03 16:00", tz=spec.timezone).tz_convert(UTC)
+    i = int(close_ts.timestamp() // 60)
+    candles.append({
+        "datetime": int(close_ts.timestamp() * 1000),
+        "open": 100.0 + i * 0.01,
+        "high": 100.0 + i * 0.01 + 0.002,
+        "low": 100.0 + i * 0.01 - 0.002,
+        "close": 100.0 + i * 0.01 + 0.005,
+        "volume": 1000 + i,
+    })
+    rec = _analyze_request(
+        None, 200, candles, "SPY", "convenience_every_five_minutes", start_utc, end_utc,
+        start_date, end_date, cal, spec, "test", 1, None, "none",
+    )
+    assert rec.primary_session_bars == 78
+    assert rec.extended_hours_bars == 1
+    assert rec.regular_session_coverage_pct == 100.0
+    assert rec.non_five_minute_intervals == 0
+
+
+def test_grid_coverage_missing_bar_reduces_coverage(spec: IntradayProbeSpec):
+    cal = _load_calendar(spec.exchange_calendar)
+    start_date = date(2024, 6, 3)
+    end_date = date(2024, 6, 3)
+    start_utc, end_utc = _eastern_bounds(start_date, end_date, spec.timezone)
+    candles = _make_candles("SPY", start_utc, end_utc)
+    # Remove the 9:30 open bar.
+    candles = candles[1:]
+    rec = _analyze_request(
+        None, 200, candles, "SPY", "convenience_every_five_minutes", start_utc, end_utc,
+        start_date, end_date, cal, spec, "test", 1, None, "none",
+    )
+    assert rec.primary_session_bars == 77
+    assert rec.missing_regular_session_bars == 1
+    assert abs(rec.regular_session_coverage_pct - (77 / 78 * 100)) < 0.001
+    assert rec.non_five_minute_intervals == 0
+
+
+def test_pre_post_market_rows_are_extended_not_non_five(spec: IntradayProbeSpec):
+    cal = _load_calendar(spec.exchange_calendar)
+    start_date = date(2024, 6, 3)
+    end_date = date(2024, 6, 3)
+    start_utc, end_utc = _eastern_bounds(start_date, end_date, spec.timezone)
+    candles = _make_candles("SPY", start_utc, end_utc)
+    for ts_str in ("2024-06-03 09:25", "2024-06-03 16:05"):
+        ts = pd.Timestamp(ts_str, tz=spec.timezone).tz_convert(UTC)
+        i = int(ts.timestamp() // 60)
+        candles.append({
+            "datetime": int(ts.timestamp() * 1000),
+            "open": 100.0 + i * 0.01,
+            "high": 100.0 + i * 0.01 + 0.002,
+            "low": 100.0 + i * 0.01 - 0.002,
+            "close": 100.0 + i * 0.01 + 0.005,
+            "volume": 1000 + i,
+        })
+    rec = _analyze_request(
+        None, 200, candles, "SPY", "convenience_every_five_minutes", start_utc, end_utc,
+        start_date, end_date, cal, spec, "test", 1, None, "none",
+    )
+    assert rec.primary_session_bars == 78
+    assert rec.extended_hours_bars == 2
+    assert rec.non_five_minute_intervals == 0
+
+
+def test_method_parity_empty_empty_is_not_comparable():
+    conv = _base_record(probe_id="window-2024-w1-SPY-convenience-rep1", symbol="SPY", method="convenience_every_five_minutes")
+    raw = _base_record(probe_id="window-2024-w1-SPY-raw-rep1", symbol="SPY", method="raw_price_history_five_minutes")
+    dfs = {"window-2024-w1-SPY-convenience": pd.DataFrame(), "window-2024-w1-SPY-raw": pd.DataFrame()}
+    row = _compare_methods("window-2024-w1", "SPY", 1, conv, raw, dfs)
+    assert row["classification"] == "not_comparable"
+
+
+def test_chunked_support_false_when_expected_window_missing(spec: IntradayProbeSpec):
+    """Only one bounded window passes; chunked support must be false because the locked set is incomplete."""
+    records = [
+        _base_record(
+            probe_id="window-2025-12-SPY-convenience_every_five_minutes-rep1",
+            symbol="SPY", method="convenience_every_five_minutes", threshold_result="passed",
+            date_bound_classification="honored_exactly", primary_session_bars=78,
+        ),
+        _base_record(
+            probe_id="window-2025-12-SPY-raw_price_history_five_minutes-rep1",
+            symbol="SPY", method="raw_price_history_five_minutes", threshold_result="passed",
+            date_bound_classification="honored_exactly", primary_session_bars=78,
+        ),
+    ]
+    repeat_rows = [{"repeat_hash_match": True}]
+    parity_rows = [{"classification": "identical"}]
+    overlap_rows = [{"classification": "match"}]
+    decision = _build_decision(
+        spec, records, repeat_rows, parity_rows, overlap_rows, "a" * 64, "b" * 64, "abc123", "1.5.1",
+    )
+    assert not decision.chunked_historical_windows_supported
+    assert not decision.coverage_threshold_passed
+
+
+def test_date_filtering_required_is_evidence_based(spec: IntradayProbeSpec):
+    """date_filtering_required must be true only when a request actually returned out-of-range candles or a superset."""
+    records = [
+        _base_record(
+            probe_id="window-2025-12-SPY-convenience_every_five_minutes-rep1",
+            out_of_range_candles=1, date_bound_classification="superset_with_complete_requested_range", threshold_result="passed",
+        ),
+    ]
+    decision = _build_decision(
+        spec, records, [], [], [], "a" * 64, "b" * 64, "abc123", "1.5.1",
+    )
+    assert decision.date_filtering_required is True
+
+    records_clean = [
+        _base_record(
+            probe_id="window-2025-12-SPY-convenience_every_five_minutes-rep1",
+            out_of_range_candles=0, date_bound_classification="honored_exactly", threshold_result="passed",
+        ),
+    ]
+    decision_clean = _build_decision(
+        spec, records_clean, [], [], [], "a" * 64, "b" * 64, "abc123", "1.5.1",
+    )
+    assert decision_clean.date_filtering_required is False
+
+
+def test_selected_request_method_is_none_when_not_supported(spec: IntradayProbeSpec):
+    """If neither direct nor chunked access is supported, selected_request_method must be 'none'."""
+    records = [
+        _base_record(
+            probe_id="full-SPY-convenience_every_five_minutes-rep1",
+            symbol="SPY", method="convenience_every_five_minutes", threshold_result="failed",
+            date_bound_classification="clipped_to_recent_history", primary_session_bars=10, expected_regular_session_bars=1000,
+        ),
+    ]
+    repeat_rows = [{"repeat_hash_match": True}]
+    parity_rows = [{"classification": "not_comparable"}]
+    overlap_rows = [{"classification": "not_comparable"}]
+    decision = _build_decision(
+        spec, records, repeat_rows, parity_rows, overlap_rows, "a" * 64, "b" * 64, "abc123", "1.5.1",
+    )
+    assert decision.selected_request_method == "none"
+    assert decision.selected_windowing_policy == "none"
+    assert not decision.approved_for_intra_001_five_minute_ohlcv

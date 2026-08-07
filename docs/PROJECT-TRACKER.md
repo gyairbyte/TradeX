@@ -482,7 +482,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Probe branch:** `devin/intra-001b-schwab-probe`
 - **Probe spec:** `docs/research/specs/INTRA-001B-schwab-probe-v1.json`
 - **Probe report:** `docs/research/INTRA-001B-SCHWAB-DATA-PROBE.md`
-- **Safe artifacts:** `docs/research/artifacts/INTRA-001B/2026-08-07-044434/`
+- **Safe artifacts:** `docs/research/artifacts/INTRA-001B/2026-08-07-123144/`
 - **Outcome:** `not_supported` — Schwab returned only the most recent ~30 regular sessions for a four-year full-range request and returned empty payloads for all bounded 2022–2024 windows; direct full range and bounded monthly chunking both fail the locked coverage thresholds
 - **Problem statement:** The intraday score is a loose bundle of indicators without VWAP, time-of-day, or liquidity context.
 - **Recommended action:** Begin an alternative five-minute OHLCV source investigation (`devin/intra-001b-alternative-ohlcv-source`). Continue the phased plan in `docs/research/INTRA-001-SPEC.md` only after a data source that can supply 2022–2025 five-minute regular-session bars is locked.

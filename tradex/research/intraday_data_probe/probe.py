@@ -102,25 +102,28 @@ def _is_early_close(calendar: Any, session_date: date) -> bool:
     return calendar.is_session(session_date) and not _is_full_session(calendar, session_date)
 
 
+def _session_grid_times(calendar: Any, session_date: date) -> pd.DatetimeIndex:
+    """Return the expected bar-start timestamps for a single session (UTC)."""
+    open_utc = calendar.session_open(session_date).tz_convert(UTC)
+    close_utc = calendar.session_close(session_date).tz_convert(UTC)
+    return pd.date_range(start=open_utc, end=close_utc, freq="5min", inclusive="left")
+
+
 def _expected_primary_sessions_and_bars(
     calendar: Any,
     start_date: date,
     end_date: date,
     exclude_early_close: bool,
 ) -> tuple[int, int]:
+    """Count sessions and expected five-minute bars using the exact XNYS grid."""
     if end_date < start_date:
         return 0, 0
     sessions = list(calendar.sessions_in_range(start_date, end_date))
     if exclude_early_close:
         sessions = [s for s in sessions if _is_full_session(calendar, s.date())]
-    # Full sessions contribute 78 bars; early-close sessions contribute half.
     bar_count = 0
     for s in sessions:
-        d = s.date()
-        if _is_full_session(calendar, d):
-            bar_count += 78
-        elif _is_early_close(calendar, d):
-            bar_count += 39
+        bar_count += len(_session_grid_times(calendar, s.date()))
     return len(sessions), bar_count
 
 
@@ -283,46 +286,64 @@ def _analyze_request(
         calendar, start_date, end_date, spec.exclude_early_close_sessions_from_primary_coverage
     )
 
-    primary_bars = 0
-    early_close_bars = 0
-    extended_hours_bars = 0
-    non_five_minute_intervals = 0
-    if not df_ny.empty:
-        for ts in df_ny.index:
-            d = ts.date()
-            if not calendar.is_session(d):
-                extended_hours_bars += 1
-                continue
-            open_t = calendar.session_open(d).tz_convert(spec.timezone)
-            close_t = calendar.session_close(d).tz_convert(spec.timezone)
-            if ts < open_t or ts > close_t:
-                extended_hours_bars += 1
-            elif _is_early_close(calendar, d):
-                early_close_bars += 1
-            else:
-                primary_bars += 1
+    # Build the exact bar-start grid for every session in the requested date range.
+    tz = ZoneInfo(spec.timezone)
+    session_grids: dict[date, dict[str, Any]] = {}
+    for s in calendar.sessions_in_range(start_date, end_date):
+        d = s.date()
+        open_utc = calendar.session_open(d).tz_convert(UTC)
+        close_utc = calendar.session_close(d).tz_convert(UTC)
+        close_ny = close_utc.tz_convert(tz)
+        is_full = close_ny.time() == dt_time(16, 0)
+        grid = set(pd.date_range(start=open_utc, end=close_utc, freq="5min", inclusive="left"))
+        session_grids[d] = {"open_utc": open_utc, "close_utc": close_utc, "is_full": is_full, "grid": grid}
 
-        # Intra-session non-five-minute interval detection.
-        by_session: dict[date, list[datetime]] = {}
-        for ts in df_ny.index:
-            d = ts.date()
-            if not calendar.is_session(d):
+    primary: set[datetime] = set()
+    early_close: set[datetime] = set()
+    extended: set[datetime] = set()
+    non_five: set[datetime] = set()
+    if not df.empty:
+        for ts_utc in df.index:
+            ts_ny = ts_utc.astimezone(tz)
+            d = ts_ny.date()
+            info = session_grids.get(d)
+            if info is None:
+                extended.add(ts_utc)
                 continue
-            by_session.setdefault(d, []).append(ts)
-        for d, times in by_session.items():
-            times.sort()
-            for i in range(1, len(times)):
-                delta = (times[i] - times[i - 1]).total_seconds()
-                if abs(delta - 300) > 1:
-                    non_five_minute_intervals += 1
+            open_ny_time = info["open_utc"].astimezone(tz).time()
+            close_ny_time = info["close_utc"].astimezone(tz).time()
+            ts_time = ts_ny.time()
+            # Pre/post-market rows are extended hours and must not create intra-session gap counts.
+            if ts_time < open_ny_time or ts_time > close_ny_time:
+                extended.add(ts_utc)
+                continue
+            if ts_time == close_ny_time:
+                # A close timestamp is extra (e.g. 16:00 under bar-start semantics) and
+                # must not be counted as a regular grid bar.
+                extended.add(ts_utc)
+                continue
+            if ts_utc in info["grid"]:
+                if info["is_full"] or not spec.exclude_early_close_sessions_from_primary_coverage:
+                    primary.add(ts_utc)
+                else:
+                    early_close.add(ts_utc)
+            else:
+                # Within market hours but not on the expected five-minute grid.
+                non_five.add(ts_utc)
+
+    primary_bars = len(primary)
+    early_close_bars = len(early_close)
+    extended_hours_bars = len(extended)
+    non_five_minute_intervals = len(non_five)
 
     zero_volume_bars = 0
     if not df.empty and "volume" in df.columns:
         zero_volume_bars = int((df["volume"] == 0).sum())
     duplicate_rate = (duplicate_timestamps / raw_count * 100) if raw_count else 0.0
     zero_volume_rate = (zero_volume_bars / normalized_count * 100) if normalized_count else 0.0
-    missing_bars = max(0, expected_bars - primary_bars)
-    coverage_pct = (primary_bars / expected_bars * 100) if expected_bars else 0.0
+    returned_regular = primary_bars
+    missing_bars = max(0, expected_bars - returned_regular)
+    coverage_pct = (returned_regular / expected_bars * 100) if expected_bars else 0.0
 
     timestamp_semantics = _classify_timestamp_semantics(df_ny, calendar, spec.exclude_early_close_sessions_from_primary_coverage)
     date_bound = _classify_date_bound(
@@ -334,17 +355,13 @@ def _analyze_request(
         and duplicate_rate <= spec.maximum_duplicate_bar_rate_pct
         and zero_volume_rate <= spec.maximum_zero_volume_bar_rate_pct
         and invalid_ohlc_rows == 0
-        and non_five_minute_intervals == 0
     )
     threshold_result = "passed" if threshold_passed else "failed"
 
     payload_hash = _sha256_candles(candles, resp) if resp else ""
     requested_hash = _sha256_dataframe(requested_range_df)
 
-    unique_regular_sessions = 0
-    if not df_ny.empty:
-        session_dates = {ts.date() for ts in df_ny.index if calendar.is_session(ts.date())}
-        unique_regular_sessions = len(session_dates)
+    unique_regular_sessions = len({ts_utc.astimezone(tz).date() for ts_utc in primary})
 
     return ProbeRequestRecord(
         probe_id=probe_id,
@@ -367,7 +384,7 @@ def _analyze_request(
         unique_regular_sessions=unique_regular_sessions,
         expected_eligible_sessions=expected_sessions,
         expected_regular_session_bars=expected_bars,
-        returned_regular_session_bars=primary_bars + early_close_bars,
+        returned_regular_session_bars=returned_regular,
         primary_session_bars=primary_bars,
         early_close_session_bars=early_close_bars,
         extended_hours_bars=extended_hours_bars,
@@ -745,7 +762,8 @@ def _compare_methods(
     if not status_ok:
         classification = "one_method_error" if (conv.http_status == 200 or raw.http_status == 200) else "not_comparable"
     elif (df_conv is None or df_conv.empty) and (df_raw is None or df_raw.empty):
-        classification = "identical"
+        # No requested-range data from either method: nothing to compare.
+        classification = "not_comparable"
     elif df_conv is None or df_conv.empty or df_raw is None or df_raw.empty:
         classification = "one_method_empty"
     elif len(df_conv) != len(df_raw) or not df_conv.index.equals(df_raw.index):
@@ -843,46 +861,55 @@ def _build_decision(
 ) -> ProbeDecision:
     """Apply the locked decision policy."""
     blockers: list[str] = []
-    limitations: list[str] = []
+    limitations: list[str] = [
+        "This is an as-of observation using the locked symbol set and sample windows; Schwab behavior/entitlements may change.",
+        "The probe does not resolve point-in-time universe, security-master, delisted-symbol, or volume-provenance requirements.",
+    ]
 
-    full_methods_ok: set[str] = set()
+    expected_full_combos = {
+        (symbol, method)
+        for symbol in spec.full_range_probe["symbols"]
+        for method in spec.methods
+    }
+    full_passing_combos: set[tuple[str, str]] = set()
     for rec in records:
         if _probe_kind(rec.probe_id) != "full":
             continue
         if rec.threshold_result == "passed" and rec.date_bound_classification in ("honored_exactly", "superset_with_complete_requested_range"):
-            full_methods_ok.add(rec.method)
+            full_passing_combos.add((rec.symbol, rec.method))
 
-    bounded_ok_by_window: dict[str, set[str]] = {}
+    expected_bounded_combos = {
+        (window.id, symbol, method)
+        for window in spec.bounded_window_probes
+        for symbol in spec.symbols
+        for method in spec.methods
+    }
+    bounded_passing_combos: set[tuple[str, str, str]] = set()
     for rec in records:
         if _probe_kind(rec.probe_id) != "bounded":
             continue
         # The window key is the probe_id with the trailing "-<method>-rep<N>" removed.
         base = rec.probe_id.rsplit("-rep", 1)[0]
-        window = base.rsplit("-", 1)[0]
-        if rec.threshold_result == "passed":
-            bounded_ok_by_window.setdefault(window, set()).add(rec.method)
+        window_id = base.rsplit("-", 1)[0]
+        if rec.threshold_result == "passed" and rec.date_bound_classification in ("honored_exactly", "superset_with_complete_requested_range"):
+            bounded_passing_combos.add((window_id, rec.symbol, rec.method))
 
     repeatability_passed = all(r["repeat_hash_match"] for r in repeatability_rows) if repeatability_rows else False
-    method_parity_passed = all(r["classification"] == "identical" for r in parity_rows) if parity_rows else False
+    # Method parity is required for genuinely comparable data-bearing pairs; empty/empty or
+    # error/error pairs are not comparable and do not constitute a method discrepancy.
+    method_parity_passed = all(r["classification"] in ("identical", "not_comparable") for r in parity_rows) if parity_rows else False
     chunk_overlap_passed = all(r["classification"] == "match" for r in overlap_rows) if overlap_rows else False
 
-    direct_full_range_supported = bool(full_methods_ok) and repeatability_passed and method_parity_passed
+    full_range_ok = expected_full_combos <= full_passing_combos
+    bounded_windows_ok = expected_bounded_combos <= bounded_passing_combos
+
+    direct_full_range_supported = full_range_ok and repeatability_passed and method_parity_passed
     chunked_historical_windows_supported = (
-        all(bool(s) for s in bounded_ok_by_window.values())
+        bounded_windows_ok
         and repeatability_passed
         and chunk_overlap_passed
         and method_parity_passed
     )
-
-    selected_method = "none"
-    if method_parity_passed:
-        if "convenience_every_five_minutes" in full_methods_ok or "convenience_every_five_minutes" in {m for s in bounded_ok_by_window.values() for m in s}:
-            selected_method = "convenience_every_five_minutes"
-        elif "raw_price_history_five_minutes" in full_methods_ok or "raw_price_history_five_minutes" in {m for s in bounded_ok_by_window.values() for m in s}:
-            selected_method = "raw_price_history_five_minutes"
-    else:
-        if full_methods_ok:
-            selected_method = "raw_price_history_five_minutes" if len(full_methods_ok) == 1 and "raw_price_history_five_minutes" in full_methods_ok else "none"
 
     if direct_full_range_supported:
         windowing = "direct_full_range"
@@ -891,14 +918,32 @@ def _build_decision(
     else:
         windowing = "none"
 
+    selected_method = "none"
+    if direct_full_range_supported:
+        available_methods = {m for _, m in full_passing_combos}
+        selected_method = "convenience_every_five_minutes" if "convenience_every_five_minutes" in available_methods else "raw_price_history_five_minutes"
+    elif chunked_historical_windows_supported:
+        available_methods = {m for _, _, m in bounded_passing_combos}
+        selected_method = "convenience_every_five_minutes" if "convenience_every_five_minutes" in available_methods else "raw_price_history_five_minutes"
+
     approved = bool(direct_full_range_supported or chunked_historical_windows_supported) and selected_method != "none"
+
+    coverage_threshold_passed = direct_full_range_supported or chunked_historical_windows_supported
+
+    date_filtering_required = any(
+        r.out_of_range_candles > 0 or r.date_bound_classification == "superset_with_complete_requested_range"
+        for r in records
+    )
 
     if not approved:
         blockers.append("Schwab did not satisfy the locked coverage, repeatability, method parity, or chunk-overlap requirements.")
-    if not method_parity_passed and parity_rows:
-        blockers.append("Convenience and raw methods produced different requested-range candles for at least one window.")
-    if not chunk_overlap_passed and overlap_rows:
-        blockers.append("Chunk overlap mismatch prevents deterministic stitching.")
+    if parity_rows and not method_parity_passed:
+        blockers.append("Convenience and raw methods produced different requested-range candles for at least one comparable window.")
+    if overlap_rows and not chunk_overlap_passed:
+        if any(r["classification"] == "mismatch" for r in overlap_rows):
+            blockers.append("Chunk overlap mismatch prevents deterministic stitching.")
+        else:
+            blockers.append("Chunk overlap test was not comparable because one or both overlap windows contained no requested-range data; deterministic stitching could not be verified.")
 
     timestamp_semantics = _aggregate_timestamp_semantics(records)
     timestamp_normalization_required = timestamp_semantics in ("bar_start", "bar_end")
@@ -924,13 +969,13 @@ def _build_decision(
         selected_windowing_policy=windowing,
         approved_for_intra_001_five_minute_ohlcv=approved,
         approved_as_complete_intra_001_data_source=False,
-        date_filtering_required=True,
+        date_filtering_required=date_filtering_required,
         timestamp_semantics=timestamp_semantics,
         timestamp_normalization_required=timestamp_normalization_required,
         repeatability_passed=repeatability_passed,
         method_parity_passed=method_parity_passed,
         chunk_overlap_passed=chunk_overlap_passed,
-        coverage_threshold_passed=bool(full_methods_ok) or bool(bounded_ok_by_window),
+        coverage_threshold_passed=coverage_threshold_passed,
         remaining_universe_source_required=True,
         remaining_security_master_required=True,
         remaining_delisted_symbol_support_required=True,
