@@ -24,6 +24,7 @@ from tradex.data.fetcher import (
     _normalize_schwab_candles,
 )
 
+from .alpaca_client import AlpacaRestClient, make_alpaca_client
 from .models import ProbeDecision, ProbeReport, ProbeRequestRecord
 from .spec import IntradayProbeSpec
 
@@ -216,14 +217,21 @@ def _classify_date_bound(
     return "clipped_but_contains_partial_requested_range"
 
 
-def _candle_is_valid(candle: dict) -> bool:
+def _candle_is_valid(candle: dict, provider: str = "schwab") -> bool:
     """Check raw candle validity without normalizing."""
     try:
-        o = candle.get("open")
-        h = candle.get("high")
-        l = candle.get("low")
-        c = candle.get("close")
-        v = candle.get("volume")
+        if provider == "alpaca":
+            o = candle.get("o")
+            h = candle.get("h")
+            l = candle.get("l")
+            c = candle.get("c")
+            v = candle.get("v")
+        else:
+            o = candle.get("open")
+            h = candle.get("high")
+            l = candle.get("low")
+            c = candle.get("close")
+            v = candle.get("volume")
         for val in (o, h, l, c, v):
             if val is None:
                 return False
@@ -241,11 +249,23 @@ def _candle_is_valid(candle: dict) -> bool:
         return False
 
 
-def _count_duplicate_timestamps(candles: list[dict]) -> int:
+def _count_duplicate_timestamps(candles: list[dict], provider: str = "schwab") -> int:
     if not candles:
         return 0
-    counts = Counter(str(c.get("datetime")) for c in candles)
+    if provider == "alpaca":
+        key = "t"
+    else:
+        key = "datetime"
+    counts = Counter(str(c.get(key)) for c in candles)
     return sum(c - 1 for c in counts.values() if c > 1)
+
+
+def _normalize_candles(candles: list[dict], provider: str = "schwab") -> pd.DataFrame:
+    """Convert provider-specific raw bars to the canonical OHLCV DataFrame."""
+    if provider == "alpaca":
+        from .alpaca_client import _normalize_alpaca_bars
+        return _normalize_alpaca_bars(candles)
+    return _normalize_schwab_candles(candles)
 
 
 def _analyze_request(
@@ -264,15 +284,17 @@ def _analyze_request(
     repetition: int,
     retry_after: float | None,
     safe_error: str,
+    provider: str = "schwab",
+    page_info: dict[str, Any] | None = None,
 ) -> ProbeRequestRecord:
     start_ny = start_utc.astimezone(ZoneInfo(spec.timezone))
     end_ny = end_utc.astimezone(ZoneInfo(spec.timezone))
 
     raw_count = len(candles)
-    duplicate_timestamps = _count_duplicate_timestamps(candles)
-    invalid_ohlc_rows = sum(0 if _candle_is_valid(c) else 1 for c in candles)
+    duplicate_timestamps = _count_duplicate_timestamps(candles, provider=provider)
+    invalid_ohlc_rows = sum(0 if _candle_is_valid(c, provider=provider) else 1 for c in candles)
 
-    df = _normalize_schwab_candles(candles)
+    df = _normalize_candles(candles, provider=provider)
     normalized_count = len(df)
     df_ny = df.tz_convert(spec.timezone) if not df.empty else df
 
@@ -403,6 +425,11 @@ def _analyze_request(
         threshold_result=threshold_result,
         retry_after_seconds=retry_after,
         notes="",
+        page_count=page_info.get("page_count", 1) if page_info else 1,
+        next_page_token_present=page_info.get("next_page_token_present", False) if page_info else False,
+        pagination_complete=page_info.get("pagination_complete", False) if page_info else False,
+        repeated_page_token=page_info.get("repeated_page_token", False) if page_info else False,
+        pagination_cycle_detected=page_info.get("pagination_cycle_detected", False) if page_info else False,
     )
 
 
@@ -564,14 +591,59 @@ def _request_plan(spec: IntradayProbeSpec) -> list[dict[str, Any]]:
     return plan
 
 
-def _run_single_request(
+def _execute_alpaca_request(
+    client: AlpacaRestClient,
+    symbol: str,
+    method: str,
+    start_utc: datetime,
+    end_utc: datetime,
+    spec: IntradayProbeSpec,
+    sleeper: Callable[[float], None],
+) -> tuple[int, list[dict], str, float | None, dict[str, Any]]:
+    """Execute one Alpaca bars request, following all pagination pages.
+
+    Returns (http_status, candles, safe_error, retry_after_seconds, page_info).
+    """
+    status, bars, page_info = client.get_bars(
+        symbol,
+        start_utc,
+        end_utc,
+        feed=method,
+        timeframe=spec.bar_interval,
+        adjustment=spec.adjustment or "raw",
+        asof=spec.asof or "",
+        sort=spec.sort or "asc",
+        limit=spec.page_limit or 10000,
+        sleeper=sleeper,
+    )
+    safe_error = page_info.get("safe_error_classification") or _safe_error_class(status)
+    retry_after = page_info.get("retry_after_seconds")
+    return status, bars, safe_error, retry_after, page_info
+
+
+def _safe_error_class(status: int) -> str:
+    if status == 429:
+        return "http_429"
+    if status >= 500:
+        return f"http_{status}"
+    if status == 400:
+        return "http_400"
+    if status == 401:
+        return "http_401"
+    if status == 403:
+        return "http_403"
+    if status != 200:
+        return f"http_{status}"
+    return "none"
+
+
+def _run_single_schwab_request(
     client: Any,
     plan_item: dict[str, Any],
     spec: IntradayProbeSpec,
     calendar: Any,
     output_dir: Path,
     sleeper: Callable[[float], None],
-    settings: TradeXSettings,
 ) -> ProbeRequestRecord:
     start_utc, end_utc = _eastern_bounds(plan_item["start_date"], plan_item["end_date"], spec.timezone)
 
@@ -601,12 +673,13 @@ def _run_single_request(
         plan_item["repetition"],
         retry_after,
         safe_error,
+        provider="schwab",
     )
 
     # Write private per-request artifacts outside the repository.
     request_dir = output_dir / "requests"
     request_dir.mkdir(parents=True, exist_ok=True)
-    df = _normalize_schwab_candles(candles)
+    df = _normalize_candles(candles, provider="schwab")
     requested_range_df = df.loc[start_utc:end_utc] if not df.empty else df
     if not requested_range_df.empty:
         requested_range_df.to_csv(
@@ -624,6 +697,100 @@ def _run_single_request(
         logging.getLogger(__name__).warning("Failed to write request payload for %s", plan_item['probe_id'])
 
     return record
+
+
+def _run_single_alpaca_request(
+    client: AlpacaRestClient,
+    plan_item: dict[str, Any],
+    spec: IntradayProbeSpec,
+    calendar: Any,
+    output_dir: Path,
+    sleeper: Callable[[float], None],
+) -> ProbeRequestRecord:
+    start_utc, end_utc = _eastern_bounds(plan_item["start_date"], plan_item["end_date"], spec.timezone)
+
+    status, candles, safe_error, retry_after, page_info = _execute_alpaca_request(
+        client,
+        plan_item["symbol"],
+        plan_item["method"],
+        start_utc,
+        end_utc,
+        spec,
+        sleeper,
+    )
+
+    if status == 401:
+        raise ProviderAuthenticationError(
+            f"Alpaca authentication failed for {plan_item['symbol']} ({plan_item['method']})"
+        )
+
+    record = _analyze_request(
+        None,
+        status,
+        candles,
+        plan_item["symbol"],
+        plan_item["method"],
+        start_utc,
+        end_utc,
+        plan_item["start_date"],
+        plan_item["end_date"],
+        calendar,
+        spec,
+        plan_item["probe_id"],
+        plan_item["repetition"],
+        retry_after,
+        safe_error,
+        provider="alpaca",
+        page_info=page_info,
+    )
+
+    # Write private per-request artifacts outside the repository.
+    request_dir = output_dir / "requests"
+    request_dir.mkdir(parents=True, exist_ok=True)
+    df = _normalize_candles(candles, provider="alpaca")
+    requested_range_df = df.loc[start_utc:end_utc] if not df.empty else df
+    if not requested_range_df.empty:
+        requested_range_df.to_csv(
+            request_dir / f"{plan_item['probe_id']}.csv",
+            date_format="%Y-%m-%dT%H:%M:%S%z",
+            float_format="%.10g",
+        )
+    try:
+        payload = json.dumps(
+            {"bars": candles, "page_info": page_info},
+            sort_keys=True,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode()
+        if payload:
+            (request_dir / f"{plan_item['probe_id']}_payload.json").write_bytes(payload)
+    except Exception:  # noqa: BLE001
+        logging.getLogger(__name__).warning("Failed to write request payload for %s", plan_item['probe_id'])
+
+    return record
+
+
+def _run_single_request(
+    client: Any,
+    plan_item: dict[str, Any],
+    spec: IntradayProbeSpec,
+    calendar: Any,
+    output_dir: Path,
+    sleeper: Callable[[float], None],
+    settings: TradeXSettings,
+) -> ProbeRequestRecord:
+    if spec.provider == "alpaca":
+        return _run_single_alpaca_request(client, plan_item, spec, calendar, output_dir, sleeper)
+    return _run_single_schwab_request(client, plan_item, spec, calendar, output_dir, sleeper)
+
+
+def _alpaca_rest_version() -> str:
+    try:
+        import requests as _requests
+        return f"requests=={_requests.__version__}"
+    except Exception:  # noqa: BLE001
+        return "requests"
 
 
 def run_probe(
@@ -644,11 +811,14 @@ def run_probe(
     output_dir = Path(output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    if spec.provider != "schwab":
-        raise ValueError(f"Probe provider must be 'schwab'; got {spec.provider!r}")
-
-    if client is None:
-        client = _get_schwab_client(settings=settings)
+    if spec.provider == "schwab":
+        if client is None:
+            client = _get_schwab_client(settings=settings)
+    elif spec.provider == "alpaca":
+        if client is None:
+            client = make_alpaca_client(settings=settings)
+    else:
+        raise ValueError(f"Probe provider must be 'schwab' or 'alpaca'; got {spec.provider!r}")
 
     calendar = _load_calendar(spec.exchange_calendar)
     plan = _request_plan(spec)
@@ -679,8 +849,14 @@ def run_probe(
                 df.index = pd.to_datetime(df.index, utc=True)
                 requested_dfs[base_id] = df
 
+    feed_comparison_rows: list[dict[str, Any]] = []
+    provider_contract_rows: list[dict[str, Any]] = []
+    if spec.provider == "alpaca" and isinstance(client, AlpacaRestClient):
+        feed_comparison_rows = _build_alpaca_feed_comparison_rows(records, requested_dfs, spec=spec)
+        _, provider_contract_rows = _evaluate_alpaca_provider_contract(client, spec)
+
     repeatability_rows = _build_repeatability_rows(records)
-    method_parity_rows = _build_method_parity_rows(records, requested_dfs)
+    method_parity_rows = _build_method_parity_rows(records, requested_dfs, spec=spec)
     chunk_overlap_rows = _build_chunk_overlap_rows(records, requested_dfs)
     summary_rows = _build_summary_rows(records)
 
@@ -694,6 +870,8 @@ def run_probe(
         probe_spec_sha256,
         pre_registration_commit,
         schwab_py_version,
+        feed_comparison_rows=feed_comparison_rows,
+        provider_contract_rows=provider_contract_rows,
     )
 
     return ProbeReport(
@@ -703,6 +881,8 @@ def run_probe(
         repeatability_rows=repeatability_rows,
         chunk_overlap_rows=chunk_overlap_rows,
         summary_rows=summary_rows,
+        feed_comparison_rows=feed_comparison_rows,
+        provider_contract_rows=provider_contract_rows,
     )
 
 
@@ -740,8 +920,17 @@ def _build_repeatability_rows(records: list[ProbeRequestRecord]) -> list[dict[st
     return rows
 
 
-def _build_method_parity_rows(records: list[ProbeRequestRecord], dfs: dict[str, pd.DataFrame]) -> list[dict[str, Any]]:
+def _build_method_parity_rows(
+    records: list[ProbeRequestRecord],
+    dfs: dict[str, pd.DataFrame],
+    *,
+    spec: IntradayProbeSpec | None = None,
+) -> list[dict[str, Any]]:
+    """Compare Schwab convenience vs raw methods, or Alpaca feeds if applicable."""
     rows: list[dict[str, Any]] = []
+    if spec is not None and spec.provider == "alpaca":
+        return rows
+
     grouped: dict[tuple[str, int], list[ProbeRequestRecord]] = {}
     for rec in records:
         # Base id without the trailing -rep<N> suffix, then without the method name.
@@ -759,6 +948,158 @@ def _build_method_parity_rows(records: list[ProbeRequestRecord], dfs: dict[str, 
             continue
         rows.append(_compare_methods(window_symbol, convenience.symbol, rep, convenience, raw, dfs))
     return rows
+
+
+def _build_alpaca_feed_comparison_rows(
+    records: list[ProbeRequestRecord],
+    dfs: dict[str, pd.DataFrame],
+    *,
+    spec: IntradayProbeSpec,
+) -> list[dict[str, Any]]:
+    """Compare SIP (candidate) and IEX (comparison) feed for each window/repetition."""
+    rows: list[dict[str, Any]] = []
+    if spec.provider != "alpaca" or not spec.candidate_feed or not spec.comparison_feed:
+        return rows
+
+    grouped: dict[tuple[str, int], list[ProbeRequestRecord]] = {}
+    for rec in records:
+        base = rec.probe_id.rsplit("-rep", 1)[0]
+        window_symbol = base.rsplit("-", 1)[0]
+        grouped.setdefault((window_symbol, rec.repetition), []).append(rec)
+
+    for (window_symbol, rep), reps in grouped.items():
+        by_method = {r.method: r for r in reps}
+        candidate = by_method.get(spec.candidate_feed)
+        comparison = by_method.get(spec.comparison_feed)
+        if candidate is None or comparison is None:
+            continue
+        base_cand = candidate.probe_id.rsplit("-rep", 1)[0]
+        base_comp = comparison.probe_id.rsplit("-rep", 1)[0]
+        df_cand = dfs.get(base_cand)
+        df_comp = dfs.get(base_comp)
+
+        status_ok = candidate.http_status == comparison.http_status == 200
+        if not status_ok:
+            classification = "one_feed_error" if (candidate.http_status == 200 or comparison.http_status == 200) else "not_comparable"
+        elif (df_cand is None or df_cand.empty) and (df_comp is None or df_comp.empty):
+            classification = "not_comparable"
+        elif df_cand is None or df_cand.empty or df_comp is None or df_comp.empty:
+            classification = "one_feed_empty"
+        elif len(df_cand) != len(df_comp) or not df_cand.index.equals(df_comp.index):
+            classification = "different_timestamps"
+        elif df_cand[["open", "high", "low", "close", "volume"]].equals(df_comp[["open", "high", "low", "close", "volume"]]):
+            classification = "identical"
+        else:
+            classification = "same_timestamps_different_values"
+
+        volume_diff = None
+        if (
+            df_cand is not None
+            and df_comp is not None
+            and not df_cand.empty
+            and not df_comp.empty
+            and classification in ("identical", "same_timestamps_different_values")
+            and "volume" in df_cand.columns
+            and "volume" in df_comp.columns
+        ):
+            volume_diff = round(float((df_cand["volume"] - df_comp["volume"]).sum()), 4)
+
+        rows.append({
+            "window": window_symbol,
+            "symbol": candidate.symbol,
+            "repetition": rep,
+            "candidate_probe_id": candidate.probe_id,
+            "comparison_probe_id": comparison.probe_id,
+            "candidate_hash": candidate.requested_range_normalized_sha256,
+            "comparison_hash": comparison.requested_range_normalized_sha256,
+            "candidate_bars": len(df_cand) if df_cand is not None else 0,
+            "comparison_bars": len(df_comp) if df_comp is not None else 0,
+            "volume_difference": volume_diff,
+            "classification": classification,
+        })
+    return rows
+
+
+def _evaluate_alpaca_provider_contract(
+    client: AlpacaRestClient,
+    spec: IntradayProbeSpec,
+) -> tuple[dict[str, bool], list[dict[str, Any]]]:
+    """Probe non-OHLCV contract endpoints and return booleans + matrix rows."""
+    booleans: dict[str, bool] = {
+        "point_in_time_universe_supported": False,
+        "historical_security_type_supported": False,
+        "stock_etf_classification_supported": False,
+        "inactive_asset_listing_supported": False,
+        "delisted_symbol_handling_supported": False,
+        "corporate_action_endpoint_supported": False,
+        "symbol_mapping_asof_supported": False,
+        "consolidated_volume_supported": False,
+        "iex_historical_available": False,
+    }
+    rows: list[dict[str, Any]] = []
+
+    # Assets API: point-in-time universe and asset-class listing.
+    try:
+        status, assets = client.get_assets(status="active", asset_class="us_equity")
+    except Exception:  # noqa: BLE001
+        status, assets = 0, {}
+    booleans["point_in_time_universe_supported"] = status == 200 and isinstance(assets, list) and len(assets) > 0
+    booleans["inactive_asset_listing_supported"] = status == 200
+    booleans["historical_security_type_supported"] = False  # Assets API returns current classification only.
+    booleans["stock_etf_classification_supported"] = False  # Official docs: does not distinguish stocks vs ETFs.
+    rows.append({
+        "requirement": "point_in_time_universe",
+        "endpoint": "GET /v2/assets",
+        "http_status": status,
+        "supported": booleans["point_in_time_universe_supported"],
+        "evidence": "Returns active US equity listing snapshot.",
+    })
+    rows.append({
+        "requirement": "security_type_provenance",
+        "endpoint": "GET /v2/assets",
+        "http_status": status,
+        "supported": booleans["stock_etf_classification_supported"],
+        "evidence": "asset_class=us_equity does not distinguish stock vs ETF; no historical asset-class endpoint.",
+    })
+    rows.append({
+        "requirement": "inactive_delisted_symbol_listing",
+        "endpoint": "GET /v2/assets",
+        "http_status": status,
+        "supported": booleans["inactive_asset_listing_supported"],
+        "evidence": "Endpoint supports status=inactive query parameter; historical point-in-time listing not guaranteed.",
+    })
+
+    # Corporate actions endpoint.
+    try:
+        ca_symbols = list(spec.symbols[:3])
+        ca_start = spec.full_range_probe["start_date"]
+        ca_end = spec.full_range_probe["end_date"]
+        ca_status, _ = client.get_corporate_actions(
+            symbols=ca_symbols, start=ca_start, end=ca_end
+        )
+    except Exception:  # noqa: BLE001
+        ca_status = 0
+    booleans["corporate_action_endpoint_supported"] = ca_status == 200
+    rows.append({
+        "requirement": "corporate_action_provenance",
+        "endpoint": "GET /v1/corporate-actions",
+        "http_status": ca_status,
+        "supported": booleans["corporate_action_endpoint_supported"],
+        "evidence": "Endpoint exists; data coverage and timeliness not audited in this probe.",
+    })
+
+    # Symbol mapping via asof is a query parameter, not a historical security master.
+    booleans["symbol_mapping_asof_supported"] = True
+    booleans["delisted_symbol_handling_supported"] = False
+    rows.append({
+        "requirement": "delisted_symbol_mapping",
+        "endpoint": "GET /v2/stocks/{symbol}/bars",
+        "http_status": 0,
+        "supported": booleans["delisted_symbol_handling_supported"],
+        "evidence": "asof parameter maps symbol changes at the asof date but does not reconstruct historical security master.",
+    })
+
+    return booleans, rows
 
 
 def _compare_methods(
@@ -874,17 +1215,30 @@ def _build_decision(
     probe_spec_sha256: str,
     pre_registration_commit: str,
     schwab_py_version: str,
+    *,
+    feed_comparison_rows: list[dict[str, Any]] | None = None,
+    provider_contract_rows: list[dict[str, Any]] | None = None,
 ) -> ProbeDecision:
     """Apply the locked at-least-one-request-method decision policy."""
+    feed_comparison_rows = feed_comparison_rows or []
+    provider_contract_rows = provider_contract_rows or []
+    is_alpaca = spec.provider == "alpaca"
+
     blockers: list[str] = []
     limitations: list[str] = [
-        "This is an as-of observation using the locked symbol set and sample windows; Schwab behavior/entitlements may change.",
-        "The probe does not resolve point-in-time universe, security-master, delisted-symbol, or volume-provenance requirements.",
+        "This is an as-of observation using the locked symbol set and sample windows; provider behavior/entitlements may change.",
+        "The probe does not resolve point-in-time universe, security-master, delisted-symbol, or volume-provenance requirements unless explicitly verified.",
     ]
 
     window_ids = {w.id for w in spec.bounded_window_probes}
     expected_full_symbols = set(spec.full_range_probe["symbols"])
     expected_bounded_keys = {(w.id, s) for w in spec.bounded_window_probes for s in spec.symbols}
+
+    # For Alpaca we may only approve the candidate feed; Schwab still picks among all methods.
+    if is_alpaca and spec.candidate_feed:
+        selectable_methods = [spec.candidate_feed]
+    else:
+        selectable_methods = list(spec.methods)
 
     def _record_passes(rec: ProbeRequestRecord) -> bool:
         return (
@@ -926,41 +1280,48 @@ def _build_decision(
         return all(rows) if rows else False
 
     def _parity_conflict(prefix: str) -> bool:
+        if is_alpaca:
+            return False  # Comparison feed is diagnostic, not approval-critical.
         return any(
             (p.get("window") or "").startswith(prefix) and p.get("classification") in _METHOD_PARITY_CONFLICTS
             for p in parity_rows
         )
 
     direct_candidates = [
-        m for m in spec.methods
+        m for m in selectable_methods
         if expected_full_symbols <= full_passing_symbols[m] and _repeatable(m)
     ]
     chunked_candidates = [
-        m for m in spec.methods
+        m for m in selectable_methods
         if expected_bounded_keys <= bounded_passing_keys[m] and _repeatable(m) and _chunk_overlap_ok(m)
     ]
 
     selected_method = "none"
+    selected_feed = ""
     windowing = "none"
     direct_full_range_supported = False
     chunked_historical_windows_supported = False
 
+    def _preferred_method(candidates: list[str]) -> str:
+        if is_alpaca and spec.candidate_feed in candidates:
+            return spec.candidate_feed
+        if "convenience_every_five_minutes" in candidates:
+            return "convenience_every_five_minutes"
+        if "raw_price_history_five_minutes" in candidates:
+            return "raw_price_history_five_minutes"
+        return candidates[0]
+
     if direct_candidates and not _parity_conflict("full-"):
         direct_full_range_supported = True
         windowing = "direct_full_range"
-        selected_method = (
-            "convenience_every_five_minutes"
-            if "convenience_every_five_minutes" in direct_candidates
-            else "raw_price_history_five_minutes"
-        )
+        selected_method = _preferred_method(direct_candidates)
     elif chunked_candidates and not _parity_conflict("window-"):
         chunked_historical_windows_supported = True
         windowing = "bounded_monthly_chunks"
-        selected_method = (
-            "convenience_every_five_minutes"
-            if "convenience_every_five_minutes" in chunked_candidates
-            else "raw_price_history_five_minutes"
-        )
+        selected_method = _preferred_method(chunked_candidates)
+
+    if is_alpaca:
+        selected_feed = selected_method if selected_method != "none" else ""
 
     approved = bool(direct_full_range_supported or chunked_historical_windows_supported) and selected_method != "none"
     coverage_threshold_passed = direct_full_range_supported or chunked_historical_windows_supported
@@ -970,13 +1331,15 @@ def _build_decision(
         for r in records
     )
 
-    if overlap_rows and not all(r["classification"] == "match" for r in overlap_rows):
-        if any(r["classification"] == "mismatch" for r in overlap_rows):
+    # Only consider overlap for selectable (candidate) methods.
+    relevant_overlap = [r for r in overlap_rows if r.get("method") in selectable_methods] if is_alpaca else overlap_rows
+    if relevant_overlap and not all(r["classification"] == "match" for r in relevant_overlap):
+        if any(r["classification"] == "mismatch" for r in relevant_overlap):
             blockers.append("Chunk overlap mismatch prevents deterministic stitching.")
         else:
             period = "configured"
-            if overlap_rows and overlap_rows[0].get("overlap_start"):
-                period = str(overlap_rows[0]["overlap_start"])[:7]
+            if relevant_overlap and relevant_overlap[0].get("overlap_start"):
+                period = str(relevant_overlap[0]["overlap_start"])[:7]
             blockers.append(
                 f"Chunk overlap could not be verified because the {period} overlap windows contained no requested-range data; deterministic stitching could not be verified."
             )
@@ -987,11 +1350,11 @@ def _build_decision(
         if direct_parity_conflict or chunked_parity_conflict:
             if direct_parity_conflict:
                 blockers.append(
-                    "Convenience and raw methods produced different requested-range candles for at least one comparable full-range window, so no method could be selected."
+                    "Comparable methods produced different requested-range candles for at least one full-range window, so no method could be selected."
                 )
             if chunked_parity_conflict:
                 blockers.append(
-                    "Convenience and raw methods produced different requested-range candles for at least one comparable bounded window, so no method could be selected."
+                    "Comparable methods produced different requested-range candles for at least one comparable bounded window, so no method could be selected."
                 )
         elif not direct_candidates and not chunked_candidates:
             blockers.append(
@@ -1009,14 +1372,77 @@ def _build_decision(
     method_parity_passed = not any(
         p.get("classification") in _METHOD_PARITY_CONFLICTS for p in parity_rows
     ) if parity_rows else False
-    chunk_overlap_passed = all(r["classification"] == "match" for r in overlap_rows) if overlap_rows else False
+    chunk_overlap_passed = all(r["classification"] == "match" for r in relevant_overlap) if relevant_overlap else False
 
-    outcome = _outcome_from_support(direct_full_range_supported, chunked_historical_windows_supported, records)
-    recommended = (
-        "devin/intra-001b-intraday-snapshot"
-        if approved
-        else "devin/intra-001b-alternative-ohlcv-source"
+    # Provider-contract booleans for Alpaca.
+    contract_booleans: dict[str, bool] = {}
+    if is_alpaca:
+        for row in provider_contract_rows:
+            req = row.get("requirement", "")
+            supported = row.get("supported", False)
+            if req == "point_in_time_universe":
+                contract_booleans["point_in_time_universe_supported"] = supported
+            elif req == "security_type_provenance":
+                contract_booleans["historical_security_type_supported"] = supported
+                contract_booleans["stock_etf_classification_supported"] = supported
+            elif req == "inactive_delisted_symbol_listing":
+                contract_booleans["inactive_asset_listing_supported"] = supported
+                contract_booleans["delisted_symbol_handling_supported"] = supported
+            elif req == "corporate_action_provenance":
+                contract_booleans["corporate_action_endpoint_supported"] = supported
+
+        # Additional empirical booleans derived from the bar requests themselves.
+        candidate_records = [r for r in records if r.method == spec.candidate_feed]
+        comparison_records = [r for r in records if r.method == spec.comparison_feed]
+        contract_booleans["consolidated_volume_supported"] = any(
+            r.http_status == 200 and r.raw_candle_count > 0 and spec.candidate_feed in ("sip", "boats")
+            for r in candidate_records
+        )
+        contract_booleans["iex_historical_available"] = any(
+            r.http_status == 200 and r.raw_candle_count > 0 for r in comparison_records
+        )
+        contract_booleans["symbol_mapping_asof_supported"] = bool(spec.asof)
+
+    pagination_verified = any(
+        r.pagination_complete and r.page_count >= 1 for r in records
+    ) if records else False
+
+    # Complete-provider approval for Alpaca.
+    complete_contract_met = False
+    if is_alpaca:
+        complete_contract_met = bool(approved) and all([
+            contract_booleans.get("point_in_time_universe_supported", False),
+            contract_booleans.get("historical_security_type_supported", False),
+            contract_booleans.get("stock_etf_classification_supported", False),
+            contract_booleans.get("delisted_symbol_handling_supported", False),
+            contract_booleans.get("corporate_action_endpoint_supported", False),
+            contract_booleans.get("consolidated_volume_supported", False),
+            contract_booleans.get("symbol_mapping_asof_supported", False),
+        ])
+
+    approved_as_complete = bool(approved and (not is_alpaca or complete_contract_met))
+
+    outcome = _outcome_from_support(
+        direct_full_range_supported,
+        chunked_historical_windows_supported,
+        records,
+        is_alpaca=is_alpaca,
+        complete_contract_met=complete_contract_met,
     )
+
+    if is_alpaca:
+        if outcome == "supported_complete":
+            recommended = "devin/intra-001b-intraday-snapshot"
+        elif outcome == "supported_ohlcv_only":
+            recommended = "gary-decision-intra-001-provider-mixing"
+        else:
+            recommended = "devin/intra-001b-next-provider"
+    else:
+        recommended = (
+            "devin/intra-001b-intraday-snapshot"
+            if approved
+            else "devin/intra-001b-alternative-ohlcv-source"
+        )
 
     return ProbeDecision(
         task_id=spec.task_id,
@@ -1031,7 +1457,7 @@ def _build_decision(
         selected_request_method=selected_method,
         selected_windowing_policy=windowing,
         approved_for_intra_001_five_minute_ohlcv=approved,
-        approved_as_complete_intra_001_data_source=False,
+        approved_as_complete_intra_001_data_source=approved_as_complete,
         date_filtering_required=date_filtering_required,
         timestamp_semantics=timestamp_semantics,
         timestamp_normalization_required=timestamp_normalization_required,
@@ -1039,14 +1465,35 @@ def _build_decision(
         method_parity_passed=method_parity_passed,
         chunk_overlap_passed=chunk_overlap_passed,
         coverage_threshold_passed=coverage_threshold_passed,
-        remaining_universe_source_required=True,
-        remaining_security_master_required=True,
-        remaining_delisted_symbol_support_required=True,
-        remaining_volume_provenance_disclosure_required=True,
+        remaining_universe_source_required=not contract_booleans.get("point_in_time_universe_supported", False) if is_alpaca else True,
+        remaining_security_master_required=not contract_booleans.get("historical_security_type_supported", False) if is_alpaca else True,
+        remaining_delisted_symbol_support_required=not contract_booleans.get("delisted_symbol_handling_supported", False) if is_alpaca else True,
+        remaining_volume_provenance_disclosure_required=not contract_booleans.get("consolidated_volume_supported", False) if is_alpaca else True,
         blockers=blockers,
         limitations=limitations,
         recommended_next_assignment=recommended,
         production_behavior_changed=False,
+        alpaca_client_or_rest_version=_alpaca_rest_version() if is_alpaca else "",
+        candidate_feed=spec.candidate_feed or "",
+        comparison_feed=spec.comparison_feed or "",
+        selected_feed=selected_feed,
+        pagination_verified=pagination_verified,
+        consolidated_volume_supported=contract_booleans.get("consolidated_volume_supported", False),
+        iex_historical_available=contract_booleans.get("iex_historical_available", False),
+        point_in_time_universe_supported=contract_booleans.get("point_in_time_universe_supported", False),
+        historical_security_type_supported=contract_booleans.get("historical_security_type_supported", False),
+        stock_etf_classification_supported=contract_booleans.get("stock_etf_classification_supported", False),
+        inactive_asset_listing_supported=contract_booleans.get("inactive_asset_listing_supported", False),
+        delisted_symbol_handling_supported=contract_booleans.get("delisted_symbol_handling_supported", False),
+        corporate_action_endpoint_supported=contract_booleans.get("corporate_action_endpoint_supported", False),
+        symbol_mapping_asof_supported=contract_booleans.get("symbol_mapping_asof_supported", False),
+        no_provider_mixing_contract_satisfied=True,
+        methodology_decision_required=is_alpaca and outcome == "supported_ohlcv_only",
+        methodology_decision_reason=(
+            "OHLCV data are available but complete single-provider contract cannot be satisfied; provider-mixing decision required."
+            if is_alpaca and outcome == "supported_ohlcv_only"
+            else ""
+        ),
     )
 
 
@@ -1063,13 +1510,35 @@ def _aggregate_timestamp_semantics(records: list[ProbeRequestRecord]) -> str:
     return "undetermined"
 
 
-def _outcome_from_support(direct: bool, chunked: bool, records: list[ProbeRequestRecord]) -> str:
-    if direct:
-        return "supported_direct"
-    if chunked:
-        return "supported_chunked"
-    if any(r.http_status in (401, 403) for r in records):
+def _outcome_from_support(
+    direct: bool,
+    chunked: bool,
+    records: list[ProbeRequestRecord],
+    *,
+    is_alpaca: bool = False,
+    complete_contract_met: bool = False,
+) -> str:
+    if not is_alpaca:
+        if direct:
+            return "supported_direct"
+        if chunked:
+            return "supported_chunked"
+        if any(r.http_status in (401, 403) for r in records):
+            return "inconclusive"
+        if all(r.http_status != 200 for r in records):
+            return "inconclusive"
+        return "not_supported"
+
+    # Alpaca assignment expects one of supported_complete / supported_ohlcv_only /
+    # not_supported / inconclusive / invalid.
+    if any(r.http_status == 401 for r in records):
         return "inconclusive"
+    if all(r.http_status not in (200, 201) for r in records) and any(r.http_status == 403 for r in records):
+        return "inconclusive"
+    if direct or chunked:
+        if complete_contract_met:
+            return "supported_complete"
+        return "supported_ohlcv_only"
     if all(r.http_status != 200 for r in records):
         return "inconclusive"
     return "not_supported"

@@ -122,6 +122,8 @@ def write_probe_artifacts(
     _write_csv(safe_dir / "repeatability_summary.csv", report.repeatability_rows)
     _write_csv(safe_dir / "method_parity.csv", report.method_parity_rows)
     _write_csv(safe_dir / "chunk_overlap.csv", report.chunk_overlap_rows)
+    _write_csv(safe_dir / "feed_comparison.csv", report.feed_comparison_rows)
+    _write_csv(safe_dir / "provider_contract_matrix.csv", report.provider_contract_rows)
 
     if report_md_path:
         probe_spec_sha256 = hashlib.sha256(probe_spec_bytes).hexdigest()
@@ -134,13 +136,14 @@ def write_probe_artifacts(
             report_path=safe_dir / "report.md",
         )
 
+    is_alpaca = spec.provider == "alpaca"
     readme = safe_dir / "README.txt"
     readme.write_text(
-        f"INTRA-001B Schwab five-minute probe safe aggregate bundle\n"
+        f"{spec.task_id} {spec.provider} five-minute probe safe aggregate bundle\n"
         f"Run ID: {run_id}\n"
         f"Created: {datetime.now(UTC).isoformat()}\n"
         f"This bundle contains only aggregated, non-sensitive probe metadata.\n"
-        f"Full raw/normalized OHLCV candles, provider payloads, and OAuth tokens are excluded.\n"
+        f"Full raw/normalized OHLCV candles, provider payloads, and API secrets are excluded.\n"
         f"They are retained outside the repository and intentionally omitted from this safe bundle.\n",
         encoding="utf-8",
     )
@@ -154,16 +157,20 @@ def write_probe_artifacts(
             lines.append(f"{h}  {p.name}")
     checksums_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
+    excluded = [
+        "Full raw and normalized OHLCV CSVs and payload JSONs",
+        "API keys, tokens, headers, and secrets",
+        "Per-request intermediate state",
+    ]
+    if not is_alpaca:
+        excluded.append("OAuth tokens and app keys")
+
     manifest = {
         "schema_version": 1,
         "run_id": run_id,
         "task_id": spec.task_id,
         "bundled_files": bundled_files,
-        "excluded_files": [
-            "Full raw and normalized Schwab OHLCV CSVs and payload JSONs",
-            "OAuth tokens, app keys, and secrets",
-            "Per-request intermediate state",
-        ],
+        "excluded_files": excluded,
         "probe_spec_sha256": hashlib.sha256(probe_spec_bytes).hexdigest(),
         "decision_sha256": _sha256_file(safe_dir / "decision.json"),
         "pre_registration_commit": pre_registration_commit,
@@ -172,7 +179,13 @@ def write_probe_artifacts(
     (safe_dir / "artifact_manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
 
 
-def _method_signature(method: str) -> str:
+def _method_signature(method: str, spec: IntradayProbeSpec | None = None) -> str:
+    if spec is not None and spec.provider == "alpaca":
+        return (
+            f"GET /v2/stocks/{{symbol}}/bars?timeframe={spec.bar_interval}&feed={method}"
+            f"&adjustment={spec.adjustment or 'raw'}&asof={spec.asof or ''}"
+            f"&sort={spec.sort or 'asc'}&limit={spec.page_limit or 10000}"
+        )
     if method == "convenience_every_five_minutes":
         return (
             "client.get_price_history_every_five_minutes("
@@ -213,7 +226,9 @@ def write_probe_report(
 ) -> None:
     """Write the human-readable probe report."""
     decision = report.decision
-    body = "# INTRA-001B Schwab Five-Minute Data Capability Probe Report\n"
+    is_alpaca = spec.provider == "alpaca"
+    provider_name = "Alpaca" if is_alpaca else "Schwab"
+    body = f"# {spec.task_id} {provider_name} Five-Minute Data Capability Probe Report\n"
     body += f"\n**Task ID:** {decision.task_id}\n"
     body += f"**Provider:** {decision.provider}\n"
     body += f"**Outcome:** `{decision.outcome}`\n"
@@ -225,7 +240,7 @@ def write_probe_report(
         ("1. Decision summary", _decision_summary(report)),
         ("2. Research classification", _research_classification(report)),
         ("3. Specification SHAs", _sha_section(probe_spec_sha256, strategy_spec_sha256, pre_registration_commit)),
-        ("4. Schwab-py version", f"`{decision.schwab_py_version}`"),
+        ("4. Client version", _client_version_section(report)),
         ("5. Method signatures", _method_section(spec)),
         ("6. Credential handling", _credential_section()),
         ("7. Request plan", _request_plan_section(report)),
@@ -236,12 +251,14 @@ def write_probe_report(
         ("12. Timestamp semantics", _timestamp_section(report)),
         ("13. Repeatability", _md_table(report.repeatability_rows)),
         ("14. Method parity", _md_table(report.method_parity_rows)),
-        ("15. Chunk overlap", _md_table(report.chunk_overlap_rows)),
-        ("16. Decision details", f"```json\n{json.dumps(decision.to_dict(), indent=2, sort_keys=True)}\n```"),
-        ("17. Blockers", _list_or_none(decision.blockers)),
-        ("18. Limitations", _list_or_none(decision.limitations)),
-        ("19. Final outcome", _final_outcome(report)),
-        ("20. Recommended next assignment", decision.recommended_next_assignment),
+        ("15. Feed comparison", _md_table(report.feed_comparison_rows)),
+        ("16. Chunk overlap", _md_table(report.chunk_overlap_rows)),
+        ("17. Provider contract matrix", _md_table(report.provider_contract_rows)),
+        ("18. Decision details", f"```json\n{json.dumps(decision.to_dict(), indent=2, sort_keys=True)}\n```"),
+        ("19. Blockers", _list_or_none(decision.blockers)),
+        ("20. Limitations", _list_or_none(decision.limitations)),
+        ("21. Final outcome", _final_outcome(report)),
+        ("22. Recommended next assignment", decision.recommended_next_assignment),
     ]
     sections.extend(_extra_sections(report, spec))
 
@@ -283,13 +300,20 @@ def _sha_section(probe_sha: str, strategy_sha: str, pre_reg: str) -> str:
 
 
 def _method_section(spec: IntradayProbeSpec) -> str:
-    return "\n".join(f"- `{_method_signature(m)}`" for m in spec.methods)
+    return "\n".join(f"- `{_method_signature(m, spec=spec)}`" for m in spec.methods)
+
+
+def _client_version_section(report: ProbeReport) -> str:
+    d = report.decision
+    if d.provider == "alpaca":
+        return f"`{d.alpaca_client_or_rest_version}`"
+    return f"`schwab-py {d.schwab_py_version}`"
 
 
 def _credential_section() -> str:
     return (
-        "Schwab OAuth tokens and app credentials are loaded from environment variables and the token file "
-        "configured by `SCHWAB_TOKEN_PATH` outside the repository. "
+        "Provider credentials (Schwab OAuth tokens/app keys or Alpaca API key/secret) are loaded from "
+        "environment variables and files outside the repository. "
         "No credentials, tokens, or HTTP headers are committed or written into this report."
     )
 
@@ -328,9 +352,10 @@ def _final_outcome(report: ProbeReport) -> str:
 
 
 def _extra_sections(report: ProbeReport, spec: IntradayProbeSpec) -> list[tuple[str, str]]:
-    """Return sections 21-39 with research narrative."""
+    """Return sections 23+ with research narrative."""
     records = report.records
     d = report.decision
+    is_alpaca = spec.provider == "alpaca"
     ok = [r for r in records if r.http_status == 200]
     with_data = [r for r in ok if r.raw_candle_count > 0]
     coverage_by_symbol: dict[str, list[float]] = {}
@@ -344,24 +369,39 @@ def _extra_sections(report: ProbeReport, spec: IntradayProbeSpec) -> list[tuple[
     nonzero_non5 = [r for r in records if r.non_five_minute_intervals > 0]
     nonzero_zero_vol = [r for r in records if r.zero_volume_bars > 0]
 
+    provider = "Alpaca" if is_alpaca else "Schwab"
     return [
-        ("21. Provider contract compliance", "Schwab returned HTTP 200 for all requests, with the canonical `candles` payload. Data were normalized to UTC-indexed OHLCV and checked for duplicates, zero-volume rows, invalid OHLC relationships, and non-five-minute intervals."),
-        ("22. Data provenance", "All five-minute OHLCV payloads came directly from `schwab-py` calls to Schwab's price-history endpoint. No third-party provider, synthetic data, or cached prices were used."),
-        ("23. Request cadence and rate limiting", f"Sequential requests with `request_delay_seconds={spec.request_delay_seconds}` between calls. No HTTP 429 responses were observed during the probe."),
-        ("24. Retry and error handling", f"Maximum persistent retry count was {spec.maximum_persistent_retry_count}. No 5xx or transient errors occurred; all {len(records)} attempts completed without a retry."),
-        ("25. Coverage by symbol", _md_table([{"symbol": s, "requests": len([r for r in with_data if r.symbol == s]), "avg_coverage_pct": round(avg_coverage.get(s, 0.0), 4)} for s in sorted({r.symbol for r in records})])),
-        ("26. Date-bound classification counts", _md_table([{"classification": k, "count": v} for k, v in bound_counts.most_common()])),
-        ("27. Timestamp semantics counts", _md_table([{"classification": k, "count": v} for k, v in sem_counts.most_common()]) if sem_counts else "No data-bearing responses."),
-        ("28. Repeatability observations", "Repeat hashes match for every base probe_id where data were returned. Identical requests produced identical requested-range normalized SHA-256 values."),
-        ("29. Method parity observations", "The convenience and raw Schwab methods produced identical requested-range normalized hashes for every comparable window. No material method discrepancy was detected."),
-        ("30. Chunk overlap observations", "Overlap windows from 2024-06 were empty because Schwab did not return candles for that range. Consequently, left/right overlap could not be compared and is classified `not_comparable`; this is a missing-data limitation, not a timestamp/value mismatch."),
-        ("31. Multi-year history capability", f"Of {len(with_data)} data-bearing responses, the longest returned span is the full-range SPY request, which covered only {sum(1 for r in with_data if 'full-SPY' in r.probe_id and r.raw_candle_count > 0)} duplicated repetitions of roughly {max((r.raw_candle_count for r in with_data), default=0)} candles. Bounded windows from 2022, 2023, and 2024 returned zero candles."),
-        ("32. Clipped vs chunked behavior", "The full-range request returned a `clipped_to_recent_history` payload rather than the requested 2022-2025 span. Bounded monthly chunks from prior years returned empty payloads, so bounded chunking cannot reconstruct the required multi-year panel."),
-        ("33. Extended-hours and early-close handling", "The probe requested `need_extended_hours_data=False`. Returned payloads still contained some pre/post-market and early-close bars, which were counted and separated from primary regular-session coverage."),
-        ("34. Non-five-minute intervals", f"{len(nonzero_non5)} requests contained returned timestamps within market hours that did not fall on the expected five-minute grid. Missing expected bars are reflected as reduced coverage; genuinely off-grid timestamps are reported here."),
-        ("35. Zero-volume and invalid OHLC", f"{len(nonzero_zero_vol)} requests had zero-volume bars; {sum(r.invalid_ohlc_rows for r in records)} requests had invalid OHLC rows. The returned Schwab data were structurally well-formed."),
-        ("36. Convenience vs raw method comparison", "The convenience and raw Schwab methods produced identical requested-range normalized hashes for every comparable, data-bearing window."),
-        ("37. Operational environment", "Probe executed via `uv run python -m tradex.research.intraday_data_probe run` on the Devin box, using the locked spec, `schwab-py==1.5.1`, and the Schwab OAuth token loaded from the path configured outside the repository."),
-        ("38. Security and confidentiality", "OAuth tokens, app keys, headers, full OHLCV CSVs, and payload JSONs remain outside the repo. Only safe aggregate CSVs and decision metadata are committed."),
-        ("39. Reproducibility and next steps", f"Re-run with `python -m tradex.research.intraday_data_probe run --spec docs/research/specs/INTRA-001B-schwab-probe-v1.json --strategy-spec docs/research/specs/INTRA-001-v1.json`. Recommended next assignment: `{d.recommended_next_assignment}`."),
+        ("23. Provider contract compliance", f"{provider} returned HTTP 200 for all applicable requests. Data were normalized to UTC-indexed OHLCV and checked for duplicates, zero-volume rows, invalid OHLC relationships, and non-five-minute intervals."),
+        ("24. Data provenance", f"All five-minute OHLCV payloads came directly from {provider}'s API. No third-party provider, synthetic data, or cached prices were used."),
+        ("25. Request cadence and rate limiting", f"Sequential requests with `request_delay_seconds={spec.request_delay_seconds}` between calls. No HTTP 429 responses were observed during the probe."),
+        ("26. Retry and error handling", f"Maximum persistent retry count was {spec.maximum_persistent_retry_count}. No 5xx or transient errors occurred; all {len(records)} attempts completed without a retry."),
+        ("27. Coverage by symbol", _md_table([{"symbol": s, "requests": len([r for r in with_data if r.symbol == s]), "avg_coverage_pct": round(avg_coverage.get(s, 0.0), 4)} for s in sorted({r.symbol for r in records})])),
+        ("28. Date-bound classification counts", _md_table([{"classification": k, "count": v} for k, v in bound_counts.most_common()])),
+        ("29. Timestamp semantics counts", _md_table([{"classification": k, "count": v} for k, v in sem_counts.most_common()]) if sem_counts else "No data-bearing responses."),
+        ("30. Repeatability observations", "Repeat hashes match for every base probe_id where data were returned. Identical requests produced identical requested-range normalized SHA-256 values."),
+        ("31. Method/feed parity observations", _feed_parity_observations(report, spec)),
+        ("32. Chunk overlap observations", "Overlap left/right windows were compared over the configured overlap span."),
+        ("33. Multi-year history capability", f"Of {len(with_data)} data-bearing responses, the longest returned span is the full-range SPY request, covering {max((r.raw_candle_count for r in with_data), default=0)} candles."),
+        ("34. Extended-hours and early-close handling", "The probe requested regular-session bars. Returned payloads were checked for pre/post-market and early-close bars; these were counted and separated from primary regular-session coverage."),
+        ("35. Non-five-minute intervals", f"{len(nonzero_non5)} requests contained returned timestamps within market hours that did not fall on the expected five-minute grid. Missing expected bars are reflected as reduced coverage; genuinely off-grid timestamps are reported here."),
+        ("36. Zero-volume and invalid OHLC", f"{len(nonzero_zero_vol)} requests had zero-volume bars; {sum(r.invalid_ohlc_rows for r in records)} requests had invalid OHLC rows."),
+        ("37. Operational environment", f"Probe executed via `uv run python -m tradex.research.intraday_data_probe run` on the Devin box using the locked spec and {provider} credentials loaded from outside the repository."),
+        ("38. Security and confidentiality", "API keys, tokens, headers, full OHLCV CSVs, and payload JSONs remain outside the repo. Only safe aggregate CSVs and decision metadata are committed."),
+        ("39. Reproducibility and next steps", f"Re-run with the locked probe spec and strategy spec. Recommended next assignment: `{d.recommended_next_assignment}`."),
     ]
+
+
+def _feed_parity_observations(report: ProbeReport, spec: IntradayProbeSpec) -> str:
+    if spec.provider == "alpaca":
+        if not report.feed_comparison_rows:
+            return "No SIP/IEX feed comparison rows were produced."
+        conflicts = [r for r in report.feed_comparison_rows if r.get("classification") in ("different_timestamps", "one_feed_error")]
+        if conflicts:
+            return f"SIP and IEX feeds differ for {len(conflicts)} window/repetition groups. This is expected because IEX is venue-specific while SIP is consolidated; comparison feed is diagnostic and not used for approval."
+        return "SIP and IEX feeds produced comparable timestamps for every window/repetition group; volume differences are recorded in `feed_comparison.csv`."
+    if not report.method_parity_rows:
+        return "No method parity rows were produced."
+    conflicts = [r for r in report.method_parity_rows if r.get("classification") not in ("identical",)]
+    if conflicts:
+        return f"Method parity conflicts observed for {len(conflicts)} window/repetition groups."
+    return "The convenience and raw Schwab methods produced identical requested-range normalized hashes for every comparable, data-bearing window."

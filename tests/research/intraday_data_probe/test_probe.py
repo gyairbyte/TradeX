@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
@@ -939,3 +940,560 @@ def test_decision_records_full_pre_registration_commit(spec: IntradayProbeSpec):
     decision = _build_decision(spec, records, [], [], [], "a" * 64, "b" * 64, full_sha, "1.5.1")
     assert decision.pre_registration_commit == full_sha
     assert len(decision.pre_registration_commit) == 40
+
+
+# ---------------------------------------------------------------------------
+# Alpaca-specific credential-free tests
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def alpaca_spec_path(tmp_path: Path) -> Path:
+    """Return a valid, minimal Alpaca probe-spec JSON."""
+    spec = {
+        "schema_version": 1,
+        "task_id": "INTRA-001B-ALPACA-TEST",
+        "provider": "alpaca",
+        "target_entitlement": "basic_free",
+        "bar_interval": "5Min",
+        "timezone": "America/New_York",
+        "exchange_calendar": "XNYS",
+        "candidate_feed": "sip",
+        "comparison_feed": "iex",
+        "adjustment": "raw",
+        "asof": "2025-12-31",
+        "sort": "asc",
+        "page_limit": 10000,
+        "repeat_count": 2,
+        "request_delay_seconds": 0.01,
+        "symbols": ["SPY"],
+        "full_range_probe": {"symbols": ["SPY"], "start_date": "2024-06-03", "end_date": "2024-06-07"},
+        "bounded_window_probes": [
+            {"id": "window-2024-w1", "start_date": "2024-06-03", "end_date": "2024-06-07"},
+        ],
+        "overlap_probe": {
+            "symbol": "SPY",
+            "left_start_date": "2024-06-03",
+            "left_end_date": "2024-06-07",
+            "right_start_date": "2024-06-05",
+            "right_end_date": "2024-06-11",
+        },
+        "exclude_early_close_sessions_from_primary_coverage": True,
+        "minimum_regular_session_coverage_pct": 95.0,
+        "maximum_duplicate_bar_rate_pct": 1.0,
+        "maximum_zero_volume_bar_rate_pct": 10.0,
+        "maximum_persistent_retry_count": 1,
+        "decision_requires_repeat_hash_match": True,
+        "decision_requires_method_overlap_match": False,
+        "decision_requires_chunk_overlap_match": True,
+        "approve_only_candidate_feed": True,
+        "need_extended_hours_data": False,
+    }
+    p = tmp_path / "alpaca-probe-spec.json"
+    p.write_text(json.dumps(spec), encoding="utf-8")
+    return p
+
+
+@pytest.fixture
+def alpaca_spec(alpaca_spec_path: Path) -> IntradayProbeSpec:
+    spec, _ = load_probe_spec(alpaca_spec_path)
+    return spec
+
+
+@pytest.fixture
+def locked_alpaca_spec() -> IntradayProbeSpec:
+    spec, _ = load_probe_spec("docs/research/specs/INTRA-001B-alpaca-probe-v1.json")
+    return spec
+
+
+def _make_alpaca_candles(symbol: str, start_utc: datetime, end_utc: datetime, *, seed: float = 100.0, volume_offset: int = 0):
+    """Return Alpaca-format bars for every XNYS session in the requested UTC range."""
+    from zoneinfo import ZoneInfo
+
+    import exchange_calendars as xcals
+
+    cal = xcals.get_calendar("XNYS")
+    start_date = start_utc.astimezone(ZoneInfo("America/New_York")).date()
+    end_date = end_utc.astimezone(ZoneInfo("America/New_York")).date()
+    sessions = cal.sessions_in_range(start_date, end_date)
+    bars: list[dict] = []
+    for session in sessions:
+        d = session.date()
+        if not cal.is_session(d):
+            continue
+        open_ts = cal.session_open(d).tz_convert(UTC)
+        close_ts = cal.session_close(d).tz_convert(UTC)
+        for ts in pd.date_range(start=open_ts, end=close_ts, freq="5min", inclusive="left"):
+            i = int(ts.timestamp() // 60)
+            o = seed + i * 0.01
+            c = o + 0.005
+            h = max(o, c) + 0.002
+            l = min(o, c) - 0.002
+            bars.append({
+                "t": ts.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "o": o,
+                "h": h,
+                "l": l,
+                "c": c,
+                "v": 1000 + i + volume_offset,
+            })
+    return bars
+
+
+def _make_alpaca_full_response(symbol: str, start_utc: datetime, end_utc: datetime, *, seed: float = 100.0, volume_offset: int = 0):
+    bars = _make_alpaca_candles(symbol, start_utc, end_utc, seed=seed, volume_offset=volume_offset)
+    payload = json.dumps({"bars": bars, "next_page_token": None}, separators=(",", ":")).encode()
+    return FakeResponse(200, {"bars": bars, "next_page_token": None}, content=payload)
+
+
+def _make_alpaca_empty_response():
+    return FakeResponse(200, {"bars": [], "next_page_token": None}, content=b'{"bars":[],"next_page_token":null}')
+
+
+def _make_paginated_alpaca_handler(pages: list[list[dict]]) -> Callable:
+    """Return a request_func that serves the given pages sequentially."""
+    calls: list[int] = [0]
+
+    def handler(url: str, **kwargs):
+        _params = kwargs.get("params", {})
+        if "/v2/assets" in url:
+            return FakeResponse(200, [{"symbol": "SPY", "asset_class": "us_equity"}], content=b'[]')
+        if "/v1/corporate-actions" in url:
+            return FakeResponse(200, {"corporate_actions": []}, content=b'{}')
+        idx = calls[0]
+        calls[0] += 1
+        page = pages[idx] if idx < len(pages) else []
+        token = "more" if idx < len(pages) - 1 else None
+        data = {"bars": page, "next_page_token": token}
+        return FakeResponse(200, data, content=json.dumps(data, separators=(",", ":")).encode())
+
+    return handler
+
+
+def _make_alpaca_handler(symbol: str = "SPY", *, seed: float = 100.0, volume_offset: int = 0, fail_status: int | None = None) -> Callable:
+    calls: dict[str, Any] = {"count": 0, "params": []}
+
+    def handler(url: str, **kwargs):
+        params = kwargs.get("params", {})
+        calls["params"].append((url, params))
+        calls["count"] += 1
+        if "/v2/assets" in url:
+            return FakeResponse(200, [{"symbol": "SPY", "asset_class": "us_equity"}], content=b'[]')
+        if "/v1/corporate-actions" in url:
+            return FakeResponse(200, {"corporate_actions": []}, content=b'{}')
+        if fail_status is not None and calls["count"] == 1:
+            return FakeResponse(fail_status, {"error": "test"}, content=b'{}')
+        # Parse symbol from /v2/stocks/{symbol}/bars
+        parts = url.rstrip("/").split("/")
+        sym = parts[-2] if parts[-1] == "bars" else symbol
+        start = pd.to_datetime(params["start"], utc=True).to_pydatetime()
+        end = pd.to_datetime(params["end"], utc=True).to_pydatetime()
+        # SIP and IEX are expected to differ in volume; add a constant offset for IEX.
+        effective_offset = volume_offset + (500 if params.get("feed") == "iex" else 0)
+        bars = _make_alpaca_candles(sym, start, end, seed=seed, volume_offset=effective_offset)
+        data = {"bars": bars, "next_page_token": None}
+        return FakeResponse(200, data, content=json.dumps(data, separators=(",", ":")).encode())
+
+    return handler, calls
+
+
+def _make_alpaca_client(handler: Callable) -> Any:
+    from tradex.research.intraday_data_probe.alpaca_client import AlpacaRestClient
+    return AlpacaRestClient("PKFAKE", "FAKESECRET", request_func=handler)
+
+
+def test_alpaca_spec_loads(locked_alpaca_spec: IntradayProbeSpec):
+    assert locked_alpaca_spec.provider == "alpaca"
+    assert locked_alpaca_spec.candidate_feed == "sip"
+    assert locked_alpaca_spec.comparison_feed == "iex"
+    assert locked_alpaca_spec.methods == ("sip", "iex")
+
+
+def test_alpaca_missing_credentials_fail_before_network(alpaca_spec: IntradayProbeSpec, tmp_path: Path):
+    from tradex.config import DataProviderSettings, TradeXSettings
+    from tradex.research.intraday_data_probe.alpaca_client import make_alpaca_client
+    settings = TradeXSettings(data=DataProviderSettings(alpaca_api_key="", alpaca_secret_key=""))
+    with pytest.raises(OSError, match="ALPACA"):
+        make_alpaca_client(settings)
+
+
+def test_alpaca_query_parameters_exact(alpaca_spec: IntradayProbeSpec, tmp_path: Path):
+    handler, calls = _make_alpaca_handler()
+    client = _make_alpaca_client(handler)
+    _ = run_probe(
+        spec=alpaca_spec,
+        strategy_spec_sha256="a" * 64,
+        probe_spec_sha256="b" * 64,
+        output_dir=tmp_path / "out",
+        pre_registration_commit="a" * 40,
+        schwab_py_version="",
+        client=client,
+        sleeper=lambda _: None,
+    )
+    bar_calls = [(url, p) for url, p in calls["params"] if "/v2/stocks/" in url]
+    assert bar_calls
+    for _, params in bar_calls:
+        assert params["timeframe"] == "5Min"
+        assert params["adjustment"] == "raw"
+        assert params["asof"] == "2025-12-31"
+        assert params["sort"] == "asc"
+        assert params["limit"] == 10000
+        assert params["feed"] in ("sip", "iex")
+        assert "start" in params
+        assert "end" in params
+
+
+def test_alpaca_pagination_one_and_multi_page(alpaca_spec: IntradayProbeSpec, tmp_path: Path):
+    start_utc, end_utc = _eastern_bounds(date(2024, 6, 3), date(2024, 6, 3), alpaca_spec.timezone)
+    all_bars = _make_alpaca_candles("SPY", start_utc, end_utc)
+    mid = len(all_bars) // 2
+    pages = [all_bars[:mid], all_bars[mid:]]
+    handler = _make_paginated_alpaca_handler(pages)
+    client = _make_alpaca_client(handler)
+    report = run_probe(
+        spec=alpaca_spec,
+        strategy_spec_sha256="a" * 64,
+        probe_spec_sha256="b" * 64,
+        output_dir=tmp_path / "out",
+        pre_registration_commit="a" * 40,
+        schwab_py_version="",
+        client=client,
+        sleeper=lambda _: None,
+    )
+    rec = next(r for r in report.records if r.probe_id.startswith("full") and r.method == "sip")
+    assert rec.pagination_complete is True
+    assert rec.page_count == 2
+    assert rec.raw_candle_count == 78
+
+
+def test_alpaca_repeated_page_token_cycle_detected(alpaca_spec: IntradayProbeSpec, tmp_path: Path):
+    start_utc, end_utc = _eastern_bounds(date(2024, 6, 3), date(2024, 6, 3), alpaca_spec.timezone)
+    bars = _make_alpaca_candles("SPY", start_utc, end_utc)
+    data = {"bars": bars, "next_page_token": "stuck"}
+    def handler(url: str, **kwargs):
+        return FakeResponse(200, data, content=json.dumps(data, separators=(",", ":")).encode())
+    client = _make_alpaca_client(handler)
+    report = run_probe(
+        spec=alpaca_spec,
+        strategy_spec_sha256="a" * 64,
+        probe_spec_sha256="b" * 64,
+        output_dir=tmp_path / "out",
+        pre_registration_commit="a" * 40,
+        schwab_py_version="",
+        client=client,
+        sleeper=lambda _: None,
+    )
+    rec = next(r for r in report.records if r.probe_id.startswith("full"))
+    assert rec.pagination_cycle_detected is True
+    assert rec.repeated_page_token is True
+
+
+def test_alpaca_401_stops_live_execution(alpaca_spec: IntradayProbeSpec, tmp_path: Path):
+    def handler(url: str, **kwargs):
+        return FakeResponse(401, {"error": "unauthorized"}, content=b'{}')
+    client = _make_alpaca_client(handler)
+    with pytest.raises(ProviderAuthenticationError):
+        run_probe(
+            spec=alpaca_spec,
+            strategy_spec_sha256="a" * 64,
+            probe_spec_sha256="b" * 64,
+            output_dir=tmp_path / "out",
+            pre_registration_commit="a" * 40,
+            schwab_py_version="",
+            client=client,
+            sleeper=lambda _: None,
+        )
+
+
+def test_alpaca_403_recorded_safe(alpaca_spec: IntradayProbeSpec, tmp_path: Path):
+    def handler(url: str, **kwargs):
+        return FakeResponse(403, {"error": "forbidden"}, content=b'{}')
+    client = _make_alpaca_client(handler)
+    report = run_probe(
+        spec=alpaca_spec,
+        strategy_spec_sha256="a" * 64,
+        probe_spec_sha256="b" * 64,
+        output_dir=tmp_path / "out",
+        pre_registration_commit="a" * 40,
+        schwab_py_version="",
+        client=client,
+        sleeper=lambda _: None,
+    )
+    assert all(r.http_status == 403 for r in report.records)
+    assert all(r.safe_error_classification == "http_403" for r in report.records)
+
+
+def test_alpaca_429_retries_once(alpaca_spec: IntradayProbeSpec, tmp_path: Path):
+    calls = {"n": 0}
+    def handler(url: str, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return FakeResponse(429, {}, headers={"Retry-After": "1"}, content=b'{}')
+        return _make_alpaca_empty_response()
+    client = _make_alpaca_client(handler)
+    report = run_probe(
+        spec=alpaca_spec,
+        strategy_spec_sha256="a" * 64,
+        probe_spec_sha256="b" * 64,
+        output_dir=tmp_path / "out",
+        pre_registration_commit="a" * 40,
+        schwab_py_version="",
+        client=client,
+        sleeper=lambda _: None,
+    )
+    rec = report.records[0]
+    assert rec.http_status == 200
+    assert rec.retry_after_seconds == 1.0
+
+
+def test_alpaca_5xx_fails_after_retry(alpaca_spec: IntradayProbeSpec, tmp_path: Path):
+    calls = {"n": 0}
+    def handler(url: str, **kwargs):
+        calls["n"] += 1
+        if calls["n"] <= 2:
+            return FakeResponse(500, {}, content=b'{}')
+        return _make_alpaca_empty_response()
+    client = _make_alpaca_client(handler)
+    report = run_probe(
+        spec=alpaca_spec,
+        strategy_spec_sha256="a" * 64,
+        probe_spec_sha256="b" * 64,
+        output_dir=tmp_path / "out",
+        pre_registration_commit="a" * 40,
+        schwab_py_version="",
+        client=client,
+        sleeper=lambda _: None,
+    )
+    assert report.records[0].http_status == 500
+    assert report.records[0].safe_error_classification == "http_500"
+
+
+def test_alpaca_empty_response(alpaca_spec: IntradayProbeSpec, tmp_path: Path):
+    client = _make_alpaca_client(lambda url, **kwargs: _make_alpaca_empty_response())
+    report = run_probe(
+        spec=alpaca_spec,
+        strategy_spec_sha256="a" * 64,
+        probe_spec_sha256="b" * 64,
+        output_dir=tmp_path / "out",
+        pre_registration_commit="a" * 40,
+        schwab_py_version="",
+        client=client,
+        sleeper=lambda _: None,
+    )
+    assert all(r.http_status == 200 and r.raw_candle_count == 0 for r in report.records)
+
+
+def test_alpaca_78_bar_grid_and_missing_bar(alpaca_spec: IntradayProbeSpec):
+    from tradex.research.intraday_data_probe.probe import _analyze_request
+    start_date = date(2024, 6, 3)
+    end_date = date(2024, 6, 3)
+    start_utc, end_utc = _eastern_bounds(start_date, end_date, alpaca_spec.timezone)
+    cal = _load_calendar(alpaca_spec.exchange_calendar)
+    candles = _make_alpaca_candles("SPY", start_utc, end_utc)
+    rec = _analyze_request(
+        None, 200, candles, "SPY", "sip", start_utc, end_utc,
+        start_date, end_date, cal, alpaca_spec, "full-SPY-sip-rep1", 1, None, "none",
+        provider="alpaca",
+    )
+    assert rec.primary_session_bars == 78
+    assert rec.regular_session_coverage_pct == 100.0
+    rec_missing = _analyze_request(
+        None, 200, candles[1:], "SPY", "sip", start_utc, end_utc,
+        start_date, end_date, cal, alpaca_spec, "full-SPY-sip-rep1", 1, None, "none",
+        provider="alpaca",
+    )
+    assert rec_missing.primary_session_bars == 77
+    assert rec_missing.missing_regular_session_bars == 1
+
+
+def test_alpaca_1600_extra_bar_and_extended_hours(alpaca_spec: IntradayProbeSpec):
+    from tradex.research.intraday_data_probe.probe import _analyze_request
+    start_date = date(2024, 6, 3)
+    end_date = date(2024, 6, 3)
+    start_utc, end_utc = _eastern_bounds(start_date, end_date, alpaca_spec.timezone)
+    cal = _load_calendar(alpaca_spec.exchange_calendar)
+    candles = _make_alpaca_candles("SPY", start_utc, end_utc)
+    for ts_str in ("2024-06-03 09:25", "2024-06-03 16:00", "2024-06-03 16:05"):
+        ts = pd.Timestamp(ts_str, tz=alpaca_spec.timezone).tz_convert(UTC)
+        i = int(ts.timestamp() // 60)
+        candles.append({
+            "t": ts.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "o": 100.0 + i * 0.01,
+            "h": 100.0 + i * 0.01 + 0.002,
+            "l": 100.0 + i * 0.01 - 0.002,
+            "c": 100.0 + i * 0.01 + 0.005,
+            "v": 1000 + i,
+        })
+    rec = _analyze_request(
+        None, 200, candles, "SPY", "sip", start_utc, end_utc,
+        start_date, end_date, cal, alpaca_spec, "full-SPY-sip-rep1", 1, None, "none",
+        provider="alpaca",
+    )
+    assert rec.primary_session_bars == 78
+    assert rec.extended_hours_bars == 3
+    assert rec.non_five_minute_intervals == 0
+
+
+def test_alpaca_duplicate_zero_volume_invalid_ohlc_rates(alpaca_spec: IntradayProbeSpec):
+    from tradex.research.intraday_data_probe.probe import _analyze_request
+    start_date = date(2024, 6, 3)
+    end_date = date(2024, 6, 3)
+    start_utc, end_utc = _eastern_bounds(start_date, end_date, alpaca_spec.timezone)
+    cal = _load_calendar(alpaca_spec.exchange_calendar)
+    candles = _make_alpaca_candles("SPY", start_utc, end_utc)
+    # Duplicate first timestamp
+    candles.insert(0, candles[0].copy())
+    # Zero volume bar
+    candles[2]["v"] = 0
+    # Invalid OHLC: low > open
+    candles[3]["l"] = candles[3]["o"] + 1.0
+    rec = _analyze_request(
+        None, 200, candles, "SPY", "sip", start_utc, end_utc,
+        start_date, end_date, cal, alpaca_spec, "full-SPY-sip-rep1", 1, None, "none",
+        provider="alpaca",
+    )
+    assert rec.duplicate_timestamps == 1
+    assert rec.zero_volume_bars == 1
+    assert rec.invalid_ohlc_rows == 1
+
+
+def test_alpaca_repeat_hash_match_and_chunk_overlap(alpaca_spec: IntradayProbeSpec, tmp_path: Path):
+    handler, _ = _make_alpaca_handler()
+    client = _make_alpaca_client(handler)
+    report = run_probe(
+        spec=alpaca_spec,
+        strategy_spec_sha256="a" * 64,
+        probe_spec_sha256="b" * 64,
+        output_dir=tmp_path / "out",
+        pre_registration_commit="a" * 40,
+        schwab_py_version="",
+        client=client,
+        sleeper=lambda _: None,
+    )
+    assert all(r["repeat_hash_match"] for r in report.repeatability_rows if r["method"] == "sip")
+    overlap = [r for r in report.chunk_overlap_rows if r["method"] == "sip"]
+    assert overlap and all(r["classification"] == "match" for r in overlap)
+
+
+def test_alpaca_feed_comparison_and_decision_paths(alpaca_spec: IntradayProbeSpec, tmp_path: Path):
+    handler, _ = _make_alpaca_handler()
+    client = _make_alpaca_client(handler)
+    report = run_probe(
+        spec=alpaca_spec,
+        strategy_spec_sha256="a" * 64,
+        probe_spec_sha256="b" * 64,
+        output_dir=tmp_path / "out",
+        pre_registration_commit="a" * 40,
+        schwab_py_version="",
+        client=client,
+        sleeper=lambda _: None,
+    )
+    assert report.feed_comparison_rows
+    sip_rows = [r for r in report.feed_comparison_rows if r["candidate_probe_id"].endswith("-sip-rep1")]
+    assert all(r["classification"] == "same_timestamps_different_values" for r in sip_rows)
+    assert report.decision.outcome in ("supported_ohlcv_only", "supported_complete")
+    assert report.decision.approved_for_intra_001_five_minute_ohlcv is True
+
+
+def test_alpaca_supported_complete_when_contract_fully_met(alpaca_spec: IntradayProbeSpec, tmp_path: Path):
+    """If every remaining contract dimension were supported, outcome would be supported_complete."""
+    from tradex.research.intraday_data_probe.probe import _build_decision
+    records = [
+        _base_record(
+            probe_id="full-SPY-sip-rep1", symbol="SPY", method="sip",
+            threshold_result="passed", date_bound_classification="honored_exactly", primary_session_bars=78,
+            raw_candle_count=78, normalized_candle_count=78, http_status=200,
+        ),
+        _base_record(
+            probe_id="full-SPY-sip-rep2", symbol="SPY", method="sip",
+            threshold_result="passed", date_bound_classification="honored_exactly", primary_session_bars=78,
+            raw_candle_count=78, normalized_candle_count=78, http_status=200,
+        ),
+    ]
+    provider_rows = [
+        {"requirement": "point_in_time_universe", "supported": True},
+        {"requirement": "security_type_provenance", "supported": True},
+        {"requirement": "inactive_delisted_symbol_listing", "supported": True},
+        {"requirement": "corporate_action_provenance", "supported": True},
+    ]
+    repeat_rows = [{"repeat_hash_match": True, "method": "sip"}]
+    # The decision is tied to spec.provider, so we create a tiny spec clone.
+    from dataclasses import replace
+    test_spec = replace(alpaca_spec)
+    decision = _build_decision(
+        test_spec, records, repeat_rows, [], [], "a" * 64, "b" * 64, "a" * 40, "",
+        provider_contract_rows=provider_rows,
+    )
+    assert decision.outcome == "supported_complete"
+    assert decision.approved_as_complete_intra_001_data_source is True
+
+
+def test_alpaca_not_supported_when_no_data(alpaca_spec: IntradayProbeSpec, tmp_path: Path):
+    client = _make_alpaca_client(lambda url, **kwargs: _make_alpaca_empty_response())
+    report = run_probe(
+        spec=alpaca_spec,
+        strategy_spec_sha256="a" * 64,
+        probe_spec_sha256="b" * 64,
+        output_dir=tmp_path / "out",
+        pre_registration_commit="a" * 40,
+        schwab_py_version="",
+        client=client,
+        sleeper=lambda _: None,
+    )
+    assert report.decision.outcome == "not_supported"
+    assert report.decision.approved_for_intra_001_five_minute_ohlcv is False
+
+
+def test_alpaca_safe_artifact_bundle_no_absolute_paths(alpaca_spec: IntradayProbeSpec, tmp_path: Path, strategy_spec_path: Path):
+    handler, _ = _make_alpaca_handler()
+    client = _make_alpaca_client(handler)
+    report = run_probe(
+        spec=alpaca_spec,
+        strategy_spec_sha256="a" * 64,
+        probe_spec_sha256="b" * 64,
+        output_dir=tmp_path / "out",
+        pre_registration_commit="a" * 40,
+        schwab_py_version="",
+        client=client,
+        sleeper=lambda _: None,
+    )
+    artifact_dir = tmp_path / "artifacts"
+    spec_bytes = json.dumps(alpaca_spec.to_dict()).encode()
+    write_probe_artifacts(
+        report=report,
+        spec=alpaca_spec,
+        probe_spec_bytes=spec_bytes,
+        strategy_spec_path=strategy_spec_path,
+        artifact_dir=artifact_dir,
+        pre_registration_commit="a" * 40,
+        repo_root=tmp_path,
+    )
+    safe_dirs = [p for p in artifact_dir.iterdir() if p.is_dir()]
+    assert safe_dirs
+    safe_dir = safe_dirs[0]
+    forbidden = ["/tmp/", "/home/", "/Users/", "C:\\\\", "C:/", "D:\\\\", ":\\\\"]
+    failures: list[str] = []
+    for p in safe_dir.iterdir():
+        if not p.is_file():
+            continue
+        text = p.read_text(encoding="utf-8")
+        for pat in forbidden:
+            if pat in text:
+                failures.append(f"{p.name} contains forbidden path {pat!r}")
+    assert not failures, "\n".join(failures)
+
+
+def test_alpaca_preregistration_commit_retained_in_decision(alpaca_spec: IntradayProbeSpec, tmp_path: Path):
+    handler, _ = _make_alpaca_handler()
+    client = _make_alpaca_client(handler)
+    report = run_probe(
+        spec=alpaca_spec,
+        strategy_spec_sha256="a" * 64,
+        probe_spec_sha256="b" * 64,
+        output_dir=tmp_path / "out",
+        pre_registration_commit="a" * 40,
+        schwab_py_version="",
+        client=client,
+        sleeper=lambda _: None,
+    )
+    assert report.decision.pre_registration_commit == "a" * 40
+    assert len(report.decision.pre_registration_commit) == 40

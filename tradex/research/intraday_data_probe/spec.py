@@ -50,9 +50,18 @@ class IntradayProbeSpec:
     decision_requires_repeat_hash_match: bool
     decision_requires_method_overlap_match: bool
     decision_requires_chunk_overlap_match: bool
+    # Alpaca-specific optional fields
+    target_entitlement: str | None = None
+    candidate_feed: str | None = None
+    comparison_feed: str | None = None
+    adjustment: str | None = None
+    asof: str | None = None
+    sort: str | None = None
+    page_limit: int | None = None
+    approve_only_candidate_feed: bool = False
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        result = {
             "schema_version": self.schema_version,
             "task_id": self.task_id,
             "provider": self.provider,
@@ -85,6 +94,20 @@ class IntradayProbeSpec:
             "decision_requires_method_overlap_match": self.decision_requires_method_overlap_match,
             "decision_requires_chunk_overlap_match": self.decision_requires_chunk_overlap_match,
         }
+        for key in (
+            "target_entitlement",
+            "candidate_feed",
+            "comparison_feed",
+            "adjustment",
+            "asof",
+            "sort",
+            "page_limit",
+            "approve_only_candidate_feed",
+        ):
+            value = getattr(self, key)
+            if value is not None or key == "approve_only_candidate_feed":
+                result[key] = value
+        return result
 
 
 class SpecValidationError(ValueError):
@@ -106,6 +129,20 @@ def _as_tuple(value: Any, name: str) -> tuple[str, ...]:
     if isinstance(value, list):
         return tuple(str(v) for v in value)
     raise SpecValidationError(f"{name} must be a list of strings")
+
+
+def _resolve_methods(data: dict[str, Any]) -> tuple[str, ...]:
+    """Return the ordered methods/feeds for this probe."""
+    if "methods" in data:
+        return _as_tuple(data["methods"], "methods")
+    feeds: list[str] = []
+    for key in ("candidate_feed", "comparison_feed"):
+        value = data.get(key)
+        if value:
+            feeds.append(str(value))
+    if not feeds:
+        raise SpecValidationError("Probe spec must define 'methods' or 'candidate_feed'/'comparison_feed'")
+    return tuple(feeds)
 
 
 def load_probe_spec(path: str | Path) -> tuple[IntradayProbeSpec, bytes]:
@@ -139,6 +176,15 @@ def load_probe_spec(path: str | Path) -> tuple[IntradayProbeSpec, bytes]:
         raise SpecValidationError("full_range_probe must be an object")
     _require_known_fields(full, {"symbols", "start_date", "end_date"}, "full_range_probe")
 
+    methods = _resolve_methods(data)
+    candidate_feed = data.get("candidate_feed")
+    comparison_feed = data.get("comparison_feed")
+    # If methods were supplied explicitly but feeds were not, keep them consistent for reporting.
+    if candidate_feed is None and len(methods) == 1:
+        candidate_feed = methods[0]
+    if comparison_feed is None and len(methods) == 2:
+        comparison_feed = methods[1]
+
     spec = IntradayProbeSpec(
         schema_version=int(data["schema_version"]),
         task_id=str(data["task_id"]),
@@ -146,11 +192,11 @@ def load_probe_spec(path: str | Path) -> tuple[IntradayProbeSpec, bytes]:
         bar_interval=str(data["bar_interval"]),
         timezone=str(data["timezone"]),
         exchange_calendar=str(data["exchange_calendar"]),
-        need_extended_hours_data=bool(data["need_extended_hours_data"]),
+        need_extended_hours_data=bool(data.get("need_extended_hours_data", False)),
         repeat_count=int(data["repeat_count"]),
         request_delay_seconds=float(data["request_delay_seconds"]),
         symbols=_as_tuple(data["symbols"], "symbols"),
-        methods=_as_tuple(data["methods"], "methods"),
+        methods=methods,
         full_range_probe=dict(full),
         bounded_window_probes=tuple(windows),
         overlap_probe=OverlapProbe(
@@ -165,9 +211,17 @@ def load_probe_spec(path: str | Path) -> tuple[IntradayProbeSpec, bytes]:
         maximum_duplicate_bar_rate_pct=float(data["maximum_duplicate_bar_rate_pct"]),
         maximum_zero_volume_bar_rate_pct=float(data["maximum_zero_volume_bar_rate_pct"]),
         maximum_persistent_retry_count=int(data["maximum_persistent_retry_count"]),
-        decision_requires_repeat_hash_match=bool(data["decision_requires_repeat_hash_match"]),
-        decision_requires_method_overlap_match=bool(data["decision_requires_method_overlap_match"]),
-        decision_requires_chunk_overlap_match=bool(data["decision_requires_chunk_overlap_match"]),
+        decision_requires_repeat_hash_match=bool(data.get("decision_requires_repeat_hash_match", False)),
+        decision_requires_method_overlap_match=bool(data.get("decision_requires_method_overlap_match", False)),
+        decision_requires_chunk_overlap_match=bool(data.get("decision_requires_chunk_overlap_match", False)),
+        target_entitlement=data.get("target_entitlement"),
+        candidate_feed=candidate_feed,
+        comparison_feed=comparison_feed,
+        adjustment=data.get("adjustment"),
+        asof=data.get("asof"),
+        sort=data.get("sort"),
+        page_limit=int(data["page_limit"]) if data.get("page_limit") is not None else None,
+        approve_only_candidate_feed=bool(data.get("approve_only_candidate_feed", False)),
     )
     return spec, raw
 

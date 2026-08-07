@@ -1,4 +1,4 @@
-"""Dataclasses and value objects for the INTRA-001B Schwab probe."""
+"""Dataclasses and value objects for the INTRA-001B probe."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -48,6 +48,12 @@ class ProbeRequestRecord:
     threshold_result: str
     retry_after_seconds: float | None = None
     notes: str = ""
+    # Pagination and retry diagnostics (added for Alpaca probe)
+    page_count: int = 1
+    next_page_token_present: bool = False
+    pagination_complete: bool = False
+    repeated_page_token: bool = False
+    pagination_cycle_detected: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -90,6 +96,11 @@ class ProbeRequestRecord:
             "threshold_result": self.threshold_result,
             "retry_after_seconds": self.retry_after_seconds,
             "notes": self.notes,
+            "page_count": self.page_count,
+            "next_page_token_present": self.next_page_token_present,
+            "pagination_complete": self.pagination_complete,
+            "repeated_page_token": self.repeated_page_token,
+            "pagination_cycle_detected": self.pagination_cycle_detected,
         }
 
     @classmethod
@@ -129,6 +140,24 @@ class ProbeDecision:
     limitations: list[str] = field(default_factory=list)
     recommended_next_assignment: str = ""
     production_behavior_changed: bool = False
+    # Alpaca-specific decision fields
+    alpaca_client_or_rest_version: str = ""
+    candidate_feed: str = ""
+    comparison_feed: str = ""
+    selected_feed: str = ""
+    pagination_verified: bool = False
+    consolidated_volume_supported: bool = False
+    iex_historical_available: bool = False
+    point_in_time_universe_supported: bool = False
+    historical_security_type_supported: bool = False
+    stock_etf_classification_supported: bool = False
+    inactive_asset_listing_supported: bool = False
+    delisted_symbol_handling_supported: bool = False
+    corporate_action_endpoint_supported: bool = False
+    symbol_mapping_asof_supported: bool = False
+    no_provider_mixing_contract_satisfied: bool = True
+    methodology_decision_required: bool = False
+    methodology_decision_reason: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -160,6 +189,23 @@ class ProbeDecision:
             "limitations": self.limitations,
             "recommended_next_assignment": self.recommended_next_assignment,
             "production_behavior_changed": self.production_behavior_changed,
+            "alpaca_client_or_rest_version": self.alpaca_client_or_rest_version,
+            "candidate_feed": self.candidate_feed,
+            "comparison_feed": self.comparison_feed,
+            "selected_feed": self.selected_feed,
+            "pagination_verified": self.pagination_verified,
+            "consolidated_volume_supported": self.consolidated_volume_supported,
+            "iex_historical_available": self.iex_historical_available,
+            "point_in_time_universe_supported": self.point_in_time_universe_supported,
+            "historical_security_type_supported": self.historical_security_type_supported,
+            "stock_etf_classification_supported": self.stock_etf_classification_supported,
+            "inactive_asset_listing_supported": self.inactive_asset_listing_supported,
+            "delisted_symbol_handling_supported": self.delisted_symbol_handling_supported,
+            "corporate_action_endpoint_supported": self.corporate_action_endpoint_supported,
+            "symbol_mapping_asof_supported": self.symbol_mapping_asof_supported,
+            "no_provider_mixing_contract_satisfied": self.no_provider_mixing_contract_satisfied,
+            "methodology_decision_required": self.methodology_decision_required,
+            "methodology_decision_reason": self.methodology_decision_reason,
         }
 
     @classmethod
@@ -177,6 +223,8 @@ class ProbeReport:
     repeatability_rows: list[dict[str, Any]]
     chunk_overlap_rows: list[dict[str, Any]]
     summary_rows: list[dict[str, Any]]
+    feed_comparison_rows: list[dict[str, Any]] = field(default_factory=list)
+    provider_contract_rows: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -186,6 +234,8 @@ class ProbeReport:
             "repeatability": self.repeatability_rows,
             "chunk_overlap": self.chunk_overlap_rows,
             "summary": self.summary_rows,
+            "feed_comparison": self.feed_comparison_rows,
+            "provider_contract": self.provider_contract_rows,
         }
 
     @classmethod
@@ -197,4 +247,6 @@ class ProbeReport:
             repeatability_rows=d.get("repeatability", []),
             chunk_overlap_rows=d.get("chunk_overlap", []),
             summary_rows=d.get("summary", []),
+            feed_comparison_rows=d.get("feed_comparison", []),
+            provider_contract_rows=d.get("provider_contract", []),
         )
