@@ -37,6 +37,138 @@ def _artifact_run_id() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%d-%H%M%S")
 
 
+def _unwanted_markers() -> set[str]:
+    return {"WARRANT", "RIGHT", "UNIT", "PFD"}
+
+
+def _security_type_mapping_rows(
+    security_type_counts: dict[str, int],
+) -> list[dict[str, Any]]:
+    unwanted = _unwanted_markers()
+    rows = []
+    for stype, count in sorted(security_type_counts.items()):
+        if stype in unwanted:
+            marker = "exclude"
+        elif stype in {"CS", "ETF"}:
+            marker = "include"
+        else:
+            marker = "review"
+        rows.append(
+            {
+                "provider_type_value": stype,
+                "mapped_category": stype,
+                "exclusion_marker": marker,
+                "observed_count": count,
+            }
+        )
+    return rows
+
+
+def _write_reference_files(out: Path, spec: ReferenceProbeSpec) -> dict[str, str]:
+    files: dict[str, str] = {}
+    original_spec = Path(spec.original_strategy_spec_path)
+    if original_spec.exists():
+        ref = {
+            "original_strategy_spec_path": spec.original_strategy_spec_path,
+            "sha256": _hash_file(original_spec),
+        }
+        p = out / "strategy_spec_reference.json"
+        _write_json(p, ref)
+        files["strategy_spec_reference.json"] = _hash_file(p)
+
+    alpaca_path = Path(spec.alpaca_v2_artifact_path) if spec.alpaca_v2_artifact_path else None
+    if alpaca_path and alpaca_path.exists():
+        ref = {
+            "artifact_path": str(alpaca_path.relative_to(Path.cwd()) if Path.cwd() in alpaca_path.parents else alpaca_path),
+            "sha256": _hash_file(alpaca_path),
+        }
+        p = out / "alpaca_v2_reference.json"
+        _write_json(p, ref)
+        files["alpaca_v2_reference.json"] = _hash_file(p)
+    return files
+
+
+def _write_audit_files(out: Path, candidate_result: ProviderCandidateResult) -> dict[str, str]:
+    files: dict[str, str] = {}
+    observations = [obs.to_dict() for obs in candidate_result.observations]
+
+    if observations:
+        request_rows = []
+        coverage_rows = []
+        repeat_rows = []
+        for obs in observations:
+            request_rows.append(
+                {
+                    "provider": obs["provider"],
+                    "pit_date": obs["pit_date"],
+                    "state": obs["state"],
+                    "requested_at": obs["requested_at"],
+                    "elapsed_seconds": obs["elapsed_seconds"],
+                    "http_status": obs["http_status"],
+                    "row_count": obs["row_count"],
+                    "raw_sha256": obs["raw_sha256"],
+                    "repeat_match": obs.get("repeat_match"),
+                    "repeat_seconds": obs.get("repeat_seconds"),
+                    "repeat_sha256": obs.get("repeat_sha256"),
+                }
+            )
+            coverage_rows.append(
+                {
+                    "pit_date": obs["pit_date"],
+                    "state": obs["state"],
+                    "row_count": obs["row_count"],
+                    "repeat_match": obs.get("repeat_match"),
+                    "raw_sha256": obs["raw_sha256"],
+                }
+            )
+            repeat_rows.append(
+                {
+                    "provider": obs["provider"],
+                    "pit_date": obs["pit_date"],
+                    "state": obs["state"],
+                    "repeat_match": obs.get("repeat_match"),
+                    "raw_sha256": obs["raw_sha256"],
+                    "repeat_sha256": obs.get("repeat_sha256"),
+                    "repeat_seconds": obs.get("repeat_seconds"),
+                }
+            )
+
+        _write_csv(out / "request_audit.csv", request_rows)
+        files["request_audit.csv"] = _hash_file(out / "request_audit.csv")
+
+        _write_csv(out / "historical_coverage.csv", coverage_rows)
+        files["historical_coverage.csv"] = _hash_file(out / "historical_coverage.csv")
+
+        _write_csv(out / "repeatability.csv", repeat_rows)
+        files["repeatability.csv"] = _hash_file(out / "repeatability.csv")
+
+    mapping_rows = _security_type_mapping_rows(candidate_result.security_type_counts)
+    _write_csv(out / "security_type_mapping.csv", mapping_rows)
+    files["security_type_mapping.csv"] = _hash_file(out / "security_type_mapping.csv")
+
+    return files
+
+
+def _write_readme(out: Path, decision: ReferenceProbeDecision) -> dict[str, str]:
+    readme = (
+        f"INTRA-001B-REFERENCE safe artifact bundle\n"
+        f"Run ID: {out.name}\n"
+        f"Task: {decision.task_id}\n"
+        f"Provider: {decision.provider or 'none selected'}\n"
+        f"Outcome: {decision.outcome}\n"
+        f"Dataset used: {decision.dataset_used or 'n/a'}\n"
+        f"Pre-registration commit: {decision.v1_pre_registration_commit}\n"
+        f"Final head: {decision.final_head}\n"
+        f"Branch: {decision.branch}\n"
+        f"Ran at: {decision.ran_at}\n\n"
+        "This bundle contains research-only audit artifacts for the reference-provider probe.\n"
+        "It does not authorize production changes.\n"
+    )
+    p = out / "README.txt"
+    p.write_text(readme)
+    return {"README.txt": _hash_file(p)}
+
+
 def write_reference_probe_artifacts(
     spec: ReferenceProbeSpec,
     decision: ReferenceProbeDecision,
@@ -57,6 +189,8 @@ def write_reference_probe_artifacts(
             stale.unlink()
 
     files: dict[str, str] = {}
+    files.update(_write_readme(out, decision))
+    files.update(_write_reference_files(out, spec))
 
     probe_lock = out / "probe_spec.lock.json"
     probe_lock.write_bytes(probe_spec_raw)
@@ -94,6 +228,8 @@ def write_reference_probe_artifacts(
         ]
         _write_csv(out / "exchange_counts.csv", exchange_rows)
         files["exchange_counts.csv"] = _hash_file(out / "exchange_counts.csv")
+
+        files.update(_write_audit_files(out, candidate_result))
 
     report_md = report_markdown or _default_report(decision, candidate_result, spec)
     report_path = out / "report.md"
@@ -163,6 +299,17 @@ def _default_report(
     lines.append(f"| Free under current entitlement | {decision.free_under_current_entitlement} |")
     lines.append(f"| Full repeatability passed | {decision.full_repeatability_passed} |")
     lines.append("")
+
+    if decision.dataset_used:
+        lines.append(f"- **Dataset used:** {decision.dataset_used}")
+        lines.append("")
+
+    if decision.candidate_dispositions:
+        lines.append("## Candidate dispositions")
+        lines.append("")
+        for name, reason in decision.candidate_dispositions:
+            lines.append(f"- **{name}:** {reason}")
+        lines.append("")
 
     if candidate is not None:
         lines.append("## Provider candidate summary")

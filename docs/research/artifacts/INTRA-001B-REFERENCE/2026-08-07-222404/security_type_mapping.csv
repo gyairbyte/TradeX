@@ -1,0 +1,14 @@
+provider_type_value,mapped_category,exclusion_marker,observed_count
+ADRC,ADRC,review,217
+CS,CS,include,3311
+ETF,ETF,review,752
+ETN,ETN,review,38
+ETS,ETS,review,36
+ETV,ETV,review,4
+FUND,FUND,review,75
+INDEX,INDEX,review,23
+PFD,PFD,exclude,732
+RIGHT,RIGHT,exclude,66
+SP,SP,review,427
+UNIT,UNIT,exclude,335
+WARRANT,WARRANT,exclude,563

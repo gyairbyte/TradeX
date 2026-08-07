@@ -4,8 +4,8 @@
   "amendment_id": "INTRA-001-data-contract-amendment-v2",
   "amendment_version": 2,
   "amendment_type": "data_contract_methodology",
-  "status": "approved_mixed_model_reference_provider_pending",
-  "authority": "Gary explicitly approved role-locked mixed-provider research data for INTRA-001 after Alpaca v2 proved OHLCV capability but not the complete reference contract.",
+  "status": "locked_ready_for_snapshot_implementation",
+  "authority": "Gary explicitly approved role-locked mixed-provider research data for INTRA-001 after Alpaca v2 proved OHLCV capability but not the complete reference contract. INTRA-001B-REFERENCE selected Massive/Polygon as the reference provider on 2026-08-07.",
   "original_strategy_spec": "docs/research/specs/INTRA-001-v1.json",
   "original_strategy_spec_sha256": "09394d038928433529ec4c5f5ba5ff0392c764d5b59f1af71d95f4f3957c0464",
   "note": "This amendment changes ONLY the data-provider methodology. Every non-data-source rule in INTRA-001-v1 remains unchanged.",
@@ -31,7 +31,7 @@
     "delisting date where available",
     "symbol/reference identity required for monthly membership"
   ],
-  "reference_provider": null,
+  "reference_provider": "massive",
   "original_dataset_start": "2022-01-03",
   "original_dataset_end": "2025-12-31",
   "fallback_dataset": {

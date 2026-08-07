@@ -1,0 +1,10 @@
+capability,evidence_class,note,provider,supported
+pit_date_support_for_all_probe_dates,live_evidence,All four PIT dates returned rows without error.,massive,True
+active_and_delisted_or_inactive_coverage,live_evidence,"States with data: ['active', 'inactive'].",massive,True
+security_type_exclusions_feasible,live_evidence,"Observed type values: ['ADRC', 'CS', 'ETF', 'ETN', 'ETS', 'ETV', 'FUND', 'INDEX', 'PFD', 'RIGHT', 'SP', 'UNIT', 'WARRANT'].",massive,True
+security_type_taxonomy_granular,live_evidence,Provider exposes labels that distinguish the five unwanted security types.,massive,True
+primary_exchange_provenance,live_evidence,"Observed exchanges: ['ARCX', 'BATS', 'XASE', 'XNAS', 'XNYS']...",massive,True
+full_repeatability,live_evidence,Repeat fetch SHA-256 matched for every observation.,massive,True
+free_under_current_entitlement,documented_capability,Probe used only free endpoints; no paid upgrade was required.,massive,True
+historical_2022_entitlement_under_current_plan,live_evidence,A 2022 PIT date was requested and returned data.,massive,True
+listing_and_delisting_date_fields,live_evidence,Delisting field: delisting_utc; listing field: None.,massive,True

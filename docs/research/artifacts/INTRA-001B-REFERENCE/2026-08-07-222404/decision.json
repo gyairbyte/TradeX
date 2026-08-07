@@ -1,0 +1,42 @@
+{
+  "active_delisted_coverage": true,
+  "approved_as_reference_provider": true,
+  "branch": "devin/intra-001b-reference-source",
+  "candidate_dispositions": [],
+  "candidate_order": [
+    "alpha_vantage",
+    "massive"
+  ],
+  "dataset_used": "original",
+  "fallback_probe_dates": [
+    "2024-01-31",
+    "2024-07-31",
+    "2025-01-31",
+    "2025-11-30"
+  ],
+  "final_head": "d5b2ba5d14151fd007c89cc5fc9c6ae7fec6f299",
+  "free_under_current_entitlement": true,
+  "full_repeatability_passed": true,
+  "no_composite_reference_stack": true,
+  "no_paid_upgrade": true,
+  "no_silent_fallback": true,
+  "outcome": "supported",
+  "pit_date_support": true,
+  "pit_dates": [
+    "2022-01-31",
+    "2023-07-31",
+    "2024-05-31",
+    "2025-11-30"
+  ],
+  "primary_exchange_provenance": true,
+  "probe_version": 1,
+  "provider": "massive",
+  "ran_at": "2026-08-07T22:24:04.258836+00:00",
+  "reason": "All mandatory reference-provider gates passed.",
+  "reproducible": true,
+  "security_type_exclusions_possible": true,
+  "security_type_taxonomy_granular": true,
+  "target_entitlement": "current Gary entitlement",
+  "task_id": "INTRA-001B-REFERENCE",
+  "v1_pre_registration_commit": "d5b2ba5d14151fd007c89cc5fc9c6ae7fec6f299"
+}
