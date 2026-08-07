@@ -1,0 +1,30 @@
+{
+  "bundled_files": [
+    "README.txt",
+    "artifact_manifest.json",
+    "checksums.sha256",
+    "chunk_overlap.csv",
+    "coverage_summary.csv",
+    "decision.json",
+    "feed_comparison.csv",
+    "pagination_summary.csv",
+    "probe_spec.lock.json",
+    "provider_contract_matrix.csv",
+    "repeatability_summary.csv",
+    "report.md",
+    "request_audit.csv",
+    "strategy_spec_reference.json"
+  ],
+  "created_at": "2026-08-07T17:58:45.917628+00:00",
+  "decision_sha256": "5b350da3d95cf8ea2c43679890626dc57769002649adf4626c30724dac6d7966",
+  "excluded_files": [
+    "Full raw/normalized OHLCV CSVs and payload JSONs",
+    "API keys, tokens, headers, and secrets",
+    "Per-request intermediate state"
+  ],
+  "pre_registration_commit": "340e0921b31e40b6d9ef67aaedb8b6b8ec7a4185",
+  "probe_spec_sha256": "f0ee4f8bfca77eae39432974064d3335ae50f1fbd4b57db2ee97dbb553b8fd1e",
+  "run_id": "2026-08-07-175845",
+  "schema_version": 2,
+  "task_id": "INTRA-001B-ALPACA"
+}

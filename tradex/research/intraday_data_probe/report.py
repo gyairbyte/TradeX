@@ -27,7 +27,7 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         return
     fieldnames = list(rows[0].keys())
     with path.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(f, fieldnames=fieldnames, lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
 
@@ -149,6 +149,8 @@ def write_probe_artifacts(
     _write_csv(safe_dir / "feed_comparison.csv", report.feed_comparison_rows)
     _write_csv(safe_dir / "provider_contract_matrix.csv", report.provider_contract_rows)
 
+    if report_md_path is None and getattr(spec, "safe_artifact_schema_version", 1) >= 2:
+        report_md_path = safe_dir / "report.md"
     if report_md_path:
         probe_spec_sha256 = hashlib.sha256(probe_spec_bytes).hexdigest()
         write_probe_report(
@@ -157,7 +159,7 @@ def write_probe_artifacts(
             probe_spec_sha256=probe_spec_sha256,
             strategy_spec_sha256=decision["strategy_spec_sha256"],
             pre_registration_commit=pre_registration_commit,
-            report_path=safe_dir / "report.md",
+            report_path=report_md_path,
         )
 
     is_alpaca = spec.provider == "alpaca"

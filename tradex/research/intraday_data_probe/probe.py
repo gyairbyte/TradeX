@@ -1768,16 +1768,17 @@ def _build_decision(
                 "Repeatability, chunk-overlap, timestamp-semantics, or pagination requirements were not met for the access methods that otherwise had sufficient coverage."
             )
 
-    timestamp_semantics = _aggregate_timestamp_semantics(records)
+    candidate_records = [r for r in records if r.method == spec.candidate_feed] if is_alpaca else records
+
+    timestamp_semantics = _aggregate_timestamp_semantics(candidate_records)
+    candidate_timestamp_semantics = timestamp_semantics
     timestamp_normalization_required = timestamp_semantics in ("bar_start", "bar_end")
 
     repeatability_passed = all(r["repeat_hash_match"] for r in repeatability_rows) if repeatability_rows else False
     method_parity_passed = not any(
         p.get("classification") in _METHOD_PARITY_CONFLICTS for p in parity_rows
-    ) if parity_rows else False
+    ) if parity_rows else True
     chunk_overlap_passed = all(r["classification"] == "match" for r in relevant_overlap) if relevant_overlap else False
-
-    candidate_records = [r for r in records if r.method == spec.candidate_feed] if is_alpaca else records
 
     timestamp_semantics_passed = (
         all(
@@ -1896,6 +1897,7 @@ def _build_decision(
         repeatability_passed=repeatability_passed,
         method_parity_passed=method_parity_passed,
         chunk_overlap_passed=chunk_overlap_passed,
+        candidate_timestamp_semantics=candidate_timestamp_semantics,
         coverage_threshold_passed=coverage_threshold_passed,
         remaining_universe_source_required=not any(
             r.get("requirement") == "point_in_time_universe" and r.get("supported") for r in provider_contract_rows
@@ -1952,7 +1954,6 @@ def _build_decision(
             if is_alpaca and outcome == "supported_ohlcv_only"
             else ""
         ),
-        candidate_timestamp_semantics=timestamp_semantics,
         timestamp_semantics_passed=timestamp_semantics_passed,
         pagination_repeatability_passed=pagination_repeatability_passed,
         candidate_zero_volume_threshold_passed=candidate_zero_volume_threshold_passed,

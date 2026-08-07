@@ -475,7 +475,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Redesign intraday scorer around a specific setup
 - **Category:** Intraday trading
 - **Priority:** Medium
-- **Status:** In progress — INTRA-001B Alpaca probe complete; `supported_ohlcv_only`
+- **Status:** In progress — INTRA-001B Alpaca v2 probe complete; `supported_ohlcv_only`; awaiting provider-mixing decision before production promotion
 - **Research specification:** `docs/research/INTRA-001-SPEC.md`
 - **Locked machine-readable spec:** `docs/research/specs/INTRA-001-v1.json`
 - **Specification branch:** `devin/intra-001-spec`
@@ -484,14 +484,19 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Schwab safe artifacts:** `docs/research/artifacts/INTRA-001B/2026-08-07-133704/`
 - **Schwab outcome:** `not_supported` — Schwab returned only the most recent ~30 regular sessions for a four-year full-range request and empty 2022–2024 windows
 - **Alpaca probe branch:** `devin/intra-001b-alpaca-probe`
-- **Alpaca probe spec:** `docs/research/specs/INTRA-001B-alpaca-probe-v1.json`
-- **Alpaca probe report:** `docs/research/INTRA-001B-ALPACA-DATA-PROBE.md`
-- **Alpaca safe artifacts:** `docs/research/artifacts/INTRA-001B-ALPACA/2026-08-07-153429/`
-- **Alpaca v1 outcome (frozen):** `supported_ohlcv_only` in the v1 artifact bundle
-- **Alpaca v1 disposition (post-review):** `invalid` / not promotion-decision-grade — the v1 probe implementation violated its own timestamp, pagination, and contract-evidence gating requirements, so the `approved_for_intra_001_five_minute_ohlcv=true` assertion is not valid. The underlying empirical evidence still strongly suggests Alpaca SIP contains the required 2022-01-03 through 2025-12-31 five-minute OHLCV.
-- **v2 proposal:** `docs/research/INTRA-001B-ALPACA-DATA-PROBE-V2-PROPOSAL.md`
+- **Alpaca v1 probe spec (frozen):** `docs/research/specs/INTRA-001B-alpaca-probe-v1.json`
+- **Alpaca v1 probe report (frozen/invalid):** `docs/research/INTRA-001B-ALPACA-DATA-PROBE.md`
+- **Alpaca v1 safe artifacts (frozen/invalid):** `docs/research/artifacts/INTRA-001B-ALPACA/2026-08-07-153429/`
+- **Alpaca v1 outcome (frozen/invalid):** `supported_ohlcv_only` in the v1 artifact bundle; v1 formal disposition is `invalid` / not promotion-decision-grade
+- **Alpaca v2 probe spec:** `docs/research/specs/INTRA-001B-alpaca-probe-v2.json`
+- **Alpaca v2 probe report:** `docs/research/INTRA-001B-ALPACA-DATA-PROBE-V2.md`
+- **Alpaca v2 safe artifacts:** `docs/research/artifacts/INTRA-001B-ALPACA-V2/2026-08-07-175845/`
+- **Alpaca v2 outcome:** `supported_ohlcv_only` — Alpaca Basic/free SIP supplies the locked 2022-01-03 through 2025-12-31 five-minute regular-session OHLCV, but cannot by itself satisfy the complete INTRA-001 single-provider data contract (point-in-time universe, security-master, delisted handling, volume provenance).
+- **v2 pre-registration commit:** `340e0921b31e40b6d9ef67aaedb8b6b8ec7a4185`
+- **v2 decision A:** `approved_for_intra_001_five_minute_ohlcv = true` (Alpaca SIP bar-start timestamps, 100% eligible coverage, repeatable, paginated, within quality thresholds)
+- **v2 decision B:** `approved_as_complete_intra_001_data_source = false` (`supported_ohlcv_only`; remaining dimensions require a provider-mixing or supplement decision)
 - **Problem statement:** The intraday score is a loose bundle of indicators without VWAP, time-of-day, or liquidity context.
-- **Recommended action:** Review and approve the bounded v2 proposal. Do not re-run the live Alpaca probe or make any `INTRA-001` production trading-behavior change until v2 pre-registration is approved and executed.
+- **Recommended action:** Gary must decide whether to approve a mixed-provider data contract (Alpaca for OHLCV + another source for universe/security-master) or to treat INTRA-001 as blocked until a single provider satisfies the full contract.
 - **Reason:** A generic score is not actionable for intraday trading. The concrete open-drive VWAP pullback setup and its two baselines are pre-registered before any code changes.
 - **Dependencies:** VAL-001
 - **Files likely affected:** `docs/research/INTRA-001-SPEC.md`, `docs/research/specs/INTRA-001-v1.json`, `docs/PROJECT-TRACKER.md` (this specification PR changes no `tradex/` or test code)
