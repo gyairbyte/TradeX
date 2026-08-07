@@ -26,8 +26,7 @@
   "sidecar_sha256": {
     "ingestion_spec.lock.json": "f9a3f473fe14620984caca34cd6386000b87fea47a44e32d83bd05852c3ef23e",
     "invalid_rows.csv": "fb240a9065735ec8c845720546d61901b8a7ce5d96cf0588afce8fda2b358c87",
-    "snapshot_audit.json": "6d56ccc6263de2be83157fe90485091da9593496cc8c77bf80ccbc94b6c24101",
-    "snapshot_data_quality.csv": "f439be34c8ec2acd88b52520b53605d9ac1bd09fad8e46372b3d271c670b91db"
+    "snapshot_data_quality.csv": "e4f64acba2d1c56001494426691ac78f6b9ce25c24ca36855e35cc836a9a6f04"
   },
   "threshold_result": "passed",
   "total_invalid_row_rate_pct": 0.028037

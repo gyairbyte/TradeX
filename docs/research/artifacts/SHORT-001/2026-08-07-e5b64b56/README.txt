@@ -32,6 +32,7 @@ Files:
   ingestion_spec.lock.json            locked copy of SHORT-001-ingestion-v2.json
   snapshot/
     manifest.json                     locked snapshot manifest
+    AAPL.csv ... XOM.csv              cleaned, manifest-locked OHLCV CSVs
     snapshot_audit.json               snapshot-level cleaning audit
     invalid_rows.csv                  the 23 rows that were dropped
     snapshot_data_quality.csv         per-ticker raw/cleaned row counts
@@ -40,6 +41,7 @@ Files:
   evaluation/
     report.md                         final study report
     candidate_selection.json          candidate policy selection and metrics
+    candidate_comparison.csv            development/validation candidate comparison
     holdout_evaluation.csv            holdout event-study metrics (empty; no candidate)
     paired_backtests.csv              paired-backtest metrics per ticker
     ticker_comparison.csv             per-ticker robustness comparison
@@ -50,9 +52,10 @@ Files:
     snapshot_audit.lock.json          snapshot audit reference copied into result
 
 Excluded (per provider terms and repository policy):
-  - Raw Schwab OHLCV CSVs
+  - Raw Schwab OHLCV CSVs (cleaned, manifest-locked OHLCV CSVs are included)
   - OAuth tokens and credentials
   - Row-level provider-derived output beyond the 23 invalid rows
+  - context_events.csv and study.json (large, reproducible from the locked manifest + spec)
 
 Context-spec SHA-256:
   5ae8a420be97d3665c48ed82401cb4d9b0f0d71610898b7036f72453755acb45
@@ -64,7 +67,7 @@ Snapshot manifest SHA-256:
   e5b64b56328c4de588ff7b126f8aedd73c81951b61bde915b7e410afb1f6813b
 
 Outcome:
-  Inconclusive (Outcome I). The data-quality remediation succeeded, but none of
-  the candidate context policies passed the predefined development/validation
-  criteria, so no holdout evaluation of a candidate was performed. Production
-  promotion is not eligible.
+  Completed — Not supported. The data-quality remediation succeeded and the
+  predefined candidate-selection gate ran as designed, but no candidate context
+  policy passed the development/validation criteria, so no holdout evaluation
+  of a candidate was performed. Production promotion is not eligible.

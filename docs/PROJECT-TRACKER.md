@@ -444,7 +444,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Add market regime and relative strength to short-term scorer
 - **Category:** Short-term trading
 - **Priority:** Medium
-- **Status:** Inconclusive (Outcome I) — v2 ingestion remediation succeeded (23 malformed rows dropped, 45-symbol panel preserved), but no candidate policy passed the predefined development/validation criteria
+- **Status:** Completed — Not supported (v2 ingestion remediation succeeded; 23 malformed rows dropped, 45-symbol panel preserved; no candidate policy passed the predefined development/validation criteria; `production_promotion_eligible=false`)
 - **Resolved by:** `devin/improve-short-term-context`
 - **Disposition reviewed by:** `devin/short-001-disposition`
 - **V1 real-data study branch:** `devin/short-001-real-data-study`
@@ -453,7 +453,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **V2 real-data report:** `docs/research/SHORT-001-SCHWAB-STUDY-V2.md`
 - **Safe artifacts:** `docs/research/artifacts/SHORT-001/2026-08-01-5ae8a420/` (v1, preserved unchanged); `docs/research/artifacts/SHORT-001/2026-08-07-e5b64b56/` (v2)
 - **Problem statement:** The short-term score does not account for whether the broad market or sector is trending.
-- **Recommended action:** The v2 ingestion remediation and rerun are complete. The data-quality issue was resolved by dropping 23 malformed rows and producing deterministic audit evidence. The unchanged candidate-selection gate produced no qualifying policy, so SHORT-001 is closed as inconclusive and no production integration is warranted. The next research priority is to resume INTRA-001B: empirically probe Schwab multi-year five-minute history and lock the intraday data-source decision.
+- **Recommended action:** The v2 ingestion remediation and rerun are complete. The data-quality issue was resolved by dropping 23 malformed rows and producing deterministic audit evidence. The unchanged candidate-selection gate produced no qualifying policy, so SHORT-001 is closed as Completed — Not supported and no production integration is warranted. The next research priority is to resume INTRA-001B: empirically probe Schwab multi-year five-minute history and lock the intraday data-source decision.
 - **Next recommended PR:** `devin/intra-001b-data-source` (empirically probe Schwab multi-year five-minute history and lock the intraday data-source decision)
 - **Reason:** Buying pullbacks in a bear market or weak sector is a different proposition than in a strong bull market.
 - **Dependencies:** VAL-001 (backtesting harness), VAL-002 (score validation study)
@@ -465,7 +465,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
   - Candidate selection uses only `development` + `validation`; `holdout` does not influence any decision.
   - Both the event-study and paired-backtest promotion gates must pass before production exposure.
   - On synthetic data the gate did not pass, so the candidate policy was not exposed and production behavior remains unchanged.
-  - No manifest-locked real-data study exists; the hypothesis cannot be evaluated or promoted until one is run.
+  - A manifest-locked v2 real-data study exists at `docs/research/artifacts/SHORT-001/2026-08-07-e5b64b56/`; no candidate policy passed the predefined gates, so production promotion remains blocked.
 - **Intended pull request:** `devin/improve-short-term-context`
 - **Affects trading behavior:** No; the production screener does not expose context filtering. Research output is promotion-gated, and a candidate policy is only integrated after both holdout gates pass.
 
@@ -681,30 +681,25 @@ This is the master backlog for recommendations from the Devin review. Items are 
 
 | Status | Count |
 |---|---|
-| Completed | 30 |
+| Completed | 31 |
 | Deferred | 0 |
 | Proposed | 0 |
 | In progress | 1 |
-| Blocked | 1 |
+| Blocked | 0 |
 
-The original engineering-foundation and UI-refactor backlog is substantially complete. The `INTRA-001` research specification is locked in `docs/research/INTRA-001-SPEC.md`; `INTRA-001B` remains paused until the `SHORT-001` Schwab data-quality issue is resolved and the locked real-data study can be reattempted. Production strategy changes remain promotion-gated.
+The original engineering-foundation and UI-refactor backlog is substantially complete. The `SHORT-001` Schwab real-data study is now closed as Completed — Not supported: the data-quality issue was resolved, the 45-symbol panel was preserved, and the predefined candidate-selection gate produced no qualifying policy. The `INTRA-001` research specification is locked in `docs/research/INTRA-001-SPEC.md`; `INTRA-001B` is now unblocked and is the recommended next research work.
 
 **Remaining non-completed items:**
-- `SHORT-001`: Blocked (data invalid; v1 Schwab real-data study found 23 malformed OHLC candles across 19 of 45 pre-registered symbols out of 82,035 rows, 0.028%).
-- `INTRA-001`: In progress — research specification complete; implementation and study not started; INTRA-001B paused until the `SHORT-001` Schwab data-quality issue is resolved.
+- `INTRA-001`: In progress — research specification complete; implementation and study not started; `INTRA-001B` is unblocked now that the `SHORT-001` Schwab data-quality issue is resolved.
 
 **Recommended next work order:**
-1. **SHORT-001 data-ingestion remediation** — Research-only malformed-row exclusion using the PATTERN-001 precedent: drop hard-invalid OHLC rows, preserve the locked 45-symbol panel, record pre/post-clean row counts and hashes, then rerun the unchanged snapshot/evaluation.
-2. **SHORT-001 real-data study rerun** — Approved predefined, manifest-locked Schwab real-data study once the remediation produces a clean manifest.
-3. **INTRA-001B data and manifest infrastructure** — Approved provider integration, date-ranged five-minute snapshot, point-in-time universe manifest, session normalization, data-quality validation.
-3. **INTRA-001C research detector and execution engine** — Session VWAP, opening-drive state, pullback/reclaim detector, intraday execution model, current-score and simple-VWAP baselines, synthetic tests only.
-4. **INTRA-001D locked real-data study** — Build manifest from approved source, run development/validation, run holdout only if validation gates pass, commit safe reproducibility artifacts, record outcome.
-5. **Separate Gary-approved production PR** — Only if all gates pass and methodology remains valid; must define exact scorer, score, weight, threshold, ranking, screener, UI, alert, and rollback changes.
+1. **INTRA-001B data and manifest infrastructure** — Approved provider integration, date-ranged five-minute snapshot, point-in-time universe manifest, session normalization, data-quality validation.
+2. **INTRA-001C research detector and execution engine** — Session VWAP, opening-drive state, pullback/reclaim detector, intraday execution model, current-score and simple-VWAP baselines, synthetic tests only.
+3. **INTRA-001D locked real-data study** — Build manifest from approved source, run development/validation, run holdout only if validation gates pass, commit safe reproducibility artifacts, record outcome.
+4. **Separate Gary-approved production PR** — Only if all gates pass and methodology remains valid; must define exact scorer, score, weight, threshold, ranking, screener, UI, alert, and rollback changes.
 
 **Recommended next pull request order:**
-1. `devin/short-001-data-ingestion` (proposed; research-only malformed-row exclusion using PATTERN-001 precedent) — drop hard-invalid OHLC rows and rerun the unchanged snapshot/evaluation.
-2. `devin/short-001-real-data-study` (reattempt) — approved predefined, manifest-locked Schwab real-data study after a clean manifest is produced.
-3. `devin/intra-001-b-intraday-data` (INTRA-001B data and manifest infrastructure) after `SHORT-001` is unblocked.
-3. `devin/intra-001-c-research-engine` (INTRA-001C research detector and execution engine).
-4. `devin/intra-001-d-locked-study` (INTRA-001D locked real-data study).
+1. `devin/intra-001-b-intraday-data` (INTRA-001B data and manifest infrastructure).
+2. `devin/intra-001-c-research-engine` (INTRA-001C research detector and execution engine).
+3. `devin/intra-001-d-locked-study` (INTRA-001D locked real-data study).
 

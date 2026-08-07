@@ -2,11 +2,11 @@
 
 ## 1. Decision summary
 
-`SHORT-001` is **Inconclusive (Outcome I)** after the v2 ingestion remediation and rerun.
+`SHORT-001` is **Completed — Not supported** after the v2 ingestion remediation and rerun.
 
 The engineering and research infrastructure is complete and verified: point-in-time market-regime and relative-strength context, candidate policies, development/validation candidate selection, untouched holdout event-study gate, and paired executable-backtest gate all exist and work as designed.
 
-The locked v1 real-data attempt (PR #38) failed data ingestion with `23` hard-invalid OHLC rows across `19` symbols, so it was **Outcome E — Invalid study**. The v2 rerun used the locked `short-001-hard-invalid-row-exclusion-v2` ingestion policy to drop those `23` rows (`0.028%` of `82,035`) while preserving the complete 45-symbol panel and recording deterministic audit evidence. The unchanged evaluation then produced no candidate that passed the predefined development/validation criteria (`selected_policy: null`; `selection_reason: "no policy passed development and validation criteria"`).
+The locked v1 real-data attempt (PR #38) failed data ingestion with `23` hard-invalid OHLC rows across `19` symbols, so it was **Outcome E — Invalid study**. The v2 rerun used the locked `short-001-hard-invalid-row-exclusion-v2` ingestion policy to drop those `23` rows (`0.028%` of `82,035`) while preserving the complete 45-symbol panel and recording deterministic audit evidence. The unchanged evaluation then produced no candidate that passed the predefined development/validation criteria (`selected_policy: null`; `selection_reason: "no policy passed development and validation criteria"`). The v2 real-data study is therefore **Completed — Not supported**: the data were valid and the gate was applied as designed, but the evidence does not support promoting any of the candidate context policies.
 
 No production score, weight, threshold, rank, eligibility, alert, or screener behavior was changed. No context policy is exposed in production.
 
@@ -181,9 +181,9 @@ candidate_selection.json:   3b5f6580341e12a545a520f0c35d8a0b3e459f6bdf0cf7b373a1
 
 ## 9. Real-data evidence inventory
 
-A committed, manifest-locked SHORT-001 real-data v1 study now exists at `docs/research/artifacts/SHORT-001/2026-08-01-5ae8a420/` and is recorded in `docs/research/SHORT-001-SCHWAB-STUDY.md`. It contains the pre-registered context spec, per-symbol fetch audit, and a list of hard-invalid OHLCV rows. It does **not** contain a complete `manifest.lock.json`, `study.json`, event-study, paired-backtest, or candidate-selection output because the snapshot failed before a manifest could be generated. The data-ingestion failure is documented as **Outcome E — Invalid study**.
+A committed, manifest-locked SHORT-001 real-data v2 study now exists at `docs/research/artifacts/SHORT-001/2026-08-07-e5b64b56/` and is recorded in `docs/research/SHORT-001-SCHWAB-STUDY-V2.md`. It contains the pre-registered context spec, the locked ingestion policy, the manifest-locked CSV panel, the snapshot audit, and the full evaluation. The v1 attempt at `docs/research/artifacts/SHORT-001/2026-08-01-5ae8a420/` is preserved as **Outcome E — Invalid study**.
 
-The only complete end-to-end SHORT-001 outcome with all gate artifacts remains the deterministic synthetic run.
+The only complete end-to-end SHORT-001 outcome with all gate artifacts is the v2 real-data study.
 
 ## 10. What the evidence supports
 
@@ -214,9 +214,9 @@ A synthetic one-ticker run cannot validate or reject the market hypothesis. It v
 
 ## 13. Final disposition
 
-`SHORT-001` status: **Blocked** (data invalid; v1 real-data attempt failed ingestion).
+`SHORT-001` status: **Completed — Not supported** (v2 real-data ingestion and evaluation finished; no candidate policy passed the predefined development/validation gates; `production_promotion_eligible=false`).
 
-Reason: research infrastructure and methodology are implemented and verified, and a locked real-data v1 study was attempted. The Schwab daily OHLCV data for the locked 45-symbol panel contained 23 hard-invalid OHLC rows across 19 symbols (0.028% of 82,035 rows), preventing snapshot generation. The v1 attempt is invalid (Outcome E), but this is not the end of SHORT-001. A separate, approved research-only data-ingestion remediation PR is required to drop hard-invalid rows using the PATTERN-001 precedent, preserve the locked panel, and rerun the unchanged snapshot/evaluation before the hypothesis can be evaluated.
+Reason: research infrastructure and methodology are implemented and verified. The v1 real-data attempt failed ingestion, so the locked `short-001-hard-invalid-row-exclusion-v2` ingestion policy was applied, dropped 23 malformed OHLC rows while preserving the complete 45-symbol panel, and the unchanged evaluation was rerun. No candidate policy (`off`, `market_rs`, `market_sector_rs`) passed the predefined development/validation criteria. The production short-term scorer remains unchanged and `ShortContextPolicy.OFF` remains the default.
 
 ## 14. Requirements to reopen
 
@@ -228,8 +228,7 @@ A new real-data study must:
 4. Include at least ten holdout tickers (stocks and/or ETFs) and enough events to meet `minimum_holdout_events`.
 5. Run the existing `snapshot` and `evaluate` CLI commands without modifying gate logic.
 6. Preserve an untouched holdout not used for candidate selection.
-7. Produce all required artifacts: `study.json`, `context_events.csv`, `candidate_comparison.csv`, `candidate_selection.json`, `holdout_evaluation.csv`, `paired_backtests.csv`, `ticker_comparison.csv`, `data_quality.csv`, `manifest.lock.json`, `context_spec.lock.json`, `report.md`.
-8. Pass the dual-gate promotion criteria if promotion is to be considered.
+7. Produce all required artifacts: `context_events.csv`, `candidate_comparison.csv`, `candidate_selection.json`, `holdout_evaluation.csv`, `paired_backtests.csv`, `ticker_comparison.csv`, `data_quality.csv`, `manifest.lock.json`, `context_spec.lock.json`, `report.md`.
 
 ## 15. Production-promotion requirements
 
@@ -273,7 +272,7 @@ On 2026-08-07 the locked `short-001-hard-invalid-row-exclusion-v2` ingestion pol
 - The unchanged evaluation was run with `--warmup-bars 60 --horizons 1,3,5 --slippage-bps 0.0,5.0,10.0 --commission-bps 0.0`.
 - Result: `selected_policy: null`; `selection_reason: "no policy passed development and validation criteria"`.
 - No holdout event-study or paired-backtest evaluation of a candidate was performed because no candidate was selected.
-- Outcome: **Inconclusive (Outcome I)**. The data-quality remediation succeeded, but the predefined candidate-selection gate did not identify a policy worth evaluating on holdout.
+- Outcome: **Completed — Not supported**. The data-quality remediation succeeded and the candidate-selection gate ran as designed, but no policy passed the predefined development/validation criteria, so no holdout evaluation was performed and no production promotion is warranted.
 - Safe artifact bundle: `docs/research/artifacts/SHORT-001/2026-08-07-e5b64b56/`.
 - Full report: `docs/research/SHORT-001-SCHWAB-STUDY-V2.md`.
 

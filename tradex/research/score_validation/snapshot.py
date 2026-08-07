@@ -205,27 +205,14 @@ def create_snapshot(
             write_snapshot_data_quality(cleaning_results, tmp_dir / "snapshot_data_quality.csv")
             write_invalid_rows(invalid_rows_df, tmp_dir / "invalid_rows.csv")
 
-            audit = build_snapshot_audit(
-                cleaning_results,
-                ingestion_policy,
-                resolved_provider,
-                start,
-                end,
-                ingestion_spec_sha256 or "",
-                context_spec_sha256,
-            )
-            audit = update_audit_reason_summary(audit, invalid_rows_df)
-            write_snapshot_audit(audit, tmp_dir / "snapshot_audit.json")
-            write_snapshot_checksums(tmp_dir, tmp_dir / "snapshot_checksums.sha256")
-
-            # Manifest was written before the audit; update the audit with the
-            # manifest and sidecar hashes now that all files exist.
+            # Compute the manifest and sidecar hashes before writing the audit.
+            # snapshot_audit.json is intentionally excluded from sidecar_sha256
+            # because a JSON document cannot contain its own final hash.
             manifest_sha = _sha256_file(manifest_path)
             sidecar_sha256 = {
                 name: _sha256_file(tmp_dir / name)
                 for name in [
                     "ingestion_spec.lock.json",
-                    "snapshot_audit.json",
                     "snapshot_data_quality.csv",
                     "invalid_rows.csv",
                 ]

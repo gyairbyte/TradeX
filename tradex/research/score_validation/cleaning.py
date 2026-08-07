@@ -20,9 +20,23 @@ from typing import Any
 
 import pandas as pd
 
+from tradex.backtest.validation import BacktestDataError, canonicalize_bars
 from tradex.research.score_validation.models import ValidationError
 
 _CANONICAL_COLUMNS = ["open", "high", "low", "close", "volume"]
+
+# Machine-readable contract for the locked SHORT-001 v2 ingestion policy.
+# The implementation applies this exact fixed set of hard row invariants.
+_SUPPORTED_HARD_ROW_INVARIANTS = (
+    "required OHLCV value is missing, non-numeric, NaN, or non-finite",
+    "open, high, low, or close is nonpositive",
+    "volume is negative",
+    "high is below low",
+    "high is below open",
+    "high is below close",
+    "low is above open",
+    "low is above close",
+)
 
 # Fixed reason-code order from the SHORT-001 v2 ingestion policy.
 _REASON_CODES = [
@@ -96,6 +110,12 @@ class IngestionPolicy:
         if self.minimum_pre_development_warmup_bars < 0:
             raise ValidationError(f"minimum_pre_development_warmup_bars must be nonnegative; got {self.minimum_pre_development_warmup_bars}")
         object.__setattr__(self, "hard_row_invariants", tuple(self.hard_row_invariants))
+        if self.hard_row_invariants != _SUPPORTED_HARD_ROW_INVARIANTS:
+            raise ValidationError(
+                f"hard_row_invariants must match the supported contract; got {list(self.hard_row_invariants)}"
+            )
+        if not self.require_all_symbols:
+            raise ValidationError("require_all_symbols must be true for this policy")
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -356,8 +376,15 @@ def clean_ticker(
             f"policy requires {policy.minimum_pre_development_warmup_bars}"
         )
 
+    # Apply the final canonical validator once and compute the cleaned CSV hash
+    # from exactly the DataFrame that will be serialized to the manifest CSV.
+    try:
+        canonical_cleaned_df = canonicalize_bars(cleaned_df)
+    except BacktestDataError as exc:
+        raise ValidationError(f"{ticker}: {exc}") from exc
+
     # Final cleaned CSV hash (must match the manifest entry written later).
-    cleaned_hash = _hash_dataframe(cleaned_df)
+    cleaned_hash = _hash_dataframe(canonical_cleaned_df)
 
     result = TickerIngestionResult(
         ticker=ticker,
@@ -368,14 +395,14 @@ def clean_ticker(
         invalid_row_rate_pct=round(invalid_rate_pct, 6),
         raw_start=raw_df.index[0].to_pydatetime(),
         raw_end=raw_df.index[-1].to_pydatetime(),
-        cleaned_start=cleaned_df.index[0].to_pydatetime(),
-        cleaned_end=cleaned_df.index[-1].to_pydatetime(),
+        cleaned_start=canonical_cleaned_df.index[0].to_pydatetime(),
+        cleaned_end=canonical_cleaned_df.index[-1].to_pydatetime(),
         max_consecutive_invalid_rows=max_consecutive,
         raw_normalized_sha256=raw_hash,
         cleaned_csv_sha256=cleaned_hash,
         warnings=warnings,
     )
-    return cleaned_df, removed_df, result
+    return canonical_cleaned_df, removed_df, result
 
 
 def _row_invalidity(numeric_df: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
@@ -619,7 +646,12 @@ def write_snapshot_checksums(snapshot_dir: str | Path, output_path: str | Path) 
     output_path.write_text("\n".join(lines) + "\n")
 
 
-def verify_snapshot_sidecars(snapshot_dir: str | Path, expected_ingestion_sha256: str) -> dict[str, Any]:
+def verify_snapshot_sidecars(
+    snapshot_dir: str | Path,
+    expected_ingestion_sha256: str,
+    expected_context_sha256: str | None = None,
+    expected_manifest_path: str | Path | None = None,
+) -> dict[str, Any]:
     """Verify that a snapshot directory contains a locked, matching ingestion spec and checksums.
 
     Returns the parsed snapshot audit dictionary.
@@ -639,6 +671,18 @@ def verify_snapshot_sidecars(snapshot_dir: str | Path, expected_ingestion_sha256
         raise ValidationError(f"Snapshot missing snapshot_audit.json: {snapshot_dir}")
     audit = json.loads(audit_path.read_text())
 
+    # Every snapshot with an ingestion policy must carry these sidecars.
+    mandatory_sidecars = [
+        "ingestion_spec.lock.json",
+        "snapshot_audit.json",
+        "snapshot_data_quality.csv",
+        "snapshot_checksums.sha256",
+        "invalid_rows.csv",
+    ]
+    missing_sidecars = [name for name in mandatory_sidecars if not (snapshot_dir / name).is_file()]
+    if missing_sidecars:
+        raise ValidationError(f"Snapshot missing mandatory sidecars: {missing_sidecars}")
+
     checksums_path = snapshot_dir / "snapshot_checksums.sha256"
     if not checksums_path.is_file():
         raise ValidationError(f"Snapshot missing snapshot_checksums.sha256: {snapshot_dir}")
@@ -652,6 +696,45 @@ def verify_snapshot_sidecars(snapshot_dir: str | Path, expected_ingestion_sha256
         actual = _sha256_file(file_path)
         if actual != expected:
             raise ValidationError(f"Checksum mismatch for {filename}: expected {expected}, got {actual}")
+
+    # Authoritative audit-field checks.
+    manifest_path = Path(expected_manifest_path) if expected_manifest_path else snapshot_dir / "manifest.json"
+    if not manifest_path.is_file():
+        raise ValidationError(f"Manifest not found at {manifest_path}")
+    actual_manifest_sha = _sha256_file(manifest_path)
+    if audit.get("manifest_sha256") != actual_manifest_sha:
+        raise ValidationError(
+            f"Audit manifest_sha256 mismatch: expected {actual_manifest_sha}, got {audit.get('manifest_sha256')}"
+        )
+
+    if expected_context_sha256 is not None and audit.get("context_spec_sha256") != expected_context_sha256:
+        raise ValidationError(
+            f"Audit context_spec_sha256 mismatch: expected {expected_context_sha256}, got {audit.get('context_spec_sha256')}"
+        )
+
+    if audit.get("provider") != "schwab":
+        raise ValidationError(f"Audit provider must be 'schwab'; got {audit.get('provider')!r}")
+
+    if audit.get("threshold_result") != "passed":
+        raise ValidationError(f"Audit threshold_result must be 'passed'; got {audit.get('threshold_result')!r}")
+
+    if audit.get("retrieved_symbol_count") != audit.get("required_symbol_count"):
+        raise ValidationError(
+            f"Audit retrieved_symbol_count {audit.get('retrieved_symbol_count')} "
+            f"!= required_symbol_count {audit.get('required_symbol_count')}"
+        )
+
+    sidecar_sha256 = audit.get("sidecar_sha256") or {}
+    if "snapshot_audit.json" in sidecar_sha256:
+        raise ValidationError("snapshot_audit.json must not be recorded in audit sidecar_sha256")
+
+    for name, expected in sidecar_sha256.items():
+        file_path = snapshot_dir / name
+        if not file_path.is_file():
+            raise ValidationError(f"Audit sidecar missing on disk: {name}")
+        actual = _sha256_file(file_path)
+        if actual != expected:
+            raise ValidationError(f"Audit sidecar hash mismatch for {name}: expected {expected}, got {actual}")
 
     return audit
 

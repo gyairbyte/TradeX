@@ -1,8 +1,9 @@
 # Short-Term Market Context Study
 
 ## 1. Study identity
-- Study: SHORT-001 Schwab real-data panel v1
-- Manifest: /tmp/short-001-v2-snapshot/manifest.json
+- Study: SHORT-001 Schwab real-data panel v2
+- Artifact: docs/research/artifacts/SHORT-001/2026-08-07-e5b64b56
+- Manifest: docs/research/artifacts/SHORT-001/2026-08-07-e5b64b56/snapshot/manifest.json
 - Generated: 2026-08-07T01:13:42.300026+00:00
 
 ## 2. Dataset provenance

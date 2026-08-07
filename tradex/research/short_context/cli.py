@@ -152,7 +152,14 @@ def _handle_evaluate(args: argparse.Namespace) -> int:
         _, spec_bytes = load_ingestion_policy(args.ingestion_spec)
         expected_ingestion_sha = hashlib.sha256(spec_bytes).hexdigest()
         snapshot_dir = Path(args.manifest).expanduser().resolve().parent
-        verify_snapshot_sidecars(snapshot_dir, expected_ingestion_sha)
+        _, spec_bytes = load_spec(args.context_spec)
+        expected_context_sha = hashlib.sha256(spec_bytes).hexdigest()
+        verify_snapshot_sidecars(
+            snapshot_dir,
+            expected_ingestion_sha,
+            expected_context_sha256=expected_context_sha,
+            expected_manifest_path=args.manifest,
+        )
         kwargs["ingestion_spec"] = args.ingestion_spec
     run_study(**kwargs)
     return 0

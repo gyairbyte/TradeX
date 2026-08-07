@@ -1,6 +1,8 @@
 """Tests for deterministic malformed-row exclusion in research snapshots."""
 from __future__ import annotations
 
+import hashlib
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 
@@ -8,6 +10,7 @@ import pandas as pd
 import pytest
 
 from tradex.research.score_validation.cleaning import (
+    _SUPPORTED_HARD_ROW_INVARIANTS,
     IngestionPolicy,
     clean_ticker,
     load_ingestion_policy,
@@ -38,7 +41,7 @@ def _policy(required_symbol_count: int = 1) -> IngestionPolicy:
         max_consecutive_invalid_rows_per_ticker=1,
         allow_first_or_last_row_removal=False,
         minimum_pre_development_warmup_bars=5,
-        hard_row_invariants=["open, high, low, or close is nonpositive"],
+        hard_row_invariants=list(_SUPPORTED_HARD_ROW_INVARIANTS),
     )
 
 
@@ -263,3 +266,31 @@ def test_locked_ingestion_spec_loads_from_docs():
     assert not policy.repair_values
     assert policy.required_symbol_count == 45
     assert len(raw_bytes) > 0
+
+
+def test_ingestion_policy_rejects_unsupported_hard_row_invariants():
+    invariants = list(_SUPPORTED_HARD_ROW_INVARIANTS)
+    invariants[0] = "unsupported invariant"
+    with pytest.raises(ValidationError, match="supported contract"):
+        replace(_policy(), hard_row_invariants=invariants)
+
+
+def test_ingestion_policy_rejects_require_all_symbols_false():
+    with pytest.raises(ValidationError, match="require_all_symbols must be true"):
+        replace(_policy(), require_all_symbols=False)
+
+
+def test_cleaned_csv_sha256_is_canonical_serialization_hash(tmp_path: Path):
+    """cleaned_csv_sha256 must match the bytes of the canonical CSV that is written to the manifest."""
+    df = _make_history()
+    df["volume"] = df["volume"].astype(int)
+    df.loc[df.index[10], "high"] = 98.0
+    canonical_df, _removed, result = clean_ticker(
+        df, "AAPL", _policy(), date(2020, 1, 1), date(2020, 4, 30), date(2020, 2, 1), "schwab"
+    )
+    assert canonical_df["volume"].dtype == float
+
+    csv_path = tmp_path / "canonical.csv"
+    canonical_df.to_csv(csv_path, index=True, date_format="%Y-%m-%dT%H:%M:%S%z")
+    expected_hash = hashlib.sha256(csv_path.read_bytes()).hexdigest()
+    assert result.cleaned_csv_sha256 == expected_hash

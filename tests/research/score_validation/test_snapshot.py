@@ -1,6 +1,8 @@
 """Snapshot command tests with mocked provider access."""
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -9,6 +11,10 @@ from unittest.mock import patch
 import pandas as pd
 import pytest
 
+from tradex.research.score_validation.cleaning import (
+    _SUPPORTED_HARD_ROW_INVARIANTS,
+    verify_snapshot_sidecars,
+)
 from tradex.research.score_validation.manifest import load_manifest
 from tradex.research.score_validation.models import ValidationError
 from tradex.research.score_validation.snapshot import create_snapshot
@@ -228,7 +234,7 @@ def _ingestion_policy(symbol_count: int = 2) -> Any:
         max_consecutive_invalid_rows_per_ticker=1,
         allow_first_or_last_row_removal=False,
         minimum_pre_development_warmup_bars=5,
-        hard_row_invariants=[],
+        hard_row_invariants=list(_SUPPORTED_HARD_ROW_INVARIANTS),
     )
 
 
@@ -307,3 +313,95 @@ def test_snapshot_ingestion_rejects_excessive_invalid_rows(tmp_path: Path):
                 provider="schwab",
                 ingestion_spec=policy,
             )
+
+
+def _create_valid_snapshot(tmp_path: Path, with_invalid: bool = True):
+    """Return a snapshot directory and ingestion spec sha for a valid 2-ticker snapshot."""
+    out = tmp_path / "dataset"
+    history = _make_history(start="2019-12-01", periods=150)
+
+    def side_effect(ticker, start, end, provider=None, *, settings=None):
+        if ticker == "AAPL" and with_invalid:
+            df = history.copy()
+            df["volume"] = df["volume"].astype(int)
+            df.loc[df.index[10], "high"] = 98.0
+            return df
+        return history
+
+    policy = _ingestion_policy(2)
+    with patch("tradex.research.score_validation.snapshot.fetch_daily_history", side_effect=side_effect):
+        manifest_path = create_snapshot(
+            ["AAPL", "MSFT"],
+            start=date(2019, 12, 1),
+            end=date(2020, 4, 30),
+            output_dir=out,
+            splits=_default_splits(),
+            provider="schwab",
+            ingestion_spec=policy,
+            context_spec_sha256="abcd1234" * 8,
+        )
+    spec_bytes = policy.to_json().encode("utf-8")
+    return out, manifest_path, hashlib.sha256(spec_bytes).hexdigest()
+
+
+def test_cleaned_csv_sha256_matches_manifest_hashes(tmp_path: Path):
+    """The data-quality audit must agree with the manifest CSV hashes."""
+    out, manifest_path, _ = _create_valid_snapshot(tmp_path)
+    manifest = load_manifest(manifest_path)
+    quality = pd.read_csv(out / "snapshot_data_quality.csv")
+    for entry in manifest.entries:
+        row = quality[quality["ticker"] == entry.ticker].iloc[0]
+        assert row["cleaned_csv_sha256"] == entry.sha256
+
+
+def test_snapshot_audit_excludes_self_hash_and_hashes_match(tmp_path: Path):
+    """snapshot_audit.json must not contain its own hash; all sidecar hashes must be verifiable."""
+    out, _manifest_path, _ = _create_valid_snapshot(tmp_path)
+    audit = json.loads((out / "snapshot_audit.json").read_text())
+    assert "snapshot_audit.json" not in audit["sidecar_sha256"]
+
+    for name, expected in audit["sidecar_sha256"].items():
+        file_path = out / name
+        assert file_path.is_file()
+        actual = hashlib.sha256(file_path.read_bytes()).hexdigest()
+        assert actual == expected
+
+
+def test_verify_snapshot_sidecars_valid(tmp_path: Path):
+    _out, manifest_path, ingestion_sha = _create_valid_snapshot(tmp_path)
+    snapshot_dir = manifest_path.parent
+    audit = verify_snapshot_sidecars(
+        snapshot_dir,
+        ingestion_sha,
+        expected_context_sha256="abcd1234" * 8,
+        expected_manifest_path=manifest_path,
+    )
+    assert audit["provider"] == "schwab"
+    assert audit["threshold_result"] == "passed"
+    assert audit["retrieved_symbol_count"] == audit["required_symbol_count"]
+
+
+def test_verify_snapshot_sidecars_rejects_tampered_sidecar(tmp_path: Path):
+    _out, manifest_path, ingestion_sha = _create_valid_snapshot(tmp_path)
+    snapshot_dir = manifest_path.parent
+    (snapshot_dir / "invalid_rows.csv").write_text("tampered")
+    with pytest.raises(ValidationError, match="Checksum mismatch|sidecar hash mismatch"):
+        verify_snapshot_sidecars(
+            snapshot_dir,
+            ingestion_sha,
+            expected_context_sha256="abcd1234" * 8,
+            expected_manifest_path=manifest_path,
+        )
+
+
+def test_verify_snapshot_sidecars_rejects_missing_mandatory_sidecar(tmp_path: Path):
+    _out, manifest_path, ingestion_sha = _create_valid_snapshot(tmp_path)
+    snapshot_dir = manifest_path.parent
+    (snapshot_dir / "invalid_rows.csv").unlink()
+    with pytest.raises(ValidationError, match="missing mandatory sidecars|missing sidecar"):
+        verify_snapshot_sidecars(
+            snapshot_dir,
+            ingestion_sha,
+            expected_context_sha256="abcd1234" * 8,
+            expected_manifest_path=manifest_path,
+        )

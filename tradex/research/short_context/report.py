@@ -70,7 +70,12 @@ def run_study(
         _, ingestion_bytes = load_ingestion_policy(ingestion_spec)
         ingestion_spec_sha256 = hashlib.sha256(ingestion_bytes).hexdigest()
         snapshot_dir = Path(manifest_path).expanduser().resolve().parent
-        snapshot_audit = verify_snapshot_sidecars(snapshot_dir, ingestion_spec_sha256)
+        snapshot_audit = verify_snapshot_sidecars(
+            snapshot_dir,
+            ingestion_spec_sha256,
+            expected_context_sha256=spec_sha,
+            expected_manifest_path=manifest_path,
+        )
         snapshot_audit_sha256 = sha256_file(snapshot_dir / "snapshot_audit.json")
 
     events, quality_rows = generate_context_events(manifest_path, spec, config)
@@ -98,7 +103,6 @@ def run_study(
 
     report_md = _render_report(
         spec=spec,
-        manifest_path=manifest_path,
         manifest_sha=manifest_sha,
         spec_sha=spec_sha,
         weight_snapshot=weight_snapshot,
@@ -367,7 +371,6 @@ def _comparison_metrics_to_dict(m: PolicySplitMetrics) -> dict[str, Any]:
 
 def _render_report(
     spec: ShortContextSpec,
-    manifest_path: Any,
     manifest_sha: str | None,
     spec_sha: str,
     weight_snapshot: dict[str, Any],
@@ -383,12 +386,21 @@ def _render_report(
     snapshot_audit: dict[str, Any] | None = None,
 ) -> str:
     """Build the Markdown report."""
+    # The report is part of the safe artifact bundle; use relative paths and
+    # a v2 label when the locked ingestion policy was applied to the v1 spec.
+    if ingestion_spec_sha256 is not None and spec.study_name.endswith(" v1"):
+        study_label = f"{spec.study_name[:-3]} v2"
+    elif ingestion_spec_sha256 is not None:
+        study_label = f"{spec.study_name} (v2)"
+    else:
+        study_label = spec.study_name
+    manifest_label = "snapshot/manifest.json" if ingestion_spec_sha256 is not None else "manifest.json"
     lines: list[str] = []
     lines.append("# Short-Term Market Context Study")
     lines.append("")
     lines.append("## 1. Study identity")
-    lines.append(f"- Study: {spec.study_name}")
-    lines.append(f"- Manifest: {manifest_path}")
+    lines.append(f"- Study: {study_label}")
+    lines.append(f"- Manifest: {manifest_label}")
     lines.append(f"- Generated: {generated_at.isoformat()}")
     lines.append("")
 
