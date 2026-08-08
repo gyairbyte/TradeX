@@ -1,0 +1,23 @@
+capability,evidence_class,note,provider,supported
+pit_date_support_for_all_probe_dates,live_evidence,"Successful PIT dates: []; required: ['2022-01-31', '2023-07-31', '2024-05-31', '2025-11-30']",massive,False
+active_state_complete,live_evidence,Active observations: 0; complete: False,massive,False
+inactive_or_delisted_state_complete,live_evidence,Inactive/delisted observations: 0; complete: False,massive,False
+pagination_exhausted_to_terminal,live_evidence,At least one snapshot did not reach terminal pagination.,massive,False
+no_pagination_cycles_or_repeated_cursors,live_evidence,"No repeated cursor, cycle, or unexpected next_url detected.",massive,True
+exact_historical_date_semantics,live_evidence,Distinct historical date semantics not proven.,massive,False
+common_stock_classification,live_evidence,Common-stock mapping present: True,massive,True
+etf_classification,live_evidence,ETF mapping present: True,massive,True
+warrant_exclusion,live_evidence,Warrant category present and ineligible: True,massive,True
+right_exclusion,live_evidence,Right category present and ineligible: True,massive,True
+unit_exclusion,live_evidence,Unit category present and ineligible: True,massive,True
+preferred_stock_exclusion,live_evidence,Preferred-stock category present and ineligible: True,massive,True
+otc_exclusion,live_evidence,OTC taxonomy: False; OTC exchange markers: False; primary exchange field: primary_exchange,massive,False
+primary_listing_provenance,live_evidence,No primary exchange field or values.,massive,False
+symbol_presence_and_determinism,live_evidence,Blank ticker count total: 0; canonical rows present: False,massive,False
+lifecycle_evidence,live_evidence,"Lifecycle fields present: ('delisting_date', 'listing_date'); listing field: None; delisting field: delisted_utc",massive,True
+duplicate_symbol_behavior_and_resolution,live_evidence,Duplicate symbols: 0; unresolved: 0,massive,True
+repeatability,live_evidence,Repeat mismatch or missing.,massive,False
+hashability,live_evidence,All successful snapshots have SHA-256 hashes.,massive,True
+no_present_day_reconstruction,live_evidence,Present-day reconstruction not disproven.,massive,False
+historical_2022_entitlement_under_current_plan,live_evidence,2022 PIT date request failed or returned no rows.,massive,False
+feasible_for_all_48_monthly_pit_snapshots,documented_capability,48-month feasibility not established.,massive,False

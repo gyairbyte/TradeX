@@ -1,0 +1,9 @@
+canonical_ticker_count,full_snapshot_sha256,pagination_complete,pit_date,row_count,state
+1000,,False,2022-01-31,1000,active
+1000,,False,2022-01-31,1000,inactive
+1000,,False,2023-07-31,1000,active
+1000,,False,2023-07-31,1000,inactive
+1000,,False,2024-05-31,1000,active
+1000,,False,2024-05-31,1000,inactive
+1000,,False,2025-11-30,1000,active
+999,,False,2025-11-30,1000,inactive
