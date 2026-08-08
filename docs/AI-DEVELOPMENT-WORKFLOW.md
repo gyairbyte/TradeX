@@ -223,6 +223,22 @@ Every Devin assignment should include:
 * Branch and pull-request requirements
 * Required completion report
 
+For assignments that require evaluating or selecting a data provider, the assignment must also identify:
+
+* **Preferred provider and history** — the ideal source and date range.
+* **Minimum usable provider/data contract** — the least source that satisfies the study's data requirements without a genuine blocker.
+* **Accepted limitations** — imperfections that reduce confidence but do not invalidate the study, and how they will be documented.
+* **Genuine hard blockers** — conditions that make the data unusable (e.g., lookahead, missing required inputs, material timestamp errors, silent substitution, nonreproducible evidence).
+* **Provider-search budget** — named candidates, retry limits, expected API calls, and expected runtime.
+* **Fallback path** — what to do if the preferred source is unavailable.
+* **Stop condition** — when to halt provider exploration and proceed with the best available data.
+
+### Anti-rabbit-hole rule
+
+> Once the minimum usable data contract is satisfied, implementation proceeds. Additional provider probes require Gary's explicit approval and must address a calculation-invalidating blocker, not merely improve an already usable dataset.
+
+Provider investigations must be bounded in advance by named candidates, retry limits, expected calls/runtime, and a clear stop condition. Do not continue provider-hunting to optimize an already usable dataset without explicit approval.
+
 Before coding, Devin must:
 
 1. Read the relevant repository instructions.

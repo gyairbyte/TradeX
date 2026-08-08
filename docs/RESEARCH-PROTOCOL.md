@@ -298,6 +298,67 @@ Prevent reproducible studies from silently loading local user settings, saved we
 
 Research outputs should be JSON-safe and schema-stable when consumed programmatically.
 
+## Best-Available Data and Documented Limitations
+
+TradeX research should use the best reliable data reasonably available. Lack of an ideal provider, a perfect historical universe, or a multi-year history is a **documented limitation**, not automatically a blocker to building, evaluating, or considering a decision-support feature for production.
+
+### Preferred versus minimum usable data
+
+* **Preferred data** is the ideal provider, history length, and point-in-time coverage that would maximize confidence.
+* **Minimum usable data** is the dataset that allows the study to run without a genuine validity blocker.
+* **One usable year is an acceptable minimum starting point** for building, evaluating, and considering a TradeX decision-support feature for production.
+* **Calendar length alone is not a hard blocker.**
+
+### Documented limitation versus genuine blocker
+
+A **documented limitation** reduces confidence and must be surfaced in the report, tracker, and any promotion discussion. A **genuine blocker** makes the study invalid.
+
+Examples of genuine blockers include:
+
+* Lookahead or data leakage
+* Required signal inputs that cannot be reconstructed
+* Material timestamp or execution invalidity
+* Corrupt or incomplete inputs that make the calculation materially wrong
+* Holding or outcome horizons that cannot complete within the available data
+* Silent provider substitution
+* Nonreproducible or unauditable evidence
+
+Imperfect survivorship, delisting, universe, classification, or regime coverage may reduce confidence without automatically invalidating the research.
+
+### Evidence-confidence labels
+
+Research outputs should use one of the following evidence labels to communicate confidence. These labels describe the strength of the evidence; they do **not** automatically authorize production promotion.
+
+* `strong_evidence`
+* `moderate_evidence`
+* `limited_but_usable_evidence`
+* `invalid_evidence`
+
+### Forward monitoring
+
+When research proceeds with limited or best-available data, record:
+
+* The known limitations
+* The monitoring that would detect whether the limitation matters
+* The conditions under which the study must be revisited or invalidated
+
+### Bounded provider exploration
+
+Provider searches must be bounded in advance by:
+
+* Named candidates
+* Retry limits
+* Expected API calls and runtime
+* A clear stop condition
+
+Once the minimum usable data contract is satisfied, implementation proceeds. Additional provider probes require explicit approval and must address a **calculation-invalidating blocker**, not merely improve an already usable dataset.
+
+### Data-sufficiency locks
+
+A shorter history does **not** automatically reduce existing study-specific sample minimums or performance gates. Any change to sample minimums, validation gates, holdout gates, costs, thresholds, or other success criteria must be **preregistered before validation or holdout results are viewed**.
+
+A controlled production decision-support rollout may be considered with limited evidence only through a separate, explicitly approved production PR that documents the limitations and forward-monitoring plan.
+
 ## Valid Outcomes
 
 A study may conclude:

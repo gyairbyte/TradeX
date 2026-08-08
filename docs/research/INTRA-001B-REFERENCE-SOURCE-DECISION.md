@@ -1,6 +1,8 @@
 # INTRA-001B Reference Provider Decision
 
-**Formal v2 disposition:** `invalid` / not decision-grade. The v2 pre-registration, safe artifact bundle, and provider first-page evidence at `docs/research/artifacts/INTRA-001B-REFERENCE/2026-08-07-222404/` are preserved as an audit record. Massive/Polygon is **not** yet locked as the authoritative reference provider. A bounded v3 proposal is in preparation.
+> **Superseded:** This v2 decision is a historical audit record. `INTRA-001B-REFERENCE-V4` later completed a bounded full-pagination probe, and `INTRA-001-data-sufficiency-amendment-v3` now accepts Massive/Polygon as the `best_available_reference_input` with conservative exclusions. See `docs/research/INTRA-001B-REFERENCE-V4.md` and `docs/research/INTRA-001-DATA-SUFFICIENCY-AMENDMENT-V3.md` for the current methodology.
+
+**Formal v2 disposition:** `invalid` / not decision-grade. The v2 pre-registration, safe artifact bundle, and provider first-page evidence at `docs/research/artifacts/INTRA-001B-REFERENCE/2026-08-07-222404/` are preserved as an audit record. Massive/Polygon is **not** yet locked as the authoritative reference provider at the v2 stage. A bounded v3/v4 probe was later executed and is documented in `docs/research/INTRA-001B-REFERENCE-V4.md`; `INTRA-001-data-sufficiency-amendment-v3` now governs prospective dataset construction.
 
 ## Why v2 is not decision-grade
 
@@ -40,8 +42,8 @@ A bounded `INTRA-001B-REFERENCE-V3` proposal is in `docs/research/INTRA-001B-REF
 
 ## Amendment status
 
-- `docs/research/specs/INTRA-001-data-contract-amendment-v2.json` remains the active amendment but its status returns to `approved_mixed_model_reference_provider_pending` until a valid v3 reference-provider decision.
-- `reference_provider` is not locked to `massive` until v3 passes.
+- `docs/research/specs/INTRA-001-data-contract-amendment-v2.json` is preserved as a historical audit record; its status at the time of this v2 decision was `approved_mixed_model_reference_provider_pending`.
+- `INTRA-001-data-sufficiency-amendment-v3` (`docs/research/specs/INTRA-001-data-sufficiency-amendment-v3.json`) now supersedes amendment v2 for prospective `INTRA-001` dataset construction.
 
 ## What does not change
 
