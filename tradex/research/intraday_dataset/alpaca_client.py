@@ -81,7 +81,11 @@ class DatasetAlpacaClient:
         self.market_data_host = market_data_host.rstrip("/")
         self.request_delay_seconds = request_delay_seconds
         self.max_retries = max_retries
-        self.request_func = request_func or requests.get
+        if request_func:
+            self.request_func = request_func
+        else:
+            self._session = requests.Session()
+            self.request_func = self._session.get
 
     def _get(
         self,
