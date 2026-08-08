@@ -486,8 +486,8 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Reference probe v4 outcome:** `unsupported` — Massive/Polygon completed full pagination, taxonomy, and repeatability, but failed the mandatory `otc_exclusion` and `duplicate_symbol_behavior_and_resolution` gates
 - **INTRA-001B branch:** `devin/intra-001b-one-year-snapshot`
 - **INTRA-001B pre-registration / 1Day amendment commit:** `60e46e25b38e9e7ef9316bf49bb0a51cf092121c`
-- **INTRA-001B live run head:** (recorded in safe artifact `decision.json`)
-- **INTRA-001B safe artifacts:** `docs/research/artifacts/INTRA-001B-DATASET-V1/2026-08-08-200544/`
+- **INTRA-001B live run head:** `ee4b7b897f3768f6fa6608c2fdba28384b9a5d91`
+- **INTRA-001B safe artifacts:** `docs/research/artifacts/INTRA-001B-DATASET-V1/2026-08-08-200945/`
 - **INTRA-001B dataset disposition:** `valid` — 6 of 756 symbols rejected for data quality (0.79%), within the 5% threshold; no provider/provenance/pagination/silent-substitution failures
 - **INTRA-001B monthly stock counts:** 50 selected stocks per month, 12 months
 - **INTRA-001B fixed ETF stratum:** 13 ETFs per month
