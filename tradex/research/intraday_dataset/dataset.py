@@ -478,7 +478,7 @@ def run_build_universe(
 
     client = DatasetAlpacaClient(api_key, secret_key, market_data_host=market_data_host)
 
-    # Run ranking-timeframe parity probe once.
+    # Determine ranking timeframe and, if enabled, run a parity/sensitivity probe.
     parity_cfg = plan.liquidity_ranking.get("ranking_timeframe_parity_probe", {})
     ranking_timeframe = plan.liquidity_ranking.get("ranking_timeframe", "1D")
     parity_passed = False
@@ -500,8 +500,16 @@ def run_build_universe(
             logger.warning("%s parity failed: %s; falling back to %s for ranking", plan.liquidity_ranking.get("ranking_timeframe", "1D"), parity_message, ranking_timeframe)
         elif parity_passed:
             logger.info("%s parity passed: %s", plan.liquidity_ranking.get("ranking_timeframe", "1D"), parity_message)
+    else:
+        # 1Day ranking is used under an approved amendment; no intraday parity probe is required.
+        parity_passed = ranking_timeframe == "1Day"
+        parity_message = "1Day ranking per approved amendment; 1Day volume is a total-liquidity proxy and is not equivalent to regular-session-only volume"
 
-    state_data = {"ranking_timeframe": ranking_timeframe, "ranking_parity_passed": parity_passed, "ranking_parity_message": parity_message}
+    state_data = {
+        "ranking_timeframe": ranking_timeframe,
+        "ranking_parity_passed": parity_passed,
+        "ranking_parity_message": parity_message,
+    }
     _write_json(out / "ranking_timeframe.json", state_data)
 
     completed = set(state.universe_built_for_months)
@@ -544,7 +552,7 @@ def run_build_universe(
 
         liquidity_results: dict[str, dict[str, float | None]] = {}
         batch_size = int(plan.ranking_download_efficiency.get("multi_symbol_batch_size", 400))
-        if ranking_timeframe != "1D":
+        if ranking_timeframe not in ("1D", "1Day"):
             # Intraday responses are larger; keep per-call payload manageable.
             # 30Min has only 13 bars/session, so a 300-symbol batch stays well
             # under Alpaca's ~4k symbol URL ceiling and is still one page.
@@ -552,7 +560,8 @@ def run_build_universe(
             batch_size = min(batch_size, cap)
         for i in range(0, len(tickers), batch_size):
             batch = tickers[i:i + batch_size]
-            if ranking_timeframe == "1D":
+            if ranking_timeframe in ("1D", "1Day"):
+                # 1Day bars are already one row per session; do not aggregate from intraday bars.
                 dfs = _daily_bars_for_ranking(client, batch, prior_sessions, asof=pit_date)
             else:
                 # Fetch coarser intraday bars (e.g. 30Min) and aggregate to daily for ranking.
