@@ -83,6 +83,27 @@ def _make_5min(symbol: str, sessions: list[pd.Timestamp], close: float, volume: 
     return df.set_index("datetime").sort_index()
 
 
+def _make_30min(symbol: str, sessions: list[pd.Timestamp], close: float, volume: float) -> pd.DataFrame:
+    grid = pd.date_range("09:30", "15:30", freq="30min", tz="America/New_York")
+    rows = []
+    for i, s in enumerate(sessions):
+        base = close * (1 + i * 0.001)
+        for t in grid:
+            bar_ts = pd.Timestamp(s.date()) + pd.Timedelta(hours=t.hour, minutes=t.minute)
+            bar_ts = bar_ts.tz_localize("America/New_York").tz_convert("UTC")
+            rows.append({
+                "datetime": bar_ts,
+                "open": base,
+                "high": base * 1.005,
+                "low": base * 0.995,
+                "close": base,
+                "volume": volume / 13,
+            })
+    df = pd.DataFrame(rows)
+    df["datetime"] = pd.to_datetime(df["datetime"], utc=True)
+    return df.set_index("datetime").sort_index()
+
+
 class FakeAlpacaClient:
     """Returns deterministic bars without network calls."""
 
@@ -98,6 +119,8 @@ class FakeAlpacaClient:
         for sym in symbols:
             if timeframe == "1Day":
                 dfs[sym.upper()] = _make_daily(sym, sessions, self.close, self.volume)
+            elif timeframe == "30Min":
+                dfs[sym.upper()] = _make_30min(sym, sessions, self.close, self.volume)
             else:
                 dfs[sym.upper()] = _make_5min(sym, sessions, self.close, self.volume)
         return dfs, {

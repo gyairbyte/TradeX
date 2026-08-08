@@ -304,65 +304,60 @@ def _ranking_timeframe_parity(
     start: str,
     end: str,
     tolerance_pct: float,
+    timeframe: str = "30Min",
+    reference_timeframe: str = "5Min",
 ) -> tuple[bool, str]:
-    """Compare 1D close/volume to aggregated 5Min regular-session close/volume."""
+    """Compare ``timeframe`` regular-session close/volume to ``reference_timeframe`` aggregated to daily."""
     start_ts = pd.Timestamp(start, tz="America/New_York")
     end_ts = pd.Timestamp(end, tz="America/New_York")
     start_utc = start_ts.tz_convert("UTC")
     end_utc = end_ts.tz_convert("UTC")
 
-    dfs_1d, meta_1d = client.get_bars(
+    dfs_tf, meta_tf = client.get_bars(
         sample_symbols,
         start_utc,
         end_utc,
         feed="sip",
-        timeframe="1Day",
+        timeframe=timeframe,
         adjustment="raw",
         sort="asc",
     )
-    dfs_5m, meta_5m = client.get_bars(
+    dfs_ref, meta_ref = client.get_bars(
         sample_symbols,
         start_utc,
         end_utc,
         feed="sip",
-        timeframe="5Min",
+        timeframe=reference_timeframe,
         adjustment="raw",
         sort="asc",
     )
-    if not meta_1d["pagination_complete"] or not meta_5m["pagination_complete"]:
+    if not meta_tf["pagination_complete"] or not meta_ref["pagination_complete"]:
         return False, "parity probe pagination incomplete"
 
-    grid_minutes = {(t.hour, t.minute) for t in _regular_session_grid()}
+    daily_tf = _aggregate_to_daily(dfs_tf, calendar)
+    daily_ref = _aggregate_to_daily(dfs_ref, calendar)
     mismatches = []
     for sym in sample_symbols:
-        df1 = dfs_1d.get(sym.upper())
-        df5 = dfs_5m.get(sym.upper())
-        if df1 is None or df1.empty or df5 is None or df5.empty:
-            mismatches.append(f"{sym}: missing data")
+        dtf = daily_tf.get(sym.upper())
+        dref = daily_ref.get(sym.upper())
+        if dtf is None or dtf.empty or dref is None or dref.empty:
+            mismatches.append(f"{sym}: missing aggregated daily data")
             continue
-        df5 = df5.tz_convert("America/New_York")
-        for ts in df1.index:
-            session_date = ts.tz_convert("America/New_York").date()
+        dtf = dtf.tz_convert("America/New_York")
+        dref = dref.tz_convert("America/New_York")
+        for ts in dref.index:
+            session_date = ts.date()
             if not calendar.is_session(session_date):
                 continue
-            close = calendar.schedule.loc[pd.Timestamp(session_date), "close"].tz_convert("America/New_York")
-            if not _is_regular_close(close):
+            if ts not in dtf.index:
+                mismatches.append(f"{sym} {session_date}: missing {timeframe} daily bar")
                 continue
-            minutes = pd.Series(df5.index.hour * 60 + df5.index.minute, index=df5.index)
-            session5 = df5[
-                (df5.index.date == session_date)
-                & minutes.between(570, 955, inclusive="both")
-            ]
-            session5 = session5[session5.index.to_series().apply(lambda d: (d.hour, d.minute) in grid_minutes)]
-            if session5.empty:
-                mismatches.append(f"{sym} {session_date}: no 5min bars")
-                continue
-            close_1d = float(df1.loc[ts, "close"])
-            close_5m = float(session5["close"].iloc[-1])
-            vol_1d = float(df1.loc[ts, "volume"])
-            vol_5m = float(session5["volume"].sum())
-            close_diff = abs(close_1d - close_5m) / max(close_5m, 1e-9) * 100
-            vol_diff = abs(vol_1d - vol_5m) / max(vol_5m, 1e-9) * 100
+            close_tf = float(dtf.loc[ts, "close"])
+            close_ref = float(dref.loc[ts, "close"])
+            vol_tf = float(dtf.loc[ts, "volume"])
+            vol_ref = float(dref.loc[ts, "volume"])
+            close_diff = abs(close_tf - close_ref) / max(close_ref, 1e-9) * 100
+            vol_diff = abs(vol_tf - vol_ref) / max(vol_ref, 1e-9) * 100
             if close_diff > tolerance_pct or vol_diff > tolerance_pct:
                 mismatches.append(
                     f"{sym} {session_date}: close_diff={close_diff:.4f}% vol_diff={vol_diff:.4f}%"
@@ -395,6 +390,27 @@ def _daily_bars_for_ranking(
     return dfs
 
 
+def _intraday_bars(
+    client: DatasetAlpacaClient,
+    symbols: list[str],
+    start_utc: datetime,
+    end_utc: datetime,
+    asof: str,
+    timeframe: str = "5Min",
+) -> tuple[dict[str, pd.DataFrame], dict[str, Any]]:
+    """Fetch Alpaca SIP intraday bars for the given timeframe."""
+    return client.get_bars(
+        symbols,
+        start_utc,
+        end_utc,
+        feed="sip",
+        timeframe=timeframe,
+        adjustment="raw",
+        sort="asc",
+        asof=asof,
+    )
+
+
 def _five_min_bars(
     client: DatasetAlpacaClient,
     symbols: list[str],
@@ -402,16 +418,8 @@ def _five_min_bars(
     end_utc: datetime,
     asof: str,
 ) -> tuple[dict[str, pd.DataFrame], dict[str, Any]]:
-    return client.get_bars(
-        symbols,
-        start_utc,
-        end_utc,
-        feed="sip",
-        timeframe="5Min",
-        adjustment="raw",
-        sort="asc",
-        asof=asof,
-    )
+    """Fetch Alpaca SIP 5Min bars (used for the final OHLCV dataset)."""
+    return _intraday_bars(client, symbols, start_utc, end_utc, asof, timeframe="5Min")
 
 
 def _compute_liquidity(
@@ -483,12 +491,15 @@ def run_build_universe(
             parity_cfg["sample_window"]["start"],
             parity_cfg["sample_window"]["end"],
             parity_cfg.get("tolerance_pct", 0.1),
+            timeframe=ranking_timeframe,
+            reference_timeframe=parity_cfg.get("reference_timeframe", "5Min"),
         )
-        if not parity_passed and plan.liquidity_ranking.get("fallback_on_failure"):
-            ranking_timeframe = plan.liquidity_ranking.get("fallback_on_failure", "5Min")
-            logger.warning("1D parity failed: %s; falling back to %s for ranking", parity_message, ranking_timeframe)
-        else:
-            logger.info("1D parity passed: %s", parity_message)
+        fallback = parity_cfg.get("fallback_on_failure") or plan.liquidity_ranking.get("fallback_on_failure")
+        if not parity_passed and fallback:
+            ranking_timeframe = fallback
+            logger.warning("%s parity failed: %s; falling back to %s for ranking", plan.liquidity_ranking.get("ranking_timeframe", "1D"), parity_message, ranking_timeframe)
+        elif parity_passed:
+            logger.info("%s parity passed: %s", plan.liquidity_ranking.get("ranking_timeframe", "1D"), parity_message)
 
     state_data = {"ranking_timeframe": ranking_timeframe, "ranking_parity_passed": parity_passed, "ranking_parity_message": parity_message}
     _write_json(out / "ranking_timeframe.json", state_data)
@@ -533,18 +544,23 @@ def run_build_universe(
 
         liquidity_results: dict[str, dict[str, float | None]] = {}
         batch_size = int(plan.ranking_download_efficiency.get("multi_symbol_batch_size", 400))
+        if ranking_timeframe != "1D":
+            # Intraday responses are larger; keep per-call payload manageable.
+            # 30Min is lighter than 5Min, so it can use a slightly larger batch.
+            cap = 100 if ranking_timeframe == "30Min" else 50
+            batch_size = min(batch_size, cap)
         for i in range(0, len(tickers), batch_size):
             batch = tickers[i:i + batch_size]
             if ranking_timeframe == "1D":
                 dfs = _daily_bars_for_ranking(client, batch, prior_sessions, asof=pit_date)
             else:
-                # Fallback 5Min ranking
+                # Fetch coarser intraday bars (e.g. 30Min) and aggregate to daily for ranking.
                 start_utc = prior_sessions[0].tz_convert("UTC") if prior_sessions else None
                 end_utc = (prior_sessions[-1] + pd.Timedelta(hours=24)).tz_convert("UTC") if prior_sessions else None
                 if start_utc is None:
                     dfs = {}
                 else:
-                    dfs, _ = _five_min_bars(client, batch, start_utc, end_utc, asof=pit_date)
+                    dfs, _ = _intraday_bars(client, batch, start_utc, end_utc, asof=pit_date, timeframe=ranking_timeframe)
                     dfs = _aggregate_to_daily(dfs, calendar)
             results = _compute_liquidity(dfs, calendar, prior_sessions)
             liquidity_results.update(results)
@@ -665,18 +681,23 @@ def run_build_universe(
     save_state(output_dir, state)
 
 
+def _is_regular_session_minute(ts: pd.Timestamp) -> bool:
+    """True for a bar whose start time is within the XNYS 09:30-16:00 window."""
+    minute = ts.hour * 60 + ts.minute
+    return 570 <= minute < 960
+
+
 def _aggregate_to_daily(dfs: dict[str, pd.DataFrame], calendar: xcals.ExchangeCalendar) -> dict[str, pd.DataFrame]:
-    """Aggregate 5Min regular-session bars to daily close/volume for liquidity ranking fallback."""
-    grid_minutes = {(t.hour, t.minute) for t in _regular_session_grid()}
+    """Aggregate intraday regular-session bars to daily close/volume for liquidity ranking."""
     daily: dict[str, pd.DataFrame] = {}
     for sym, df in dfs.items():
         if df is None or df.empty:
             daily[sym] = pd.DataFrame(columns=_OHLCV_COLUMNS)
             continue
         df = df.tz_convert("America/New_York")
-        # Select only regular-session grid bars and drop early-close sessions.
+        # Select only bars starting within the regular session and drop early-close sessions.
         on_grid = pd.Series(
-            [(d.hour, d.minute) in grid_minutes for d in df.index],
+            [_is_regular_session_minute(d) for d in df.index],
             index=df.index,
         )
         df = df[on_grid]

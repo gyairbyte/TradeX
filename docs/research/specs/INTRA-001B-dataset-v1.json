@@ -99,7 +99,7 @@
     "prior_20_sessions_median_dollar_volume_min_usd": 50000000.0,
     "prior_sessions_count": 20,
     "information_cutoff": "before the first XNYS regular session of the effective month",
-    "ranking_timeframe": "1D",
+    "ranking_timeframe": "30Min",
     "ranking_feed": "sip",
     "ranking_adjustment": "raw",
     "ranking_timeframe_parity_probe": {
@@ -110,6 +110,7 @@
         "end": "2024-06-28"
       },
       "parity_fields": ["regular_session_final_close", "sum_regular_session_volume"],
+      "reference_timeframe": "5Min",
       "tolerance_pct": 0.1,
       "fallback_on_failure": "5Min"
     },
