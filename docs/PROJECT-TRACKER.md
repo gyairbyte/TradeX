@@ -475,7 +475,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Redesign intraday scorer around a specific setup
 - **Category:** Intraday trading
 - **Priority:** Medium
-- **Status:** In progress — mixed-provider data contract approved; reference provider **pending** (`INTRA-001B-REFERENCE-V3` corrected and marked invalid; bounded `INTRA-001B-REFERENCE-V4` is pre-registered with a recent 1–2 year entitlement-valid dataset)
+- **Status:** In progress — mixed-provider data contract approved; reference provider **blocked under current free entitlement** (`INTRA-001B-REFERENCE-V4` completed and marked `unsupported`; no V5 without explicit approval)
 - **Research specification:** `docs/research/INTRA-001-SPEC.md`
 - **Locked machine-readable strategy spec:** `docs/research/specs/INTRA-001-v1.json` (SHA-256 unchanged)
 - **Locked mixed-provider amendment:** `docs/research/specs/INTRA-001-data-contract-amendment-v2.json` and `docs/research/INTRA-001-MIXED-PROVIDER-DATA-CONTRACT.md`
@@ -486,8 +486,12 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Reference probe v3 outcome:** `invalid` / not decision-grade — the V3 Massive client rejected every provider-supplied `next_url` because it did not decode the base64url `cursor` parameter before validating `date`/`active`/`market`, so complete pagination could not be proven
 - **Reference probe v4 proposal:** `docs/research/INTRA-001B-REFERENCE-V4-PROPOSAL.md`
 - **Reference probe v4 spec:** `docs/research/specs/INTRA-001B-reference-probe-v4.json`
+- **Reference probe v4 pre-registration / live run head:** `27b111c0c9cc0adb21ef82dd9d2f0699e55e297f`
+- **Reference probe v4 safe artifacts:** `docs/research/artifacts/INTRA-001B-REFERENCE-V4/2026-08-08-062051/`
+- **Reference probe v4 decision:** `docs/research/INTRA-001B-REFERENCE-V4.md`
 - **Reference probe v4 original dataset:** `2025-08-01` through `2026-07-31` (12 monthly PIT snapshots)
-- **Reference probe v4 fallback dataset:** `2024-09-01` through `2026-07-31` (23 monthly PIT snapshots, entitlement-valid; used only for historical-depth / entitlement limitations)
+- **Reference probe v4 fallback dataset:** `2024-09-01` through `2026-07-31` (23 monthly PIT snapshots, entitlement-valid; not used because the failure was structural, not historical-depth / entitlement)
+- **Reference probe v4 outcome:** `unsupported` — Massive/Polygon completed full pagination, taxonomy, and repeatability, but failed the mandatory `otc_exclusion` and `duplicate_symbol_behavior_and_resolution` gates
 - **Reference provider role:** point-in-time monthly active listings, common-stock vs ETF classification, warrant/right/unit/preferred-stock/OTC exclusion, primary listing/exchange provenance, deterministic symbol identity, duplicate handling, lifecycle evidence, inactive/delisted status, reproducible historical snapshots, complete pagination
 - **OHLCV provider role:** Alpaca SIP (already locked by `INTRA-001B-ALPACA-V2`)
 - **No paid upgrade, no composite reference stack, no silent fallback:** confirmed
@@ -495,7 +499,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **v2 pre-registration commit:** `d5b2ba5d14151fd007c89cc5fc9c6ae7fec6f299`
 - **v2 live run head:** `d5b2ba5d14151fd007c89cc5fc9c6ae7fec6f299`
 - **Problem statement:** The intraday score is a loose bundle of indicators without VWAP, time-of-day, or liquidity context.
-- **Recommended action:** Approve and execute the bounded `INTRA-001B-REFERENCE-V4` proposal (fix Massive cursor validation and disposition reporting, then rerun). After a valid reference-provider decision, the next phase is `devin/intra-001b-intraday-snapshot` (the `INTRA-001B` data and manifest infrastructure phase per `INTRA-001-v1.json`), not `INTRA-001C`.
+- **Recommended action:** The bounded `INTRA-001B-REFERENCE-V4` probe has been executed. Reference provider work is blocked under the current free entitlement. The next step requires an explicit Gary decision: either approve a paid Massive upgrade / different entitlement, approve a different reference provider, or accept the limitation and pause `INTRA-001` snapshot construction. `INTRA-001C` snapshot construction and production promotion remain blocked.
 - **Reason:** A generic score is not actionable for intraday trading. The concrete open-drive VWAP pullback setup and its two baselines are pre-registered before any code changes.
 - **Dependencies:** VAL-001
 - **Files likely affected:** `docs/research/INTRA-001-SPEC.md`, `docs/research/specs/INTRA-001-v1.json`, `docs/PROJECT-TRACKER.md` (this specification PR changes no `tradex/` or test code)

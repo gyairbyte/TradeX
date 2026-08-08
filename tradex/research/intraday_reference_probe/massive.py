@@ -425,6 +425,7 @@ class MassiveReferenceClient:
         pit_dates: tuple[str, ...],
         states: tuple[bool, ...] = (True, False),
         *,
+        probe_version: int = 3,
         safety_max_pages: int | None = None,
     ) -> ProviderCandidateResult:
         observations: list[PITObservation] = []
@@ -541,7 +542,7 @@ class MassiveReferenceClient:
         return ProviderCandidateResult(
             provider="massive",
             target_entitlement="current Gary entitlement",
-            probe_version=3,
+            probe_version=probe_version,
             observations=tuple(observations),
             capability_rows=(),
             pagination_pages=tuple(pagination_pages),

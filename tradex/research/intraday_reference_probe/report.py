@@ -1,4 +1,4 @@
-"""Safe artifact bundle and report writer for INTRA-001B-REFERENCE-V3."""
+"""Safe artifact bundle and report writer for INTRA-001B-REFERENCE probes."""
 from __future__ import annotations
 
 import csv
@@ -367,8 +367,9 @@ def _default_report(
     candidate: ProviderCandidateResult | None,
     spec: ReferenceProbeSpec,
 ) -> str:
+    version = decision.probe_version or 3
     lines = [
-        "# INTRA-001B-REFERENCE-V3 Reference Provider Probe Report",
+        f"# INTRA-001B-REFERENCE-V{version} Reference Provider Probe Report",
         "",
         f"- **Task ID:** {decision.task_id}",
         f"- **Probe version:** {decision.probe_version}",

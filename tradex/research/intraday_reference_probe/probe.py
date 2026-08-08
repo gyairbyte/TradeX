@@ -629,7 +629,7 @@ def _probe_provider(
 
         client = AlphaVantageReferenceClient(key)
         states = tuple(spec.alpha_vantage.get("states", ["active", "delisted"]))
-        result = client.probe_provider(pit_dates, states)
+        result = client.probe_provider(pit_dates, states, probe_version=spec.probe_version)
         result = ProviderCandidateResult(
             **{**result.__dict__, "capability_rows": _capability_matrix_v3(result, spec)}
         )
@@ -702,7 +702,7 @@ def _probe_provider(
         pagination_cfg = spec.massive.get("pagination", {})
         safety_max_pages = pagination_cfg.get("safety_max_pages", 10000)
         client = MassiveReferenceClient(key)
-        result = client.probe_provider(pit_dates, (True, False), safety_max_pages=safety_max_pages)
+        result = client.probe_provider(pit_dates, (True, False), probe_version=spec.probe_version, safety_max_pages=safety_max_pages)
         result = ProviderCandidateResult(
             **{**result.__dict__, "capability_rows": _capability_matrix_v3(result, spec)}
         )

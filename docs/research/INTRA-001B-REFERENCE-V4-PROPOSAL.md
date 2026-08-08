@@ -2,6 +2,11 @@
 
 ## Status
 
+**Executed.** The V4 live probe completed and the formal disposition is
+`unsupported`. See `docs/research/INTRA-001B-REFERENCE-V4.md` and the safe
+artifact bundle at `docs/research/artifacts/INTRA-001B-REFERENCE-V4/2026-08-08-062051/`.
+No V5 probe is begun without explicit approval.
+
 `INTRA-001B-REFERENCE-V3` has been executed and its safe artifact bundle is now
 marked **invalid as a decision-grade capability assessment**. The V3 bundle
 records `live_run_head=03e61700dbf2fd072fc36bb63764dc7fa3876281` (the exact SHA

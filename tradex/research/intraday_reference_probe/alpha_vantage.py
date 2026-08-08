@@ -223,6 +223,8 @@ class AlphaVantageReferenceClient:
         self,
         pit_dates: tuple[str, ...],
         states: tuple[str, ...] = ("active", "delisted"),
+        *,
+        probe_version: int = 3,
     ) -> ProviderCandidateResult:
         """Probe all PIT dates and states, including a single repeatability check per date/state."""
         observations: list[PITObservation] = []
@@ -289,7 +291,7 @@ class AlphaVantageReferenceClient:
         return ProviderCandidateResult(
             provider="alpha_vantage",
             target_entitlement="free LISTING_STATUS",
-            probe_version=3,
+            probe_version=probe_version,
             observations=tuple(observations),
             capability_rows=(),
             security_type_counts=security_type_counts,
