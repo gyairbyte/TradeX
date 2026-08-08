@@ -7,6 +7,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+def _repo_relative(path: str | Path) -> str:
+    """Return a relative repo-root path; fall back to a normalized absolute path if outside the repo."""
+    p = Path(path).expanduser().resolve()
+    try:
+        return str(p.relative_to(_REPO_ROOT))
+    except ValueError:
+        return str(p)
+
 
 @dataclass(frozen=True)
 class DatasetPlan:
@@ -45,17 +56,17 @@ class DatasetPlan:
             "dataset_id": self.dataset_id,
             "study_parent": self.study_parent,
             "original_strategy_spec": {
-                "path": str(self.original_strategy_spec_path),
+                "path": _repo_relative(self.original_strategy_spec_path),
                 "sha256": self.original_strategy_spec_sha256,
             },
             "data_sufficiency_amendment": {
-                "path": str(self.amendment_v3_path),
+                "path": _repo_relative(self.amendment_v3_path),
                 "sha256": self.amendment_v3_sha256,
             },
             "reference_probe_evidence": {
-                "v4_decision_document": str(self.v4_decision_doc_path),
+                "v4_decision_document": _repo_relative(self.v4_decision_doc_path),
                 "v4_decision_document_sha256": self.v4_decision_doc_sha256,
-                "alpaca_v2_probe_spec": str(self.alpaca_v2_probe_spec_path),
+                "alpaca_v2_probe_spec": _repo_relative(self.alpaca_v2_probe_spec_path),
                 "alpaca_v2_probe_spec_sha256": self.alpaca_v2_probe_spec_sha256,
             },
             "provider_roles": self.provider_roles,

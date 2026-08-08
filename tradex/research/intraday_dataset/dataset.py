@@ -26,7 +26,7 @@ from .models import (
     UniverseMember,
     now_utc_iso,
 )
-from .spec import DatasetPlan
+from .spec import DatasetPlan, _repo_relative
 
 logger = logging.getLogger(__name__)
 
@@ -1169,12 +1169,12 @@ def _write_safe_artifacts(
 
     # Strategy and amendment references
     _write_json(out / "strategy_spec_reference.json", {
-        "path": str(plan.original_strategy_spec_path),
+        "path": _repo_relative(plan.original_strategy_spec_path),
         "sha256": plan.original_strategy_spec_sha256,
     })
     files["strategy_spec_reference.json"] = _sha256_file(out / "strategy_spec_reference.json")
     _write_json(out / "amendment_reference.json", {
-        "path": str(plan.amendment_v3_path),
+        "path": _repo_relative(plan.amendment_v3_path),
         "sha256": plan.amendment_v3_sha256,
     })
     files["amendment_reference.json"] = _sha256_file(out / "amendment_reference.json")
@@ -1284,9 +1284,9 @@ def _generate_report(plan: DatasetPlan, decision: DatasetDecision, output_dir: P
         "",
         "## Locked data contract",
         "",
-        f"- Original strategy spec: `{plan.original_strategy_spec_path}` (SHA-256 `{plan.original_strategy_spec_sha256}`)",
-        f"- Amendment v3: `{plan.amendment_v3_path}` (SHA-256 `{plan.amendment_v3_sha256}`)",
-        f"- V4 decision doc: `{plan.v4_decision_doc_path}` (SHA-256 `{plan.v4_decision_doc_sha256}`)",
+        f"- Original strategy spec: `{_repo_relative(plan.original_strategy_spec_path)}` (SHA-256 `{plan.original_strategy_spec_sha256}`)",
+        f"- Amendment v3: `{_repo_relative(plan.amendment_v3_path)}` (SHA-256 `{plan.amendment_v3_sha256}`)",
+        f"- V4 decision doc: `{_repo_relative(plan.v4_decision_doc_path)}` (SHA-256 `{plan.v4_decision_doc_sha256}`)",
         f"- OHLCV provider: `{plan.provider_roles.get('authoritative_ohlcv_provider')}` feed `{plan.provider_roles.get('authoritative_ohlcv_feed')}`",
         f"- Reference provider: `{plan.provider_roles.get('reference_provider')}` with `{plan.provider_roles.get('reference_provider_status')}`",
         f"- Dataset: `{plan.dataset.get('dataset_start')}` through `{plan.dataset.get('dataset_end')}`",
