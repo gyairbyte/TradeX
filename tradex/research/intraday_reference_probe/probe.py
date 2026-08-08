@@ -368,7 +368,57 @@ def _capability_matrix_v3(
         f"Estimated {result.estimated_http_calls_48_months} HTTP calls and {result.estimated_collection_time_48_months_seconds}s collection time for 48 monthly snapshots." if feasible else "48-month feasibility not established.",
     )
 
+    # 23. feasible_for_all_probe_monthly_pit_snapshots
+    probe_months = len(spec.probe_dates)
+    if result.estimated_http_calls_48_months is not None and result.estimated_collection_time_48_months_seconds is not None and probe_months > 0:
+        estimated_calls_probe = int(result.estimated_http_calls_48_months * probe_months / 48)
+        estimated_seconds_probe = result.estimated_collection_time_48_months_seconds * probe_months / 48
+    else:
+        estimated_calls_probe = None
+        estimated_seconds_probe = None
+    feasible_probe = (
+        pagination_complete
+        and no_anomaly
+        and estimated_calls_probe is not None
+        and estimated_calls_probe > 0
+        and estimated_seconds_probe is not None
+        and estimated_seconds_probe < 86_400
+    )
+    _add(
+        "feasible_for_all_probe_monthly_pit_snapshots",
+        feasible_probe,
+        "documented_capability",
+        f"Estimated {estimated_calls_probe} HTTP calls and {estimated_seconds_probe:,.1f}s collection time for {probe_months} probe monthly snapshots." if feasible_probe else f"Feasibility for {probe_months} probe monthly snapshots not established.",
+    )
+
     return tuple(rows)
+
+
+def _provider_flags_from_dispositions(
+    dispositions: tuple[ProviderDisposition, ...],
+    selected_provider: str | None = None,
+) -> dict[str, Any]:
+    """Return alpha_vantage/massive probe_executed/disposition flags."""
+    flags: dict[str, Any] = {
+        "alpha_vantage_credentials_available": False,
+        "alpha_vantage_probe_executed": False,
+        "alpha_vantage_disposition": "not_attempted",
+        "massive_credentials_available": False,
+        "massive_probe_executed": False,
+        "massive_disposition": "not_attempted",
+    }
+    for d in dispositions:
+        if d.provider == "alpha_vantage":
+            flags["alpha_vantage_probe_executed"] = d.probe_executed
+            flags["alpha_vantage_disposition"] = d.disposition
+        elif d.provider == "massive":
+            flags["massive_probe_executed"] = d.probe_executed
+            flags["massive_disposition"] = d.disposition
+    if selected_provider == "alpha_vantage":
+        flags["alpha_vantage_disposition"] = "supported"
+    elif selected_provider == "massive":
+        flags["massive_disposition"] = "supported"
+    return flags
 
 
 def _evaluate_candidate(
@@ -381,6 +431,7 @@ def _evaluate_candidate(
     v1_pre_registration_commit: str,
     v2_pre_registration_commit: str,
     v3_pre_registration_commit: str,
+    v4_pre_registration_commit: str | None = None,
     strategy_spec_sha256: str,
     alpaca_v2_decision_sha256: str,
     probe_spec_sha256: str,
@@ -395,27 +446,35 @@ def _evaluate_candidate(
     by_name = {r.capability: r for r in rows}
 
     gate_map = {name: by_name.get(name, CapabilityEvidence("", name, False, "unproven", "")).supported for name in spec.mandatory_gates}
-    all_pass = bool(spec.mandatory_gates) and all(gate_map.get(name, False) for name in spec.mandatory_gates)
+    not_required = set(spec.not_required_gates)
+    required = [name for name in spec.mandatory_gates if name not in not_required]
+    all_pass = bool(required) and all(gate_map.get(name, False) for name in required)
 
-    failed = [name for name in spec.mandatory_gates if not gate_map.get(name, False)]
+    failed = [name for name in required if not gate_map.get(name, False)]
+    not_required_failed = [name for name in not_required if not gate_map.get(name, False)]
     if all_pass:
         outcome = "supported"
         approved = True
-        reason = "All mandatory reference-provider gates passed."
-    elif any(gate_map.get(name, False) for name in spec.mandatory_gates):
+        reason = "All required reference-provider gates passed."
+    elif any(gate_map.get(name, False) for name in required):
         outcome = "partial_only"
         approved = False
-        reason = f"Some mandatory gates passed; failed: {sorted(failed)}"
+        reason = f"Some required gates passed; failed: {sorted(failed)}"
     else:
         outcome = "no_currently_free_complete_reference_source"
         approved = False
-        reason = f"No mandatory gates passed; failed: {sorted(failed)}"
+        reason = f"No required gates passed; failed: {sorted(failed)}"
+
+    if all_pass and not_required_failed:
+        reason += f" (not required gates not passed: {sorted(not_required_failed)})"
 
     blockers: list[str] = []
     if failed:
-        blockers.append(f"Failed mandatory gates: {sorted(failed)}")
+        blockers.append(f"Failed required gates: {sorted(failed)}")
     if result.error:
         blockers.append(f"Provider errors: {result.error}")
+
+    limitations = [f"Gate {name} not required and did not pass" for name in sorted(not_required_failed)]
 
     reference_provider_role = spec.reference_provider_role or (
         "monthly point-in-time active listings",
@@ -443,6 +502,7 @@ def _evaluate_candidate(
         v1_pre_registration_commit=v1_pre_registration_commit,
         v2_pre_registration_commit=v2_pre_registration_commit,
         v3_pre_registration_commit=v3_pre_registration_commit,
+        v4_pre_registration_commit=v4_pre_registration_commit,
         strategy_spec_sha256=strategy_spec_sha256,
         alpaca_v2_decision_sha256=alpaca_v2_decision_sha256,
         probe_spec_sha256=probe_spec_sha256,
@@ -502,9 +562,11 @@ def _evaluate_candidate(
         no_present_day_reconstruction_gate=gate_map.get("no_present_day_reconstruction", False),
         historical_2022_entitlement_under_current_plan=gate_map.get("historical_2022_entitlement_under_current_plan", False),
         feasible_for_all_48_monthly_pit_snapshots=gate_map.get("feasible_for_all_48_monthly_pit_snapshots", False),
+        feasible_for_all_probe_monthly_pit_snapshots=gate_map.get("feasible_for_all_probe_monthly_pit_snapshots", False),
         all_mandatory_gates_passed=all_pass,
+        not_required_gates=spec.not_required_gates,
         blockers=tuple(blockers),
-        limitations=(),
+        limitations=tuple(limitations),
         recommended_next_assignment="devin/intra-001b-intraday-snapshot" if approved else "",
         candidate_dispositions=dispositions,
     )
@@ -523,6 +585,7 @@ def _probe_provider(
     v1_pre_registration_commit: str,
     v2_pre_registration_commit: str,
     v3_pre_registration_commit: str,
+    v4_pre_registration_commit: str | None,
     strategy_spec_sha256: str,
     alpaca_v2_decision_sha256: str,
     probe_spec_sha256: str,
@@ -551,6 +614,7 @@ def _probe_provider(
                 v1_pre_registration_commit,
                 v2_pre_registration_commit,
                 v3_pre_registration_commit,
+                v4_pre_registration_commit,
                 strategy_spec_sha256,
                 alpaca_v2_decision_sha256,
                 probe_spec_sha256,
@@ -590,6 +654,7 @@ def _probe_provider(
             v1_pre_registration_commit=v1_pre_registration_commit,
             v2_pre_registration_commit=v2_pre_registration_commit,
             v3_pre_registration_commit=v3_pre_registration_commit,
+            v4_pre_registration_commit=v4_pre_registration_commit,
             strategy_spec_sha256=strategy_spec_sha256,
             alpaca_v2_decision_sha256=alpaca_v2_decision_sha256,
             probe_spec_sha256=probe_spec_sha256,
@@ -621,6 +686,7 @@ def _probe_provider(
                 v1_pre_registration_commit,
                 v2_pre_registration_commit,
                 v3_pre_registration_commit,
+                v4_pre_registration_commit,
                 strategy_spec_sha256,
                 alpaca_v2_decision_sha256,
                 probe_spec_sha256,
@@ -663,6 +729,7 @@ def _probe_provider(
             v1_pre_registration_commit=v1_pre_registration_commit,
             v2_pre_registration_commit=v2_pre_registration_commit,
             v3_pre_registration_commit=v3_pre_registration_commit,
+            v4_pre_registration_commit=v4_pre_registration_commit,
             strategy_spec_sha256=strategy_spec_sha256,
             alpaca_v2_decision_sha256=alpaca_v2_decision_sha256,
             probe_spec_sha256=probe_spec_sha256,
@@ -685,6 +752,7 @@ def _empty_decision(
     v1_pre_registration_commit: str,
     v2_pre_registration_commit: str,
     v3_pre_registration_commit: str,
+    v4_pre_registration_commit: str | None,
     strategy_spec_sha256: str,
     alpaca_v2_decision_sha256: str,
     probe_spec_sha256: str,
@@ -695,6 +763,13 @@ def _empty_decision(
     dispositions: tuple[ProviderDisposition, ...],
     missing_provider: str,
 ) -> ReferenceProbeDecision:
+    provider_flags = _provider_flags_from_dispositions(dispositions)
+    if missing_provider == "alpha_vantage":
+        provider_flags["alpha_vantage_credentials_available"] = False
+        provider_flags["alpha_vantage_disposition"] = "missing_credentials"
+    elif missing_provider == "massive":
+        provider_flags["massive_credentials_available"] = False
+        provider_flags["massive_disposition"] = "missing_credentials"
     return ReferenceProbeDecision(
         probe_version=spec.probe_version,
         task_id=spec.task_id,
@@ -709,6 +784,7 @@ def _empty_decision(
         v1_pre_registration_commit=v1_pre_registration_commit,
         v2_pre_registration_commit=v2_pre_registration_commit,
         v3_pre_registration_commit=v3_pre_registration_commit,
+        v4_pre_registration_commit=v4_pre_registration_commit,
         strategy_spec_sha256=strategy_spec_sha256,
         alpaca_v2_decision_sha256=alpaca_v2_decision_sha256,
         probe_spec_sha256=probe_spec_sha256,
@@ -721,12 +797,9 @@ def _empty_decision(
         pit_dates=pit_dates,
         fallback_probe_dates=spec.fallback_probe_dates,
         candidate_dispositions=dispositions,
-        alpha_vantage_credentials_available=missing_provider == "alpha_vantage" and False,
-        alpha_vantage_probe_executed=False,
-        alpha_vantage_disposition="missing_credentials" if missing_provider == "alpha_vantage" else "not_attempted",
-        massive_credentials_available=missing_provider == "massive" and False,
-        massive_probe_executed=False,
-        massive_disposition="missing_credentials" if missing_provider == "massive" else "not_attempted",
+        not_required_gates=spec.not_required_gates,
+        feasible_for_all_probe_monthly_pit_snapshots=False,
+        **provider_flags,
         recommended_next_assignment="",
         blockers=(f"{missing_provider} not available",),
         reference_provider_role=spec.reference_provider_role,
@@ -765,10 +838,11 @@ def run_reference_probe(
     v1_pre_registration_commit: str,
     v2_pre_registration_commit: str,
     v3_pre_registration_commit: str,
+    v4_pre_registration_commit: str | None = None,
     probe_spec_sha256: str,
     starting_main_sha: str | None = None,
     branch: str | None = None,
-    final_head: str | None = None,
+    live_run_head: str | None = None,
     only_provider: str | None = None,
 ) -> tuple[ProviderCandidateResult | None, ReferenceProbeDecision]:
     """Run the locked candidate-evaluation order and return a decision.
@@ -776,17 +850,16 @@ def run_reference_probe(
     First try the original four-year reference dates. If no provider passes,
     attempt the approved two-year fallback dates (methodology amendment).
     """
-    if final_head is None:
-        final_head = _current_head()
     if branch is None:
         branch = _current_branch()
     if starting_main_sha is None:
         starting_main_sha = _current_head()
-    live_run_head = final_head
+    if live_run_head is None:
+        live_run_head = v4_pre_registration_commit or _current_head()
 
-    for commit in (v1_pre_registration_commit, v2_pre_registration_commit, v3_pre_registration_commit):
+    for commit in (v1_pre_registration_commit, v2_pre_registration_commit, v3_pre_registration_commit, v4_pre_registration_commit):
         if commit:
-            validate_pre_registration_commit(commit, final_head)
+            validate_pre_registration_commit(commit, live_run_head)
 
     original_sha = sha256_of_file(spec.original_strategy_spec_path)
     if original_sha != spec.expected_original_strategy_spec_sha256:
@@ -829,6 +902,7 @@ def run_reference_probe(
                 v1_pre_registration_commit=v1_pre_registration_commit,
                 v2_pre_registration_commit=v2_pre_registration_commit,
                 v3_pre_registration_commit=v3_pre_registration_commit,
+                v4_pre_registration_commit=v4_pre_registration_commit,
                 strategy_spec_sha256=strategy_spec_sha256,
                 alpaca_v2_decision_sha256=alpaca_v2_decision_sha256,
                 probe_spec_sha256=probe_spec_sha256,
@@ -847,20 +921,17 @@ def run_reference_probe(
                     **{**disposition.__dict__, "selected": True}
                 )
                 # Update decision with final dispositions and provider metadata
+                provider_flags = _provider_flags_from_dispositions(tuple(all_dispositions), selected_provider=result.provider)
+                provider_flags["alpha_vantage_credentials_available"] = settings.data.alpha_vantage_api_key is not None
+                provider_flags["massive_credentials_available"] = settings.data.massive_api_key is not None
                 decision = ReferenceProbeDecision(
                     **{
                         **decision.__dict__,
                         "provider": result.provider,
                         "selected_reference_provider": result.provider,
-                        "alpha_vantage_credentials_available": settings.data.alpha_vantage_api_key is not None,
-                        "alpha_vantage_probe_executed": result.provider == "alpha_vantage",
-                        "alpha_vantage_disposition": "supported" if result.provider == "alpha_vantage" else decision.alpha_vantage_disposition,
-                        "massive_credentials_available": settings.data.massive_api_key is not None,
-                        "massive_probe_executed": result.provider == "massive",
-                        "massive_disposition": "supported" if result.provider == "massive" else decision.massive_disposition,
                         "candidate_dispositions": tuple(all_dispositions),
-                        "final_pr_head": final_head,
                         "dataset_used": dataset_label,
+                        **provider_flags,
                     }
                 )
                 return result, decision
@@ -875,6 +946,9 @@ def run_reference_probe(
 
     # No provider passed any dataset.
     if last_decision is not None:
+        provider_flags = _provider_flags_from_dispositions(tuple(all_dispositions))
+        provider_flags["alpha_vantage_credentials_available"] = settings.data.alpha_vantage_api_key is not None
+        provider_flags["massive_credentials_available"] = settings.data.massive_api_key is not None
         final_decision = ReferenceProbeDecision(
             **{
                 **last_decision.__dict__,
@@ -883,13 +957,11 @@ def run_reference_probe(
                 "outcome": "no_currently_free_complete_reference_source",
                 "reason": f"No candidate satisfied all mandatory gates. {fallback_reason or ''}",
                 "candidate_dispositions": tuple(all_dispositions),
-                "alpha_vantage_credentials_available": settings.data.alpha_vantage_api_key is not None,
-                "massive_credentials_available": settings.data.massive_api_key is not None,
-                "final_pr_head": final_head,
                 "dataset_used": "none",
                 "fallback_evaluated": dataset_label == "fallback",
                 "fallback_activation_reason": fallback_reason,
                 "recommended_next_assignment": "gary-decision-intra-001-reference-data-cost",
+                **provider_flags,
             }
         )
         return last_result, final_decision
@@ -906,10 +978,10 @@ def run_reference_probe(
         starting_main_sha=starting_main_sha,
         branch=branch,
         live_run_head=live_run_head,
-        final_pr_head=final_head,
         v1_pre_registration_commit=v1_pre_registration_commit,
         v2_pre_registration_commit=v2_pre_registration_commit,
         v3_pre_registration_commit=v3_pre_registration_commit,
+        v4_pre_registration_commit=v4_pre_registration_commit,
         strategy_spec_sha256=strategy_spec_sha256,
         alpaca_v2_decision_sha256=alpaca_v2_decision_sha256,
         probe_spec_sha256=probe_spec_sha256,
@@ -919,6 +991,8 @@ def run_reference_probe(
         fallback_dataset_end=spec.fallback_dataset_end,
         dataset_used="none",
         candidate_dispositions=tuple(all_dispositions),
+        not_required_gates=spec.not_required_gates,
+        feasible_for_all_probe_monthly_pit_snapshots=False,
         alpha_vantage_credentials_available=settings.data.alpha_vantage_api_key is not None,
         massive_credentials_available=settings.data.massive_api_key is not None,
         recommended_next_assignment="gary-decision-intra-001-reference-data-cost",

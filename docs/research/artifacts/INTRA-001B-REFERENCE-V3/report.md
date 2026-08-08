@@ -3,18 +3,19 @@
 - **Task ID:** INTRA-001B-REFERENCE-V3
 - **Probe version:** 3
 - **Provider:** none selected
-- **Outcome:** no_currently_free_complete_reference_source
+- **Outcome:** invalid
 - **Approved as reference provider:** False
-- **Reason:** No candidate satisfied all mandatory gates. Structural failure; fallback cannot cure this provider.
+- **Reason:** V3 probe code contained a cursor-validation defect and is not decision-grade. Alpha Vantage LISTING_STATUS returned empty provider messages for all PIT dates; Massive/Polygon /v3/reference/tickers returned first-page data, but the pre-registered next_url validator rejected every provider-supplied cursor because it did not decode the base64url cursor before validating date/active/market. See the V4 proposal for the bounded rerun.
 - **Candidate order:** alpha_vantage, massive
 - **Starting main SHA:** 8405ca77569b55f460a381555843842fe55e248a
 - **Branch:** devin/intra-001b-reference-v3
-- **Live run head:** 82fd28f
-- **Final PR head:** 82fd28f
+- **Live run head:** 03e61700dbf2fd072fc36bb63764dc7fa3876281
 - **v1 pre-registration commit:** e4d123e5ecca80ab8ba1fa09ff397d4f0a3d67dc
 - **v2 pre-registration commit:** d5b2ba5d14151fd007c89cc5fc9c6ae7fec6f299
 - **v3 pre-registration commit:** 03e61700dbf2fd072fc36bb63764dc7fa3876281
-- **Ran at:** 2026-08-08T00:05:32.450287+00:00
+- **v4 pre-registration commit:** n/a
+- **Ran at:** 2026-08-08T00:33:21.113592+00:00
+- **Not required gates:** none
 
 ## Locked methodology
 
@@ -64,9 +65,8 @@
 | no_present_day_reconstruction | False |
 | historical_2022_entitlement_under_current_plan | False |
 | feasible_for_all_48_monthly_pit_snapshots | False |
+| feasible_for_all_probe_monthly_pit_snapshots | False |
 | **All mandatory gates passed** | False |
-
-- **Dataset used:** none
 
 ## Candidate dispositions
 
@@ -120,6 +120,7 @@
 | no_present_day_reconstruction | False | live_evidence | Present-day reconstruction not disproven. |
 | historical_2022_entitlement_under_current_plan | False | live_evidence | 2022 PIT date request failed or returned no rows. |
 | feasible_for_all_48_monthly_pit_snapshots | False | documented_capability | 48-month feasibility not established. |
+| feasible_for_all_probe_monthly_pit_snapshots | False | documented_capability | Feasibility for 4 probe monthly snapshots not established. |
 
 ---
 This report is a research artifact only. It does not authorize production changes.

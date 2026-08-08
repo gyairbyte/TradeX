@@ -475,7 +475,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Redesign intraday scorer around a specific setup
 - **Category:** Intraday trading
 - **Priority:** Medium
-- **Status:** In progress — mixed-provider data contract approved; reference provider **pending** (`INTRA-001B-REFERENCE-V3` executed but is invalid as decision-grade because of a cursor-validation defect; a bounded V4 is proposed)
+- **Status:** In progress — mixed-provider data contract approved; reference provider **pending** (`INTRA-001B-REFERENCE-V3` corrected and marked invalid; bounded `INTRA-001B-REFERENCE-V4` is pre-registered with a recent 1–2 year entitlement-valid dataset)
 - **Research specification:** `docs/research/INTRA-001-SPEC.md`
 - **Locked machine-readable strategy spec:** `docs/research/specs/INTRA-001-v1.json` (SHA-256 unchanged)
 - **Locked mixed-provider amendment:** `docs/research/specs/INTRA-001-data-contract-amendment-v2.json` and `docs/research/INTRA-001-MIXED-PROVIDER-DATA-CONTRACT.md`
@@ -485,9 +485,11 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Reference probe v3 safe artifacts:** `docs/research/artifacts/INTRA-001B-REFERENCE-V3/`
 - **Reference probe v3 outcome:** `invalid` / not decision-grade — the V3 Massive client rejected every provider-supplied `next_url` because it did not decode the base64url `cursor` parameter before validating `date`/`active`/`market`, so complete pagination could not be proven
 - **Reference probe v4 proposal:** `docs/research/INTRA-001B-REFERENCE-V4-PROPOSAL.md`
-- **Reference provider role:** point-in-time monthly active listings, common-stock vs ETF classification, warrant/right/unit/preferred-stock/OTC exclusion, primary listing/exchange provenance, deterministic symbol identity, duplicate handling, lifecycle evidence, inactive/delisted status, reproducible historical snapshots, complete pagination, historical 2022 access
+- **Reference probe v4 spec:** `docs/research/specs/INTRA-001B-reference-probe-v4.json`
+- **Reference probe v4 original dataset:** `2025-08-01` through `2026-07-31` (12 monthly PIT snapshots)
+- **Reference probe v4 fallback dataset:** `2024-09-01` through `2026-07-31` (23 monthly PIT snapshots, entitlement-valid; used only for historical-depth / entitlement limitations)
+- **Reference provider role:** point-in-time monthly active listings, common-stock vs ETF classification, warrant/right/unit/preferred-stock/OTC exclusion, primary listing/exchange provenance, deterministic symbol identity, duplicate handling, lifecycle evidence, inactive/delisted status, reproducible historical snapshots, complete pagination
 - **OHLCV provider role:** Alpaca SIP (already locked by `INTRA-001B-ALPACA-V2`)
-- **Fallback dataset:** 2024-01-02 through 2025-12-31, approved but not yet required
 - **No paid upgrade, no composite reference stack, no silent fallback:** confirmed
 - **v1 pre-registration commit:** `e4d123e5ecca80ab8ba1fa09ff397d4f0a3d67dc`
 - **v2 pre-registration commit:** `d5b2ba5d14151fd007c89cc5fc9c6ae7fec6f299`

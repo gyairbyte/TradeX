@@ -255,6 +255,7 @@ class ReferenceProbeDecision:
     v1_pre_registration_commit: str | None = None
     v2_pre_registration_commit: str | None = None
     v3_pre_registration_commit: str | None = None
+    v4_pre_registration_commit: str | None = None
     strategy_spec_sha256: str | None = None
     alpaca_v2_decision_sha256: str | None = None
     probe_spec_sha256: str | None = None
@@ -325,7 +326,9 @@ class ReferenceProbeDecision:
     no_present_day_reconstruction_gate: bool = False
     historical_2022_entitlement_under_current_plan: bool = False
     feasible_for_all_48_monthly_pit_snapshots: bool = False
+    feasible_for_all_probe_monthly_pit_snapshots: bool = False
     all_mandatory_gates_passed: bool = False
+    not_required_gates: tuple[str, ...] = ()
     # Audit / artifacts
     blockers: tuple[str, ...] = ()
     limitations: tuple[str, ...] = ()
@@ -346,10 +349,10 @@ class ReferenceProbeDecision:
             "starting_main_sha": self.starting_main_sha,
             "branch": self.branch,
             "live_run_head": self.live_run_head,
-            "final_pr_head": self.final_pr_head,
             "v1_pre_registration_commit": self.v1_pre_registration_commit,
             "v2_pre_registration_commit": self.v2_pre_registration_commit,
             "v3_pre_registration_commit": self.v3_pre_registration_commit,
+            "v4_pre_registration_commit": self.v4_pre_registration_commit,
             "strategy_spec_sha256": self.strategy_spec_sha256,
             "alpaca_v2_decision_sha256": self.alpaca_v2_decision_sha256,
             "probe_spec_sha256": self.probe_spec_sha256,
@@ -416,7 +419,9 @@ class ReferenceProbeDecision:
             "no_present_day_reconstruction_gate": self.no_present_day_reconstruction_gate,
             "historical_2022_entitlement_under_current_plan": self.historical_2022_entitlement_under_current_plan,
             "feasible_for_all_48_monthly_pit_snapshots": self.feasible_for_all_48_monthly_pit_snapshots,
+            "feasible_for_all_probe_monthly_pit_snapshots": self.feasible_for_all_probe_monthly_pit_snapshots,
             "all_mandatory_gates_passed": self.all_mandatory_gates_passed,
+            "not_required_gates": list(self.not_required_gates),
             "blockers": list(self.blockers),
             "limitations": list(self.limitations),
             "recommended_next_assignment": self.recommended_next_assignment,

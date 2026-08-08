@@ -35,6 +35,7 @@ class ReferenceProbeSpec:
     safe_artifact_schema_version: int = 1
     expected_safe_artifacts: tuple[str, ...] = ()
     mandatory_gates: tuple[str, ...] = ()
+    not_required_gates: tuple[str, ...] = ()
     reference_provider_role: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
@@ -62,6 +63,7 @@ class ReferenceProbeSpec:
             "safe_artifact_schema_version": self.safe_artifact_schema_version,
             "expected_safe_artifacts": list(self.expected_safe_artifacts),
             "mandatory_gates": list(self.mandatory_gates),
+            "not_required_gates": list(self.not_required_gates),
             "reference_provider_role": list(self.reference_provider_role),
         }
 
@@ -126,6 +128,7 @@ def load_probe_spec(path: str | Path) -> tuple[ReferenceProbeSpec, bytes]:
         "reference_provider_role",
         "no_silent_fallback",
         "fallback_only_for_historical_depth_or_entitlement_limitation",
+        "not_required_gates",
     }
 
     spec = ReferenceProbeSpec(
@@ -152,6 +155,7 @@ def load_probe_spec(path: str | Path) -> tuple[ReferenceProbeSpec, bytes]:
         safe_artifact_schema_version=int(data["safe_artifact_schema_version"]),
         expected_safe_artifacts=_as_tuple(data["expected_safe_artifacts"], "expected_safe_artifacts"),
         mandatory_gates=_as_str_tuple(data.get("mandatory_gates"), "mandatory_gates"),
+        not_required_gates=_as_str_tuple(data.get("not_required_gates"), "not_required_gates"),
         reference_provider_role=_as_str_tuple(data.get("reference_provider_role"), "reference_provider_role"),
     )
     return spec, raw

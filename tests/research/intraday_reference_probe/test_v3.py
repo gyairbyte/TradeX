@@ -1,6 +1,7 @@
 """Credential-free v3 reference probe tests."""
 from __future__ import annotations
 
+import base64
 import json
 import shutil
 from pathlib import Path
@@ -74,6 +75,11 @@ def _ticker_page(
     return json.dumps(payload).encode("utf-8")
 
 
+def _CURSOR1() -> str:
+    q = "date=2024-05-31&active=true&market=stocks&locale=us"
+    return base64.urlsafe_b64encode(q.encode()).rstrip(b"=").decode()
+
+
 def _types_page() -> bytes:
     return json.dumps({
         "results": [
@@ -111,12 +117,13 @@ def test_massive_pagination_one_page_terminal() -> None:
 
 def test_massive_pagination_two_pages() -> None:
     client = MassiveReferenceClient("k", base_url="https://api.massive.com")
-    page1 = _ticker_page(["AAPL"], next_url="https://api.massive.com/v3/reference/tickers?date=2024-05-31&active=true&market=stocks&locale=us&cursor=c1")
+    page1 = _ticker_page(["AAPL"], next_url=f"https://api.massive.com/v3/reference/tickers?cursor={_CURSOR1()}")
     page2 = _ticker_page(["MSFT"])
+    cursor1 = _CURSOR1()
 
     def _urlopen(req, *args, **kwargs):
         url = req.get_full_url()
-        if "cursor=c1" in url:
+        if f"cursor={cursor1}" in url:
             return _FakeResponse(page2, 200)
         return _FakeResponse(page1, 200)
 
@@ -129,7 +136,7 @@ def test_massive_pagination_two_pages() -> None:
 
 def test_massive_pagination_first_page_only_fails() -> None:
     client = MassiveReferenceClient("k", base_url="https://api.massive.com")
-    body = _ticker_page(["AAPL"] * 1000, next_url="https://api.massive.com/v3/reference/tickers?date=2024-05-31&active=true&market=stocks&locale=us&cursor=c1")
+    body = _ticker_page(["AAPL"] * 1000, next_url=f"https://api.massive.com/v3/reference/tickers?cursor={_CURSOR1()}")
     with patch("urllib.request.urlopen", return_value=_FakeResponse(body, 200)):
         _rows, _pages, obs = client.fetch_tickers("2024-05-31", True, safety_max_pages=1)
     assert obs.max_pages_reached
@@ -138,7 +145,7 @@ def test_massive_pagination_first_page_only_fails() -> None:
 
 def test_massive_pagination_repeated_next_url_fails() -> None:
     client = MassiveReferenceClient("k", base_url="https://api.massive.com")
-    url = "https://api.massive.com/v3/reference/tickers?date=2024-05-31&active=true&market=stocks&locale=us&cursor=c1"
+    url = f"https://api.massive.com/v3/reference/tickers?cursor={_CURSOR1()}"
     body = _ticker_page(["AAPL"], next_url=url)
 
     def _urlopen(req, *args, **kwargs):
@@ -151,7 +158,7 @@ def test_massive_pagination_repeated_next_url_fails() -> None:
 
 def test_massive_pagination_unexpected_host_fails() -> None:
     client = MassiveReferenceClient("k", base_url="https://api.massive.com")
-    body = _ticker_page(["AAPL"], next_url="https://evil.com/v3/reference/tickers?date=2024-05-31&active=true&market=stocks&locale=us&cursor=c1")
+    body = _ticker_page(["AAPL"], next_url=f"https://evil.com/v3/reference/tickers?cursor={_CURSOR1()}")
     with patch("urllib.request.urlopen", return_value=_FakeResponse(body, 200)):
         _rows, _pages, obs = client.fetch_tickers("2024-05-31", True)
     assert obs.unexpected_next_url
@@ -171,16 +178,17 @@ def test_massive_ticker_types_builds_mapping() -> None:
 
 def test_massive_probe_provider_runs_with_mocks() -> None:
     client = MassiveReferenceClient("k")
-    page1 = _ticker_page(["AAPL"], next_url="https://api.massive.com/v3/reference/tickers?date=2024-05-31&active=true&market=stocks&locale=us&cursor=c1")
+    page1 = _ticker_page(["AAPL"], next_url=f"https://api.massive.com/v3/reference/tickers?cursor={_CURSOR1()}")
     page2 = _ticker_page(["MSFT"])
     call_count = {"n": 0}
+    cursor1 = _CURSOR1()
 
     def _urlopen(req, *args, **kwargs):
         call_count["n"] += 1
         url = req.get_full_url()
         if "tickers/types" in url:
             return _FakeResponse(_types_page(), 200)
-        if "cursor=c1" in url:
+        if f"cursor={cursor1}" in url:
             return _FakeResponse(page2, 200)
         return _FakeResponse(page1, 200)
 
@@ -337,10 +345,11 @@ def test_run_reference_probe_missing_credentials(monkeypatch) -> None:
         v1_pre_registration_commit="a" * 40,
         v2_pre_registration_commit="b" * 40,
         v3_pre_registration_commit="c" * 40,
-        probe_spec_sha256="d" * 64,
-        starting_main_sha="e" * 40,
+        v4_pre_registration_commit="d" * 40,
+        probe_spec_sha256="e" * 64,
+        starting_main_sha="f" * 40,
         branch="devin/intra-001b-reference-v3",
-        final_head="e" * 40,
+        live_run_head="f" * 40,
     )
     assert result is None
     assert decision.outcome == "no_currently_free_complete_reference_source"

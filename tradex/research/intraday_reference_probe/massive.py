@@ -1,6 +1,7 @@
 """Massive / Polygon reference tickers probe client."""
 from __future__ import annotations
 
+import base64
 import json
 import time
 import urllib.error
@@ -70,12 +71,31 @@ class MassiveReferenceClient:
         sep = "&" if query else ""
         return f"{self.base_url}{path}?{query}{sep}apiKey={self.api_key}"
 
+    def _decode_cursor_params(self, next_url: str) -> dict[str, list[str]] | None:
+        """Decode Massive's base64url cursor parameter into a query dict."""
+        parsed = urllib.parse.urlparse(next_url)
+        query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+        cursor = query.get("cursor", [None])[0]
+        if not cursor:
+            return query
+        try:
+            padding = "=" * (-len(cursor) % 4)
+            decoded = base64.urlsafe_b64decode(cursor + padding).decode("utf-8")
+            return urllib.parse.parse_qs(decoded, keep_blank_values=True)
+        except (ValueError, UnicodeDecodeError):
+            return None
+
     def _validate_next_url(
         self,
         next_url: str,
         base_params: dict[str, Any],
     ) -> tuple[bool, str | None]:
-        """Validate a provider-supplied next_url before following it."""
+        """Validate a provider-supplied next_url before following it.
+
+        Massive encodes the original query parameters inside a single
+        base64url `cursor` parameter, so we decode that before comparing
+        active/date/market against the original request.
+        """
         if not next_url:
             return True, None
         parsed = urllib.parse.urlparse(next_url)
@@ -85,25 +105,30 @@ class MassiveReferenceClient:
             return False, f"unexpected host: {parsed.netloc}"
         if not parsed.path.startswith("/v3/reference/tickers"):
             return False, f"unexpected path: {parsed.path}"
-        query = urllib.parse.parse_qs(parsed.query)
-        if query.get("date", [None])[0] != str(base_params.get("date")):
-            return False, "date parameter drift"
-        if query.get("active", [None])[0] != str(base_params.get("active")):
-            return False, "active parameter drift"
-        if query.get("market", [None])[0] != str(base_params.get("market")):
-            return False, "market parameter drift"
-        if query.get("locale", [None])[0] != str(base_params.get("locale")):
-            return False, "locale parameter drift"
+
+        decoded = self._decode_cursor_params(next_url)
+        if decoded is None:
+            return False, "cursor decode failure"
+
+        for key in ("date", "active", "market"):
+            expected = str(base_params.get(key, ""))
+            if not expected:
+                continue
+            actual = decoded.get(key, [None])[0]
+            if actual != expected:
+                return False, f"{key} parameter drift: expected {expected!r}, got {actual!r}"
         return True, None
 
     def _authenticated_next_url(self, next_url: str) -> str:
-        """Re-attach the API key to a provider-supplied next_url if absent."""
-        parsed = urllib.parse.urlparse(next_url)
-        query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
-        if "apiKey" not in query:
-            query["apiKey"] = [self.api_key]
-        new_query = urllib.parse.urlencode(query, doseq=True)
-        return urllib.parse.urlunparse(parsed._replace(query=new_query))
+        """Re-attach the API key to a provider-supplied next_url if absent.
+
+        The provider-supplied cursor string is preserved byte-for-byte to avoid
+        re-encoding issues with base64url tokens.
+        """
+        if "apiKey=" in next_url:
+            return next_url
+        sep = "&" if ("?" in next_url and next_url.split("?")[-1]) else "?"
+        return f"{next_url}{sep}apiKey={self.api_key}"
 
     def _canonicalize_rows(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Return a stable, hashable representation of rows for repeatability."""

@@ -272,24 +272,33 @@ def _write_audit_files(out: Path, candidate_result: ProviderCandidateResult) -> 
 
 
 def _write_readme(out: Path, decision: ReferenceProbeDecision) -> dict[str, str]:
-    readme = (
-        f"INTRA-001B-REFERENCE-V3 safe artifact bundle\n"
-        f"Run ID: {out.name}\n"
-        f"Task: {decision.task_id}\n"
-        f"Provider: {decision.provider or 'none selected'}\n"
-        f"Outcome: {decision.outcome}\n"
-        f"Dataset used: {decision.dataset_used or 'n/a'}\n"
-        f"v1 pre-registration commit: {decision.v1_pre_registration_commit or 'n/a'}\n"
-        f"v2 pre-registration commit: {decision.v2_pre_registration_commit or 'n/a'}\n"
-        f"v3 pre-registration commit: {decision.v3_pre_registration_commit or 'n/a'}\n"
-        f"Final head: {decision.final_pr_head or decision.live_run_head or 'n/a'}\n"
-        f"Branch: {decision.branch}\n"
-        f"Ran at: {decision.ran_at}\n\n"
-        "This bundle contains research-only audit artifacts for the reference-provider probe.\n"
-        "It does not authorize production changes.\n"
-    )
+    version = decision.probe_version or 3
+    pre_lines = [
+        f"INTRA-001B-REFERENCE-V{version} safe artifact bundle",
+        f"Run ID: {out.name}",
+        f"Task: {decision.task_id}",
+        f"Provider: {decision.provider or 'none selected'}",
+        f"Outcome: {decision.outcome}",
+        f"Dataset used: {decision.dataset_used or 'n/a'}",
+    ]
+    if decision.v1_pre_registration_commit:
+        pre_lines.append(f"v1 pre-registration commit: {decision.v1_pre_registration_commit}")
+    if decision.v2_pre_registration_commit:
+        pre_lines.append(f"v2 pre-registration commit: {decision.v2_pre_registration_commit}")
+    if decision.v3_pre_registration_commit:
+        pre_lines.append(f"v3 pre-registration commit: {decision.v3_pre_registration_commit}")
+    if decision.v4_pre_registration_commit:
+        pre_lines.append(f"v4 pre-registration commit: {decision.v4_pre_registration_commit}")
+    pre_lines.extend([
+        f"Live run head: {decision.live_run_head or 'n/a'}",
+        f"Branch: {decision.branch}",
+        f"Ran at: {decision.ran_at}",
+        "",
+        "This bundle contains research-only audit artifacts for the reference-provider probe.",
+        "It does not authorize production changes.",
+    ])
     p = out / "README.txt"
-    p.write_text(readme)
+    p.write_text("\n".join(pre_lines) + "\n")
     return {"README.txt": _hash_file(p)}
 
 
@@ -371,11 +380,12 @@ def _default_report(
         f"- **Starting main SHA:** {decision.starting_main_sha}",
         f"- **Branch:** {decision.branch}",
         f"- **Live run head:** {decision.live_run_head}",
-        f"- **Final PR head:** {decision.final_pr_head or 'n/a'}",
         f"- **v1 pre-registration commit:** {decision.v1_pre_registration_commit}",
         f"- **v2 pre-registration commit:** {decision.v2_pre_registration_commit}",
         f"- **v3 pre-registration commit:** {decision.v3_pre_registration_commit}",
+        f"- **v4 pre-registration commit:** {decision.v4_pre_registration_commit or 'n/a'}",
         f"- **Ran at:** {decision.ran_at}",
+        f"- **Not required gates:** {', '.join(decision.not_required_gates) or 'none'}",
         "",
         "## Locked methodology",
         "",
@@ -424,6 +434,7 @@ def _default_report(
         "no_present_day_reconstruction",
         "historical_2022_entitlement_under_current_plan",
         "feasible_for_all_48_monthly_pit_snapshots",
+        "feasible_for_all_probe_monthly_pit_snapshots",
     ]
     for name in gate_names:
         value = getattr(decision, name, False)
