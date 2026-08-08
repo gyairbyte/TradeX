@@ -546,8 +546,9 @@ def run_build_universe(
         batch_size = int(plan.ranking_download_efficiency.get("multi_symbol_batch_size", 400))
         if ranking_timeframe != "1D":
             # Intraday responses are larger; keep per-call payload manageable.
-            # 30Min is lighter than 5Min, so it can use a slightly larger batch.
-            cap = 100 if ranking_timeframe == "30Min" else 50
+            # 30Min has only 13 bars/session, so a 300-symbol batch stays well
+            # under Alpaca's ~4k symbol URL ceiling and is still one page.
+            cap = 300 if ranking_timeframe == "30Min" else 100
             batch_size = min(batch_size, cap)
         for i in range(0, len(tickers), batch_size):
             batch = tickers[i:i + batch_size]
