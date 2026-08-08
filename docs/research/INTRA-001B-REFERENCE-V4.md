@@ -55,6 +55,15 @@ Because the data contract requires deterministic symbol identity and an explicit
 - No paid upgrade, no third reference provider, and no Alpha Vantage + Massive composite stack is introduced.
 - The fallback dataset is not invoked because the failures are structural data-contract failures, not historical-depth or entitlement limitations.
 
+## Post-V4 product decision and supersession
+
+Subsequent to the V4 strict-contract `unsupported` disposition, Gary decided to stop reference-provider exploration and proceed with Massive/Polygon as the `best_available_reference_input` for `INTRA-001` using conservative exclusions. This decision is recorded in:
+
+* `docs/research/specs/INTRA-001-data-sufficiency-amendment-v3.json`
+* `docs/research/INTRA-001-DATA-SUFFICIENCY-AMENDMENT-V3.md`
+
+That amendment supersedes the V4 strict contract for prospective `INTRA-001` dataset construction. It preserves this V4 document, V4's `unsupported` disposition, the failed gates, the 868 request count, and the V4 safe artifact bundle unchanged as historical audit evidence. No V5 provider probe, paid upgrade, or production behavior change is authorized.
+
 ## Next steps (require explicit approval)
 
-Any continuation of reference-provider work (`INTRA-001B-REFERENCE-V5` or a paid/entitlement change) requires a new Gary approval and a new pre-registered probe. `INTRA-001C` snapshot construction and production promotion remain blocked until a valid reference-provider decision is achieved.
+`INTRA-001B` reference-provider work is complete. The next approved assignment is `devin/intra-001b-one-year-snapshot`, which will build the 2025 dataset and monthly universe manifests under the data-sufficiency amendment v3.

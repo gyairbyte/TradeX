@@ -1,0 +1,138 @@
+{
+  "accepted_limitations": [
+    "Massive does not surface an explicit OTC marker in its US stocks taxonomy or exchange set.",
+    "Massive inactive snapshots contain duplicate ticker occurrences; some historical inactive tickers map to multiple records without a consistent cik, figi, or composite_figi.",
+    "Available reference history is limited to the Massive free-entitlement rolling window; the 2025-only contract is shorter than the original four-year 2022-2025 contract.",
+    "Security-type and exchange provenance are used as provided; unknown or unmapped values are conservatively excluded."
+  ],
+  "amendment_id": "INTRA-001-data-sufficiency-amendment-v3",
+  "amendment_type": "data_sufficiency_methodology",
+  "amendment_version": 3,
+  "authority": "Gary's explicit product decision to stop provider hunting and proceed with the best reasonably available data for INTRA-001. This amendment supersedes amendment v2 only for prospective dataset construction and data-sufficiency decisions. V2, V3, and V4 probe evidence are preserved unchanged as historical audit records.",
+  "conservative_universe_controls": {
+    "do_not_construct_from_todays_listings": true,
+    "do_not_silently_substitute_providers_or_fields": true,
+    "duplicate_symbol_policy": "Exclude any ticker with more than one reference record in the same PIT snapshot",
+    "etf_stratum_unchanged": true,
+    "etf_universe_source": "docs/research/specs/INTRA-001-v1.json universe.etfs",
+    "exchange_allowlist": [
+      "XNYS",
+      "XNAS",
+      "ARCX",
+      "BATS",
+      "XASE",
+      "XBOS"
+    ],
+    "exclude_unknown_or_unmapped_exchanges": true,
+    "if_pagination_or_pit_provenance_missing": "Surface explicitly; do not turn into an empty successful snapshot",
+    "missing_security_type_policy": "Exclude",
+    "monthly_pit_dates": [
+      "2024-12-31",
+      "2025-01-31",
+      "2025-02-28",
+      "2025-03-31",
+      "2025-04-30",
+      "2025-05-31",
+      "2025-06-30",
+      "2025-07-31",
+      "2025-08-31",
+      "2025-09-30",
+      "2025-10-31",
+      "2025-11-30"
+    ],
+    "monthly_universe_source": "completely paginated Massive active-listing snapshot as of the prior calendar month-end",
+    "no_manual_ticker_exceptions": true,
+    "pit_date_precedes_effective_month": true,
+    "preserve_inactive_snapshot_provenance": true,
+    "record_exclusion_reasons": true,
+    "record_monthly_exclusion_counts": true,
+    "security_type_exclusions": [
+      "OTC",
+      "warrant",
+      "right",
+      "unit",
+      "preferred_stock",
+      "unmapped"
+    ],
+    "stock_security_type_allowlist": [
+      "common_stock"
+    ],
+    "unmapped_security_type_policy": "Exclude"
+  },
+  "dataset": {
+    "end": "2025-12-31",
+    "holdout_must_not_be_inspected_during_implementation_or_candidate_debugging": true,
+    "splits": {
+      "development": {
+        "end": "2025-06-30",
+        "start": "2025-01-02"
+      },
+      "holdout": {
+        "end": "2025-12-31",
+        "start": "2025-10-01"
+      },
+      "validation": {
+        "end": "2025-09-30",
+        "start": "2025-07-01"
+      }
+    },
+    "splits_are_chronological_and_non_overlapping": true,
+    "start": "2025-01-02"
+  },
+  "evidence_label": "limited_but_usable_evidence",
+  "no_v5_or_additional_provider_search": true,
+  "original_strategy_spec": "docs/research/specs/INTRA-001-v1.json",
+  "original_strategy_spec_sha256": "09394d038928433529ec4c5f5ba5ff0392c764d5b59f1af71d95f4f3957c0464",
+  "preserved_reference_probe_evidence": {
+    "v4_decision_document": "docs/research/INTRA-001B-REFERENCE-V4.md",
+    "v4_decision_document_sha256": "23afcdad8a72efff9508a6958a4b05dfbf8b88ab2356414730f97b5298bf4d02",
+    "v4_failed_mandatory_gates": [
+      "otc_exclusion",
+      "duplicate_symbol_behavior_and_resolution"
+    ],
+    "v4_safe_artifact_bundle": "docs/research/artifacts/INTRA-001B-REFERENCE-V4/2026-08-08-062051/",
+    "v4_strict_contract_disposition": "unsupported"
+  },
+  "production_promotion_requires": "separate Gary-approved production PR after INTRA-001D gates pass",
+  "provider_roles": {
+    "authoritative_ohlcv_feed": "sip",
+    "authoritative_ohlcv_provider": "alpaca",
+    "no_composite_reference_stack": true,
+    "no_ohlcv_provider_mixing": true,
+    "no_silent_fallback": true,
+    "ohlcv_provider_role": [
+      "five-minute OHLCV",
+      "prior closes used for liquidity/ranking",
+      "prior 20 regular-session dollar-volume calculations",
+      "session VWAP inputs",
+      "opening-drive volume",
+      "execution prices"
+    ],
+    "reference_provider": "massive",
+    "reference_provider_endpoint": "Massive / Polygon /v3/reference/tickers",
+    "reference_provider_role": [
+      "monthly point-in-time active listings",
+      "common-stock vs ETF classification",
+      "security-type eligibility and exclusion",
+      "primary listing/exchange provenance where available",
+      "inactive/delisted status provenance",
+      "symbol/reference identity for monthly membership"
+    ],
+    "reference_provider_status": "accepted_with_documented_limitations",
+    "secondary_provider_cannot_supply_ohlcv": true
+  },
+  "sample_minimums_policy": {
+    "any_change_to_sample_minimums_or_gates_must_be_preregistered": true,
+    "shorter_history_does_not_reduce_sample_minimums": true,
+    "source": "docs/research/specs/INTRA-001-v1.json sample_minimums and validation_gates"
+  },
+  "schema_version": "1.0",
+  "status": "approved_best_available_data_ready_for_snapshot_implementation",
+  "supersedes": {
+    "amendment_id": "INTRA-001-data-contract-amendment-v2",
+    "amendment_path": "docs/research/specs/INTRA-001-data-contract-amendment-v2.json",
+    "amendment_sha256": "56862e61b41f15035d1ecfead0f938253564284cb34a16df0b9cf80097a1563c",
+    "superseded_for": "prospective INTRA-001 dataset construction and data-sufficiency decisions only"
+  },
+  "task_id": "INTRA-001"
+}

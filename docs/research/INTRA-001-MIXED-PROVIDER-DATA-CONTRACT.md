@@ -1,5 +1,7 @@
 # INTRA-001 Mixed-Provider Data Contract Amendment v2
 
+> **Superseded for prospective dataset construction:** `INTRA-001-data-sufficiency-amendment-v3` (`docs/research/specs/INTRA-001-data-sufficiency-amendment-v3.json` and `docs/research/INTRA-001-DATA-SUFFICIENCY-AMENDMENT-V3.md`) is now the active data-sufficiency and provider methodology for `INTRA-001`. Amendment v2 and this document are preserved as historical records; the canonical v2 JSON is unchanged.
+
 This document formalizes Gary's approval of a locked, role-based mixed-provider data contract for the `INTRA-001` research study. It is an amendment to the original locked strategy specification only; every non-data-source rule in `docs/research/specs/INTRA-001-v1.json` remains unchanged.
 
 ## Original strategy spec
@@ -73,11 +75,11 @@ A third provider is not permitted for this amendment. Alpha Vantage and Massive 
 
 ## Amendment status
 
-- Current amendment: `docs/research/specs/INTRA-001-data-contract-amendment-v2.json`
-- Status: `approved_mixed_model_reference_provider_pending` until `INTRA-001B-REFERENCE` selects and locks a reference provider with decision-grade evidence.
+- This amendment v2 is preserved as a historical audit record. For the latest prospective data-sufficiency methodology, see `docs/research/specs/INTRA-001-data-sufficiency-amendment-v3.json` and `docs/research/INTRA-001-DATA-SUFFICIENCY-AMENDMENT-V3.md`.
+- Current amendment at the time of v2: `docs/research/specs/INTRA-001-data-contract-amendment-v2.json`
+- Status at the time of v2: `approved_mixed_model_reference_provider_pending` until `INTRA-001B-REFERENCE` selects and locks a reference provider with decision-grade evidence.
 - `INTRA-001B-REFERENCE` v2 first-page evidence (`2026-08-07-222404`) is preserved as an audit record but is explicitly not decision-grade; no reference provider is locked by v2.
-- Once a reference provider is selected, the amendment status moves to `locked_ready_for_snapshot_implementation`.
-- If only the two-year fallback dataset can be satisfied, the status remains locked for the fallback but the original four-year contract is explicitly documented as unsatisfied.
+- `INTRA-001B-REFERENCE-V4` later completed full-pagination live evidence and is recorded in `docs/research/INTRA-001B-REFERENCE-V4.md`.
 
 ## What this amendment does NOT do
 
