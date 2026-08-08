@@ -1,0 +1,25 @@
+capability,evidence_class,note,provider,supported
+pit_date_support_for_all_probe_dates,live_evidence,"Successful PIT dates: ['2025-08-31', '2025-09-30', '2025-10-31', '2025-11-30', '2025-12-31', '2026-01-31', '2026-02-28', '2026-03-31', '2026-04-30', '2026-05-31', '2026-06-30', '2026-07-31']; required: ['2025-08-31', '2025-09-30', '2025-10-31', '2025-11-30', '2025-12-31', '2026-01-31', '2026-02-28', '2026-03-31', '2026-04-30', '2026-05-31', '2026-06-30', '2026-07-31']",massive,True
+active_state_complete,live_evidence,Active observations: 24; complete: True,massive,True
+inactive_or_delisted_state_complete,live_evidence,Inactive/delisted observations: 24; complete: True,massive,True
+pagination_exhausted_to_terminal,live_evidence,All snapshots reached terminal pagination.,massive,True
+no_pagination_cycles_or_repeated_cursors,live_evidence,"No repeated cursor, cycle, or unexpected next_url detected.",massive,True
+exact_historical_date_semantics,live_evidence,Date parameter preserved; distinct canonical sets across PIT dates.,massive,True
+common_stock_classification,live_evidence,Common-stock mapping present: True,massive,True
+etf_classification,live_evidence,ETF mapping present: True,massive,True
+warrant_exclusion,live_evidence,Warrant category present and ineligible: True,massive,True
+right_exclusion,live_evidence,Right category present and ineligible: True,massive,True
+unit_exclusion,live_evidence,Unit category present and ineligible: True,massive,True
+preferred_stock_exclusion,live_evidence,Preferred-stock category present and ineligible: True,massive,True
+otc_exclusion,live_evidence,OTC taxonomy: False; OTC exchange markers: False; primary exchange field: primary_exchange,massive,False
+primary_listing_provenance,live_evidence,"Exchange field 'primary_exchange'; observed exchanges: ['ARCX', 'BATS', 'XASE', 'XBOS', 'XNAS', 'XNYS']...",massive,True
+symbol_presence_and_determinism,live_evidence,Blank ticker count total: 0; canonical rows present: True,massive,True
+lifecycle_evidence,live_evidence,"Lifecycle fields present: ('delisting_date', 'listing_date'); listing field: None; delisting field: delisted_utc",massive,True
+duplicate_symbol_behavior_and_resolution,live_evidence,Duplicate symbols: 302; unresolved: 5,massive,False
+repeatability,live_evidence,Full-snapshot repeat hashes matched for all observations.,massive,True
+hashability,live_evidence,All successful snapshots have SHA-256 hashes.,massive,True
+no_present_day_reconstruction,live_evidence,Distinct historical results across requested dates; no evidence of present-day reconstruction.,massive,True
+historical_2022_entitlement_under_current_plan,live_evidence,2022 PIT date request failed or returned no rows.,massive,False
+feasible_for_all_48_monthly_pit_snapshots,documented_capability,48-month PIT entitlement not probed in V4; 2022-2023 coverage explicitly not required.,massive,False
+estimated_48_month_pagination_cost,documented_capability,"Estimated 1824 HTTP calls and 22,070.4s collection time for 48 monthly snapshots.",massive,True
+feasible_for_all_probe_monthly_pit_snapshots,documented_capability,"Estimated 456 HTTP calls and 5,517.6s collection time for 12 probe monthly snapshots.",massive,True

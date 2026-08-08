@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "task_id": "INTRA-001B-REFERENCE-V3",
-  "probe_version": 3,
+  "task_id": "INTRA-001B-REFERENCE-V4",
+  "probe_version": 4,
   "provider": "reference",
   "study_parent": "INTRA-001",
   "amendment_path": "docs/research/specs/INTRA-001-data-contract-amendment-v2.json",
@@ -9,25 +9,51 @@
   "expected_original_strategy_spec_sha256": "09394d038928433529ec4c5f5ba5ff0392c764d5b59f1af71d95f4f3957c0464",
   "alpaca_v2_artifact_path": "docs/research/artifacts/INTRA-001B-ALPACA-V2/2026-08-07-175845/decision.json",
   "probe_dates": [
-    "2022-01-31",
-    "2023-07-31",
-    "2024-05-31",
-    "2025-11-30"
+    "2025-08-31",
+    "2025-09-30",
+    "2025-10-31",
+    "2025-11-30",
+    "2025-12-31",
+    "2026-01-31",
+    "2026-02-28",
+    "2026-03-31",
+    "2026-04-30",
+    "2026-05-31",
+    "2026-06-30",
+    "2026-07-31"
   ],
-  "original_dataset_start": "2022-01-03",
-  "original_dataset_end": "2025-12-31",
+  "original_dataset_start": "2025-08-01",
+  "original_dataset_end": "2026-07-31",
   "fallback_probe_dates": [
-    "2024-01-31",
-    "2024-07-31",
+    "2024-09-30",
+    "2024-10-31",
+    "2024-11-30",
+    "2024-12-31",
     "2025-01-31",
-    "2025-11-30"
+    "2025-02-28",
+    "2025-03-31",
+    "2025-04-30",
+    "2025-05-31",
+    "2025-06-30",
+    "2025-07-31",
+    "2025-08-31",
+    "2025-09-30",
+    "2025-10-31",
+    "2025-11-30",
+    "2025-12-31",
+    "2026-01-31",
+    "2026-02-28",
+    "2026-03-31",
+    "2026-04-30",
+    "2026-05-31",
+    "2026-06-30",
+    "2026-07-31"
   ],
-  "fallback_dataset_start": "2024-01-02",
-  "fallback_dataset_end": "2025-12-31",
+  "fallback_dataset_start": "2024-09-01",
+  "fallback_dataset_end": "2026-07-31",
   "no_silent_fallback": true,
   "fallback_only_for_historical_depth_or_entitlement_limitation": true,
   "candidate_selection_order": [
-    "alpha_vantage",
     "massive"
   ],
   "no_paid_upgrade": true,
@@ -47,20 +73,39 @@
     "later-delisted/inactive securities",
     "reproducible historical snapshots",
     "complete pagination",
-    "historical 2022 access",
-    "feasible for all 48 monthly PIT snapshots"
+    "feasible for all probe monthly PIT snapshots"
   ],
   "alpha_vantage": {
     "endpoint": "LISTING_STATUS",
-    "states": ["active", "delisted"],
-    "expected_columns": ["symbol", "name", "exchange", "assetType", "ipoDate", "delistingDate", "status"],
-    "security_type_exclusions_required": ["OTC", "warrant", "right", "unit", "preferred_stock"]
+    "states": [
+      "active",
+      "delisted"
+    ],
+    "expected_columns": [
+      "symbol",
+      "name",
+      "exchange",
+      "assetType",
+      "ipoDate",
+      "delistingDate",
+      "status"
+    ],
+    "security_type_exclusions_required": [
+      "OTC",
+      "warrant",
+      "right",
+      "unit",
+      "preferred_stock"
+    ]
   },
   "massive": {
     "tickers_endpoint": "/v3/reference/tickers",
     "types_endpoint": "/v3/reference/tickers/types",
     "filters": {
-      "active": [true, false],
+      "active": [
+        true,
+        false
+      ],
       "market": "stocks",
       "locale": "us"
     },
@@ -71,7 +116,13 @@
       "detect_repeated_cursor": true,
       "detect_cycles": true
     },
-    "security_type_exclusions_required": ["OTC", "warrant", "right", "unit", "preferred_stock"]
+    "security_type_exclusions_required": [
+      "OTC",
+      "warrant",
+      "right",
+      "unit",
+      "preferred_stock"
+    ]
   },
   "mandatory_gates": [
     "pit_date_support_for_all_probe_dates",
@@ -94,6 +145,9 @@
     "repeatability",
     "hashability",
     "no_present_day_reconstruction",
+    "feasible_for_all_probe_monthly_pit_snapshots"
+  ],
+  "not_required_gates": [
     "historical_2022_entitlement_under_current_plan",
     "feasible_for_all_48_monthly_pit_snapshots"
   ],

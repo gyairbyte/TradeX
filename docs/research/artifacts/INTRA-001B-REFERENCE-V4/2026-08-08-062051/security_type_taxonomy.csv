@@ -1,0 +1,25 @@
+eligible_stock,provider_asset_class,provider_code,provider_description,provider_locale,tradex_category
+True,stocks,CS,Common Stock,us,common_stock
+False,stocks,PFD,Preferred Stock,us,preferred_stock
+False,stocks,WARRANT,Warrant,us,warrant
+False,stocks,RIGHT,Rights,us,right
+False,stocks,BOND,Corporate Bond,us,unknown
+False,stocks,ETF,Exchange Traded Fund,us,etf
+False,stocks,ETN,Exchange Traded Note,us,etf
+False,stocks,ETV,Exchange Traded Vehicle,us,etf
+False,stocks,SP,Structured Product,us,unknown
+False,stocks,ADRC,American Depository Receipt Common,us,unknown
+False,stocks,ADRP,American Depository Receipt Preferred,us,preferred_stock
+False,stocks,ADRW,American Depository Receipt Warrants,us,warrant
+False,stocks,ADRR,American Depository Receipt Rights,us,right
+False,stocks,FUND,Fund,us,other
+False,stocks,BASKET,Basket,us,unknown
+False,stocks,UNIT,Unit,us,unit
+False,stocks,LT,Liquidating Trust,us,unknown
+False,stocks,OS,Ordinary Shares,us,unknown
+False,stocks,GDR,Global Depository Receipts,us,unknown
+False,stocks,OTHER,Other Security Type,us,unknown
+False,stocks,NYRS,New York Registry Shares,us,unknown
+False,stocks,AGEN,Agency Bond,us,unknown
+False,stocks,EQLK,Equity Linked Bond,us,unknown
+False,stocks,ETS,Single-security ETF,us,etf

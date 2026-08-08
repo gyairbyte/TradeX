@@ -475,24 +475,34 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Redesign intraday scorer around a specific setup
 - **Category:** Intraday trading
 - **Priority:** Medium
-- **Status:** In progress — mixed-provider data contract approved; reference provider **pending** (`INTRA-001B-REFERENCE` v2 first-page evidence is preserved as an audit record but is not decision-grade)
+- **Status:** In progress — mixed-provider data contract approved; reference provider **blocked under current free entitlement** (`INTRA-001B-REFERENCE-V4` completed and marked `unsupported`; no V5 without explicit approval)
 - **Research specification:** `docs/research/INTRA-001-SPEC.md`
 - **Locked machine-readable strategy spec:** `docs/research/specs/INTRA-001-v1.json` (SHA-256 unchanged)
 - **Locked mixed-provider amendment:** `docs/research/specs/INTRA-001-data-contract-amendment-v2.json` and `docs/research/INTRA-001-MIXED-PROVIDER-DATA-CONTRACT.md`
-- **Reference probe branch:** `devin/intra-001b-reference-source`
-- **Reference probe v2 spec (frozen/invalid):** `docs/research/specs/INTRA-001B-reference-probe-v2.json`
-- **Reference probe v2 report (disposition):** `docs/research/INTRA-001B-REFERENCE-SOURCE-DECISION.md`
-- **Reference probe v2 safe artifacts (frozen):** `docs/research/artifacts/INTRA-001B-REFERENCE/2026-08-07-222404/`
-- **Reference probe v2 outcome:** `invalid` / not decision-grade — the v2 Massive probe fetched only the first page per PIT snapshot (`row_count=1000` for every observation) and did not prove complete PIT universe reconstruction, full taxonomy, or all 20 mandatory reference-provider gates
-- **Reference provider role:** point-in-time monthly active listings, stock vs ETF classification, security-type exclusions, primary exchange provenance, inactive/delisted status, IPO/delisting dates where available
+- **Reference probe v3 branch:** `devin/intra-001b-reference-v3`
+- **Reference probe v3 pre-registration commit:** `03e61700dbf2fd072fc36bb63764dc7fa3876281`
+- **Reference probe v3 live run head:** `03e61700dbf2fd072fc36bb63764dc7fa3876281`
+- **Reference probe v3 safe artifacts:** `docs/research/artifacts/INTRA-001B-REFERENCE-V3/`
+- **Reference probe v3 outcome:** `invalid` / not decision-grade — the V3 Massive client rejected every provider-supplied `next_url` because it did not decode the base64url `cursor` parameter before validating `date`/`active`/`market`, so complete pagination could not be proven
+- **Reference probe v4 proposal:** `docs/research/INTRA-001B-REFERENCE-V4-PROPOSAL.md`
+- **Reference probe v4 spec:** `docs/research/specs/INTRA-001B-reference-probe-v4.json`
+- **Reference probe v4 pre-registration / live run head:** `27b111c0c9cc0adb21ef82dd9d2f0699e55e297f`
+- **Reference probe v4 starting main SHA:** `8405ca77569b55f460a381555843842fe55e248a`
+- **Reference probe v4 safe artifacts:** `docs/research/artifacts/INTRA-001B-REFERENCE-V4/2026-08-08-062051/`
+- **Reference probe v4 decision:** `docs/research/INTRA-001B-REFERENCE-V4.md`
+- **Reference probe v4 original dataset:** `2025-08-01` through `2026-07-31` (12 monthly PIT snapshots)
+- **Reference probe v4 fallback dataset:** `2024-09-01` through `2026-07-31` (23 monthly PIT snapshots, entitlement-valid; not used because the failure was structural, not historical-depth / entitlement)
+- **Reference probe v4 outcome:** `unsupported` — Massive/Polygon completed full pagination, taxonomy, and repeatability, but failed the mandatory `otc_exclusion` and `duplicate_symbol_behavior_and_resolution` gates
+- **Reference probe v4 Massive HTTP page requests:** 868 (first-pass + repeat across 12 active and 12 inactive monthly PIT snapshots; 0 errors and 0 `429` responses)
+- **Reference probe v4 48-month feasibility note:** `feasible_for_all_48_monthly_pit_snapshots` is `false` because the 48-month window was not probed and 2022-2023 coverage was not required for V4; an information-only `estimated_48_month_pagination_cost` row reports an extrapolated 1,824-call / 22,070-second pagination cost
+- **Reference provider role:** point-in-time monthly active listings, common-stock vs ETF classification, warrant/right/unit/preferred-stock/OTC exclusion, primary listing/exchange provenance, deterministic symbol identity, duplicate handling, lifecycle evidence, inactive/delisted status, reproducible historical snapshots, complete pagination
 - **OHLCV provider role:** Alpaca SIP (already locked by `INTRA-001B-ALPACA-V2`)
-- **Fallback dataset:** 2024-01-02 through 2025-12-31, approved but not yet required
 - **No paid upgrade, no composite reference stack, no silent fallback:** confirmed
 - **v1 pre-registration commit:** `e4d123e5ecca80ab8ba1fa09ff397d4f0a3d67dc`
 - **v2 pre-registration commit:** `d5b2ba5d14151fd007c89cc5fc9c6ae7fec6f299`
 - **v2 live run head:** `d5b2ba5d14151fd007c89cc5fc9c6ae7fec6f299`
 - **Problem statement:** The intraday score is a loose bundle of indicators without VWAP, time-of-day, or liquidity context.
-- **Recommended action:** Pre-register `INTRA-001B-REFERENCE-V3` with complete pagination, Ticker Types taxonomy lock, all 20 mandatory gates, full audit preservation, and the corrected decision/artifact provenance schema before any new live provider calls. After a valid reference-provider decision, the next phase is `devin/intra-001b-intraday-snapshot` (the `INTRA-001B` data and manifest infrastructure phase per `INTRA-001-v1.json`), not `INTRA-001C`.
+- **Recommended action:** The bounded `INTRA-001B-REFERENCE-V4` probe has been executed. Reference provider work is blocked under the current free entitlement. The next step requires an explicit Gary decision: either approve a paid Massive upgrade / different entitlement, approve a different reference provider, or accept the limitation and pause `INTRA-001` snapshot construction. `INTRA-001C` snapshot construction and production promotion remain blocked.
 - **Reason:** A generic score is not actionable for intraday trading. The concrete open-drive VWAP pullback setup and its two baselines are pre-registered before any code changes.
 - **Dependencies:** VAL-001
 - **Files likely affected:** `docs/research/INTRA-001-SPEC.md`, `docs/research/specs/INTRA-001-v1.json`, `docs/PROJECT-TRACKER.md` (this specification PR changes no `tradex/` or test code)

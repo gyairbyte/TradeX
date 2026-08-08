@@ -1,4 +1,4 @@
-"""Safe artifact bundle and report writer for INTRA-001B reference probe."""
+"""Safe artifact bundle and report writer for INTRA-001B-REFERENCE probes."""
 from __future__ import annotations
 
 import csv
@@ -9,6 +9,24 @@ from typing import Any
 
 from .models import ProviderCandidateResult, ReferenceProbeDecision
 from .spec import ReferenceProbeSpec
+
+EXPECTED_SAFE_ARTIFACTS = (
+    "README.txt",
+    "artifact_manifest.json",
+    "checksums.sha256",
+    "probe_spec.lock.json",
+    "strategy_spec_reference.json",
+    "alpaca_v2_reference.json",
+    "request_audit.csv",
+    "provider_capability_matrix.csv",
+    "security_type_mapping.csv",
+    "security_type_taxonomy.csv",
+    "historical_coverage.csv",
+    "pagination_audit.csv",
+    "repeatability.csv",
+    "decision.json",
+    "report.md",
+)
 
 
 def _write_json(path: Path, obj: Any) -> None:
@@ -21,7 +39,7 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         return
     fieldnames = sorted(rows[0].keys())
     with path.open("w", newline="") as fp:
-        writer = csv.DictWriter(fp, fieldnames=fieldnames)
+        writer = csv.DictWriter(fp, fieldnames=fieldnames, lineterminator="\n")
         writer.writeheader()
         for row in rows:
             writer.writerow({k: row[k] for k in fieldnames})
@@ -37,31 +55,162 @@ def _artifact_run_id() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%d-%H%M%S")
 
 
-def _unwanted_markers() -> set[str]:
-    return {"WARRANT", "RIGHT", "UNIT", "PFD"}
+def _map_alpha_asset_type(asset_type: str) -> str:
+    at = (asset_type or "").lower()
+    if "common stock" in at or at == "stock":
+        return "common_stock"
+    if "etf" in at:
+        return "etf"
+    if "preferred" in at or "pfd" in at:
+        return "preferred_stock"
+    if "warrant" in at:
+        return "warrant"
+    if "right" in at:
+        return "right"
+    if "unit" in at:
+        return "unit"
+    if "otc" in at:
+        return "otc"
+    return "unknown"
 
 
 def _security_type_mapping_rows(
-    security_type_counts: dict[str, int],
+    result: ProviderCandidateResult,
 ) -> list[dict[str, Any]]:
-    unwanted = _unwanted_markers()
     rows = []
-    for stype, count in sorted(security_type_counts.items()):
-        if stype in unwanted:
-            marker = "exclude"
-        elif stype in {"CS", "ETF"}:
-            marker = "include"
-        else:
-            marker = "review"
-        rows.append(
-            {
+    if result.taxonomy_mapping:
+        for stype, category in sorted(result.taxonomy_mapping.items()):
+            if category == "common_stock":
+                marker = "include"
+            elif category in {"etf", "preferred_stock", "warrant", "right", "unit", "otc", "unknown", "other"}:
+                marker = "exclude"
+            else:
+                marker = "review"
+            rows.append({
                 "provider_type_value": stype,
-                "mapped_category": stype,
+                "mapped_category": category,
+                "exclusion_marker": marker,
+                "observed_count": result.security_type_counts.get(stype, 0),
+            })
+    else:
+        for stype, count in sorted(result.security_type_counts.items()):
+            category = _map_alpha_asset_type(stype)
+            if category == "common_stock":
+                marker = "include"
+            elif category in {"etf", "preferred_stock", "warrant", "right", "unit", "otc", "unknown", "other"}:
+                marker = "exclude"
+            else:
+                marker = "review"
+            rows.append({
+                "provider_type_value": stype,
+                "mapped_category": category,
                 "exclusion_marker": marker,
                 "observed_count": count,
-            }
-        )
+            })
     return rows
+
+
+def _security_type_taxonomy_rows(
+    result: ProviderCandidateResult,
+) -> list[dict[str, Any]]:
+    if result.ticker_types:
+        rows = []
+        for entry in result.ticker_types:
+            if not isinstance(entry, dict):
+                continue
+            code = str(entry.get("code") or "").strip().upper()
+            if not code:
+                continue
+            category = result.taxonomy_mapping.get(code, "unknown")
+            rows.append({
+                "provider_code": code,
+                "provider_description": str(entry.get("description") or "").strip(),
+                "provider_asset_class": str(entry.get("asset_class") or "").strip(),
+                "provider_locale": str(entry.get("locale") or "").strip(),
+                "tradex_category": category,
+                "eligible_stock": category == "common_stock",
+            })
+        return rows
+    if result.taxonomy_mapping:
+        return [
+            {
+                "provider_code": code,
+                "provider_description": code,
+                "provider_asset_class": "stocks",
+                "provider_locale": "us",
+                "tradex_category": category,
+                "eligible_stock": category == "common_stock",
+            }
+            for code, category in sorted(result.taxonomy_mapping.items())
+        ]
+    return []
+
+
+def _request_audit_rows(result: ProviderCandidateResult) -> list[dict[str, Any]]:
+    rows = []
+    for obs in result.observations:
+        rows.append({
+            "provider": obs.provider,
+            "pit_date": obs.pit_date,
+            "state": obs.state,
+            "requested_at": obs.requested_at,
+            "elapsed_seconds": obs.elapsed_seconds,
+            "http_status": obs.http_status,
+            "row_count": obs.row_count,
+            "page_count": obs.page_count,
+            "pagination_complete": obs.pagination_complete,
+            "max_pages_reached": obs.max_pages_reached,
+            "raw_sha256": obs.raw_sha256,
+            "full_snapshot_sha256": obs.full_snapshot_sha256 or "",
+            "repeat_match": obs.repeat_match,
+            "repeat_sha256": obs.repeat_sha256 or "",
+            "error": obs.error or "",
+        })
+    return rows
+
+
+def _historical_coverage_rows(result: ProviderCandidateResult) -> list[dict[str, Any]]:
+    seen = set()
+    rows = []
+    for obs in result.observations:
+        key = (obs.pit_date, obs.state)
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append({
+            "pit_date": obs.pit_date,
+            "state": obs.state,
+            "row_count": obs.row_count,
+            "canonical_ticker_count": obs.canonical_ticker_count,
+            "pagination_complete": obs.pagination_complete,
+            "full_snapshot_sha256": obs.full_snapshot_sha256 or "",
+        })
+    return rows
+
+
+def _repeatability_rows(result: ProviderCandidateResult) -> list[dict[str, Any]]:
+    rows = []
+    for obs in result.observations:
+        if obs.repeat_match is None:
+            continue
+        rows.append({
+            "provider": obs.provider,
+            "pit_date": obs.pit_date,
+            "state": obs.state,
+            "repeat_match": obs.repeat_match,
+            "raw_sha256": obs.raw_sha256,
+            "repeat_sha256": obs.repeat_sha256 or "",
+            "repeat_seconds": obs.repeat_seconds,
+        })
+    return rows
+
+
+def _pagination_audit_rows(result: ProviderCandidateResult) -> list[dict[str, Any]]:
+    return [page.to_dict() for page in result.pagination_pages]
+
+
+def _capability_matrix_rows(result: ProviderCandidateResult) -> list[dict[str, Any]]:
+    return [row.to_dict() for row in result.capability_rows]
 
 
 def _write_reference_files(out: Path, spec: ReferenceProbeSpec) -> dict[str, str]:
@@ -90,82 +239,77 @@ def _write_reference_files(out: Path, spec: ReferenceProbeSpec) -> dict[str, str
 
 def _write_audit_files(out: Path, candidate_result: ProviderCandidateResult) -> dict[str, str]:
     files: dict[str, str] = {}
-    observations = [obs.to_dict() for obs in candidate_result.observations]
 
-    if observations:
-        request_rows = []
-        coverage_rows = []
-        repeat_rows = []
-        for obs in observations:
-            request_rows.append(
-                {
-                    "provider": obs["provider"],
-                    "pit_date": obs["pit_date"],
-                    "state": obs["state"],
-                    "requested_at": obs["requested_at"],
-                    "elapsed_seconds": obs["elapsed_seconds"],
-                    "http_status": obs["http_status"],
-                    "row_count": obs["row_count"],
-                    "raw_sha256": obs["raw_sha256"],
-                    "repeat_match": obs.get("repeat_match"),
-                    "repeat_seconds": obs.get("repeat_seconds"),
-                    "repeat_sha256": obs.get("repeat_sha256"),
-                }
-            )
-            coverage_rows.append(
-                {
-                    "pit_date": obs["pit_date"],
-                    "state": obs["state"],
-                    "row_count": obs["row_count"],
-                    "repeat_match": obs.get("repeat_match"),
-                    "raw_sha256": obs["raw_sha256"],
-                }
-            )
-            repeat_rows.append(
-                {
-                    "provider": obs["provider"],
-                    "pit_date": obs["pit_date"],
-                    "state": obs["state"],
-                    "repeat_match": obs.get("repeat_match"),
-                    "raw_sha256": obs["raw_sha256"],
-                    "repeat_sha256": obs.get("repeat_sha256"),
-                    "repeat_seconds": obs.get("repeat_seconds"),
-                }
-            )
+    request_rows = _request_audit_rows(candidate_result)
+    _write_csv(out / "request_audit.csv", request_rows)
+    files["request_audit.csv"] = _hash_file(out / "request_audit.csv")
 
-        _write_csv(out / "request_audit.csv", request_rows)
-        files["request_audit.csv"] = _hash_file(out / "request_audit.csv")
+    coverage_rows = _historical_coverage_rows(candidate_result)
+    _write_csv(out / "historical_coverage.csv", coverage_rows)
+    files["historical_coverage.csv"] = _hash_file(out / "historical_coverage.csv")
 
-        _write_csv(out / "historical_coverage.csv", coverage_rows)
-        files["historical_coverage.csv"] = _hash_file(out / "historical_coverage.csv")
+    repeat_rows = _repeatability_rows(candidate_result)
+    _write_csv(out / "repeatability.csv", repeat_rows)
+    files["repeatability.csv"] = _hash_file(out / "repeatability.csv")
 
-        _write_csv(out / "repeatability.csv", repeat_rows)
-        files["repeatability.csv"] = _hash_file(out / "repeatability.csv")
+    pagination_rows = _pagination_audit_rows(candidate_result)
+    _write_csv(out / "pagination_audit.csv", pagination_rows)
+    files["pagination_audit.csv"] = _hash_file(out / "pagination_audit.csv")
 
-    mapping_rows = _security_type_mapping_rows(candidate_result.security_type_counts)
+    capability_rows = _capability_matrix_rows(candidate_result)
+    _write_csv(out / "provider_capability_matrix.csv", capability_rows)
+    files["provider_capability_matrix.csv"] = _hash_file(out / "provider_capability_matrix.csv")
+
+    mapping_rows = _security_type_mapping_rows(candidate_result)
     _write_csv(out / "security_type_mapping.csv", mapping_rows)
     files["security_type_mapping.csv"] = _hash_file(out / "security_type_mapping.csv")
+
+    taxonomy_rows = _security_type_taxonomy_rows(candidate_result)
+    _write_csv(out / "security_type_taxonomy.csv", taxonomy_rows)
+    files["security_type_taxonomy.csv"] = _hash_file(out / "security_type_taxonomy.csv")
 
     return files
 
 
 def _write_readme(out: Path, decision: ReferenceProbeDecision) -> dict[str, str]:
-    readme = (
-        f"INTRA-001B-REFERENCE safe artifact bundle\n"
-        f"Run ID: {out.name}\n"
-        f"Task: {decision.task_id}\n"
-        f"Provider: {decision.provider or 'none selected'}\n"
-        f"Outcome: {decision.outcome}\n"
-        f"Dataset used: {decision.dataset_used or 'n/a'}\n"
-        f"Pre-registration commit: {decision.v1_pre_registration_commit}\n"
-        f"Final head: {decision.final_head}\n"
-        f"Branch: {decision.branch}\n"
-        f"Ran at: {decision.ran_at}\n\n"
-        "This bundle contains research-only audit artifacts for the reference-provider probe.\n"
-        "It does not authorize production changes.\n"
-    )
+    version = decision.probe_version or 3
+    pre_lines = [
+        f"INTRA-001B-REFERENCE-V{version} safe artifact bundle",
+        f"Run ID: {out.name}",
+        f"Task: {decision.task_id}",
+        f"Provider: {decision.provider or 'none selected'}",
+        f"Outcome: {decision.outcome}",
+        f"Dataset used: {decision.dataset_used or 'n/a'}",
+    ]
+    if decision.v1_pre_registration_commit:
+        pre_lines.append(f"v1 pre-registration commit: {decision.v1_pre_registration_commit}")
+    if decision.v2_pre_registration_commit:
+        pre_lines.append(f"v2 pre-registration commit: {decision.v2_pre_registration_commit}")
+    if decision.v3_pre_registration_commit:
+        pre_lines.append(f"v3 pre-registration commit: {decision.v3_pre_registration_commit}")
+    if decision.v4_pre_registration_commit:
+        pre_lines.append(f"v4 pre-registration commit: {decision.v4_pre_registration_commit}")
+    http_by_provider = {
+        d.provider: d.http_request_count
+        for d in decision.candidate_dispositions
+        if d.http_request_count
+    }
+    pre_lines.extend([
+        f"Live run head: {decision.live_run_head or 'n/a'}",
+        f"Starting main SHA: {decision.starting_main_sha or 'n/a'}",
+        f"Branch: {decision.branch}",
+        f"Ran at: {decision.ran_at}",
+    ])
+    if http_by_provider:
+        for provider, count in sorted(http_by_provider.items()):
+            pre_lines.append(f"HTTP page requests ({provider}): {count}")
+    pre_lines.extend([
+        "",
+        "This bundle contains research-only audit artifacts for the reference-provider probe.",
+        "It does not authorize production changes.",
+    ])
     p = out / "README.txt"
-    p.write_text(readme)
+    p.write_text("\n".join(pre_lines) + "\n")
     return {"README.txt": _hash_file(p)}
 
 
@@ -177,7 +321,6 @@ def write_reference_probe_artifacts(
     *,
     probe_spec_raw: bytes,
     report_markdown: str | None = None,
-    additional_files: dict[str, bytes] | None = None,
 ) -> Path:
     """Write the locked safe artifact bundle and return the bundle directory."""
     out = Path(output_dir).expanduser().resolve()
@@ -201,34 +344,6 @@ def write_reference_probe_artifacts(
     files["decision.json"] = _hash_file(decision_path)
 
     if candidate_result is not None:
-        provider_path = out / "provider_candidate_result.json"
-        _write_json(provider_path, candidate_result.to_dict())
-        files["provider_candidate_result.json"] = _hash_file(provider_path)
-
-        _write_csv(
-            out / "observations.csv",
-            [obs.to_dict() for obs in candidate_result.observations],
-        )
-        files["observations.csv"] = _hash_file(out / "observations.csv")
-
-        _write_csv(
-            out / "capability_matrix.csv",
-            [row.to_dict() for row in candidate_result.capability_rows],
-        )
-        files["capability_matrix.csv"] = _hash_file(out / "capability_matrix.csv")
-
-        security_rows = [
-            {"security_type": k, "count": v} for k, v in candidate_result.security_type_counts.items()
-        ]
-        _write_csv(out / "security_type_counts.csv", security_rows)
-        files["security_type_counts.csv"] = _hash_file(out / "security_type_counts.csv")
-
-        exchange_rows = [
-            {"exchange": k, "count": v} for k, v in candidate_result.exchange_counts.items()
-        ]
-        _write_csv(out / "exchange_counts.csv", exchange_rows)
-        files["exchange_counts.csv"] = _hash_file(out / "exchange_counts.csv")
-
         files.update(_write_audit_files(out, candidate_result))
 
     report_md = report_markdown or _default_report(decision, candidate_result, spec)
@@ -236,18 +351,24 @@ def write_reference_probe_artifacts(
     report_path.write_text(report_md)
     files["report.md"] = _hash_file(report_path)
 
-    if additional_files:
-        for name, data in additional_files.items():
-            p = out / name
-            p.write_bytes(data)
-            files[name] = _hash_file(p)
-
+    # Manifest lists all safe artifacts except itself.
     manifest_path = out / "artifact_manifest.json"
-    _write_json(manifest_path, {"schema_version": spec.safe_artifact_schema_version, "files": files})
+    _write_json(manifest_path, {"schema_version": spec.safe_artifact_schema_version, "files": dict(sorted(files.items()))})
+    files["artifact_manifest.json"] = _hash_file(manifest_path)
 
+    # Checksum lists all safe artifacts except itself.
     checksum_path = out / "checksums.sha256"
     lines = [f"{h}  {name}\n" for name, h in sorted(files.items())]
     checksum_path.write_text("".join(lines))
+    files["checksums.sha256"] = _hash_file(checksum_path)
+
+    # Enforce exact safe-artifact contract.
+    actual = set(files.keys())
+    expected = set(EXPECTED_SAFE_ARTIFACTS)
+    if actual != expected:
+        missing = expected - actual
+        extra = actual - expected
+        raise RuntimeError(f"Safe artifact contract violation: missing={sorted(missing)} extra={sorted(extra)}")
 
     return out
 
@@ -257,8 +378,9 @@ def _default_report(
     candidate: ProviderCandidateResult | None,
     spec: ReferenceProbeSpec,
 ) -> str:
+    version = decision.probe_version or 3
     lines = [
-        "# INTRA-001B-REFERENCE Reference Provider Probe Report",
+        f"# INTRA-001B-REFERENCE-V{version} Reference Provider Probe Report",
         "",
         f"- **Task ID:** {decision.task_id}",
         f"- **Probe version:** {decision.probe_version}",
@@ -267,10 +389,15 @@ def _default_report(
         f"- **Approved as reference provider:** {decision.approved_as_reference_provider}",
         f"- **Reason:** {decision.reason}",
         f"- **Candidate order:** {', '.join(decision.candidate_order)}",
-        f"- **Pre-registration commit:** {decision.v1_pre_registration_commit}",
-        f"- **Final head:** {decision.final_head}",
+        f"- **Starting main SHA:** {decision.starting_main_sha}",
         f"- **Branch:** {decision.branch}",
+        f"- **Live run head:** {decision.live_run_head}",
+        f"- **v1 pre-registration commit:** {decision.v1_pre_registration_commit}",
+        f"- **v2 pre-registration commit:** {decision.v2_pre_registration_commit}",
+        f"- **v3 pre-registration commit:** {decision.v3_pre_registration_commit}",
+        f"- **v4 pre-registration commit:** {decision.v4_pre_registration_commit or 'n/a'}",
         f"- **Ran at:** {decision.ran_at}",
+        f"- **Not required gates:** {', '.join(decision.not_required_gates) or 'none'}",
         "",
         "## Locked methodology",
         "",
@@ -286,18 +413,45 @@ def _default_report(
     for d in decision.pit_dates:
         lines.append(f"- {d}")
     lines.append("")
+    if decision.fallback_probe_dates:
+        lines.append("## Fallback probe dates")
+        lines.append("")
+        for d in decision.fallback_probe_dates:
+            lines.append(f"- {d}")
+        lines.append("")
     lines.append("## Decision gates")
     lines.append("")
     lines.append("| Gate | Passed |")
     lines.append("|------|--------|")
-    lines.append(f"| PIT date support | {decision.pit_date_support} |")
-    lines.append(f"| Active/delisted coverage | {decision.active_delisted_coverage} |")
-    lines.append(f"| Security-type exclusions possible | {decision.security_type_exclusions_possible} |")
-    lines.append(f"| Security-type taxonomy granular | {decision.security_type_taxonomy_granular} |")
-    lines.append(f"| Primary exchange provenance | {decision.primary_exchange_provenance} |")
-    lines.append(f"| Reproducible | {decision.reproducible} |")
-    lines.append(f"| Free under current entitlement | {decision.free_under_current_entitlement} |")
-    lines.append(f"| Full repeatability passed | {decision.full_repeatability_passed} |")
+    gate_names = [
+        "pit_date_support_for_all_probe_dates",
+        "active_state_complete",
+        "inactive_or_delisted_state_complete",
+        "pagination_exhausted_to_terminal",
+        "no_pagination_cycles_or_repeated_cursors",
+        "exact_historical_date_semantics",
+        "common_stock_classification",
+        "etf_classification",
+        "warrant_exclusion",
+        "right_exclusion",
+        "unit_exclusion",
+        "preferred_stock_exclusion",
+        "otc_exclusion",
+        "primary_listing_provenance",
+        "symbol_presence_and_determinism",
+        "lifecycle_evidence",
+        "duplicate_symbol_behavior_and_resolution",
+        "repeatability",
+        "hashability",
+        "no_present_day_reconstruction",
+        "historical_2022_entitlement_under_current_plan",
+        "feasible_for_all_48_monthly_pit_snapshots",
+        "feasible_for_all_probe_monthly_pit_snapshots",
+    ]
+    for name in gate_names:
+        value = getattr(decision, name, False)
+        lines.append(f"| {name} | {value} |")
+    lines.append(f"| **All mandatory gates passed** | {decision.all_mandatory_gates_passed} |")
     lines.append("")
 
     if decision.dataset_used:
@@ -307,8 +461,9 @@ def _default_report(
     if decision.candidate_dispositions:
         lines.append("## Candidate dispositions")
         lines.append("")
-        for name, reason in decision.candidate_dispositions:
-            lines.append(f"- **{name}:** {reason}")
+        for disp in decision.candidate_dispositions:
+            d = disp if isinstance(disp, dict) else disp.to_dict()
+            lines.append(f"- **{d['provider']}** ({d['dataset']}): {d['disposition']} — {d['reason']}")
         lines.append("")
 
     if candidate is not None:
@@ -337,6 +492,15 @@ def _default_report(
         lines.append("")
         for k, v in sorted(candidate.exchange_counts.items()):
             lines.append(f"- {k}: {v}")
+        lines.append("")
+        lines.append("### Pagination summary")
+        lines.append("")
+        lines.append(f"- Max active pages: {candidate.max_pages_active}")
+        lines.append(f"- Max inactive pages: {candidate.max_pages_inactive}")
+        if candidate.estimated_http_calls_48_months:
+            lines.append(f"- Estimated HTTP calls for 48 monthly snapshots: {candidate.estimated_http_calls_48_months}")
+        if candidate.estimated_collection_time_48_months_seconds:
+            lines.append(f"- Estimated collection time (seconds): {candidate.estimated_collection_time_48_months_seconds:,.0f}")
         lines.append("")
         lines.append("## Capability matrix")
         lines.append("")

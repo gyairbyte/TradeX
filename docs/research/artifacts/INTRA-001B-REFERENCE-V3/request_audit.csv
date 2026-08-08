@@ -1,0 +1,9 @@
+elapsed_seconds,error,full_snapshot_sha256,http_status,max_pages_reached,page_count,pagination_complete,pit_date,provider,raw_sha256,repeat_match,repeat_sha256,requested_at,row_count,state
+12.502143,invalid next_url: date parameter drift,,200,False,2,False,2022-01-31,massive,,,,2026-08-08T00:03:55.301840+00:00,1000,active
+11.953971,invalid next_url: date parameter drift,,200,False,2,False,2022-01-31,massive,,,,2026-08-08T00:04:07.805259+00:00,1000,inactive
+12.104717,invalid next_url: date parameter drift,,200,False,2,False,2023-07-31,massive,,,,2026-08-08T00:04:19.760060+00:00,1000,active
+12.161487,invalid next_url: date parameter drift,,200,False,2,False,2023-07-31,massive,,,,2026-08-08T00:04:31.865552+00:00,1000,inactive
+12.046507,invalid next_url: date parameter drift,,200,False,2,False,2024-05-31,massive,,,,2026-08-08T00:04:44.027815+00:00,1000,active
+12.083647,invalid next_url: date parameter drift,,200,False,2,False,2024-05-31,massive,,,,2026-08-08T00:04:56.075145+00:00,1000,inactive
+12.206183,invalid next_url: date parameter drift,,200,False,2,False,2025-11-30,massive,,,,2026-08-08T00:05:08.159585+00:00,1000,active
+12.081173,invalid next_url: date parameter drift,,200,False,2,False,2025-11-30,massive,,,,2026-08-08T00:05:20.366581+00:00,1000,inactive
