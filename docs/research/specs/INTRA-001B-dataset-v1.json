@@ -1,0 +1,253 @@
+{
+  "schema_version": "1.0",
+  "task_id": "INTRA-001B-DATASET-V1",
+  "dataset_id": "INTRA-001B-DATASET-V1",
+  "study_parent": "INTRA-001",
+  "original_strategy_spec": {
+    "path": "docs/research/specs/INTRA-001-v1.json",
+    "sha256": "09394d038928433529ec4c5f5ba5ff0392c764d5b59f1af71d95f4f3957c0464"
+  },
+  "data_sufficiency_amendment": {
+    "path": "docs/research/specs/INTRA-001-data-sufficiency-amendment-v3.json",
+    "sha256": "94cc27820c97086a27252e2392c6fcf5ebcba4be482e026e1a80ff523ed1e48b"
+  },
+  "reference_probe_evidence": {
+    "v4_decision_document": "docs/research/INTRA-001B-REFERENCE-V4.md",
+    "v4_decision_document_sha256": "23afcdad8a72efff9508a6958a4b05dfbf8b88ab2356414730f97b5298bf4d02",
+    "alpaca_v2_probe_spec": "docs/research/specs/INTRA-001B-alpaca-probe-v2.json",
+    "alpaca_v2_probe_spec_sha256": "f0ee4f8bfca77eae39432974064d3335ae50f1fbd4b57db2ee97dbb553b8fd1e"
+  },
+  "provider_roles": {
+    "authoritative_ohlcv_provider": "alpaca",
+    "authoritative_ohlcv_feed": "sip",
+    "ohlcv_timeframe": "5Min",
+    "ohlcv_adjustment": "raw",
+    "ohlcv_sort": "asc",
+    "ohlcv_page_limit": 10000,
+    "reference_provider": "massive",
+    "reference_provider_endpoint": "GET https://api.massive.com/v3/reference/tickers",
+    "reference_provider_status": "accepted_with_documented_limitations",
+    "no_ohlcv_provider_mixing": true,
+    "no_silent_fallback": true,
+    "no_paid_upgrade": true,
+    "read_only_historical_endpoints_only": true
+  },
+  "dataset": {
+    "dataset_start": "2025-01-02",
+    "dataset_end": "2025-12-31",
+    "development": {
+      "start": "2025-01-02",
+      "end": "2025-06-30"
+    },
+    "validation": {
+      "start": "2025-07-01",
+      "end": "2025-09-30"
+    },
+    "holdout": {
+      "start": "2025-10-01",
+      "end": "2025-12-31"
+    },
+    "splits_are_chronological_and_non_overlapping": true,
+    "holdout_must_not_be_inspected_during_implementation_or_candidate_debugging": true
+  },
+  "monthly_pit_dates": [
+    "2024-12-31",
+    "2025-01-31",
+    "2025-02-28",
+    "2025-03-31",
+    "2025-04-30",
+    "2025-05-31",
+    "2025-06-30",
+    "2025-07-31",
+    "2025-08-31",
+    "2025-09-30",
+    "2025-10-31",
+    "2025-11-30"
+  ],
+  "reference_snapshot_policy": {
+    "active_snapshot_required": true,
+    "inactive_snapshot_required": true,
+    "taxonony_endpoint": "GET https://api.massive.com/v3/reference/tickers/types?asset_class=stocks&locale=us",
+    "duplicate_symbol_policy": "Exclude any ticker with more than one reference record in the same PIT snapshot",
+    "active_inactive_overlap_policy": "Active membership is taken from the active snapshot only. A ticker present in both active and inactive snapshots on the same PIT date is treated as active for universe eligibility and the inactive row is retained only for lifecycle provenance.",
+    "no_manual_ticker_exceptions": true,
+    "do_not_construct_from_todays_listings": true,
+    "preserve_inactive_snapshot_provenance": true,
+    "if_pagination_or_pit_provenance_missing": "Surface explicitly; do not turn into an empty successful snapshot"
+  },
+  "conservative_universe_controls": {
+    "stock_security_type_allowlist": ["common_stock"],
+    "security_type_exclusions": ["OTC", "warrant", "right", "unit", "preferred_stock", "unmapped", "unknown", "other"],
+    "exchange_allowlist": ["XNYS", "XNAS", "ARCX", "BATS", "XASE", "XBOS"],
+    "exclude_missing_or_unmapped_exchanges": true,
+    "exclude_missing_or_unmapped_security_types": true,
+    "exclude_unknown_or_unmapped_values": true,
+    "record_exclusion_reasons": true,
+    "record_monthly_exclusion_counts": true
+  },
+  "etf_stratum": {
+    "source": "docs/research/specs/INTRA-001-v1.json universe.etfs",
+    "tickers": ["SPY", "QQQ", "IWM", "DIA", "XLK", "XLF", "XLE", "XLV", "XLI", "XLY", "XLP", "XLU", "SMH"],
+    "fixed": true,
+    "liquidity_filter": false
+  },
+  "liquidity_ranking": {
+    "rank_metric": "median regular-session dollar volume over previous 20 complete XNYS sessions",
+    "dollar_volume_formula": "session_dollar_volume = regular_session_final_close * sum(regular_session_volume)",
+    "rank_top_n": 50,
+    "prior_close_min_usd": 5.0,
+    "prior_20_sessions_median_dollar_volume_min_usd": 50000000.0,
+    "prior_sessions_count": 20,
+    "information_cutoff": "before the first XNYS regular session of the effective month",
+    "ranking_timeframe": "1D",
+    "ranking_feed": "sip",
+    "ranking_adjustment": "raw",
+    "ranking_timeframe_parity_probe": {
+      "enabled": true,
+      "sample_symbols": ["SPY", "AAPL", "JPM"],
+      "sample_window": {
+        "start": "2024-06-03",
+        "end": "2024-06-28"
+      },
+      "parity_fields": ["regular_session_final_close", "sum_regular_session_volume"],
+      "tolerance_pct": 0.1,
+      "fallback_on_failure": "5Min"
+    },
+    "tie_break_rule": "ticker ascending (lexicographic)",
+    "shortfall_policy": "If fewer than 50 stocks qualify, preserve the shortfall explicitly; do not relax thresholds or fill with lower-ranked symbols"
+  },
+  "ohlcv_policy": {
+    "timeframe": "5Min",
+    "feed": "sip",
+    "adjustment": "raw",
+    "sort": "asc",
+    "page_limit": 10000,
+    "timezone_storage": "UTC",
+    "timezone_session_interpretation": "America/New_York",
+    "regular_session_start": "09:30",
+    "regular_session_end": "16:00",
+    "exclude_early_close_sessions": true,
+    "exclude_premarket_bars": true,
+    "exclude_after_hours_bars": true,
+    "bar_timestamp_semantics": "bar_start",
+    "no_missing_bar_fabrication": true,
+    "no_silent_zero_filling": true,
+    "no_silent_provider_fallback": true,
+    "no_iex_substitution": true,
+    "asof_policy": "Use the effective PIT date (YYYY-MM-DD) as the asof parameter for every request. Record requested ticker, effective month, PIT date, requested asof, and returned symbol identity. Reject rows where returned symbol identity does not match requested ticker.",
+    "warmup_sessions": 20
+  },
+  "ranking_download_efficiency": {
+    "use_batched_alpaca_multi_symbol_pagination": true,
+    "multi_symbol_batch_size": 400,
+    "ranking_timeframe_is_coarser_than_5min": true,
+    "coarser_timeframe_parity_verified_before_use": true,
+    "fallback_to_5min_for_ranking_if_parity_fails": true
+  },
+  "data_quality_thresholds": {
+    "missing_bar_rate_per_symbol_pct_max": 5.0,
+    "zero_volume_bar_rate_per_symbol_pct_max": 10.0,
+    "duplicate_bar_rate_per_symbol_pct_max": 1.0,
+    "symbols_rejected_for_data_quality_pct_max": 5.0
+  },
+  "retry_limits": {
+    "alpaca_max_retries": 1,
+    "alpaca_request_delay_seconds": 0.5,
+    "massive_min_interval_seconds": 12.1,
+    "massive_max_pages_per_snapshot": 50
+  },
+  "estimated_resources": {
+    "massive_http_requests": 600,
+    "massive_collection_time_seconds": 10800,
+    "alpaca_http_requests": 300,
+    "alpaca_collection_time_seconds": 300,
+    "local_storage_gb": 2.0
+  },
+  "resume_and_checkpoint": {
+    "resumable_by_phase": true,
+    "skip_completed_files_if_sha_valid": true,
+    "refetch_missing_or_mismatched_files": true,
+    "never_treat_partial_pagination_as_complete": true,
+    "progress_printing": {
+      "phase": true,
+      "pit_date": true,
+      "effective_month": true,
+      "batch": true,
+      "page": true,
+      "successful_requests": true,
+      "retries_and_errors": true,
+      "completed_work": true,
+      "elapsed_time": true,
+      "eta": true
+    }
+  },
+  "stop_conditions": [
+    "Required credentials are unavailable",
+    "A PIT snapshot cannot paginate completely",
+    "Alpaca SIP is unavailable under the current entitlement",
+    "Returned feed or adjustment differs from the locked contract",
+    "Symbol identity cannot be joined deterministically",
+    "Estimated job is materially larger than the preregistered budget",
+    "A calculation-invalidating ambiguity is discovered",
+    "The preregistration commit cannot be proven as an ancestor of the live-run head"
+  ],
+  "safe_artifact_policy": {
+    "do_not_commit": [
+      "API credentials or headers",
+      "Raw pagination tokens or cursors",
+      "Account information",
+      "Absolute local paths",
+      "Raw provider JSON payloads",
+      "Full normalized OHLCV dataset",
+      "Large private evidence files"
+    ],
+    "committed_artifacts_include": [
+      "logical relative file identifiers",
+      "provider/feed/timeframe/adjustment",
+      "symbol and effective month",
+      "requested and actual coverage",
+      "row counts",
+      "file sizes",
+      "SHA-256 for every source/normalized file",
+      "schema/version",
+      "request and pagination summaries",
+      "data-quality results",
+      "dataset-level manifest hash"
+    ],
+    "safe_bundle_path": "docs/research/artifacts/INTRA-001B-DATASET-V1/<run-id>/",
+    "expected_safe_artifacts": [
+      "README.txt",
+      "dataset_plan.lock.json",
+      "strategy_spec_reference.json",
+      "amendment_reference.json",
+      "manifest.lock.json",
+      "universe_manifest.csv",
+      "reference_snapshot_summary.csv",
+      "security_type_mapping.csv",
+      "exclusion_summary.csv",
+      "liquidity_ranking_summary.csv",
+      "data_quality.csv",
+      "request_audit.csv",
+      "artifact_manifest.json",
+      "checksums.sha256",
+      "decision.json",
+      "report.md"
+    ]
+  },
+  "failure_classification": {
+    "data_quality_threshold_failure": "inconclusive",
+    "provider_provenance_manifest_timestamp_pagination_or_silent_substitution_failure": "invalid"
+  },
+  "out_of_scope": [
+    "Calculate session VWAP strategy features",
+    "Generate candidate or baseline signals",
+    "Simulate entries or exits",
+    "Calculate returns or trade metrics",
+    "Compare strategies",
+    "Inspect holdout performance",
+    "Use holdout data to alter universe, ranking, thresholds, or methodology",
+    "Import or invoke any strategy module",
+    "Change production trading behavior"
+  ],
+  "trading_impact": "Research-only data and manifest infrastructure. No production signals, scores, weights, thresholds, rankings, eligibility, screeners, alerts, dashboards, brokerage, account, position, order, or trading behavior change."
+}
