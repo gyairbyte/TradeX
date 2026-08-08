@@ -25,6 +25,7 @@ Because the data contract requires deterministic symbol identity and an explicit
 - **v2 pre-registration commit:** `d5b2ba5d14151fd007c89cc5fc9c6ae7fec6f299`
 - **v3 pre-registration commit:** `03e61700dbf2fd072fc36bb63764dc7fa3876281`
 - **v4 pre-registration commit / live run head:** `27b111c0c9cc0adb21ef82dd9d2f0699e55e297f`
+- **Starting main SHA:** `8405ca77569b55f460a381555843842fe55e248a`
 - **Branch:** `devin/intra-001b-reference-v3`
 - **v4 safe artifact bundle:** `docs/research/artifacts/INTRA-001B-REFERENCE-V4/2026-08-08-062051/`
 - **Original strategy spec:** `docs/research/specs/INTRA-001-v1.json`
@@ -37,8 +38,10 @@ Because the data contract requires deterministic symbol identity and an explicit
 - **Alpha Vantage** evidence from V3 was reused; `LISTING_STATUS` returned empty `{}` messages for all attempted PIT dates. It was not selected.
 - **Massive/Polygon** was probed first under the V4 pre-registered candidate order.
 - **HTTP/429/cursor errors:** 0 errors, 0 `429` throttling responses, no repeated cursors or cycles detected across the live run.
+- **Total Massive HTTP page requests:** 868 (first-pass + repeat for all 12 active and 12 inactive snapshots).
 - **Repeatability:** All 24 first-pass observations had matching repeat-pass raw SHA-256 hashes.
 - **Gate matrix:** See `decision.json` and `report.md` in the safe artifact bundle. Mandatory gates `otc_exclusion` and `duplicate_symbol_behavior_and_resolution` did not pass. `historical_2022_entitlement_under_current_plan` and `feasible_for_all_48_monthly_pit_snapshots` were recorded as not required.
+- **48-month semantics:** `feasible_for_all_48_monthly_pit_snapshots` is `false` because the 48-month PIT window was not probed and 2022-2023 entitlement is explicitly not required for V4. The `estimated_48_month_pagination_cost` capability row reports an extrapolated 1,824-call / 22,070-second pagination cost as an information-only estimate, separate from gate pass/fail status.
 
 ## Amendment status
 

@@ -54,6 +54,20 @@ def _current_branch() -> str:
     return result.stdout.strip()
 
 
+def _main_base_sha() -> str:
+    """Return the merge-base with origin/main, or current HEAD if unavailable."""
+    try:
+        result = subprocess.run(
+            ["git", "merge-base", "origin/main", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return result.stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return _current_head()
+
+
 def validate_pre_registration_commit(
     commit: str, final_head: str | None = None
 ) -> None:
@@ -353,19 +367,29 @@ def _capability_matrix_v3(
     )
 
     # 22. feasible_for_all_48_monthly_pit_snapshots
-    feasible = (
+    # The 48-month PIT window was not probed (V4 used 12 months and 2022 was
+    # explicitly not required), so the gate is false. The estimated runtime is
+    # reported separately as an information-only pagination-cost row.
+    _add(
+        "feasible_for_all_48_monthly_pit_snapshots",
+        False,
+        "documented_capability",
+        "48-month PIT entitlement not probed in V4; 2022-2023 coverage explicitly not required.",
+    )
+
+    # 22b. Information-only estimate of pagination cost for 48 monthly snapshots.
+    estimated_cost_ok = (
         pagination_complete
         and no_anomaly
         and result.estimated_http_calls_48_months is not None
         and result.estimated_http_calls_48_months > 0
         and result.estimated_collection_time_48_months_seconds is not None
-        and result.estimated_collection_time_48_months_seconds < 86_400
     )
     _add(
-        "feasible_for_all_48_monthly_pit_snapshots",
-        feasible,
+        "estimated_48_month_pagination_cost",
+        estimated_cost_ok,
         "documented_capability",
-        f"Estimated {result.estimated_http_calls_48_months} HTTP calls and {result.estimated_collection_time_48_months_seconds}s collection time for 48 monthly snapshots." if feasible else "48-month feasibility not established.",
+        f"Estimated {result.estimated_http_calls_48_months} HTTP calls and {result.estimated_collection_time_48_months_seconds:,.1f}s collection time for 48 monthly snapshots." if estimated_cost_ok else "No pagination-cost estimate available.",
     )
 
     # 23. feasible_for_all_probe_monthly_pit_snapshots
@@ -853,7 +877,7 @@ def run_reference_probe(
     if branch is None:
         branch = _current_branch()
     if starting_main_sha is None:
-        starting_main_sha = _current_head()
+        starting_main_sha = _main_base_sha()
     if live_run_head is None:
         live_run_head = v4_pre_registration_commit or _current_head()
 

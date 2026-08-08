@@ -39,7 +39,7 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         return
     fieldnames = sorted(rows[0].keys())
     with path.open("w", newline="") as fp:
-        writer = csv.DictWriter(fp, fieldnames=fieldnames)
+        writer = csv.DictWriter(fp, fieldnames=fieldnames, lineterminator="\n")
         writer.writeheader()
         for row in rows:
             writer.writerow({k: row[k] for k in fieldnames})
@@ -289,10 +289,21 @@ def _write_readme(out: Path, decision: ReferenceProbeDecision) -> dict[str, str]
         pre_lines.append(f"v3 pre-registration commit: {decision.v3_pre_registration_commit}")
     if decision.v4_pre_registration_commit:
         pre_lines.append(f"v4 pre-registration commit: {decision.v4_pre_registration_commit}")
+    http_by_provider = {
+        d.provider: d.http_request_count
+        for d in decision.candidate_dispositions
+        if d.http_request_count
+    }
     pre_lines.extend([
         f"Live run head: {decision.live_run_head or 'n/a'}",
+        f"Starting main SHA: {decision.starting_main_sha or 'n/a'}",
         f"Branch: {decision.branch}",
         f"Ran at: {decision.ran_at}",
+    ])
+    if http_by_provider:
+        for provider, count in sorted(http_by_provider.items()):
+            pre_lines.append(f"HTTP page requests ({provider}): {count}")
+    pre_lines.extend([
         "",
         "This bundle contains research-only audit artifacts for the reference-provider probe.",
         "It does not authorize production changes.",

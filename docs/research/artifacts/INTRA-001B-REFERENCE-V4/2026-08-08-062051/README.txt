@@ -9,8 +9,11 @@ v2 pre-registration commit: d5b2ba5d14151fd007c89cc5fc9c6ae7fec6f299
 v3 pre-registration commit: 03e61700dbf2fd072fc36bb63764dc7fa3876281
 v4 pre-registration commit: 27b111c0c9cc0adb21ef82dd9d2f0699e55e297f
 Live run head: 27b111c0c9cc0adb21ef82dd9d2f0699e55e297f
+Starting main SHA: 8405ca77569b55f460a381555843842fe55e248a
 Branch: devin/intra-001b-reference-v3
 Ran at: 2026-08-08T06:20:51.835613+00:00
+HTTP page requests (alpha_vantage): 16
+HTTP page requests (massive): 868
 
 This bundle contains research-only audit artifacts for the reference-provider probe.
 It does not authorize production changes.

@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from tradex.research.intraday_reference_probe.models import (
     PITObservation,
     ProviderCandidateResult,
@@ -91,3 +93,40 @@ def test_hash_functions() -> None:
     assert hash_bytes(b"foo") == hash_text("foo")
     assert len(hash_bytes(b"foo")) == 64
     assert json_hash({"a": 1, "b": [2, 3]}) == json_hash({"b": [2, 3], "a": 1})
+
+
+def test_reference_probe_decision_limitations_are_strings() -> None:
+    """Regression: limitations/blockers must be tuples of complete strings, not split characters."""
+    decision = ReferenceProbeDecision(
+        probe_version=4,
+        task_id="INTRA-001B-REFERENCE",
+        provider="massive",
+        outcome="unsupported",
+        approved_as_reference_provider=False,
+        reason="failed gates",
+        candidate_order=("massive",),
+        blockers=("Failed required gates: otc_exclusion",),
+        limitations=(
+            "Gate feasible_for_all_48_monthly_pit_snapshots is not required for V4 and did not pass",
+            "Massive/Polygon returned duplicates and unresolved symbols",
+        ),
+    )
+    d = decision.to_dict()
+    assert isinstance(d["limitations"], list)
+    assert all(isinstance(item, str) and len(item) > 1 for item in d["limitations"])
+    assert all(isinstance(item, str) and len(item) > 1 for item in d["blockers"])
+
+
+def test_reference_probe_decision_rejects_string_limitations() -> None:
+    """A single string for limitations/blockers must be rejected at construction."""
+    with pytest.raises(ValueError):
+        ReferenceProbeDecision(
+            probe_version=4,
+            task_id="INTRA-001B-REFERENCE",
+            provider="massive",
+            outcome="unsupported",
+            approved_as_reference_provider=False,
+            reason="failed gates",
+            candidate_order=("massive",),
+            limitations="This must be a tuple of strings, not a single string",
+        )

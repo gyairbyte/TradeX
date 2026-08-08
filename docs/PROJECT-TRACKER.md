@@ -487,11 +487,14 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Reference probe v4 proposal:** `docs/research/INTRA-001B-REFERENCE-V4-PROPOSAL.md`
 - **Reference probe v4 spec:** `docs/research/specs/INTRA-001B-reference-probe-v4.json`
 - **Reference probe v4 pre-registration / live run head:** `27b111c0c9cc0adb21ef82dd9d2f0699e55e297f`
+- **Reference probe v4 starting main SHA:** `8405ca77569b55f460a381555843842fe55e248a`
 - **Reference probe v4 safe artifacts:** `docs/research/artifacts/INTRA-001B-REFERENCE-V4/2026-08-08-062051/`
 - **Reference probe v4 decision:** `docs/research/INTRA-001B-REFERENCE-V4.md`
 - **Reference probe v4 original dataset:** `2025-08-01` through `2026-07-31` (12 monthly PIT snapshots)
 - **Reference probe v4 fallback dataset:** `2024-09-01` through `2026-07-31` (23 monthly PIT snapshots, entitlement-valid; not used because the failure was structural, not historical-depth / entitlement)
 - **Reference probe v4 outcome:** `unsupported` — Massive/Polygon completed full pagination, taxonomy, and repeatability, but failed the mandatory `otc_exclusion` and `duplicate_symbol_behavior_and_resolution` gates
+- **Reference probe v4 Massive HTTP page requests:** 868 (first-pass + repeat across 12 active and 12 inactive monthly PIT snapshots; 0 errors and 0 `429` responses)
+- **Reference probe v4 48-month feasibility note:** `feasible_for_all_48_monthly_pit_snapshots` is `false` because the 48-month window was not probed and 2022-2023 coverage was not required for V4; an information-only `estimated_48_month_pagination_cost` row reports an extrapolated 1,824-call / 22,070-second pagination cost
 - **Reference provider role:** point-in-time monthly active listings, common-stock vs ETF classification, warrant/right/unit/preferred-stock/OTC exclusion, primary listing/exchange provenance, deterministic symbol identity, duplicate handling, lifecycle evidence, inactive/delisted status, reproducible historical snapshots, complete pagination
 - **OHLCV provider role:** Alpaca SIP (already locked by `INTRA-001B-ALPACA-V2`)
 - **No paid upgrade, no composite reference stack, no silent fallback:** confirmed

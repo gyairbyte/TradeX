@@ -20,5 +20,6 @@ repeatability,live_evidence,Full-snapshot repeat hashes matched for all observat
 hashability,live_evidence,All successful snapshots have SHA-256 hashes.,massive,True
 no_present_day_reconstruction,live_evidence,Distinct historical results across requested dates; no evidence of present-day reconstruction.,massive,True
 historical_2022_entitlement_under_current_plan,live_evidence,2022 PIT date request failed or returned no rows.,massive,False
-feasible_for_all_48_monthly_pit_snapshots,documented_capability,Estimated 1824 HTTP calls and 22070.399999999998s collection time for 48 monthly snapshots.,massive,True
+feasible_for_all_48_monthly_pit_snapshots,documented_capability,48-month PIT entitlement not probed in V4; 2022-2023 coverage explicitly not required.,massive,False
+estimated_48_month_pagination_cost,documented_capability,"Estimated 1824 HTTP calls and 22,070.4s collection time for 48 monthly snapshots.",massive,True
 feasible_for_all_probe_monthly_pit_snapshots,documented_capability,"Estimated 456 HTTP calls and 5,517.6s collection time for 12 probe monthly snapshots.",massive,True

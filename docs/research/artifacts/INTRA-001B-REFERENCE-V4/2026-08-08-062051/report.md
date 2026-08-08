@@ -7,7 +7,7 @@
 - **Approved as reference provider:** False
 - **Reason:** Massive/Polygon completed all 12 monthly PIT snapshots for active/inactive states with verified pagination, taxonomy, repeatability, and hashability, but did not satisfy all mandatory gates: ['otc_exclusion', 'duplicate_symbol_behavior_and_resolution']. Duplicate symbols: 302; unresolved: 5. No paid upgrade or composite reference stack was introduced. The reference provider remains unselected under the current free entitlement.
 - **Candidate order:** alpha_vantage, massive
-- **Starting main SHA:** 27b111c0c9cc0adb21ef82dd9d2f0699e55e297f
+- **Starting main SHA:** 8405ca77569b55f460a381555843842fe55e248a
 - **Branch:** devin/intra-001b-reference-v3
 - **Live run head:** 27b111c0c9cc0adb21ef82dd9d2f0699e55e297f
 - **v1 pre-registration commit:** e4d123e5ecca80ab8ba1fa09ff397d4f0a3d67dc
@@ -98,7 +98,7 @@
 ## Candidate dispositions
 
 - **alpha_vantage** (original): evaluated_not_selected — 2022-01-31/active: provider message: {}; 2022-01-31/delisted: provider message: {}; 2023-07-31/active: provider message: {}; 2023-07-31/delisted: provider message: {}; 2024-05-31/active: provider message: {}; 2024-05-31/delisted: provider message: {}; 2025-11-30/active: provider message: {}; 2025-11-30/delisted: provider message: {}
-- **massive** (original): evaluated — Evaluated
+- **massive** (original): evaluated — Completed all 12 monthly PIT snapshots; 868 HTTP page requests; failed mandatory gates: ['otc_exclusion', 'duplicate_symbol_behavior_and_resolution'].
 
 ## Provider candidate summary
 
@@ -167,7 +167,8 @@
 | hashability | True | live_evidence | All successful snapshots have SHA-256 hashes. |
 | no_present_day_reconstruction | True | live_evidence | Distinct historical results across requested dates; no evidence of present-day reconstruction. |
 | historical_2022_entitlement_under_current_plan | False | live_evidence | 2022 PIT date request failed or returned no rows. |
-| feasible_for_all_48_monthly_pit_snapshots | True | documented_capability | Estimated 1824 HTTP calls and 22070.399999999998s collection time for 48 monthly snapshots. |
+| feasible_for_all_48_monthly_pit_snapshots | False | documented_capability | 48-month PIT entitlement not probed in V4; 2022-2023 coverage explicitly not required. |
+| estimated_48_month_pagination_cost | True | documented_capability | Estimated 1824 HTTP calls and 22,070.4s collection time for 48 monthly snapshots. |
 | feasible_for_all_probe_monthly_pit_snapshots | True | documented_capability | Estimated 456 HTTP calls and 5,517.6s collection time for 12 probe monthly snapshots. |
 
 ---

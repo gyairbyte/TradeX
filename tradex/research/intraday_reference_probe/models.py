@@ -337,6 +337,20 @@ class ReferenceProbeDecision:
     candidate_dispositions: tuple[ProviderDisposition, ...] = ()
     ran_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat(timespec="microseconds"))
 
+    def __post_init__(self) -> None:
+        for name in ("blockers", "limitations"):
+            value = getattr(self, name)
+            if value is None:
+                object.__setattr__(self, name, ())
+                continue
+            if isinstance(value, str):
+                raise ValueError(f"{name} must be a tuple of strings, not a single string")
+            if not isinstance(value, tuple):
+                raise ValueError(f"{name} must be a tuple of strings")
+            for item in value:
+                if not isinstance(item, str):
+                    raise ValueError(f"{name} must be a tuple of strings")
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "probe_version": self.probe_version,
