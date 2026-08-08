@@ -75,7 +75,7 @@
     "2025-11-30"
   ],
   "feasible_for_all_48_monthly_pit_snapshots": false,
-  "final_pr_head": "03e61700dbf2fd072fc36bb63764dc7fa3876281",
+  "final_pr_head": "906ce9784694ed4d365b0881042e0619cddfc1a3",
   "hashability": true,
   "historical_2022_entitlement": false,
   "historical_2022_entitlement_under_current_plan": false,
@@ -83,7 +83,7 @@
   "lifecycle_evidence": "delisting_date, listing_date",
   "lifecycle_evidence_gate": true,
   "limitations": [],
-  "live_run_head": "03e61700dbf2fd072fc36bb63764dc7fa3876281",
+  "live_run_head": "906ce9784694ed4d365b0881042e0619cddfc1a3",
   "massive_credentials_available": true,
   "massive_disposition": "not_attempted",
   "massive_probe_executed": false,
