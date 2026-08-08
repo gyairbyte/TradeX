@@ -7,7 +7,7 @@ import json
 import logging
 import shutil
 from collections import Counter
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -979,6 +979,11 @@ def run_validate(
     max_dup = float(thresholds.get("duplicate_bar_rate_per_symbol_pct_max", 1.0))
     max_rejected_pct = float(thresholds.get("symbols_rejected_for_data_quality_pct_max", 5.0))
 
+    df["pagination_complete"] = df["pagination_complete"].astype(bool)
+    df["symbol_mismatch"] = df["symbol_mismatch"].astype(bool)
+    df["rejected"] = False
+    df["rejection_reason"] = ""
+
     rejected_mask = (
         (df["missing_bar_rate_pct"] > max_missing)
         | (df["zero_volume_bar_rate_pct"] > max_zero)
@@ -1105,7 +1110,7 @@ def _write_safe_artifacts(
     artifact_dir: Path,
     decision: DatasetDecision,
 ) -> None:
-    run_id = datetime.now(datetime.UTC).strftime("%Y-%m-%d-%H%M%S")
+    run_id = datetime.now(UTC).strftime("%Y-%m-%d-%H%M%S")
     out = Path(artifact_dir).expanduser().resolve() / run_id
     out.mkdir(parents=True, exist_ok=True)
 
