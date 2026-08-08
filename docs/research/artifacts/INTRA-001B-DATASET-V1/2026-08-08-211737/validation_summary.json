@@ -1,0 +1,98 @@
+{
+  "disposition": "valid",
+  "max_duplicate_rate_pct": 0.0,
+  "max_malformed_row_rate_pct": 0.0,
+  "max_missing_rate_pct": 29.4559,
+  "max_zero_volume_rate_pct": 0.0,
+  "monthly_rejections": {
+    "2025-01": {
+      "breaches_5pct_threshold": false,
+      "data_quality_rejected": 1,
+      "invalid_symbols": 0,
+      "rejected_pct": 1.5873,
+      "total_symbols": 63
+    },
+    "2025-02": {
+      "breaches_5pct_threshold": false,
+      "data_quality_rejected": 1,
+      "invalid_symbols": 0,
+      "rejected_pct": 1.5873,
+      "total_symbols": 63
+    },
+    "2025-03": {
+      "breaches_5pct_threshold": false,
+      "data_quality_rejected": 1,
+      "invalid_symbols": 0,
+      "rejected_pct": 1.5873,
+      "total_symbols": 63
+    },
+    "2025-04": {
+      "breaches_5pct_threshold": false,
+      "data_quality_rejected": 1,
+      "invalid_symbols": 0,
+      "rejected_pct": 1.5873,
+      "total_symbols": 63
+    },
+    "2025-05": {
+      "breaches_5pct_threshold": false,
+      "data_quality_rejected": 0,
+      "invalid_symbols": 0,
+      "rejected_pct": 0.0,
+      "total_symbols": 63
+    },
+    "2025-06": {
+      "breaches_5pct_threshold": false,
+      "data_quality_rejected": 0,
+      "invalid_symbols": 0,
+      "rejected_pct": 0.0,
+      "total_symbols": 63
+    },
+    "2025-07": {
+      "breaches_5pct_threshold": false,
+      "data_quality_rejected": 1,
+      "invalid_symbols": 0,
+      "rejected_pct": 1.5873,
+      "total_symbols": 63
+    },
+    "2025-08": {
+      "breaches_5pct_threshold": false,
+      "data_quality_rejected": 0,
+      "invalid_symbols": 0,
+      "rejected_pct": 0.0,
+      "total_symbols": 63
+    },
+    "2025-09": {
+      "breaches_5pct_threshold": false,
+      "data_quality_rejected": 0,
+      "invalid_symbols": 0,
+      "rejected_pct": 0.0,
+      "total_symbols": 63
+    },
+    "2025-10": {
+      "breaches_5pct_threshold": false,
+      "data_quality_rejected": 0,
+      "invalid_symbols": 0,
+      "rejected_pct": 0.0,
+      "total_symbols": 63
+    },
+    "2025-11": {
+      "breaches_5pct_threshold": false,
+      "data_quality_rejected": 1,
+      "invalid_symbols": 0,
+      "rejected_pct": 1.5873,
+      "total_symbols": 63
+    },
+    "2025-12": {
+      "breaches_5pct_threshold": false,
+      "data_quality_rejected": 0,
+      "invalid_symbols": 0,
+      "rejected_pct": 0.0,
+      "total_symbols": 63
+    }
+  },
+  "overall_data_quality_rejected": 6,
+  "overall_invalid_symbol_months": 0,
+  "overall_symbols_rejected_pct": 0.7937,
+  "reason": "All monthly universes within thresholds; 6 of 756 symbol-months rejected for data quality",
+  "total_symbol_months": 756
+}

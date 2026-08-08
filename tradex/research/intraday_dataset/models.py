@@ -199,8 +199,11 @@ class OhlcvFile:
     regular_session_sessions: int
     missing_bars: int
     missing_bar_rate_pct: float
+    pre_dedup_duplicate_bars: int
     duplicate_bars: int
     duplicate_bar_rate_pct: float
+    malformed_rows: int
+    malformed_row_rate_pct: float
     zero_volume_bars: int
     zero_volume_bar_rate_pct: float
     invalid_ohlc_rows: int
@@ -230,8 +233,11 @@ class OhlcvFile:
             "regular_session_sessions": self.regular_session_sessions,
             "missing_bars": self.missing_bars,
             "missing_bar_rate_pct": self.missing_bar_rate_pct,
+            "pre_dedup_duplicate_bars": self.pre_dedup_duplicate_bars,
             "duplicate_bars": self.duplicate_bars,
             "duplicate_bar_rate_pct": self.duplicate_bar_rate_pct,
+            "malformed_rows": self.malformed_rows,
+            "malformed_row_rate_pct": self.malformed_row_rate_pct,
             "zero_volume_bars": self.zero_volume_bars,
             "zero_volume_bar_rate_pct": self.zero_volume_bar_rate_pct,
             "invalid_ohlc_rows": self.invalid_ohlc_rows,
@@ -262,8 +268,11 @@ class DataQuality:
     actual_bars: int
     missing_bars: int
     missing_bar_rate_pct: float
+    pre_dedup_duplicate_bars: int
     duplicate_bars: int
     duplicate_bar_rate_pct: float
+    malformed_rows: int
+    malformed_row_rate_pct: float
     zero_volume_bars: int
     zero_volume_bar_rate_pct: float
     invalid_ohlc_rows: int
@@ -292,8 +301,11 @@ class DataQuality:
             "actual_bars": self.actual_bars,
             "missing_bars": self.missing_bars,
             "missing_bar_rate_pct": self.missing_bar_rate_pct,
+            "pre_dedup_duplicate_bars": self.pre_dedup_duplicate_bars,
             "duplicate_bars": self.duplicate_bars,
             "duplicate_bar_rate_pct": self.duplicate_bar_rate_pct,
+            "malformed_rows": self.malformed_rows,
+            "malformed_row_rate_pct": self.malformed_row_rate_pct,
             "zero_volume_bars": self.zero_volume_bars,
             "zero_volume_bar_rate_pct": self.zero_volume_bar_rate_pct,
             "invalid_ohlc_rows": self.invalid_ohlc_rows,
@@ -336,12 +348,6 @@ class DatasetDecision:
     dataset_coverage_start: str
     dataset_coverage_end: str
     massive_http_requests: int
-    alpaca_http_requests: int
-    http_errors: int
-    http_429s: int
-    pagination_cycles: int
-    incomplete_requests: int
-    runtime_seconds: float
     local_storage_bytes: int
     ranking_timeframe: str
     ranking_feed: str
@@ -353,6 +359,25 @@ class DatasetDecision:
     duplicate_rate_max_pct: float
     symbols_rejected_pct: float
     next_assignment: str
+    # Optional / derived counters (must follow required fields)
+    massive_incomplete_snapshots: int = 0
+    alpaca_http_requests: int | None = None
+    alpaca_ranking_logical_calls: int = 0
+    alpaca_ranking_http_pages: int = 0
+    alpaca_ranking_http_attempts: int = 0
+    alpaca_ranking_http_429s: int = 0
+    alpaca_ranking_http_errors: int = 0
+    alpaca_ohlcv_logical_calls: int = 0
+    alpaca_ohlcv_http_pages: int = 0
+    alpaca_ohlcv_http_attempts: int = 0
+    alpaca_ohlcv_http_429s: int = 0
+    alpaca_ohlcv_http_errors: int = 0
+    http_errors: int = 0
+    http_429s: int = 0
+    pagination_cycles: int = 0
+    incomplete_requests: int = 0
+    runtime_seconds: float | None = None
+    runtime_note: str = ""
     production_behavior_changed: bool = False
     no_v5_or_provider_search: bool = True
     ran_at: str = field(default_factory=now_utc_iso)
@@ -378,12 +403,24 @@ class DatasetDecision:
             "dataset_coverage_start": self.dataset_coverage_start,
             "dataset_coverage_end": self.dataset_coverage_end,
             "massive_http_requests": self.massive_http_requests,
+            "massive_incomplete_snapshots": self.massive_incomplete_snapshots,
             "alpaca_http_requests": self.alpaca_http_requests,
+            "alpaca_ranking_logical_calls": self.alpaca_ranking_logical_calls,
+            "alpaca_ranking_http_pages": self.alpaca_ranking_http_pages,
+            "alpaca_ranking_http_attempts": self.alpaca_ranking_http_attempts,
+            "alpaca_ranking_http_429s": self.alpaca_ranking_http_429s,
+            "alpaca_ranking_http_errors": self.alpaca_ranking_http_errors,
+            "alpaca_ohlcv_logical_calls": self.alpaca_ohlcv_logical_calls,
+            "alpaca_ohlcv_http_pages": self.alpaca_ohlcv_http_pages,
+            "alpaca_ohlcv_http_attempts": self.alpaca_ohlcv_http_attempts,
+            "alpaca_ohlcv_http_429s": self.alpaca_ohlcv_http_429s,
+            "alpaca_ohlcv_http_errors": self.alpaca_ohlcv_http_errors,
             "http_errors": self.http_errors,
             "http_429s": self.http_429s,
             "pagination_cycles": self.pagination_cycles,
             "incomplete_requests": self.incomplete_requests,
             "runtime_seconds": self.runtime_seconds,
+            "runtime_note": self.runtime_note,
             "local_storage_bytes": self.local_storage_bytes,
             "ranking_timeframe": self.ranking_timeframe,
             "ranking_feed": self.ranking_feed,
@@ -412,12 +449,29 @@ class DatasetState:
     validated: bool = False
     finalized: bool = False
     errors: list[str] = field(default_factory=list)
+    # Legacy aggregate counters (kept for backward compatibility)
     massive_request_count: int = 0
     alpaca_request_count: int = 0
     http_error_count: int = 0
     http_429_count: int = 0
     pagination_cycles: int = 0
     incomplete_requests: int = 0
+    # Detailed Alpaca request accounting
+    alpaca_ranking_logical_calls: int = 0
+    alpaca_ranking_http_pages: int = 0
+    alpaca_ranking_http_attempts: int = 0
+    alpaca_ranking_http_429s: int = 0
+    alpaca_ranking_http_errors: int = 0
+    alpaca_ohlcv_logical_calls: int = 0
+    alpaca_ohlcv_http_pages: int = 0
+    alpaca_ohlcv_http_attempts: int = 0
+    alpaca_ohlcv_http_429s: int = 0
+    alpaca_ohlcv_http_errors: int = 0
+    # Runtime and per-request logs
+    phase_start_times: dict[str, str] = field(default_factory=dict)
+    phase_end_times: dict[str, str] = field(default_factory=dict)
+    runtime_seconds: float | None = None
+    request_audit_rows: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -434,6 +488,20 @@ class DatasetState:
             "http_429_count": self.http_429_count,
             "pagination_cycles": self.pagination_cycles,
             "incomplete_requests": self.incomplete_requests,
+            "alpaca_ranking_logical_calls": self.alpaca_ranking_logical_calls,
+            "alpaca_ranking_http_pages": self.alpaca_ranking_http_pages,
+            "alpaca_ranking_http_attempts": self.alpaca_ranking_http_attempts,
+            "alpaca_ranking_http_429s": self.alpaca_ranking_http_429s,
+            "alpaca_ranking_http_errors": self.alpaca_ranking_http_errors,
+            "alpaca_ohlcv_logical_calls": self.alpaca_ohlcv_logical_calls,
+            "alpaca_ohlcv_http_pages": self.alpaca_ohlcv_http_pages,
+            "alpaca_ohlcv_http_attempts": self.alpaca_ohlcv_http_attempts,
+            "alpaca_ohlcv_http_429s": self.alpaca_ohlcv_http_429s,
+            "alpaca_ohlcv_http_errors": self.alpaca_ohlcv_http_errors,
+            "phase_start_times": self.phase_start_times,
+            "phase_end_times": self.phase_end_times,
+            "runtime_seconds": self.runtime_seconds,
+            "request_audit_rows": self.request_audit_rows,
         }
 
     @classmethod
@@ -452,4 +520,18 @@ class DatasetState:
             http_429_count=int(data.get("http_429_count", 0)),
             pagination_cycles=int(data.get("pagination_cycles", 0)),
             incomplete_requests=int(data.get("incomplete_requests", 0)),
+            alpaca_ranking_logical_calls=int(data.get("alpaca_ranking_logical_calls", 0)),
+            alpaca_ranking_http_pages=int(data.get("alpaca_ranking_http_pages", 0)),
+            alpaca_ranking_http_attempts=int(data.get("alpaca_ranking_http_attempts", 0)),
+            alpaca_ranking_http_429s=int(data.get("alpaca_ranking_http_429s", 0)),
+            alpaca_ranking_http_errors=int(data.get("alpaca_ranking_http_errors", 0)),
+            alpaca_ohlcv_logical_calls=int(data.get("alpaca_ohlcv_logical_calls", 0)),
+            alpaca_ohlcv_http_pages=int(data.get("alpaca_ohlcv_http_pages", 0)),
+            alpaca_ohlcv_http_attempts=int(data.get("alpaca_ohlcv_http_attempts", 0)),
+            alpaca_ohlcv_http_429s=int(data.get("alpaca_ohlcv_http_429s", 0)),
+            alpaca_ohlcv_http_errors=int(data.get("alpaca_ohlcv_http_errors", 0)),
+            phase_start_times=dict(data.get("phase_start_times", {})),
+            phase_end_times=dict(data.get("phase_end_times", {})),
+            runtime_seconds=data.get("runtime_seconds"),
+            request_audit_rows=list(data.get("request_audit_rows", [])),
         )

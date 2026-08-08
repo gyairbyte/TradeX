@@ -74,12 +74,21 @@ def _prior_n_sessions(calendar: xcals.ExchangeCalendar, before: pd.Timestamp, n:
 
 
 def _sessions_in_range(calendar: xcals.ExchangeCalendar, start: pd.Timestamp, end: pd.Timestamp) -> list[pd.Timestamp]:
-    """Return complete regular sessions within [start, end] (UTC)."""
+    """Return complete regular sessions whose open/close lie within [start, end] (UTC).
+
+    Uses the actual session open/close times instead of naive date comparisons,
+    preventing the off-by-one inclusion of the next calendar day's session.
+    """
+    start_utc = pd.Timestamp(start).tz_convert("UTC")
+    end_utc = pd.Timestamp(end).tz_convert("UTC")
     schedule = calendar.schedule
-    start_n = start.tz_convert("America/New_York").tz_localize(None) if start.tz else start
-    end_n = end.tz_convert("America/New_York").tz_localize(None) if end.tz else end
-    mask = (schedule.index >= start_n) & (schedule.index <= end_n)
-    selected = [ts for ts in schedule[mask].index if _is_regular_session(calendar, ts)]
+    opens = schedule["open"].dt.tz_convert("UTC")
+    closes = schedule["close"].dt.tz_convert("UTC")
+    mask = (closes <= end_utc) & (opens >= start_utc)
+    selected = []
+    for ts, close in zip(schedule[mask].index, closes[mask]):
+        if _is_regular_close(close.tz_convert("America/New_York")):
+            selected.append(ts)
     return [pd.Timestamp(ts, tz="America/New_York") for ts in selected]
 
 
@@ -99,7 +108,7 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     if not rows:
         path.write_text("", encoding="utf-8")
         return
-    fieldnames = list(rows[0].keys())
+    fieldnames = list(dict.fromkeys(k for r in rows for k in r))
     with path.open("w", newline="", encoding="utf-8") as fp:
         writer = csv.DictWriter(fp, fieldnames=fieldnames, lineterminator="\n")
         writer.writeheader()
@@ -372,12 +381,12 @@ def _daily_bars_for_ranking(
     symbols: list[str],
     prior_sessions: list[pd.Timestamp],
     asof: str,
-) -> dict[str, pd.DataFrame]:
+) -> tuple[dict[str, pd.DataFrame], dict[str, Any]]:
     if not prior_sessions:
-        return {}
+        return {}, {"pagination_complete": True, "logical_calls": 0, "http_pages": 0, "http_attempts": 0, "http_429s": 0, "http_errors": 0, "response_symbols": []}
     start_utc = prior_sessions[0].tz_convert("UTC")
     end_utc = (prior_sessions[-1] + pd.Timedelta(hours=24)).tz_convert("UTC")
-    dfs, _meta = client.get_bars(
+    return client.get_bars(
         symbols,
         start_utc,
         end_utc,
@@ -387,7 +396,6 @@ def _daily_bars_for_ranking(
         sort="asc",
         asof=asof,
     )
-    return dfs
 
 
 def _intraday_bars(
@@ -434,6 +442,8 @@ def _compute_liquidity(
         if df is None or df.empty:
             results[sym] = {"prior_close": None, "median_dollar_volume": None, "valid_sessions": 0}
             continue
+        # Deduplicate timestamps (keep last) and drop malformed rows for ranking.
+        df = df[~df.index.duplicated(keep="last")].dropna(subset=_OHLCV_COLUMNS)
         df = df.tz_convert("America/New_York")
         # Filter to regular sessions.
         regular = []
@@ -525,8 +535,11 @@ def run_build_universe(
         active_snap = _load_snapshot(output_dir, pit_date, "active")
         inactive_snap = _load_snapshot(output_dir, pit_date, "inactive")
 
-        if active_snap.observations[0].error or active_snap.observations[0].max_pages_reached:
-            raise RuntimeError(f"Active snapshot for {pit_date} is incomplete")
+        # Fail closed on incomplete Massive snapshots (active or inactive).
+        for snap_label, snap in (("active", active_snap), ("inactive", inactive_snap)):
+            obs = snap.observations[0]
+            if obs.error or obs.max_pages_reached or not obs.pagination_complete:
+                raise RuntimeError(f"{snap_label.capitalize()} snapshot for {pit_date} is incomplete")
 
         eligible_rows, exclusions, active_dup_tickers = _build_active_eligible(active_snap, mapping, controls)
         for ex in exclusions:
@@ -562,19 +575,45 @@ def run_build_universe(
             batch = tickers[i:i + batch_size]
             if ranking_timeframe in ("1D", "1Day"):
                 # 1Day bars are already one row per session; do not aggregate from intraday bars.
-                dfs = _daily_bars_for_ranking(client, batch, prior_sessions, asof=pit_date)
+                dfs, meta = _daily_bars_for_ranking(client, batch, prior_sessions, asof=pit_date)
             else:
                 # Fetch coarser intraday bars (e.g. 30Min) and aggregate to daily for ranking.
                 start_utc = prior_sessions[0].tz_convert("UTC") if prior_sessions else None
                 end_utc = (prior_sessions[-1] + pd.Timedelta(hours=24)).tz_convert("UTC") if prior_sessions else None
                 if start_utc is None:
-                    dfs = {}
+                    dfs, meta = {}, {}
                 else:
-                    dfs, _ = _intraday_bars(client, batch, start_utc, end_utc, asof=pit_date, timeframe=ranking_timeframe)
+                    dfs, meta = _intraday_bars(client, batch, start_utc, end_utc, asof=pit_date, timeframe=ranking_timeframe)
                     dfs = _aggregate_to_daily(dfs, calendar)
+            meta = meta or {}
+            if not meta.get("pagination_complete", False):
+                raise RuntimeError(f"Ranking pagination incomplete for {effective_month} batch {i}")
             results = _compute_liquidity(dfs, calendar, prior_sessions)
             liquidity_results.update(results)
-            state.alpaca_request_count += 1
+            state.alpaca_request_count += meta.get("page_count", 1)
+            state.alpaca_ranking_logical_calls += meta.get("logical_calls", 1)
+            state.alpaca_ranking_http_pages += meta.get("http_pages", meta.get("page_count", 1))
+            state.alpaca_ranking_http_attempts += meta.get("http_attempts", meta.get("page_count", 1))
+            state.alpaca_ranking_http_429s += meta.get("http_429s", 0)
+            state.alpaca_ranking_http_errors += meta.get("http_errors", 0)
+            state.pagination_cycles += int(meta.get("pagination_cycle_detected", False))
+            response_symbols = {str(s).upper() for s in meta.get("response_symbols", [])}
+            state.request_audit_rows.append({
+                "phase": "build_universe",
+                "effective_month": effective_month,
+                "batch_index": i,
+                "requested_symbols": ",".join(batch),
+                "response_symbols": ",".join(sorted(response_symbols)),
+                "logical_calls": meta.get("logical_calls", 1),
+                "http_pages": meta.get("http_pages", meta.get("page_count", 1)),
+                "http_attempts": meta.get("http_attempts", meta.get("page_count", 1)),
+                "http_429s": meta.get("http_429s", 0),
+                "http_errors": meta.get("http_errors", 0),
+                "pagination_complete": meta.get("pagination_complete", False),
+                "pagination_cycle_detected": meta.get("pagination_cycle_detected", False),
+                "safe_error_classification": meta.get("safe_error_classification", "unknown"),
+                "http_status": meta.get("http_status", 0),
+            })
             save_state(output_dir, state)
 
         # Build ranking
@@ -692,9 +731,9 @@ def run_build_universe(
 
 
 def _is_regular_session_minute(ts: pd.Timestamp) -> bool:
-    """True for a bar whose start time is within the XNYS 09:30-16:00 window."""
+    """True for a 5-minute bar start within the XNYS 09:30-16:00 window."""
     minute = ts.hour * 60 + ts.minute
-    return 570 <= minute < 960
+    return 570 <= minute < 960 and minute % 5 == 0
 
 
 def _aggregate_to_daily(dfs: dict[str, pd.DataFrame], calendar: xcals.ExchangeCalendar) -> dict[str, pd.DataFrame]:
@@ -744,37 +783,51 @@ def _split_for_symbol(universe_df: pd.DataFrame, effective_month: str, stratum: 
     return universe_df.loc[mask & universe_df["included"], "ticker"].tolist()
 
 
+def _minute_of_day(ts: pd.Timestamp) -> int:
+    return ts.hour * 60 + ts.minute
+
+
 def _filter_regular_session(
     df: pd.DataFrame,
     calendar: xcals.ExchangeCalendar,
 ) -> tuple[pd.DataFrame, dict[str, int]]:
-    """Return regular-session 5Min bars and counts of removed bars."""
+    """Return regular-session 5Min bars and counts of removed bars.
+
+    Bars are kept only if their start minute is on the XNYS 5-minute grid
+    between 09:30 (inclusive) and 16:00 (exclusive) and the session is a
+    regular (non-early) close day. Removed bars are counted by category.
+    """
     if df is None or df.empty:
         return df, {"premarket": 0, "after_hours": 0, "early_close": 0, "off_grid": 0}
     df = df.tz_convert("America/New_York")
-    grid = _regular_session_grid()
-    in_grid = df.index.hour.isin(grid.hour) & df.index.minute.isin(grid.minute)
-    premarket = (df.index.hour < 9) | ((df.index.hour == 9) & (df.index.minute < 30))
-    after_hours = (df.index.hour > 16) | ((df.index.hour == 16) & (df.index.minute > 0))
-    early_close_removed = 0
-    # Determine regular sessions and early closes
+    hours = df.index.hour
+    minutes_of_day = hours * 60 + df.index.minute
+    in_grid = (minutes_of_day >= 570) & (minutes_of_day < 960) & (minutes_of_day % 5 == 0)
+    premarket = minutes_of_day < 570
+    after_hours = minutes_of_day >= 960
+    # Identify early-close/non-session days and remove all bars for those dates.
     session_dates = df.index.to_series().dt.date.unique()
-    keep_mask = pd.Series(True, index=df.index)
+    early_close_dates = set()
+    non_session_dates = set()
     for session_date in session_dates:
         ts = pd.Timestamp(session_date)
         if ts not in calendar.schedule.index:
-            keep_mask = keep_mask & (df.index.date != session_date)
+            non_session_dates.add(session_date)
             continue
         close = calendar.schedule.loc[ts, "close"].tz_convert("America/New_York")
         if not _is_regular_close(close):
-            keep_mask = keep_mask & (df.index.date != session_date)
-            early_close_removed += len(df[df.index.date == session_date])
-    keep_mask = keep_mask & in_grid & ~premarket & ~after_hours
+            early_close_dates.add(session_date)
+    date_series = pd.Series(df.index.date, index=df.index)
+    early_close_removed = int(date_series.isin(early_close_dates).sum())
+    non_session_removed = int(date_series.isin(non_session_dates).sum())
+    keep_mask = in_grid & ~date_series.isin(early_close_dates | non_session_dates)
+    off_grid = ~in_grid & ~premarket & ~after_hours & ~date_series.isin(early_close_dates | non_session_dates)
     counts = {
         "premarket": int(premarket.sum()),
         "after_hours": int(after_hours.sum()),
         "early_close": early_close_removed,
-        "off_grid": int((~in_grid & ~premarket & ~after_hours).sum()),
+        "off_grid": int(off_grid.sum()),
+        "non_session": non_session_removed,
     }
     return df[keep_mask].copy(), counts
 
@@ -841,30 +894,65 @@ def run_fetch_ohlcv(
         pit_date = universe_df.loc[universe_df["effective_month"] == month, "pit_date"].iloc[0]
         asof = pit_date
 
+        expected_sessions, expected_bars = _expected_sessions_and_bars(calendar, start_utc, end_utc)
+
         batch_size = int(plan.ranking_download_efficiency.get("multi_symbol_batch_size", 400))
         for i in range(0, len(tickers), batch_size):
             batch = tickers[i:i + batch_size]
             dfs, meta = _five_min_bars(client, batch, start_utc, end_utc, asof=asof)
             state.alpaca_request_count += meta.get("page_count", 1)
-            if not meta["pagination_complete"]:
+            state.alpaca_ohlcv_logical_calls += meta.get("logical_calls", 1)
+            state.alpaca_ohlcv_http_pages += meta.get("http_pages", meta.get("page_count", 1))
+            state.alpaca_ohlcv_http_attempts += meta.get("http_attempts", meta.get("page_count", 1))
+            state.alpaca_ohlcv_http_429s += meta.get("http_429s", 0)
+            state.alpaca_ohlcv_http_errors += meta.get("http_errors", 0)
+            state.pagination_cycles += int(meta.get("pagination_cycle_detected", False))
+            pagination_incomplete = not meta.get("pagination_complete", False)
+            if pagination_incomplete:
                 state.incomplete_requests += 1
                 state.errors.append(f"{month} batch {i}: pagination incomplete")
+            response_symbols = {str(s).upper() for s in meta.get("response_symbols", [])}
+            state.request_audit_rows.append({
+                "phase": "fetch_ohlcv",
+                "effective_month": month,
+                "batch_index": i,
+                "requested_symbols": ",".join(batch),
+                "response_symbols": ",".join(sorted(response_symbols)),
+                "logical_calls": meta.get("logical_calls", 1),
+                "http_pages": meta.get("http_pages", meta.get("page_count", 1)),
+                "http_attempts": meta.get("http_attempts", meta.get("page_count", 1)),
+                "http_429s": meta.get("http_429s", 0),
+                "http_errors": meta.get("http_errors", 0),
+                "pagination_complete": meta.get("pagination_complete", False),
+                "pagination_cycle_detected": meta.get("pagination_cycle_detected", False),
+                "safe_error_classification": meta.get("safe_error_classification", "unknown"),
+                "http_status": meta.get("http_status", 0),
+            })
             for sym in batch:
                 df = dfs.get(sym.upper(), pd.DataFrame())
                 requested = sym.upper()
-                returned = sym.upper()
-                if not df.empty:
-                    # Symbol identity check: requested vs returned. Multi-symbol returns key.
-                    returned = sym.upper()
-                df_filtered, counts = _filter_regular_session(df, calendar)
+                returned = sym.upper() if sym.upper() in response_symbols else "missing_from_response"
+                symbol_mismatch = requested != returned
+                if pagination_incomplete:
+                    state.errors.append(f"{month}/{requested}: batch pagination incomplete")
+
+                # Observability: count duplicates and malformed rows before deduplication.
+                pre_dedup_rows = len(df)
+                pre_dedup_duplicate_bars = int(df.index.duplicated().sum()) if not df.empty else 0
+                malformed_rows = int(df[_OHLCV_COLUMNS].isna().any(axis=1).sum()) if not df.empty else 0
+                malformed_rate = (malformed_rows / pre_dedup_rows * 100) if pre_dedup_rows else 0.0
+
+                # Deterministic normalization: keep last duplicate and drop malformed rows.
+                df_clean = df[~df.index.duplicated(keep="last")].dropna(subset=_OHLCV_COLUMNS)
+                duplicate_bars_after = int(df_clean.index.duplicated().sum())
+
+                df_filtered, counts = _filter_regular_session(df_clean, calendar)
                 invalid = _detect_invalid_ohlc(df_filtered)
-                expected_sessions, expected_bars = _expected_sessions_and_bars(calendar, start_utc, end_utc)
                 actual_sessions = df_filtered.index.to_series().dt.date.nunique() if not df_filtered.empty else 0
                 actual_bars = len(df_filtered)
                 missing_bars = max(0, expected_bars - actual_bars)
                 missing_rate = (missing_bars / expected_bars * 100) if expected_bars else 0.0
-                duplicate_bars = int((df_filtered.index.duplicated()).sum())
-                dup_rate = (duplicate_bars / actual_bars * 100) if actual_bars else 0.0
+                dup_rate_after = (duplicate_bars_after / actual_bars * 100) if actual_bars else 0.0
                 zero_volume_bars = int((df_filtered["volume"] == 0).sum()) if "volume" in df_filtered.columns else 0
                 zv_rate = (zero_volume_bars / actual_bars * 100) if actual_bars else 0.0
 
@@ -889,8 +977,11 @@ def run_fetch_ohlcv(
                     regular_session_sessions=actual_sessions,
                     missing_bars=missing_bars,
                     missing_bar_rate_pct=round(missing_rate, 4),
-                    duplicate_bars=duplicate_bars,
-                    duplicate_bar_rate_pct=round(dup_rate, 4),
+                    pre_dedup_duplicate_bars=pre_dedup_duplicate_bars,
+                    duplicate_bars=duplicate_bars_after,
+                    duplicate_bar_rate_pct=round(dup_rate_after, 4),
+                    malformed_rows=malformed_rows,
+                    malformed_row_rate_pct=round(malformed_rate, 4),
                     zero_volume_bars=zero_volume_bars,
                     zero_volume_bar_rate_pct=round(zv_rate, 4),
                     invalid_ohlc_rows=invalid,
@@ -918,8 +1009,11 @@ def run_fetch_ohlcv(
                     actual_bars=actual_bars,
                     missing_bars=missing_bars,
                     missing_bar_rate_pct=round(missing_rate, 4),
-                    duplicate_bars=duplicate_bars,
-                    duplicate_bar_rate_pct=round(dup_rate, 4),
+                    pre_dedup_duplicate_bars=pre_dedup_duplicate_bars,
+                    duplicate_bars=duplicate_bars_after,
+                    duplicate_bar_rate_pct=round(dup_rate_after, 4),
+                    malformed_rows=malformed_rows,
+                    malformed_row_rate_pct=round(malformed_rate, 4),
                     zero_volume_bars=zero_volume_bars,
                     zero_volume_bar_rate_pct=round(zv_rate, 4),
                     invalid_ohlc_rows=invalid,
@@ -932,7 +1026,7 @@ def run_fetch_ohlcv(
                     adjustment="raw",
                     requested_symbol=requested,
                     returned_symbol=returned,
-                    symbol_mismatch=requested != returned,
+                    symbol_mismatch=symbol_mismatch,
                     pagination_complete=meta["pagination_complete"],
                     rejected=False,
                     rejection_reason="",
@@ -950,23 +1044,59 @@ def run_fetch_ohlcv(
 
 
 def _split_name_for_month(plan: DatasetPlan, month: str) -> str:
+    """Classify an effective month into development/validation/holdout by date overlap.
+
+    Monthly classification uses the actual locked split date ranges and the
+    calendar month represented by ``month`` (``YYYY-MM``), not just the first day.
+    """
     ds = plan.dataset
-    dev = ds.get("development", {})
-    val = ds.get("validation", {})
-    ho = ds.get("holdout", {})
-    if dev.get("start", "") <= f"{month}-01" <= dev.get("end", ""):
+    month_start = _effective_month_start(month)
+    month_end = _month_end(month)
+
+    def _overlaps(split: dict[str, Any]) -> bool:
+        if not split:
+            return False
+        split_start = pd.Timestamp(split["start"])
+        split_end = pd.Timestamp(split["end"])
+        return month_start <= split_end and month_end >= split_start
+
+    if _overlaps(ds.get("development", {})):
         return "development"
-    if val.get("start", "") <= f"{month}-01" <= val.get("end", ""):
+    if _overlaps(ds.get("validation", {})):
         return "validation"
-    if ho.get("start", "") <= f"{month}-01" <= ho.get("end", ""):
+    if _overlaps(ds.get("holdout", {})):
         return "holdout"
     return "unknown"
+
+
+def _reject_reason_row(r: pd.Series, *, max_missing: float, max_zero: float, max_dup: float) -> str:
+    reasons: list[str] = []
+    if r["missing_bar_rate_pct"] > max_missing:
+        reasons.append("missing_bar_rate")
+    if r["zero_volume_bar_rate_pct"] > max_zero:
+        reasons.append("zero_volume_rate")
+    if r["duplicate_bar_rate_pct"] > max_dup:
+        reasons.append("duplicate_rate")
+    if not r["pagination_complete"]:
+        reasons.append("pagination_incomplete")
+    if r["symbol_mismatch"]:
+        reasons.append("symbol_mismatch")
+    return "; ".join(reasons)
 
 
 def run_validate(
     plan: DatasetPlan,
     output_dir: Path,
 ) -> dict[str, Any]:
+    """Validate data quality and enforce disposition rules.
+
+    Disposition hierarchy:
+      - Provider/provenance/manifest/timestamp/pagination/silent-substitution/symbol-identity failures → invalid.
+      - Data-quality threshold breach → inconclusive.
+      - Otherwise valid.
+
+    The 5% symbol-rejection threshold is applied independently to each monthly universe.
+    """
     state = load_state(output_dir)
     state.phase = "validate"
     q_path = output_dir / "ohlcv" / "data_quality.csv"
@@ -984,43 +1114,75 @@ def run_validate(
     df["rejected"] = False
     df["rejection_reason"] = ""
 
-    rejected_mask = (
+    invalid_mask = (~df["pagination_complete"]) | (df["symbol_mismatch"])
+    quality_mask = (
         (df["missing_bar_rate_pct"] > max_missing)
         | (df["zero_volume_bar_rate_pct"] > max_zero)
         | (df["duplicate_bar_rate_pct"] > max_dup)
-        | (~df["pagination_complete"])
-        | (df["symbol_mismatch"])
     )
-    df.loc[rejected_mask, "rejected"] = True
-    df.loc[rejected_mask, "rejection_reason"] = df.loc[rejected_mask].apply(
-        lambda r: "; ".join(
-            filter(
-                None,
-                [
-                    "missing_bar_rate" if r["missing_bar_rate_pct"] > max_missing else "",
-                    "zero_volume_rate" if r["zero_volume_bar_rate_pct"] > max_zero else "",
-                    "duplicate_rate" if r["duplicate_bar_rate_pct"] > max_dup else "",
-                    "pagination_incomplete" if not r["pagination_complete"] else "",
-                    "symbol_mismatch" if r["symbol_mismatch"] else "",
-                ],
-            )
+    df.loc[quality_mask & ~invalid_mask, "rejected"] = True
+    df.loc[invalid_mask, "rejected"] = True
+
+    # Build rejection reasons. Invalid (pagination/symbol) failures take precedence.
+    df["rejection_reason"] = df.apply(
+        lambda r: (
+            "pagination_incomplete;symbol_mismatch" if r["symbol_mismatch"] and not r["pagination_complete"]
+            else "pagination_incomplete" if not r["pagination_complete"]
+            else "symbol_mismatch" if r["symbol_mismatch"]
+            else _reject_reason_row(r, max_missing=max_missing, max_zero=max_zero, max_dup=max_dup)
         ),
         axis=1,
     )
     _write_csv(q_path, df.to_dict("records"))
 
-    total_symbols = len(df)
-    rejected_symbols = int(df["rejected"].sum())
-    rejected_pct = (rejected_symbols / total_symbols * 100) if total_symbols else 0.0
-    disposition = "valid" if rejected_pct <= max_rejected_pct else "inconclusive"
+    # Per-monthly-universe rejection accounting.
+    monthly_rejections: dict[str, dict[str, int | float]] = {}
+    any_invalid = False
+    any_inconclusive = False
+    for month, group in df.groupby("effective_month"):
+        total = len(group)
+        invalid = int(((~group["pagination_complete"]) | group["symbol_mismatch"]).sum())
+        quality_rejected = int(group["rejected"].sum()) - invalid
+        rejected_pct = (quality_rejected / total * 100) if total else 0.0
+        monthly_rejections[str(month)] = {
+            "total_symbols": total,
+            "invalid_symbols": invalid,
+            "data_quality_rejected": quality_rejected,
+            "rejected_pct": round(rejected_pct, 4),
+            "breaches_5pct_threshold": rejected_pct > max_rejected_pct,
+        }
+        if invalid > 0:
+            any_invalid = True
+        if rejected_pct > max_rejected_pct:
+            any_inconclusive = True
+
+    total_symbols = int(df.groupby("effective_month").size().sum())
+    overall_invalid = int(((~df["pagination_complete"]) | df["symbol_mismatch"]).sum())
+    overall_quality_rejected = int(df["rejected"].sum()) - overall_invalid
+    overall_rejected_pct = (overall_quality_rejected / total_symbols * 100) if total_symbols else 0.0
+
+    if any_invalid:
+        disposition = "invalid"
+        reason = f"Provider/provenance/pagination/symbol-identity failures in {overall_invalid} symbol-months"
+    elif any_inconclusive:
+        disposition = "inconclusive"
+        reason = "One or more monthly universes exceeded the 5% data-quality rejection threshold"
+    else:
+        disposition = "valid"
+        reason = f"All monthly universes within thresholds; {overall_quality_rejected} of {total_symbols} symbol-months rejected for data quality"
+
     summary = {
         "disposition": disposition,
-        "rejected_symbols": rejected_symbols,
-        "total_symbols": total_symbols,
-        "rejected_pct": round(rejected_pct, 4),
+        "reason": reason,
+        "total_symbol_months": total_symbols,
+        "overall_invalid_symbol_months": overall_invalid,
+        "overall_data_quality_rejected": overall_quality_rejected,
+        "overall_symbols_rejected_pct": round(overall_rejected_pct, 4),
+        "monthly_rejections": monthly_rejections,
         "max_missing_rate_pct": round(df["missing_bar_rate_pct"].max() if not df.empty else 0.0, 4),
         "max_zero_volume_rate_pct": round(df["zero_volume_bar_rate_pct"].max() if not df.empty else 0.0, 4),
         "max_duplicate_rate_pct": round(df["duplicate_bar_rate_pct"].max() if not df.empty else 0.0, 4),
+        "max_malformed_row_rate_pct": round(df["malformed_row_rate_pct"].max() if not df.empty else 0.0, 4),
     }
     _write_json(output_dir / "validation_summary.json", summary)
     state.validated = True
@@ -1037,7 +1199,8 @@ def run_finalize(
     branch: str = "",
     live_run_head: str = "",
     pre_registration_commit: str = "",
-    runtime_seconds: float = 0.0,
+    runtime_seconds: float | None = None,
+    runtime_note: str = "",
 ) -> DatasetDecision:
     state = load_state(output_dir)
     state.phase = "finalize"
@@ -1059,11 +1222,19 @@ def run_finalize(
 
     ranking_info = json.loads((output_dir / "universe" / "ranking_timeframe.json").read_text(encoding="utf-8"))
 
+    # Runtime: prefer the accumulated state runtime; fall back to the passed value.
+    final_runtime = state.runtime_seconds if state.runtime_seconds is not None else runtime_seconds
+    final_runtime_note = runtime_note
+    if state.runtime_seconds is None and runtime_seconds is not None:
+        final_runtime_note = "Runtime recorded for finalize phase only"
+    elif state.runtime_seconds is None:
+        final_runtime_note = "Historical runtime unavailable"
+
     decision = DatasetDecision(
         task_id=plan.task_id,
         dataset_id=plan.dataset_id,
         disposition=validation["disposition"],
-        reason=f"Data quality {validation['disposition']}: {validation['rejected_symbols']} of {validation['total_symbols']} symbol-months rejected ({validation['rejected_pct']}%)",
+        reason=validation.get("reason", ""),
         starting_main_sha=starting_main_sha,
         branch=branch,
         live_run_head=live_run_head,
@@ -1079,12 +1250,24 @@ def run_finalize(
         dataset_coverage_start=str(plan.dataset.get("dataset_start", "2025-01-02")),
         dataset_coverage_end=str(plan.dataset.get("dataset_end", "2025-12-31")),
         massive_http_requests=state.massive_request_count,
-        alpaca_http_requests=state.alpaca_request_count,
-        http_errors=state.http_error_count,
-        http_429s=state.http_429_count,
+        massive_incomplete_snapshots=state.incomplete_requests,
+        alpaca_http_requests=state.alpaca_request_count if (state.alpaca_ranking_http_pages + state.alpaca_ohlcv_http_pages) == 0 else None,
+        alpaca_ranking_logical_calls=state.alpaca_ranking_logical_calls,
+        alpaca_ranking_http_pages=state.alpaca_ranking_http_pages,
+        alpaca_ranking_http_attempts=state.alpaca_ranking_http_attempts,
+        alpaca_ranking_http_429s=state.alpaca_ranking_http_429s,
+        alpaca_ranking_http_errors=state.alpaca_ranking_http_errors,
+        alpaca_ohlcv_logical_calls=state.alpaca_ohlcv_logical_calls,
+        alpaca_ohlcv_http_pages=state.alpaca_ohlcv_http_pages,
+        alpaca_ohlcv_http_attempts=state.alpaca_ohlcv_http_attempts,
+        alpaca_ohlcv_http_429s=state.alpaca_ohlcv_http_429s,
+        alpaca_ohlcv_http_errors=state.alpaca_ohlcv_http_errors,
+        http_errors=state.http_error_count + state.alpaca_ranking_http_errors + state.alpaca_ohlcv_http_errors,
+        http_429s=state.http_429_count + state.alpaca_ranking_http_429s + state.alpaca_ohlcv_http_429s,
         pagination_cycles=state.pagination_cycles,
         incomplete_requests=state.incomplete_requests,
-        runtime_seconds=runtime_seconds,
+        runtime_seconds=final_runtime,
+        runtime_note=final_runtime_note,
         local_storage_bytes=storage_bytes,
         ranking_timeframe=ranking_info.get("ranking_timeframe", "1D"),
         ranking_feed="sip",
@@ -1094,7 +1277,7 @@ def run_finalize(
         missing_bar_rate_max_pct=validation["max_missing_rate_pct"],
         zero_volume_rate_max_pct=validation["max_zero_volume_rate_pct"],
         duplicate_rate_max_pct=validation["max_duplicate_rate_pct"],
-        symbols_rejected_pct=validation["rejected_pct"],
+        symbols_rejected_pct=validation.get("overall_symbols_rejected_pct", 0.0),
         next_assignment="devin/intra-001-c-research-engine",
     )
     state.finalized = True
@@ -1182,22 +1365,39 @@ def _write_safe_artifacts(
     # Request audit
     state = load_state(output_dir)
     request_rows = []
-    # We do not keep per-request logs in this implementation; record aggregate counts.
     request_rows.append({
         "provider": "massive",
         "request_count": state.massive_request_count,
         "http_error_count": state.http_error_count,
         "http_429_count": state.http_429_count,
-        "pagination_cycles": state.pagination_cycles,
+        "pagination_cycles": 0,
         "incomplete_requests": state.incomplete_requests,
+        "phase": "all",
+        "notes": "Massive PIT reference snapshots",
     })
     request_rows.append({
         "provider": "alpaca",
-        "request_count": state.alpaca_request_count,
-        "http_error_count": 0,
-        "http_429_count": 0,
+        "phase": "ranking",
+        "logical_calls": state.alpaca_ranking_logical_calls,
+        "http_pages": state.alpaca_ranking_http_pages,
+        "http_attempts": state.alpaca_ranking_http_attempts,
+        "http_429_count": state.alpaca_ranking_http_429s,
+        "http_error_count": state.alpaca_ranking_http_errors,
+        "pagination_cycles": state.pagination_cycles,
+        "incomplete_requests": 0,
+        "notes": "1Day liquidity ranking",
+    })
+    request_rows.append({
+        "provider": "alpaca",
+        "phase": "ohlcv",
+        "logical_calls": state.alpaca_ohlcv_logical_calls,
+        "http_pages": state.alpaca_ohlcv_http_pages,
+        "http_attempts": state.alpaca_ohlcv_http_attempts,
+        "http_429_count": state.alpaca_ohlcv_http_429s,
+        "http_error_count": state.alpaca_ohlcv_http_errors,
         "pagination_cycles": 0,
         "incomplete_requests": state.incomplete_requests,
+        "notes": "5Min OHLCV dataset",
     })
     _write_csv(out / "request_audit.csv", request_rows)
     files["request_audit.csv"] = _sha256_file(out / "request_audit.csv")
@@ -1311,17 +1511,38 @@ def _generate_report(plan: DatasetPlan, decision: DatasetDecision, output_dir: P
         f"- Max missing-bar rate: {decision.missing_bar_rate_max_pct}%",
         f"- Max zero-volume rate: {decision.zero_volume_rate_max_pct}%",
         f"- Max duplicate rate: {decision.duplicate_rate_max_pct}%",
-        f"- Symbols rejected: {decision.symbols_rejected_pct}%",
+        f"- Symbols rejected for data quality: {decision.symbols_rejected_pct}%",
+        "",
+        "### Monthly rejection summary",
+        "",
+        "| Month | Total | Rejected | Rejected % |",
+        "|-------|-------|----------|------------|",
+    ])
+    validation = json.loads((output_dir / "validation_summary.json").read_text(encoding="utf-8"))
+    for month, stats in sorted(validation.get("monthly_rejections", {}).items()):
+        lines.append(f"| {month} | {stats['total_symbols']} | {stats['data_quality_rejected']} | {stats['rejected_pct']}% |")
+    lines.extend([
         "",
         "## Resource usage",
         "",
         f"- Massive HTTP requests: {decision.massive_http_requests}",
-        f"- Alpaca HTTP requests: {decision.alpaca_http_requests}",
-        f"- HTTP errors: {decision.http_errors}",
-        f"- HTTP 429s: {decision.http_429s}",
+        f"- Massive incomplete snapshots: {decision.massive_incomplete_snapshots}",
+        f"- Alpaca ranking logical calls: {decision.alpaca_ranking_logical_calls}",
+        f"- Alpaca ranking HTTP pages: {decision.alpaca_ranking_http_pages}",
+        f"- Alpaca ranking HTTP attempts: {decision.alpaca_ranking_http_attempts}",
+        f"- Alpaca ranking HTTP 429s: {decision.alpaca_ranking_http_429s}",
+        f"- Alpaca ranking HTTP errors: {decision.alpaca_ranking_http_errors}",
+        f"- Alpaca OHLCV logical calls: {decision.alpaca_ohlcv_logical_calls}",
+        f"- Alpaca OHLCV HTTP pages: {decision.alpaca_ohlcv_http_pages}",
+        f"- Alpaca OHLCV HTTP attempts: {decision.alpaca_ohlcv_http_attempts}",
+        f"- Alpaca OHLCV HTTP 429s: {decision.alpaca_ohlcv_http_429s}",
+        f"- Alpaca OHLCV HTTP errors: {decision.alpaca_ohlcv_http_errors}",
+        f"- HTTP errors (total): {decision.http_errors}",
+        f"- HTTP 429s (total): {decision.http_429s}",
         f"- Pagination cycles: {decision.pagination_cycles}",
         f"- Incomplete requests: {decision.incomplete_requests}",
-        f"- Runtime (seconds): {decision.runtime_seconds:.1f}",
+        f"- Original aggregate Alpaca HTTP requests (ranking + OHLCV): {decision.alpaca_http_requests if decision.alpaca_http_requests is not None else 'unavailable'}",
+        f"- Runtime (seconds): {decision.runtime_seconds if decision.runtime_seconds is not None else 'unavailable'} {f'— {decision.runtime_note}' if decision.runtime_note else ''}".strip(),
         f"- Local storage (bytes): {decision.local_storage_bytes}",
         "",
         "## Ranking methodology",
@@ -1335,6 +1556,9 @@ def _generate_report(plan: DatasetPlan, decision: DatasetDecision, output_dir: P
         "- Massive/Polygon does not surface an explicit OTC marker; conservative exclusion is performed through the exchange allowlist and security-type allowlist.",
         "- Duplicate symbols in inactive snapshots are excluded from the active universe.",
         "- The 2025-only dataset is shorter than the original 2022-2025 contract; sample minimums and gates are unchanged.",
+        "- Alpaca SIP 1Day volume is a total-liquidity proxy that includes pre-market and after-hours volume; it is not exact regular-session volume. The locked ranking formula uses this proxy.",
+        "- The pre-dedup duplicate and malformed row counts reported for this recomputed bundle are zero because the original 2026-08-08-200945 run normalized bars before recording them. Recomputing from normalized parquet cannot recover those original pre-normalization counts; the corrected pipeline now preserves them for future runs.",
+        "- The five whole-market ~78-bar discrepancies in the original data_quality.csv were caused by an off-by-one expected-session construction in `_sessions_in_range`: it included the first regular session of the next calendar month when that day was a trading day and then counted 78 bars for that not-yet-open session. The corrected implementation uses session open/close UTC comparisons. Affected months and their extra expected-but-absent sessions: March 2025 = 2025-04-01; April 2025 = 2025-05-01; June 2025 = 2025-07-01; July 2025 = 2025-08-01; September 2025 = 2025-10-01.",
         "",
         "## Next step",
         "",

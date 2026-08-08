@@ -11,12 +11,14 @@ import time
 from pathlib import Path
 
 from .dataset import (
+    load_state,
     run_build_universe,
     run_fetch_ohlcv,
     run_fetch_reference,
     run_finalize,
     run_plan,
     run_validate,
+    save_state,
 )
 from .spec import load_dataset_plan
 
@@ -96,46 +98,62 @@ def _add_common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--pre-registration-commit", default="", help="Pre-registration commit SHA")
 
 
+def _record_runtime(output_dir: Path, elapsed: float) -> None:
+    state = load_state(output_dir)
+    state.runtime_seconds = (state.runtime_seconds or 0.0) + elapsed
+    save_state(output_dir, state)
+
+
 def _cmd_plan(args: argparse.Namespace) -> int:
+    t0 = time.time()
     plan, _ = load_dataset_plan(args.spec)
     run_plan(plan, Path(args.output_dir), pre_registration_commit=args.pre_registration_commit)
+    _record_runtime(Path(args.output_dir), time.time() - t0)
     print(json.dumps({"estimated_resources": plan.estimated_resources}, indent=2))
     return 0
 
 
 def _cmd_fetch_reference(args: argparse.Namespace) -> int:
+    t0 = time.time()
     plan, _ = load_dataset_plan(args.spec)
     key = _massive_key()
     if not key:
         print("MASSIVE_API_KEY not configured", file=sys.stderr)
         return 1
     run_fetch_reference(plan, Path(args.output_dir), key)
+    _record_runtime(Path(args.output_dir), time.time() - t0)
     return 0
 
 
 def _cmd_build_universe(args: argparse.Namespace) -> int:
+    t0 = time.time()
     plan, _ = load_dataset_plan(args.spec)
     api_key, secret_key = _alpaca_keys()
     if not api_key or not secret_key:
         print("ALPACA_API_KEY and ALPACA_SECRET_KEY must be configured", file=sys.stderr)
         return 1
     run_build_universe(plan, Path(args.output_dir), api_key, secret_key)
+    _record_runtime(Path(args.output_dir), time.time() - t0)
     return 0
 
 
 def _cmd_fetch_ohlcv(args: argparse.Namespace) -> int:
+    t0 = time.time()
     plan, _ = load_dataset_plan(args.spec)
     api_key, secret_key = _alpaca_keys()
     if not api_key or not secret_key:
         print("ALPACA_API_KEY and ALPACA_SECRET_KEY must be configured", file=sys.stderr)
         return 1
     run_fetch_ohlcv(plan, Path(args.output_dir), api_key, secret_key)
+    _record_runtime(Path(args.output_dir), time.time() - t0)
     return 0
 
 
 def _cmd_validate(args: argparse.Namespace) -> int:
+    t0 = time.time()
     plan, _ = load_dataset_plan(args.spec)
     summary = run_validate(plan, Path(args.output_dir))
+    _record_runtime(Path(args.output_dir), time.time() - t0)
     print(json.dumps(summary, indent=2))
     return 0
 
@@ -151,7 +169,9 @@ def _cmd_finalize(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 1
-    t0 = time.time()
+    state = load_state(Path(args.output_dir))
+    runtime_seconds = state.runtime_seconds
+    final_t0 = time.time()
     decision = run_finalize(
         plan,
         Path(args.output_dir),
@@ -160,8 +180,9 @@ def _cmd_finalize(args: argparse.Namespace) -> int:
         branch=_current_branch(),
         live_run_head=head,
         pre_registration_commit=pre_reg_full,
-        runtime_seconds=time.time() - t0,
+        runtime_seconds=runtime_seconds,
     )
+    _record_runtime(Path(args.output_dir), time.time() - final_t0)
     print(json.dumps({"disposition": decision.disposition, "artifact_path": str(Path(args.artifact_dir))}, indent=2))
     return 0
 

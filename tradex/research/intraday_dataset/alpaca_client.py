@@ -62,6 +62,13 @@ def _retry_after_seconds(response: requests.Response, default: float) -> float:
         return default
 
 
+def _count_429_and_error(statuses: list[int]) -> tuple[int, int]:
+    """Return (http_429_count, http_error_count) from per-attempt statuses."""
+    http_429s = sum(1 for s in statuses if s == 429)
+    http_errors = sum(1 for s in statuses if s != 200)
+    return http_429s, http_errors
+
+
 class DatasetAlpacaClient:
     """Minimal read-only client for Alpaca multi-symbol historical bars."""
 
@@ -92,9 +99,11 @@ class DatasetAlpacaClient:
         url: str,
         params: dict[str, Any],
         sleeper: Callable[[float], None] | None = None,
-    ) -> tuple[requests.Response, float | None, int]:
+    ) -> tuple[requests.Response, float | None, int, list[int]]:
+        """Execute one HTTP page fetch, retrying on 429/5xx. Returns response, retry-after, attempt count, statuses."""
         sleeper = sleeper or time.sleep
         retry_after: float | None = None
+        statuses: list[int] = []
         for attempt in range(self.max_retries + 1):
             try:
                 resp = self.request_func(url, params=params, headers=_headers(self.api_key, self.secret_key), timeout=30)
@@ -104,18 +113,24 @@ class DatasetAlpacaClient:
                     continue
                 raise
             status = resp.status_code
+            statuses.append(status)
             if (status == 429 or status >= 500) and attempt < self.max_retries:
                 retry_after = _retry_after_seconds(resp, self.request_delay_seconds)
                 sleeper(retry_after)
                 continue
             sleeper(self.request_delay_seconds)
-            return resp, retry_after, attempt + 1
-        return resp, retry_after, attempt + 1  # type: ignore[possibly-undefined]
+            return resp, retry_after, attempt + 1, statuses
+        return resp, retry_after, attempt + 1, statuses  # type: ignore[possibly-undefined]
 
     def _normalize_bars(
         self,
         bars: list[dict[str, Any]],
     ) -> pd.DataFrame:
+        """Convert provider bars to a numeric UTC DataFrame without deduplication or NaN dropping.
+
+        Callers are responsible for counting duplicates/malformed rows and then
+        deduplicating/dropping before storage.
+        """
         if not bars:
             return pd.DataFrame(
                 columns=_OHLCV_COLUMNS,
@@ -131,14 +146,13 @@ class DatasetAlpacaClient:
         df["datetime"] = pd.to_datetime(df["datetime"], utc=True, errors="coerce")
         df = df.dropna(subset=["datetime"])
         df = df.set_index("datetime").sort_index()
-        df = df[~df.index.duplicated(keep="last")]
         for col in _OHLCV_COLUMNS:
             if col not in df.columns:
                 df[col] = pd.NA
         df = df[_OHLCV_COLUMNS]
         for col in _OHLCV_COLUMNS:
             df[col] = pd.to_numeric(df[col], errors="coerce")
-        return df.dropna(subset=_OHLCV_COLUMNS)
+        return df
 
     def get_bars(
         self,
@@ -187,6 +201,9 @@ class DatasetAlpacaClient:
         page_bar_counts: list[int] = []
         token_hashes: list[str] = []
 
+        http_attempts = 0
+        http_429s = 0
+        http_errors = 0
         while True:
             if page_token:
                 params["page_token"] = page_token
@@ -196,10 +213,19 @@ class DatasetAlpacaClient:
             token_hashes.append(_token_hash(page_token))
 
             try:
-                resp, retry_after, _ = self._get(url, params, sleeper=sleeper)
+                resp, retry_after, attempts, statuses = self._get(url, params, sleeper=sleeper)
+                http_attempts += attempts
+                r429, rerr = _count_429_and_error(statuses)
+                http_429s += r429
+                http_errors += rerr
             except (requests.Timeout, requests.ConnectionError):
                 return {s: pd.DataFrame() for s in symbols}, {
                     "page_count": page_count,
+                    "logical_calls": 1,
+                    "http_pages": page_count,
+                    "http_attempts": http_attempts,
+                    "http_429s": http_429s,
+                    "http_errors": http_errors,
                     "next_page_token_present": next_page_token_present,
                     "pagination_complete": False,
                     "repeated_page_token": repeated_page_token,
@@ -222,6 +248,11 @@ class DatasetAlpacaClient:
                     error_body = ""
                 return {s: pd.DataFrame() for s in symbols}, {
                     "page_count": page_count,
+                    "logical_calls": 1,
+                    "http_pages": page_count,
+                    "http_attempts": http_attempts,
+                    "http_429s": http_429s,
+                    "http_errors": http_errors,
                     "next_page_token_present": next_page_token_present,
                     "pagination_complete": False,
                     "repeated_page_token": repeated_page_token,
@@ -250,6 +281,10 @@ class DatasetAlpacaClient:
                 safe_error = "invalid_response"
                 break
 
+            # Symbol identity: a requested symbol missing from the response is
+            # returned as an empty DataFrame; an unexpected key is ignored.
+            response_symbols = {str(s).upper() for s in bars_by_symbol}
+
             page_total = 0
             for sym in symbols:
                 upper = sym.upper()
@@ -276,10 +311,16 @@ class DatasetAlpacaClient:
 
         dfs: dict[str, pd.DataFrame] = {}
         for sym in symbols:
-            dfs[sym.upper()] = self._normalize_bars(all_bars.get(sym.upper(), []))
+            sym_upper = sym.upper()
+            dfs[sym_upper] = self._normalize_bars(all_bars.get(sym_upper, []))
 
         return dfs, {
             "page_count": page_count,
+            "logical_calls": 1,
+            "http_pages": page_count,
+            "http_attempts": http_attempts,
+            "http_429s": http_429s,
+            "http_errors": http_errors,
             "next_page_token_present": next_page_token_present,
             "pagination_complete": last_status == 200 and not repeated_page_token and safe_error != "invalid_response",
             "repeated_page_token": repeated_page_token,
@@ -290,4 +331,5 @@ class DatasetAlpacaClient:
             "token_hashes": token_hashes,
             "token_sequence_sha256": _token_sequence_hash(token_hashes),
             "http_status": last_status,
+            "response_symbols": sorted(response_symbols),
         }

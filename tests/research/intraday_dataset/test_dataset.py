@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -26,6 +27,7 @@ from tradex.research.intraday_dataset.dataset import (
     _ranking_timeframe_parity,
     _regular_session_grid,
     _sessions_in_range,
+    _split_name_for_month,
     run_build_universe,
     run_fetch_ohlcv,
     run_plan,
@@ -47,61 +49,63 @@ def output_dir():
 
 
 def _make_daily(symbol: str, sessions: list[pd.Timestamp], close: float, volume: float) -> pd.DataFrame:
-    rows = []
-    for i, s in enumerate(sessions):
-        rows.append({
-            "datetime": s + pd.Timedelta(hours=4, minutes=0),
-            "open": close * (1 + i * 0.001),
-            "high": close * (1 + i * 0.001) * 1.01,
-            "low": close * (1 + i * 0.001) * 0.99,
-            "close": close * (1 + i * 0.001),
-            "volume": volume,
-        })
-    df = pd.DataFrame(rows)
-    df["datetime"] = pd.to_datetime(df["datetime"], utc=True)
-    return df.set_index("datetime").tz_convert("UTC").sort_index()
+    n = len(sessions)
+    base = np.full(n, close) * (1 + np.arange(n) * 0.001)
+    dt = pd.to_datetime(sessions) + pd.Timedelta(hours=4, minutes=0)
+    if dt.tz is None:
+        dt = dt.tz_localize("UTC")
+    else:
+        dt = dt.tz_convert("UTC")
+    df = pd.DataFrame({
+        "open": base,
+        "high": base * 1.01,
+        "low": base * 0.99,
+        "close": base,
+        "volume": volume,
+    }, index=dt)
+    return df.sort_index()
 
 
 def _make_5min(symbol: str, sessions: list[pd.Timestamp], close: float, volume: float) -> pd.DataFrame:
     grid = _regular_session_grid()
-    rows = []
-    for i, s in enumerate(sessions):
-        base = close * (1 + i * 0.001)
-        for j, t in enumerate(grid):
-            bar_ts = pd.Timestamp(s.date()) + pd.Timedelta(hours=t.hour, minutes=t.minute)
-            bar_ts = bar_ts.tz_localize("America/New_York").tz_convert("UTC")
-            rows.append({
-                "datetime": bar_ts,
-                "open": base,
-                "high": base * 1.005,
-                "low": base * 0.995,
-                "close": base,
-                "volume": volume / 78,
-            })
-    df = pd.DataFrame(rows)
-    df["datetime"] = pd.to_datetime(df["datetime"], utc=True)
-    return df.set_index("datetime").sort_index()
+    n_sessions = len(sessions)
+    n_bars = len(grid)
+    session_idx = np.repeat(np.arange(n_sessions), n_bars)
+    bar_idx = np.tile(np.arange(n_bars), n_sessions)
+    base = close * (1 + session_idx * 0.001)
+    session_dates = pd.to_datetime([s.date() for s in sessions])
+    bar_times = pd.to_timedelta(grid.hour, unit="h") + pd.to_timedelta(grid.minute, unit="m")
+    bar_datetimes = session_dates[session_idx] + bar_times[bar_idx]
+    bar_datetimes = bar_datetimes.tz_localize("America/New_York").tz_convert("UTC")
+    df = pd.DataFrame({
+        "open": base,
+        "high": base * 1.005,
+        "low": base * 0.995,
+        "close": base,
+        "volume": volume / n_bars,
+    }, index=bar_datetimes)
+    return df.sort_index()
 
 
 def _make_30min(symbol: str, sessions: list[pd.Timestamp], close: float, volume: float) -> pd.DataFrame:
     grid = pd.date_range("09:30", "15:30", freq="30min", tz="America/New_York")
-    rows = []
-    for i, s in enumerate(sessions):
-        base = close * (1 + i * 0.001)
-        for t in grid:
-            bar_ts = pd.Timestamp(s.date()) + pd.Timedelta(hours=t.hour, minutes=t.minute)
-            bar_ts = bar_ts.tz_localize("America/New_York").tz_convert("UTC")
-            rows.append({
-                "datetime": bar_ts,
-                "open": base,
-                "high": base * 1.005,
-                "low": base * 0.995,
-                "close": base,
-                "volume": volume / 13,
-            })
-    df = pd.DataFrame(rows)
-    df["datetime"] = pd.to_datetime(df["datetime"], utc=True)
-    return df.set_index("datetime").sort_index()
+    n_sessions = len(sessions)
+    n_bars = len(grid)
+    session_idx = np.repeat(np.arange(n_sessions), n_bars)
+    bar_idx = np.tile(np.arange(n_bars), n_sessions)
+    base = close * (1 + session_idx * 0.001)
+    session_dates = pd.to_datetime([s.date() for s in sessions])
+    bar_times = pd.to_timedelta(grid.hour, unit="h") + pd.to_timedelta(grid.minute, unit="m")
+    bar_datetimes = session_dates[session_idx] + bar_times[bar_idx]
+    bar_datetimes = bar_datetimes.tz_localize("America/New_York").tz_convert("UTC")
+    df = pd.DataFrame({
+        "open": base,
+        "high": base * 1.005,
+        "low": base * 0.995,
+        "close": base,
+        "volume": volume / n_bars,
+    }, index=bar_datetimes)
+    return df.sort_index()
 
 
 class FakeAlpacaClient:
@@ -123,18 +127,25 @@ class FakeAlpacaClient:
                 dfs[sym.upper()] = _make_30min(sym, sessions, self.close, self.volume)
             else:
                 dfs[sym.upper()] = _make_5min(sym, sessions, self.close, self.volume)
+        bar_count = sum(len(df) for df in dfs.values())
         return dfs, {
             "page_count": 1,
+            "logical_calls": 1,
+            "http_pages": 1,
+            "http_attempts": 1,
+            "http_429s": 0,
+            "http_errors": 0,
             "next_page_token_present": False,
             "pagination_complete": True,
             "repeated_page_token": False,
             "pagination_cycle_detected": False,
             "retry_after_seconds": None,
             "safe_error_classification": "none",
-            "page_bar_counts": [len(sessions) * (1 if timeframe == "1Day" else 78)],
+            "page_bar_counts": [bar_count],
             "token_hashes": ["abc"],
             "token_sequence_sha256": "abc",
             "http_status": 200,
+            "response_symbols": [s.upper() for s in symbols],
         }
 
 
@@ -224,10 +235,12 @@ def test_prior_n_sessions():
 def test_sessions_in_range():
     calendar = _load_xnys()
     start = pd.Timestamp("2025-01-02", tz="America/New_York").tz_convert("UTC")
-    end = pd.Timestamp("2025-01-31", tz="America/New_York").tz_convert("UTC")
+    # End must cover the regular-session close to include the last day.
+    end = pd.Timestamp("2025-01-31 16:00", tz="America/New_York").tz_convert("UTC")
     sessions = _sessions_in_range(calendar, start, end)
     assert 20 <= len(sessions) <= 22
     assert all(s >= start.tz_convert("America/New_York") for s in sessions)
+    assert pd.Timestamp("2025-01-31", tz="America/New_York") in sessions
 
 
 def test_regular_session_grid():
@@ -409,3 +422,114 @@ def test_no_provider_calls_on_import():
     # Re-importing already happened in fixtures; just assert client init requires keys.
     with pytest.raises(OSError):
         DatasetAlpacaClient("", "")
+
+
+def test_split_name_for_month(plan):
+    assert _split_name_for_month(plan, "2025-01") == "development"
+    assert _split_name_for_month(plan, "2025-06") == "development"
+    assert _split_name_for_month(plan, "2025-07") == "validation"
+    assert _split_name_for_month(plan, "2025-09") == "validation"
+    assert _split_name_for_month(plan, "2025-10") == "holdout"
+    assert _split_name_for_month(plan, "2025-12") == "holdout"
+
+
+def test_sessions_in_range_no_next_month_overlap():
+    """March 2025 must not include 2025-04-01 as an expected session."""
+    calendar = _load_xnys()
+    start = pd.Timestamp("2025-03-01", tz="America/New_York").tz_convert("UTC")
+    end = (pd.Timestamp("2025-03-31", tz="America/New_York") + pd.Timedelta(hours=24)).tz_convert("UTC")
+    sessions = _sessions_in_range(calendar, start, end)
+    assert pd.Timestamp("2025-04-01", tz="America/New_York") not in sessions
+    # 2025-03-31 is a regular session and should be included.
+    assert pd.Timestamp("2025-03-31", tz="America/New_York") in sessions
+
+
+def test_filter_regular_session_rejects_off_grid():
+    calendar = _load_xnys()
+    sessions = _prior_n_sessions(calendar, pd.Timestamp("2025-01-02"), 1)
+    df = _make_5min("A", sessions, 100.0, 78_000_000.0)
+    # Insert an off-grid bar at 09:33 (not a 5-minute bar start)
+    bad_ts = pd.Timestamp(sessions[0].date()) + pd.Timedelta(hours=9, minutes=33)
+    bad_ts = bad_ts.tz_localize("America/New_York").tz_convert("UTC")
+    bad = pd.DataFrame([{
+        "datetime": bad_ts,
+        "open": 99,
+        "high": 101,
+        "low": 99,
+        "close": 100,
+        "volume": 1000,
+    }])
+    bad["datetime"] = pd.to_datetime(bad["datetime"], utc=True)
+    bad = bad.set_index("datetime")
+    df = pd.concat([df, bad]).sort_index()
+    filtered, counts = _filter_regular_session(df, calendar)
+    assert counts["off_grid"] >= 1
+    assert len(filtered) == 78
+
+
+def test_duplicate_and_malformed_rows_observable(plan, output_dir, monkeypatch):
+    _write_fake_reference_snapshots(output_dir, plan)
+    run_plan(plan, output_dir)
+    monkeypatch.setattr("tradex.research.intraday_dataset.dataset.DatasetAlpacaClient", FakeAlpacaClient)
+    run_build_universe(plan, output_dir, "dummy", "dummy")
+    run_fetch_ohlcv(plan, output_dir, "dummy", "dummy")
+    quality = pd.read_csv(output_dir / "ohlcv" / "data_quality.csv")
+    assert "pre_dedup_duplicate_bars" in quality.columns
+    assert "malformed_rows" in quality.columns
+
+
+def test_incomplete_ranking_pagination_fails_closed(plan, output_dir, monkeypatch):
+    class BrokenAlpacaClient(FakeAlpacaClient):
+        def get_bars(self, *args, **kwargs):
+            dfs, meta = super().get_bars(*args, **kwargs)
+            meta["pagination_complete"] = False
+            return dfs, meta
+
+    _write_fake_reference_snapshots(output_dir, plan)
+    run_plan(plan, output_dir)
+    monkeypatch.setattr("tradex.research.intraday_dataset.dataset.DatasetAlpacaClient", BrokenAlpacaClient)
+    with pytest.raises(RuntimeError, match="Ranking pagination incomplete"):
+        run_build_universe(plan, output_dir, "dummy", "dummy")
+
+
+def test_incomplete_ohlcv_pagination_marks_invalid(plan, output_dir, monkeypatch):
+    class BrokenAlpacaClient(FakeAlpacaClient):
+        def get_bars(self, *args, **kwargs):
+            dfs, meta = super().get_bars(*args, **kwargs)
+            if kwargs.get("timeframe") == "5Min":
+                meta["pagination_complete"] = False
+            return dfs, meta
+
+    _write_fake_reference_snapshots(output_dir, plan)
+    run_plan(plan, output_dir)
+    monkeypatch.setattr("tradex.research.intraday_dataset.dataset.DatasetAlpacaClient", BrokenAlpacaClient)
+    run_build_universe(plan, output_dir, "dummy", "dummy")
+    run_fetch_ohlcv(plan, output_dir, "dummy", "dummy")
+    summary = run_validate(plan, output_dir)
+    assert summary["disposition"] == "invalid"
+
+
+def test_incomplete_massive_snapshot_fails_closed(plan, output_dir, monkeypatch):
+    _write_fake_reference_snapshots(output_dir, plan)
+    # Corrupt one active snapshot to be incomplete.
+    snap_path = output_dir / "reference_snapshots" / "2025-01-31_active.json"
+    data = json.loads(snap_path.read_text(encoding="utf-8"))
+    data["observations"][0]["pagination_complete"] = False
+    snap_path.write_text(json.dumps(data), encoding="utf-8")
+    run_plan(plan, output_dir)
+    monkeypatch.setattr("tradex.research.intraday_dataset.dataset.DatasetAlpacaClient", FakeAlpacaClient)
+    with pytest.raises(RuntimeError, match="Active snapshot for .* is incomplete"):
+        run_build_universe(plan, output_dir, "dummy", "dummy")
+
+
+def test_monthly_5pct_rejection_calculation(plan, output_dir, monkeypatch):
+    _write_fake_reference_snapshots(output_dir, plan)
+    run_plan(plan, output_dir)
+    monkeypatch.setattr("tradex.research.intraday_dataset.dataset.DatasetAlpacaClient", FakeAlpacaClient)
+    run_build_universe(plan, output_dir, "dummy", "dummy")
+    run_fetch_ohlcv(plan, output_dir, "dummy", "dummy")
+    summary = run_validate(plan, output_dir)
+    assert "monthly_rejections" in summary
+    for stats in summary["monthly_rejections"].values():
+        assert "rejected_pct" in stats
+        assert "breaches_5pct_threshold" in stats

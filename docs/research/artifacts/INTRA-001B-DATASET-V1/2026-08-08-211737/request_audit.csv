@@ -1,0 +1,4 @@
+provider,request_count,http_error_count,http_429_count,pagination_cycles,incomplete_requests,phase,notes,logical_calls,http_pages,http_attempts
+massive,440,0,0,0,0,all,Massive PIT reference snapshots,,,
+alpaca,,0,0,0,0,ranking,1Day liquidity ranking,0,0,0
+alpaca,,0,0,0,0,ohlcv,5Min OHLCV dataset,0,0,0
