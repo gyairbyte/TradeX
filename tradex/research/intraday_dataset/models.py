@@ -185,7 +185,12 @@ class UniverseMember:
 
 @dataclass(frozen=True)
 class OhlcvFile:
-    """A normalized OHLCV file stored outside the repository."""
+    """A normalized OHLCV file stored outside the repository.
+
+    Pre-normalization duplicate and malformed counts are optional because they
+    cannot be recovered from already-deduplicated parquet files. When they are
+    unavailable they are represented as ``None`` rather than zero.
+    """
 
     manifest_id: str
     symbol: str
@@ -199,11 +204,6 @@ class OhlcvFile:
     regular_session_sessions: int
     missing_bars: int
     missing_bar_rate_pct: float
-    pre_dedup_duplicate_bars: int
-    duplicate_bars: int
-    duplicate_bar_rate_pct: float
-    malformed_rows: int
-    malformed_row_rate_pct: float
     zero_volume_bars: int
     zero_volume_bar_rate_pct: float
     invalid_ohlc_rows: int
@@ -218,6 +218,13 @@ class OhlcvFile:
     returned_symbol: str
     pagination_complete: bool
     page_count: int
+    # Optional pre-normalization observability
+    pre_normalization_metrics_available: bool = False
+    pre_dedup_duplicate_bars: int | None = None
+    duplicate_bars: int | None = None
+    duplicate_bar_rate_pct: float | None = None
+    malformed_rows: int | None = None
+    malformed_row_rate_pct: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -233,11 +240,6 @@ class OhlcvFile:
             "regular_session_sessions": self.regular_session_sessions,
             "missing_bars": self.missing_bars,
             "missing_bar_rate_pct": self.missing_bar_rate_pct,
-            "pre_dedup_duplicate_bars": self.pre_dedup_duplicate_bars,
-            "duplicate_bars": self.duplicate_bars,
-            "duplicate_bar_rate_pct": self.duplicate_bar_rate_pct,
-            "malformed_rows": self.malformed_rows,
-            "malformed_row_rate_pct": self.malformed_row_rate_pct,
             "zero_volume_bars": self.zero_volume_bars,
             "zero_volume_bar_rate_pct": self.zero_volume_bar_rate_pct,
             "invalid_ohlc_rows": self.invalid_ohlc_rows,
@@ -252,12 +254,23 @@ class OhlcvFile:
             "returned_symbol": self.returned_symbol,
             "pagination_complete": self.pagination_complete,
             "page_count": self.page_count,
+            "pre_normalization_metrics_available": self.pre_normalization_metrics_available,
+            "pre_dedup_duplicate_bars": self.pre_dedup_duplicate_bars,
+            "duplicate_bars": self.duplicate_bars,
+            "duplicate_bar_rate_pct": self.duplicate_bar_rate_pct,
+            "malformed_rows": self.malformed_rows,
+            "malformed_row_rate_pct": self.malformed_row_rate_pct,
         }
 
 
 @dataclass(frozen=True)
 class DataQuality:
-    """Data-quality summary for one symbol/month."""
+    """Data-quality summary for one symbol/month.
+
+    Pre-normalization duplicate and malformed counts are optional because they
+    cannot be recovered from already-deduplicated parquet files. When they are
+    unavailable they are represented as ``None`` rather than zero.
+    """
 
     symbol: str
     effective_month: str
@@ -268,11 +281,6 @@ class DataQuality:
     actual_bars: int
     missing_bars: int
     missing_bar_rate_pct: float
-    pre_dedup_duplicate_bars: int
-    duplicate_bars: int
-    duplicate_bar_rate_pct: float
-    malformed_rows: int
-    malformed_row_rate_pct: float
     zero_volume_bars: int
     zero_volume_bar_rate_pct: float
     invalid_ohlc_rows: int
@@ -282,13 +290,23 @@ class DataQuality:
     early_close_removed: int
     ohlc_consistency_violations: int
     provider_feed: str
+    timeframe: str
     adjustment: str
+    file_sha256: str
+    relative_path: str
     requested_symbol: str
     returned_symbol: str
     symbol_mismatch: bool
     pagination_complete: bool
     rejected: bool
     rejection_reason: str
+    # Optional pre-normalization observability
+    pre_normalization_metrics_available: bool = False
+    pre_dedup_duplicate_bars: int | None = None
+    duplicate_bars: int | None = None
+    duplicate_bar_rate_pct: float | None = None
+    malformed_rows: int | None = None
+    malformed_row_rate_pct: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -301,11 +319,6 @@ class DataQuality:
             "actual_bars": self.actual_bars,
             "missing_bars": self.missing_bars,
             "missing_bar_rate_pct": self.missing_bar_rate_pct,
-            "pre_dedup_duplicate_bars": self.pre_dedup_duplicate_bars,
-            "duplicate_bars": self.duplicate_bars,
-            "duplicate_bar_rate_pct": self.duplicate_bar_rate_pct,
-            "malformed_rows": self.malformed_rows,
-            "malformed_row_rate_pct": self.malformed_row_rate_pct,
             "zero_volume_bars": self.zero_volume_bars,
             "zero_volume_bar_rate_pct": self.zero_volume_bar_rate_pct,
             "invalid_ohlc_rows": self.invalid_ohlc_rows,
@@ -315,13 +328,22 @@ class DataQuality:
             "early_close_removed": self.early_close_removed,
             "ohlc_consistency_violations": self.ohlc_consistency_violations,
             "provider_feed": self.provider_feed,
+            "timeframe": self.timeframe,
             "adjustment": self.adjustment,
+            "file_sha256": self.file_sha256,
+            "relative_path": self.relative_path,
             "requested_symbol": self.requested_symbol,
             "returned_symbol": self.returned_symbol,
             "symbol_mismatch": self.symbol_mismatch,
             "pagination_complete": self.pagination_complete,
             "rejected": self.rejected,
             "rejection_reason": self.rejection_reason,
+            "pre_normalization_metrics_available": self.pre_normalization_metrics_available,
+            "pre_dedup_duplicate_bars": self.pre_dedup_duplicate_bars,
+            "duplicate_bars": self.duplicate_bars,
+            "duplicate_bar_rate_pct": self.duplicate_bar_rate_pct,
+            "malformed_rows": self.malformed_rows,
+            "malformed_row_rate_pct": self.malformed_row_rate_pct,
         }
 
 
@@ -362,22 +384,26 @@ class DatasetDecision:
     # Optional / derived counters (must follow required fields)
     massive_incomplete_snapshots: int = 0
     alpaca_http_requests: int | None = None
-    alpaca_ranking_logical_calls: int = 0
-    alpaca_ranking_http_pages: int = 0
-    alpaca_ranking_http_attempts: int = 0
-    alpaca_ranking_http_429s: int = 0
-    alpaca_ranking_http_errors: int = 0
-    alpaca_ohlcv_logical_calls: int = 0
-    alpaca_ohlcv_http_pages: int = 0
-    alpaca_ohlcv_http_attempts: int = 0
-    alpaca_ohlcv_http_429s: int = 0
-    alpaca_ohlcv_http_errors: int = 0
+    # Per-phase Alpaca counters are None when the state was produced without
+    # detailed request accounting (legacy or recomputed bundles).
+    alpaca_ranking_logical_calls: int | None = None
+    alpaca_ranking_http_pages: int | None = None
+    alpaca_ranking_http_attempts: int | None = None
+    alpaca_ranking_http_429s: int | None = None
+    alpaca_ranking_http_errors: int | None = None
+    alpaca_ohlcv_logical_calls: int | None = None
+    alpaca_ohlcv_http_pages: int | None = None
+    alpaca_ohlcv_http_attempts: int | None = None
+    alpaca_ohlcv_http_429s: int | None = None
+    alpaca_ohlcv_http_errors: int | None = None
     http_errors: int = 0
     http_429s: int = 0
     pagination_cycles: int = 0
     incomplete_requests: int = 0
     runtime_seconds: float | None = None
     runtime_note: str = ""
+    per_phase_request_counters_available: bool = False
+    pre_normalization_metrics_available: bool = False
     production_behavior_changed: bool = False
     no_v5_or_provider_search: bool = True
     ran_at: str = field(default_factory=now_utc_iso)
@@ -432,6 +458,8 @@ class DatasetDecision:
             "duplicate_rate_max_pct": self.duplicate_rate_max_pct,
             "symbols_rejected_pct": self.symbols_rejected_pct,
             "next_assignment": self.next_assignment,
+            "per_phase_request_counters_available": self.per_phase_request_counters_available,
+            "pre_normalization_metrics_available": self.pre_normalization_metrics_available,
             "production_behavior_changed": self.production_behavior_changed,
             "no_v5_or_provider_search": self.no_v5_or_provider_search,
             "ran_at": self.ran_at,
@@ -472,6 +500,9 @@ class DatasetState:
     phase_end_times: dict[str, str] = field(default_factory=dict)
     runtime_seconds: float | None = None
     request_audit_rows: list[dict[str, Any]] = field(default_factory=list)
+    # Availability flags for legacy/recomputed states
+    per_phase_request_counters_available: bool = False
+    pre_normalization_metrics_available: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -502,6 +533,8 @@ class DatasetState:
             "phase_end_times": self.phase_end_times,
             "runtime_seconds": self.runtime_seconds,
             "request_audit_rows": self.request_audit_rows,
+            "per_phase_request_counters_available": self.per_phase_request_counters_available,
+            "pre_normalization_metrics_available": self.pre_normalization_metrics_available,
         }
 
     @classmethod
@@ -534,4 +567,6 @@ class DatasetState:
             phase_end_times=dict(data.get("phase_end_times", {})),
             runtime_seconds=data.get("runtime_seconds"),
             request_audit_rows=list(data.get("request_audit_rows", [])),
+            per_phase_request_counters_available=bool(data.get("per_phase_request_counters_available", False)),
+            pre_normalization_metrics_available=bool(data.get("pre_normalization_metrics_available", False)),
         )

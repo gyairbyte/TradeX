@@ -1,0 +1,4 @@
+provider,request_count,http_error_count,http_429_count,pagination_cycles,incomplete_requests,phase,notes,logical_calls,http_pages,http_attempts
+massive,440,0,0,0,0,all,Massive PIT reference snapshots,,,
+alpaca,,,,,0,ranking,unavailable (legacy/recomputed state),,,
+alpaca,,,,0,,ohlcv,unavailable (legacy/recomputed state),,,

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import exchange_calendars as xcals
+import numpy as np
 import pandas as pd
 
 from .alpaca_client import DatasetAlpacaClient
@@ -117,6 +118,16 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
 
 def _sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _load_csv_rows(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    text = path.read_text(encoding="utf-8")
+    if not text.strip():
+        return []
+    reader = csv.DictReader(text.splitlines())
+    return [row for row in reader if row]
 
 
 def _checkpoint_path(output_dir: Path) -> Path:
@@ -481,12 +492,19 @@ def run_build_universe(
     out.mkdir(parents=True, exist_ok=True)
     state = load_state(output_dir)
     state.phase = "build_universe"
+    state.per_phase_request_counters_available = True
     controls = plan.conservative_universe_controls
     mapping = _load_taxonomy(output_dir)
     calendar = _load_xnys()
     etf_tickers = [t.upper() for t in plan.etf_stratum.get("tickers", [])]
 
     client = DatasetAlpacaClient(api_key, secret_key, market_data_host=market_data_host)
+
+    completed = set(state.universe_built_for_months)
+    # Load existing aggregate manifests so a resume or rerun preserves already completed months.
+    universe_rows: list[dict[str, Any]] = [r for r in _load_csv_rows(out / "universe_manifest.csv") if r.get("effective_month") in completed]
+    exclusion_rows: list[dict[str, Any]] = [r for r in _load_csv_rows(out / "exclusion_summary.csv") if r.get("effective_month") in completed]
+    liquidity_rows: list[dict[str, Any]] = [r for r in _load_csv_rows(out / "liquidity_ranking_summary.csv") if r.get("effective_month") in completed]
 
     # Determine ranking timeframe and, if enabled, run a parity/sensitivity probe.
     parity_cfg = plan.liquidity_ranking.get("ranking_timeframe_parity_probe", {})
@@ -522,10 +540,6 @@ def run_build_universe(
     }
     _write_json(out / "ranking_timeframe.json", state_data)
 
-    completed = set(state.universe_built_for_months)
-    universe_rows: list[dict[str, Any]] = []
-    exclusion_rows: list[dict[str, Any]] = []
-    liquidity_rows: list[dict[str, Any]] = []
     for pit_date in plan.monthly_pit_dates:
         effective_month = _month_from_pit(pit_date)
         if effective_month in completed:
@@ -867,11 +881,14 @@ def run_fetch_ohlcv(
     ohlcv_dir.mkdir(parents=True, exist_ok=True)
     state = load_state(output_dir)
     state.phase = "fetch_ohlcv"
+    state.per_phase_request_counters_available = True
+    state.pre_normalization_metrics_available = True
     client = DatasetAlpacaClient(api_key, secret_key, market_data_host=market_data_host)
 
     completed = set(state.ohlcv_fetched_for_months)
-    ohlcv_records: list[dict[str, Any]] = []
-    quality_records: list[dict[str, Any]] = []
+    # Load existing aggregate manifests so a resume or rerun preserves already completed months.
+    ohlcv_records: list[dict[str, Any]] = [r for r in _load_csv_rows(ohlcv_dir / "ohlcv_manifest.csv") if r.get("effective_month") in completed]
+    quality_records: list[dict[str, Any]] = [r for r in _load_csv_rows(ohlcv_dir / "data_quality.csv") if r.get("effective_month") in completed]
 
     for month in sorted(universe_df["effective_month"].unique()):
         if month in completed:
@@ -937,9 +954,13 @@ def run_fetch_ohlcv(
                     state.errors.append(f"{month}/{requested}: batch pagination incomplete")
 
                 # Observability: count duplicates and malformed rows before deduplication.
+                # Treat non-finite values (inf/-inf/NaN) as malformed and drop them after counting.
+                if not df.empty:
+                    df = df.replace([np.inf, -np.inf], np.nan)
                 pre_dedup_rows = len(df)
                 pre_dedup_duplicate_bars = int(df.index.duplicated().sum()) if not df.empty else 0
                 malformed_rows = int(df[_OHLCV_COLUMNS].isna().any(axis=1).sum()) if not df.empty else 0
+                duplicate_rate = (pre_dedup_duplicate_bars / pre_dedup_rows * 100) if pre_dedup_rows else 0.0
                 malformed_rate = (malformed_rows / pre_dedup_rows * 100) if pre_dedup_rows else 0.0
 
                 # Deterministic normalization: keep last duplicate and drop malformed rows.
@@ -952,7 +973,6 @@ def run_fetch_ohlcv(
                 actual_bars = len(df_filtered)
                 missing_bars = max(0, expected_bars - actual_bars)
                 missing_rate = (missing_bars / expected_bars * 100) if expected_bars else 0.0
-                dup_rate_after = (duplicate_bars_after / actual_bars * 100) if actual_bars else 0.0
                 zero_volume_bars = int((df_filtered["volume"] == 0).sum()) if "volume" in df_filtered.columns else 0
                 zv_rate = (zero_volume_bars / actual_bars * 100) if actual_bars else 0.0
 
@@ -977,11 +997,6 @@ def run_fetch_ohlcv(
                     regular_session_sessions=actual_sessions,
                     missing_bars=missing_bars,
                     missing_bar_rate_pct=round(missing_rate, 4),
-                    pre_dedup_duplicate_bars=pre_dedup_duplicate_bars,
-                    duplicate_bars=duplicate_bars_after,
-                    duplicate_bar_rate_pct=round(dup_rate_after, 4),
-                    malformed_rows=malformed_rows,
-                    malformed_row_rate_pct=round(malformed_rate, 4),
                     zero_volume_bars=zero_volume_bars,
                     zero_volume_bar_rate_pct=round(zv_rate, 4),
                     invalid_ohlc_rows=invalid,
@@ -996,6 +1011,12 @@ def run_fetch_ohlcv(
                     returned_symbol=returned,
                     pagination_complete=meta["pagination_complete"],
                     page_count=meta["page_count"],
+                    pre_normalization_metrics_available=True,
+                    pre_dedup_duplicate_bars=pre_dedup_duplicate_bars,
+                    duplicate_bars=duplicate_bars_after,
+                    duplicate_bar_rate_pct=round(duplicate_rate, 4),
+                    malformed_rows=malformed_rows,
+                    malformed_row_rate_pct=round(malformed_rate, 4),
                 )
                 ohlcv_records.append(record.to_dict())
                 split = _split_name_for_month(plan, month)
@@ -1009,11 +1030,6 @@ def run_fetch_ohlcv(
                     actual_bars=actual_bars,
                     missing_bars=missing_bars,
                     missing_bar_rate_pct=round(missing_rate, 4),
-                    pre_dedup_duplicate_bars=pre_dedup_duplicate_bars,
-                    duplicate_bars=duplicate_bars_after,
-                    duplicate_bar_rate_pct=round(dup_rate_after, 4),
-                    malformed_rows=malformed_rows,
-                    malformed_row_rate_pct=round(malformed_rate, 4),
                     zero_volume_bars=zero_volume_bars,
                     zero_volume_bar_rate_pct=round(zv_rate, 4),
                     invalid_ohlc_rows=invalid,
@@ -1023,13 +1039,22 @@ def run_fetch_ohlcv(
                     early_close_removed=counts["early_close"],
                     ohlc_consistency_violations=invalid,
                     provider_feed="sip",
+                    timeframe="5Min",
                     adjustment="raw",
+                    file_sha256=sha,
+                    relative_path=rel_path,
                     requested_symbol=requested,
                     returned_symbol=returned,
                     symbol_mismatch=symbol_mismatch,
                     pagination_complete=meta["pagination_complete"],
                     rejected=False,
                     rejection_reason="",
+                    pre_normalization_metrics_available=True,
+                    pre_dedup_duplicate_bars=pre_dedup_duplicate_bars,
+                    duplicate_bars=duplicate_bars_after,
+                    duplicate_bar_rate_pct=round(duplicate_rate, 4),
+                    malformed_rows=malformed_rows,
+                    malformed_row_rate_pct=round(malformed_rate, 4),
                 )
                 quality_records.append(quality.to_dict())
 
@@ -1069,19 +1094,41 @@ def _split_name_for_month(plan: DatasetPlan, month: str) -> str:
     return "unknown"
 
 
-def _reject_reason_row(r: pd.Series, *, max_missing: float, max_zero: float, max_dup: float) -> str:
+def _reject_reason_row(r: pd.Series, *, max_missing: float, max_zero: float, max_dup: float, max_mal: float) -> str:
     reasons: list[str] = []
-    if r["missing_bar_rate_pct"] > max_missing:
-        reasons.append("missing_bar_rate")
-    if r["zero_volume_bar_rate_pct"] > max_zero:
-        reasons.append("zero_volume_rate")
-    if r["duplicate_bar_rate_pct"] > max_dup:
-        reasons.append("duplicate_rate")
     if not r["pagination_complete"]:
         reasons.append("pagination_incomplete")
     if r["symbol_mismatch"]:
         reasons.append("symbol_mismatch")
+    if r["provider_feed"] != "sip":
+        reasons.append("feed_mismatch")
+    if r["timeframe"] != "5Min":
+        reasons.append("timeframe_mismatch")
+    if r["adjustment"] != "raw":
+        reasons.append("adjustment_mismatch")
+    if r["off_grid_bars"] > 0:
+        reasons.append("off_grid_bars")
+    if r["invalid_ohlc_rows"] > 0:
+        reasons.append("invalid_ohlc")
+    if not r["file_sha256_match"]:
+        reasons.append("manifest_sha_mismatch")
+    if r["missing_bar_rate_pct"] > max_missing:
+        reasons.append("missing_bar_rate")
+    if r["zero_volume_bar_rate_pct"] > max_zero:
+        reasons.append("zero_volume_rate")
+    if not pd.isna(r["duplicate_bar_rate_pct"]) and r["duplicate_bar_rate_pct"] > max_dup:
+        reasons.append("duplicate_rate")
+    if not pd.isna(r["malformed_row_rate_pct"]) and r["malformed_row_rate_pct"] > max_mal:
+        reasons.append("malformed_row_rate")
+    if not r["pre_normalization_metrics_available"] or pd.isna(r["duplicate_bar_rate_pct"]) or pd.isna(r["malformed_row_rate_pct"]):
+        reasons.append("pre_normalization_metrics_unavailable")
     return "; ".join(reasons)
+
+
+def _safe_max_numeric(series: pd.Series) -> float | None:
+    if series.empty or series.isna().all():
+        return None
+    return round(float(series.max()), 4)
 
 
 def run_validate(
@@ -1092,7 +1139,7 @@ def run_validate(
 
     Disposition hierarchy:
       - Provider/provenance/manifest/timestamp/pagination/silent-substitution/symbol-identity failures → invalid.
-      - Data-quality threshold breach → inconclusive.
+      - Data-quality threshold breach (including unavailable pre-normalization metrics) → inconclusive.
       - Otherwise valid.
 
     The 5% symbol-rejection threshold is applied independently to each monthly universe.
@@ -1107,66 +1154,120 @@ def run_validate(
     max_missing = float(thresholds.get("missing_bar_rate_per_symbol_pct_max", 5.0))
     max_zero = float(thresholds.get("zero_volume_bar_rate_per_symbol_pct_max", 10.0))
     max_dup = float(thresholds.get("duplicate_bar_rate_per_symbol_pct_max", 1.0))
+    max_mal = float(thresholds.get("malformed_row_rate_per_symbol_pct_max", max_dup))
     max_rejected_pct = float(thresholds.get("symbols_rejected_for_data_quality_pct_max", 5.0))
 
-    df["pagination_complete"] = df["pagination_complete"].astype(bool)
-    df["symbol_mismatch"] = df["symbol_mismatch"].astype(bool)
+    for col in ("pagination_complete", "symbol_mismatch", "pre_normalization_metrics_available"):
+        if col in df.columns:
+            df[col] = df[col].astype(bool)
+        else:
+            df[col] = False
+    for col in ("provider_feed", "timeframe", "adjustment", "file_sha256", "relative_path"):
+        if col not in df.columns:
+            df[col] = ""
+    for col in ("pre_dedup_duplicate_bars", "malformed_rows"):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    for col in ("duplicate_bar_rate_pct", "malformed_row_rate_pct"):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    # Manifest/provenance: verify each row's file SHA-256 matches its stored manifest.
+    def _row_file_sha_matches(r: pd.Series) -> bool:
+        expected = r.get("file_sha256", "") or ""
+        rel_path = r.get("relative_path", "") or ""
+        if not expected or not rel_path:
+            return False
+        fpath = output_dir / "ohlcv" / rel_path
+        return fpath.exists() and _sha256_file(fpath) == expected
+
+    df["file_sha256_match"] = df.apply(_row_file_sha_matches, axis=1)
+
     df["rejected"] = False
     df["rejection_reason"] = ""
 
-    invalid_mask = (~df["pagination_complete"]) | (df["symbol_mismatch"])
+    invalid_mask = (
+        (~df["pagination_complete"])
+        | df["symbol_mismatch"]
+        | (df["provider_feed"] != "sip")
+        | (df["timeframe"] != "5Min")
+        | (df["adjustment"] != "raw")
+        | (df["off_grid_bars"] > 0)
+        | (df["invalid_ohlc_rows"] > 0)
+        | (~df["file_sha256_match"])
+    )
+
+    unverified_mask = (
+        (~df["pre_normalization_metrics_available"])
+        | df["pre_dedup_duplicate_bars"].isna()
+        | df["malformed_rows"].isna()
+        | df["duplicate_bar_rate_pct"].isna()
+        | df["malformed_row_rate_pct"].isna()
+    )
+
     quality_mask = (
         (df["missing_bar_rate_pct"] > max_missing)
         | (df["zero_volume_bar_rate_pct"] > max_zero)
-        | (df["duplicate_bar_rate_pct"] > max_dup)
+        | ((~df["duplicate_bar_rate_pct"].isna()) & (df["duplicate_bar_rate_pct"] > max_dup))
+        | ((~df["malformed_row_rate_pct"].isna()) & (df["malformed_row_rate_pct"] > max_mal))
     )
-    df.loc[quality_mask & ~invalid_mask, "rejected"] = True
-    df.loc[invalid_mask, "rejected"] = True
 
-    # Build rejection reasons. Invalid (pagination/symbol) failures take precedence.
+    df.loc[invalid_mask | unverified_mask | quality_mask, "rejected"] = True
     df["rejection_reason"] = df.apply(
-        lambda r: (
-            "pagination_incomplete;symbol_mismatch" if r["symbol_mismatch"] and not r["pagination_complete"]
-            else "pagination_incomplete" if not r["pagination_complete"]
-            else "symbol_mismatch" if r["symbol_mismatch"]
-            else _reject_reason_row(r, max_missing=max_missing, max_zero=max_zero, max_dup=max_dup)
-        ),
+        lambda r: _reject_reason_row(r, max_missing=max_missing, max_zero=max_zero, max_dup=max_dup, max_mal=max_mal),
         axis=1,
     )
     _write_csv(q_path, df.to_dict("records"))
+
+    # Persisted provider-error/cycle state makes the whole dataset invalid.
+    any_invalid_state = bool(
+        state.pagination_cycles > 0
+        or state.http_error_count > 0
+        or state.incomplete_requests > 0
+    )
 
     # Per-monthly-universe rejection accounting.
     monthly_rejections: dict[str, dict[str, int | float]] = {}
     any_invalid = False
     any_inconclusive = False
+    any_unverified = False
     for month, group in df.groupby("effective_month"):
         total = len(group)
-        invalid = int(((~group["pagination_complete"]) | group["symbol_mismatch"]).sum())
-        quality_rejected = int(group["rejected"].sum()) - invalid
-        rejected_pct = (quality_rejected / total * 100) if total else 0.0
+        invalid = int(invalid_mask[group.index].sum())
+        unverified = int(unverified_mask[group.index].sum())
+        quality_rejected = int((quality_mask[group.index] & ~invalid_mask[group.index] & ~unverified_mask[group.index]).sum())
+        rejected = invalid + unverified + quality_rejected
+        rejected_pct = (rejected / total * 100) if total else 0.0
         monthly_rejections[str(month)] = {
             "total_symbols": total,
             "invalid_symbols": invalid,
+            "unverified_symbols": unverified,
             "data_quality_rejected": quality_rejected,
             "rejected_pct": round(rejected_pct, 4),
             "breaches_5pct_threshold": rejected_pct > max_rejected_pct,
         }
         if invalid > 0:
             any_invalid = True
+        if unverified > 0:
+            any_unverified = True
         if rejected_pct > max_rejected_pct:
             any_inconclusive = True
 
     total_symbols = int(df.groupby("effective_month").size().sum())
-    overall_invalid = int(((~df["pagination_complete"]) | df["symbol_mismatch"]).sum())
-    overall_quality_rejected = int(df["rejected"].sum()) - overall_invalid
-    overall_rejected_pct = (overall_quality_rejected / total_symbols * 100) if total_symbols else 0.0
+    overall_invalid = int(invalid_mask.sum())
+    overall_unverified = int(unverified_mask.sum())
+    overall_quality_rejected = int((quality_mask & ~invalid_mask & ~unverified_mask).sum())
+    overall_rejected = overall_invalid + overall_unverified + overall_quality_rejected
+    overall_rejected_pct = (overall_rejected / total_symbols * 100) if total_symbols else 0.0
 
-    if any_invalid:
+    if any_invalid or any_invalid_state:
         disposition = "invalid"
-        reason = f"Provider/provenance/pagination/symbol-identity failures in {overall_invalid} symbol-months"
-    elif any_inconclusive:
+        reason = f"Provider/provenance/pagination/symbol-identity/manifest failures in {overall_invalid} symbol-months"
+        if any_invalid_state:
+            reason += f"; persisted provider errors/cycles/incomplete requests in state (cycles={state.pagination_cycles}, http_errors={state.http_error_count}, incomplete={state.incomplete_requests})"
+    elif any_inconclusive or any_unverified:
         disposition = "inconclusive"
-        reason = "One or more monthly universes exceeded the 5% data-quality rejection threshold"
+        reason = "One or more monthly universes exceeded the 5% data-quality rejection threshold or pre-normalization metrics are unavailable"
     else:
         disposition = "valid"
         reason = f"All monthly universes within thresholds; {overall_quality_rejected} of {total_symbols} symbol-months rejected for data quality"
@@ -1176,13 +1277,14 @@ def run_validate(
         "reason": reason,
         "total_symbol_months": total_symbols,
         "overall_invalid_symbol_months": overall_invalid,
+        "overall_unverified_symbol_months": overall_unverified,
         "overall_data_quality_rejected": overall_quality_rejected,
         "overall_symbols_rejected_pct": round(overall_rejected_pct, 4),
         "monthly_rejections": monthly_rejections,
-        "max_missing_rate_pct": round(df["missing_bar_rate_pct"].max() if not df.empty else 0.0, 4),
-        "max_zero_volume_rate_pct": round(df["zero_volume_bar_rate_pct"].max() if not df.empty else 0.0, 4),
-        "max_duplicate_rate_pct": round(df["duplicate_bar_rate_pct"].max() if not df.empty else 0.0, 4),
-        "max_malformed_row_rate_pct": round(df["malformed_row_rate_pct"].max() if not df.empty else 0.0, 4),
+        "max_missing_rate_pct": _safe_max_numeric(df["missing_bar_rate_pct"]),
+        "max_zero_volume_rate_pct": _safe_max_numeric(df["zero_volume_bar_rate_pct"]),
+        "max_duplicate_rate_pct": _safe_max_numeric(df["duplicate_bar_rate_pct"]),
+        "max_malformed_row_rate_pct": _safe_max_numeric(df["malformed_row_rate_pct"]),
     }
     _write_json(output_dir / "validation_summary.json", summary)
     state.validated = True
@@ -1230,6 +1332,40 @@ def run_finalize(
     elif state.runtime_seconds is None:
         final_runtime_note = "Historical runtime unavailable"
 
+    # Pre-normalization metrics availability is derived from the data quality manifest.
+    dq_path = output_dir / "ohlcv" / "data_quality.csv"
+    pre_normalization_metrics_available = False
+    if dq_path.exists():
+        dq_df = pd.read_csv(dq_path)
+        if not dq_df.empty:
+            pre_normalization_metrics_available = bool(
+                dq_df["pre_normalization_metrics_available"].astype(bool).all()
+                and dq_df["duplicate_bar_rate_pct"].notna().all()
+                and dq_df["malformed_row_rate_pct"].notna().all()
+            )
+
+    # Per-phase Alpaca counters are None when the state was not recorded with detailed accounting.
+    if state.per_phase_request_counters_available:
+        per_phase = {
+            "alpaca_ranking_logical_calls": state.alpaca_ranking_logical_calls,
+            "alpaca_ranking_http_pages": state.alpaca_ranking_http_pages,
+            "alpaca_ranking_http_attempts": state.alpaca_ranking_http_attempts,
+            "alpaca_ranking_http_429s": state.alpaca_ranking_http_429s,
+            "alpaca_ranking_http_errors": state.alpaca_ranking_http_errors,
+            "alpaca_ohlcv_logical_calls": state.alpaca_ohlcv_logical_calls,
+            "alpaca_ohlcv_http_pages": state.alpaca_ohlcv_http_pages,
+            "alpaca_ohlcv_http_attempts": state.alpaca_ohlcv_http_attempts,
+            "alpaca_ohlcv_http_429s": state.alpaca_ohlcv_http_429s,
+            "alpaca_ohlcv_http_errors": state.alpaca_ohlcv_http_errors,
+        }
+    else:
+        per_phase = {k: None for k in (
+            "alpaca_ranking_logical_calls", "alpaca_ranking_http_pages", "alpaca_ranking_http_attempts",
+            "alpaca_ranking_http_429s", "alpaca_ranking_http_errors",
+            "alpaca_ohlcv_logical_calls", "alpaca_ohlcv_http_pages", "alpaca_ohlcv_http_attempts",
+            "alpaca_ohlcv_http_429s", "alpaca_ohlcv_http_errors",
+        )}
+
     decision = DatasetDecision(
         task_id=plan.task_id,
         dataset_id=plan.dataset_id,
@@ -1251,19 +1387,19 @@ def run_finalize(
         dataset_coverage_end=str(plan.dataset.get("dataset_end", "2025-12-31")),
         massive_http_requests=state.massive_request_count,
         massive_incomplete_snapshots=state.incomplete_requests,
-        alpaca_http_requests=state.alpaca_request_count if (state.alpaca_ranking_http_pages + state.alpaca_ohlcv_http_pages) == 0 else None,
-        alpaca_ranking_logical_calls=state.alpaca_ranking_logical_calls,
-        alpaca_ranking_http_pages=state.alpaca_ranking_http_pages,
-        alpaca_ranking_http_attempts=state.alpaca_ranking_http_attempts,
-        alpaca_ranking_http_429s=state.alpaca_ranking_http_429s,
-        alpaca_ranking_http_errors=state.alpaca_ranking_http_errors,
-        alpaca_ohlcv_logical_calls=state.alpaca_ohlcv_logical_calls,
-        alpaca_ohlcv_http_pages=state.alpaca_ohlcv_http_pages,
-        alpaca_ohlcv_http_attempts=state.alpaca_ohlcv_http_attempts,
-        alpaca_ohlcv_http_429s=state.alpaca_ohlcv_http_429s,
-        alpaca_ohlcv_http_errors=state.alpaca_ohlcv_http_errors,
-        http_errors=state.http_error_count + state.alpaca_ranking_http_errors + state.alpaca_ohlcv_http_errors,
-        http_429s=state.http_429_count + state.alpaca_ranking_http_429s + state.alpaca_ohlcv_http_429s,
+        alpaca_http_requests=state.alpaca_request_count or None,
+        alpaca_ranking_logical_calls=per_phase["alpaca_ranking_logical_calls"],
+        alpaca_ranking_http_pages=per_phase["alpaca_ranking_http_pages"],
+        alpaca_ranking_http_attempts=per_phase["alpaca_ranking_http_attempts"],
+        alpaca_ranking_http_429s=per_phase["alpaca_ranking_http_429s"],
+        alpaca_ranking_http_errors=per_phase["alpaca_ranking_http_errors"],
+        alpaca_ohlcv_logical_calls=per_phase["alpaca_ohlcv_logical_calls"],
+        alpaca_ohlcv_http_pages=per_phase["alpaca_ohlcv_http_pages"],
+        alpaca_ohlcv_http_attempts=per_phase["alpaca_ohlcv_http_attempts"],
+        alpaca_ohlcv_http_429s=per_phase["alpaca_ohlcv_http_429s"],
+        alpaca_ohlcv_http_errors=per_phase["alpaca_ohlcv_http_errors"],
+        http_errors=state.http_error_count,
+        http_429s=state.http_429_count,
         pagination_cycles=state.pagination_cycles,
         incomplete_requests=state.incomplete_requests,
         runtime_seconds=final_runtime,
@@ -1274,11 +1410,13 @@ def run_finalize(
         ranking_timeframe_parity_passed=ranking_info.get("ranking_parity_passed", False),
         parity_fallback_used=ranking_info.get("ranking_timeframe", "1D") != plan.liquidity_ranking.get("ranking_timeframe", "1D"),
         data_quality_disposition=validation["disposition"],
-        missing_bar_rate_max_pct=validation["max_missing_rate_pct"],
-        zero_volume_rate_max_pct=validation["max_zero_volume_rate_pct"],
-        duplicate_rate_max_pct=validation["max_duplicate_rate_pct"],
+        missing_bar_rate_max_pct=validation.get("max_missing_rate_pct") or 0.0,
+        zero_volume_rate_max_pct=validation.get("max_zero_volume_rate_pct") or 0.0,
+        duplicate_rate_max_pct=validation.get("max_duplicate_rate_pct") or 0.0,
         symbols_rejected_pct=validation.get("overall_symbols_rejected_pct", 0.0),
         next_assignment="devin/intra-001-c-research-engine",
+        per_phase_request_counters_available=state.per_phase_request_counters_available,
+        pre_normalization_metrics_available=pre_normalization_metrics_available,
     )
     state.finalized = True
     save_state(output_dir, state)
@@ -1364,6 +1502,10 @@ def _write_safe_artifacts(
 
     # Request audit
     state = load_state(output_dir)
+
+    def _per_phase_value(key: str) -> int | None:
+        return getattr(state, key) if state.per_phase_request_counters_available else None
+
     request_rows = []
     request_rows.append({
         "provider": "massive",
@@ -1378,26 +1520,26 @@ def _write_safe_artifacts(
     request_rows.append({
         "provider": "alpaca",
         "phase": "ranking",
-        "logical_calls": state.alpaca_ranking_logical_calls,
-        "http_pages": state.alpaca_ranking_http_pages,
-        "http_attempts": state.alpaca_ranking_http_attempts,
-        "http_429_count": state.alpaca_ranking_http_429s,
-        "http_error_count": state.alpaca_ranking_http_errors,
-        "pagination_cycles": state.pagination_cycles,
+        "logical_calls": _per_phase_value("alpaca_ranking_logical_calls"),
+        "http_pages": _per_phase_value("alpaca_ranking_http_pages"),
+        "http_attempts": _per_phase_value("alpaca_ranking_http_attempts"),
+        "http_429_count": _per_phase_value("alpaca_ranking_http_429s"),
+        "http_error_count": _per_phase_value("alpaca_ranking_http_errors"),
+        "pagination_cycles": state.pagination_cycles if state.per_phase_request_counters_available else None,
         "incomplete_requests": 0,
-        "notes": "1Day liquidity ranking",
+        "notes": "1Day liquidity ranking" if state.per_phase_request_counters_available else "unavailable (legacy/recomputed state)",
     })
     request_rows.append({
         "provider": "alpaca",
         "phase": "ohlcv",
-        "logical_calls": state.alpaca_ohlcv_logical_calls,
-        "http_pages": state.alpaca_ohlcv_http_pages,
-        "http_attempts": state.alpaca_ohlcv_http_attempts,
-        "http_429_count": state.alpaca_ohlcv_http_429s,
-        "http_error_count": state.alpaca_ohlcv_http_errors,
+        "logical_calls": _per_phase_value("alpaca_ohlcv_logical_calls"),
+        "http_pages": _per_phase_value("alpaca_ohlcv_http_pages"),
+        "http_attempts": _per_phase_value("alpaca_ohlcv_http_attempts"),
+        "http_429_count": _per_phase_value("alpaca_ohlcv_http_429s"),
+        "http_error_count": _per_phase_value("alpaca_ohlcv_http_errors"),
         "pagination_cycles": 0,
-        "incomplete_requests": state.incomplete_requests,
-        "notes": "5Min OHLCV dataset",
+        "incomplete_requests": state.incomplete_requests if state.per_phase_request_counters_available else None,
+        "notes": "5Min OHLCV dataset" if state.per_phase_request_counters_available else "unavailable (legacy/recomputed state)",
     })
     _write_csv(out / "request_audit.csv", request_rows)
     files["request_audit.csv"] = _sha256_file(out / "request_audit.csv")
@@ -1444,20 +1586,23 @@ def _write_safe_artifacts(
     (out / "README.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
     files["README.txt"] = _sha256_file(out / "README.txt")
 
-    # Write artifact manifest and checksums
-    manifest_path = out / "artifact_manifest.json"
-    _write_json(manifest_path, {"schema_version": "1.0", "files": dict(sorted(files.items()))})
-    files["artifact_manifest.json"] = _sha256_file(manifest_path)
-
-    checksum_path = out / "checksums.sha256"
-    lines = [f"{h}  {name}\n" for name, h in sorted(files.items())]
-    checksum_path.write_text("".join(lines), encoding="utf-8")
-    files["checksums.sha256"] = _sha256_file(checksum_path)
-
-    # Report.md
+    # Report.md must be generated before the manifest and checksum so it can be covered by them.
     report = _generate_report(plan, decision, output_dir)
     (out / "report.md").write_text(report, encoding="utf-8")
     files["report.md"] = _sha256_file(out / "report.md")
+
+    # Write artifact manifest (excludes itself and checksums.sha256 to avoid circular hashes)
+    manifest_path = out / "artifact_manifest.json"
+    manifest_files = {name: h for name, h in files.items() if name not in {"artifact_manifest.json", "checksums.sha256"}}
+    _write_json(manifest_path, {"schema_version": "1.0", "files": dict(sorted(manifest_files.items()))})
+    files["artifact_manifest.json"] = _sha256_file(manifest_path)
+
+    # Write checksums (excludes itself; includes report, manifest, and all payload files)
+    checksum_path = out / "checksums.sha256"
+    checksum_files = {name: h for name, h in files.items() if name != "checksums.sha256"}
+    lines = [f"{h}  {name}\n" for name, h in sorted(checksum_files.items())]
+    checksum_path.write_text("".join(lines), encoding="utf-8")
+    files["checksums.sha256"] = _sha256_file(checksum_path)
 
     # Validate expected artifacts
     expected = set(plan.safe_artifact_policy.get("expected_safe_artifacts", []))
@@ -1503,6 +1648,9 @@ def _generate_report(plan: DatasetPlan, decision: DatasetDecision, output_dir: P
     ]
     for m, c in sorted(decision.monthly_stock_counts.items()):
         lines.append(f"- {m}: {c}")
+    def _fmt(value: float | None) -> str:
+        return "unavailable" if value is None else str(value)
+
     lines.extend([
         "",
         "## Data quality",
@@ -1510,39 +1658,44 @@ def _generate_report(plan: DatasetPlan, decision: DatasetDecision, output_dir: P
         f"- Disposition: {decision.data_quality_disposition}",
         f"- Max missing-bar rate: {decision.missing_bar_rate_max_pct}%",
         f"- Max zero-volume rate: {decision.zero_volume_rate_max_pct}%",
-        f"- Max duplicate rate: {decision.duplicate_rate_max_pct}%",
+        f"- Max duplicate rate: {(_fmt(decision.duplicate_rate_max_pct) + '%') if decision.pre_normalization_metrics_available else 'unavailable (pre-normalization metrics not recovered)'}",
+        f"- Pre-normalization metrics available: {decision.pre_normalization_metrics_available}",
         f"- Symbols rejected for data quality: {decision.symbols_rejected_pct}%",
         "",
         "### Monthly rejection summary",
         "",
-        "| Month | Total | Rejected | Rejected % |",
-        "|-------|-------|----------|------------|",
+        "| Month | Total | Invalid | Unverified | Data-quality rejected | Rejected % |",
+        "|-------|-------|---------|------------|----------------------|------------|",
     ])
     validation = json.loads((output_dir / "validation_summary.json").read_text(encoding="utf-8"))
     for month, stats in sorted(validation.get("monthly_rejections", {}).items()):
-        lines.append(f"| {month} | {stats['total_symbols']} | {stats['data_quality_rejected']} | {stats['rejected_pct']}% |")
+        lines.append(
+            f"| {month} | {stats['total_symbols']} | {stats.get('invalid_symbols', 0)} | "
+            f"{stats.get('unverified_symbols', 0)} | {stats['data_quality_rejected']} | {stats['rejected_pct']}% |"
+        )
     lines.extend([
         "",
         "## Resource usage",
         "",
         f"- Massive HTTP requests: {decision.massive_http_requests}",
         f"- Massive incomplete snapshots: {decision.massive_incomplete_snapshots}",
-        f"- Alpaca ranking logical calls: {decision.alpaca_ranking_logical_calls}",
-        f"- Alpaca ranking HTTP pages: {decision.alpaca_ranking_http_pages}",
-        f"- Alpaca ranking HTTP attempts: {decision.alpaca_ranking_http_attempts}",
-        f"- Alpaca ranking HTTP 429s: {decision.alpaca_ranking_http_429s}",
-        f"- Alpaca ranking HTTP errors: {decision.alpaca_ranking_http_errors}",
-        f"- Alpaca OHLCV logical calls: {decision.alpaca_ohlcv_logical_calls}",
-        f"- Alpaca OHLCV HTTP pages: {decision.alpaca_ohlcv_http_pages}",
-        f"- Alpaca OHLCV HTTP attempts: {decision.alpaca_ohlcv_http_attempts}",
-        f"- Alpaca OHLCV HTTP 429s: {decision.alpaca_ohlcv_http_429s}",
-        f"- Alpaca OHLCV HTTP errors: {decision.alpaca_ohlcv_http_errors}",
+        f"- Per-phase Alpaca counters available: {decision.per_phase_request_counters_available}",
+        f"- Alpaca ranking logical calls: {_fmt(decision.alpaca_ranking_logical_calls)}",
+        f"- Alpaca ranking HTTP pages: {_fmt(decision.alpaca_ranking_http_pages)}",
+        f"- Alpaca ranking HTTP attempts: {_fmt(decision.alpaca_ranking_http_attempts)}",
+        f"- Alpaca ranking HTTP 429s: {_fmt(decision.alpaca_ranking_http_429s)}",
+        f"- Alpaca ranking HTTP errors: {_fmt(decision.alpaca_ranking_http_errors)}",
+        f"- Alpaca OHLCV logical calls: {_fmt(decision.alpaca_ohlcv_logical_calls)}",
+        f"- Alpaca OHLCV HTTP pages: {_fmt(decision.alpaca_ohlcv_http_pages)}",
+        f"- Alpaca OHLCV HTTP attempts: {_fmt(decision.alpaca_ohlcv_http_attempts)}",
+        f"- Alpaca OHLCV HTTP 429s: {_fmt(decision.alpaca_ohlcv_http_429s)}",
+        f"- Alpaca OHLCV HTTP errors: {_fmt(decision.alpaca_ohlcv_http_errors)}",
         f"- HTTP errors (total): {decision.http_errors}",
         f"- HTTP 429s (total): {decision.http_429s}",
         f"- Pagination cycles: {decision.pagination_cycles}",
         f"- Incomplete requests: {decision.incomplete_requests}",
-        f"- Original aggregate Alpaca HTTP requests (ranking + OHLCV): {decision.alpaca_http_requests if decision.alpaca_http_requests is not None else 'unavailable'}",
-        f"- Runtime (seconds): {decision.runtime_seconds if decision.runtime_seconds is not None else 'unavailable'} {f'— {decision.runtime_note}' if decision.runtime_note else ''}".strip(),
+        f"- Original aggregate Alpaca HTTP requests (ranking + OHLCV): {_fmt(decision.alpaca_http_requests)}",
+        f"- Runtime (seconds): {_fmt(decision.runtime_seconds)} {f'— {decision.runtime_note}' if decision.runtime_note else ''}".strip(),
         f"- Local storage (bytes): {decision.local_storage_bytes}",
         "",
         "## Ranking methodology",
@@ -1557,7 +1710,7 @@ def _generate_report(plan: DatasetPlan, decision: DatasetDecision, output_dir: P
         "- Duplicate symbols in inactive snapshots are excluded from the active universe.",
         "- The 2025-only dataset is shorter than the original 2022-2025 contract; sample minimums and gates are unchanged.",
         "- Alpaca SIP 1Day volume is a total-liquidity proxy that includes pre-market and after-hours volume; it is not exact regular-session volume. The locked ranking formula uses this proxy.",
-        "- The pre-dedup duplicate and malformed row counts reported for this recomputed bundle are zero because the original 2026-08-08-200945 run normalized bars before recording them. Recomputing from normalized parquet cannot recover those original pre-normalization counts; the corrected pipeline now preserves them for future runs.",
+        f"- Pre-normalization duplicate/malformed metrics for this bundle: {'available' if decision.pre_normalization_metrics_available else 'unavailable (recomputed from normalized parquet; original 2026-08-08-200945 run normalized before recording)'}. The corrected pipeline now preserves and counts these values before deduplication for future runs.",
         "- The five whole-market ~78-bar discrepancies in the original data_quality.csv were caused by an off-by-one expected-session construction in `_sessions_in_range`: it included the first regular session of the next calendar month when that day was a trading day and then counted 78 bars for that not-yet-open session. The corrected implementation uses session open/close UTC comparisons. Affected months and their extra expected-but-absent sessions: March 2025 = 2025-04-01; April 2025 = 2025-05-01; June 2025 = 2025-07-01; July 2025 = 2025-08-01; September 2025 = 2025-10-01.",
         "",
         "## Next step",

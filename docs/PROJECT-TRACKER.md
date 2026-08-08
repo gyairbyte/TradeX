@@ -475,7 +475,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Redesign intraday scorer around a specific setup
 - **Category:** Intraday trading
 - **Priority:** Medium
-- **Status:** In progress — `INTRA-001B-DATASET-V1` completed with a `valid` manifest; ChatGPT-review auditability blockers corrected (split classification, expected-session calculation, monthly 5% rejection accounting, duplicate/malformed observability, ranking pagination counters, disposition hierarchy, runtime recording); safe bundle regenerated from existing local data; no new live provider calls; no V5 or additional provider search occurred
+- **Status:** In progress — `INTRA-001B-DATASET-V1` safe bundle regenerated; disposition is `inconclusive` because pre-normalization duplicate/malformed metrics cannot be recovered from normalized parquet, so the 1% duplicate threshold is unverified; all other locked provider and manifest invariants are clean; ChatGPT-review auditability blockers corrected (duplicate-rate gating from pre-dedup count, unavailable pre-normalization metrics represented as null, response-symbol union across pages, per-phase request counters modeled as unavailable, report.md included in manifest/checksums, resume/idempotence, expanded invalid validation hierarchy); no new live provider calls; no V5 or additional provider search occurred
 - **Research specification:** `docs/research/INTRA-001-SPEC.md`
 - **Locked machine-readable strategy spec:** `docs/research/specs/INTRA-001-v1.json` (SHA-256 unchanged)
 - **Data-sufficiency amendment v3:** `docs/research/specs/INTRA-001-data-sufficiency-amendment-v3.json` and `docs/research/INTRA-001-DATA-SUFFICIENCY-AMENDMENT-V3.md`
@@ -488,16 +488,17 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **INTRA-001B pre-registration / 1Day amendment commit:** `60e46e25b38e9e7ef9316bf49bb0a51cf092121c`
 - **INTRA-001B live run head:** `ee4b7b897f3768f6fa6608c2fdba28384b9a5d91` (original download); validation and safe bundle recomputed from existing local data without new provider calls
 - **INTRA-001B original safe artifacts (preserved):** `docs/research/artifacts/INTRA-001B-DATASET-V1/2026-08-08-200945/`
-- **INTRA-001B corrected safe artifacts:** `docs/research/artifacts/INTRA-001B-DATASET-V1/2026-08-08-211737/`
-- **INTRA-001B dataset disposition:** `valid` — 6 of 756 symbol-months rejected for data quality (0.79%), within the 5% monthly threshold; no provider/provenance/pagination/silent-substitution failures
+- **INTRA-001B first-corrected safe artifacts (preserved):** `docs/research/artifacts/INTRA-001B-DATASET-V1/2026-08-08-211737/`
+- **INTRA-001B second-corrected safe artifacts:** `docs/research/artifacts/INTRA-001B-DATASET-V1/2026-08-08-225153/`
+- **INTRA-001B dataset disposition:** `inconclusive` — pre-normalization duplicate/malformed metrics unavailable, so the 1% duplicate threshold is unverified; missing-bar and zero-volume thresholds are clean; no provider/provenance/pagination/silent-substitution/manifest failures
 - **INTRA-001B monthly stock counts:** 50 selected stocks per month, 12 months
 - **INTRA-001B fixed ETF stratum:** 13 ETFs per month
 - **INTRA-001B unique selected symbols:** 97 distinct stocks + 13 ETFs
 - **INTRA-001B coverage:** `2025-01-02` through `2025-12-31` with 20-session warm-up before each month
 - **INTRA-001B Massive HTTP requests:** 440 (12 active + 12 inactive PIT snapshots, 0 errors, 0 `429`s)
-- **INTRA-001B Alpaca HTTP requests:** 1,885 aggregate (72 ranking batch calls + 1,813 OHLCV pages, 0 errors, 0 `429`s, 0 pagination cycles); per-phase logical/page/attempt/429/error counters are now tracked in code and will be populated on any future live run
-- **INTRA-001B actual runtime:** historical runtime unavailable for the recomputed bundle; original download was ~35 minutes ranking + ~22 minutes OHLCV + finalize; total under 60 minutes
-- **INTRA-001B local storage:** ~257 MB
+- **INTRA-001B Alpaca HTTP requests:** 1,885 aggregate observed during original download; per-phase logical/page/attempt/429/error counters are unavailable for the recomputed bundle and modeled as `null`
+- **INTRA-001B actual runtime:** historical runtime unavailable for the recomputed bundle; original download was under 60 minutes
+- **INTRA-001B local storage:** ~270 MB
 - **Ranking formula:** `session_dollar_volume = Alpaca SIP 1Day close * Alpaca SIP 1Day volume`; median over prior 20 complete XNYS sessions; 1Day volume accepted as a total-liquidity proxy that includes pre/post-market activity
 - **Holdout protection:** OHLCV bars downloaded and validated; no VWAP, signals, entries, exits, returns, metrics, or holdout-performance inspection
 - **Problem statement:** The intraday score is a loose bundle of indicators without VWAP, time-of-day, or liquidity context.

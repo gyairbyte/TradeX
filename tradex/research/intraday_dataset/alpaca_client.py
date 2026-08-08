@@ -189,6 +189,7 @@ class DatasetAlpacaClient:
             params["asof"] = asof
 
         all_bars: dict[str, list[dict[str, Any]]] = {s.upper(): [] for s in symbols}
+        response_symbols: set[str] = set()
         page_count = 0
         next_page_token_present = False
         seen_tokens: set[str] = set()
@@ -236,6 +237,7 @@ class DatasetAlpacaClient:
                     "token_hashes": token_hashes,
                     "token_sequence_sha256": _token_sequence_hash(token_hashes),
                     "http_status": 0,
+                    "response_symbols": sorted(response_symbols),
                 }
 
             page_count += 1
@@ -264,6 +266,7 @@ class DatasetAlpacaClient:
                     "token_sequence_sha256": _token_sequence_hash(token_hashes),
                     "http_status": last_status,
                     "error_body": error_body[:500],
+                    "response_symbols": sorted(response_symbols),
                 }
 
             try:
@@ -281,9 +284,10 @@ class DatasetAlpacaClient:
                 safe_error = "invalid_response"
                 break
 
-            # Symbol identity: a requested symbol missing from the response is
-            # returned as an empty DataFrame; an unexpected key is ignored.
-            response_symbols = {str(s).upper() for s in bars_by_symbol}
+            # Symbol identity: accumulate every symbol that appears on any page.
+            # A requested symbol missing from all pages is returned as an empty
+            # DataFrame; an unexpected key is ignored for the requested set.
+            response_symbols.update(str(s).upper() for s in bars_by_symbol)
 
             page_total = 0
             for sym in symbols:

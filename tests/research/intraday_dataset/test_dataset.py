@@ -1,6 +1,7 @@
 """Credential-free tests for INTRA-001B-DATASET-V1 pipeline."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import tempfile
@@ -11,6 +12,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import pytest
+import requests
 
 from tradex.research.intraday_dataset import spec as spec_module
 from tradex.research.intraday_dataset.alpaca_client import DatasetAlpacaClient
@@ -28,10 +30,13 @@ from tradex.research.intraday_dataset.dataset import (
     _regular_session_grid,
     _sessions_in_range,
     _split_name_for_month,
+    load_state,
     run_build_universe,
     run_fetch_ohlcv,
+    run_finalize,
     run_plan,
     run_validate,
+    save_state,
 )
 from tradex.research.intraday_dataset.models import ReferenceSnapshot
 
@@ -533,3 +538,259 @@ def test_monthly_5pct_rejection_calculation(plan, output_dir, monkeypatch):
     for stats in summary["monthly_rejections"].values():
         assert "rejected_pct" in stats
         assert "breaches_5pct_threshold" in stats
+
+
+class DuplicateBarClient(FakeAlpacaClient):
+    """Returns duplicated 5Min bars so pre-dedup duplicate rate exceeds 1%."""
+
+    def get_bars(self, *args, **kwargs):
+        dfs, meta = super().get_bars(*args, **kwargs)
+        if kwargs.get("timeframe") == "5Min":
+            for sym, df in dfs.items():
+                dfs[sym] = pd.concat([df, df]).sort_index()
+        return dfs, meta
+
+
+def test_duplicate_rate_gated_on_pre_dedup_count(plan, output_dir, monkeypatch):
+    """Duplicate bars counted before deduplication must breach the 1% threshold."""
+    _write_fake_reference_snapshots(output_dir, plan)
+    run_plan(plan, output_dir)
+    monkeypatch.setattr("tradex.research.intraday_dataset.dataset.DatasetAlpacaClient", DuplicateBarClient)
+    run_build_universe(plan, output_dir, "dummy", "dummy")
+    run_fetch_ohlcv(plan, output_dir, "dummy", "dummy")
+    ohlcv = pd.read_csv(output_dir / "ohlcv" / "ohlcv_manifest.csv")
+    assert (ohlcv["pre_dedup_duplicate_bars"] > 0).all()
+    assert (ohlcv["duplicate_bars"] == 0).all()
+    quality = pd.read_csv(output_dir / "ohlcv" / "data_quality.csv")
+    assert (quality["duplicate_bar_rate_pct"] > 1.0).all()
+    summary = run_validate(plan, output_dir)
+    assert summary["disposition"] == "inconclusive"
+
+
+def test_pre_normalization_metrics_unavailable_marks_inconclusive(plan, output_dir, monkeypatch):
+    """When pre-normalization duplicate/malformed metrics are unavailable the bundle is inconclusive, not valid."""
+    _write_fake_reference_snapshots(output_dir, plan)
+    run_plan(plan, output_dir)
+    monkeypatch.setattr("tradex.research.intraday_dataset.dataset.DatasetAlpacaClient", FakeAlpacaClient)
+    run_build_universe(plan, output_dir, "dummy", "dummy")
+    run_fetch_ohlcv(plan, output_dir, "dummy", "dummy")
+    quality_path = output_dir / "ohlcv" / "data_quality.csv"
+    quality = pd.read_csv(quality_path)
+    quality["pre_normalization_metrics_available"] = False
+    quality["pre_dedup_duplicate_bars"] = pd.NA
+    quality["duplicate_bars"] = pd.NA
+    quality["duplicate_bar_rate_pct"] = pd.NA
+    quality["malformed_rows"] = pd.NA
+    quality["malformed_row_rate_pct"] = pd.NA
+    quality.to_csv(quality_path, index=False, lineterminator="\n")
+    summary = run_validate(plan, output_dir)
+    assert summary["disposition"] == "inconclusive"
+    assert "pre-normalization metrics" in summary["reason"].lower()
+    updated = pd.read_csv(quality_path)
+    assert updated["rejected"].all()
+    assert all("pre_normalization_metrics_unavailable" in r for r in updated["rejection_reason"])
+
+
+def _make_resp(body: dict[str, Any], status: int = 200) -> requests.Response:
+    resp = requests.Response()
+    resp.status_code = status
+    resp._content = json.dumps(body).encode("utf-8")
+    return resp
+
+
+def test_get_bars_response_symbol_union_across_pages():
+    """Symbols returned on any page are accumulated, not overwritten by the final page."""
+    client = DatasetAlpacaClient("key", "secret")
+    calls = []
+
+    def mock_get(url, params, sleeper=None):
+        if len(calls) == 0:
+            calls.append(1)
+            return _make_resp({
+                "bars": {"A": [{"t": "2025-01-02T14:30:00Z", "o": 100, "h": 101, "l": 99, "c": 100, "v": 1000}]},
+                "next_page_token": "page2",
+            }), None, 1, [200]
+        calls.append(2)
+        return _make_resp({
+            "bars": {"B": [{"t": "2025-01-02T14:35:00Z", "o": 200, "h": 201, "l": 199, "c": 200, "v": 2000}]},
+            "next_page_token": None,
+        }), None, 1, [200]
+
+    client._get = mock_get  # type: ignore[method-assign]
+    dfs, meta = client.get_bars(
+        ["A", "B"],
+        pd.Timestamp("2025-01-02", tz="America/New_York").tz_convert("UTC"),
+        pd.Timestamp("2025-01-02", tz="America/New_York").tz_convert("UTC") + pd.Timedelta(hours=23),
+        feed="sip",
+        timeframe="5Min",
+        adjustment="raw",
+        sleeper=lambda x: None,
+    )
+    assert sorted(meta["response_symbols"]) == ["A", "B"]
+    assert "A" in dfs and "B" in dfs
+
+
+def test_get_bars_response_symbols_initialized_on_error():
+    """An error response still returns a bound response_symbols set."""
+    client = DatasetAlpacaClient("key", "secret")
+    client._get = lambda url, params, sleeper=None: (_make_resp({"message": "bad"}, 500), None, 1, [500])  # type: ignore[method-assign]
+    _dfs, meta = client.get_bars(
+        ["A"],
+        pd.Timestamp("2025-01-02", tz="America/New_York").tz_convert("UTC"),
+        pd.Timestamp("2025-01-02", tz="America/New_York").tz_convert("UTC") + pd.Timedelta(hours=23),
+        feed="sip",
+        timeframe="5Min",
+        adjustment="raw",
+        sleeper=lambda x: None,
+    )
+    assert meta["response_symbols"] == []
+    assert meta["pagination_complete"] is False
+
+
+def test_per_phase_counters_available_in_decision(plan, output_dir, monkeypatch):
+    """Detailed per-phase Alpaca counters are preserved through finalization."""
+    _write_fake_reference_snapshots(output_dir, plan)
+    run_plan(plan, output_dir)
+    monkeypatch.setattr("tradex.research.intraday_dataset.dataset.DatasetAlpacaClient", FakeAlpacaClient)
+    run_build_universe(plan, output_dir, "dummy", "dummy")
+    run_fetch_ohlcv(plan, output_dir, "dummy", "dummy")
+    summary = run_validate(plan, output_dir)
+    assert summary["disposition"] == "valid"
+    artifact_dir = output_dir / "safe"
+    decision = run_finalize(
+        plan,
+        output_dir,
+        artifact_dir,
+        starting_main_sha="sha",
+        branch="test",
+        live_run_head="head",
+        pre_registration_commit="pre",
+    )
+    assert decision.per_phase_request_counters_available is True
+    assert isinstance(decision.alpaca_ranking_http_pages, int)
+    assert isinstance(decision.alpaca_ohlcv_http_pages, int)
+    assert decision.alpaca_http_requests == (decision.alpaca_ranking_http_pages or 0) + (decision.alpaca_ohlcv_http_pages or 0)
+
+
+def test_checksum_verification_catches_modified_report(plan, output_dir, monkeypatch):
+    """checksums.sha256 must cover report.md and detect modifications."""
+    _write_fake_reference_snapshots(output_dir, plan)
+    run_plan(plan, output_dir)
+    monkeypatch.setattr("tradex.research.intraday_dataset.dataset.DatasetAlpacaClient", FakeAlpacaClient)
+    run_build_universe(plan, output_dir, "dummy", "dummy")
+    run_fetch_ohlcv(plan, output_dir, "dummy", "dummy")
+    run_validate(plan, output_dir)
+    artifact_dir = output_dir / "safe"
+    run_finalize(plan, output_dir, artifact_dir, starting_main_sha="sha", branch="test", live_run_head="head", pre_registration_commit="pre")
+    bundle = next(artifact_dir.iterdir())
+    checksum_path = bundle / "checksums.sha256"
+    assert checksum_path.exists()
+    report_path = bundle / "report.md"
+    original_report = report_path.read_bytes()
+    report_path.write_bytes(original_report + b"\n")
+    valid = True
+    for line in checksum_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        expected_hash, name = line.split("  ", 1)
+        path = bundle / name
+        if not path.exists() or hashlib.sha256(path.read_bytes()).hexdigest() != expected_hash:
+            valid = False
+            break
+    assert valid is False
+
+
+def test_completed_rerun_preserves_manifests(plan, output_dir, monkeypatch):
+    """A completed rerun of build-universe and fetch-ohlcv is byte-stable."""
+    _write_fake_reference_snapshots(output_dir, plan)
+    run_plan(plan, output_dir)
+    monkeypatch.setattr("tradex.research.intraday_dataset.dataset.DatasetAlpacaClient", FakeAlpacaClient)
+    run_build_universe(plan, output_dir, "dummy", "dummy")
+    run_fetch_ohlcv(plan, output_dir, "dummy", "dummy")
+    manifest_sha1 = hashlib.sha256((output_dir / "universe" / "universe_manifest.csv").read_bytes()).hexdigest()
+    ohlcv_sha1 = hashlib.sha256((output_dir / "ohlcv" / "ohlcv_manifest.csv").read_bytes()).hexdigest()
+    quality_sha1 = hashlib.sha256((output_dir / "ohlcv" / "data_quality.csv").read_bytes()).hexdigest()
+    run_build_universe(plan, output_dir, "dummy", "dummy")
+    run_fetch_ohlcv(plan, output_dir, "dummy", "dummy")
+    assert hashlib.sha256((output_dir / "universe" / "universe_manifest.csv").read_bytes()).hexdigest() == manifest_sha1
+    assert hashlib.sha256((output_dir / "ohlcv" / "ohlcv_manifest.csv").read_bytes()).hexdigest() == ohlcv_sha1
+    assert hashlib.sha256((output_dir / "ohlcv" / "data_quality.csv").read_bytes()).hexdigest() == quality_sha1
+
+
+def test_partial_resume_preserves_completed_months(plan, output_dir, monkeypatch):
+    """Resuming from a partial state rebuilds missing months without discarding completed ones."""
+    _write_fake_reference_snapshots(output_dir, plan)
+    run_plan(plan, output_dir)
+    monkeypatch.setattr("tradex.research.intraday_dataset.dataset.DatasetAlpacaClient", FakeAlpacaClient)
+    run_build_universe(plan, output_dir, "dummy", "dummy")
+    run_fetch_ohlcv(plan, output_dir, "dummy", "dummy")
+
+    # Simulate a partial resume: only keep January, drop later months from state and manifests.
+    state = load_state(output_dir)
+    state.universe_built_for_months = ["2025-01"]
+    state.ohlcv_fetched_for_months = ["2025-01"]
+    save_state(output_dir, state)
+
+    universe = pd.read_csv(output_dir / "universe" / "universe_manifest.csv")
+    universe[universe["effective_month"] == "2025-01"].to_csv(
+        output_dir / "universe" / "universe_manifest.csv", index=False, lineterminator="\n"
+    )
+    ohlcv = pd.read_csv(output_dir / "ohlcv" / "ohlcv_manifest.csv")
+    ohlcv[ohlcv["effective_month"] == "2025-01"].to_csv(
+        output_dir / "ohlcv" / "ohlcv_manifest.csv", index=False, lineterminator="\n"
+    )
+    quality = pd.read_csv(output_dir / "ohlcv" / "data_quality.csv")
+    quality[quality["effective_month"] == "2025-01"].to_csv(
+        output_dir / "ohlcv" / "data_quality.csv", index=False, lineterminator="\n"
+    )
+
+    jan_universe = set(
+        universe[universe["effective_month"] == "2025-01"]["ticker"].tolist()
+    )
+    run_build_universe(plan, output_dir, "dummy", "dummy")
+    run_fetch_ohlcv(plan, output_dir, "dummy", "dummy")
+
+    universe2 = pd.read_csv(output_dir / "universe" / "universe_manifest.csv")
+    ohlcv2 = pd.read_csv(output_dir / "ohlcv" / "ohlcv_manifest.csv")
+    assert sorted(universe2["effective_month"].unique()) == [f"2025-{m:02d}" for m in range(1, 13)]
+    assert sorted(ohlcv2["effective_month"].unique()) == [f"2025-{m:02d}" for m in range(1, 13)]
+    preserved = set(universe2[universe2["effective_month"] == "2025-01"]["ticker"].tolist())
+    assert preserved == jan_universe
+
+
+def test_validation_hierarchy_invalid_cases(plan, output_dir, monkeypatch):
+    """Provider/provenance/manifest/timestamp/symbol-identity failures are invalid."""
+    _write_fake_reference_snapshots(output_dir, plan)
+    run_plan(plan, output_dir)
+    monkeypatch.setattr("tradex.research.intraday_dataset.dataset.DatasetAlpacaClient", FakeAlpacaClient)
+    run_build_universe(plan, output_dir, "dummy", "dummy")
+    run_fetch_ohlcv(plan, output_dir, "dummy", "dummy")
+    original_quality = pd.read_csv(output_dir / "ohlcv" / "data_quality.csv")
+    original_state = load_state(output_dir)
+
+    cases = [
+        ("feed_mismatch", lambda q: q.assign(provider_feed="iex")),
+        ("adjustment_mismatch", lambda q: q.assign(adjustment="split_adjusted")),
+        ("symbol_mismatch", lambda q: q.assign(symbol_mismatch=True, returned_symbol="BAD")),
+        ("manifest_sha_mismatch", lambda q: q.assign(file_sha256="0" * 64)),
+    ]
+
+    for name, mutator in cases:
+        mutator(original_quality).to_csv(output_dir / "ohlcv" / "data_quality.csv", index=False, lineterminator="\n")
+        summary = run_validate(plan, output_dir)
+        assert summary["disposition"] == "invalid", f"{name} should produce invalid disposition"
+        assert name in summary["reason"].lower() or "provider/provenance" in summary["reason"].lower()
+        # Restore original for next case.
+        original_quality.to_csv(output_dir / "ohlcv" / "data_quality.csv", index=False, lineterminator="\n")
+        save_state(output_dir, original_state)
+
+    # Persisted pagination cycle and HTTP error state also force invalid.
+    original_quality.to_csv(output_dir / "ohlcv" / "data_quality.csv", index=False, lineterminator="\n")
+    state = load_state(output_dir)
+    state.pagination_cycles = 1
+    save_state(output_dir, state)
+    summary = run_validate(plan, output_dir)
+    assert summary["disposition"] == "invalid"
+    assert "persisted provider" in summary["reason"].lower() or "pagination" in summary["reason"].lower()
+
+    save_state(output_dir, original_state)
