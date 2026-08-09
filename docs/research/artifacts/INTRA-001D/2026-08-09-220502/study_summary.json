@@ -1,0 +1,82 @@
+{
+  "study_id": "INTRA-001D",
+  "generated_at": "2026-08-09T22:05:02+00:00",
+  "spec_sha256": "09394d038928433529ec4c5f5ba5ff0392c764d5b59f1af71d95f4f3957c0464",
+  "dataset_id": "INTRA-001B-DATASET-V1",
+  "manifest_lock_sha256": "aceea6117ac951c7bb73f8b5b64afa7a5adb57b010e131bb6beb664401459ddc",
+  "freeze": {
+    "evaluation_code_sha": "1065a28df388cb213b82c7e2d91c67ee52571070",
+    "repository_clean": true,
+    "frozen_at": "2026-08-09T22:21:59.264131+00:00",
+    "spec_sha256": "09394d038928433529ec4c5f5ba5ff0392c764d5b59f1af71d95f4f3957c0464",
+    "amendment_sha256": "94cc27820c97086a27252e2392c6fcf5ebcba4be482e026e1a80ff523ed1e48b",
+    "dataset_plan_sha256": "5b922c377d36463dab4025bcd29915a93ea229f092be1a6d653349baedc43f28",
+    "evaluation_files": {
+      "docs/research/INTRA-001-DATA-SUFFICIENCY-AMENDMENT-V3.md": "480f1219223bf8bc1cf2d48057b4647ca4731210f4cc53dbdc61922d681239fb",
+      "docs/research/INTRA-001-SPEC.md": "894bbc8562a3485aa395e7c065a124bbae63bd2335163c19b3340a761b0e5f15",
+      "docs/research/INTRA-001B-DATASET-V1-1DAY-AMENDMENT.md": "4a95617ede73f9b3533944073a7bfaa30303258944bbd9f810db88409699a93e",
+      "docs/research/INTRA-001C-IMPLEMENTATION.md": "e8c2741e3d44ac203203b67d57fc233a908c03552d580f27d25675eab3afd6e3",
+      "docs/research/INTRA-001D-IMPLEMENTATION.md": "8274f8661c87fd3c2002b8bc0d45588903f7bc4ee211c9ec87e7bdfaea9ced67",
+      "docs/research/specs/INTRA-001-data-sufficiency-amendment-v3.json": "94cc27820c97086a27252e2392c6fcf5ebcba4be482e026e1a80ff523ed1e48b",
+      "docs/research/specs/INTRA-001-v1.json": "09394d038928433529ec4c5f5ba5ff0392c764d5b59f1af71d95f4f3957c0464",
+      "docs/research/specs/INTRA-001B-dataset-v1.json": "12a373f82f180777ab8c3b0e6a4b67d4d8b35b9ce0c396fde84652663265724d",
+      "tests/research/intraday_engine/test_intra001c.py": "ca732e2bcceaf2c0a47c345ff27afe7dd4f097b561ab3f3a5bdcddbc0f5709be",
+      "tests/research/intraday_study/conftest.py": "6f91ccbeadafc43b31a16b2a17a0f0b723753b6ff18300d6b3d8d6457f557533",
+      "tests/research/intraday_study/test_study.py": "ac8a02d4e191aa442d6232e54c671bdcadf5574a773622e261fe3d404b68b7f2",
+      "tradex/research/intraday_engine/__init__.py": "a30d4cbfbef95b1f13b7343c28bb5c8126456e5e3b04cd49adfbee45ac9ee701",
+      "tradex/research/intraday_engine/__main__.py": "12290091e9b0d0aa7dbbc0370ec1edffe0b5dc6e4638cc55b4962574c2334f13",
+      "tradex/research/intraday_engine/baseline_a.py": "55176e035bb7611756c8599b4b7b8483c4275bcd9cec7ac3610c0b43574e9b65",
+      "tradex/research/intraday_engine/baseline_b.py": "ea022da90f1ea740793985dc9f3fef4f6c5c88f1386c6e7b6aa3ba1e4a1d0f6a",
+      "tradex/research/intraday_engine/calendar.py": "28140ced87651235e7235411278fa86860bae53c9dd99a2bdaa15ecde71e4dfb",
+      "tradex/research/intraday_engine/candidate.py": "a57c5c13852b0b1d1553d63d33c5c84168189391bb4143084c46aebcc0791c95",
+      "tradex/research/intraday_engine/cli.py": "578f22f6eaf43fba27d6c0d8c02ad8df2602bd19214837e50847ae7b321c8901",
+      "tradex/research/intraday_engine/eligibility.py": "855c968d5487e086cfe3a4ff91d6ee247d35aec0a165385817e05a1c197c75be",
+      "tradex/research/intraday_engine/engine.py": "b9706bbd756ce7c107d252ef32a3430d74887f7e3606c8b2a3c20a7f1e1d7e30",
+      "tradex/research/intraday_engine/execution.py": "ab3f7bb4925a81231a01d576cd080ed465c796fbc40669c94a1d242597f9d2fc",
+      "tradex/research/intraday_engine/gates.py": "d6e6fb2ade62ba32b912d0d4b562210b12661d4661c68bd53a90c334f8c6ee2a",
+      "tradex/research/intraday_engine/metrics.py": "c0dc138dc4510606adb13efea6f3e959308a51a275e37661be31ba364449883f",
+      "tradex/research/intraday_engine/models.py": "c21fe144867e2d5aa69f2ad82ea8b0789aae86b2efdf3b11cbdab8f660e444d0",
+      "tradex/research/intraday_engine/normalize.py": "ff10f96850cee3f5a3f5688ed8fdefbd079bd8bce17649d1a87be1017cd07962",
+      "tradex/research/intraday_engine/opening_drive.py": "e8f444176a5949e5bd65c789e32be5d77e315be004039e6548bbab4d918184ee",
+      "tradex/research/intraday_engine/reclaim.py": "96d4e695786dd3a5975d1584cbe9e8e55679cac1d065cf61400e6eca4ff03e5a",
+      "tradex/research/intraday_engine/report.py": "04f97ddda739360beab1eb716a7f7c8c825460c5d5f6035f2b8f116373444115",
+      "tradex/research/intraday_engine/spec.py": "992335efd9d47ab8d4ad9a1dff1d475ffa24f66bbb4353f5d29f7dd7cc08f46f",
+      "tradex/research/intraday_engine/synthetic.py": "09d542aebf06385db327dc04d634d8bb59277405bb0d05a25e80d312d3b4806d",
+      "tradex/research/intraday_engine/vwap.py": "e5a078929ad5e6cfe049df48cb65cf4739defe5c6468e9ec426435819ef1da0c",
+      "tradex/research/intraday_study/__init__.py": "c686b0b05947ef360f9d646bded784965f394b25a1f6ef4b3b88a648a5df95ca",
+      "tradex/research/intraday_study/__main__.py": "1668061f8f1e2fd51a19b102a5764b2c88785ba01b96d65d817d95b8459fa700",
+      "tradex/research/intraday_study/artifacts.py": "84b6c79755e0ff37ed10c7c584e0fc61ef003551653b0f482f6061608816ef17",
+      "tradex/research/intraday_study/cli.py": "e08579fc8d499e0d7f7b1a9f999eacf88c07b78babb8d68d03da69be81d8123f",
+      "tradex/research/intraday_study/freeze.py": "c8f31bd695badb75d4e5e4be29ca5f63fed18224c87d3476b5b60dc84c4eb6aa",
+      "tradex/research/intraday_study/loader.py": "115e9d8911fc758b364c8fcf72df8cef5326157b7fdd1ea6a30bdeb5ce725c1e",
+      "tradex/research/intraday_study/manifest.py": "be1a70442504a474b261a69460f5fa38b77a93e1d15aca00744926689a9852ea",
+      "tradex/research/intraday_study/split.py": "7394f1894e7c6ec0199e8ecc6862be52d8890e03c0f6865cd9e4c1f6070bfdf0",
+      "tradex/research/intraday_study/study.py": "83e9d691ee51510a498a25d7f141b8738e9417a001f7693c90c5acacdc650bd1"
+    }
+  },
+  "splits": [
+    {
+      "split": "development",
+      "disposition": "inconclusive",
+      "reason": "sample_or_data_sufficiency_minimums_not_met: executed_candidate_trades_232_below_300; etf_stratum_trades_32_below_75; data_sufficiency_failed; missing_bar_rate_0.0991_above_5% (1 symbol-month); missing_bar_rate_0.1213_above_5% (1 symbol-month); missing_bar_rate_0.1345_above_5% (1 symbol-month); missing_bar_rate_0.2324_above_5% (1 symbol-month); pre_normalization_metrics_unavailable (378 symbol-months)",
+      "evidence_eligible": false,
+      "path": "/home/ubuntu/repos/TradeX/docs/research/artifacts/INTRA-001D/2026-08-09-220502/development"
+    },
+    {
+      "split": "validation",
+      "disposition": "inconclusive",
+      "reason": "sample_or_data_sufficiency_minimums_not_met: executed_candidate_trades_103_below_300; represented_etfs_7_below_8; stock_stratum_trades_95_below_100; etf_stratum_trades_8_below_75; data_sufficiency_failed; missing_bar_rate_0.2946_above_5% (1 symbol-month); pre_normalization_metrics_unavailable (189 symbol-months)",
+      "evidence_eligible": false,
+      "path": "/home/ubuntu/repos/TradeX/docs/research/artifacts/INTRA-001D/2026-08-09-220502/validation"
+    },
+    {
+      "split": "holdout",
+      "disposition": null,
+      "reason": "not_run_validation_inconclusive",
+      "path": null
+    }
+  ],
+  "final_disposition": "inconclusive",
+  "production_promotion_eligible": false,
+  "no_provider_calls": true
+}
