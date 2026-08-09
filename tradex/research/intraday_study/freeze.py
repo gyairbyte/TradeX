@@ -24,7 +24,7 @@ class FreezeRecord:
     spec_sha256: str
     amendment_sha256: str | None
     dataset_plan_sha256: str | None
-    tracked_files: list[str]
+    evaluation_files: dict[str, str]
 
 
 def _git(*args: str, cwd: Path | None = None) -> str:
@@ -44,24 +44,24 @@ def _clean_worktree(repo_root: Path) -> bool:
         return False
 
 
-def _list_tracked_files(repo_root: Path) -> list[str]:
-    """Return the list of files tracked by git."""
-    out = _git("ls-files", cwd=repo_root)
+def _evaluation_file_paths(repo_root: Path) -> list[str]:
+    """Return tracked files that constitute the locked evaluation code."""
+    pathspecs = [
+        "tradex/research/intraday_engine/",
+        "tradex/research/intraday_study/",
+        "tests/research/intraday_engine/",
+        "tests/research/intraday_study/",
+        "docs/research/specs/INTRA-001-v1.json",
+        "docs/research/specs/INTRA-001B-dataset-v1.json",
+        "docs/research/specs/INTRA-001-data-sufficiency-amendment-v3.json",
+        "docs/research/INTRA-001-SPEC.md",
+        "docs/research/INTRA-001-DATA-SUFFICIENCY-AMENDMENT-V3.md",
+        "docs/research/INTRA-001B-DATASET-V1-1DAY-AMENDMENT.md",
+        "docs/research/INTRA-001C-IMPLEMENTATION.md",
+        "docs/research/INTRA-001D-IMPLEMENTATION.md",
+    ]
+    out = _git("ls-files", "--", *pathspecs, cwd=repo_root)
     return [line for line in out.splitlines() if line]
-
-
-def _hash_text(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
-def hash_files(file_paths: list[Path]) -> dict[str, str]:
-    """Return a mapping of relative-path -> SHA-256 for a list of files."""
-    digests: dict[str, str] = {}
-    for p in file_paths:
-        if p.is_file():
-            rel = str(p)
-            digests[rel] = sha256_of_file(p)
-    return digests
 
 
 def sha256_of_file(path: Path) -> str:
@@ -72,6 +72,15 @@ def sha256_of_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def _hash_evaluation_files(repo_root: Path) -> dict[str, str]:
+    digests: dict[str, str] = {}
+    for rel in _evaluation_file_paths(repo_root):
+        p = repo_root / rel
+        if p.is_file():
+            digests[rel] = sha256_of_file(p)
+    return digests
+
+
 def freeze_evaluation_code(
     repo_root: Path,
     spec_sha256: str,
@@ -79,13 +88,13 @@ def freeze_evaluation_code(
     amendment_sha256: str | None = None,
     dataset_plan_sha256: str | None = None,
 ) -> FreezeRecord:
-    """Record the current git HEAD and file hashes as the frozen evaluation code."""
+    """Record the current git HEAD and evaluation-code file hashes."""
     repo_root = Path(repo_root).expanduser().resolve()
     head = _git("rev-parse", "HEAD", cwd=repo_root)
     if not head:
         raise FreezeError("cannot determine git HEAD")
     clean = _clean_worktree(repo_root)
-    tracked = _list_tracked_files(repo_root)
+    evaluation_files = _hash_evaluation_files(repo_root)
     return FreezeRecord(
         evaluation_code_sha=head,
         repository_clean=clean,
@@ -93,7 +102,7 @@ def freeze_evaluation_code(
         spec_sha256=spec_sha256,
         amendment_sha256=amendment_sha256,
         dataset_plan_sha256=dataset_plan_sha256,
-        tracked_files=tracked,
+        evaluation_files=evaluation_files,
     )
 
 
@@ -114,7 +123,7 @@ def freeze_record_to_dict(record: FreezeRecord) -> dict[str, Any]:
         "spec_sha256": record.spec_sha256,
         "amendment_sha256": record.amendment_sha256,
         "dataset_plan_sha256": record.dataset_plan_sha256,
-        "tracked_files": record.tracked_files,
+        "evaluation_files": record.evaluation_files,
     }
 
 
@@ -127,5 +136,5 @@ def load_freeze_record(path: Path) -> FreezeRecord:
         spec_sha256=data["spec_sha256"],
         amendment_sha256=data.get("amendment_sha256"),
         dataset_plan_sha256=data.get("dataset_plan_sha256"),
-        tracked_files=data.get("tracked_files", []),
+        evaluation_files=data.get("evaluation_files", {}),
     )

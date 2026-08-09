@@ -102,9 +102,11 @@ def _collect_quality_results(
     sufficiency_reasons, quality_summaries)``.  Contract violations make a study
     ``invalid``; sufficiency shortfalls make it ``inconclusive``.
     """
+    from collections import Counter
+
     summaries = [ti.quality_summary for ti in ticker_inputs if ti.quality_summary is not None]
     contract_reasons: list[str] = []
-    sufficiency_reasons: list[str] = []
+    sufficiency_counter: Counter[str] = Counter()
     any_sufficiency_fail = False
     for summary in summaries:
         valid, reasons = evaluate_data_contract(summary)
@@ -113,8 +115,13 @@ def _collect_quality_results(
         suff_ok, suff_reasons = evaluate_data_sufficiency(summary)
         if not suff_ok:
             any_sufficiency_fail = True
-            sufficiency_reasons.extend(f"{summary.ticker}:{r}" for r in suff_reasons)
+            for r in suff_reasons:
+                sufficiency_counter[r] += 1
     data_contract_valid = not contract_reasons
+    sufficiency_reasons = [
+        f"{reason} ({count} symbol-month{'s' if count != 1 else ''})"
+        for reason, count in sorted(sufficiency_counter.items())
+    ]
     return data_contract_valid, not any_sufficiency_fail, contract_reasons, sufficiency_reasons, summaries
 
 
