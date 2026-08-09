@@ -152,7 +152,7 @@ class Trade:
     same_bar_ambiguity: bool
     entry_bar_index: int | None = None
     exit_bar_index: int | None = None
-    holding_bars: int = 0
+    holding_minutes: float = 0.0
     opening_gap_pct: float | None = None
     fallback_reason: str | None = None
     status: Literal["executed", "rejected"] = "executed"
@@ -211,7 +211,7 @@ class StudyMetrics:
     rejection_counts: dict[str, int] = field(default_factory=dict)
     exit_counts: dict[str, int] = field(default_factory=dict)
     positive_trade_rate: float | None = None
-    average_holding_bars: float | None = None
+    average_holding_minutes: float | None = None
     per_symbol: dict[str, PerSymbolMetrics] = field(default_factory=dict)
 
 
@@ -252,6 +252,8 @@ class StudyResult:
     generated_at_fixed: bool = False
     metrics_by_strategy: dict[str, dict[str, StudyMetrics]] = field(default_factory=dict)
     data_quality_summaries: list[DataQualitySummary] = field(default_factory=list)
+    monthly_metrics: dict[str, StudyMetrics] = field(default_factory=dict)
+    gap_bucket_metrics: dict[str, StudyMetrics] = field(default_factory=dict)
     outcome: StudyOutcome | None = None
     invalid_reasons: list[str] = field(default_factory=list)
 

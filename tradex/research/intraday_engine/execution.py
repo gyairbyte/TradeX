@@ -188,8 +188,9 @@ def attempt_trade(
 
         if bar_start == time_exit_start:
             if bar is None or not bar.is_valid:
-                # Expected time-exit bar missing; use locked fallback.
-                fallback = _fallback_close(session, session.closes_at)
+                # Expected time-exit bar missing; use the last valid close strictly
+                # before the time exit was due, without continuing to later bars.
+                fallback = _fallback_close(session, bar_available_at(time_exit_start))
                 if fallback is not None:
                     raw_exit_price, exit_bar_start, exit_time, fallback_reason = fallback
                     exit_type = "time_fallback"
@@ -248,7 +249,10 @@ def attempt_trade(
     profit = exit_fill - entry_fill
     net_r = profit / risk_per_share
 
-    holding_bars = (exit_bar_index - entry_idx) if exit_bar_index is not None else 0
+    if exit_time is not None and entry_time is not None:
+        holding_minutes = max(0.0, (exit_time - entry_time).total_seconds() / 60.0)
+    else:
+        holding_minutes = 0.0
 
     trade = Trade(
         ticker=ticker,
@@ -273,7 +277,7 @@ def attempt_trade(
         same_bar_ambiguity=same_bar_ambiguity,
         entry_bar_index=entry_idx,
         exit_bar_index=exit_bar_index,
-        holding_bars=holding_bars,
+        holding_minutes=holding_minutes,
         opening_gap_pct=opening_gap_pct,
         fallback_reason=fallback_reason,
     )

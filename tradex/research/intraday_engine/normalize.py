@@ -53,7 +53,12 @@ def normalize_to_sessions(
     *,
     exclude_early_close: bool = True,
 ) -> tuple[list[Session], DataQualitySummary]:
-    """Return validated ``Session`` objects and observability counts."""
+    """Return validated ``Session`` objects and observability counts.
+
+    Duplicate and malformed rows are counted *before* deduplication so that the
+    data-quality summary reflects the provider input.  Bars are deduplicated
+    deterministically by session and bar-start time.
+    """
     df = _localize_index(df, ticker)
     cols = {str(c).lower().strip().replace(" ", "_"): c for c in df.columns}
     df = df.rename(columns={v: k for k, v in cols.items()})
@@ -63,22 +68,20 @@ def normalize_to_sessions(
 
     total_rows = len(df)
 
-    # Count and remove duplicate timestamps before other validation.
+    # Count duplicate timestamps on the raw input before any validation/dedup.
     dup_mask = df.index.duplicated(keep="first")
     duplicate_timestamps = int(dup_mask.sum())
-    df = df[~dup_mask]
 
-    # Convert numeric columns and drop rows with non-finite required values.
+    # Convert numeric columns and identify non-finite required values.
     for col in _REQUIRED:
         df[col] = pd.to_numeric(df[col], errors="coerce")
     required_df = df[list(_REQUIRED)]
     non_finite_mask = required_df.isna().any(axis=1) | np.isinf(required_df.values).any(axis=1)
     non_finite_rows = int(non_finite_mask.sum())
-    df = df[~non_finite_mask]
 
-    # Classify invalid OHLC rows; keep them as invalid records.
+    # Classify invalid OHLC rows on finite rows only; non-finite rows are counted above.
     invalid_mask = pd.Series(False, index=df.index)
-    for idx, row in df.iterrows():
+    for idx, row in df[~non_finite_mask].iterrows():
         valid, _ = _is_valid_ohlc(row)
         if not valid:
             invalid_mask.loc[idx] = True
@@ -89,10 +92,19 @@ def normalize_to_sessions(
         lambda: defaultdict(int)
     )
 
-    off_grid_bars = 0
-    zero_volume_bars = 0
+    seen_no_session: set[datetime] = set()
+    seen_per_session: dict[datetime, set[datetime]] = defaultdict(set)
+    off_grid_total = 0
 
-    for idx, row in df.iterrows():
+    rows = list(df.iterrows())
+    for (idx, row), is_non_finite, is_invalid in zip(
+        rows,
+        non_finite_mask.values,
+        invalid_mask.values,
+    ):
+        if is_non_finite:
+            continue
+
         bar_utc = idx.to_pydatetime().astimezone(UTC)
         bar_et = bar_utc.astimezone(MARKET_TIMEZONE)
         day = bar_et.date()
@@ -100,22 +112,29 @@ def normalize_to_sessions(
         if day not in sessions_by_date:
             session = build_session(day, exclude_early_close=exclude_early_close)
             if session is None:
-                off_grid_bars += 1
+                # Off-grid rows with no corresponding regular session are counted once
+                # per unique timestamp; duplicates are already counted above.
+                if bar_utc not in seen_no_session:
+                    off_grid_total += 1
+                    seen_no_session.add(bar_utc)
                 continue
             sessions_by_date[day] = session
 
         session = sessions_by_date[day]
 
+        # Deduplicate by timestamp within a session; only the first occurrence is
+        # processed, but all duplicates have already been counted in duplicate_timestamps.
+        if bar_utc in seen_per_session[day]:
+            continue
+        seen_per_session[day].add(bar_utc)
+
         if not is_on_grid(bar_utc, session.grid):
-            off_grid_bars += 1
             quality_by_session[day]["off_grid_bars"] += 1
             continue
 
         if float(row["volume"]) == 0:
-            zero_volume_bars += 1
             quality_by_session[day]["zero_volume_bars"] += 1
 
-        is_invalid = bool(invalid_mask.loc[idx])
         invalid_reasons: list[str] = []
         if is_invalid:
             _, reasons = _is_valid_ohlc(row)
@@ -134,11 +153,6 @@ def normalize_to_sessions(
             invalid_reasons=invalid_reasons,
         )
 
-        if bar.bar_start in bars_by_session[day]:
-            duplicate_timestamps += 1
-            quality_by_session[day]["duplicate_timestamps"] += 1
-            continue
-
         bars_by_session[day][bar.bar_start] = bar
         if bar.is_valid:
             quality_by_session[day]["valid_bars"] += 1
@@ -148,7 +162,7 @@ def normalize_to_sessions(
     total_valid = 0
     total_invalid = 0
     total_zero = 0
-    total_off_grid = off_grid_bars
+    total_off_grid = off_grid_total
 
     for day in sorted(sessions_by_date):
         session = sessions_by_date[day]

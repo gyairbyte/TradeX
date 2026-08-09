@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from .calendar import MARKET_TIMEZONE, bar_available_at
+from .eligibility import check_ticker_eligibility
 from .execution import attempt_trade
 from .models import CostScenario, Session, Signal, TickerMeta
 from .normalize import bars_to_dataframe
@@ -35,22 +36,6 @@ def _baseline_a_search_window(session: Session, spec: IntradaySpec) -> list[date
     return result
 
 
-def _is_eligible(ticker_meta: TickerMeta, spec: IntradaySpec) -> tuple[bool, str]:
-    if not ticker_meta.is_eligible:
-        return False, "ticker_not_eligible"
-    if ticker_meta.prior_close is not None and ticker_meta.prior_close < spec.prior_close_min:
-        return False, f"prior_close_{ticker_meta.prior_close}_below_{spec.prior_close_min}"
-    if (
-        ticker_meta.prior_20_median_dollar_volume is not None
-        and ticker_meta.prior_20_median_dollar_volume < spec.prior_dollar_volume_min
-    ):
-        return False, "prior_20_median_dollar_volume_below_threshold"
-    excluded_types = {"otc", "warrant", "right", "unit", "preferred_stock"}
-    if ticker_meta.security_type.lower() in excluded_types:
-        return False, f"security_type_excluded_{ticker_meta.security_type}"
-    return True, ""
-
-
 def evaluate_baseline_a_session(
     ticker: str,
     ticker_meta: TickerMeta,
@@ -65,7 +50,7 @@ def evaluate_baseline_a_session(
     from tradex.signals.intraday import score as intraday_score
     from tradex.signals.weights import IntradayWeights
 
-    eligible, reason = _is_eligible(ticker_meta, spec)
+    eligible, eligibility_reasons = check_ticker_eligibility(ticker_meta, spec)
     if not eligible:
         return [
             Signal(
@@ -82,7 +67,7 @@ def evaluate_baseline_a_session(
                 entry_fill=None,
                 risk_per_share=None,
                 status="no_signal",
-                reason=reason,
+                reason=";".join(eligibility_reasons),
             )
         ]
 

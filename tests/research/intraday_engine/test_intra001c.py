@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import date, time
+from datetime import UTC, date, datetime, time
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -29,8 +29,10 @@ from tradex.research.intraday_engine.models import (
     CostScenario,
     DataQualitySummary,
     PerSymbolMetrics,
+    Signal,
     StudyMetrics,
     TickerMeta,
+    Trade,
 )
 from tradex.research.intraday_engine.normalize import (
     NormalizationError,
@@ -292,19 +294,61 @@ class TestBaseline:
         executed = [s for s in signals if s.status == "executed"]
         assert executed
 
-    def test_baseline_a_uses_fresh_weights_no_saved_weights(self, spec, primary_cost, monkeypatch):
+    def test_baseline_a_fresh_weights_first_trigger_and_future_invariance(self, spec, primary_cost, monkeypatch):
+        from tradex.signals import intraday as intraday_mod
+        from tradex.signals.weights import IntradayWeights
+
         ti = _single_session_input(spec)
-        from tradex.research.intraday_engine import baseline_a as baseline_a_mod
-        from tradex.signals import weights as weights_mod
 
         def fake_load(*args, **kwargs):
             raise RuntimeError("load_weights should not be called")
 
-        monkeypatch.setattr(weights_mod, "load", fake_load)
-        signals = baseline_a_mod.evaluate_baseline_a_session(
+        monkeypatch.setattr(intraday_mod, "load_weights", fake_load)
+        monkeypatch.setattr("tradex.signals.weights.load", fake_load)
+
+        score_calls = []
+
+        def fake_score(df, weights=None):
+            if weights is None:
+                raise RuntimeError("score called without explicit weights")
+            if not isinstance(weights, IntradayWeights):
+                raise TypeError("score called with non-default weights")
+            score_calls.append(df)
+            # Trigger on the first scored bar (the earliest with enough history) and
+            # never after, so the test verifies first-trigger behavior.
+            return {"score": 41, "reasons": [], "last_close": 100.0, "volume_ratio": 1.0, "rsi": 50.0}
+
+        monkeypatch.setattr(intraday_mod, "score", fake_score)
+
+        signals = evaluate_baseline_a_session(
             ti.ticker, ti.meta, ti.sessions[0], [], primary_cost, spec
         )
-        assert signals
+        executed = [s for s in signals if s.status == "executed"]
+        assert executed
+        first_score_bar = executed[0].signal_bar_start
+        assert first_score_bar in {df.index[-1] for df in score_calls}
+
+        # The score must only see bars up to the trigger; verify the recorded call.
+        trigger_calls = [df for df in score_calls if df.index[-1] == first_score_bar]
+        assert trigger_calls
+        assert first_score_bar in trigger_calls[0].index
+
+        # Future-bar perturbation: modify every bar strictly after the trigger and rerun.
+        perturbed = ti.sessions[0]
+        for g in perturbed.grid:
+            if g > first_score_bar:
+                bar = perturbed.bars[g]
+                bar.open *= 2.0
+                bar.high *= 2.0
+                bar.low *= 2.0
+                bar.close *= 2.0
+
+        signals2 = evaluate_baseline_a_session(
+            ti.ticker, ti.meta, perturbed, [], primary_cost, spec
+        )
+        executed2 = [s for s in signals2 if s.status == "executed"]
+        assert executed2
+        assert executed2[0].signal_bar_start == first_score_bar
 
 
 class TestCosts:
@@ -443,6 +487,19 @@ class TestOpeningDriveHistory:
         state = evaluate_opening_drive(ti.sessions[0], prior, ti.meta, spec)
         assert state.qualified is False
         assert any("insufficient_prior_20_complete_sessions" in r for r in state.reasons)
+
+    def test_uses_older_complete_when_latest_incomplete(self, spec):
+        ti = _single_session_input(spec)
+        prior = _make_prior_sessions(spec, n=21)
+        # Delete the first bar of the most recent prior session; the 20 older
+        # complete sessions should still produce a valid median.
+        latest = prior[-1]
+        first_grid = min(latest.grid)
+        del latest.bars[first_grid]
+        compute_session_vwap(ti.sessions[0])
+        state = evaluate_opening_drive(ti.sessions[0], prior, ti.meta, spec)
+        assert state.median_prior_cumulative_volume == 6_000_000.0
+        assert state.qualified is True
 
     def test_uses_most_recent_twenty_prior_sessions(self, spec):
         ti = _single_session_input(spec)
@@ -587,6 +644,7 @@ class TestExecutionPriorities:
         assert sig.status == "executed"
         assert sig.trade.exit_type == "gap_stop"
         assert sig.trade.exit_time == sig.trade.exit_bar_start
+        assert sig.trade.holding_minutes == pytest.approx(5.0)
 
     def test_gap_target_exit(self, spec, primary_cost):
         ti = _single_session_input(spec, reclaim=False)
@@ -619,6 +677,7 @@ class TestExecutionPriorities:
         )
         assert sig.status == "executed"
         assert sig.trade.exit_type == "gap_target"
+        assert sig.trade.holding_minutes == pytest.approx(5.0)
 
     def test_intrabar_stop(self, spec, primary_cost):
         sig = self._make_trade(
@@ -628,6 +687,7 @@ class TestExecutionPriorities:
         )
         assert sig.status == "executed"
         assert sig.trade.exit_type == "stop"
+        assert sig.trade.holding_minutes == pytest.approx(5.0)
 
     def test_intrabar_target(self, spec, primary_cost):
         sig = self._make_trade(
@@ -637,6 +697,7 @@ class TestExecutionPriorities:
         )
         assert sig.status == "executed"
         assert sig.trade.exit_type == "target"
+        assert sig.trade.holding_minutes == pytest.approx(5.0)
 
     def test_same_bar_ambiguity_stop_first(self, spec, primary_cost):
         sig = self._make_trade(
@@ -647,6 +708,7 @@ class TestExecutionPriorities:
         assert sig.status == "executed"
         assert sig.trade.exit_type == "stop"
         assert sig.trade.same_bar_ambiguity is True
+        assert sig.trade.holding_minutes == pytest.approx(5.0)
 
     def test_time_exit(self, spec, primary_cost):
         # Signal at 15:35; entry bar (15:40) is the time-exit bar.
@@ -658,6 +720,7 @@ class TestExecutionPriorities:
         )
         assert sig.status == "executed"
         assert sig.trade.exit_type == "time"
+        assert sig.trade.holding_minutes == pytest.approx(5.0)
 
     def test_entry_rejected_when_next_bar_open_at_or_below_stop(self, spec, primary_cost):
         sig = self._make_trade(
@@ -703,6 +766,7 @@ class TestExecutionPriorities:
         assert sig.status == "executed"
         assert sig.trade.exit_type == "time_fallback"
         assert sig.trade.fallback_reason == "missing_time_exit_bar_fallback"
+        assert sig.trade.holding_minutes == pytest.approx(5.0)
 
 
 class TestCostsAndMetrics:
@@ -897,3 +961,391 @@ class TestDeterminism:
         j1 = json.dumps(as_json_dict(r1), indent=2, sort_keys=True)
         j2 = json.dumps(as_json_dict(r2), indent=2, sort_keys=True)
         assert j1 == j2
+        # JSON serialization must not contain NaN/Infinity.
+        assert "NaN" not in j1 and "Infinity" not in j1
+        assert r1.synthetic is True
+        assert r1.evidence_eligible is False
+
+
+class TestOffGridAccounting:
+    def test_off_grid_bars_counted_exactly_not_double(self, spec):
+        session = _session_grid_2025_01_02()
+        grid = sorted(session.grid)
+        records = []
+        for i, g in enumerate(grid):
+            open_p = 100.0 + i * 0.01
+            close_p = open_p + 0.01
+            high_p = close_p + 0.01
+            low_p = open_p - 0.01
+            records.append({"datetime": g, "open": open_p, "high": high_p, "low": low_p, "close": close_p, "volume": 1_000_000})
+        # Add one off-grid timestamp (one minute after a grid point).
+        off_grid = grid[10] + pd.Timedelta(minutes=1)
+        records.append({"datetime": off_grid, "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0, "volume": 1_000_000})
+        df = pd.DataFrame(records).set_index("datetime")
+        df.index = pd.to_datetime(df.index, utc=True)
+        _, summary = normalize_to_sessions(df, "OFFGRID")
+        # Exactly one off-grid bar, not double-counted.
+        assert summary.off_grid_bars == 1
+        valid, reasons = evaluate_data_contract(summary)
+        assert valid is False
+        assert any("off_grid" in r for r in reasons)
+
+    def test_off_grid_duplicates_not_double_counted(self, spec):
+        session = _session_grid_2025_01_02()
+        grid = sorted(session.grid)
+        records = []
+        for i, g in enumerate(grid):
+            open_p = 100.0 + i * 0.01
+            close_p = open_p + 0.01
+            high_p = close_p + 0.01
+            low_p = open_p - 0.01
+            records.append({"datetime": g, "open": open_p, "high": high_p, "low": low_p, "close": close_p, "volume": 1_000_000})
+        # Add two duplicate off-grid timestamps.
+        off_grid = grid[10] + pd.Timedelta(minutes=1)
+        records.append({"datetime": off_grid, "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0, "volume": 1_000_000})
+        records.append({"datetime": off_grid, "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0, "volume": 1_000_000})
+        df = pd.DataFrame(records).set_index("datetime")
+        df.index = pd.to_datetime(df.index, utc=True)
+        _, summary = normalize_to_sessions(df, "OFFGRID-DUP")
+        # One off-grid event and one duplicate timestamp.
+        assert summary.off_grid_bars == 1
+        assert summary.duplicate_timestamps == 1
+
+
+class TestRunStudyDisposition:
+    def _minimal_inputs(self, spec, *, missing_bars: int = 0, off_grid_bars: int = 0, total_rows: int = 78):
+        ti = _single_session_input(spec, reclaim=False)
+        summary = DataQualitySummary(
+            ticker=ti.ticker,
+            total_rows=total_rows,
+            duplicate_timestamps=0,
+            naive_timestamps=0,
+            off_grid_bars=off_grid_bars,
+            invalid_ohlc_rows=0,
+            non_finite_rows=0,
+            zero_volume_bars=0,
+            missing_bars=missing_bars,
+            valid_bars=total_rows - missing_bars,
+            sessions=1,
+        )
+        return [TickerInput(ticker=ti.ticker, meta=ti.meta, sessions=ti.sessions, quality_summary=summary)]
+
+    def test_run_study_invalid_for_contract_violation(self, spec):
+        inputs = self._minimal_inputs(spec, off_grid_bars=1)
+        result = run_study(
+            inputs,
+            spec,
+            sample_minimums=SampleMinimums(
+                executed_candidate_trades_min=0,
+                represented_stock_symbols_min=0,
+                represented_etfs_min=0,
+                stock_stratum_trades_min=0,
+                etf_stratum_trades_min=0,
+                paired_symbol_overlap_min=0,
+            ),
+        )
+        assert result.outcome.disposition == "invalid"
+        assert result.invalid_reasons
+        assert any("off_grid" in r for r in result.invalid_reasons)
+
+    def test_run_study_inconclusive_for_sufficiency_breach(self, spec):
+        # 10 missing bars out of 78 -> 12.8% > 5%, but contract is clean.
+        inputs = self._minimal_inputs(spec, missing_bars=10, total_rows=78)
+        result = run_study(
+            inputs,
+            spec,
+            sample_minimums=SampleMinimums(
+                executed_candidate_trades_min=0,
+                represented_stock_symbols_min=0,
+                represented_etfs_min=0,
+                stock_stratum_trades_min=0,
+                etf_stratum_trades_min=0,
+                paired_symbol_overlap_min=0,
+            ),
+        )
+        assert result.outcome.disposition == "inconclusive"
+        assert "data_sufficiency_failed" in result.outcome.reason or any(
+            "missing" in g.reason for g in result.outcome.gate_results
+        )
+
+    def test_run_study_rejected_for_ineligible_ticker(self, spec):
+        ti = _single_session_input(spec, reclaim=False)
+        ti.meta = TickerMeta(
+            ticker=ti.ticker,
+            is_etf=False,
+            is_eligible=False,
+            prior_close=100.0,
+            prior_20_median_dollar_volume=100_000_000.0,
+            security_type="common_stock",
+        )
+        result = run_study(
+            [TickerInput(ticker=ti.ticker, meta=ti.meta, sessions=ti.sessions)],
+            spec,
+            sample_minimums=SampleMinimums(
+                executed_candidate_trades_min=0,
+                represented_stock_symbols_min=0,
+                represented_etfs_min=0,
+                stock_stratum_trades_min=0,
+                etf_stratum_trades_min=0,
+                paired_symbol_overlap_min=0,
+            ),
+        )
+        # No data contract issue; no data-quality issue from a clean session; but the
+        # candidate cannot trade and the sample minimums are zero, so the study is
+        # inconclusive rather than invalid.  It is not supported because no trades exist.
+        assert result.synthetic is True
+        assert result.evidence_eligible is False
+        assert result.outcome.disposition in ("inconclusive", "not_supported")
+
+
+class TestMetricFormulas:
+    def test_profit_factor_cases(self):
+        from tradex.research.intraday_engine.metrics import _profit_factor_case
+        assert _profit_factor_case(0, 0.0, 0.0) == ("no_trade", None, None)
+        assert _profit_factor_case(5, 0.0, -10.0) == ("no_profit", 0.0, 0.0)
+        assert _profit_factor_case(5, 10.0, 0.0) == ("no_loss_positive", None, float("inf"))
+        assert _profit_factor_case(5, 10.0, -5.0) == ("finite", 2.0, 2.0)
+
+    def test_paired_symbol_outperformance(self):
+        from tradex.research.intraday_engine.metrics import paired_symbol_outperformance
+        cand = {"A": PerSymbolMetrics("A", False, 10, 1.0, 0.1, 1.0, 0.0, 1.0, "finite", 1.0, 0.0, [100.0, 101.0], True)}
+        base = {"A": PerSymbolMetrics("A", False, 10, 0.5, 0.05, 0.5, 0.0, 1.0, "finite", 1.0, 0.0, [100.0, 100.5], True)}
+        overlap, rate = paired_symbol_outperformance(cand, base)
+        assert overlap == 1
+        assert rate == 1.0
+
+    def test_median_profit_factor_value_uses_ordered_median(self, spec):
+        from tradex.research.intraday_engine.metrics import compute_study_metrics
+        cost = CostScenario("primary", 5.0, 5.0, 0.0, 0.0)
+
+        def _make_trade(net_r: float, profit: float) -> Trade:
+            return Trade(
+                ticker="A",
+                session_date=date(2025, 1, 2),
+                strategy="candidate",
+                signal_time=datetime(2025, 1, 2, 14, 35, tzinfo=UTC),
+                signal_bar_start=datetime(2025, 1, 2, 14, 30, tzinfo=UTC),
+                entry_time=datetime(2025, 1, 2, 14, 35, tzinfo=UTC),
+                entry_bar_start=datetime(2025, 1, 2, 14, 35, tzinfo=UTC),
+                entry_open=100.0,
+                entry_fill=100.05,
+                stop_price=99.0,
+                target_price=101.0,
+                risk_per_share=1.05,
+                exit_time=datetime(2025, 1, 2, 14, 40, tzinfo=UTC),
+                exit_bar_start=datetime(2025, 1, 2, 14, 35, tzinfo=UTC),
+                raw_exit_price=100.0 + profit,
+                exit_fill=100.05 + profit,
+                profit=profit,
+                net_r=net_r,
+                exit_type="target",
+                same_bar_ambiguity=False,
+            )
+
+        # One winner (net_r=1.0) and one loser (net_r=-0.5) -> profit factor = 1.0 / 0.5 = 2.0.
+        signals = [
+            Signal(
+                ticker="A",
+                session_date=date(2025, 1, 2),
+                strategy="candidate",
+                signal_bar_start=datetime(2025, 1, 2, 14, 30, tzinfo=UTC),
+                signal_time=datetime(2025, 1, 2, 14, 35, tzinfo=UTC),
+                opening_drive_qualified=True,
+                score=None,
+                stop_price=99.0,
+                target_price=101.0,
+                entry_open=100.0,
+                entry_fill=100.05,
+                risk_per_share=1.05,
+                status="executed",
+                trade=_make_trade(1.0, 1.05),
+            ),
+            Signal(
+                ticker="A",
+                session_date=date(2025, 1, 3),
+                strategy="candidate",
+                signal_bar_start=datetime(2025, 1, 3, 14, 30, tzinfo=UTC),
+                signal_time=datetime(2025, 1, 3, 14, 35, tzinfo=UTC),
+                opening_drive_qualified=True,
+                score=None,
+                stop_price=99.0,
+                target_price=101.0,
+                entry_open=100.0,
+                entry_fill=100.05,
+                risk_per_share=1.05,
+                status="executed",
+                trade=_make_trade(-0.5, -0.525),
+            ),
+        ]
+        meta_map = {"A": TickerMeta("A", False, True, 100.0, 100_000_000.0)}
+        metrics = compute_study_metrics("candidate", signals, meta_map, cost)
+        assert metrics.median_per_symbol_profit_factor_value is not None
+        assert metrics.median_per_symbol_profit_factor_value == pytest.approx(2.0, abs=1e-9)
+
+    def test_mixed_finite_and_no_loss_positive_profit_factor(self, spec):
+        from tradex.research.intraday_engine.metrics import compute_study_metrics
+        cost = CostScenario("primary", 5.0, 5.0, 0.0, 0.0)
+        # Build three symbols: one no-profit (pf 0), one finite (pf 2), one no-loss-positive (inf).
+        trades_map = {
+            "Loser": ([-1.0], "no_profit", 0.0, 0.0),
+            "Winner": ([2.0, -1.0], "finite", 2.0, 2.0),
+            "NoLoss": ([2.0], "no_loss_positive", None, float("inf")),
+        }
+        signals: list[Signal] = []
+        for ticker, (net_rs, case, value, order) in trades_map.items():
+            for i, net_r in enumerate(net_rs):
+                t = Trade(
+                    ticker=ticker,
+                    session_date=date(2025, 1, 2),
+                    strategy="candidate",
+                    signal_time=datetime(2025, 1, 2, 14, 35, tzinfo=UTC),
+                    signal_bar_start=datetime(2025, 1, 2, 14, 30, tzinfo=UTC),
+                    entry_time=datetime(2025, 1, 2, 14, 35, tzinfo=UTC),
+                    entry_bar_start=datetime(2025, 1, 2, 14, 35, tzinfo=UTC),
+                    entry_open=100.0,
+                    entry_fill=100.05,
+                    stop_price=99.0,
+                    target_price=101.0,
+                    risk_per_share=1.05,
+                    exit_time=datetime(2025, 1, 2, 14, 40, tzinfo=UTC),
+                    exit_bar_start=datetime(2025, 1, 2, 14, 35, tzinfo=UTC),
+                    raw_exit_price=100.0 + net_r,
+                    exit_fill=100.0 + net_r,
+                    profit=net_r,
+                    net_r=net_r,
+                    exit_type="target",
+                    same_bar_ambiguity=False,
+                )
+                signals.append(
+                    Signal(
+                        ticker=ticker,
+                        session_date=date(2025, 1, 2),
+                        strategy="candidate",
+                        signal_bar_start=datetime(2025, 1, 2, 14, 30, tzinfo=UTC),
+                        signal_time=datetime(2025, 1, 2, 14, 35, tzinfo=UTC),
+                        opening_drive_qualified=True,
+                        score=None,
+                        stop_price=99.0,
+                        target_price=101.0,
+                        entry_open=100.0,
+                        entry_fill=100.05,
+                        risk_per_share=1.05,
+                        status="executed",
+                        trade=t,
+                    )
+                )
+        meta_map = {
+            t: TickerMeta(t, False, True, 100.0, 100_000_000.0)
+            for t in trades_map
+        }
+        metrics = compute_study_metrics("candidate", signals, meta_map, cost)
+        # Ordered profit-factor values are [0, 2, inf]; median order is 2 -> median value 2.
+        assert metrics.median_per_symbol_profit_factor_order == pytest.approx(2.0, abs=1e-9)
+        assert metrics.median_per_symbol_profit_factor_value == pytest.approx(2.0, abs=1e-9)
+
+    def test_grouped_monthly_and_gap_metrics_present_in_result(self, spec):
+        inputs = generate_synthetic_inputs(spec, seed=42, n_stock_tickers=2, n_etf_tickers=1, n_sessions=30)
+        result = run_study(inputs, spec)
+        assert result.monthly_metrics
+        assert result.gap_bucket_metrics
+        assert "candidate:" in next(iter(result.monthly_metrics))
+
+    def test_average_holding_minutes_for_gap_and_intrabar(self, spec, primary_cost):
+        ti = _single_session_input(spec, reclaim=False)
+        session = ti.sessions[0]
+        compute_session_vwap(session)
+        grid = sorted(session.grid)
+        signal_bar = session.bars[grid[12]]
+        vwap = signal_bar.vwap
+        signal_bar.low = vwap * 0.99
+        signal_bar.close = max(vwap * 1.01, signal_bar.open * 1.001)
+        signal_bar.high = max(signal_bar.open, signal_bar.close) * 1.001
+        stop = signal_bar.low - max(0.01, signal_bar.close * 0.0005)
+        next_bar = session.bars[grid[13]]
+        next_bar.open = signal_bar.close
+        next_bar.low = next_bar.open * 0.999
+        next_bar.high = next_bar.open * 1.001
+        next_bar.close = next_bar.open
+        # Gap target on the second bar after entry.
+        second_bar = session.bars[grid[14]]
+        entry_fill = next_bar.open * 1.0005
+        risk = entry_fill - stop
+        target = entry_fill + 1.5 * risk
+        second_bar.open = target * 1.02
+        second_bar.high = second_bar.open * 1.01
+        second_bar.low = second_bar.open * 0.99
+        second_bar.close = second_bar.open
+        sig = attempt_trade(
+            ti.ticker, ti.meta, session, signal_bar, stop, True, None, primary_cost, spec, "candidate"
+        )
+        assert sig.trade.exit_type == "gap_target"
+        assert sig.trade.holding_minutes == pytest.approx(5.0)
+
+        # Intrabar target on the entry bar should also be 5 minutes (close-to-open holding).
+        ti2 = _single_session_input(spec, reclaim=False)
+        session2 = ti2.sessions[0]
+        compute_session_vwap(session2)
+        grid2 = sorted(session2.grid)
+        signal_bar2 = session2.bars[grid2[12]]
+        vwap2 = signal_bar2.vwap
+        signal_bar2.low = vwap2 * 0.99
+        signal_bar2.close = max(vwap2 * 1.01, signal_bar2.open * 1.001)
+        signal_bar2.high = max(signal_bar2.open, signal_bar2.close) * 1.001
+        stop2 = signal_bar2.low - max(0.01, signal_bar2.close * 0.0005)
+        entry_bar2 = session2.bars[grid2[13]]
+        entry_fill2 = entry_bar2.open * 1.0005
+        risk2 = entry_fill2 - stop2
+        target2 = entry_fill2 + 1.5 * risk2
+        entry_bar2.high = target2 * 1.01
+        entry_bar2.close = entry_bar2.open
+        entry_bar2.low = entry_bar2.open * 0.999
+        sig2 = attempt_trade(
+            ti2.ticker, ti2.meta, session2, signal_bar2, stop2, True, None, primary_cost, spec, "candidate"
+        )
+        assert sig2.trade.exit_type == "target"
+        assert sig2.trade.holding_minutes == pytest.approx(5.0)
+
+
+class TestSyntheticOutcomePaths:
+    def _empty_minimums(self):
+        return SampleMinimums(
+            executed_candidate_trades_min=0,
+            represented_stock_symbols_min=0,
+            represented_etfs_min=0,
+            stock_stratum_trades_min=0,
+            etf_stratum_trades_min=0,
+            paired_symbol_overlap_min=0,
+        )
+
+    def test_synthetic_run_is_marked_not_evidence_eligible(self, spec):
+        inputs = generate_synthetic_inputs(spec, seed=42, n_stock_tickers=2, n_etf_tickers=1, n_sessions=30)
+        result = run_study(inputs, spec, synthetic=True, evidence_eligible=False)
+        assert result.synthetic is True
+        assert result.evidence_eligible is False
+
+    def test_synthetic_cli_produces_no_non_finite_json(self, spec, tmp_path):
+        from tradex.research.intraday_engine.cli import main
+        out = str(tmp_path / "smoke")
+        ret = main(
+            [
+                "synthetic-smoke",
+                "--output",
+                out,
+                "--seed",
+                "123",
+                "--n-stock-tickers",
+                "2",
+                "--n-etf-tickers",
+                "1",
+                "--n-sessions",
+                "20",
+            ]
+        )
+        assert ret == 0
+        result_path = Path(out) / "result.json"
+        assert result_path.exists()
+        text = result_path.read_text()
+        data = json.loads(text)
+        assert data["synthetic"] is True
+        assert data["evidence_eligible"] is False
+        assert "NaN" not in text and "Infinity" not in text

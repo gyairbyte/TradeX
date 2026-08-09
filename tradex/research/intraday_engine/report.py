@@ -26,7 +26,7 @@ def _signal_table(signals: list[Signal], label: str) -> list[str]:
         f"- Executed trades: {len(executed)}",
     ]
     if executed:
-        lines.append("| Ticker | Session | Signal time | Entry | Exit | Net R | Exit type | Ambiguity | Holding bars |")
+        lines.append("| Ticker | Session | Signal time | Entry | Exit | Net R | Exit type | Ambiguity | Holding minutes |")
         lines.append("|---|---|---|---|---|---|---|---|---|")
         for s in executed:
             t = s.trade
@@ -37,7 +37,7 @@ def _signal_table(signals: list[Signal], label: str) -> list[str]:
                 f"{_fmt(t.net_r if t else None)} | "
                 f"{t.exit_type if t else ''} | "
                 f"{t.same_bar_ambiguity if t else ''} | "
-                f"{t.holding_bars if t else ''} |"
+                f"{_fmt(t.holding_minutes if t else None)} |"
             )
     lines.append("")
     return lines
@@ -46,7 +46,7 @@ def _signal_table(signals: list[Signal], label: str) -> list[str]:
 def _cost_table(cost_metrics: dict[str, StudyMetrics]) -> list[str]:
     lines = [
         "## Cost sensitivity",
-        "| Strategy | Scenario | Signals | Executed | Pooled expectancy | Total return | Overall MDD | Median per-symbol expectancy | Positive trade rate | Avg holding bars |",
+        "| Strategy | Scenario | Signals | Executed | Pooled expectancy | Total return | Overall MDD | Median per-symbol expectancy | Positive trade rate | Avg holding minutes |",
         "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for name, m in cost_metrics.items():
@@ -54,7 +54,7 @@ def _cost_table(cost_metrics: dict[str, StudyMetrics]) -> list[str]:
             f"| {m.strategy} | {name} | {m.total_signals} | {m.executed_trades} | "
             f"{_fmt(m.pooled_expectancy)} | {_fmt(m.pooled_total_return)} | "
             f"{_fmt(m.overall_maximum_drawdown_pct)} | {_fmt(m.median_per_symbol_expectancy)} | "
-            f"{_fmt(m.positive_trade_rate)} | {_fmt(m.average_holding_bars)} |"
+            f"{_fmt(m.positive_trade_rate)} | {_fmt(m.average_holding_minutes)} |"
         )
     lines.append("")
     return lines

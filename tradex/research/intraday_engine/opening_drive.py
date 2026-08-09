@@ -29,28 +29,29 @@ def _prior_six_bar_cumulative_volumes(
 ) -> list[float]:
     """Return the 6-bar cumulative volumes for the most recent 20 *complete* prior sessions.
 
-    The locked contract requires exactly the prior 20 complete sessions.  If fewer
-    than 20 are supplied, or any of those 20 is missing one of the first six bars,
-    the baseline is unavailable and an empty list is returned.
+    A prior session is complete when all of its first six regular-session bars are
+    present and valid.  The function filters for complete sessions, then takes the
+    newest 20 by session date.  If fewer than 20 complete sessions are available,
+    an empty list is returned.
     """
     sorted_prior = sorted(prior_sessions, key=lambda s: s.session_date)
-    recent = sorted_prior[-_REQUIRED_PRIOR_SESSIONS:]
+
+    def _is_complete(session: Session) -> bool:
+        first_six = [
+            session.bars[g]
+            for g in sorted(session.grid)[:_OPENING_DRIVE_BAR_COUNT]
+            if g in session.bars
+        ]
+        if len(first_six) != _OPENING_DRIVE_BAR_COUNT:
+            return False
+        return all(b.is_valid for b in first_six)
+
+    complete = [s for s in sorted_prior if _is_complete(s)]
+    recent = complete[-_REQUIRED_PRIOR_SESSIONS:]
     if len(recent) < _REQUIRED_PRIOR_SESSIONS:
         return []
 
-    volumes: list[float] = []
-    for prior in recent:
-        first_six = [
-            prior.bars[g]
-            for g in sorted(prior.grid)[:_OPENING_DRIVE_BAR_COUNT]
-            if g in prior.bars
-        ]
-        if len(first_six) != _OPENING_DRIVE_BAR_COUNT:
-            return []
-        if any(not b.is_valid for b in first_six):
-            return []
-        volumes.append(sum(b.volume for b in first_six))
-    return volumes
+    return [sum(s.bars[g].volume for g in sorted(s.grid)[:_OPENING_DRIVE_BAR_COUNT]) for s in recent]
 
 
 def evaluate_opening_drive(

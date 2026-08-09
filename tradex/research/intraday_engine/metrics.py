@@ -116,8 +116,10 @@ def _opening_gap_bucket(gap_pct: float | None) -> str:
     return "above_plus_1pct"
 
 
-def _compute_signal_counts(signals: list[Signal]) -> tuple[int, int, int, dict[str, int], dict[str, int], float | None, float | None]:
-    """Return total, executed, rejected, rejection_counts, exit_counts, positive_trade_rate, avg_holding_bars."""
+def _compute_signal_counts(
+    signals: list[Signal],
+) -> tuple[int, int, int, int, dict[str, int], dict[str, int], float | None, float | None]:
+    """Return total, executed, rejected, no_signal, rejection_counts, exit_counts, positive_trade_rate, avg_holding_minutes."""
     total = len(signals)
     executed = [s for s in signals if s.status == "executed" and s.trade is not None]
     rejected = [s for s in signals if s.status not in ("executed", "no_signal")]
@@ -129,7 +131,7 @@ def _compute_signal_counts(signals: list[Signal]) -> tuple[int, int, int, dict[s
 
     exit_counts: dict[str, int] = defaultdict(int)
     positive = 0
-    holding_bars: list[int] = []
+    holding_minutes: list[float] = []
     for s in executed:
         t = s.trade
         if t is None:
@@ -137,10 +139,10 @@ def _compute_signal_counts(signals: list[Signal]) -> tuple[int, int, int, dict[s
         exit_counts[t.exit_type or "unknown"] += 1
         if t.net_r is not None and t.net_r > 0:
             positive += 1
-        holding_bars.append(t.holding_bars)
+        holding_minutes.append(t.holding_minutes)
 
     positive_rate = positive / len(executed) if executed else None
-    avg_holding = _safe_mean([float(v) for v in holding_bars])
+    avg_holding = _safe_mean(holding_minutes)
 
     return (
         total,
@@ -169,7 +171,7 @@ def compute_study_metrics(
         rejection_counts,
         exit_counts,
         positive_trade_rate,
-        average_holding_bars,
+        average_holding_minutes,
     ) = _compute_signal_counts(signals)
 
     trades = [s.trade for s in signals if s.status == "executed" and s.trade is not None]
@@ -213,8 +215,8 @@ def compute_study_metrics(
         for m in represented
         if m.trade_count > 0 and m.profit_factor_order is not None
     ]
-    pf_values = [
-        m.profit_factor_value
+    pf_values_all = [
+        (m.profit_factor_value if m.profit_factor_value is not None else float("inf"))
         for m in represented
         if m.trade_count > 0 and m.profit_factor_case != "no_trade"
     ]
@@ -226,10 +228,11 @@ def compute_study_metrics(
     pf_median_value: float | None = None
     if n_represented > 0 and computable_pf >= math.ceil(n_represented / 2):
         pf_median_order = _safe_median(pf_orders)
-        if pf_median_order is not None and math.isinf(pf_median_order):
+        raw_median_value = _safe_median(pf_values_all)
+        if raw_median_value is not None and math.isinf(raw_median_value):
             pf_median_value = None
         else:
-            pf_median_value = _safe_median(pf_values)
+            pf_median_value = raw_median_value
 
     positive_count = sum(1 for m in represented if m.trade_count > 0 and m.positive)
     positive_rate = positive_count / n_represented if n_represented else None
@@ -288,7 +291,7 @@ def compute_study_metrics(
         rejection_counts=rejection_counts,
         exit_counts=exit_counts,
         positive_trade_rate=positive_trade_rate,
-        average_holding_bars=average_holding_bars,
+        average_holding_minutes=average_holding_minutes,
         per_symbol=per_symbol,
     )
 

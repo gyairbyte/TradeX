@@ -94,6 +94,7 @@ def evaluate_gates(
     data_sufficiency_passed: bool = True,
     data_contract_valid: bool = True,
     contract_reasons: list[str] | None = None,
+    sufficiency_reasons: list[str] | None = None,
     pf_threshold: float = 1.05,
     positive_symbol_threshold: float = 0.55,
     paired_outperform_threshold: float = 0.55,
@@ -111,6 +112,8 @@ def evaluate_gates(
     if not data_sufficiency_passed:
         sample_met = False
         sample_reasons.append("data_sufficiency_failed")
+        if sufficiency_reasons:
+            sample_reasons.extend(sufficiency_reasons)
 
     gate_results.append(
         GateResult(

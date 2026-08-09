@@ -91,10 +91,16 @@ def _evaluate_ticker_for_scenario(
 
 def _collect_quality_results(
     ticker_inputs: list[TickerInput],
-) -> tuple[bool, bool, list[str], list[DataQualitySummary]]:
-    """Evaluate data contract and sufficiency across all ticker inputs."""
+) -> tuple[bool, bool, list[str], list[str], list[DataQualitySummary]]:
+    """Evaluate data contract and sufficiency across all ticker inputs.
+
+    Returns ``(data_contract_valid, data_sufficiency_passed, contract_reasons,
+    sufficiency_reasons, quality_summaries)``.  Contract violations make a study
+    ``invalid``; sufficiency shortfalls make it ``inconclusive``.
+    """
     summaries = [ti.quality_summary for ti in ticker_inputs if ti.quality_summary is not None]
     contract_reasons: list[str] = []
+    sufficiency_reasons: list[str] = []
     any_sufficiency_fail = False
     for summary in summaries:
         valid, reasons = evaluate_data_contract(summary)
@@ -103,9 +109,9 @@ def _collect_quality_results(
         suff_ok, suff_reasons = evaluate_data_sufficiency(summary)
         if not suff_ok:
             any_sufficiency_fail = True
-            contract_reasons.extend(f"{summary.ticker}:{r}" for r in suff_reasons)
+            sufficiency_reasons.extend(f"{summary.ticker}:{r}" for r in suff_reasons)
     data_contract_valid = not contract_reasons
-    return data_contract_valid, not any_sufficiency_fail, contract_reasons, summaries
+    return data_contract_valid, not any_sufficiency_fail, contract_reasons, sufficiency_reasons, summaries
 
 
 def run_study(
@@ -183,9 +189,13 @@ def run_study(
         "slippage_10bps", candidate_5bps
     )
 
-    data_contract_valid, data_sufficiency_passed, contract_reasons, quality_summaries = _collect_quality_results(
-        ticker_inputs
-    )
+    (
+        data_contract_valid,
+        data_sufficiency_passed,
+        contract_reasons,
+        sufficiency_reasons,
+        quality_summaries,
+    ) = _collect_quality_results(ticker_inputs)
 
     outcome = evaluate_gates(
         candidate_5bps,
@@ -196,6 +206,7 @@ def run_study(
         data_sufficiency_passed=data_sufficiency_passed,
         data_contract_valid=data_contract_valid,
         contract_reasons=contract_reasons,
+        sufficiency_reasons=sufficiency_reasons,
     )
 
     monthly_metrics: dict[str, StudyMetrics] = {}
@@ -241,6 +252,8 @@ def run_study(
         cost_scenarios=cost_metrics,
         metrics_by_strategy=metrics_by_strategy,
         data_quality_summaries=quality_summaries,
+        monthly_metrics=monthly_metrics,
+        gap_bucket_metrics=gap_bucket_metrics,
         candidate_signals=candidate_signals_primary,
         baseline_a_signals=baseline_a_signals_primary,
         baseline_b_signals=baseline_b_signals_primary,
