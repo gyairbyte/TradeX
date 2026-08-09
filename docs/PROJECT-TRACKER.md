@@ -498,7 +498,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **INTRA-001C implementation doc:** `docs/research/INTRA-001C-IMPLEMENTATION.md`
 - **INTRA-001C engine package:** `tradex/research/intraday_engine/`
 - **INTRA-001C tests:** `tests/research/intraday_engine/`
-- **INTRA-001C status:** Synthetic engine complete; second-round ChatGPT review blockers addressed — contract/sufficiency disposition separation, latest 20 complete prior sessions, shared Baseline A eligibility, saved-weight/first-trigger/future-perturbation tests, exact off-grid accounting, explicit holding minutes, structured monthly/gap metrics, profit-factor ordered-median consistency, and synthetic `run_study` outcome-path fixtures; no real-data or provider calls; no production behavior changed; `INTRA-001D` not started
+- **INTRA-001C status:** Synthetic engine complete; third-round ChatGPT review blockers addressed — `run_study` now uses genuine end-to-end synthetic `TickerInput` fixtures (candidate, Baseline A, Baseline B, execution, aggregation, gates, and JSON-safe serialization) with exact dispositions/statuses for supported, not_supported, and rejected paths; no monkeypatched strategy evaluators; no real-data or provider calls; no production behavior changed; `INTRA-001D` not started
 - **INTRA-001B monthly stock counts:** 50 selected stocks per month, 12 months
 - **INTRA-001B fixed ETF stratum:** 13 ETFs per month
 - **INTRA-001B unique selected symbols:** 97 distinct stocks + 13 ETFs
