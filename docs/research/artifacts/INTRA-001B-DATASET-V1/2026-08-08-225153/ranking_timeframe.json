@@ -1,0 +1,5 @@
+{
+  "ranking_parity_message": "1Day ranking per approved amendment; 1Day volume is a total-liquidity proxy and is not equivalent to regular-session-only volume",
+  "ranking_parity_passed": true,
+  "ranking_timeframe": "1Day"
+}

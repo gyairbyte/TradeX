@@ -475,47 +475,45 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Redesign intraday scorer around a specific setup
 - **Category:** Intraday trading
 - **Priority:** Medium
-- **Status:** In progress — mixed-provider data contract approved; data-sufficiency amendment v3 accepts Massive/Polygon as the `best_available_reference_input` with documented limitations; `INTRA-001B` reference-provider work is complete; no V5 or additional provider search is authorized
+- **Status:** In progress — `INTRA-001B-DATASET-V1` safe bundle regenerated; disposition is `inconclusive` because pre-normalization duplicate/malformed metrics cannot be recovered from normalized parquet, so the 1% duplicate threshold is unverified; all other locked provider and manifest invariants are clean; ChatGPT-review auditability blockers corrected (duplicate-rate gating from pre-dedup count, unavailable pre-normalization metrics represented as null, response-symbol union across pages, per-phase request counters modeled as unavailable, report.md included in manifest/checksums, resume/idempotence, expanded invalid validation hierarchy); no new live provider calls; no V5 or additional provider search occurred
 - **Research specification:** `docs/research/INTRA-001-SPEC.md`
 - **Locked machine-readable strategy spec:** `docs/research/specs/INTRA-001-v1.json` (SHA-256 unchanged)
-- **Locked mixed-provider amendment:** `docs/research/specs/INTRA-001-data-contract-amendment-v2.json` and `docs/research/INTRA-001-MIXED-PROVIDER-DATA-CONTRACT.md`
-- **Reference probe v3 branch:** `devin/intra-001b-reference-v3`
-- **Reference probe v3 pre-registration commit:** `03e61700dbf2fd072fc36bb63764dc7fa3876281`
-- **Reference probe v3 live run head:** `03e61700dbf2fd072fc36bb63764dc7fa3876281`
-- **Reference probe v3 safe artifacts:** `docs/research/artifacts/INTRA-001B-REFERENCE-V3/`
-- **Reference probe v3 outcome:** `invalid` / not decision-grade — the V3 Massive client rejected every provider-supplied `next_url` because it did not decode the base64url `cursor` parameter before validating `date`/`active`/`market`, so complete pagination could not be proven
-- **Reference probe v4 proposal:** `docs/research/INTRA-001B-REFERENCE-V4-PROPOSAL.md`
-- **Reference probe v4 spec:** `docs/research/specs/INTRA-001B-reference-probe-v4.json`
-- **Reference probe v4 pre-registration / live run head:** `27b111c0c9cc0adb21ef82dd9d2f0699e55e297f`
-- **Reference probe v4 starting main SHA:** `8405ca77569b55f460a381555843842fe55e248a`
+- **Data-sufficiency amendment v3:** `docs/research/specs/INTRA-001-data-sufficiency-amendment-v3.json` and `docs/research/INTRA-001-DATA-SUFFICIENCY-AMENDMENT-V3.md`
+- **Locked 2025 dataset plan:** `docs/research/specs/INTRA-001B-dataset-v1.json`
+- **2025 dataset plan 1Day amendment rationale:** `docs/research/INTRA-001B-DATASET-V1-1DAY-AMENDMENT.md`
 - **Reference probe v4 safe artifacts:** `docs/research/artifacts/INTRA-001B-REFERENCE-V4/2026-08-08-062051/`
 - **Reference probe v4 decision:** `docs/research/INTRA-001B-REFERENCE-V4.md`
-- **Reference probe v4 original dataset:** `2025-08-01` through `2026-07-31` (12 monthly PIT snapshots)
-- **Reference probe v4 fallback dataset:** `2024-09-01` through `2026-07-31` (23 monthly PIT snapshots, entitlement-valid; not used because the failure was structural, not historical-depth / entitlement)
 - **Reference probe v4 outcome:** `unsupported` — Massive/Polygon completed full pagination, taxonomy, and repeatability, but failed the mandatory `otc_exclusion` and `duplicate_symbol_behavior_and_resolution` gates
-- **Reference probe v4 Massive HTTP page requests:** 868 (first-pass + repeat across 12 active and 12 inactive monthly PIT snapshots; 0 errors and 0 `429` responses)
-- **Reference probe v4 48-month feasibility note:** `feasible_for_all_48_monthly_pit_snapshots` is `false` because the 48-month window was not probed and 2022-2023 coverage was not required for V4; an information-only `estimated_48_month_pagination_cost` row reports an extrapolated 1,824-call / 22,070-second pagination cost
-- **Data-sufficiency amendment v3:** `docs/research/specs/INTRA-001-data-sufficiency-amendment-v3.json` and `docs/research/INTRA-001-DATA-SUFFICIENCY-AMENDMENT-V3.md`
-- **Data-sufficiency amendment v3 status:** `approved_best_available_data_ready_for_snapshot_implementation` — Massive/Polygon accepted as `best_available_reference_input` with conservative exclusions; V4 strict-contract `unsupported` disposition preserved
-- **Locked 2025 dataset:** `2025-01-02` through `2025-12-31`; development `2025-01-02` through `2025-06-30`; validation `2025-07-01` through `2025-09-30`; holdout `2025-10-01` through `2025-12-31`
-- **Monthly PIT snapshots:** prior calendar month-end dates from `2024-12-31` through `2025-11-30`
-- **Conservative universe controls:** common-stock allowlist, fixed ETF stratum, exchange allowlist `XNYS, XNAS, ARCX, BATS, XASE, XBOS`, exclude duplicate/missing/unmapped security types and exchanges, record exclusion reasons/counts
-- **Reference provider role:** point-in-time monthly active listings, common-stock vs ETF classification, warrant/right/unit/preferred-stock/OTC exclusion, primary listing/exchange provenance, deterministic symbol identity, duplicate handling, lifecycle evidence, inactive/delisted status, reproducible historical snapshots, complete pagination
-- **OHLCV provider role:** Alpaca SIP (already locked by `INTRA-001B-ALPACA-V2`)
-- **No paid upgrade, no composite reference stack, no silent fallback:** confirmed
-- **v1 pre-registration commit:** `e4d123e5ecca80ab8ba1fa09ff397d4f0a3d67dc`
-- **v2 pre-registration commit:** `d5b2ba5d14151fd007c89cc5fc9c6ae7fec6f299`
-- **v2 live run head:** `d5b2ba5d14151fd007c89cc5fc9c6ae7fec6f299`
+- **INTRA-001B branch:** `devin/intra-001b-one-year-snapshot`
+- **INTRA-001B pre-registration / 1Day amendment commit:** `60e46e25b38e9e7ef9316bf49bb0a51cf092121c`
+- **INTRA-001B live run head:** `ee4b7b897f3768f6fa6608c2fdba28384b9a5d91` (original download head; no new provider calls on recompute)
+- **INTRA-001B bundle generation head:** `ccb5e604d8497c1cbec230bc146c12019d3d0bae` (fourth-round validation/finalize code commit)
+- **INTRA-001B original safe artifacts (preserved):** `docs/research/artifacts/INTRA-001B-DATASET-V1/2026-08-08-200945/`
+- **INTRA-001B first-corrected safe artifacts (preserved):** `docs/research/artifacts/INTRA-001B-DATASET-V1/2026-08-08-211737/`
+- **INTRA-001B second-corrected safe artifacts (preserved):** `docs/research/artifacts/INTRA-001B-DATASET-V1/2026-08-08-225153/`
+- **INTRA-001B third-corrected safe artifacts (preserved):** `docs/research/artifacts/INTRA-001B-DATASET-V1/2026-08-09-011333/`
+- **INTRA-001B fourth-corrected safe artifacts:** `docs/research/artifacts/INTRA-001B-DATASET-V1/2026-08-09-014844/`
+- **INTRA-001B dataset disposition:** `inconclusive` — pre-normalization duplicate/malformed metrics unavailable, so the 1% duplicate threshold is unverified; missing-bar and zero-volume thresholds are otherwise clean except for six BKNG symbol-month breaches (Jan 23.2372%, Feb 13.4451%, Mar 12.1326%, Apr 9.9124%, Jul 29.4559%, Nov 11.6059%, all > the locked 5% per-symbol maximum); no provider/provenance/pagination/silent-substitution/manifest failures
+- **INTRA-001B monthly stock counts:** 50 selected stocks per month, 12 months
+- **INTRA-001B fixed ETF stratum:** 13 ETFs per month
+- **INTRA-001B unique selected symbols:** 97 distinct stocks + 13 ETFs
+- **INTRA-001B coverage:** `2025-01-02` through `2025-12-31` with 20-session warm-up before each month
+- **INTRA-001B Massive HTTP requests:** 440 (12 active + 12 inactive PIT snapshots, 0 errors, 0 `429`s)
+- **INTRA-001B Alpaca HTTP requests:** 1,885 aggregate observed during original download; per-phase logical/page/attempt/429/error counters are unavailable for the recomputed bundle and modeled as `null`
+- **INTRA-001B actual runtime:** historical runtime unavailable for the recomputed bundle; original download was under 60 minutes
+- **INTRA-001B local storage:** ~270 MB
+- **Ranking formula:** `session_dollar_volume = Alpaca SIP 1Day close * Alpaca SIP 1Day volume`; median over prior 20 complete XNYS sessions; 1Day volume accepted as a total-liquidity proxy that includes pre/post-market activity
+- **Holdout protection:** OHLCV bars downloaded and validated; no VWAP, signals, entries, exits, returns, metrics, or holdout-performance inspection
 - **Problem statement:** The intraday score is a loose bundle of indicators without VWAP, time-of-day, or liquidity context.
-- **Recommended action:** Reference-provider exploration is complete. Gary has approved `INTRA-001-data-sufficiency-amendment-v3`, which accepts Massive/Polygon as the `best_available_reference_input` with conservative exclusions and locks a one-year 2025 dataset. The next assignment is `devin/intra-001b-one-year-snapshot` to build the 2025 monthly universe and Alpaca SIP OHLCV manifest under the amendment. `INTRA-001C` detector/execution-engine work and `INTRA-001D` real-data study follow separate, explicitly approved branches.
+- **Recommended action:** The 2025 point-in-time universe and Alpaca SIP 5Min OHLCV manifest are locked. The next assignment is `devin/intra-001c-research-engine` to implement the VWAP pullback detector and execution engine, followed by `INTRA-001D` real-data study on a separate, explicitly approved branch.
 - **Reason:** A generic score is not actionable for intraday trading. The concrete open-drive VWAP pullback setup and its two baselines are pre-registered before any code changes.
 - **Dependencies:** VAL-001
-- **Files likely affected:** `docs/research/INTRA-001-SPEC.md`, `docs/research/specs/INTRA-001-v1.json`, `docs/research/specs/INTRA-001-data-sufficiency-amendment-v3.json`, `docs/research/INTRA-001-DATA-SUFFICIENCY-AMENDMENT-V3.md`, `docs/PROJECT-TRACKER.md`
-- **Testing requirements:** JSON schema validation; focused amendment-v3 regression tests; full test suite; documentation/search audit.
-- **Acceptance criteria:** Amendment v3 is created, preserves v1/v2/v4 evidence, locks the 2025 dataset/splits, defines conservative universe controls, accepts Massive with limitations, and records `no_v5_or_additional_provider_search`.
-- **Intended pull request:** `devin/best-available-data-governance`
-- **Affects trading behavior:** Yes — this specification describes a future trading-behavior change, but the current PR changes no production code, scores, weights, thresholds, rankings, or eligibility.
-- **This specification PR changes no trading behavior.**
+- **Files likely affected:** `docs/research/INTRA-001-SPEC.md`, `docs/research/specs/INTRA-001-v1.json`, `docs/research/specs/INTRA-001-data-sufficiency-amendment-v3.json`, `docs/research/INTRA-001-DATA-SUFFICIENCY-AMENDMENT-V3.md`, `docs/research/specs/INTRA-001B-dataset-v1.json`, `docs/research/INTRA-001B-DATASET-V1-1DAY-AMENDMENT.md`, `tradex/research/intraday_dataset/`, `docs/PROJECT-TRACKER.md`
+- **Testing requirements:** JSON schema validation; focused dataset tests; full test suite; documentation/search audit; artifact checksum verification; secret/path/token/cursor scan.
+- **Acceptance criteria:** 12 monthly PIT universes built, 13-ETF stratum preserved, Alpaca SIP 5Min OHLCV manifest locked, data-quality gates evaluated and reported under the locked disposition hierarchy (provider/provenance/pagination/symbol-identity/manifest failures → invalid; per-symbol missing/zero-volume/duplicate/malformed threshold breaches → inconclusive; otherwise valid), safe artifact bundle produced, `INTRA-001-v1.json` / amendment v3 / frozen V4 artifacts unchanged, no V5/provider search, no trading-behavior change.
+- **Intended pull request:** `devin/intra-001b-one-year-snapshot`
+- **Affects trading behavior:** No — data and manifest infrastructure only; no production code, scores, weights, thresholds, rankings, or eligibility changed.
+- **This PR changes no trading behavior.**
 
 ### PATTERN-001: Validate pattern matcher before dashboard promotion
 
@@ -717,17 +715,15 @@ This is the master backlog for recommendations from the Devin review. Items are 
 The original engineering-foundation and UI-refactor backlog is substantially complete. `SHORT-001` is closed as Completed — Not supported. `INTRA-001B` Alpaca v1/v2 established that Alpaca SIP can supply the five-minute OHLCV contract, and `INTRA-001B-REFERENCE-V4` showed Massive/Polygon is the best available free reference input but did not satisfy the pre-registered strict contract. Gary has approved data-sufficiency amendment v3, which stops provider hunting, accepts Massive/Polygon with conservative exclusions, and locks a one-year 2025 dataset for `INTRA-001`. No V5 reference-provider probe is authorized.
 
 **Remaining non-completed items:**
-- `INTRA-001`: In progress — `INTRA-001-data-sufficiency-amendment-v3` is approved; `INTRA-001B` reference-provider work is complete; snapshot construction is the next assignment.
+- `INTRA-001`: In progress — `INTRA-001-data-sufficiency-amendment-v3` is approved; `INTRA-001B` dataset construction is in progress; `devin/intra-001-c-research-engine` is the next assignment.
 
 **Recommended next work order:**
-1. **`devin/intra-001b-one-year-snapshot`** — Build the 2025 monthly universe and Alpaca SIP five-minute OHLCV manifest under amendment v3.
-2. **`devin/intra-001-c-research-engine`** — Session VWAP, opening-drive state, pullback/reclaim detector, baselines, synthetic tests only.
-3. **`devin/intra-001-d-locked-study`** — Build manifest, run dev/validation, holdout only if gates pass, commit safe artifacts.
-4. **Separate Gary-approved production PR** — Only if all gates pass and methodology remains valid.
+1. **`devin/intra-001-c-research-engine`** — Session VWAP, opening-drive state, pullback/reclaim detector, baselines, synthetic tests only.
+2. **`devin/intra-001-d-locked-study`** — Build manifest, run dev/validation, holdout only if gates pass, commit safe artifacts.
+3. **Separate Gary-approved production PR** — Only if all gates pass and methodology remains valid.
 
 **Recommended next pull request order:**
-1. `devin/best-available-data-governance` (DOC-003 / INTRA-001-DATA-SUFFICIENCY-V3).
-2. `devin/intra-001b-one-year-snapshot` (2025 dataset and manifest infrastructure).
-3. `devin/intra-001-c-research-engine` (research detector and execution engine).
-4. `devin/intra-001-d-locked-study` (locked real-data study).
+1. `devin/intra-001b-one-year-snapshot` (2025 dataset and manifest infrastructure; currently in review).
+2. `devin/intra-001-c-research-engine` (research detector and execution engine).
+3. `devin/intra-001-d-locked-study` (locked real-data study).
 

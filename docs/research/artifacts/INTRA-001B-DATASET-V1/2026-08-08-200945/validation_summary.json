@@ -1,0 +1,9 @@
+{
+  "disposition": "valid",
+  "max_duplicate_rate_pct": 0.0,
+  "max_missing_rate_pct": 31.1355,
+  "max_zero_volume_rate_pct": 0.0,
+  "rejected_pct": 0.7937,
+  "rejected_symbols": 6,
+  "total_symbols": 756
+}
