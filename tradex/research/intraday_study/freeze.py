@@ -36,9 +36,9 @@ def _git(*args: str, cwd: Path | None = None) -> str:
 
 
 def _clean_worktree(repo_root: Path) -> bool:
-    """Return True if there are no uncommitted changes in the working tree."""
+    """Return True if no tracked files have uncommitted changes."""
     try:
-        status = _git("status", "--porcelain", cwd=repo_root)
+        status = _git("status", "--porcelain", "--untracked-files=no", cwd=repo_root)
         return status == ""
     except FreezeError:
         return False
