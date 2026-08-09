@@ -475,7 +475,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Redesign intraday scorer around a specific setup
 - **Category:** Intraday trading
 - **Priority:** Medium
-- **Status:** In progress — `INTRA-001B-DATASET-V1` safe bundle regenerated and `INTRA-001C` synthetic engine implemented and review-blocker fixes applied; `INTRA-001C` produces deterministic `synthetic=true`, `evidence_eligible=false` artifacts and does not touch real data or production behavior; no new live provider calls; no V5 or additional provider search occurred
+- **Status:** In progress — `INTRA-001B-DATASET-V1` safe bundle regenerated and `INTRA-001C` synthetic engine implemented with second-round review blockers addressed; `INTRA-001C` produces deterministic `synthetic=true`, `evidence_eligible=false` artifacts and does not touch real data or production behavior; no new live provider calls; no V5 or additional provider search occurred
 - **Research specification:** `docs/research/INTRA-001-SPEC.md`
 - **Locked machine-readable strategy spec:** `docs/research/specs/INTRA-001-v1.json` (SHA-256 unchanged)
 - **Data-sufficiency amendment v3:** `docs/research/specs/INTRA-001-data-sufficiency-amendment-v3.json` and `docs/research/INTRA-001-DATA-SUFFICIENCY-AMENDMENT-V3.md`
@@ -495,10 +495,11 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **INTRA-001B fourth-corrected safe artifacts:** `docs/research/artifacts/INTRA-001B-DATASET-V1/2026-08-09-014844/`
 - **INTRA-001B dataset disposition:** `inconclusive` — pre-normalization duplicate/malformed metrics unavailable, so the 1% duplicate threshold is unverified; missing-bar and zero-volume thresholds are otherwise clean except for six BKNG symbol-month breaches (Jan 23.2372%, Feb 13.4451%, Mar 12.1326%, Apr 9.9124%, Jul 29.4559%, Nov 11.6059%, all > the locked 5% per-symbol maximum); no provider/provenance/pagination/silent-substitution/manifest failures
 - **INTRA-001C branch:** `devin/intra-001c-research-engine`
+- **INTRA-001C head SHA:** `c85588f9f85f03e5829c97f2f4ef8f7c6f44ac3b`
 - **INTRA-001C implementation doc:** `docs/research/INTRA-001C-IMPLEMENTATION.md`
 - **INTRA-001C engine package:** `tradex/research/intraday_engine/`
 - **INTRA-001C tests:** `tests/research/intraday_engine/`
-- **INTRA-001C status:** Synthetic engine complete with ChatGPT review blockers addressed — uniform eligibility, exact prior-20-session volume baseline, Baseline A signal window separated from candidate reclaim window, deterministic gap/time/fallback execution records, expanded metrics/gate schemas, deterministic output with checksum identity, and focused boundary/failure-mode tests; no real-data or provider calls; no production behavior changed; `INTRA-001D` not started
+- **INTRA-001C status:** Synthetic engine complete; second-round ChatGPT review blockers addressed — contract/sufficiency disposition separation, latest 20 complete prior sessions, shared Baseline A eligibility, saved-weight/first-trigger/future-perturbation tests, exact off-grid accounting, explicit holding minutes, structured monthly/gap metrics, profit-factor ordered-median consistency, and synthetic `run_study` outcome-path fixtures; no real-data or provider calls; no production behavior changed; `INTRA-001D` not started
 - **INTRA-001B monthly stock counts:** 50 selected stocks per month, 12 months
 - **INTRA-001B fixed ETF stratum:** 13 ETFs per month
 - **INTRA-001B unique selected symbols:** 97 distinct stocks + 13 ETFs
