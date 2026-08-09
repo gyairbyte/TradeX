@@ -73,6 +73,8 @@ Scanner runs → results DataFrame
 | `tradex/research/short_context/` | Short-term market-regime context research (SHORT-001; v2 rerun dropped the 23 malformed Schwab OHLC rows and produced a 'not supported' result; `production_promotion_eligible=false`). |
 | `docs/research/INTRA-001-SPEC.md` | Pre-registered research specification for the long open-drive VWAP pullback continuation study. `INTRA-001B` Alpaca v1/v2 locked Alpaca SIP as the OHLCV source; `INTRA-001B-REFERENCE-V4` identified Massive/Polygon as the best available free reference input; `INTRA-001-data-sufficiency-amendment-v3` accepts Massive with conservative exclusions and locks a one-year 2025 dataset. |
 | `docs/research/specs/INTRA-001-v1.json` | Machine-readable locked specification for `INTRA-001`; future artifacts must record its SHA-256. |
+| `tradex/research/intraday_engine/` | `INTRA-001C` synthetic intraday detector and execution engine. Research-only; no real-data or provider access. |
+| `docs/research/INTRA-001C-IMPLEMENTATION.md` | Implementation notes and CLI instructions for `INTRA-001C`. |
 | `tradex/options/models.py` | Typed options source/capability and scan report models (`OptionsDataKind`, `OptionsSourceStatus`, `OptionsActivityReport`). |
 | `tradex/options/flow.py` | Capability-aware options source resolution, true-flow scanning, chain-snapshot scanning, and non-directional put/call balance. |
 | `tradex/ui/dashboard.py` | Streamlit dashboard router: Scanner, Coil Detector, Confluence, Pattern Similarity — Experimental Research, Pre-Market, Options Activity, Alerts, Signal Journal, Weights, Help |
