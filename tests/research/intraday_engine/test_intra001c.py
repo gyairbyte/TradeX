@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -34,6 +34,7 @@ from tradex.research.intraday_engine.models import (
     StudyMetrics,
     TickerMeta,
     Trade,
+    as_json_dict,
 )
 from tradex.research.intraday_engine.normalize import (
     NormalizationError,
@@ -1381,89 +1382,165 @@ class TestSyntheticOutcomePaths:
 
 
 class TestRunStudyOutcomePaths:
-    """run_study fixtures for supported, not_supported, and rejected signal paths."""
+    """Genuine end-to-end run_study fixtures using real detection/execution/baselines."""
 
     @staticmethod
-    def _baseline_signal(ticker: str, session_date: date, session: Session, strategy: str, net_r: float):
-        """Return a deterministic executed Signal for a baseline strategy."""
+    def _warmup_session_df(session, base: float = 100.0) -> pd.DataFrame:
+        """Low first-six volume, large rest-of-day volume, tiny alternating close.
+
+        The large non-first-six volume suppresses baseline-A's rolling volume-ratio
+        at the candidate signal window, while the small alternating close keeps RSI
+        out of the 55-75 band so baseline A does not fire during candidate sessions.
+        """
         grid = sorted(session.grid)
-        signal_bar = grid[20]
-        signal_time = signal_bar + timedelta(minutes=5)
-        entry_time = signal_time
-        entry_fill = 100.0
-        trade = Trade(
+        records = []
+        close = base
+        for i, g in enumerate(grid):
+            open_p = close
+            close = open_p * (1 + (0.0005 if i % 2 == 0 else -0.0005))
+            high = max(open_p, close) * 1.001
+            low = min(open_p, close) * 0.999
+            vol = 100_000 if i < 6 else 50_000_000
+            records.append(
+                {"datetime": g, "open": open_p, "high": high, "low": low, "close": close, "volume": vol}
+            )
+        return pd.DataFrame(records).set_index("datetime")
+
+    @staticmethod
+    def _engineered_session_df(session, scenario: str, base: float = 100.0) -> pd.DataFrame:
+        """Raw DataFrame for a single engineered session."""
+        grid = sorted(session.grid)
+        records = []
+        prev = base
+        first6_vol = 10_000_000 if scenario.startswith("candidate") else 100_000
+        for i, g in enumerate(grid):
+            if i < 6:
+                if scenario.startswith("candidate"):
+                    open_p = base * (1 + i * 0.0012)
+                    close_p = open_p * 1.0015
+                else:
+                    open_p = base * (1 - i * 0.0003)
+                    close_p = open_p * 0.9998
+                vol = first6_vol
+            elif i == 6 and scenario in ("baseline_a_lose", "baseline_b_lose"):
+                open_p = prev
+                close_p = open_p * 1.03
+                vol = 50_000_000
+            else:
+                open_p = prev
+                close_p = open_p * 1.0001
+                vol = 1_000_000
+            high = max(open_p, close_p) * 1.001
+            low = min(open_p, close_p) * 0.999
+            records.append(
+                {"datetime": g, "open": open_p, "high": high, "low": low, "close": close_p, "volume": vol}
+            )
+            prev = close_p
+        return pd.DataFrame(records).set_index("datetime")
+
+    @staticmethod
+    def _postprocess_session(session: Session, scenario: str, base: float = 100.0) -> None:
+        """Mutate normalized bars so the locked engines hit the desired outcome."""
+        compute_session_vwap(session)
+        grid = sorted(session.grid)
+        if scenario in ("baseline_a_lose", "baseline_b_lose"):
+            sig = session.bars[grid[6]]
+            sig.open = base * 1.002
+            sig.close = max(sig.vwap * 1.004, sig.open * 1.002)
+            sig.low = sig.vwap * 0.985
+            sig.high = sig.close * 1.001
+            sig.high = max(sig.high, sig.open, sig.close)
+            sig.low = min(sig.low, sig.open, sig.close)
+            ent = session.bars[grid[7]]
+            stop = sig.low - max(0.01, sig.close * 0.0005)
+            ent.open = sig.close
+            ent.low = stop * 0.99
+            ent.close = stop * 0.999
+            ent.high = ent.open * 1.001
+            ent.volume = 1_000_000
+            ent.high = max(ent.high, ent.open, ent.close)
+            ent.low = min(ent.low, ent.open, ent.close)
+        if scenario.startswith("candidate"):
+            sig = session.bars[grid[12]]
+            sig.open = base * 1.008
+            sig.close = sig.vwap * 1.01
+            sig.low = sig.vwap * 0.98
+            sig.high = sig.close * 1.001
+            sig.high = max(sig.high, sig.open, sig.close)
+            sig.low = min(sig.low, sig.open, sig.close)
+            ent = session.bars[grid[13]]
+            stop = sig.low - max(0.01, sig.close * 0.0005)
+            entry_open = sig.close
+            entry_fill = entry_open * 1.0005
+            risk = entry_fill - stop
+            target = entry_fill + 1.5 * risk
+            ent.open = entry_open
+            ent.volume = 1_000_000
+            if scenario == "candidate_win":
+                ent.high = target * 1.01
+                ent.close = target * 1.001
+                ent.low = max(entry_open * 0.999, stop * 1.01)
+            elif scenario == "candidate_lose":
+                ent.low = stop * 0.99
+                ent.close = stop * 0.999
+                ent.high = ent.open * 1.001
+            elif scenario == "candidate_reject":
+                ent.open = stop - 0.05
+                ent.high = stop
+                ent.low = ent.open * 0.99
+                ent.close = ent.low
+            ent.high = max(ent.high, ent.open, ent.close)
+            ent.low = min(ent.low, ent.open, ent.close)
+
+    @classmethod
+    def _engineered_ticker_input(
+        cls, spec, scenarios: list[str], ticker: str = "TEST", base: float = 100.0
+    ) -> TickerInput:
+        """Build a TickerInput with 20 warmup sessions plus the requested scenarios."""
+        sessions = build_sessions(date(2025, 1, 2), date(2025, 4, 30))
+        warmup_count = 20
+        if len(scenarios) + warmup_count > len(sessions):
+            raise ValueError("not enough trading days in fixture range")
+        scenarios = ["warmup"] * warmup_count + scenarios
+        scenarios = scenarios + ["warmup"] * (len(sessions) - len(scenarios))
+        all_records: list[dict] = []
+        for session, scenario in zip(sessions, scenarios):
+            if scenario == "warmup":
+                df = cls._warmup_session_df(session, base=base)
+            else:
+                df = cls._engineered_session_df(session, scenario, base=base)
+            all_records.extend(df.reset_index().to_dict("records"))
+        combined = pd.DataFrame(all_records)
+        combined["datetime"] = pd.to_datetime(combined["datetime"], utc=True)
+        combined = combined.set_index("datetime").sort_index()
+        normalized, summary = normalize_to_sessions(combined, ticker)
+        for session, scenario in zip(normalized, scenarios):
+            if scenario == "warmup":
+                compute_session_vwap(session)
+            else:
+                cls._postprocess_session(session, scenario, base=base)
+        meta = TickerMeta(
             ticker=ticker,
-            session_date=session_date,
-            strategy=strategy,
-            signal_time=signal_time,
-            signal_bar_start=signal_bar,
-            entry_time=entry_time,
-            entry_bar_start=signal_bar,
-            entry_open=entry_fill,
-            entry_fill=entry_fill,
-            stop_price=entry_fill * 0.98,
-            target_price=entry_fill * 1.02,
-            risk_per_share=entry_fill * 0.02,
-            exit_time=entry_time,
-            exit_bar_start=signal_bar,
-            raw_exit_price=entry_fill * (1.0 + net_r * 0.02),
-            exit_fill=entry_fill * (1.0 + net_r * 0.02),
-            profit=entry_fill * net_r * 0.02,
-            net_r=net_r,
-            exit_type="target" if net_r > 0 else "stop",
-            same_bar_ambiguity=False,
+            is_etf=False,
+            is_eligible=True,
+            prior_close=base,
+            prior_20_median_dollar_volume=base * 1_000_000,
         )
-        return Signal(
-            ticker=ticker,
-            session_date=session_date,
-            strategy=strategy,
-            signal_bar_start=signal_bar,
-            signal_time=signal_time,
-            opening_drive_qualified=None,
-            score=None,
-            stop_price=trade.stop_price,
-            target_price=trade.target_price,
-            entry_open=trade.entry_open,
-            entry_fill=trade.entry_fill,
-            risk_per_share=trade.risk_per_share,
-            status="executed",
-            reason="baseline_fixture",
-            trade=trade,
+        return TickerInput(ticker=ticker, meta=meta, sessions=normalized, quality_summary=summary)
+
+    @staticmethod
+    def _assert_json_safe(result):
+        """Serialise the result and reject non-finite floats."""
+        text = json.dumps(as_json_dict(result), allow_nan=False)
+        assert "NaN" not in text and "Infinity" not in text
+
+    def test_run_study_supported_beaten_baselines(self, spec):
+        """Candidate wins more than it loses and beats real negative baselines."""
+        scenarios = (
+            ["candidate_win", "candidate_win", "candidate_lose"]
+            + ["baseline_a_lose", "baseline_b_lose"] * 4
         )
-
-    def test_run_study_supported_beaten_baselines(self, spec, monkeypatch):
-        """A positive candidate trade with negative baselines yields supported."""
-        ti = _single_session_input(spec)
-        prior = _make_prior_sessions(spec)
-        # Patch candidate to use the real evaluator with the prepared priors.
-        from tradex.research.intraday_engine import candidate as candidate_mod
-
-        original_candidate = candidate_mod.evaluate_candidate_session
-
-        def _candidate_with_prior(ticker, meta, session, _, costs, sp):
-            return original_candidate(ticker, meta, session, prior, costs, sp)
-
-        monkeypatch.setattr(
-            "tradex.research.intraday_engine.engine.evaluate_candidate_session",
-            _candidate_with_prior,
-        )
-
-        def _baseline(ticker, meta, session, _prior, costs, sp):
-            return [
-                self._baseline_signal(
-                    ticker, session.session_date, session, "baseline_a", -0.5
-                )
-            ]
-
-        monkeypatch.setattr(
-            "tradex.research.intraday_engine.engine.evaluate_baseline_a_session",
-            _baseline,
-        )
-        monkeypatch.setattr(
-            "tradex.research.intraday_engine.engine.evaluate_baseline_b_session",
-            _baseline,
-        )
-
+        ti = self._engineered_ticker_input(spec, scenarios)
         result = run_study(
             [ti],
             spec,
@@ -1474,53 +1551,21 @@ class TestRunStudyOutcomePaths:
         assert result.outcome.disposition == "supported"
         assert result.synthetic is True
         assert result.evidence_eligible is False
-        assert any(s.status == "executed" for s in result.candidate_signals)
+        executed = [s for s in result.candidate_signals if s.status == "executed"]
+        assert len(executed) == 3
+        assert any(s.trade.net_r > 0 for s in executed)
+        assert any(s.trade.net_r < 0 for s in executed)
+        assert result.metrics_by_strategy["baseline_a"]["primary_5bps"].pooled_expectancy < 0
+        assert result.metrics_by_strategy["baseline_b"]["primary_5bps"].pooled_expectancy < 0
+        self._assert_json_safe(result)
 
-    def test_run_study_not_supported_negative_candidate(self, spec, monkeypatch):
-        """A negative candidate trade with positive baselines yields not_supported."""
-        ti = _single_session_input(spec)
-        prior = _make_prior_sessions(spec)
-        session = ti.sessions[0]
-        grid = sorted(session.grid)
-        # Force the entry bar to stop out for a negative candidate trade.
-        entry_bar = session.bars[grid[13]]
-        stop = (
-            session.bars[grid[12]].low
-            - max(0.01, session.bars[grid[12]].close * 0.0005)
+    def test_run_study_not_supported_negative_candidate(self, spec):
+        """Candidate is net negative while real baselines are also negative."""
+        scenarios = (
+            ["candidate_win", "candidate_lose", "candidate_lose"]
+            + ["baseline_a_lose", "baseline_b_lose"] * 3
         )
-        entry_bar.open = stop + 0.02
-        entry_bar.high = entry_bar.open * 1.0001
-        entry_bar.low = stop - 0.05
-        entry_bar.close = stop - 0.02
-
-        from tradex.research.intraday_engine import candidate as candidate_mod
-
-        original_candidate = candidate_mod.evaluate_candidate_session
-
-        def _candidate_with_prior(ticker, meta, session, _, costs, sp):
-            return original_candidate(ticker, meta, session, prior, costs, sp)
-
-        monkeypatch.setattr(
-            "tradex.research.intraday_engine.engine.evaluate_candidate_session",
-            _candidate_with_prior,
-        )
-
-        def _baseline(ticker, meta, session, _prior, costs, sp):
-            return [
-                self._baseline_signal(
-                    ticker, session.session_date, session, "baseline_a", 0.5
-                )
-            ]
-
-        monkeypatch.setattr(
-            "tradex.research.intraday_engine.engine.evaluate_baseline_a_session",
-            _baseline,
-        )
-        monkeypatch.setattr(
-            "tradex.research.intraday_engine.engine.evaluate_baseline_b_session",
-            _baseline,
-        )
-
+        ti = self._engineered_ticker_input(spec, scenarios)
         result = run_study(
             [ti],
             spec,
@@ -1529,112 +1574,41 @@ class TestRunStudyOutcomePaths:
             sample_minimums=_zero_sample_minimums(),
         )
         assert result.outcome.disposition == "not_supported"
-        assert any(s.status == "executed" for s in result.candidate_signals)
-        assert all(s.trade.net_r < 0 for s in result.candidate_signals if s.status == "executed")
+        assert result.synthetic is True
+        assert result.evidence_eligible is False
+        assert result.metrics_by_strategy["candidate"]["primary_5bps"].pooled_expectancy < 0
+        self._assert_json_safe(result)
 
-    def test_run_study_rejected_signal_status(self, spec, monkeypatch):
-        """A candidate whose entry is rejected at the open is recorded and the study is inconclusive."""
-        ti = _single_session_input(spec)
-        prior = _make_prior_sessions(spec)
-        session = ti.sessions[0]
-        grid = sorted(session.grid)
-        entry_bar = session.bars[grid[13]]
-        stop = (
-            session.bars[grid[12]].low
-            - max(0.01, session.bars[grid[12]].close * 0.0005)
+    def test_run_study_rejected_signal_status(self, spec):
+        """A candidate rejected at the open is recorded alongside an executed loss."""
+        scenarios = (
+            ["candidate_lose", "candidate_reject"]
+            + ["baseline_a_lose", "baseline_b_lose"] * 3
         )
-        # Reject because the next-bar open is at or below the stop.
-        entry_bar.open = stop - 0.05
-        entry_bar.high = stop
-        entry_bar.low = stop * 0.99
-        entry_bar.close = stop * 0.999
-
-        from tradex.research.intraday_engine import candidate as candidate_mod
-
-        original_candidate = candidate_mod.evaluate_candidate_session
-
-        def _candidate_with_prior(ticker, meta, session, _, costs, sp):
-            return original_candidate(ticker, meta, session, prior, costs, sp)
-
-        monkeypatch.setattr(
-            "tradex.research.intraday_engine.engine.evaluate_candidate_session",
-            _candidate_with_prior,
-        )
-
-        def _baseline_no_signal(*args, **kwargs):
-            return [
-                Signal(
-                    ticker=ti.ticker,
-                    session_date=ti.sessions[0].session_date,
-                    strategy="baseline_a",
-                    signal_bar_start=None,
-                    signal_time=None,
-                    opening_drive_qualified=None,
-                    score=None,
-                    stop_price=None,
-                    target_price=None,
-                    entry_open=None,
-                    entry_fill=None,
-                    risk_per_share=None,
-                    status="no_signal",
-                    reason="baseline_fixture",
-                )
-            ]
-
-        monkeypatch.setattr(
-            "tradex.research.intraday_engine.engine.evaluate_baseline_a_session",
-            _baseline_no_signal,
-        )
-        monkeypatch.setattr(
-            "tradex.research.intraday_engine.engine.evaluate_baseline_b_session",
-            _baseline_no_signal,
-        )
-
+        ti = self._engineered_ticker_input(spec, scenarios)
         result = run_study(
             [ti],
             spec,
             synthetic=True,
             evidence_eligible=False,
-            sample_minimums=SampleMinimums(
-                executed_candidate_trades_min=1,
-                represented_stock_symbols_min=1,
-                represented_etfs_min=0,
-                stock_stratum_trades_min=0,
-                etf_stratum_trades_min=0,
-                paired_symbol_overlap_min=0,
-                single_ticker_max_pct_of_trades=100.0,
-                single_ticker_max_pct_of_net_profit=100.0,
-            ),
+            sample_minimums=_zero_sample_minimums(),
         )
-        assert result.outcome.disposition == "inconclusive"
-        candidate = [s for s in result.candidate_signals if s.status == "rejected_entry_at_or_below_stop"]
-        assert candidate
-        assert candidate[0].strategy == "candidate"
+        assert result.outcome.disposition == "not_supported"
+        rejected = [
+            s for s in result.candidate_signals
+            if s.status == "rejected_entry_at_or_below_stop"
+        ]
+        assert rejected
+        assert rejected[0].strategy == "candidate"
+        # The rejected signal records the next-bar open that caused the rejection.
+        assert rejected[0].entry_open is not None
+        assert rejected[0].entry_open <= rejected[0].stop_price
+        self._assert_json_safe(result)
 
-    def test_synthetic_forces_evidence_ineligible(self, spec, monkeypatch):
-        """run_study must set evidence_eligible=False when synthetic=True even if the caller passes True."""
-        ti = _single_session_input(spec)
-        prior = _make_prior_sessions(spec)
-        from tradex.research.intraday_engine import candidate as candidate_mod
-
-        original_candidate = candidate_mod.evaluate_candidate_session
-
-        def _candidate_with_prior(ticker, meta, session, _, costs, sp):
-            return original_candidate(ticker, meta, session, prior, costs, sp)
-
-        monkeypatch.setattr(
-            "tradex.research.intraday_engine.engine.evaluate_candidate_session",
-            _candidate_with_prior,
-        )
-        monkeypatch.setattr(
-            "tradex.research.intraday_engine.engine.evaluate_baseline_a_session",
-            lambda *a, **k: [],
-        )
-        monkeypatch.setattr(
-            "tradex.research.intraday_engine.engine.evaluate_baseline_b_session",
-            lambda *a, **k: [],
-        )
-
+    def test_synthetic_forces_evidence_ineligible(self, spec):
+        """run_study must set evidence_eligible=False when synthetic=True."""
+        scenarios = ["candidate_win"] + ["baseline_a_lose", "baseline_b_lose"] * 2
+        ti = self._engineered_ticker_input(spec, scenarios)
         result = run_study(
             [ti],
             spec,
@@ -1644,3 +1618,4 @@ class TestRunStudyOutcomePaths:
         )
         assert result.synthetic is True
         assert result.evidence_eligible is False
+        self._assert_json_safe(result)
