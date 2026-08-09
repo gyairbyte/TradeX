@@ -124,6 +124,10 @@ def run_study(
     sample_minimums: SampleMinimums | None = None,
 ) -> StudyResult:
     """Run the full engine across all tickers, sessions, and cost scenarios."""
+    # Synthetic artifacts are never evidence-eligible.
+    if synthetic:
+        evidence_eligible = False
+
     if generated_at is None:
         generated_at = datetime(2025, 1, 1, tzinfo=UTC)
         generated_at_fixed = True

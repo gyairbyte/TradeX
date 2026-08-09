@@ -37,14 +37,16 @@ def _prior_six_bar_cumulative_volumes(
     sorted_prior = sorted(prior_sessions, key=lambda s: s.session_date)
 
     def _is_complete(session: Session) -> bool:
-        first_six = [
-            session.bars[g]
-            for g in sorted(session.grid)[:_OPENING_DRIVE_BAR_COUNT]
-            if g in session.bars
-        ]
-        if len(first_six) != _OPENING_DRIVE_BAR_COUNT:
+        # A prior session is complete only when every expected regular-session grid
+        # position is present and valid.  The six-bar cumulative volume is still
+        # computed from the first six bars below.
+        if len(session.bars) != len(session.grid):
             return False
-        return all(b.is_valid for b in first_six)
+        for g in session.grid:
+            bar = session.bars.get(g)
+            if bar is None or not bar.is_valid:
+                return False
+        return True
 
     complete = [s for s in sorted_prior if _is_complete(s)]
     recent = complete[-_REQUIRED_PRIOR_SESSIONS:]
