@@ -45,14 +45,26 @@ tradex/research/intraday_engine/
 - Bar timestamps stored as UTC but interpreted in ET; `available_at = bar_start + 5min`.
 - VWAP resets every session; no filling/interpolation; no future-bar access.
 - At most one trade per ticker-session; no overnight positions.
+- Uniform point-in-time liquidity and security-type eligibility enforced for candidate,
+  Baseline A, and Baseline B.
 - Opening drive: six completed bars, return ≥ +0.75%, close > VWAP,
-  cumulative volume ≥ 1.5× prior-20-session same-window median.
-- Reclaim: 10:00–11:25 bar starts, `low <= VWAP`, `close > VWAP`, `close > open`,
+  cumulative volume ≥ 1.5× the **exact** most-recent 20 complete prior-session same-window median.
+- Reclaim: 10:00–11:25 bar starts (first completed bar *after* 10:00 through the bar
+  completing at 11:30 ET), `low <= VWAP`, `close > VWAP`, `close > open`,
   `close >= 09:30 open`, first only.
-- Stops/targets/costs/exit priority match the locked spec exactly.
+- Baseline A signal window uses completed bars from 10:00 through 11:30 ET, which is
+  one bar earlier at the lower bound than the candidate reclaim window, as required by
+  the locked spec.
+- Stops/targets/costs/exit priority match the locked spec exactly, including gap-exit
+  timestamps at the bar open, a retained fallback exit bar, and a deterministic
+  last-valid-regular-session-close fallback when the 3:45 PM time-exit bar is missing.
 - Baseline A uses an explicit fresh `IntradayWeights()` instance; no saved weights.
+- Data-contract violations (naive timestamps, off-grid bars, invalid OHLC, non-finite rows)
+  fail closed to `invalid`; data-sufficiency threshold breaches (missing/zero/duplicate bars)
+  produce `inconclusive`.
 - Validation gates and outcome hierarchy (`supported`/`not_supported`/`inconclusive`/`invalid`)
-  follow the locked spec.
+  follow the locked spec, with expanded signal/rejection/exit counts, monthly and opening-gap
+  contribution buckets, per-strategy × per-cost metrics, and absolute-loss concentration checks.
 
 ## Running the synthetic smoke test
 
@@ -66,9 +78,13 @@ directory. All outputs are marked `synthetic=true` and `evidence_eligible=false`
 ## Verification
 
 - `uv run pytest tests/research/intraday_engine -q`
+- `uv run pytest tests -q` (full suite)
 - `uv run ruff check tradex/research/intraday_engine tests/research/intraday_engine`
 - `git diff --check`
 - `sha256sum docs/research/specs/INTRA-001-v1.json` (locked hash)
+- `uv run python -c "import json; json.load(open('docs/research/specs/INTRA-001-v1.json'))"` (JSON valid)
+- Synthetic `result.json` output is deterministic for a fixed `generated_at` and seed; the
+  JSON serialization contains no `NaN` or `Infinity` values.
 
 ## Limitations and next steps
 

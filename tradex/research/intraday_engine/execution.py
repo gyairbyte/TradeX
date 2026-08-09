@@ -5,7 +5,7 @@ import math
 from datetime import datetime
 from typing import Any
 
-from .calendar import MARKET_TIMEZONE, bar_available_at
+from .calendar import MARKET_TIMEZONE, bar_available_at, grid_index
 from .models import Bar, CostScenario, Session, Signal, Trade
 from .spec import IntradaySpec
 
@@ -33,8 +33,11 @@ def _time_exit_bar_start(session: Session, spec: IntradaySpec) -> datetime | Non
     return None
 
 
-def _fallback_close(session: Session, before: datetime) -> tuple[float, datetime, str] | None:
-    """Last valid regular-session close strictly before ``before``."""
+def _fallback_close(session: Session, before: datetime) -> tuple[float, datetime, datetime, str] | None:
+    """Last valid regular-session close strictly before ``before``.
+
+    Returns (raw_exit_price, exit_bar_start, exit_time, reason).
+    """
     best: Bar | None = None
     for g in sorted(session.grid):
         if g >= before:
@@ -44,7 +47,12 @@ def _fallback_close(session: Session, before: datetime) -> tuple[float, datetime
             best = bar
     if best is None:
         return None
-    return best.close, bar_available_at(best.bar_start), "missing_time_exit_bar_fallback"
+    return (
+        best.close,
+        best.bar_start,
+        bar_available_at(best.bar_start),
+        "missing_time_exit_bar_fallback",
+    )
 
 
 def _exit_on_bar(bar: Bar, stop: float, target: float) -> tuple[float, str, bool] | None:
@@ -65,6 +73,13 @@ def _exit_on_bar(bar: Bar, stop: float, target: float) -> tuple[float, str, bool
     if target_touched:
         return target, "target", ambiguity
     return None
+
+
+def _exit_time_for(bar: Bar, exit_type: str) -> datetime:
+    """Gap exits occur at the bar open; intrabar/time exits use bar completion."""
+    if exit_type.startswith("gap_"):
+        return bar.bar_start
+    return bar_available_at(bar.bar_start)
 
 
 def attempt_trade(
@@ -149,69 +164,64 @@ def attempt_trade(
     target_price = entry_fill + spec.target_multiple * risk_per_share
     entry_time = next_bar.bar_start
 
-    # Simulate exit from entry bar through the rest of the session.
+    # Opening gap for this session (session open vs point-in-time prior close).
+    opening_gap_pct: float | None = None
+    session_open_bar = session.bars.get(session.grid[0]) if session.grid else None
+    if session_open_bar is not None and ticker_meta.prior_close:
+        opening_gap_pct = (session_open_bar.open - ticker_meta.prior_close) / ticker_meta.prior_close
+
     sorted_grid = sorted(session.grid)
-    entry_idx = sorted_grid.index(next_bar.bar_start)
+    entry_idx = grid_index(next_bar.bar_start, sorted_grid)
     exit_time: datetime | None = None
     exit_bar_start: datetime | None = None
     raw_exit_price: float | None = None
     exit_type: str | None = None
     same_bar_ambiguity = False
     fallback_reason: str | None = None
+    exit_bar_index: int | None = None
 
     time_exit_start = _time_exit_bar_start(session, spec)
 
     for i in range(entry_idx, len(sorted_grid)):
         bar_start = sorted_grid[i]
         bar = session.bars.get(bar_start)
-        if bar is None or not bar.is_valid:
-            continue
 
-        if i == entry_idx:
-            # We entered at the open; evaluate the completed entry bar.
-            result = _exit_on_bar(bar, stop_price, target_price)
-            if result is not None:
-                raw_exit_price, exit_type, ambiguity = result
-                exit_time = bar_available_at(bar.bar_start)
-                exit_bar_start = bar.bar_start
-                same_bar_ambiguity = ambiguity
-                break
-
-            # If the entry bar is the time-exit bar, exit at close.
-            if bar_start == time_exit_start:
-                raw_exit_price = bar.close
-                exit_type = "time"
-                exit_time = bar_available_at(bar.bar_start)
-                exit_bar_start = bar.bar_start
-                break
-            continue
-
-        # Subsequent bars.
         if bar_start == time_exit_start:
-            # Time exit priority: intrabar stop/target first, then close.
+            if bar is None or not bar.is_valid:
+                # Expected time-exit bar missing; use locked fallback.
+                fallback = _fallback_close(session, session.closes_at)
+                if fallback is not None:
+                    raw_exit_price, exit_bar_start, exit_time, fallback_reason = fallback
+                    exit_type = "time_fallback"
+                    exit_bar_index = grid_index(exit_bar_start, sorted_grid)
+                break
+            # Time-exit bar: intrabar stop/target take priority over the close.
             result = _exit_on_bar(bar, stop_price, target_price)
             if result is not None:
-                raw_exit_price, exit_type, ambiguity = result
-                exit_time = bar_available_at(bar.bar_start)
+                raw_exit_price, exit_type, same_bar_ambiguity = result
+                exit_time = _exit_time_for(bar, exit_type)
                 exit_bar_start = bar.bar_start
-                same_bar_ambiguity = ambiguity
+                exit_bar_index = i
                 break
             raw_exit_price = bar.close
             exit_type = "time"
             exit_time = bar_available_at(bar.bar_start)
             exit_bar_start = bar.bar_start
+            exit_bar_index = i
             break
+
+        if bar is None or not bar.is_valid:
+            continue
 
         result = _exit_on_bar(bar, stop_price, target_price)
         if result is not None:
-            raw_exit_price, exit_type, ambiguity = result
-            exit_time = bar_available_at(bar.bar_start)
+            raw_exit_price, exit_type, same_bar_ambiguity = result
+            exit_time = _exit_time_for(bar, exit_type)
             exit_bar_start = bar.bar_start
-            same_bar_ambiguity = ambiguity
+            exit_bar_index = i
             break
 
     if raw_exit_price is None:
-        # Expected time-exit bar is missing; use fallback close.
         fallback = _fallback_close(session, session.closes_at)
         if fallback is None:
             return Signal(
@@ -230,12 +240,15 @@ def attempt_trade(
                 status="rejected_no_time_exit_fallback",
                 reason="no_valid_regular_session_close_before_close",
             )
-        raw_exit_price, exit_time, fallback_reason = fallback
+        raw_exit_price, exit_bar_start, exit_time, fallback_reason = fallback
         exit_type = "time_fallback"
+        exit_bar_index = grid_index(exit_bar_start, sorted_grid)
 
     exit_fill = costs.exit_fill(raw_exit_price)
     profit = exit_fill - entry_fill
     net_r = profit / risk_per_share
+
+    holding_bars = (exit_bar_index - entry_idx) if exit_bar_index is not None else 0
 
     trade = Trade(
         ticker=ticker,
@@ -258,6 +271,10 @@ def attempt_trade(
         net_r=net_r,
         exit_type=exit_type,
         same_bar_ambiguity=same_bar_ambiguity,
+        entry_bar_index=entry_idx,
+        exit_bar_index=exit_bar_index,
+        holding_bars=holding_bars,
+        opening_gap_pct=opening_gap_pct,
         fallback_reason=fallback_reason,
     )
 

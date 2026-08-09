@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .engine import run_study
@@ -44,7 +45,13 @@ def synthetic_smoke(args: argparse.Namespace) -> int:
         n_etf_tickers=args.n_etf_tickers,
         n_sessions=args.n_sessions,
     )
-    result = run_study(inputs, spec, synthetic=True, evidence_eligible=False)
+    result = run_study(
+        inputs,
+        spec,
+        synthetic=True,
+        evidence_eligible=False,
+        generated_at=datetime(2025, 1, 1, tzinfo=UTC),
+    )
     _write_outputs(result, output_dir)
     print(f"Wrote synthetic outputs to {output_dir}")
     print(f"Disposition: {result.outcome.disposition}")

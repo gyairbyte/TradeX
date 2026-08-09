@@ -150,6 +150,10 @@ class Trade:
     net_r: float | None
     exit_type: str | None
     same_bar_ambiguity: bool
+    entry_bar_index: int | None = None
+    exit_bar_index: int | None = None
+    holding_bars: int = 0
+    opening_gap_pct: float | None = None
     fallback_reason: str | None = None
     status: Literal["executed", "rejected"] = "executed"
     rejection_reason: str | None = None
@@ -180,6 +184,10 @@ class StudyMetrics:
 
     strategy: str
     cost_scenario: CostScenario
+    total_signals: int
+    executed_trades: int
+    rejected_signals: int
+    no_signal_count: int
     total_trades: int
     pooled_expectancy: float
     pooled_total_return: float
@@ -200,6 +208,10 @@ class StudyMetrics:
     etf_stratum_pooled_expectancy: float
     represented_stock_symbols: int
     represented_etf_symbols: int
+    rejection_counts: dict[str, int] = field(default_factory=dict)
+    exit_counts: dict[str, int] = field(default_factory=dict)
+    positive_trade_rate: float | None = None
+    average_holding_bars: float | None = None
     per_symbol: dict[str, PerSymbolMetrics] = field(default_factory=dict)
 
 
@@ -237,7 +249,11 @@ class StudyResult:
     baseline_b_signals: list[Signal]
     trades: dict[str, list[Trade]]
     report_markdown: str
+    generated_at_fixed: bool = False
+    metrics_by_strategy: dict[str, dict[str, StudyMetrics]] = field(default_factory=dict)
+    data_quality_summaries: list[DataQualitySummary] = field(default_factory=list)
     outcome: StudyOutcome | None = None
+    invalid_reasons: list[str] = field(default_factory=list)
 
 
 @dataclass

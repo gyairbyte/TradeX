@@ -85,6 +85,16 @@ class IntradaySpec:
         return time(11, 30)
 
     @property
+    def baseline_a_signal_window_start_time(self) -> time:
+        """Baseline A signal window begins at the first bar completing at 10:00 AM."""
+        return time(10, 0)
+
+    @property
+    def baseline_a_signal_window_end_time(self) -> time:
+        """Baseline A signal window ends with the bar completing at 11:30 AM."""
+        return time(11, 30)
+
+    @property
     def time_exit_time(self) -> time:
         return _parse_hh_mm(str(self.raw["exit_policy"]["time_exit_time"]))
 
@@ -107,6 +117,10 @@ class IntradaySpec:
     @property
     def prior_dollar_volume_min(self) -> float:
         return float(self.raw["liquidity"]["prior_20_sessions_median_dollar_volume_min_usd"])
+
+    @property
+    def prior_sessions_for_baseline(self) -> int:
+        return int(self.raw["liquidity"]["prior_sessions_for_time_of_day_baseline"])
 
     @property
     def target_multiple(self) -> float:

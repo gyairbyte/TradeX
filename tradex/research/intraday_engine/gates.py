@@ -54,6 +54,12 @@ def _check_sample_minimums(
         reasons.append(
             f"net_profit_concentration_{candidate.net_profit_concentration * 100:.2f}%_exceeds_{sample.single_ticker_max_pct_of_net_profit}%"
         )
+    if candidate.absolute_loss_concentration is not None and (
+        candidate.absolute_loss_concentration * 100 > sample.single_ticker_max_pct_of_net_profit
+    ):
+        reasons.append(
+            f"absolute_loss_concentration_{candidate.absolute_loss_concentration * 100:.2f}%_exceeds_{sample.single_ticker_max_pct_of_net_profit}%"
+        )
     return (not reasons), reasons
 
 
@@ -86,6 +92,8 @@ def evaluate_gates(
     *,
     sample_minimums: SampleMinimums | None = None,
     data_sufficiency_passed: bool = True,
+    data_contract_valid: bool = True,
+    contract_reasons: list[str] | None = None,
     pf_threshold: float = 1.05,
     positive_symbol_threshold: float = 0.55,
     paired_outperform_threshold: float = 0.55,
@@ -111,6 +119,16 @@ def evaluate_gates(
             reason="; ".join(sample_reasons) if sample_reasons else "ok",
         )
     )
+
+    # Data-contract violations fail closed (invalid) regardless of gate results.
+    if not data_contract_valid:
+        reasons = contract_reasons or ["data_contract_violation"]
+        return StudyOutcome(
+            disposition="invalid",
+            reason="; ".join(reasons),
+            gate_results=gate_results,
+            sample_met=sample_met,
+        )
 
     def _gate(name: str, passed: bool | None, reason: str) -> None:
         gate_results.append(GateResult(gate=name, passed=passed, reason=reason))
@@ -212,6 +230,10 @@ def evaluate_gates(
     ) and (
         candidate.net_profit_concentration is None
         or candidate.net_profit_concentration * 100
+        <= sample_minimums.single_ticker_max_pct_of_net_profit
+    ) and (
+        candidate.absolute_loss_concentration is None
+        or candidate.absolute_loss_concentration * 100
         <= sample_minimums.single_ticker_max_pct_of_net_profit
     )
     _gate("12_concentration_limits", conc_ok, "concentration_within_limits")

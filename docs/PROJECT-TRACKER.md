@@ -475,7 +475,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Redesign intraday scorer around a specific setup
 - **Category:** Intraday trading
 - **Priority:** Medium
-- **Status:** In progress — `INTRA-001B-DATASET-V1` safe bundle regenerated and `INTRA-001C` synthetic engine implemented; `INTRA-001C` produces deterministic `synthetic=true`, `evidence_eligible=false` artifacts and does not touch real data or production behavior; no new live provider calls; no V5 or additional provider search occurred
+- **Status:** In progress — `INTRA-001B-DATASET-V1` safe bundle regenerated and `INTRA-001C` synthetic engine implemented and review-blocker fixes applied; `INTRA-001C` produces deterministic `synthetic=true`, `evidence_eligible=false` artifacts and does not touch real data or production behavior; no new live provider calls; no V5 or additional provider search occurred
 - **Research specification:** `docs/research/INTRA-001-SPEC.md`
 - **Locked machine-readable strategy spec:** `docs/research/specs/INTRA-001-v1.json` (SHA-256 unchanged)
 - **Data-sufficiency amendment v3:** `docs/research/specs/INTRA-001-data-sufficiency-amendment-v3.json` and `docs/research/INTRA-001-DATA-SUFFICIENCY-AMENDMENT-V3.md`
@@ -498,7 +498,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **INTRA-001C implementation doc:** `docs/research/INTRA-001C-IMPLEMENTATION.md`
 - **INTRA-001C engine package:** `tradex/research/intraday_engine/`
 - **INTRA-001C tests:** `tests/research/intraday_engine/`
-- **INTRA-001C status:** Synthetic engine complete; candidate, Baseline A, and Baseline B execute against deterministic synthetic fixtures; no real-data or provider calls; no production behavior changed; `INTRA-001D` not started
+- **INTRA-001C status:** Synthetic engine complete with ChatGPT review blockers addressed — uniform eligibility, exact prior-20-session volume baseline, Baseline A signal window separated from candidate reclaim window, deterministic gap/time/fallback execution records, expanded metrics/gate schemas, deterministic output with checksum identity, and focused boundary/failure-mode tests; no real-data or provider calls; no production behavior changed; `INTRA-001D` not started
 - **INTRA-001B monthly stock counts:** 50 selected stocks per month, 12 months
 - **INTRA-001B fixed ETF stratum:** 13 ETFs per month
 - **INTRA-001B unique selected symbols:** 97 distinct stocks + 13 ETFs

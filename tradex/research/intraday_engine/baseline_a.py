@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from .calendar import MARKET_TIMEZONE, bar_available_at
 from .execution import attempt_trade
 from .models import CostScenario, Session, Signal, TickerMeta
 from .normalize import bars_to_dataframe
@@ -15,13 +16,39 @@ def _signal_bar_stop(bar) -> float:
     return bar.low - stop_buffer
 
 
-def _baseline_search_window(session: Session, spec: IntradaySpec) -> list[datetime]:
-    from .reclaim import _grid_in_window
+def _baseline_a_search_window(session: Session, spec: IntradaySpec) -> list[datetime]:
+    """Return the bar-start times whose *completion* (available_at) lies in [10:00, 11:30] ET.
 
-    return _grid_in_window(
-        session, spec.reclaim_search_start_time, spec.reclaim_search_end_time
-    )
+    The locked contract says "first completed five-minute bar from 10:00 AM through
+    11:30 AM Eastern".  A bar completing at 10:00 began at 9:55 and is therefore the
+    first eligible bar; the 11:30-completing bar began at 11:25.  This is one bar
+    earlier at the lower bound than the candidate reclaim window, which requires the
+    first completed bar *after* 10:00 AM.
+    """
+    start = spec.baseline_a_signal_window_start_time
+    end = spec.baseline_a_signal_window_end_time
+    result: list[datetime] = []
+    for g in session.grid:
+        avail = bar_available_at(g).astimezone(MARKET_TIMEZONE).time()
+        if start <= avail <= end:
+            result.append(g)
+    return result
 
+
+def _is_eligible(ticker_meta: TickerMeta, spec: IntradaySpec) -> tuple[bool, str]:
+    if not ticker_meta.is_eligible:
+        return False, "ticker_not_eligible"
+    if ticker_meta.prior_close is not None and ticker_meta.prior_close < spec.prior_close_min:
+        return False, f"prior_close_{ticker_meta.prior_close}_below_{spec.prior_close_min}"
+    if (
+        ticker_meta.prior_20_median_dollar_volume is not None
+        and ticker_meta.prior_20_median_dollar_volume < spec.prior_dollar_volume_min
+    ):
+        return False, "prior_20_median_dollar_volume_below_threshold"
+    excluded_types = {"otc", "warrant", "right", "unit", "preferred_stock"}
+    if ticker_meta.security_type.lower() in excluded_types:
+        return False, f"security_type_excluded_{ticker_meta.security_type}"
+    return True, ""
 
 
 def evaluate_baseline_a_session(
@@ -37,6 +64,27 @@ def evaluate_baseline_a_session(
     from tradex.signals.indicators import add_indicators
     from tradex.signals.intraday import score as intraday_score
     from tradex.signals.weights import IntradayWeights
+
+    eligible, reason = _is_eligible(ticker_meta, spec)
+    if not eligible:
+        return [
+            Signal(
+                ticker=ticker,
+                session_date=session.session_date,
+                strategy="baseline_a",
+                signal_bar_start=None,
+                signal_time=None,
+                opening_drive_qualified=None,
+                score=None,
+                stop_price=None,
+                target_price=None,
+                entry_open=None,
+                entry_fill=None,
+                risk_per_share=None,
+                status="no_signal",
+                reason=reason,
+            )
+        ]
 
     compute_session_vwap(session)
 
@@ -68,7 +116,7 @@ def evaluate_baseline_a_session(
 
     original_add_indicators = intraday_module.add_indicators
     try:
-        for bar_start in _baseline_search_window(session, spec):
+        for bar_start in _baseline_a_search_window(session, spec):
             bar = session.bars.get(bar_start)
             if bar is None or not bar.is_valid:
                 continue

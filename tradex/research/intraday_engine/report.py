@@ -14,17 +14,20 @@ def _fmt(value: float | None) -> str:
 
 
 def _signal_table(signals: list[Signal], label: str) -> list[str]:
+    """Summary and a short table of executed trades for one strategy."""
     executed = [s for s in signals if s.status == "executed"]
-    rejected = [s for s in signals if s.status != "executed"]
+    rejected = [s for s in signals if s.status not in ("executed", "no_signal")]
+    no_signal = [s for s in signals if s.status == "no_signal"]
     lines = [
         f"## {label}",
         f"- Total signals: {len(signals)}",
+        f"- No signal: {len(no_signal)}",
+        f"- Rejected: {len(rejected)}",
         f"- Executed trades: {len(executed)}",
-        f"- Rejected/no-signal: {len(rejected)}",
     ]
     if executed:
-        lines.append("| Ticker | Session | Signal time | Entry | Exit | Net R | Exit type | Ambiguity |")
-        lines.append("|---|---|---|---|---|---|---|---|")
+        lines.append("| Ticker | Session | Signal time | Entry | Exit | Net R | Exit type | Ambiguity | Holding bars |")
+        lines.append("|---|---|---|---|---|---|---|---|---|")
         for s in executed:
             t = s.trade
             lines.append(
@@ -33,7 +36,8 @@ def _signal_table(signals: list[Signal], label: str) -> list[str]:
                 f"{_fmt(t.raw_exit_price if t else None)} | "
                 f"{_fmt(t.net_r if t else None)} | "
                 f"{t.exit_type if t else ''} | "
-                f"{t.same_bar_ambiguity if t else ''} |"
+                f"{t.same_bar_ambiguity if t else ''} | "
+                f"{t.holding_bars if t else ''} |"
             )
     lines.append("")
     return lines
@@ -42,14 +46,34 @@ def _signal_table(signals: list[Signal], label: str) -> list[str]:
 def _cost_table(cost_metrics: dict[str, StudyMetrics]) -> list[str]:
     lines = [
         "## Cost sensitivity",
-        "| Scenario | Trades | Pooled expectancy | Total return | Overall MDD | Median per-symbol expectancy |",
-        "|---|---|---|---|---|---|",
+        "| Strategy | Scenario | Signals | Executed | Pooled expectancy | Total return | Overall MDD | Median per-symbol expectancy | Positive trade rate | Avg holding bars |",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for name, m in cost_metrics.items():
         lines.append(
-            f"| {name} | {m.total_trades} | {_fmt(m.pooled_expectancy)} | "
-            f"{_fmt(m.pooled_total_return)} | {_fmt(m.overall_maximum_drawdown_pct)} | "
-            f"{_fmt(m.median_per_symbol_expectancy)} |"
+            f"| {m.strategy} | {name} | {m.total_signals} | {m.executed_trades} | "
+            f"{_fmt(m.pooled_expectancy)} | {_fmt(m.pooled_total_return)} | "
+            f"{_fmt(m.overall_maximum_drawdown_pct)} | {_fmt(m.median_per_symbol_expectancy)} | "
+            f"{_fmt(m.positive_trade_rate)} | {_fmt(m.average_holding_bars)} |"
+        )
+    lines.append("")
+    return lines
+
+
+def _strategy_summary_table(
+    metrics_by_name: dict[str, StudyMetrics], title: str
+) -> list[str]:
+    lines = [f"## {title}", ""]
+    if not metrics_by_name:
+        lines.append("_No grouped data._")
+        lines.append("")
+        return lines
+    lines.append("| Group | Signals | Executed | Pooled expectancy | Total return |")
+    lines.append("|---|---|---|---|---|")
+    for name, m in metrics_by_name.items():
+        lines.append(
+            f"| {name} | {m.total_signals} | {m.executed_trades} | "
+            f"{_fmt(m.pooled_expectancy)} | {_fmt(m.pooled_total_return)} |"
         )
     lines.append("")
     return lines
@@ -64,6 +88,8 @@ def build_report(
     spec: IntradaySpec,
     *,
     synthetic: bool = True,
+    monthly_metrics: dict[str, StudyMetrics] | None = None,
+    gap_bucket_metrics: dict[str, StudyMetrics] | None = None,
 ) -> str:
     """Build a concise markdown report."""
     lines = [
@@ -90,6 +116,11 @@ def build_report(
     lines.extend(_signal_table(baseline_a_signals, "Baseline A"))
     lines.extend(_signal_table(baseline_b_signals, "Baseline B"))
     lines.extend(_cost_table(cost_metrics))
+
+    if monthly_metrics:
+        lines.extend(_strategy_summary_table(monthly_metrics, "Monthly contribution"))
+    if gap_bucket_metrics:
+        lines.extend(_strategy_summary_table(gap_bucket_metrics, "Opening-gap bucket contribution"))
 
     lines.extend(
         [

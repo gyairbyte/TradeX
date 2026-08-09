@@ -1,6 +1,7 @@
 """Candidate open-drive VWAP pullback/reclaim strategy."""
 from __future__ import annotations
 
+from .eligibility import check_ticker_eligibility
 from .execution import attempt_trade
 from .models import Bar, CostScenario, Session, Signal, TickerMeta
 from .opening_drive import evaluate_opening_drive
@@ -23,6 +24,27 @@ def evaluate_candidate_session(
     spec: IntradaySpec,
 ) -> list[Signal]:
     """Evaluate the candidate strategy for one ticker-session."""
+    eligible, eligibility_reasons = check_ticker_eligibility(ticker_meta, spec)
+    if not eligible:
+        return [
+            Signal(
+                ticker=ticker,
+                session_date=session.session_date,
+                strategy="candidate",
+                signal_bar_start=None,
+                signal_time=None,
+                opening_drive_qualified=None,
+                score=None,
+                stop_price=None,
+                target_price=None,
+                entry_open=None,
+                entry_fill=None,
+                risk_per_share=None,
+                status="no_signal",
+                reason=";".join(eligibility_reasons),
+            )
+        ]
+
     compute_session_vwap(session)
     opening_drive = evaluate_opening_drive(session, prior_sessions, ticker_meta, spec)
 

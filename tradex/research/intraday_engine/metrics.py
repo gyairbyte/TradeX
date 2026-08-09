@@ -3,9 +3,17 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
+from datetime import date
 from typing import Any
 
 from .models import CostScenario, PerSymbolMetrics, Signal, StudyMetrics, Trade
+
+
+def _safe_mean(values: list[float | None]) -> float | None:
+    filtered = [v for v in values if v is not None and math.isfinite(v)]
+    if not filtered:
+        return None
+    return sum(filtered) / len(filtered)
 
 
 def _safe_median(values: list[float | None]) -> float | None:
@@ -90,6 +98,62 @@ def _ticker_meta_etf(ticker: str, ticker_meta_map: dict[str, Any]) -> bool:
     return bool(getattr(meta, "is_etf", False)) if meta else False
 
 
+def _month_key(session_date: date) -> str:
+    return session_date.strftime("%Y-%m")
+
+
+def _opening_gap_bucket(gap_pct: float | None) -> str:
+    if gap_pct is None:
+        return "unknown"
+    if gap_pct < -0.01:
+        return "below_minus_1pct"
+    if gap_pct < 0:
+        return "minus_1pct_to_0"
+    if gap_pct == 0:
+        return "zero"
+    if gap_pct <= 0.01:
+        return "0_to_plus_1pct"
+    return "above_plus_1pct"
+
+
+def _compute_signal_counts(signals: list[Signal]) -> tuple[int, int, int, dict[str, int], dict[str, int], float | None, float | None]:
+    """Return total, executed, rejected, rejection_counts, exit_counts, positive_trade_rate, avg_holding_bars."""
+    total = len(signals)
+    executed = [s for s in signals if s.status == "executed" and s.trade is not None]
+    rejected = [s for s in signals if s.status not in ("executed", "no_signal")]
+    no_signal = [s for s in signals if s.status == "no_signal"]
+
+    rejection_counts: dict[str, int] = defaultdict(int)
+    for s in rejected:
+        rejection_counts[s.status] += 1
+
+    exit_counts: dict[str, int] = defaultdict(int)
+    positive = 0
+    holding_bars: list[int] = []
+    for s in executed:
+        t = s.trade
+        if t is None:
+            continue
+        exit_counts[t.exit_type or "unknown"] += 1
+        if t.net_r is not None and t.net_r > 0:
+            positive += 1
+        holding_bars.append(t.holding_bars)
+
+    positive_rate = positive / len(executed) if executed else None
+    avg_holding = _safe_mean([float(v) for v in holding_bars])
+
+    return (
+        total,
+        len(executed),
+        len(rejected),
+        len(no_signal),
+        dict(rejection_counts),
+        dict(exit_counts),
+        positive_rate,
+        avg_holding,
+    )
+
+
 def compute_study_metrics(
     strategy: str,
     signals: list[Signal],
@@ -97,6 +161,17 @@ def compute_study_metrics(
     cost_scenario: CostScenario,
 ) -> StudyMetrics:
     """Compute aggregate metrics for one strategy and cost scenario."""
+    (
+        total_signals,
+        executed_trades,
+        rejected_signals,
+        no_signal_count,
+        rejection_counts,
+        exit_counts,
+        positive_trade_rate,
+        average_holding_bars,
+    ) = _compute_signal_counts(signals)
+
     trades = [s.trade for s in signals if s.status == "executed" and s.trade is not None]
     trades = sorted(trades, key=lambda t: t.signal_time)
 
@@ -151,7 +226,6 @@ def compute_study_metrics(
     pf_median_value: float | None = None
     if n_represented > 0 and computable_pf >= math.ceil(n_represented / 2):
         pf_median_order = _safe_median(pf_orders)
-        # Value is None when the median order is +inf (no_loss_positive) or when all are None.
         if pf_median_order is not None and math.isinf(pf_median_order):
             pf_median_value = None
         else:
@@ -185,6 +259,10 @@ def compute_study_metrics(
     return StudyMetrics(
         strategy=strategy,
         cost_scenario=cost_scenario,
+        total_signals=total_signals,
+        executed_trades=executed_trades,
+        rejected_signals=rejected_signals,
+        no_signal_count=no_signal_count,
         total_trades=total_trades,
         pooled_expectancy=pooled_expectancy,
         pooled_total_return=pooled_total_return,
@@ -207,8 +285,39 @@ def compute_study_metrics(
         etf_stratum_pooled_expectancy=etf_expectancy,
         represented_stock_symbols=len(stock_represented),
         represented_etf_symbols=len(etf_represented),
+        rejection_counts=rejection_counts,
+        exit_counts=exit_counts,
+        positive_trade_rate=positive_trade_rate,
+        average_holding_bars=average_holding_bars,
         per_symbol=per_symbol,
     )
+
+
+def compute_grouped_metrics(
+    strategy: str,
+    signals: list[Signal],
+    ticker_meta_map: dict[str, Any],
+    cost_scenario: CostScenario,
+    *,
+    by_month: bool = False,
+    by_gap: bool = False,
+) -> dict[str, StudyMetrics]:
+    """Compute per-group metrics (month or opening-gap bucket) for a strategy."""
+    if by_month:
+        group_fn = lambda s: _month_key(s.trade.session_date) if s.trade else "unknown"
+    elif by_gap:
+        group_fn = lambda s: _opening_gap_bucket(s.trade.opening_gap_pct if s.trade else None)
+    else:
+        return {}
+
+    grouped: dict[str, list[Signal]] = defaultdict(list)
+    for s in signals:
+        grouped[group_fn(s)].append(s)
+
+    result: dict[str, StudyMetrics] = {}
+    for key, group in grouped.items():
+        result[key] = compute_study_metrics(strategy, group, ticker_meta_map, cost_scenario)
+    return result
 
 
 def paired_symbol_outperformance(

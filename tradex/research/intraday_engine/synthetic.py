@@ -196,7 +196,7 @@ def _generate_ticker_sessions(
     combined = combined.set_index("datetime").sort_index()
     combined = combined[~combined.index.duplicated(keep="first")]
 
-    normalized, _ = normalize_to_sessions(combined, ticker)
+    normalized, summary = normalize_to_sessions(combined, ticker)
     meta = TickerMeta(
         ticker=ticker,
         is_etf=is_etf,
@@ -204,7 +204,7 @@ def _generate_ticker_sessions(
         prior_close=base_price,
         prior_20_median_dollar_volume=base_price * volume_base,
     )
-    return TickerInput(ticker=ticker, meta=meta, sessions=normalized)
+    return TickerInput(ticker=ticker, meta=meta, sessions=normalized, quality_summary=summary)
 
 
 def generate_synthetic_inputs(

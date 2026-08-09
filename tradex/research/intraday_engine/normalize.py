@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import UTC, datetime
 
+import numpy as np
 import pandas as pd
 
 from .calendar import MARKET_TIMEZONE, build_session, is_on_grid, next_bar_start
@@ -70,7 +71,8 @@ def normalize_to_sessions(
     # Convert numeric columns and drop rows with non-finite required values.
     for col in _REQUIRED:
         df[col] = pd.to_numeric(df[col], errors="coerce")
-    non_finite_mask = df[list(_REQUIRED)].isna().any(axis=1)
+    required_df = df[list(_REQUIRED)]
+    non_finite_mask = required_df.isna().any(axis=1) | np.isinf(required_df.values).any(axis=1)
     non_finite_rows = int(non_finite_mask.sum())
     df = df[~non_finite_mask]
 
@@ -182,6 +184,54 @@ def normalize_to_sessions(
         sessions=len(sessions),
     )
     return sessions, summary
+
+
+def evaluate_data_contract(summary: DataQualitySummary) -> tuple[bool, list[str]]:
+    """Return (valid, reasons) for data-contract violations that invalidate a study.
+
+    Data-sufficiency shortfalls (missing/zero-volume/duplicate bars beyond thresholds)
+    are handled separately; this function flags provider/contract violations.
+    """
+    reasons: list[str] = []
+    if summary.naive_timestamps > 0:
+        reasons.append(f"naive_timestamps={summary.naive_timestamps}")
+    if summary.off_grid_bars > 0:
+        reasons.append(f"off_grid_bars={summary.off_grid_bars}")
+    if summary.invalid_ohlc_rows > 0:
+        reasons.append(f"invalid_ohlc_rows={summary.invalid_ohlc_rows}")
+    if summary.non_finite_rows > 0:
+        reasons.append(f"non_finite_rows={summary.non_finite_rows}")
+    return (not reasons), reasons
+
+
+def evaluate_data_sufficiency(
+    summary: DataQualitySummary,
+    *,
+    expected_bars_per_session: int = 78,
+) -> tuple[bool, list[str]]:
+    """Return (passed, reasons) against the locked per-symbol data-sufficiency thresholds.
+
+    Thresholds are taken from ``docs/research/specs/INTRA-001-v1.json``:
+    - missing-bar rate <= 5%
+    - zero-volume-bar rate <= 10%
+    - duplicate-bar rate <= 1%
+    """
+    reasons: list[str] = []
+    expected = summary.sessions * expected_bars_per_session
+    if expected > 0:
+        missing_rate = summary.missing_bars / expected
+        if missing_rate > 0.05:
+            reasons.append(f"missing_bar_rate_{missing_rate:.4f}_above_5%")
+        zero_rate = (
+            summary.zero_volume_bars / expected if expected else 0.0
+        )
+        if zero_rate > 0.10:
+            reasons.append(f"zero_volume_rate_{zero_rate:.4f}_above_10%")
+    if summary.total_rows > 0:
+        dup_rate = summary.duplicate_timestamps / summary.total_rows
+        if dup_rate > 0.01:
+            reasons.append(f"duplicate_rate_{dup_rate:.4f}_above_1%")
+    return (not reasons), reasons
 
 
 def bars_to_dataframe(bars: list[Bar]) -> pd.DataFrame:
