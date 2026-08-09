@@ -1,0 +1,8 @@
+{
+  "amendment_authorized": true,
+  "ranking_parity_message": "1Day volume is not equivalent to regular-session-only volume; 1Day ranking is authorized by amendment; bounded 60-symbol sensitivity sample top-50 set matched, absolute dollar-volume parity did not",
+  "ranking_parity_passed": false,
+  "ranking_timeframe": "1Day",
+  "sensitivity_sample_absolute_dollar_volume_parity_passed": false,
+  "sensitivity_sample_top50_set_match": true
+}
