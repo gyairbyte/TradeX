@@ -492,7 +492,6 @@ def run_build_universe(
     out.mkdir(parents=True, exist_ok=True)
     state = load_state(output_dir)
     state.phase = "build_universe"
-    state.per_phase_request_counters_available = True
     controls = plan.conservative_universe_controls
     mapping = _load_taxonomy(output_dir)
     calendar = _load_xnys()
@@ -501,6 +500,7 @@ def run_build_universe(
     client = DatasetAlpacaClient(api_key, secret_key, market_data_host=market_data_host)
 
     completed = set(state.universe_built_for_months)
+    initial_completed = completed.copy()
     # Load existing aggregate manifests so a resume or rerun preserves already completed months.
     universe_rows: list[dict[str, Any]] = [r for r in _load_csv_rows(out / "universe_manifest.csv") if r.get("effective_month") in completed]
     exclusion_rows: list[dict[str, Any]] = [r for r in _load_csv_rows(out / "exclusion_summary.csv") if r.get("effective_month") in completed]
@@ -529,15 +529,27 @@ def run_build_universe(
         elif parity_passed:
             logger.info("%s parity passed: %s", plan.liquidity_ranking.get("ranking_timeframe", "1D"), parity_message)
     else:
-        # 1Day ranking is used under an approved amendment; no intraday parity probe is required.
-        parity_passed = ranking_timeframe == "1Day"
-        parity_message = "1Day ranking per approved amendment; 1Day volume is a total-liquidity proxy and is not equivalent to regular-session-only volume"
+        # 1Day ranking is used under an approved amendment; intraday parity is not applicable.
+        sensitivity = plan.liquidity_ranking.get("sensitivity_evidence", {})
+        parity_passed = False
+        parity_message = (
+            "1Day volume is not equivalent to regular-session-only volume; "
+            "1Day ranking is authorized by amendment; "
+            "bounded 60-symbol sensitivity sample top-50 set matched, absolute dollar-volume parity did not"
+        )
 
-    state_data = {
+    state_data: dict[str, Any] = {
         "ranking_timeframe": ranking_timeframe,
         "ranking_parity_passed": parity_passed,
         "ranking_parity_message": parity_message,
+        "amendment_authorized": ranking_timeframe in ("1D", "1Day"),
     }
+    if ranking_timeframe in ("1D", "1Day"):
+        sensitivity = plan.liquidity_ranking.get("sensitivity_evidence", {})
+        state_data["sensitivity_sample_top50_set_match"] = bool(
+            sensitivity.get("1Day_vs_5Min_regular_session_top50_set_symmetric_difference") == 0
+        )
+        state_data["sensitivity_sample_absolute_dollar_volume_parity_passed"] = False
     _write_json(out / "ranking_timeframe.json", state_data)
 
     for pit_date in plan.monthly_pit_dates:
@@ -740,6 +752,9 @@ def run_build_universe(
     _write_csv(out / "universe_manifest.csv", universe_rows)
     _write_csv(out / "exclusion_summary.csv", exclusion_rows)
     _write_csv(out / "liquidity_ranking_summary.csv", liquidity_rows)
+    # Per-phase counters are only reconstructable for a fresh run with no prior completed months.
+    if not state.per_phase_request_counters_available and not initial_completed:
+        state.per_phase_request_counters_available = True
     state.phase = "build_universe_done"
     save_state(output_dir, state)
 
@@ -881,11 +896,10 @@ def run_fetch_ohlcv(
     ohlcv_dir.mkdir(parents=True, exist_ok=True)
     state = load_state(output_dir)
     state.phase = "fetch_ohlcv"
-    state.per_phase_request_counters_available = True
-    state.pre_normalization_metrics_available = True
     client = DatasetAlpacaClient(api_key, secret_key, market_data_host=market_data_host)
 
     completed = set(state.ohlcv_fetched_for_months)
+    initial_completed = completed.copy()
     # Load existing aggregate manifests so a resume or rerun preserves already completed months.
     ohlcv_records: list[dict[str, Any]] = [r for r in _load_csv_rows(ohlcv_dir / "ohlcv_manifest.csv") if r.get("effective_month") in completed]
     quality_records: list[dict[str, Any]] = [r for r in _load_csv_rows(ohlcv_dir / "data_quality.csv") if r.get("effective_month") in completed]
@@ -953,22 +967,33 @@ def run_fetch_ohlcv(
                 if pagination_incomplete:
                     state.errors.append(f"{month}/{requested}: batch pagination incomplete")
 
+                # Malformed timestamps are dropped by _normalize_bars; count them here so
+                # they cannot silently vanish from validation.
+                malformed_ts_count = meta.get("malformed_timestamp_counts", {}).get(sym.upper(), 0)
+
+                row_pre_norm_available = (month not in initial_completed) or state.pre_normalization_metrics_available
+
                 # Observability: count duplicates and malformed rows before deduplication.
                 # Treat non-finite values (inf/-inf/NaN) as malformed and drop them after counting.
                 if not df.empty:
                     df = df.replace([np.inf, -np.inf], np.nan)
-                pre_dedup_rows = len(df)
+                pre_dedup_rows = len(df) + malformed_ts_count
                 pre_dedup_duplicate_bars = int(df.index.duplicated().sum()) if not df.empty else 0
-                malformed_rows = int(df[_OHLCV_COLUMNS].isna().any(axis=1).sum()) if not df.empty else 0
-                duplicate_rate = (pre_dedup_duplicate_bars / pre_dedup_rows * 100) if pre_dedup_rows else 0.0
-                malformed_rate = (malformed_rows / pre_dedup_rows * 100) if pre_dedup_rows else 0.0
+                malformed_ohlc_rows = int(df[_OHLCV_COLUMNS].isna().any(axis=1).sum()) if not df.empty else 0
+                malformed_rows = malformed_ohlc_rows + malformed_ts_count
+                if row_pre_norm_available and pre_dedup_rows:
+                    duplicate_rate = (pre_dedup_duplicate_bars / pre_dedup_rows * 100)
+                    malformed_rate = (malformed_rows / pre_dedup_rows * 100)
+                else:
+                    duplicate_rate = None
+                    malformed_rate = None
 
                 # Deterministic normalization: keep last duplicate and drop malformed rows.
                 df_clean = df[~df.index.duplicated(keep="last")].dropna(subset=_OHLCV_COLUMNS)
                 duplicate_bars_after = int(df_clean.index.duplicated().sum())
 
                 df_filtered, counts = _filter_regular_session(df_clean, calendar)
-                invalid = _detect_invalid_ohlc(df_filtered)
+                invalid = _detect_invalid_ohlc(df_filtered) + malformed_ts_count
                 actual_sessions = df_filtered.index.to_series().dt.date.nunique() if not df_filtered.empty else 0
                 actual_bars = len(df_filtered)
                 missing_bars = max(0, expected_bars - actual_bars)
@@ -1011,12 +1036,12 @@ def run_fetch_ohlcv(
                     returned_symbol=returned,
                     pagination_complete=meta["pagination_complete"],
                     page_count=meta["page_count"],
-                    pre_normalization_metrics_available=True,
-                    pre_dedup_duplicate_bars=pre_dedup_duplicate_bars,
-                    duplicate_bars=duplicate_bars_after,
-                    duplicate_bar_rate_pct=round(duplicate_rate, 4),
-                    malformed_rows=malformed_rows,
-                    malformed_row_rate_pct=round(malformed_rate, 4),
+                    pre_normalization_metrics_available=row_pre_norm_available,
+                    pre_dedup_duplicate_bars=pre_dedup_duplicate_bars if row_pre_norm_available else None,
+                    duplicate_bars=duplicate_bars_after if row_pre_norm_available else None,
+                    duplicate_bar_rate_pct=(round(duplicate_rate, 4) if duplicate_rate is not None else None),
+                    malformed_rows=malformed_rows if row_pre_norm_available else None,
+                    malformed_row_rate_pct=(round(malformed_rate, 4) if malformed_rate is not None else None),
                 )
                 ohlcv_records.append(record.to_dict())
                 split = _split_name_for_month(plan, month)
@@ -1049,12 +1074,12 @@ def run_fetch_ohlcv(
                     pagination_complete=meta["pagination_complete"],
                     rejected=False,
                     rejection_reason="",
-                    pre_normalization_metrics_available=True,
-                    pre_dedup_duplicate_bars=pre_dedup_duplicate_bars,
-                    duplicate_bars=duplicate_bars_after,
-                    duplicate_bar_rate_pct=round(duplicate_rate, 4),
-                    malformed_rows=malformed_rows,
-                    malformed_row_rate_pct=round(malformed_rate, 4),
+                    pre_normalization_metrics_available=row_pre_norm_available,
+                    pre_dedup_duplicate_bars=pre_dedup_duplicate_bars if row_pre_norm_available else None,
+                    duplicate_bars=duplicate_bars_after if row_pre_norm_available else None,
+                    duplicate_bar_rate_pct=(round(duplicate_rate, 4) if duplicate_rate is not None else None),
+                    malformed_rows=malformed_rows if row_pre_norm_available else None,
+                    malformed_row_rate_pct=(round(malformed_rate, 4) if malformed_rate is not None else None),
                 )
                 quality_records.append(quality.to_dict())
 
@@ -1064,6 +1089,11 @@ def run_fetch_ohlcv(
 
     _write_csv(ohlcv_dir / "ohlcv_manifest.csv", ohlcv_records)
     _write_csv(ohlcv_dir / "data_quality.csv", quality_records)
+    # Per-phase counters and pre-normalization metrics are only reconstructable for a fresh run.
+    if not state.per_phase_request_counters_available and not initial_completed:
+        state.per_phase_request_counters_available = True
+    if not state.pre_normalization_metrics_available and not initial_completed:
+        state.pre_normalization_metrics_available = True
     state.phase = "fetch_ohlcv_done"
     save_state(output_dir, state)
 
@@ -1231,33 +1261,39 @@ def run_validate(
     any_invalid = False
     any_inconclusive = False
     any_unverified = False
+    monthly_threshold_breaches = 0
     for month, group in df.groupby("effective_month"):
         total = len(group)
         invalid = int(invalid_mask[group.index].sum())
         unverified = int(unverified_mask[group.index].sum())
-        quality_rejected = int((quality_mask[group.index] & ~invalid_mask[group.index] & ~unverified_mask[group.index]).sum())
-        rejected = invalid + unverified + quality_rejected
+        # Data-quality failures are counted independently of unverified pre-normalization metrics.
+        quality_rejected = int((quality_mask[group.index] & ~invalid_mask[group.index]).sum())
+        # The 5% monthly-rejection gate applies to invalid + data-quality failures only.
+        rejected = invalid + quality_rejected
         rejected_pct = (rejected / total * 100) if total else 0.0
+        breaches = rejected_pct > max_rejected_pct
+        if breaches:
+            monthly_threshold_breaches += 1
         monthly_rejections[str(month)] = {
             "total_symbols": total,
             "invalid_symbols": invalid,
             "unverified_symbols": unverified,
             "data_quality_rejected": quality_rejected,
             "rejected_pct": round(rejected_pct, 4),
-            "breaches_5pct_threshold": rejected_pct > max_rejected_pct,
+            "breaches_5pct_threshold": breaches,
         }
         if invalid > 0:
             any_invalid = True
         if unverified > 0:
             any_unverified = True
-        if rejected_pct > max_rejected_pct:
+        if breaches:
             any_inconclusive = True
 
     total_symbols = int(df.groupby("effective_month").size().sum())
     overall_invalid = int(invalid_mask.sum())
     overall_unverified = int(unverified_mask.sum())
-    overall_quality_rejected = int((quality_mask & ~invalid_mask & ~unverified_mask).sum())
-    overall_rejected = overall_invalid + overall_unverified + overall_quality_rejected
+    overall_quality_rejected = int((quality_mask & ~invalid_mask).sum())
+    overall_rejected = overall_invalid + overall_quality_rejected
     overall_rejected_pct = (overall_rejected / total_symbols * 100) if total_symbols else 0.0
 
     if any_invalid or any_invalid_state:
@@ -1265,9 +1301,23 @@ def run_validate(
         reason = f"Provider/provenance/pagination/symbol-identity/manifest failures in {overall_invalid} symbol-months"
         if any_invalid_state:
             reason += f"; persisted provider errors/cycles/incomplete requests in state (cycles={state.pagination_cycles}, http_errors={state.http_error_count}, incomplete={state.incomplete_requests})"
-    elif any_inconclusive or any_unverified:
+    elif any_inconclusive and any_unverified:
         disposition = "inconclusive"
-        reason = "One or more monthly universes exceeded the 5% data-quality rejection threshold or pre-normalization metrics are unavailable"
+        reason = (
+            f"Pre-normalization metrics (duplicate/malformed) are unavailable for {overall_unverified} of {total_symbols} symbol-months; "
+            f"{monthly_threshold_breaches} monthly universe(s) exceeded the 5% data-quality rejection threshold; "
+            f"{overall_quality_rejected} symbol-month(s) independently failed observed data-quality thresholds"
+        )
+    elif any_unverified:
+        disposition = "inconclusive"
+        reason = (
+            f"Pre-normalization metrics (duplicate/malformed) are unavailable for {overall_unverified} of {total_symbols} symbol-months; "
+            f"{overall_quality_rejected} symbol-month(s) independently failed observed data-quality thresholds (missing/zero-volume); "
+            "no invalid provider/provenance/pagination/symbol-identity/manifest failures"
+        )
+    elif any_inconclusive:
+        disposition = "inconclusive"
+        reason = f"{monthly_threshold_breaches} monthly universe(s) exceeded the 5% data-quality rejection threshold"
     else:
         disposition = "valid"
         reason = f"All monthly universes within thresholds; {overall_quality_rejected} of {total_symbols} symbol-months rejected for data quality"
@@ -1408,11 +1458,13 @@ def run_finalize(
         ranking_timeframe=ranking_info.get("ranking_timeframe", "1D"),
         ranking_feed="sip",
         ranking_timeframe_parity_passed=ranking_info.get("ranking_parity_passed", False),
+        ranking_parity_message=ranking_info.get("ranking_parity_message", ""),
         parity_fallback_used=ranking_info.get("ranking_timeframe", "1D") != plan.liquidity_ranking.get("ranking_timeframe", "1D"),
         data_quality_disposition=validation["disposition"],
         missing_bar_rate_max_pct=validation.get("max_missing_rate_pct") or 0.0,
         zero_volume_rate_max_pct=validation.get("max_zero_volume_rate_pct") or 0.0,
-        duplicate_rate_max_pct=validation.get("max_duplicate_rate_pct") or 0.0,
+        duplicate_rate_max_pct=validation.get("max_duplicate_rate_pct"),
+        malformed_row_rate_max_pct=validation.get("max_malformed_row_rate_pct"),
         symbols_rejected_pct=validation.get("overall_symbols_rejected_pct", 0.0),
         next_assignment="devin/intra-001-c-research-engine",
         per_phase_request_counters_available=state.per_phase_request_counters_available,
@@ -1648,8 +1700,14 @@ def _generate_report(plan: DatasetPlan, decision: DatasetDecision, output_dir: P
     ]
     for m, c in sorted(decision.monthly_stock_counts.items()):
         lines.append(f"- {m}: {c}")
+
+    validation = json.loads((output_dir / "validation_summary.json").read_text(encoding="utf-8"))
+
     def _fmt(value: float | None) -> str:
         return "unavailable" if value is None else str(value)
+
+    def _pct(value: float | None) -> str:
+        return f"{_fmt(value)}%" if value is not None else "unavailable (pre-normalization metrics not recovered)"
 
     lines.extend([
         "",
@@ -1658,16 +1716,17 @@ def _generate_report(plan: DatasetPlan, decision: DatasetDecision, output_dir: P
         f"- Disposition: {decision.data_quality_disposition}",
         f"- Max missing-bar rate: {decision.missing_bar_rate_max_pct}%",
         f"- Max zero-volume rate: {decision.zero_volume_rate_max_pct}%",
-        f"- Max duplicate rate: {(_fmt(decision.duplicate_rate_max_pct) + '%') if decision.pre_normalization_metrics_available else 'unavailable (pre-normalization metrics not recovered)'}",
+        f"- Max duplicate rate: {_pct(decision.duplicate_rate_max_pct)}",
+        f"- Max malformed-row rate: {_pct(decision.malformed_row_rate_max_pct)}",
         f"- Pre-normalization metrics available: {decision.pre_normalization_metrics_available}",
         f"- Symbols rejected for data quality: {decision.symbols_rejected_pct}%",
+        f"- Observed data-quality failures independent of unverified pre-normalization metrics: {validation.get('overall_data_quality_rejected', 0)} symbol-month(s)",
         "",
         "### Monthly rejection summary",
         "",
         "| Month | Total | Invalid | Unverified | Data-quality rejected | Rejected % |",
         "|-------|-------|---------|------------|----------------------|------------|",
     ])
-    validation = json.loads((output_dir / "validation_summary.json").read_text(encoding="utf-8"))
     for month, stats in sorted(validation.get("monthly_rejections", {}).items()):
         lines.append(
             f"| {month} | {stats['total_symbols']} | {stats.get('invalid_symbols', 0)} | "
@@ -1702,6 +1761,7 @@ def _generate_report(plan: DatasetPlan, decision: DatasetDecision, output_dir: P
         "",
         f"- Ranking timeframe: {decision.ranking_timeframe}",
         f"- Ranking parity passed: {decision.ranking_timeframe_parity_passed}",
+        f"- Ranking parity message: {decision.ranking_parity_message}",
         f"- Parity fallback used: {decision.parity_fallback_used}",
         "",
         "## Limitations",

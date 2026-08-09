@@ -489,8 +489,9 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **INTRA-001B live run head:** `ee4b7b897f3768f6fa6608c2fdba28384b9a5d91` (original download); validation and safe bundle recomputed from existing local data without new provider calls
 - **INTRA-001B original safe artifacts (preserved):** `docs/research/artifacts/INTRA-001B-DATASET-V1/2026-08-08-200945/`
 - **INTRA-001B first-corrected safe artifacts (preserved):** `docs/research/artifacts/INTRA-001B-DATASET-V1/2026-08-08-211737/`
-- **INTRA-001B second-corrected safe artifacts:** `docs/research/artifacts/INTRA-001B-DATASET-V1/2026-08-08-225153/`
-- **INTRA-001B dataset disposition:** `inconclusive` — pre-normalization duplicate/malformed metrics unavailable, so the 1% duplicate threshold is unverified; missing-bar and zero-volume thresholds are clean; no provider/provenance/pagination/silent-substitution/manifest failures
+- **INTRA-001B second-corrected safe artifacts (preserved):** `docs/research/artifacts/INTRA-001B-DATASET-V1/2026-08-08-225153/`
+- **INTRA-001B third-corrected safe artifacts:** to be regenerated from existing local data after the current fix round
+- **INTRA-001B dataset disposition:** `inconclusive` — pre-normalization duplicate/malformed metrics unavailable, so the 1% duplicate threshold is unverified; missing-bar and zero-volume thresholds are otherwise clean except for six BKNG symbol-month breaches (Jan 23.2372%, Feb 13.4451%, Mar 12.1326%, Apr 9.9124%, Jul 29.4559%, Nov 11.6059%, all > the locked 5% per-symbol maximum); no provider/provenance/pagination/silent-substitution/manifest failures
 - **INTRA-001B monthly stock counts:** 50 selected stocks per month, 12 months
 - **INTRA-001B fixed ETF stratum:** 13 ETFs per month
 - **INTRA-001B unique selected symbols:** 97 distinct stocks + 13 ETFs
@@ -712,17 +713,15 @@ This is the master backlog for recommendations from the Devin review. Items are 
 The original engineering-foundation and UI-refactor backlog is substantially complete. `SHORT-001` is closed as Completed — Not supported. `INTRA-001B` Alpaca v1/v2 established that Alpaca SIP can supply the five-minute OHLCV contract, and `INTRA-001B-REFERENCE-V4` showed Massive/Polygon is the best available free reference input but did not satisfy the pre-registered strict contract. Gary has approved data-sufficiency amendment v3, which stops provider hunting, accepts Massive/Polygon with conservative exclusions, and locks a one-year 2025 dataset for `INTRA-001`. No V5 reference-provider probe is authorized.
 
 **Remaining non-completed items:**
-- `INTRA-001`: In progress — `INTRA-001-data-sufficiency-amendment-v3` is approved; `INTRA-001B` reference-provider work is complete; snapshot construction is the next assignment.
+- `INTRA-001`: In progress — `INTRA-001-data-sufficiency-amendment-v3` is approved; `INTRA-001B` dataset construction is in progress; `devin/intra-001-c-research-engine` is the next assignment.
 
 **Recommended next work order:**
-1. **`devin/intra-001b-one-year-snapshot`** — Build the 2025 monthly universe and Alpaca SIP five-minute OHLCV manifest under amendment v3.
-2. **`devin/intra-001-c-research-engine`** — Session VWAP, opening-drive state, pullback/reclaim detector, baselines, synthetic tests only.
-3. **`devin/intra-001-d-locked-study`** — Build manifest, run dev/validation, holdout only if gates pass, commit safe artifacts.
-4. **Separate Gary-approved production PR** — Only if all gates pass and methodology remains valid.
+1. **`devin/intra-001-c-research-engine`** — Session VWAP, opening-drive state, pullback/reclaim detector, baselines, synthetic tests only.
+2. **`devin/intra-001-d-locked-study`** — Build manifest, run dev/validation, holdout only if gates pass, commit safe artifacts.
+3. **Separate Gary-approved production PR** — Only if all gates pass and methodology remains valid.
 
 **Recommended next pull request order:**
-1. `devin/best-available-data-governance` (DOC-003 / INTRA-001-DATA-SUFFICIENCY-V3).
-2. `devin/intra-001b-one-year-snapshot` (2025 dataset and manifest infrastructure).
-3. `devin/intra-001-c-research-engine` (research detector and execution engine).
-4. `devin/intra-001-d-locked-study` (locked real-data study).
+1. `devin/intra-001b-one-year-snapshot` (2025 dataset and manifest infrastructure; currently in review).
+2. `devin/intra-001-c-research-engine` (research detector and execution engine).
+3. `devin/intra-001-d-locked-study` (locked real-data study).
 

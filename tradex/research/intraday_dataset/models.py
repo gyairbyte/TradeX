@@ -374,13 +374,16 @@ class DatasetDecision:
     ranking_timeframe: str
     ranking_feed: str
     ranking_timeframe_parity_passed: bool
+    ranking_parity_message: str
     parity_fallback_used: bool
     data_quality_disposition: str
     missing_bar_rate_max_pct: float
     zero_volume_rate_max_pct: float
-    duplicate_rate_max_pct: float
     symbols_rejected_pct: float
     next_assignment: str
+    # Optional nullable data-quality maxima (None when pre-normalization metrics are unavailable).
+    duplicate_rate_max_pct: float | None = None
+    malformed_row_rate_max_pct: float | None = None
     # Optional / derived counters (must follow required fields)
     massive_incomplete_snapshots: int = 0
     alpaca_http_requests: int | None = None
@@ -451,13 +454,15 @@ class DatasetDecision:
             "ranking_timeframe": self.ranking_timeframe,
             "ranking_feed": self.ranking_feed,
             "ranking_timeframe_parity_passed": self.ranking_timeframe_parity_passed,
+            "ranking_parity_message": self.ranking_parity_message,
             "parity_fallback_used": self.parity_fallback_used,
             "data_quality_disposition": self.data_quality_disposition,
             "missing_bar_rate_max_pct": self.missing_bar_rate_max_pct,
             "zero_volume_rate_max_pct": self.zero_volume_rate_max_pct,
-            "duplicate_rate_max_pct": self.duplicate_rate_max_pct,
             "symbols_rejected_pct": self.symbols_rejected_pct,
             "next_assignment": self.next_assignment,
+            "duplicate_rate_max_pct": self.duplicate_rate_max_pct,
+            "malformed_row_rate_max_pct": self.malformed_row_rate_max_pct,
             "per_phase_request_counters_available": self.per_phase_request_counters_available,
             "pre_normalization_metrics_available": self.pre_normalization_metrics_available,
             "production_behavior_changed": self.production_behavior_changed,

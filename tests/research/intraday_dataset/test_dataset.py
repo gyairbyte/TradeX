@@ -794,3 +794,132 @@ def test_validation_hierarchy_invalid_cases(plan, output_dir, monkeypatch):
     assert "persisted provider" in summary["reason"].lower() or "pagination" in summary["reason"].lower()
 
     save_state(output_dir, original_state)
+
+
+def test_data_quality_rejected_not_hidden_by_unverified(plan, output_dir, monkeypatch):
+    """Missing/zero-volume failures must be counted independently of unverified pre-normalization metrics."""
+    _write_fake_reference_snapshots(output_dir, plan)
+    run_plan(plan, output_dir)
+    monkeypatch.setattr("tradex.research.intraday_dataset.dataset.DatasetAlpacaClient", FakeAlpacaClient)
+    run_build_universe(plan, output_dir, "dummy", "dummy")
+    run_fetch_ohlcv(plan, output_dir, "dummy", "dummy")
+    quality_path = output_dir / "ohlcv" / "data_quality.csv"
+    quality = pd.read_csv(quality_path)
+    # Mark all duplicate/malformed metrics unverified.
+    quality["pre_normalization_metrics_available"] = False
+    quality["pre_dedup_duplicate_bars"] = pd.NA
+    quality["duplicate_bars"] = pd.NA
+    quality["duplicate_bar_rate_pct"] = pd.NA
+    quality["malformed_rows"] = pd.NA
+    quality["malformed_row_rate_pct"] = pd.NA
+    # Force one symbol-month to fail the missing-bar threshold.
+    target = quality[(quality["effective_month"] == "2025-01") & (quality["symbol"] == "STOCK000")].index[0]
+    quality.loc[target, "missing_bar_rate_pct"] = 6.0
+    quality.to_csv(quality_path, index=False, lineterminator="\n")
+    summary = run_validate(plan, output_dir)
+    assert summary["monthly_rejections"]["2025-01"]["data_quality_rejected"] >= 1
+    assert summary["monthly_rejections"]["2025-01"]["rejected_pct"] < 100
+    assert summary["overall_data_quality_rejected"] >= 1
+    assert summary["disposition"] == "inconclusive"
+
+
+def test_null_duplicate_rate_preserved_in_decision(plan, output_dir, monkeypatch):
+    """Unavailable duplicate/malformed rates must be null in decision.json, not coerced to 0.0."""
+    _write_fake_reference_snapshots(output_dir, plan)
+    run_plan(plan, output_dir)
+    monkeypatch.setattr("tradex.research.intraday_dataset.dataset.DatasetAlpacaClient", FakeAlpacaClient)
+    run_build_universe(plan, output_dir, "dummy", "dummy")
+    run_fetch_ohlcv(plan, output_dir, "dummy", "dummy")
+    quality_path = output_dir / "ohlcv" / "data_quality.csv"
+    quality = pd.read_csv(quality_path)
+    quality["pre_normalization_metrics_available"] = False
+    quality["duplicate_bar_rate_pct"] = pd.NA
+    quality["malformed_row_rate_pct"] = pd.NA
+    quality.to_csv(quality_path, index=False, lineterminator="\n")
+    run_validate(plan, output_dir)
+    artifact_dir = output_dir / "safe"
+    decision = run_finalize(
+        plan, output_dir, artifact_dir,
+        starting_main_sha="sha", branch="test", live_run_head="head", pre_registration_commit="pre",
+    )
+    assert decision.pre_normalization_metrics_available is False
+    assert decision.duplicate_rate_max_pct is None
+    assert decision.malformed_row_rate_max_pct is None
+    report = next(artifact_dir.glob("*/report.md"))
+    report_text = report.read_text(encoding="utf-8")
+    assert "Max duplicate rate: unavailable" in report_text
+
+
+def test_ranking_parity_failed_for_1day_amendment(plan, output_dir, monkeypatch):
+    """1Day ranking is authorized by amendment; parity is not passed and sensitivity evidence is recorded separately."""
+    _write_fake_reference_snapshots(output_dir, plan)
+    run_plan(plan, output_dir)
+    monkeypatch.setattr("tradex.research.intraday_dataset.dataset.DatasetAlpacaClient", FakeAlpacaClient)
+    run_build_universe(plan, output_dir, "dummy", "dummy")
+    ranking = json.loads((output_dir / "universe" / "ranking_timeframe.json").read_text(encoding="utf-8"))
+    assert ranking["ranking_timeframe"] == "1Day"
+    assert ranking["ranking_parity_passed"] is False
+    assert ranking["amendment_authorized"] is True
+    assert ranking["sensitivity_sample_top50_set_match"] is True
+    assert ranking["sensitivity_sample_absolute_dollar_volume_parity_passed"] is False
+    assert "not equivalent to regular-session-only volume" in ranking["ranking_parity_message"]
+
+
+def test_noop_legacy_resume_preserves_unavailable_counter_flags(plan, output_dir, monkeypatch):
+    """A no-op rerun of a completed legacy state must not flip unavailable request/pre-normalization flags to true."""
+    _write_fake_reference_snapshots(output_dir, plan)
+    run_plan(plan, output_dir)
+    monkeypatch.setattr("tradex.research.intraday_dataset.dataset.DatasetAlpacaClient", FakeAlpacaClient)
+    run_build_universe(plan, output_dir, "dummy", "dummy")
+    run_fetch_ohlcv(plan, output_dir, "dummy", "dummy")
+
+    # Simulate a legacy completed state whose per-phase and pre-normalization counters are unavailable.
+    state = load_state(output_dir)
+    state.per_phase_request_counters_available = False
+    state.pre_normalization_metrics_available = False
+    state.runtime_seconds = None
+    state.universe_built_for_months = [f"2025-{m:02d}" for m in range(1, 13)]
+    state.ohlcv_fetched_for_months = [f"2025-{m:02d}" for m in range(1, 13)]
+    save_state(output_dir, state)
+
+    run_build_universe(plan, output_dir, "dummy", "dummy")
+    run_fetch_ohlcv(plan, output_dir, "dummy", "dummy")
+    state2 = load_state(output_dir)
+    assert state2.per_phase_request_counters_available is False
+    assert state2.pre_normalization_metrics_available is False
+
+
+def test_normalize_bars_counts_malformed_timestamp():
+    """Rows with unparseable timestamps are counted and dropped, not silently lost."""
+    client = DatasetAlpacaClient("dummy", "dummy")
+    bars = [
+        {"t": "not-a-timestamp", "o": 100, "h": 101, "l": 99, "c": 100, "v": 1000},
+        {"t": "2025-01-02T14:30:00Z", "o": 100, "h": 101, "l": 99, "c": 100, "v": 1000},
+    ]
+    df, count = client._normalize_bars(bars)
+    assert count == 1
+    assert len(df) == 1
+    assert df.index[0] == pd.Timestamp("2025-01-02 14:30:00", tz="UTC")
+
+
+class MalformedTimestampClient(FakeAlpacaClient):
+    """Reports one malformed timestamp per symbol so the fetch/validate pipeline fails closed."""
+
+    def get_bars(self, *args, **kwargs):
+        dfs, meta = super().get_bars(*args, **kwargs)
+        meta["malformed_timestamp_counts"] = {sym.upper(): 1 for sym in dfs}
+        return dfs, meta
+
+
+def test_malformed_timestamp_not_silently_dropped(plan, output_dir, monkeypatch):
+    """Malformed timestamps counted by the Alpaca client must surface as invalid rows in validation."""
+    _write_fake_reference_snapshots(output_dir, plan)
+    run_plan(plan, output_dir)
+    monkeypatch.setattr("tradex.research.intraday_dataset.dataset.DatasetAlpacaClient", MalformedTimestampClient)
+    run_build_universe(plan, output_dir, "dummy", "dummy")
+    run_fetch_ohlcv(plan, output_dir, "dummy", "dummy")
+    summary = run_validate(plan, output_dir)
+    assert summary["disposition"] == "invalid"
+    quality = pd.read_csv(output_dir / "ohlcv" / "data_quality.csv")
+    assert (quality["malformed_rows"] >= 1).all()
+    assert (quality["invalid_ohlc_rows"] >= 1).all()

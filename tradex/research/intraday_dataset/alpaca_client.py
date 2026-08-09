@@ -125,25 +125,25 @@ class DatasetAlpacaClient:
     def _normalize_bars(
         self,
         bars: list[dict[str, Any]],
-    ) -> pd.DataFrame:
-        """Convert provider bars to a numeric UTC DataFrame without deduplication or NaN dropping.
+    ) -> tuple[pd.DataFrame, int]:
+        """Convert provider bars to a numeric UTC DataFrame and count malformed timestamps.
 
-        Callers are responsible for counting duplicates/malformed rows and then
-        deduplicating/dropping before storage.
+        Rows with missing or unparseable timestamps are counted and dropped so
+        callers can fail closed; callers are responsible for counting duplicate
+        and malformed OHLCV rows and then deduplicating/dropping before storage.
         """
+        empty = pd.DataFrame(
+            columns=_OHLCV_COLUMNS,
+            index=pd.DatetimeIndex([], name="datetime", tz="UTC"),
+        )
         if not bars:
-            return pd.DataFrame(
-                columns=_OHLCV_COLUMNS,
-                index=pd.DatetimeIndex([], name="datetime", tz="UTC"),
-            )
+            return empty, 0
         df = pd.DataFrame(bars)
         if "t" not in df.columns:
-            return pd.DataFrame(
-                columns=_OHLCV_COLUMNS,
-                index=pd.DatetimeIndex([], name="datetime", tz="UTC"),
-            )
+            return empty, 0
         df = df.rename(columns={"t": "datetime", "o": "open", "h": "high", "l": "low", "c": "close", "v": "volume"})
         df["datetime"] = pd.to_datetime(df["datetime"], utc=True, errors="coerce")
+        malformed_timestamp_count = int(df["datetime"].isna().sum())
         df = df.dropna(subset=["datetime"])
         df = df.set_index("datetime").sort_index()
         for col in _OHLCV_COLUMNS:
@@ -152,7 +152,7 @@ class DatasetAlpacaClient:
         df = df[_OHLCV_COLUMNS]
         for col in _OHLCV_COLUMNS:
             df[col] = pd.to_numeric(df[col], errors="coerce")
-        return df
+        return df, malformed_timestamp_count
 
     def get_bars(
         self,
@@ -238,6 +238,7 @@ class DatasetAlpacaClient:
                     "token_sequence_sha256": _token_sequence_hash(token_hashes),
                     "http_status": 0,
                     "response_symbols": sorted(response_symbols),
+                    "malformed_timestamp_counts": {s.upper(): 0 for s in symbols},
                 }
 
             page_count += 1
@@ -267,6 +268,7 @@ class DatasetAlpacaClient:
                     "http_status": last_status,
                     "error_body": error_body[:500],
                     "response_symbols": sorted(response_symbols),
+                    "malformed_timestamp_counts": {s.upper(): 0 for s in symbols},
                 }
 
             try:
@@ -314,14 +316,18 @@ class DatasetAlpacaClient:
             break
 
         dfs: dict[str, pd.DataFrame] = {}
+        malformed_timestamp_counts: dict[str, int] = {}
         for sym in symbols:
             sym_upper = sym.upper()
-            dfs[sym_upper] = self._normalize_bars(all_bars.get(sym_upper, []))
+            df, malformed_ts_count = self._normalize_bars(all_bars.get(sym_upper, []))
+            dfs[sym_upper] = df
+            malformed_timestamp_counts[sym_upper] = malformed_ts_count
 
         return dfs, {
             "page_count": page_count,
             "logical_calls": 1,
             "http_pages": page_count,
+            "malformed_timestamp_counts": malformed_timestamp_counts,
             "http_attempts": http_attempts,
             "http_429s": http_429s,
             "http_errors": http_errors,
