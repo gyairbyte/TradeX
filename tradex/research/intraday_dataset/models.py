@@ -381,6 +381,9 @@ class DatasetDecision:
     zero_volume_rate_max_pct: float
     symbols_rejected_pct: float
     next_assignment: str
+    # Nullable: the commit that generated this bundle. Distinguishes a recomputed/validated
+    # bundle from the original live provider run head.
+    bundle_generation_head: str | None = None
     # Optional nullable data-quality maxima (None when pre-normalization metrics are unavailable).
     duplicate_rate_max_pct: float | None = None
     malformed_row_rate_max_pct: float | None = None
@@ -461,6 +464,7 @@ class DatasetDecision:
             "zero_volume_rate_max_pct": self.zero_volume_rate_max_pct,
             "symbols_rejected_pct": self.symbols_rejected_pct,
             "next_assignment": self.next_assignment,
+            "bundle_generation_head": self.bundle_generation_head,
             "duplicate_rate_max_pct": self.duplicate_rate_max_pct,
             "malformed_row_rate_max_pct": self.malformed_row_rate_max_pct,
             "per_phase_request_counters_available": self.per_phase_request_counters_available,

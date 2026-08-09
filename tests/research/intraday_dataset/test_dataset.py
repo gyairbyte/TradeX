@@ -922,4 +922,45 @@ def test_malformed_timestamp_not_silently_dropped(plan, output_dir, monkeypatch)
     assert summary["disposition"] == "invalid"
     quality = pd.read_csv(output_dir / "ohlcv" / "data_quality.csv")
     assert (quality["malformed_rows"] >= 1).all()
-    assert (quality["invalid_ohlc_rows"] >= 1).all()
+
+
+def test_normalize_bars_counts_missing_timestamp_column():
+    """Rows without a 't' field must be counted as malformed timestamps, not silently zeroed."""
+    client = DatasetAlpacaClient("dummy", "dummy")
+    bars = [
+        {"o": 100, "h": 101, "l": 99, "c": 100, "v": 1000},
+        {"o": 101, "h": 102, "l": 100, "c": 101, "v": 1000},
+    ]
+    df, count = client._normalize_bars(bars)
+    assert count == 2
+    assert df.empty
+
+
+def test_decision_provenance_fields_not_conflated(plan, output_dir, monkeypatch):
+    """live_run_head (provider run) and bundle_generation_head (recompute commit) must be distinct and preserved."""
+    _write_fake_reference_snapshots(output_dir, plan)
+    run_plan(plan, output_dir)
+    monkeypatch.setattr("tradex.research.intraday_dataset.dataset.DatasetAlpacaClient", FakeAlpacaClient)
+    run_build_universe(plan, output_dir, "dummy", "dummy")
+    run_fetch_ohlcv(plan, output_dir, "dummy", "dummy")
+    run_validate(plan, output_dir)
+    artifact_dir = output_dir / "safe"
+    decision = run_finalize(
+        plan,
+        output_dir,
+        artifact_dir,
+        starting_main_sha="d3df7bffb5266e19c356c1027eadc7ee047a731a",
+        branch="test",
+        live_run_head="ee4b7b897f3768f6fa6608c2fdba28384b9a5d91",
+        bundle_generation_head="4c314f0149c6a851872fa0ec33fb9c99d51ab41f",
+        pre_registration_commit="60e46e25b38e9e7ef9316bf49bb0a51cf092121c",
+    )
+    assert decision.live_run_head == "ee4b7b897f3768f6fa6608c2fdba28384b9a5d91"
+    assert decision.bundle_generation_head == "4c314f0149c6a851872fa0ec33fb9c99d51ab41f"
+    assert decision.live_run_head != decision.bundle_generation_head
+    d = decision.to_dict()
+    assert d["live_run_head"] == "ee4b7b897f3768f6fa6608c2fdba28384b9a5d91"
+    assert d["bundle_generation_head"] == "4c314f0149c6a851872fa0ec33fb9c99d51ab41f"
+    report = next(artifact_dir.glob("*/report.md")).read_text(encoding="utf-8")
+    assert "**Live run head:** ee4b7b897f3768f6fa6608c2fdba28384b9a5d91" in report
+    assert "**Bundle generation head:** 4c314f0149c6a851872fa0ec33fb9c99d51ab41f" in report

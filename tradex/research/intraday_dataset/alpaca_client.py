@@ -140,7 +140,8 @@ class DatasetAlpacaClient:
             return empty, 0
         df = pd.DataFrame(bars)
         if "t" not in df.columns:
-            return empty, 0
+            # Every row is missing its timestamp; count them and fail closed.
+            return empty, len(df)
         df = df.rename(columns={"t": "datetime", "o": "open", "h": "high", "l": "low", "c": "close", "v": "volume"})
         df["datetime"] = pd.to_datetime(df["datetime"], utc=True, errors="coerce")
         malformed_timestamp_count = int(df["datetime"].isna().sum())

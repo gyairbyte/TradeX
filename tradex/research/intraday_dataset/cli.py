@@ -169,6 +169,9 @@ def _cmd_finalize(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 1
+    live_run_head = _resolve_commit(args.live_run_head) if args.live_run_head else head
+    bundle_generation_head = _resolve_commit(args.bundle_generation_head) if args.bundle_generation_head else head
+    starting_main_sha = _resolve_commit(args.starting_main_sha) if args.starting_main_sha else head
     state = load_state(Path(args.output_dir))
     runtime_seconds = state.runtime_seconds
     final_t0 = time.time()
@@ -176,9 +179,10 @@ def _cmd_finalize(args: argparse.Namespace) -> int:
         plan,
         Path(args.output_dir),
         Path(args.artifact_dir),
-        starting_main_sha=args.starting_main_sha or head,
+        starting_main_sha=starting_main_sha,
         branch=_current_branch(),
-        live_run_head=head,
+        live_run_head=live_run_head,
+        bundle_generation_head=bundle_generation_head,
         pre_registration_commit=pre_reg_full,
         runtime_seconds=runtime_seconds,
     )
@@ -214,6 +218,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("finalize", help="Generate safe artifact bundle")
     _add_common(p)
     p.add_argument("--artifact-dir", required=True, help="Repository-relative safe artifact directory")
+    p.add_argument("--live-run-head", default="", help="Commit that performed the original live provider run")
+    p.add_argument("--bundle-generation-head", default="", help="Commit that generated this safe bundle")
     p.set_defaults(func=_cmd_finalize)
 
     return parser
