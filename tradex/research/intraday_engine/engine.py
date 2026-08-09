@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import pandas as pd
 
@@ -34,6 +34,7 @@ class TickerInput:
     meta: TickerMeta
     sessions: list[Session]
     quality_summary: DataQualitySummary | None = None
+    evaluation_session_dates: set[date] | None = None
 
 
 def _primary_scenario(costs: list[CostScenario]) -> CostScenario:
@@ -54,8 +55,11 @@ def _evaluate_ticker_for_scenario(
     baseline_a: list[Signal] = []
     baseline_b: list[Signal] = []
     sessions = sorted(ticker_input.sessions, key=lambda s: s.session_date)
+    eval_dates = ticker_input.evaluation_session_dates
     for i, session in enumerate(sessions):
         prior = sessions[:i]
+        if eval_dates is not None and session.session_date not in eval_dates:
+            continue
         candidate.extend(
             evaluate_candidate_session(
                 ticker_input.ticker,

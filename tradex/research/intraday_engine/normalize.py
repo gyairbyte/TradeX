@@ -196,6 +196,7 @@ def normalize_to_sessions(
         missing_bars=total_missing,
         valid_bars=total_valid,
         sessions=len(sessions),
+        pre_normalization_metrics_available=True,
     )
     return sessions, summary
 
@@ -231,6 +232,8 @@ def evaluate_data_sufficiency(
     - duplicate-bar rate <= 1%
     """
     reasons: list[str] = []
+    if summary.pre_normalization_metrics_available is False:
+        reasons.append("pre_normalization_metrics_unavailable")
     expected = summary.sessions * expected_bars_per_session
     if expected > 0:
         missing_rate = summary.missing_bars / expected

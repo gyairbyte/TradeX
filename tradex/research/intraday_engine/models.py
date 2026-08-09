@@ -273,6 +273,7 @@ class DataQualitySummary:
     missing_bars: int
     valid_bars: int
     sessions: int
+    pre_normalization_metrics_available: bool | None = None
 
 
 def _json_clean(value: Any) -> Any:

@@ -245,6 +245,8 @@ def evaluate_gates(
     if not sample_met:
         disposition = "inconclusive"
         reason = "sample_or_data_sufficiency_minimums_not_met"
+        if sample_reasons:
+            reason += f": {'; '.join(sample_reasons)}"
     elif any(g.passed is None for g in gate_results):
         disposition = "inconclusive"
         reason = "required_gate_not_computable"
