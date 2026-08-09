@@ -494,7 +494,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **INTRA-001B third-corrected safe artifacts (preserved):** `docs/research/artifacts/INTRA-001B-DATASET-V1/2026-08-09-011333/`
 - **INTRA-001B fourth-corrected safe artifacts:** `docs/research/artifacts/INTRA-001B-DATASET-V1/2026-08-09-014844/`
 - **INTRA-001B dataset disposition:** `inconclusive` — pre-normalization duplicate/malformed metrics unavailable, so the 1% duplicate threshold is unverified; missing-bar and zero-volume thresholds are otherwise clean except for six BKNG symbol-month breaches (Jan 23.2372%, Feb 13.4451%, Mar 12.1326%, Apr 9.9124%, Jul 29.4559%, Nov 11.6059%, all > the locked 5% per-symbol maximum); no provider/provenance/pagination/silent-substitution/manifest failures
-- **INTRA-001C branch:** `devin/intra-001c-research-engine`
+- **INTRA-001C branch:** `devin/intra-001c-research-engine` (current head is the branch tip)
 - **INTRA-001C implementation doc:** `docs/research/INTRA-001C-IMPLEMENTATION.md`
 - **INTRA-001C engine package:** `tradex/research/intraday_engine/`
 - **INTRA-001C tests:** `tests/research/intraday_engine/`
