@@ -1,0 +1,11 @@
+strategy,total_signals,executed_trades,rejected_signals,no_signal_count,total_trades,pooled_expectancy,pooled_total_return,overall_maximum_drawdown_pct,median_per_symbol_expectancy,equal_weighted_per_symbol_mean_expectancy,positive_symbol_rate,median_per_symbol_total_return,median_per_symbol_maximum_drawdown_pct,median_per_symbol_profit_factor_order,median_per_symbol_profit_factor_value,trade_count_concentration,net_profit_concentration,absolute_loss_concentration,stock_stratum_trade_count,etf_stratum_trade_count,stock_stratum_pooled_expectancy,etf_stratum_pooled_expectancy,represented_stock_symbols,represented_etf_symbols,rejection_counts,exit_counts,positive_trade_rate,average_holding_minutes,cost_scenario_name,entry_slippage_bps,exit_slippage_bps,entry_commission_bps,exit_commission_bps,month,baseline
+baseline_a,0,0,0,0,0,0.0,0,0.0,,,,,,,,0.0,,,0,0,0.0,0.0,0,0,{},{},,,primary_5bps,5.0,5.0,0.0,0.0,,baseline_a
+baseline_a,0,0,0,0,0,0.0,0,0.0,,,,,,,,0.0,,,0,0,0.0,0.0,0,0,{},{},,,slippage_0bps,0.0,0.0,0.0,0.0,,baseline_a
+baseline_a,0,0,0,0,0,0.0,0,0.0,,,,,,,,0.0,,,0,0,0.0,0.0,0,0,{},{},,,slippage_2.5bps,2.5,2.5,0.0,0.0,,baseline_a
+baseline_a,0,0,0,0,0,0.0,0,0.0,,,,,,,,0.0,,,0,0,0.0,0.0,0,0,{},{},,,slippage_5bps,5.0,5.0,0.0,0.0,,baseline_a
+baseline_a,0,0,0,0,0,0.0,0,0.0,,,,,,,,0.0,,,0,0,0.0,0.0,0,0,{},{},,,slippage_10bps,10.0,10.0,0.0,0.0,,baseline_a
+baseline_b,0,0,0,0,0,0.0,0,0.0,,,,,,,,0.0,,,0,0,0.0,0.0,0,0,{},{},,,primary_5bps,5.0,5.0,0.0,0.0,,baseline_b
+baseline_b,0,0,0,0,0,0.0,0,0.0,,,,,,,,0.0,,,0,0,0.0,0.0,0,0,{},{},,,slippage_0bps,0.0,0.0,0.0,0.0,,baseline_b
+baseline_b,0,0,0,0,0,0.0,0,0.0,,,,,,,,0.0,,,0,0,0.0,0.0,0,0,{},{},,,slippage_2.5bps,2.5,2.5,0.0,0.0,,baseline_b
+baseline_b,0,0,0,0,0,0.0,0,0.0,,,,,,,,0.0,,,0,0,0.0,0.0,0,0,{},{},,,slippage_5bps,5.0,5.0,0.0,0.0,,baseline_b
+baseline_b,0,0,0,0,0,0.0,0,0.0,,,,,,,,0.0,,,0,0,0.0,0.0,0,0,{},{},,,slippage_10bps,10.0,10.0,0.0,0.0,,baseline_b

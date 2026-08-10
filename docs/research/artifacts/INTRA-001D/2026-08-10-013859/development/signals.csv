@@ -1,0 +1,1 @@
+ticker,session_date,strategy,signal_bar_start,signal_time,opening_drive_qualified,score,stop_price,target_price,entry_open,entry_fill,risk_per_share,status,reason,executed,entry_time,entry_bar_start,exit_time,exit_bar_start,raw_exit_price,exit_fill,profit,net_r,exit_type,holding_minutes,opening_gap_pct,fallback_reason,same_bar_ambiguity

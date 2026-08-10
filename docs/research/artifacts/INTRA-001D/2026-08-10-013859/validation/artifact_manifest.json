@@ -1,0 +1,19 @@
+{
+  "files": {
+    "baseline_metrics.csv": "033b05921bdb31e416ed93485a5257daac33e33c06602bbb026199b396dcd118",
+    "candidate_metrics.csv": "54df57c56f301e05e5f4ebc1b6d0e3141ea66f7114b8c00b63868a0ee097da8a",
+    "cost_sensitivity.csv": "5a37d581998ad72d895c5b96d7ba2f1b8892d28ff16ca6f2a6fb34cad97033a0",
+    "data_quality.csv": "33a31ca254f02dac7a2eb3b1ca87c87323a2922922bde440118baadda2ee7a7f",
+    "monthly_comparison.csv": "46436aecfa753b1163dfaabce6bbd66bdc4273a23ef3c559baca7f05ca5c7336",
+    "ohlcv_manifest.csv": "2284f8e162d86171237b5b3bb320273c8ec41fb18c4c63424caf271115551a37",
+    "report.md": "6a24ef0b5b81b69bf9e83ec298667337dce28970596a74f07897c1b4a020e4e7",
+    "session_features.csv": "c06555a79f15410af14c13145bb61c2d605f9bd2bf05c1ee5af3a03b6c45dae0",
+    "signals.csv": "7e7dd00ee9ce097fb510e7247edf6fa0992da690ccfebadd2b0cf69a2dd3daf5",
+    "spec.lock.json": "09394d038928433529ec4c5f5ba5ff0392c764d5b59f1af71d95f4f3957c0464",
+    "study.json": "12450fcc1ac0d33e04ab5d20fc69cfa54df43f44473d39cc195d4a4b783b0158",
+    "ticker_comparison.csv": "cd2262d0d3386342d93409ac369c63b6f09f72caf27aad37730d67131e1acd14",
+    "trades.csv": "edd1cc1d277b507609f9d1d2447d6e2cc10990c1056fed28ba5a1303ec51ccb3",
+    "universe_manifest.csv": "fff803bf27bc82066e2dbf494233d0a9c97f7dcf1ee20c560eda8cffbc66cc97"
+  },
+  "schema_version": "1.0"
+}
