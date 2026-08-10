@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import pandas as pd
 
@@ -34,6 +34,8 @@ class TickerInput:
     meta: TickerMeta
     sessions: list[Session]
     quality_summary: DataQualitySummary | None = None
+    evaluation_session_dates: set[date] | None = None
+    parquet_loaded: bool = False
 
 
 def _primary_scenario(costs: list[CostScenario]) -> CostScenario:
@@ -54,8 +56,11 @@ def _evaluate_ticker_for_scenario(
     baseline_a: list[Signal] = []
     baseline_b: list[Signal] = []
     sessions = sorted(ticker_input.sessions, key=lambda s: s.session_date)
+    eval_dates = ticker_input.evaluation_session_dates
     for i, session in enumerate(sessions):
         prior = sessions[:i]
+        if eval_dates is not None and session.session_date not in eval_dates:
+            continue
         candidate.extend(
             evaluate_candidate_session(
                 ticker_input.ticker,
@@ -91,6 +96,9 @@ def _evaluate_ticker_for_scenario(
 
 def _collect_quality_results(
     ticker_inputs: list[TickerInput],
+    *,
+    extra_sufficiency_fail: bool = False,
+    extra_sufficiency_reasons: list[str] | None = None,
 ) -> tuple[bool, bool, list[str], list[str], list[DataQualitySummary]]:
     """Evaluate data contract and sufficiency across all ticker inputs.
 
@@ -98,10 +106,15 @@ def _collect_quality_results(
     sufficiency_reasons, quality_summaries)``.  Contract violations make a study
     ``invalid``; sufficiency shortfalls make it ``inconclusive``.
     """
+    from collections import Counter
+
     summaries = [ti.quality_summary for ti in ticker_inputs if ti.quality_summary is not None]
     contract_reasons: list[str] = []
-    sufficiency_reasons: list[str] = []
-    any_sufficiency_fail = False
+    sufficiency_counter: Counter[str] = Counter()
+    any_sufficiency_fail = extra_sufficiency_fail
+    if extra_sufficiency_reasons:
+        for r in extra_sufficiency_reasons:
+            sufficiency_counter[r] += 1
     for summary in summaries:
         valid, reasons = evaluate_data_contract(summary)
         if not valid:
@@ -109,8 +122,13 @@ def _collect_quality_results(
         suff_ok, suff_reasons = evaluate_data_sufficiency(summary)
         if not suff_ok:
             any_sufficiency_fail = True
-            sufficiency_reasons.extend(f"{summary.ticker}:{r}" for r in suff_reasons)
+            for r in suff_reasons:
+                sufficiency_counter[r] += 1
     data_contract_valid = not contract_reasons
+    sufficiency_reasons = [
+        f"{reason} ({count} symbol-month{'s' if count != 1 else ''})"
+        for reason, count in sorted(sufficiency_counter.items())
+    ]
     return data_contract_valid, not any_sufficiency_fail, contract_reasons, sufficiency_reasons, summaries
 
 
@@ -122,6 +140,8 @@ def run_study(
     evidence_eligible: bool = False,
     generated_at: datetime | None = None,
     sample_minimums: SampleMinimums | None = None,
+    extra_sufficiency_fail: bool = False,
+    extra_sufficiency_reasons: list[str] | None = None,
 ) -> StudyResult:
     """Run the full engine across all tickers, sessions, and cost scenarios."""
     # Synthetic artifacts are never evidence-eligible.
@@ -130,9 +150,9 @@ def run_study(
 
     if generated_at is None:
         generated_at = datetime(2025, 1, 1, tzinfo=UTC)
-        generated_at_fixed = True
-    else:
         generated_at_fixed = False
+    else:
+        generated_at_fixed = True
 
     # Combine the explicit primary scenario with all sensitivity scenarios.
     all_scenarios = [spec.primary_cost_scenario()] + spec.all_cost_scenarios()
@@ -199,7 +219,11 @@ def run_study(
         contract_reasons,
         sufficiency_reasons,
         quality_summaries,
-    ) = _collect_quality_results(ticker_inputs)
+    ) = _collect_quality_results(
+        ticker_inputs,
+        extra_sufficiency_fail=extra_sufficiency_fail,
+        extra_sufficiency_reasons=extra_sufficiency_reasons,
+    )
 
     outcome = evaluate_gates(
         candidate_5bps,

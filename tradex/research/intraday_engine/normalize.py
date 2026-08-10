@@ -196,6 +196,7 @@ def normalize_to_sessions(
         missing_bars=total_missing,
         valid_bars=total_valid,
         sessions=len(sessions),
+        pre_normalization_metrics_available=True,
     )
     return sessions, summary
 
@@ -215,6 +216,14 @@ def evaluate_data_contract(summary: DataQualitySummary) -> tuple[bool, list[str]
         reasons.append(f"invalid_ohlc_rows={summary.invalid_ohlc_rows}")
     if summary.non_finite_rows > 0:
         reasons.append(f"non_finite_rows={summary.non_finite_rows}")
+    if summary.symbol_mismatch:
+        reasons.append(
+            f"symbol_mismatch requested={summary.requested_symbol} returned={summary.returned_symbol}"
+        )
+    if summary.file_sha256_match is False:
+        reasons.append("file_sha256_mismatch")
+    if summary.pagination_complete is False:
+        reasons.append("pagination_incomplete")
     return (not reasons), reasons
 
 
@@ -231,6 +240,8 @@ def evaluate_data_sufficiency(
     - duplicate-bar rate <= 1%
     """
     reasons: list[str] = []
+    if summary.pre_normalization_metrics_available is False:
+        reasons.append("pre_normalization_metrics_unavailable")
     expected = summary.sessions * expected_bars_per_session
     if expected > 0:
         missing_rate = summary.missing_bars / expected

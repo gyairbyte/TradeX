@@ -1,0 +1,694 @@
+"""Deterministic CLI for the INTRA-001D locked real-data study."""
+from __future__ import annotations
+
+import argparse
+import fcntl
+import json
+import os
+import sys
+from contextlib import contextmanager
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+from tradex.research.intraday_engine.models import as_json_dict
+from tradex.research.intraday_engine.spec import IntradaySpec, SpecError, load_spec
+
+from .artifacts import (
+    write_artifact_bundle,
+    write_run_artifact_manifest_and_checksums,
+)
+from .freeze import (
+    FreezeError,
+    freeze_evaluation_code,
+    freeze_record_to_dict,
+    verify_frozen_evaluation_code,
+)
+from .manifest import (
+    ManifestError,
+    SymbolMonth,
+    load_dataset_plan,
+    sha256_of_file,
+    verify_dataset_bundle,
+    verify_dataset_integrity,
+    verify_dataset_plan_linkage,
+)
+from .split import SplitName
+from .study import StudyError, run_split
+
+
+class StudyCLIError(Exception):
+    """User-facing error from the CLI."""
+
+
+def _safe_json_dump(data: Any, path: Path) -> None:
+    """Write JSON with no NaN/Infinity and stable key ordering."""
+    path.write_text(
+        json.dumps(
+            data,
+            indent=2,
+            allow_nan=False,
+            ensure_ascii=False,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[3]
+
+
+def _default_spec_path() -> Path:
+    return _repo_root() / "docs/research/specs/INTRA-001-v1.json"
+
+
+def _default_dataset_plan_path(dataset_root: Path) -> Path:
+    return dataset_root / "dataset_plan.lock.json"
+
+
+def _verify_spec_and_amendment_hashes(
+    spec_path: Path,
+    dataset_plan: dict[str, Any],
+    repo_root: Path,
+) -> Path:
+    """Fail closed if the actual spec or amendment files do not match the dataset plan.
+
+    The dataset plan records the expected SHA-256 hashes of the locked spec and the
+    data-sufficiency amendment.  We compare the on-disk files (the spec that was
+    passed to the CLI and the amendment referenced by the plan) to those hashes so
+    that a structurally valid plan cannot be paired with a tampered strategy or
+    amendment.
+    """
+    spec_actual = sha256_of_file(spec_path)
+    spec_expected = dataset_plan.get("original_strategy_spec", {}).get("sha256")
+    if spec_expected is None:
+        raise StudyCLIError("dataset plan missing original_strategy_spec.sha256")
+    if spec_actual != spec_expected:
+        raise StudyCLIError(
+            f"spec file hash mismatch: expected {spec_expected}, got {spec_actual}"
+        )
+
+    amendment_relative = dataset_plan.get("data_sufficiency_amendment", {}).get("path")
+    amendment_expected = dataset_plan.get("data_sufficiency_amendment", {}).get("sha256")
+    if amendment_relative is None or amendment_expected is None:
+        raise StudyCLIError(
+            "dataset plan missing data_sufficiency_amendment path and/or sha256"
+        )
+    amendment_path = (repo_root / amendment_relative).resolve()
+    if not amendment_path.is_file():
+        raise StudyCLIError(f"amendment file not found: {amendment_path}")
+    amendment_actual = sha256_of_file(amendment_path)
+    if amendment_actual != amendment_expected:
+        raise StudyCLIError(
+            f"amendment file hash mismatch: expected {amendment_expected}, got {amendment_actual}"
+        )
+    return amendment_path
+
+
+def _parse_generated_at(value: str) -> datetime:
+    return datetime.fromisoformat(value).replace(tzinfo=UTC)
+
+
+def _dataset_id_from_root(dataset_root: Path) -> str:
+    state_path = dataset_root / "dataset_state.json"
+    if state_path.is_file():
+        data = json.loads(state_path.read_text(encoding="utf-8"))
+        return data.get("dataset_id", "INTRA-001B-DATASET-V1")
+    return "INTRA-001B-DATASET-V1"
+
+
+def _manifest_records_for_symbol_months(symbol_months: list[SymbolMonth]) -> list[dict[str, Any]]:
+    """Convert SymbolMonth objects into the dict form expected by verify_dataset_integrity."""
+    return [
+        {
+            "manifest_id": sm.manifest_id,
+            "symbol": sm.symbol,
+            "effective_month": sm.effective_month,
+            "relative_path": sm.relative_path,
+            "sha256": sm.sha256,
+            "file_size_bytes": sm.file_size_bytes,
+        }
+        for sm in symbol_months
+    ]
+
+
+def _hash_verify_split(
+    dataset_root: Path,
+    symbol_months: list[SymbolMonth],
+) -> int:
+    """Hash-verify all symbol-month files for a split and return the count verified."""
+    records = _manifest_records_for_symbol_months(symbol_months)
+    verify_dataset_integrity(dataset_root, records)
+    return len(records)
+
+
+def _holdout_status_path(output_dir: Path) -> Path:
+    return output_dir / "holdout_status.json"
+
+
+def _read_holdout_status(output_dir: Path) -> dict[str, Any] | None:
+    p = _holdout_status_path(output_dir)
+    if p.is_file():
+        return json.loads(p.read_text(encoding="utf-8"))
+    return None
+
+
+def _write_holdout_status(
+    output_dir: Path,
+    *,
+    status: str,
+    access_count: int,
+    parse_count: int,
+    reason: str,
+    files_hash_verified_count: int,
+) -> None:
+    data = {
+        "schema_version": "1.0",
+        "status": status,
+        "access_count": access_count,
+        "parse_count": parse_count,
+        "reason": reason,
+        "files_hash_verified_count": files_hash_verified_count,
+    }
+    p = _holdout_status_path(output_dir)
+    p.write_text(
+        json.dumps(data, indent=2, allow_nan=False, sort_keys=True),
+        encoding="utf-8",
+    )
+
+
+def _default_holdout_ledger_dir() -> Path:
+    return Path.home() / ".tradex" / "research" / "holdout_ledger"
+
+
+def _holdout_ledger_path(dataset_id: str) -> Path:
+    """Return the canonical persistent ledger path for a dataset.
+
+    The ledger is keyed by ``dataset_id`` only; the full frozen identity (evaluation
+    code SHA, spec, amendment, and dataset plan SHAs) is stored inside the ledger
+    file.  This guarantees that changing any of those identities cannot be used to
+    bypass the one-official-holdout rule, and the ledger lives outside the artifact
+    ``--output`` directory.
+    """
+    return _default_holdout_ledger_dir() / dataset_id / "ledger.json"
+
+
+@contextmanager
+def _holdout_ledger_lock(ledger_path: Path):
+    """Acquire an exclusive, non-blocking advisory lock on the holdout ledger.
+
+    The lock is held for the lifetime of the context.  A second concurrent process
+    attempting to reserve the same dataset receives a ``StudyCLIError`` instead of
+    racing the read-check-write sequence.
+    """
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(str(ledger_path), os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (OSError, BlockingIOError) as e:
+        os.close(fd)
+        raise StudyCLIError(f"holdout ledger is already reserved: {ledger_path}") from e
+    try:
+        yield fd
+    finally:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
+
+
+def _ledger_identity(freeze_record: Any) -> dict[str, str]:
+    """Return the frozen identity components stored in the ledger."""
+    return {
+        "evaluation_code_sha": freeze_record.evaluation_code_sha,
+        "spec_sha256": freeze_record.spec_sha256,
+        "amendment_sha256": freeze_record.amendment_sha256 or "",
+        "dataset_plan_sha256": freeze_record.dataset_plan_sha256 or "",
+    }
+
+
+def _read_holdout_ledger(ledger_path: Path) -> dict[str, Any] | None:
+    if ledger_path.is_file() and ledger_path.stat().st_size > 0:
+        return json.loads(ledger_path.read_text(encoding="utf-8"))
+    return None
+
+
+def _atomic_json_dump(data: Any, path: Path) -> None:
+    """Write JSON atomically so a crash mid-write cannot leave a partial ledger."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.parent / f".{path.name}.tmp"
+    _safe_json_dump(data, tmp)
+    os.replace(tmp, path)
+
+
+def _write_holdout_ledger(
+    ledger_path: Path,
+    *,
+    dataset_id: str,
+    freeze_record: Any,
+    status: str,
+    access_count: int,
+    parse_count: int,
+    files_hash_verified_count: int,
+) -> None:
+    data = {
+        "schema_version": "1.0",
+        "dataset_id": dataset_id,
+        **_ledger_identity(freeze_record),
+        "status": status,
+        "access_count": access_count,
+        "parse_count": parse_count,
+        "files_hash_verified_count": files_hash_verified_count,
+        "recorded_at": datetime.now(UTC).isoformat(),
+    }
+    _atomic_json_dump(data, ledger_path)
+
+
+def _write_split_artifacts(
+    result: Any,
+    split: SplitName,
+    output_dir: Path,
+    spec: IntradaySpec,
+    *,
+    dataset_id: str,
+    freeze_record: Any | None,
+    manifest_lock_path: Path,
+    universe_manifest_path: Path,
+    data_quality_path: Path,
+    spec_path: Path,
+    holdout_status: str,
+    production_promotion_eligible: bool,
+    monthly_rejection_summary: dict[str, dict[str, Any]] | None,
+    runtime_seconds: float | None = None,
+) -> dict[str, Any]:
+    """Run the artifact writer for one split and return a split summary."""
+    split_dir = output_dir / split
+    write_artifact_bundle(
+        result,
+        split_dir,
+        split=split,
+        dataset_id=dataset_id,
+        spec=spec,
+        freeze_record=freeze_record,
+        manifest_lock_path=manifest_lock_path,
+        universe_manifest_path=universe_manifest_path,
+        data_quality_path=data_quality_path,
+        spec_path=spec_path,
+        holdout_status=holdout_status,
+        production_promotion_eligible=production_promotion_eligible,
+        monthly_rejection_summary=monthly_rejection_summary,
+        runtime_seconds=runtime_seconds,
+    )
+    return {
+        "split": split,
+        "disposition": result.outcome.disposition if result.outcome else None,
+        "reason": result.outcome.reason if result.outcome else None,
+        "evidence_eligible": result.evidence_eligible,
+        "path": split,
+    }
+
+
+def _cmd_run(args: argparse.Namespace) -> int:
+    dataset_root = Path(args.dataset_root).expanduser().resolve()
+    output_dir = Path(args.output).expanduser().resolve()
+    if args.manifest_lock:
+        manifest_lock_path = Path(args.manifest_lock).expanduser().resolve()
+    else:
+        json_lock = dataset_root / "manifest.lock.json"
+        csv_lock = dataset_root / "ohlcv" / "ohlcv_manifest.csv"
+        manifest_lock_path = json_lock if json_lock.is_file() else csv_lock
+    spec_path = Path(args.spec).expanduser().resolve()
+
+    spec, _ = load_spec(spec_path)
+    generated_at = _parse_generated_at(args.generated_at)
+
+    universe_manifest_path = dataset_root / "universe" / "universe_manifest.csv"
+    data_quality_path = dataset_root / "ohlcv" / "data_quality.csv"
+    dataset_plan_path = _default_dataset_plan_path(dataset_root)
+    repo_root = _repo_root()
+
+    # Phase 0: verify the dataset plan lock links to the committed locked plan and
+    # the required spec/amendment SHAs.  The dataset lock may be a build-output
+    # variant of the committed plan, so we verify linkage structurally rather than
+    # demanding byte-identical files.
+    committed_plan_path = repo_root / "docs/research/specs/INTRA-001B-dataset-v1.json"
+    if not committed_plan_path.is_file():
+        raise StudyCLIError("committed INTRA-001B-dataset-v1.json not found")
+    dataset_plan_sha = verify_dataset_plan_linkage(dataset_plan_path, committed_plan_path)
+    dataset_plan = load_dataset_plan(dataset_plan_path)
+
+    # Fail closed if the CLI-supplied spec or the referenced amendment file has been
+    # tampered with, even if the dataset plan's reference strings still match.
+    _verify_spec_and_amendment_hashes(spec_path, dataset_plan, repo_root)
+    amendment_sha = dataset_plan.get("data_sufficiency_amendment", {}).get("sha256")
+
+    # Phase 1: verify the entire locked dataset bundle (set equality, identity,
+    # path containment, split labels, provider contract flags) and file hashes.
+    verified = verify_dataset_bundle(dataset_root, expected_count=args.expected_symbol_months)
+    verify_dataset_integrity(
+        dataset_root,
+        _manifest_records_for_symbol_months(verified.symbol_months),
+    )
+
+    # Holdout files are hash-verified before validation, regardless of whether
+    # validation later permits parsing them.
+    holdout_symbol_months = verified.by_split.get("holdout", [])
+    holdout_files_hash_verified_count = _hash_verify_split(
+        dataset_root, holdout_symbol_months
+    )
+
+    dataset_id = _dataset_id_from_root(dataset_root)
+
+    # Phase 2: development diagnostics (not evidence-eligible).
+    dev_symbol_months = verified.by_split.get("development", [])
+    dev_result, _, dev_monthly = run_split(
+        dataset_root,
+        "development",
+        spec,
+        generated_at,
+        symbol_months=dev_symbol_months,
+        evidence_eligible=False,
+    )
+    dev_result.evidence_eligible = False
+    dev_summary = _write_split_artifacts(
+        dev_result,
+        "development",
+        output_dir,
+        spec,
+        dataset_id=dataset_id,
+        freeze_record=None,
+        manifest_lock_path=manifest_lock_path,
+        universe_manifest_path=universe_manifest_path,
+        data_quality_path=data_quality_path,
+        spec_path=spec_path,
+        holdout_status="gated_by_validation_disposition",
+        production_promotion_eligible=False,
+        monthly_rejection_summary=dev_monthly,
+        runtime_seconds=None,
+    )
+
+    # Phase 3: freeze evaluation code.  A dirty tracked worktree aborts validation
+    # and holdout because the frozen-code guarantee cannot be made.  We pin the
+    # freeze timestamp to the fixed ``generated_at`` so repeated runs with the same
+    # inputs produce byte-identical artifacts.
+    freeze_record = freeze_evaluation_code(
+        repo_root,
+        spec.sha256,
+        amendment_sha256=amendment_sha,
+        dataset_plan_sha256=dataset_plan_sha,
+        frozen_at=generated_at,
+    )
+    if not freeze_record.repository_clean:
+        raise StudyCLIError(
+            "evaluation-code worktree is not clean; validation and holdout aborted"
+        )
+    verify_frozen_evaluation_code(repo_root, freeze_record)
+
+    # Phase 4: validation.
+    val_symbol_months = verified.by_split.get("validation", [])
+    val_result, _, val_monthly = run_split(
+        dataset_root,
+        "validation",
+        spec,
+        generated_at,
+        symbol_months=val_symbol_months,
+        evidence_eligible=True,
+    )
+    val_result.evidence_eligible = (
+        val_result.outcome is not None and val_result.outcome.disposition == "supported"
+    )
+
+    # Phase 5: holdout firewall.
+    # The ledger file is protected by an exclusive advisory lock for the entire
+    # holdout decision.  This prevents two concurrent invocations from both seeing
+    # an empty ledger and parsing holdout twice.
+    holdout_result = None
+    holdout_monthly = None
+    holdout_access_count = 0
+    holdout_parse_count = 0
+    holdout_disposition = None
+    holdout_status = "gated_by_validation_disposition"
+
+    ledger_path = _holdout_ledger_path(dataset_id)
+
+    def _ledger_identity_matches(ledger: dict[str, Any]) -> bool:
+        return (
+            ledger.get("evaluation_code_sha") == freeze_record.evaluation_code_sha
+            and ledger.get("spec_sha256") == freeze_record.spec_sha256
+            and ledger.get("amendment_sha256") == (freeze_record.amendment_sha256 or "")
+            and ledger.get("dataset_plan_sha256") == (freeze_record.dataset_plan_sha256 or "")
+        )
+
+    def _raise_if_ledger_blocks(ledger: dict[str, Any] | None) -> None:
+        if not ledger:
+            return
+        if not _ledger_identity_matches(ledger):
+            raise StudyCLIError(
+                f"holdout ledger identity mismatch at {ledger_path}; "
+                "cannot rerun with changed freeze/spec/manifest identity"
+            )
+        status = ledger.get("status")
+        if status in ("started", "completed", "not_run"):
+            raise StudyCLIError(
+                f"holdout already attempted (status={status}) in persistent ledger "
+                f"{ledger_path}; cannot rerun"
+            )
+
+    with _holdout_ledger_lock(ledger_path):
+        existing_ledger = _read_holdout_ledger(ledger_path)
+        _raise_if_ledger_blocks(existing_ledger)
+
+        if val_result.outcome is None or val_result.outcome.disposition != "supported":
+            holdout_status = (
+                f"not_run_validation_{val_result.outcome.disposition if val_result.outcome else 'none'}"
+            )
+            # Hash verification of holdout files is an access; parse count remains zero.
+            holdout_access_count = holdout_files_hash_verified_count
+            holdout_parse_count = 0
+            _write_holdout_status(
+                output_dir,
+                status="not_run",
+                access_count=holdout_access_count,
+                parse_count=holdout_parse_count,
+                reason=holdout_status,
+                files_hash_verified_count=holdout_files_hash_verified_count,
+            )
+            _write_holdout_ledger(
+                ledger_path,
+                dataset_id=dataset_id,
+                freeze_record=freeze_record,
+                status="not_run",
+                access_count=holdout_access_count,
+                parse_count=holdout_parse_count,
+                files_hash_verified_count=holdout_files_hash_verified_count,
+            )
+        else:
+            # Record a started tombstone before any holdout Parquet is deserialized.
+            # A crash during parsing leaves this tombstone in place while the lock is
+            # released on process exit, blocking any rerun.
+            _write_holdout_ledger(
+                ledger_path,
+                dataset_id=dataset_id,
+                freeze_record=freeze_record,
+                status="started",
+                access_count=0,
+                parse_count=0,
+                files_hash_verified_count=holdout_files_hash_verified_count,
+            )
+            verify_frozen_evaluation_code(repo_root, freeze_record)
+            holdout_symbol_months = verified.by_split.get("holdout", [])
+            holdout_result, holdout_ticker_inputs, holdout_monthly = run_split(
+                dataset_root,
+                "holdout",
+                spec,
+                generated_at,
+                symbol_months=holdout_symbol_months,
+                evidence_eligible=True,
+            )
+            holdout_result.evidence_eligible = (
+                holdout_result.outcome is not None
+                and holdout_result.outcome.disposition == "supported"
+            )
+            holdout_disposition = holdout_result.outcome.disposition if holdout_result.outcome else None
+            holdout_access_count = len(holdout_symbol_months)
+            holdout_parse_count = sum(1 for ti in holdout_ticker_inputs if ti.parquet_loaded)
+            holdout_status = f"completed_disposition_{holdout_disposition}"
+            _write_holdout_status(
+                output_dir,
+                status="completed",
+                access_count=holdout_access_count,
+                parse_count=holdout_parse_count,
+                reason=holdout_status,
+                files_hash_verified_count=holdout_files_hash_verified_count,
+            )
+            _write_holdout_ledger(
+                ledger_path,
+                dataset_id=dataset_id,
+                freeze_record=freeze_record,
+                status="completed",
+                access_count=holdout_access_count,
+                parse_count=holdout_parse_count,
+                files_hash_verified_count=holdout_files_hash_verified_count,
+            )
+
+    production_promotion_eligible = (
+        val_result.outcome is not None
+        and val_result.outcome.disposition == "supported"
+        and holdout_result is not None
+        and holdout_result.outcome is not None
+        and holdout_result.outcome.disposition == "supported"
+        and freeze_record.repository_clean
+    )
+
+    final_disposition = (
+        holdout_result.outcome.disposition
+        if holdout_result and holdout_result.outcome
+        else (val_result.outcome.disposition if val_result.outcome else None)
+    )
+
+    # Validation report is written only after the holdout decision is final so it
+    # can accurately lead with holdout status and production eligibility.
+    val_summary = _write_split_artifacts(
+        val_result,
+        "validation",
+        output_dir,
+        spec,
+        dataset_id=dataset_id,
+        freeze_record=freeze_record,
+        manifest_lock_path=manifest_lock_path,
+        universe_manifest_path=universe_manifest_path,
+        data_quality_path=data_quality_path,
+        spec_path=spec_path,
+        holdout_status=holdout_status,
+        production_promotion_eligible=production_promotion_eligible,
+        monthly_rejection_summary=val_monthly,
+        runtime_seconds=None,
+    )
+
+    holdout_summary: dict[str, Any] = {
+        "split": "holdout",
+        "disposition": holdout_disposition,
+        "reason": holdout_status,
+        "evidence_eligible": (
+            holdout_result.evidence_eligible if holdout_result else False
+        ),
+        "path": "holdout" if holdout_result else None,
+        "access_count": holdout_access_count,
+        "parse_count": holdout_parse_count,
+    }
+
+    if holdout_result is not None:
+        _write_split_artifacts(
+            holdout_result,
+            "holdout",
+            output_dir,
+            spec,
+            dataset_id=dataset_id,
+            freeze_record=freeze_record,
+            manifest_lock_path=manifest_lock_path,
+            universe_manifest_path=universe_manifest_path,
+            data_quality_path=data_quality_path,
+            spec_path=spec_path,
+            holdout_status=holdout_status,
+            production_promotion_eligible=production_promotion_eligible,
+            monthly_rejection_summary=holdout_monthly,
+            runtime_seconds=None,
+        )
+
+    # Operational timing is intentionally omitted from the artifact bundle so that
+    # fixed inputs plus a fixed generated_at produce byte-identical safe artifacts.
+    summary = {
+        "study_id": "INTRA-001D",
+        "generated_at": generated_at.isoformat(),
+        "spec_sha256": spec.sha256,
+        "dataset_id": dataset_id,
+        "dataset_plan_sha256": dataset_plan_sha,
+        "manifest_lock_sha256": verified.manifest_sha256,
+        "freeze": freeze_record_to_dict(freeze_record),
+        "freeze_verification_seconds": None,
+        "holdout": {
+            "status": holdout_status,
+            "access_count": holdout_access_count,
+            "parse_count": holdout_parse_count,
+            "files_hash_verified_count": holdout_files_hash_verified_count,
+        },
+        "splits": [dev_summary, val_summary, holdout_summary],
+        "final_disposition": final_disposition,
+        "production_promotion_eligible": production_promotion_eligible,
+        "no_provider_calls": True,
+        "runtime_seconds": None,
+    }
+    _safe_json_dump(summary, output_dir / "study_summary.json")
+    print(json.dumps(as_json_dict(summary), indent=2, allow_nan=False))
+
+    write_run_artifact_manifest_and_checksums(output_dir)
+    return 0
+
+
+def _cmd_freeze(args: argparse.Namespace) -> int:
+    repo_root = _repo_root()
+    spec_path = Path(args.spec).expanduser().resolve()
+    spec, _ = load_spec(spec_path)
+    record = freeze_evaluation_code(repo_root, spec.sha256)
+    out = Path(args.output).expanduser().resolve() if args.output else repo_root / ".intra001d_freeze.json"
+    _safe_json_dump(freeze_record_to_dict(record), out)
+    print(json.dumps(freeze_record_to_dict(record), indent=2))
+    return 0
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="python -m tradex.research.intraday_study",
+        description="Run the locked INTRA-001D real-data intraday study.",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    run_parser = sub.add_parser("run", help="Run the full dev/val/holdout pipeline.")
+    run_parser.add_argument("--dataset-root", required=True, help="Root of INTRA-001B-DATASET-V1.")
+    run_parser.add_argument("--output", required=True, help="Output directory for safe artifacts.")
+    run_parser.add_argument(
+        "--manifest-lock",
+        default=None,
+        help="Path to manifest.lock.json or ohlcv_manifest.csv. Defaults to dataset_root/manifest.lock.json if present, otherwise dataset_root/ohlcv/ohlcv_manifest.csv.",
+    )
+    run_parser.add_argument(
+        "--spec",
+        default=str(_default_spec_path()),
+        help="Path to INTRA-001-v1.json.",
+    )
+    run_parser.add_argument(
+        "--generated-at",
+        required=True,
+        help="Fixed UTC timestamp in ISO 8601 format (e.g., 2026-08-01T00:00:00+00:00).",
+    )
+    run_parser.add_argument(
+        "--expected-symbol-months",
+        type=int,
+        default=756,
+        help="Expected number of symbol-months in the verified dataset bundle.",
+    )
+
+    freeze_parser = sub.add_parser("freeze", help="Record evaluation-code freeze only.")
+    freeze_parser.add_argument("--spec", default=str(_default_spec_path()))
+    freeze_parser.add_argument("--output", help="Path to write freeze record JSON.")
+
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+    try:
+        if args.command == "run":
+            return _cmd_run(args)
+        if args.command == "freeze":
+            return _cmd_freeze(args)
+    except (StudyCLIError, FreezeError, SpecError, ManifestError, StudyError) as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

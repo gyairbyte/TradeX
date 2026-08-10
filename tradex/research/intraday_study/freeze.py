@@ -1,0 +1,160 @@
+"""Record evaluation-code freeze state before validation/holdout."""
+from __future__ import annotations
+
+import hashlib
+import json
+import subprocess
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+
+class FreezeError(Exception):
+    """Raised when the evaluation code cannot be frozen or verified."""
+
+
+@dataclass(frozen=True)
+class FreezeRecord:
+    """Immutable record of the evaluation code used for a study."""
+
+    evaluation_code_sha: str
+    repository_clean: bool
+    frozen_at: datetime
+    spec_sha256: str
+    amendment_sha256: str | None
+    dataset_plan_sha256: str | None
+    evaluation_files: dict[str, str]
+
+
+def _git(*args: str, cwd: Path | None = None) -> str:
+    cmd = ["git", *args]
+    result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        raise FreezeError(f"git {' '.join(args)} failed: {result.stderr.strip()}")
+    return result.stdout.strip()
+
+
+def _clean_worktree(repo_root: Path) -> bool:
+    """Return True if no tracked files have uncommitted changes."""
+    try:
+        status = _git("status", "--porcelain", "--untracked-files=no", cwd=repo_root)
+        return status == ""
+    except FreezeError:
+        return False
+
+
+def _evaluation_file_paths(repo_root: Path) -> list[str]:
+    """Return tracked files that constitute the locked evaluation code."""
+    pathspecs = [
+        "tradex/research/intraday_engine/",
+        "tradex/research/intraday_study/",
+        "tests/research/intraday_engine/",
+        "tests/research/intraday_study/",
+        "docs/research/specs/INTRA-001-v1.json",
+        "docs/research/specs/INTRA-001B-dataset-v1.json",
+        "docs/research/specs/INTRA-001-data-sufficiency-amendment-v3.json",
+        "docs/research/INTRA-001-SPEC.md",
+        "docs/research/INTRA-001-DATA-SUFFICIENCY-AMENDMENT-V3.md",
+        "docs/research/INTRA-001B-DATASET-V1-1DAY-AMENDMENT.md",
+        "docs/research/INTRA-001C-IMPLEMENTATION.md",
+        "docs/research/INTRA-001D-IMPLEMENTATION.md",
+    ]
+    out = _git("ls-files", "--", *pathspecs, cwd=repo_root)
+    return [line for line in out.splitlines() if line]
+
+
+def sha256_of_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _hash_evaluation_files(repo_root: Path) -> dict[str, str]:
+    digests: dict[str, str] = {}
+    for rel in _evaluation_file_paths(repo_root):
+        p = repo_root / rel
+        if p.is_file():
+            digests[rel] = sha256_of_file(p)
+    return digests
+
+
+def freeze_evaluation_code(
+    repo_root: Path,
+    spec_sha256: str,
+    *,
+    amendment_sha256: str | None = None,
+    dataset_plan_sha256: str | None = None,
+    frozen_at: datetime | None = None,
+) -> FreezeRecord:
+    """Record the current git HEAD and evaluation-code file hashes."""
+    repo_root = Path(repo_root).expanduser().resolve()
+    head = _git("rev-parse", "HEAD", cwd=repo_root)
+    if not head:
+        raise FreezeError("cannot determine git HEAD")
+    clean = _clean_worktree(repo_root)
+    evaluation_files = _hash_evaluation_files(repo_root)
+    return FreezeRecord(
+        evaluation_code_sha=head,
+        repository_clean=clean,
+        frozen_at=frozen_at if frozen_at is not None else datetime.now(UTC),
+        spec_sha256=spec_sha256,
+        amendment_sha256=amendment_sha256,
+        dataset_plan_sha256=dataset_plan_sha256,
+        evaluation_files=evaluation_files,
+    )
+
+
+def verify_frozen_evaluation_code(
+    repo_root: Path,
+    record: FreezeRecord,
+) -> None:
+    """Verify the current git HEAD, worktree cleanliness, and evaluation-file hashes.
+
+    Raises FreezeError on any mismatch so validation/holdout cannot proceed with
+    drifted code.
+    """
+    repo_root = Path(repo_root).expanduser().resolve()
+    head = _git("rev-parse", "HEAD", cwd=repo_root)
+    if head != record.evaluation_code_sha:
+        raise FreezeError(
+            f"evaluation-code HEAD mismatch: frozen {record.evaluation_code_sha}, current {head}"
+        )
+    if not _clean_worktree(repo_root):
+        raise FreezeError("evaluation-code worktree is not clean (tracked files changed)")
+    for rel, expected_sha in (record.evaluation_files or {}).items():
+        p = repo_root / rel
+        if not p.is_file():
+            raise FreezeError(f"frozen evaluation file missing: {rel}")
+        actual = sha256_of_file(p)
+        if actual != expected_sha:
+            raise FreezeError(
+                f"frozen evaluation file hash mismatch for {rel}: expected {expected_sha}, got {actual}"
+            )
+
+
+def freeze_record_to_dict(record: FreezeRecord) -> dict[str, Any]:
+    return {
+        "evaluation_code_sha": record.evaluation_code_sha,
+        "repository_clean": record.repository_clean,
+        "frozen_at": record.frozen_at.isoformat(),
+        "spec_sha256": record.spec_sha256,
+        "amendment_sha256": record.amendment_sha256,
+        "dataset_plan_sha256": record.dataset_plan_sha256,
+        "evaluation_files": record.evaluation_files,
+    }
+
+
+def load_freeze_record(path: Path) -> FreezeRecord:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return FreezeRecord(
+        evaluation_code_sha=data["evaluation_code_sha"],
+        repository_clean=data["repository_clean"],
+        frozen_at=datetime.fromisoformat(data["frozen_at"]),
+        spec_sha256=data["spec_sha256"],
+        amendment_sha256=data.get("amendment_sha256"),
+        dataset_plan_sha256=data.get("dataset_plan_sha256"),
+        evaluation_files=data.get("evaluation_files", {}),
+    )
