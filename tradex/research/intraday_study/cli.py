@@ -311,7 +311,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         universe_manifest_path=universe_manifest_path,
         data_quality_path=data_quality_path,
         spec_path=spec_path,
-        holdout_status="not_yet_determined",
+        holdout_status="gated_by_validation_disposition",
         production_promotion_eligible=False,
         monthly_rejection_summary=dev_monthly,
         runtime_seconds=dev_runtime,
@@ -367,11 +367,14 @@ def _cmd_run(args: argparse.Namespace) -> int:
         holdout_status = (
             f"not_run_validation_{val_result.outcome.disposition if val_result.outcome else 'none'}"
         )
+        # Hash verification of holdout files is an access; parse count remains zero.
+        holdout_access_count = holdout_files_hash_verified_count
+        holdout_parse_count = 0
         _write_holdout_status(
             output_dir,
             status="not_run",
-            access_count=0,
-            parse_count=0,
+            access_count=holdout_access_count,
+            parse_count=holdout_parse_count,
             reason=holdout_status,
             files_hash_verified_count=holdout_files_hash_verified_count,
         )
