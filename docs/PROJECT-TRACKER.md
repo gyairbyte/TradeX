@@ -512,12 +512,12 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **INTRA-001C holdout protection:** Engine operates on purely synthetic tickers (`SYNTH-STK-*`, `SYNTH-ETF-*`) and writes only to a user-supplied output directory; it never downloads, reads, or evaluates real symbols
 - **INTRA-001D branch:** `devin/intra-001-d-locked-study`
 - **INTRA-001D starting main SHA:** `a7249f2f1ebf5230947c6fa601cbb1634365f25e`
-- **INTRA-001D evaluation-code freeze SHA:** `1065a28df388cb213b82c7e2d91c67ee52571070`
-- **INTRA-001D safe artifacts:** `docs/research/artifacts/INTRA-001D/2026-08-09-220502/`
-- **INTRA-001D development outcome:** `inconclusive` — candidate executed trades=232, below the locked `executed_candidate_trades_min=300`; ETF stratum trades=32, below the locked `etf_stratum_trades_min=75`; `pre_normalization_metrics_unavailable` on all 378 symbol-months; six BKNG months exceed the 5% missing-bar threshold
-- **INTRA-001D validation outcome:** `inconclusive` — candidate executed trades=103, below 300; stock stratum trades=95, below 100; ETF stratum trades=8, below 75; `pre_normalization_metrics_unavailable` on all 189 symbol-months; one BKNG month exceeds the 5% missing-bar threshold
-- **INTRA-001D holdout access status:** Not parsed — validation disposition was not `supported`; holdout files received only hash-only integrity checks
-- **INTRA-001D final disposition:** `inconclusive`
+- **INTRA-001D evaluation-code freeze SHA:** `b974d916800f540de9bcd84c79d1546f85d574b1` (clean tracked commit used to run development/validation)
+- **INTRA-001D safe artifacts:** `docs/research/artifacts/INTRA-001D/2026-08-10-013859/`
+- **INTRA-001D development outcome:** `inconclusive` — `pre_normalization_metrics_unavailable` on all 378 symbol-months, so no symbol-month is eligible to signal or trade; candidate executed trades=0, below the locked `executed_candidate_trades_min=300`; represented stock symbols=0; ETF stratum trades=0; six BKNG months exceed the 5% missing-bar threshold (Jan 23.2372%, Feb 13.4451%, Mar 12.1326%, Apr 9.9124%, plus validation Jul and holdout Nov)
+- **INTRA-001D validation outcome:** `inconclusive` — `pre_normalization_metrics_unavailable` on all 189 symbol-months, so no symbol-month is eligible to signal or trade; candidate executed trades=0, below 300; stock stratum trades=0; ETF stratum trades=0; one BKNG month (Jul) exceeds the 5% missing-bar threshold
+- **INTRA-001D holdout access status:** Not parsed — validation disposition was not `supported`; holdout files received hash-only integrity checks for all 189 holdout symbol-months before validation; zero holdout OHLCV parses occurred
+- **INTRA-001D final disposition:** `inconclusive`; `production_promotion_eligible=false`; all 756 symbol-months are data-quality rejected, 750 for `pre_normalization_metrics_unavailable` and 6 BKNG for `missing_bar_rate; pre_normalization_metrics_unavailable`
 - **INTRA-001D production-promotion eligible:** `false`
 - **INTRA-001D dataset:** `INTRA-001B-DATASET-V1` private snapshot at `~/.tradex/research/INTRA-001B-DATASET-V1/` (not committed)
 - **INTRA-001D provider calls:** 0
