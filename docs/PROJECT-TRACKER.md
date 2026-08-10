@@ -510,9 +510,10 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Ranking formula:** `session_dollar_volume = Alpaca SIP 1Day close * Alpaca SIP 1Day volume`; median over prior 20 complete XNYS sessions; 1Day volume accepted as a total-liquidity proxy that includes pre/post-market activity
 - **Holdout protection:** OHLCV bars downloaded and validated; no VWAP, signals, entries, exits, returns, metrics, or holdout-performance inspected for real data; synthetic engine does not access the locked INTRA-001B real-data directory
 - **INTRA-001C holdout protection:** Engine operates on purely synthetic tickers (`SYNTH-STK-*`, `SYNTH-ETF-*`) and writes only to a user-supplied output directory; it never downloads, reads, or evaluates real symbols
-- **INTRA-001D branch:** `devin/intra-001-d-locked-study`
+- **INTRA-001D branch:** `devin/intra-001-d-locked-study` (current head `c30f5dac5c6399628cdba5e70b640dacee35e26c`)
 - **INTRA-001D starting main SHA:** `a7249f2f1ebf5230947c6fa601cbb1634365f25e`
 - **INTRA-001D evaluation-code freeze SHA:** `b974d916800f540de9bcd84c79d1546f85d574b1` (clean tracked commit used to run development/validation)
+- **INTRA-001D branch head after review fixes:** `c30f5dac5c6399628cdba5e70b640dacee35e26c`
 - **INTRA-001D safe artifacts:** `docs/research/artifacts/INTRA-001D/2026-08-10-013859/`
 - **INTRA-001D development outcome:** `inconclusive` — `pre_normalization_metrics_unavailable` on all 378 symbol-months, so no symbol-month is eligible to signal or trade; candidate executed trades=0, below the locked `executed_candidate_trades_min=300`; represented stock symbols=0; ETF stratum trades=0; six BKNG months exceed the 5% missing-bar threshold (Jan 23.2372%, Feb 13.4451%, Mar 12.1326%, Apr 9.9124%, plus validation Jul and holdout Nov)
 - **INTRA-001D validation outcome:** `inconclusive` — `pre_normalization_metrics_unavailable` on all 189 symbol-months, so no symbol-month is eligible to signal or trade; candidate executed trades=0, below 300; stock stratum trades=0; ETF stratum trades=0; one BKNG month (Jul) exceeds the 5% missing-bar threshold
