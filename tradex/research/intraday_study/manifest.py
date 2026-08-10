@@ -253,14 +253,21 @@ def verify_dataset_bundle(
     data_quality_path = root / ohlcv_subdir / "data_quality.csv"
     universe_path = root / universe_subdir / "universe_manifest.csv"
 
-    for p in [manifest_path, ohlcv_manifest_path, data_quality_path, universe_path]:
+    for p in [ohlcv_manifest_path, data_quality_path, universe_path]:
         if not p.is_file():
             raise ManifestError(f"required dataset file not found: {p}")
 
-    manifest_lock = _read_json(manifest_path)
-    manifest_records = manifest_lock.get("files", [])
-    if not isinstance(manifest_records, list):
-        raise ManifestError("manifest.lock.json 'files' must be a list")
+    if manifest_path.is_file():
+        manifest_lock = _read_json(manifest_path)
+        manifest_records = manifest_lock.get("files", [])
+        if not isinstance(manifest_records, list):
+            raise ManifestError("manifest.lock.json 'files' must be a list")
+    else:
+        # The canonical ohlcv_manifest.csv serves as the lock file when no separate
+        # manifest.lock.json is present in the dataset snapshot.
+        manifest_path = ohlcv_manifest_path
+        manifest_df = load_ohlcv_manifest(manifest_path)
+        manifest_records = manifest_df.to_dict("records")
 
     ohlcv_df = load_ohlcv_manifest(ohlcv_manifest_path)
     dq_df = load_data_quality(data_quality_path)

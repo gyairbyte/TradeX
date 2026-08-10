@@ -184,7 +184,12 @@ def _cmd_run(args: argparse.Namespace) -> int:
     start_time = time.perf_counter()
     dataset_root = Path(args.dataset_root).expanduser().resolve()
     output_dir = Path(args.output).expanduser().resolve()
-    manifest_lock_path = Path(args.manifest_lock).expanduser().resolve()
+    if args.manifest_lock:
+        manifest_lock_path = Path(args.manifest_lock).expanduser().resolve()
+    else:
+        json_lock = dataset_root / "manifest.lock.json"
+        csv_lock = dataset_root / "ohlcv" / "ohlcv_manifest.csv"
+        manifest_lock_path = json_lock if json_lock.is_file() else csv_lock
     spec_path = Path(args.spec).expanduser().resolve()
 
     spec, _ = load_spec(spec_path)
@@ -452,8 +457,8 @@ def _build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--output", required=True, help="Output directory for safe artifacts.")
     run_parser.add_argument(
         "--manifest-lock",
-        default=str(_repo_root() / "docs/research/artifacts/INTRA-001B-DATASET-V1/2026-08-09-014844/manifest.lock.json"),
-        help="Path to manifest.lock.json.",
+        default=None,
+        help="Path to manifest.lock.json or ohlcv_manifest.csv. Defaults to dataset_root/manifest.lock.json if present, otherwise dataset_root/ohlcv/ohlcv_manifest.csv.",
     )
     run_parser.add_argument(
         "--spec",
