@@ -65,21 +65,28 @@ def _build_meta_from_universe(
         median_dv = _float_or_none(universe_row.get("median_prior_20_dollar_volume"))
         included = _bool_or_false(universe_row.get("included"))
 
-    # Any data-quality rejection disables trading for that symbol-month.  Provider
-    # contract failures (symbol mismatch, pagination incomplete, hash mismatch) are
-    # also fatal to eligibility; the engine's contract checks surface them as
-    # ``invalid`` reasons.  Pre-normalization unavailability is a data-sufficiency
-    # gate and is surfaced at the split level.
+    # Observed data-quality rejections (e.g. missing_bar_rate) and provider contract
+    # failures (symbol mismatch, pagination incomplete, hash mismatch) disable trading
+    # for that symbol-month.  Pre-normalization unavailability is a global evidence
+    # limitation that keeps the split disposition `inconclusive`; it does not, by
+    # itself, make the symbol-month ineligible.
     rejected = False
     contract_fail = False
     if data_quality_row is not None:
-        rejected = _bool_or_false(data_quality_row.get("rejected"))
         if _bool_or_false(data_quality_row.get("symbol_mismatch")):
             contract_fail = True
         if _bool_or_false(data_quality_row.get("pagination_complete")) is False:
             contract_fail = True
         if _bool_or_false(data_quality_row.get("file_sha256_match")) is False:
             contract_fail = True
+
+        if _bool_or_false(data_quality_row.get("rejected")):
+            reason_text = _clean_str(data_quality_row.get("rejection_reason"))
+            reasons = [r.strip().lower() for r in reason_text.split(";") if r.strip()]
+            non_pre_norm = [
+                r for r in reasons if r != "pre_normalization_metrics_unavailable"
+            ]
+            rejected = bool(non_pre_norm)
 
     return TickerMeta(
         ticker=symbol,
@@ -249,6 +256,7 @@ def load_symbol_month(
                 sessions=sessions,
                 quality_summary=summary,
                 evaluation_session_dates=eval_dates,
+                parquet_loaded=True,
             )
         except NormalizationError as e:
             raise LoaderError(f"normalization failed for {symbol}/{month}: {e}") from e

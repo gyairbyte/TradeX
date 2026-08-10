@@ -25,6 +25,20 @@ class StudyError(Exception):
     """Raised when a study cannot be run or a required gate is violated."""
 
 
+def _clean_str(value: Any) -> str:
+    if pd.isna(value) or value is None:
+        return ""
+    return str(value)
+
+
+def _bool_or_false(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.lower() == "true"
+    return bool(value)
+
+
 def _lookup_universe_row(
     universe_df: pd.DataFrame,
     symbol: str,
@@ -52,28 +66,54 @@ def _lookup_data_quality_row(
 
 
 def _is_rejected_for_data_quality(row: pd.Series) -> bool:
-    """Return True when a data_quality row represents a rejected symbol-month."""
-    return (
-        str(row.get("rejected")).lower() == "true"
-        or str(row.get("symbol_mismatch")).lower() == "true"
-        or str(row.get("file_sha256_match")).lower() == "false"
-        or str(row.get("pagination_complete")).lower() == "false"
-    )
+    """Return True when a data_quality row has an observed contract/threshold rejection.
+
+    `pre_normalization_metrics_unavailable` is a global evidence limitation that keeps
+    the split-level disposition `inconclusive`; it does not, by itself, disable a
+    symbol-month from trading. Observed threshold failures (e.g. `missing_bar_rate`)
+    and provider-contract failures still disable the symbol-month.
+    """
+    # Provider-contract failures are always fatal.
+    if _bool_or_false(row.get("symbol_mismatch")):
+        return True
+    if str(row.get("file_sha256_match")).lower() == "false":
+        return True
+    if str(row.get("pagination_complete")).lower() == "false":
+        return True
+
+    rejected = str(row.get("rejected")).lower() == "true"
+    if not rejected:
+        return False
+
+    reason_text = _clean_str(row.get("rejection_reason"))
+    reasons = [r.strip().lower() for r in reason_text.split(";") if r.strip()]
+    # If the only recorded reason is the unverified pre-normalization condition, the
+    # row is not an observed data-quality rejection.
+    non_pre_norm = [r for r in reasons if r != "pre_normalization_metrics_unavailable"]
+    return bool(non_pre_norm)
 
 
 def compute_monthly_rejection_summary(
     data_quality_df: pd.DataFrame,
+    split: SplitName | None = None,
 ) -> dict[str, dict[str, Any]]:
-    """Return per-effective-month rejected counts, percentages, and per-split counts."""
+    """Return per-effective-month rejected counts, percentages, and per-split counts.
+
+    If ``split`` is provided, the summary is computed only over rows belonging to
+    that split, so each split's report reflects its own monthly universe.
+    """
+    df = data_quality_df
+    if split is not None:
+        df = df[df["split"] == split]
     summary: dict[str, dict[str, Any]] = {}
-    for month, group in data_quality_df.groupby("effective_month"):
+    for month, group in df.groupby("effective_month"):
         total = len(group)
         rejected_rows = [row for _, row in group.iterrows() if _is_rejected_for_data_quality(row)]
         rejected = len(rejected_rows)
         by_split: dict[str, int] = {}
         for row in rejected_rows:
-            split = str(row.get("split")) if not pd.isna(row.get("split")) else "unknown"
-            by_split[split] = by_split.get(split, 0) + 1
+            row_split = str(row.get("split")) if not pd.isna(row.get("split")) else "unknown"
+            by_split[row_split] = by_split.get(row_split, 0) + 1
         summary[month] = {
             "total": total,
             "rejected": rejected,
@@ -151,7 +191,7 @@ def run_split(
     if symbol_months is None:
         symbol_months = verified.by_split.get(split, [])
 
-    monthly_rejection_summary = compute_monthly_rejection_summary(verified.data_quality)
+    monthly_rejection_summary = compute_monthly_rejection_summary(verified.data_quality, split=split)
     extra_fail, extra_reasons = _monthly_sufficiency_failures(monthly_rejection_summary)
 
     ticker_inputs = load_ticker_inputs_for_split(

@@ -657,9 +657,16 @@ def _supported_study_result(spec: IntradaySpec, generated_at: datetime) -> Study
 
 
 def test_cli_holdout_runs_once_and_blocks_rerun_for_supported_validation(
-    synthetic_dataset, tmp_path, spec: IntradaySpec, monkeypatch, capsys
+    synthetic_split_dataset, tmp_path, spec: IntradaySpec, monkeypatch, capsys
 ):
-    """When validation is supported, holdout runs exactly once and reruns are refused."""
+    """When validation is supported, holdout runs exactly once and reruns are refused.
+
+    The validation split is mocked to ``supported`` so the holdout gate opens, but
+    the holdout split uses the real ``run_split`` and therefore real Parquet
+    deserialization. Parse count is measured from ``TickerInput.parquet_loaded``,
+    and a persistent ledger blocks a rerun even when the output directory changes.
+    """
+    from tradex.research.intraday_study import cli as cli_module
     from tradex.research.intraday_study.freeze import FreezeRecord
 
     clean_record = FreezeRecord(
@@ -681,46 +688,60 @@ def test_cli_holdout_runs_once_and_blocks_rerun_for_supported_validation(
     )
 
     generated_at = datetime(2026, 8, 1, tzinfo=UTC)
+    real_run_split = cli_module.run_split
 
-    def _fake_run_split(*args, **kwargs):
-        return _supported_study_result(spec, generated_at), [], {}
+    def _run_split_wrapper(*args, **kwargs):
+        split_name = kwargs.get("split") or args[1]
+        if split_name == "validation":
+            return _supported_study_result(spec, generated_at), [], {}
+        return real_run_split(*args, **kwargs)
 
     monkeypatch.setattr(
         "tradex.research.intraday_study.cli.run_split",
-        _fake_run_split,
+        _run_split_wrapper,
     )
 
+    ledger_dir = tmp_path / "ledger"
     out_dir = tmp_path / "cli-out"
     args = [
         "run",
         "--dataset-root",
-        str(synthetic_dataset),
+        str(synthetic_split_dataset),
         "--output",
         str(out_dir),
         "--generated-at",
         "2026-08-01T00:00:00+00:00",
         "--manifest-lock",
-        str(synthetic_dataset / "manifest.lock.json"),
+        str(synthetic_split_dataset / "manifest.lock.json"),
         "--spec",
         str(spec.path),
         "--expected-symbol-months",
-        "3",
+        "9",
+        "--holdout-ledger-dir",
+        str(ledger_dir),
     ]
     assert main(args) == 0
 
     holdout_status = json.loads((out_dir / "holdout_status.json").read_text(encoding="utf-8"))
     assert holdout_status["status"] == "completed"
-    assert holdout_status["access_count"] == 1
-    assert holdout_status["parse_count"] == 1
+    assert holdout_status["access_count"] == 3
+    assert holdout_status["parse_count"] == 3
 
     summary = json.loads((out_dir / "study_summary.json").read_text(encoding="utf-8"))
-    assert summary["final_disposition"] == "supported"
-    assert summary["production_promotion_eligible"] is True
-    assert summary["holdout"]["access_count"] == 1
-    assert summary["holdout"]["parse_count"] == 1
+    assert summary["holdout"]["access_count"] == 3
+    assert summary["holdout"]["parse_count"] == 3
+    ledger = json.loads(
+        next(iter(ledger_dir.rglob("*.json"))).read_text(encoding="utf-8")
+    )
+    assert ledger["status"] == "completed"
+    assert ledger["parse_count"] == 3
 
-    # A second run in the same output directory must be refused because holdout
-    # has already been completed.
-    assert main(args) == 1
+    # A second run with a different output directory must still be refused because
+    # the persistent ledger already records a completed holdout.
+    out_dir2 = tmp_path / "cli-out-2"
+    args2 = [
+        a if a != str(out_dir) else str(out_dir2) for a in args
+    ]
+    assert main(args2) == 1
     captured = capsys.readouterr()
     assert "holdout already completed" in captured.err

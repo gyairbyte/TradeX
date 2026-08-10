@@ -171,29 +171,34 @@ def _universe_row(
     }
 
 
-def _build_dataset(tmp_path: Path, n_sessions: int = 42, effective_month: str = "2025-02"):
-    """Create a minimal, deterministic dataset root in tmp_path."""
-    spec, _ = load_spec(SPEC_PATH)
-    # 2 stocks + 1 ETF over Jan-Feb so the last month has warmup history.
-    inputs = generate_synthetic_inputs(
-        spec,
-        seed=42,
-        n_stock_tickers=2,
-        n_etf_tickers=1,
-        n_sessions=n_sessions,
-        start_date=date(2025, 1, 2),
-    )
-
+def _append_month(
+    tmp_path: Path,
+    spec,
+    effective_month: str,
+    start_date: date,
+    pit_date: str,
+    seed: int = 42,
+) -> list:
+    """Generate one month of synthetic data and append it to an existing dataset root."""
     (tmp_path / "ohlcv").mkdir(parents=True, exist_ok=True)
     (tmp_path / "universe").mkdir(parents=True, exist_ok=True)
 
-    manifest_records = []
-    dq_rows = []
-    universe_rows = []
+    inputs = generate_synthetic_inputs(
+        spec,
+        seed=seed,
+        n_stock_tickers=2,
+        n_etf_tickers=1,
+        n_sessions=42,
+        start_date=start_date,
+    )
 
     from tradex.research.intraday_study.split import split_for_effective_month
 
     split = split_for_effective_month(effective_month)
+    manifest_records = []
+    dq_rows = []
+    universe_rows = []
+
     for i, ti in enumerate(inputs):
         rel = _write_ticker_parquet(tmp_path, ti, effective_month)
         file_path = tmp_path / "ohlcv" / rel
@@ -203,8 +208,13 @@ def _build_dataset(tmp_path: Path, n_sessions: int = 42, effective_month: str = 
         file_size = file_path.stat().st_size
         manifest_records.append(_manifest_row(ti, rel, effective_month, sha, file_size, file_path))
         dq_rows.append(_data_quality_row(ti, effective_month, split, rel, sha))
-        universe_rows.append(_universe_row(ti, effective_month, "2025-01-31", i + 1))
+        universe_rows.append(_universe_row(ti, effective_month, pit_date, i + 1))
 
+    return inputs, manifest_records, dq_rows, universe_rows
+
+
+def _write_dataset_files(tmp_path: Path, manifest_records: list, dq_rows: list, universe_rows: list) -> None:
+    """Write the canonical CSV/JSON files for a dataset root."""
     # manifest.lock.json
     lock = {"schema_version": "1.0", "files": manifest_records}
     (tmp_path / "manifest.lock.json").write_text(
@@ -240,6 +250,19 @@ def _build_dataset(tmp_path: Path, n_sessions: int = 42, effective_month: str = 
             encoding="utf-8",
         )
 
+
+def _build_dataset(tmp_path: Path, n_sessions: int = 42, effective_month: str = "2025-02"):
+    """Create a minimal, deterministic dataset root in tmp_path."""
+    spec, _ = load_spec(SPEC_PATH)
+    inputs, manifest_records, dq_rows, universe_rows = _append_month(
+        tmp_path,
+        spec,
+        effective_month=effective_month,
+        start_date=date(2025, 1, 2),
+        pit_date="2025-01-31",
+        seed=42,
+    )
+    _write_dataset_files(tmp_path, manifest_records, dq_rows, universe_rows)
     return inputs, spec
 
 
@@ -248,6 +271,32 @@ def synthetic_dataset(tmp_path_factory):
     """A temporary dataset root with 2 stocks + 1 ETF for the development split."""
     tmp_path = tmp_path_factory.mktemp("intra001d-dataset")
     _build_dataset(tmp_path)
+    return tmp_path
+
+
+@pytest.fixture
+def synthetic_split_dataset(tmp_path_factory):
+    """A temporary dataset root with 2 stocks + 1 ETF across dev/val/holdout months."""
+    tmp_path = tmp_path_factory.mktemp("intra001d-split-dataset")
+    spec, _ = load_spec(SPEC_PATH)
+    months = [
+        ("2025-02", date(2025, 1, 2), "2025-01-31"),
+        ("2025-08", date(2025, 7, 1), "2025-07-31"),
+        ("2025-12", date(2025, 11, 3), "2025-11-30"),
+    ]
+    all_manifest: list = []
+    all_dq: list = []
+    all_universe: list = []
+    all_inputs: list = []
+    for effective_month, start_date, pit_date in months:
+        inputs, manifest_records, dq_rows, universe_rows = _append_month(
+            tmp_path, spec, effective_month, start_date, pit_date, seed=42
+        )
+        all_inputs.extend(inputs)
+        all_manifest.extend(manifest_records)
+        all_dq.extend(dq_rows)
+        all_universe.extend(universe_rows)
+    _write_dataset_files(tmp_path, all_manifest, all_dq, all_universe)
     return tmp_path
 
 

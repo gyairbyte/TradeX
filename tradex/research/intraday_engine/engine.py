@@ -35,6 +35,7 @@ class TickerInput:
     sessions: list[Session]
     quality_summary: DataQualitySummary | None = None
     evaluation_session_dates: set[date] | None = None
+    parquet_loaded: bool = False
 
 
 def _primary_scenario(costs: list[CostScenario]) -> CostScenario:

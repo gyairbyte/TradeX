@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 import time
@@ -133,6 +134,65 @@ def _write_holdout_status(
         json.dumps(data, indent=2, allow_nan=False, sort_keys=True),
         encoding="utf-8",
     )
+
+
+def _default_holdout_ledger_dir() -> Path:
+    return Path.home() / ".tradex" / "research" / "holdout_ledger"
+
+
+def _holdout_ledger_path(
+    dataset_id: str,
+    freeze_record: Any,
+    ledger_dir: Path | None = None,
+) -> Path:
+    """Return a persistent ledger path keyed by dataset and frozen code identity.
+
+    The ledger lives outside the artifact output directory so changing ``--output``
+    cannot bypass the one-and-only holdout rule.
+    """
+    d = Path(ledger_dir).expanduser().resolve() if ledger_dir else _default_holdout_ledger_dir()
+    key = (
+        f"{dataset_id}:"
+        f"{freeze_record.evaluation_code_sha}:"
+        f"{freeze_record.spec_sha256}:"
+        f"{freeze_record.amendment_sha256 or ''}:"
+        f"{freeze_record.dataset_plan_sha256 or ''}"
+    )
+    filename = hashlib.sha256(key.encode()).hexdigest() + ".json"
+    return d / dataset_id / filename
+
+
+def _read_holdout_ledger(ledger_path: Path) -> dict[str, Any] | None:
+    if ledger_path.is_file():
+        return json.loads(ledger_path.read_text(encoding="utf-8"))
+    return None
+
+
+def _write_holdout_ledger(
+    ledger_path: Path,
+    *,
+    dataset_id: str,
+    freeze_record: Any,
+    status: str,
+    access_count: int,
+    parse_count: int,
+    files_hash_verified_count: int,
+) -> None:
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    data = {
+        "schema_version": "1.0",
+        "dataset_id": dataset_id,
+        "evaluation_code_sha": freeze_record.evaluation_code_sha,
+        "spec_sha256": freeze_record.spec_sha256,
+        "amendment_sha256": freeze_record.amendment_sha256,
+        "dataset_plan_sha256": freeze_record.dataset_plan_sha256,
+        "status": status,
+        "access_count": access_count,
+        "parse_count": parse_count,
+        "files_hash_verified_count": files_hash_verified_count,
+        "parsed_at": datetime.now(UTC).isoformat(),
+    }
+    _safe_json_dump(data, ledger_path)
 
 
 def _write_split_artifacts(
@@ -296,6 +356,13 @@ def _cmd_run(args: argparse.Namespace) -> int:
     holdout_parse_count = 0
     holdout_disposition = None
 
+    ledger_dir = (
+        Path(args.holdout_ledger_dir).expanduser().resolve()
+        if args.holdout_ledger_dir
+        else _default_holdout_ledger_dir()
+    )
+    ledger_path = _holdout_ledger_path(dataset_id, freeze_record, ledger_dir)
+
     if val_result.outcome is None or val_result.outcome.disposition != "supported":
         holdout_status = (
             f"not_run_validation_{val_result.outcome.disposition if val_result.outcome else 'none'}"
@@ -309,13 +376,15 @@ def _cmd_run(args: argparse.Namespace) -> int:
             files_hash_verified_count=holdout_files_hash_verified_count,
         )
     else:
-        existing = _read_holdout_status(output_dir)
-        if existing and existing.get("status") == "completed":
-            raise StudyCLIError("holdout already completed in this output directory; cannot rerun")
+        existing_ledger = _read_holdout_ledger(ledger_path)
+        if existing_ledger and existing_ledger.get("status") == "completed":
+            raise StudyCLIError(
+                f"holdout already completed in persistent ledger {ledger_path}; cannot rerun"
+            )
         holdout_start = time.perf_counter()
         verify_frozen_evaluation_code(repo_root, freeze_record)
         holdout_symbol_months = verified.by_split.get("holdout", [])
-        holdout_result, _, holdout_monthly = run_split(
+        holdout_result, holdout_ticker_inputs, holdout_monthly = run_split(
             dataset_root,
             "holdout",
             spec,
@@ -328,8 +397,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
             and holdout_result.outcome.disposition == "supported"
         )
         holdout_disposition = holdout_result.outcome.disposition if holdout_result.outcome else None
-        holdout_access_count = 1
-        holdout_parse_count = 1
+        holdout_access_count = len(holdout_symbol_months)
+        holdout_parse_count = sum(1 for ti in holdout_ticker_inputs if ti.parquet_loaded)
         holdout_runtime = time.perf_counter() - holdout_start
         holdout_status = f"completed_disposition_{holdout_disposition}"
         _write_holdout_status(
@@ -338,6 +407,15 @@ def _cmd_run(args: argparse.Namespace) -> int:
             access_count=holdout_access_count,
             parse_count=holdout_parse_count,
             reason=holdout_status,
+            files_hash_verified_count=holdout_files_hash_verified_count,
+        )
+        _write_holdout_ledger(
+            ledger_path,
+            dataset_id=dataset_id,
+            freeze_record=freeze_record,
+            status="completed",
+            access_count=holdout_access_count,
+            parse_count=holdout_parse_count,
             files_hash_verified_count=holdout_files_hash_verified_count,
         )
 
@@ -475,6 +553,11 @@ def _build_parser() -> argparse.ArgumentParser:
         type=int,
         default=756,
         help="Expected number of symbol-months in the verified dataset bundle.",
+    )
+    run_parser.add_argument(
+        "--holdout-ledger-dir",
+        default=None,
+        help="Directory for the persistent holdout one-run ledger. Defaults to ~/.tradex/research/holdout_ledger.",
     )
 
     freeze_parser = sub.add_parser("freeze", help="Record evaluation-code freeze only.")
