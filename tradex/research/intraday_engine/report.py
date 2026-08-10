@@ -138,7 +138,10 @@ def _bkng_reconciliation(
         "`symbols_rejected_for_data_quality_pct_max = 5%` per monthly universe and "
         "does not trigger an invalid disposition."
     )
-    lines.append("- No additional symbol-months are reported as rejected.")
+    lines.append(
+        "- The remaining rejected symbol-months are rejected solely for "
+        "`pre_normalization_metrics_unavailable` and are not counted as missing-bar-rate failures."
+    )
     lines.append("")
     return lines
 
