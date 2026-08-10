@@ -150,9 +150,9 @@ def run_study(
 
     if generated_at is None:
         generated_at = datetime(2025, 1, 1, tzinfo=UTC)
-        generated_at_fixed = True
-    else:
         generated_at_fixed = False
+    else:
+        generated_at_fixed = True
 
     # Combine the explicit primary scenario with all sensitivity scenarios.
     all_scenarios = [spec.primary_cost_scenario()] + spec.all_cost_scenarios()

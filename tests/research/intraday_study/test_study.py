@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -39,6 +39,7 @@ from tradex.research.intraday_study.split import split_for_effective_month
 from tradex.research.intraday_study.study import (
     StudyError,
     compute_monthly_rejection_summary,
+    load_ticker_inputs_for_split,
     run_split,
 )
 
@@ -279,7 +280,7 @@ def test_run_split_on_synthetic_dataset(synthetic_dataset, spec: IntradaySpec):
     )
     assert result.synthetic is False
     assert result.evidence_eligible is False
-    assert result.generated_at_fixed is False
+    assert result.generated_at_fixed is True
     assert result.outcome is not None
     assert result.spec_sha256 == spec.sha256
 
@@ -461,6 +462,10 @@ def test_cli_run_subcommand_runs_and_writes_summary(
         "tradex.research.intraday_study.cli.verify_frozen_evaluation_code",
         lambda *args, **kwargs: None,
     )
+    monkeypatch.setattr(
+        "tradex.research.intraday_study.cli._default_holdout_ledger_dir",
+        lambda: tmp_path / "ledger",
+    )
 
     out_dir = tmp_path / "cli-out"
     ret = main(
@@ -522,6 +527,10 @@ def test_cli_holdout_status_ledger_records_zero_parses_when_validation_not_suppo
         "tradex.research.intraday_study.cli.verify_frozen_evaluation_code",
         lambda *args, **kwargs: None,
     )
+    monkeypatch.setattr(
+        "tradex.research.intraday_study.cli._default_holdout_ledger_dir",
+        lambda: tmp_path / "ledger",
+    )
 
     out_dir = tmp_path / "cli-out"
     ret = main(
@@ -546,6 +555,11 @@ def test_cli_holdout_status_ledger_records_zero_parses_when_validation_not_suppo
     assert holdout_status["status"] == "not_run"
     assert holdout_status["access_count"] == 0
     assert holdout_status["parse_count"] == 0
+    ledger = json.loads(
+        (tmp_path / "ledger" / "INTRA-001B-DATASET-TEST" / "ledger.json").read_text(encoding="utf-8")
+    )
+    assert ledger["status"] == "not_run"
+    assert ledger["parse_count"] == 0
 
 
 def test_frozen_code_verification_rejects_dirty_worktree(tmp_path, spec: IntradaySpec):
@@ -595,8 +609,12 @@ def test_compute_monthly_rejection_summary_counts_by_split(tmp_path, spec: Intra
     assert summary["2025-02"]["rejected_by_split"]["validation"] == 1
 
 
-def _supported_study_result(spec: IntradaySpec, generated_at: datetime) -> StudyResult:
-    """Return a minimal StudyResult whose outcome is supported."""
+def _study_result_with_disposition(
+    spec: IntradaySpec,
+    generated_at: datetime,
+    disposition: str = "supported",
+) -> StudyResult:
+    """Return a minimal StudyResult with the requested outcome disposition."""
     cost = spec.primary_cost_scenario()
     metrics = StudyMetrics(
         strategy="candidate",
@@ -628,11 +646,12 @@ def _supported_study_result(spec: IntradaySpec, generated_at: datetime) -> Study
         positive_trade_rate=0.55,
         average_holding_minutes=45.0,
     )
+    sample_met = disposition in ("supported", "not_supported")
     outcome = StudyOutcome(
-        disposition="supported",
-        reason="test supported outcome",
-        gate_results=[GateResult(gate="sample", passed=True, reason="ok")],
-        sample_met=True,
+        disposition=disposition,
+        reason=f"test {disposition} outcome",
+        gate_results=[GateResult(gate="sample", passed=sample_met, reason="ok")],
+        sample_met=sample_met,
     )
     metrics.per_symbol = {}
     return StudyResult(
@@ -686,6 +705,10 @@ def test_cli_holdout_runs_once_and_blocks_rerun_for_supported_validation(
         "tradex.research.intraday_study.cli.verify_frozen_evaluation_code",
         lambda *args, **kwargs: None,
     )
+    monkeypatch.setattr(
+        "tradex.research.intraday_study.cli._default_holdout_ledger_dir",
+        lambda: tmp_path / "ledger",
+    )
 
     generated_at = datetime(2026, 8, 1, tzinfo=UTC)
     real_run_split = cli_module.run_split
@@ -693,7 +716,7 @@ def test_cli_holdout_runs_once_and_blocks_rerun_for_supported_validation(
     def _run_split_wrapper(*args, **kwargs):
         split_name = kwargs.get("split") or args[1]
         if split_name == "validation":
-            return _supported_study_result(spec, generated_at), [], {}
+            return _study_result_with_disposition(spec, generated_at), [], {}
         return real_run_split(*args, **kwargs)
 
     monkeypatch.setattr(
@@ -701,7 +724,6 @@ def test_cli_holdout_runs_once_and_blocks_rerun_for_supported_validation(
         _run_split_wrapper,
     )
 
-    ledger_dir = tmp_path / "ledger"
     out_dir = tmp_path / "cli-out"
     args = [
         "run",
@@ -717,8 +739,6 @@ def test_cli_holdout_runs_once_and_blocks_rerun_for_supported_validation(
         str(spec.path),
         "--expected-symbol-months",
         "9",
-        "--holdout-ledger-dir",
-        str(ledger_dir),
     ]
     assert main(args) == 0
 
@@ -730,21 +750,18 @@ def test_cli_holdout_runs_once_and_blocks_rerun_for_supported_validation(
     summary = json.loads((out_dir / "study_summary.json").read_text(encoding="utf-8"))
     assert summary["holdout"]["access_count"] == 3
     assert summary["holdout"]["parse_count"] == 3
-    ledger = json.loads(
-        next(iter(ledger_dir.rglob("*.json"))).read_text(encoding="utf-8")
-    )
+    ledger_path = tmp_path / "ledger" / "INTRA-001B-DATASET-TEST" / "ledger.json"
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
     assert ledger["status"] == "completed"
     assert ledger["parse_count"] == 3
 
     # A second run with a different output directory must still be refused because
     # the persistent ledger already records a completed holdout.
     out_dir2 = tmp_path / "cli-out-2"
-    args2 = [
-        a if a != str(out_dir) else str(out_dir2) for a in args
-    ]
+    args2 = [a if a != str(out_dir) else str(out_dir2) for a in args]
     assert main(args2) == 1
     captured = capsys.readouterr()
-    assert "holdout already completed" in captured.err
+    assert "holdout already attempted" in captured.err
 
 
 def test_run_split_monthly_rejection_summary_is_split_scoped(
@@ -825,6 +842,10 @@ def test_cli_blocked_validation_does_not_parse_holdout(
         "tradex.research.intraday_study.cli.verify_frozen_evaluation_code",
         lambda *args, **kwargs: None,
     )
+    monkeypatch.setattr(
+        "tradex.research.intraday_study.cli._default_holdout_ledger_dir",
+        lambda: tmp_path / "ledger",
+    )
 
     out_dir = tmp_path / "blocked-out"
     ret = main(
@@ -850,12 +871,16 @@ def test_cli_blocked_validation_does_not_parse_holdout(
     assert summary["holdout"]["status"].startswith("not_run")
     assert summary["holdout"]["access_count"] == 3
     assert summary["holdout"]["parse_count"] == 0
+    ledger_path = tmp_path / "ledger" / "INTRA-001B-DATASET-TEST" / "ledger.json"
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    assert ledger["status"] == "not_run"
+    assert ledger["parse_count"] == 0
 
 
-def test_holdout_ledger_blocks_same_identity_allows_changed_identity(
+def test_holdout_ledger_blocks_rerun_even_with_changed_identity(
     synthetic_split_dataset, tmp_path, spec: IntradaySpec, monkeypatch
 ):
-    """The persistent ledger blocks reruns for one identity but allows a different locked identity."""
+    """The canonical ledger blocks every rerun, including changed evaluation SHA or output."""
     from tradex.research.intraday_engine.engine import TickerInput
     from tradex.research.intraday_engine.models import TickerMeta
     from tradex.research.intraday_study import cli as cli_module
@@ -878,12 +903,16 @@ def test_holdout_ledger_blocks_same_identity_allows_changed_identity(
     ]
 
     def fake_run_split(*args, **kwargs):
-        return _supported_study_result(spec, generated_at), fake_inputs, {}
+        return _study_result_with_disposition(spec, generated_at), fake_inputs, {}
 
     monkeypatch.setattr(cli_module, "run_split", fake_run_split)
     monkeypatch.setattr(
         "tradex.research.intraday_study.cli.verify_frozen_evaluation_code",
         lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "tradex.research.intraday_study.cli._default_holdout_ledger_dir",
+        lambda: tmp_path / "ledger-identity",
     )
 
     shas = iter(["a" * 40, "b" * 40, "a" * 40])
@@ -904,7 +933,6 @@ def test_holdout_ledger_blocks_same_identity_allows_changed_identity(
         next_freeze,
     )
 
-    ledger_dir = tmp_path / "ledger-identity"
     outputs = [tmp_path / f"identity-out-{i}" for i in range(3)]
     for i, out_dir in enumerate(outputs):
         ret = main(
@@ -922,14 +950,278 @@ def test_holdout_ledger_blocks_same_identity_allows_changed_identity(
                 str(spec.path),
                 "--expected-symbol-months",
                 "9",
-                "--holdout-ledger-dir",
-                str(ledger_dir),
             ]
         )
-        if i == 2:
-            assert ret == 1
-        else:
+        if i == 0:
             assert ret == 0
+        else:
+            assert ret == 1
+
+
+def test_cli_validation_invalid_blocks_holdout(
+    synthetic_split_dataset, tmp_path, spec: IntradaySpec, monkeypatch
+):
+    """A validation outcome of 'invalid' must block holdout with measured zero parses."""
+    import shutil
+
+    from tradex.research.intraday_study.freeze import FreezeRecord
+
+    dataset_copy = tmp_path / "invalid-dataset"
+    shutil.copytree(synthetic_split_dataset, dataset_copy)
+
+    dq = pd.read_csv(dataset_copy / "ohlcv" / "data_quality.csv")
+    dq["malformed_rows"] = 1
+    dq["malformed_row_rate_pct"] = 0.1
+    dq["rejected"] = False
+    dq["rejection_reason"] = ""
+    dq["pre_normalization_metrics_available"] = True
+    dq.to_csv(dataset_copy / "ohlcv" / "data_quality.csv", index=False)
+
+    clean_record = FreezeRecord(
+        evaluation_code_sha="d" * 40,
+        repository_clean=True,
+        frozen_at=datetime(2026, 8, 1, tzinfo=UTC),
+        spec_sha256=spec.sha256,
+        amendment_sha256=None,
+        dataset_plan_sha256=None,
+        evaluation_files={},
+    )
+    monkeypatch.setattr(
+        "tradex.research.intraday_study.cli.freeze_evaluation_code",
+        lambda *args, **kwargs: clean_record,
+    )
+    monkeypatch.setattr(
+        "tradex.research.intraday_study.cli.verify_frozen_evaluation_code",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "tradex.research.intraday_study.cli._default_holdout_ledger_dir",
+        lambda: tmp_path / "ledger",
+    )
+
+    out_dir = tmp_path / "invalid-out"
+    ret = main(
+        [
+            "run",
+            "--dataset-root",
+            str(dataset_copy),
+            "--output",
+            str(out_dir),
+            "--generated-at",
+            "2026-08-01T00:00:00+00:00",
+            "--manifest-lock",
+            str(dataset_copy / "manifest.lock.json"),
+            "--spec",
+            str(spec.path),
+            "--expected-symbol-months",
+            "9",
+        ]
+    )
+    assert ret == 0
+    summary = json.loads((out_dir / "study_summary.json").read_text(encoding="utf-8"))
+    assert summary["final_disposition"] == "invalid"
+    assert summary["holdout"]["status"].startswith("not_run_validation_")
+    assert summary["holdout"]["parse_count"] == 0
+    ledger_path = tmp_path / "ledger" / "INTRA-001B-DATASET-TEST" / "ledger.json"
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    assert ledger["status"] == "not_run"
+    assert ledger["parse_count"] == 0
+
+
+def test_cli_validation_not_supported_blocks_holdout(
+    synthetic_split_dataset, tmp_path, spec: IntradaySpec, monkeypatch
+):
+    """A validation outcome of 'not_supported' must block holdout with measured zero parses."""
+    from tradex.research.intraday_study import cli as cli_module
+    from tradex.research.intraday_study.freeze import FreezeRecord
+
+    generated_at = datetime(2026, 8, 1, tzinfo=UTC)
+    clean_record = FreezeRecord(
+        evaluation_code_sha="e" * 40,
+        repository_clean=True,
+        frozen_at=datetime(2026, 8, 1, tzinfo=UTC),
+        spec_sha256=spec.sha256,
+        amendment_sha256=None,
+        dataset_plan_sha256=None,
+        evaluation_files={},
+    )
+    monkeypatch.setattr(
+        "tradex.research.intraday_study.cli.freeze_evaluation_code",
+        lambda *args, **kwargs: clean_record,
+    )
+    monkeypatch.setattr(
+        "tradex.research.intraday_study.cli.verify_frozen_evaluation_code",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "tradex.research.intraday_study.cli._default_holdout_ledger_dir",
+        lambda: tmp_path / "ledger",
+    )
+
+    real_run_split = cli_module.run_split
+    holdout_calls: list[str] = []
+
+    def _run_split_wrapper(*args, **kwargs):
+        split = kwargs.get("split") or args[1]
+        if split == "validation":
+            return _study_result_with_disposition(spec, generated_at, "not_supported"), [], {}
+        if split == "holdout":
+            holdout_calls.append(split)
+        return real_run_split(*args, **kwargs)
+
+    monkeypatch.setattr(cli_module, "run_split", _run_split_wrapper)
+
+    out_dir = tmp_path / "not-supported-out"
+    ret = main(
+        [
+            "run",
+            "--dataset-root",
+            str(synthetic_split_dataset),
+            "--output",
+            str(out_dir),
+            "--generated-at",
+            "2026-08-01T00:00:00+00:00",
+            "--manifest-lock",
+            str(synthetic_split_dataset / "manifest.lock.json"),
+            "--spec",
+            str(spec.path),
+            "--expected-symbol-months",
+            "9",
+        ]
+    )
+    assert ret == 0
+    assert not holdout_calls
+    summary = json.loads((out_dir / "study_summary.json").read_text(encoding="utf-8"))
+    assert summary["final_disposition"] == "not_supported"
+    assert summary["holdout"]["status"].startswith("not_run")
+    assert summary["holdout"]["parse_count"] == 0
+    ledger_path = tmp_path / "ledger" / "INTRA-001B-DATASET-TEST" / "ledger.json"
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    assert ledger["status"] == "not_run"
+    assert ledger["parse_count"] == 0
+
+
+def test_run_split_contract_violation_makes_invalid(
+    tmp_path: Path, spec: IntradaySpec
+):
+    """A data-contract violation produces an 'invalid' split disposition."""
+    from tests.research.intraday_study.conftest import _build_dataset
+
+    _build_dataset(tmp_path, n_sessions=42, effective_month="2025-02")
+    dq = pd.read_csv(tmp_path / "ohlcv" / "data_quality.csv")
+    dq["malformed_rows"] = 1
+    dq["malformed_row_rate_pct"] = 0.1
+    dq["rejected"] = False
+    dq["rejection_reason"] = ""
+    dq["pre_normalization_metrics_available"] = True
+    dq.to_csv(tmp_path / "ohlcv" / "data_quality.csv", index=False)
+
+    generated_at = datetime(2026, 8, 1, tzinfo=UTC)
+    result, *_ = run_split(tmp_path, "development", spec, generated_at)
+    assert result.outcome is not None
+    assert result.outcome.disposition == "invalid"
+    assert "non_finite_rows" in result.outcome.reason
+
+
+def test_load_ticker_inputs_for_split_respects_monthly_pit_inclusion_exclusion(
+    tmp_path: Path, spec: IntradaySpec
+):
+    """A symbol-month excluded from the monthly PIT universe is present but not tradeable."""
+    from tests.research.intraday_study.conftest import _build_dataset
+
+    _build_dataset(tmp_path, n_sessions=42, effective_month="2025-02")
+    universe = pd.read_csv(tmp_path / "universe" / "universe_manifest.csv")
+    universe.loc[0, "included"] = False
+    universe.to_csv(tmp_path / "universe" / "universe_manifest.csv", index=False)
+
+    dq = load_data_quality(tmp_path / "ohlcv" / "data_quality.csv")
+    univ = load_universe_manifest(tmp_path / "universe" / "universe_manifest.csv")
+    inputs = load_ticker_inputs_for_split(tmp_path, "development", dq, univ)
+
+    assert len(inputs) == 3
+    excluded = [ti for ti in inputs if not ti.meta.is_eligible]
+    included = [ti for ti in inputs if ti.meta.is_eligible]
+    assert len(excluded) == 1
+    assert len(included) == 2
+    assert excluded[0].sessions == []
+    assert len(included[0].sessions) > 0
+
+
+def test_same_ticker_across_months_is_represented_per_month(
+    tmp_path: Path, spec: IntradaySpec
+):
+    """A ticker appearing in two development months appears once per effective month."""
+    from tests.research.intraday_study.conftest import (
+        _append_month,
+        _write_dataset_files,
+    )
+
+    all_manifest: list = []
+    all_dq: list = []
+    all_universe: list = []
+    months = [
+        ("2025-02", date(2025, 1, 2), "2025-01-31"),
+        ("2025-03", date(2025, 2, 3), "2025-02-28"),
+    ]
+    for effective_month, start_date, pit_date in months:
+        _inputs, manifest_records, dq_rows, universe_rows = _append_month(
+            tmp_path, spec, effective_month, start_date, pit_date, seed=42
+        )
+        all_manifest.extend(manifest_records)
+        all_dq.extend(dq_rows)
+        all_universe.extend(universe_rows)
+    _write_dataset_files(tmp_path, all_manifest, all_dq, all_universe)
+
+    generated_at = datetime(2026, 8, 1, tzinfo=UTC)
+    result, inputs, _ = run_split(tmp_path, "development", spec, generated_at)
+
+    assert len(inputs) == 6
+    ticker_counts = {}
+    for ti in inputs:
+        ticker_counts[ti.ticker] = ticker_counts.get(ti.ticker, 0) + 1
+    assert all(c == 2 for c in ticker_counts.values())
+
+    monthly_keys = {key.split(":")[1] for key in result.monthly_metrics}
+    assert {"2025-02", "2025-03"}.issubset(monthly_keys)
+
+
+def test_run_split_is_deterministic_for_fixed_generated_at(
+    tmp_path: Path, spec: IntradaySpec
+):
+    """Two runs with the same fixed timestamp produce identical StudyResult JSON."""
+    from tests.research.intraday_study.conftest import _build_dataset
+    from tradex.research.intraday_engine.models import as_json_dict
+
+    _build_dataset(tmp_path, n_sessions=42, effective_month="2025-02")
+    generated_at = datetime(2026, 8, 1, tzinfo=UTC)
+    r1, *_ = run_split(tmp_path, "development", spec, generated_at)
+    r2, *_ = run_split(tmp_path, "development", spec, generated_at)
+    assert as_json_dict(r1) == as_json_dict(r2)
+
+
+def test_intraday_study_does_not_import_network_or_provider_modules():
+    """The INTRA-001D adapter must not import network or data-provider modules."""
+    import subprocess
+    import sys
+
+    repo_root = Path(__file__).resolve().parents[3]
+    code = f"""
+import sys
+sys.path.insert(0, {str(repo_root)!r})
+import tradex.research.intraday_study.cli
+network = {{"requests", "urllib3", "httpx", "aiohttp", "websocket"}}
+provider = {{"tradex.data", "yfinance", "alpaca_trade_api", "polygon", "schwab", "tradier"}}
+bad = [m for m in sys.modules if any(m == p or m.startswith(p + ".") for p in network | provider)]
+print("OK" if not bad else "BAD: " + ",".join(bad))
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0
+    assert result.stdout.strip().startswith("OK"), result.stdout + result.stderr
 
 
 def test_intraday_study_cli_does_not_import_production_modules():
