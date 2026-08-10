@@ -9,6 +9,12 @@ import pandas as pd
 import pytest
 
 from tradex.research.intraday_engine.gates import SampleMinimums
+from tradex.research.intraday_engine.models import (
+    GateResult,
+    StudyMetrics,
+    StudyOutcome,
+    StudyResult,
+)
 from tradex.research.intraday_engine.spec import IntradaySpec
 from tradex.research.intraday_study.artifacts import write_artifact_bundle
 from tradex.research.intraday_study.cli import main
@@ -587,3 +593,134 @@ def test_compute_monthly_rejection_summary_counts_by_split(tmp_path, spec: Intra
     assert summary["2025-02"]["rejected"] == 2
     assert summary["2025-02"]["rejected_by_split"]["development"] == 1
     assert summary["2025-02"]["rejected_by_split"]["validation"] == 1
+
+
+def _supported_study_result(spec: IntradaySpec, generated_at: datetime) -> StudyResult:
+    """Return a minimal StudyResult whose outcome is supported."""
+    cost = spec.primary_cost_scenario()
+    metrics = StudyMetrics(
+        strategy="candidate",
+        cost_scenario=cost,
+        total_signals=500,
+        executed_trades=400,
+        rejected_signals=0,
+        no_signal_count=0,
+        total_trades=400,
+        pooled_expectancy=0.05,
+        pooled_total_return=0.20,
+        overall_maximum_drawdown_pct=-0.05,
+        median_per_symbol_expectancy=0.05,
+        equal_weighted_per_symbol_mean_expectancy=0.05,
+        positive_symbol_rate=0.6,
+        median_per_symbol_total_return=0.20,
+        median_per_symbol_maximum_drawdown_pct=-0.05,
+        median_per_symbol_profit_factor_order=1.0,
+        median_per_symbol_profit_factor_value=1.5,
+        trade_count_concentration=0.1,
+        net_profit_concentration=0.1,
+        absolute_loss_concentration=0.05,
+        stock_stratum_trade_count=300,
+        etf_stratum_trade_count=100,
+        stock_stratum_pooled_expectancy=0.05,
+        etf_stratum_pooled_expectancy=0.05,
+        represented_stock_symbols=30,
+        represented_etf_symbols=10,
+        positive_trade_rate=0.55,
+        average_holding_minutes=45.0,
+    )
+    outcome = StudyOutcome(
+        disposition="supported",
+        reason="test supported outcome",
+        gate_results=[GateResult(gate="sample", passed=True, reason="ok")],
+        sample_met=True,
+    )
+    metrics.per_symbol = {}
+    return StudyResult(
+        spec_sha256=spec.sha256,
+        engine_version="test",
+        synthetic=False,
+        evidence_eligible=True,
+        generated_at=generated_at,
+        cost_scenarios={cost.name: metrics},
+        candidate_signals=[],
+        baseline_a_signals=[],
+        baseline_b_signals=[],
+        trades={},
+        report_markdown="",
+        outcome=outcome,
+        metrics_by_strategy={
+            "candidate": {cost.name: metrics},
+            "baseline_a": {cost.name: metrics},
+            "baseline_b": {cost.name: metrics},
+        },
+    )
+
+
+def test_cli_holdout_runs_once_and_blocks_rerun_for_supported_validation(
+    synthetic_dataset, tmp_path, spec: IntradaySpec, monkeypatch, capsys
+):
+    """When validation is supported, holdout runs exactly once and reruns are refused."""
+    from tradex.research.intraday_study.freeze import FreezeRecord
+
+    clean_record = FreezeRecord(
+        evaluation_code_sha="a" * 40,
+        repository_clean=True,
+        frozen_at=datetime(2026, 8, 1, tzinfo=UTC),
+        spec_sha256=spec.sha256,
+        amendment_sha256=None,
+        dataset_plan_sha256=None,
+        evaluation_files={},
+    )
+    monkeypatch.setattr(
+        "tradex.research.intraday_study.cli.freeze_evaluation_code",
+        lambda *args, **kwargs: clean_record,
+    )
+    monkeypatch.setattr(
+        "tradex.research.intraday_study.cli.verify_frozen_evaluation_code",
+        lambda *args, **kwargs: None,
+    )
+
+    generated_at = datetime(2026, 8, 1, tzinfo=UTC)
+
+    def _fake_run_split(*args, **kwargs):
+        return _supported_study_result(spec, generated_at), [], {}
+
+    monkeypatch.setattr(
+        "tradex.research.intraday_study.cli.run_split",
+        _fake_run_split,
+    )
+
+    out_dir = tmp_path / "cli-out"
+    args = [
+        "run",
+        "--dataset-root",
+        str(synthetic_dataset),
+        "--output",
+        str(out_dir),
+        "--generated-at",
+        "2026-08-01T00:00:00+00:00",
+        "--manifest-lock",
+        str(synthetic_dataset / "manifest.lock.json"),
+        "--spec",
+        str(spec.path),
+        "--expected-symbol-months",
+        "3",
+    ]
+    assert main(args) == 0
+
+    holdout_status = json.loads((out_dir / "holdout_status.json").read_text(encoding="utf-8"))
+    assert holdout_status["status"] == "completed"
+    assert holdout_status["access_count"] == 1
+    assert holdout_status["parse_count"] == 1
+
+    summary = json.loads((out_dir / "study_summary.json").read_text(encoding="utf-8"))
+    assert summary["final_disposition"] == "supported"
+    assert summary["production_promotion_eligible"] is True
+    assert summary["holdout"]["access_count"] == 1
+    assert summary["holdout"]["parse_count"] == 1
+
+    # A second run in the same output directory must be refused because holdout
+    # has already been completed.
+    assert main(args) == 1
+    captured = capsys.readouterr()
+    assert "holdout already completed" in captured.err
