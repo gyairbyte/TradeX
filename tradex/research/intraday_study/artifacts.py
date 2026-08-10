@@ -436,6 +436,7 @@ def write_study_json(
     freeze_record: FreezeRecord | None = None,
     manifest_sha256: str | None = None,
     monthly_rejection_summary: dict[str, dict[str, Any]] | None = None,
+    manifest_lock_relative: str = "manifest.lock.json",
 ) -> None:
     """Write a JSON summary of the study outcome and metrics."""
     cost_rows: dict[str, dict[str, Any]] = {}
@@ -481,7 +482,7 @@ def write_study_json(
     if manifest_sha256:
         data["manifest_sha256"] = manifest_sha256
     # Relative references to the copied lock files inside this split bundle.
-    data["manifest_lock_relative"] = "manifest.lock.json"
+    data["manifest_lock_relative"] = manifest_lock_relative
     data["spec_lock_relative"] = "spec.lock.json"
     data["universe_manifest_relative"] = "universe_manifest.csv"
     data["data_quality_relative"] = "data_quality.csv"
@@ -580,6 +581,7 @@ def write_artifact_bundle(
     )
     written["report.md"] = report_md
 
+    manifest_lock_relative = Path(manifest_lock_path).name if manifest_lock_path else "manifest.lock.json"
     manifest_sha = sha256_of_file(manifest_lock_path) if manifest_lock_path else None
     study_json = output_dir / "study.json"
     write_study_json(
@@ -590,6 +592,7 @@ def write_artifact_bundle(
         freeze_record=freeze_record,
         manifest_sha256=manifest_sha,
         monthly_rejection_summary=monthly_rejection_summary,
+        manifest_lock_relative=manifest_lock_relative,
     )
     written["study.json"] = study_json
 
@@ -599,9 +602,10 @@ def write_artifact_bundle(
         written["spec.lock.json"] = dst
 
     if manifest_lock_path:
-        dst = output_dir / "manifest.lock.json"
+        manifest_lock_filename = Path(manifest_lock_path).name
+        dst = output_dir / manifest_lock_filename
         shutil.copy2(manifest_lock_path, dst)
-        written["manifest.lock.json"] = dst
+        written[manifest_lock_filename] = dst
 
     if universe_manifest_path:
         dst = output_dir / "universe_manifest.csv"
