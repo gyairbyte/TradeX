@@ -179,7 +179,10 @@ def build_report(
         dataset_line = f"- **Dataset:** `{dataset_id or 'unknown'}`"
         holdout_line = f"- **Holdout status:** {holdout_status}"
         promo_line = f"- **Production promotion eligible:** {production_promotion_eligible}"
-        runtime_line = f"- **Runtime (seconds):** {_fmt(runtime_seconds)}"
+        if runtime_seconds is None:
+            runtime_line = "- **Runtime (seconds):** not recorded (operational timing omitted for reproducibility)"
+        else:
+            runtime_line = f"- **Runtime (seconds):** {_fmt(runtime_seconds)}"
         evidence_label = (
             "- **Dataset evidence label:** locked INTRA-001B-DATASET-V1 with verified "
             "manifest.lock.json, data_quality.csv, and universe_manifest.csv"

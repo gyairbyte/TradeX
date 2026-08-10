@@ -764,6 +764,259 @@ def test_cli_holdout_runs_once_and_blocks_rerun_for_supported_validation(
     assert "holdout already attempted" in captured.err
 
 
+def test_cli_tampered_spec_file_rejected(
+    synthetic_dataset, tmp_path, spec: IntradaySpec, capsys
+):
+    """A --spec file whose content differs from the locked SHA is rejected."""
+    tampered_spec = tmp_path / "tampered_spec.json"
+    tampered_spec.write_text(spec.path.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    out_dir = tmp_path / "out"
+    ret = main(
+        [
+            "run",
+            "--dataset-root",
+            str(synthetic_dataset),
+            "--output",
+            str(out_dir),
+            "--generated-at",
+            "2026-08-01T00:00:00+00:00",
+            "--manifest-lock",
+            str(synthetic_dataset / "manifest.lock.json"),
+            "--spec",
+            str(tampered_spec),
+            "--expected-symbol-months",
+            "3",
+        ]
+    )
+    assert ret == 1
+    captured = capsys.readouterr()
+    assert "spec" in captured.err.lower() and "mismatch" in captured.err.lower()
+
+
+def test_cli_tampered_amendment_file_rejected(
+    synthetic_dataset, tmp_path, spec: IntradaySpec, monkeypatch, capsys
+):
+    """An amendment file on disk that does not match the dataset plan SHA is rejected."""
+    import shutil
+
+    from tradex.research.intraday_study.freeze import FreezeRecord
+
+    dataset_copy = tmp_path / "tampered-dataset"
+    shutil.copytree(synthetic_dataset, dataset_copy)
+
+    committed_plan = json.loads(
+        (tmp_path / "tampered-dataset" / "dataset_plan.lock.json").read_text(encoding="utf-8")
+    )
+    amendment_path = tmp_path / "tampered_amendment.json"
+    amendment_path.write_text(json.dumps(committed_plan) + "\n", encoding="utf-8")
+    committed_plan["data_sufficiency_amendment"]["path"] = str(amendment_path)
+    (tmp_path / "tampered-dataset" / "dataset_plan.lock.json").write_text(
+        json.dumps(committed_plan, indent=2), encoding="utf-8"
+    )
+
+    clean_record = FreezeRecord(
+        evaluation_code_sha="a" * 40,
+        repository_clean=True,
+        frozen_at=datetime(2026, 8, 1, tzinfo=UTC),
+        spec_sha256=spec.sha256,
+        amendment_sha256=None,
+        dataset_plan_sha256=None,
+        evaluation_files={},
+    )
+    monkeypatch.setattr(
+        "tradex.research.intraday_study.cli.freeze_evaluation_code",
+        lambda *args, **kwargs: clean_record,
+    )
+    monkeypatch.setattr(
+        "tradex.research.intraday_study.cli.verify_frozen_evaluation_code",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "tradex.research.intraday_study.cli._default_holdout_ledger_dir",
+        lambda: tmp_path / "ledger",
+    )
+
+    out_dir = tmp_path / "out"
+    ret = main(
+        [
+            "run",
+            "--dataset-root",
+            str(dataset_copy),
+            "--output",
+            str(out_dir),
+            "--generated-at",
+            "2026-08-01T00:00:00+00:00",
+            "--manifest-lock",
+            str(dataset_copy / "manifest.lock.json"),
+            "--spec",
+            str(spec.path),
+            "--expected-symbol-months",
+            "3",
+        ]
+    )
+    assert ret == 1
+    captured = capsys.readouterr()
+    assert "amendment file hash mismatch" in captured.err
+
+
+def test_cli_holdout_crash_leaves_started_and_blocks_retry(
+    synthetic_split_dataset, tmp_path, spec: IntradaySpec, monkeypatch, capsys
+):
+    """A holdout parse crash leaves a 'started' tombstone and a retry is refused."""
+    from tradex.research.intraday_study import cli as cli_module
+    from tradex.research.intraday_study.freeze import FreezeRecord
+    from tradex.research.intraday_study.study import StudyError
+
+    clean_record = FreezeRecord(
+        evaluation_code_sha="a" * 40,
+        repository_clean=True,
+        frozen_at=datetime(2026, 8, 1, tzinfo=UTC),
+        spec_sha256=spec.sha256,
+        amendment_sha256=None,
+        dataset_plan_sha256=None,
+        evaluation_files={},
+    )
+    monkeypatch.setattr(
+        "tradex.research.intraday_study.cli.freeze_evaluation_code",
+        lambda *args, **kwargs: clean_record,
+    )
+    monkeypatch.setattr(
+        "tradex.research.intraday_study.cli.verify_frozen_evaluation_code",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "tradex.research.intraday_study.cli._default_holdout_ledger_dir",
+        lambda: tmp_path / "ledger",
+    )
+
+    generated_at = datetime(2026, 8, 1, tzinfo=UTC)
+    real_run_split = cli_module.run_split
+
+    def _run_split_crash(*args, **kwargs):
+        split_name = kwargs.get("split") or args[1]
+        if split_name == "validation":
+            return _study_result_with_disposition(spec, generated_at, "supported"), [], {}
+        if split_name == "holdout":
+            raise StudyError("injected holdout parse crash")
+        return real_run_split(*args, **kwargs)
+
+    monkeypatch.setattr(
+        "tradex.research.intraday_study.cli.run_split",
+        _run_split_crash,
+    )
+
+    out_dir = tmp_path / "cli-out"
+    args = [
+        "run",
+        "--dataset-root",
+        str(synthetic_split_dataset),
+        "--output",
+        str(out_dir),
+        "--generated-at",
+        "2026-08-01T00:00:00+00:00",
+        "--manifest-lock",
+        str(synthetic_split_dataset / "manifest.lock.json"),
+        "--spec",
+        str(spec.path),
+        "--expected-symbol-months",
+        "9",
+    ]
+    assert main(args) == 1
+    captured = capsys.readouterr()
+    assert "injected holdout parse crash" in captured.err
+
+    ledger_path = tmp_path / "ledger" / "INTRA-001B-DATASET-TEST" / "ledger.json"
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    assert ledger["status"] == "started"
+    assert ledger["parse_count"] == 0
+
+    # Retry with the same frozen identity must be refused.
+    assert main(args) == 1
+    captured2 = capsys.readouterr()
+    assert "holdout already attempted" in captured2.err
+
+
+def test_holdout_ledger_lock_blocks_concurrent_holder(tmp_path):
+    """An exclusive advisory lock prevents a second process from racing the ledger."""
+    import subprocess
+    import sys
+
+    repo_root = Path(__file__).resolve().parents[3]
+    ledger_path = tmp_path / "ledger" / "TEST-CONCURRENT" / "ledger.json"
+    child_code = """
+import sys, time
+sys.path.insert(0, sys.argv[1])
+from pathlib import Path
+from tradex.research.intraday_study.cli import _holdout_ledger_lock
+with _holdout_ledger_lock(Path(sys.argv[2])):
+    print("locked")
+    sys.stdout.flush()
+    time.sleep(3)
+"""
+    proc = subprocess.Popen(
+        [sys.executable, "-c", child_code, str(repo_root), str(ledger_path)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    # Wait until the child confirms it has acquired the lock.
+    line = proc.stdout.readline()
+    assert line.strip() == "locked"
+
+    from tradex.research.intraday_study.cli import StudyCLIError, _holdout_ledger_lock
+
+    with pytest.raises(StudyCLIError, match="already reserved"), _holdout_ledger_lock(
+        ledger_path
+    ):
+        pass
+
+    proc.terminate()
+    proc.wait(timeout=5)
+
+
+def test_verify_spec_and_amendment_hashes_rejects_tampered_spec(
+    tmp_path, spec: IntradaySpec
+):
+    """The actual --spec file hash is compared to the dataset plan reference."""
+    from tradex.research.intraday_study.cli import (
+        StudyCLIError,
+        _verify_spec_and_amendment_hashes,
+    )
+
+    repo_root = Path(__file__).resolve().parents[3]
+    plan_path = repo_root / "docs/research/specs/INTRA-001B-dataset-v1.json"
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+
+    tampered_spec = tmp_path / "tampered_spec.json"
+    tampered_spec.write_text(spec.path.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+
+    with pytest.raises(StudyCLIError, match="spec file hash mismatch"):
+        _verify_spec_and_amendment_hashes(tampered_spec, plan, repo_root)
+
+
+def test_verify_spec_and_amendment_hashes_rejects_tampered_amendment(
+    tmp_path, spec: IntradaySpec
+):
+    """The actual amendment file hash is compared to the dataset plan reference."""
+    import copy
+
+    from tradex.research.intraday_study.cli import (
+        StudyCLIError,
+        _verify_spec_and_amendment_hashes,
+    )
+
+    repo_root = Path(__file__).resolve().parents[3]
+    plan_path = repo_root / "docs/research/specs/INTRA-001B-dataset-v1.json"
+    plan = copy.deepcopy(json.loads(plan_path.read_text(encoding="utf-8")))
+
+    tampered_amendment = tmp_path / "tampered_amendment.json"
+    tampered_amendment.write_text("tampered amendment content", encoding="utf-8")
+    plan["data_sufficiency_amendment"]["path"] = str(tampered_amendment)
+
+    with pytest.raises(StudyCLIError, match="amendment file hash mismatch"):
+        _verify_spec_and_amendment_hashes(spec.path, plan, repo_root)
+
+
 def test_run_split_monthly_rejection_summary_is_split_scoped(
     synthetic_split_dataset, spec: IntradaySpec
 ):
@@ -1150,11 +1403,22 @@ def test_load_ticker_inputs_for_split_respects_monthly_pit_inclusion_exclusion(
 def test_same_ticker_across_months_is_represented_per_month(
     tmp_path: Path, spec: IntradaySpec
 ):
-    """A ticker appearing in two development months appears once per effective month."""
+    """A ticker appearing in two development months appears once per effective month
+    and its pooled per-symbol metrics aggregate trades across both months."""
+    import copy
+
     from tests.research.intraday_study.conftest import (
         _append_month,
         _write_dataset_files,
     )
+
+    # Lower the opening-drive volume threshold so the synthetic fixture produces
+    # executed candidate trades in both months without changing any other spec field.
+    modified_raw = copy.deepcopy(spec.raw)
+    modified_raw["opening_drive_qualification"][
+        "cumulative_volume_930_to_10am_min_multiple_of_prior_20_same_window_median"
+    ] = "0.1"
+    modified_spec = IntradaySpec(raw=modified_raw, path=spec.path, sha256=spec.sha256)
 
     all_manifest: list = []
     all_dq: list = []
@@ -1165,7 +1429,7 @@ def test_same_ticker_across_months_is_represented_per_month(
     ]
     for effective_month, start_date, pit_date in months:
         _inputs, manifest_records, dq_rows, universe_rows = _append_month(
-            tmp_path, spec, effective_month, start_date, pit_date, seed=42
+            tmp_path, modified_spec, effective_month, start_date, pit_date, seed=42, n_sessions=60
         )
         all_manifest.extend(manifest_records)
         all_dq.extend(dq_rows)
@@ -1173,7 +1437,7 @@ def test_same_ticker_across_months_is_represented_per_month(
     _write_dataset_files(tmp_path, all_manifest, all_dq, all_universe)
 
     generated_at = datetime(2026, 8, 1, tzinfo=UTC)
-    result, inputs, _ = run_split(tmp_path, "development", spec, generated_at)
+    result, inputs, _ = run_split(tmp_path, "development", modified_spec, generated_at)
 
     assert len(inputs) == 6
     ticker_counts = {}
@@ -1184,19 +1448,101 @@ def test_same_ticker_across_months_is_represented_per_month(
     monthly_keys = {key.split(":")[1] for key in result.monthly_metrics}
     assert {"2025-02", "2025-03"}.issubset(monthly_keys)
 
+    # The overall per-symbol metrics must aggregate each ticker's trades across
+    # both months: for every ticker, the overall trade count equals the sum of its
+    # monthly per-symbol trade counts (missing month entries count as zero).  At
+    # least one ticker must have traded in both months to prove cross-month pooling
+    # rather than per-month overwriting.
+    candidate = result.metrics_by_strategy["candidate"]["primary_5bps"]
+    cross_month_tickers = 0
+    for ticker in candidate.per_symbol:
+        monthly_sum = 0
+        months_seen = 0
+        for key in result.monthly_metrics:
+            if not key.startswith("candidate:"):
+                continue
+            month_metrics = result.monthly_metrics[key].per_symbol
+            if ticker in month_metrics:
+                monthly_sum += month_metrics[ticker].trade_count
+                months_seen += 1
+        assert candidate.per_symbol[ticker].trade_count == monthly_sum
+        if months_seen >= 2:
+            cross_month_tickers += 1
+    assert cross_month_tickers > 0, "no ticker traded in both months; cannot verify cross-month aggregation"
 
-def test_run_split_is_deterministic_for_fixed_generated_at(
-    tmp_path: Path, spec: IntradaySpec
+
+def test_cli_run_produces_deterministic_bundle_for_fixed_generated_at(
+    synthetic_dataset, tmp_path: Path, spec: IntradaySpec, monkeypatch
 ):
-    """Two runs with the same fixed timestamp produce identical StudyResult JSON."""
-    from tests.research.intraday_study.conftest import _build_dataset
-    from tradex.research.intraday_engine.models import as_json_dict
+    """Two complete CLI runs with the same fixed inputs write byte-identical bundles."""
+    from tradex.research.intraday_study.freeze import FreezeRecord
 
-    _build_dataset(tmp_path, n_sessions=42, effective_month="2025-02")
-    generated_at = datetime(2026, 8, 1, tzinfo=UTC)
-    r1, *_ = run_split(tmp_path, "development", spec, generated_at)
-    r2, *_ = run_split(tmp_path, "development", spec, generated_at)
-    assert as_json_dict(r1) == as_json_dict(r2)
+    clean_record = FreezeRecord(
+        evaluation_code_sha="a" * 40,
+        repository_clean=True,
+        frozen_at=datetime(2026, 8, 1, tzinfo=UTC),
+        spec_sha256=spec.sha256,
+        amendment_sha256=None,
+        dataset_plan_sha256=None,
+        evaluation_files={},
+    )
+    monkeypatch.setattr(
+        "tradex.research.intraday_study.cli.freeze_evaluation_code",
+        lambda *args, **kwargs: clean_record,
+    )
+    monkeypatch.setattr(
+        "tradex.research.intraday_study.cli.verify_frozen_evaluation_code",
+        lambda *args, **kwargs: None,
+    )
+
+    class RotatingLedgerDir:
+        def __init__(self, base: Path):
+            self.base = base
+            self.counter = 0
+
+        def __call__(self):
+            self.counter += 1
+            return self.base / f"ledger{self.counter}"
+
+    monkeypatch.setattr(
+        "tradex.research.intraday_study.cli._default_holdout_ledger_dir",
+        RotatingLedgerDir(tmp_path / "ledgers"),
+    )
+
+    out1 = tmp_path / "run1"
+    out2 = tmp_path / "run2"
+    for out_dir in (out1, out2):
+        ret = main(
+            [
+                "run",
+                "--dataset-root",
+                str(synthetic_dataset),
+                "--output",
+                str(out_dir),
+                "--generated-at",
+                "2026-08-01T00:00:00+00:00",
+                "--manifest-lock",
+                str(synthetic_dataset / "manifest.lock.json"),
+                "--spec",
+                str(spec.path),
+                "--expected-symbol-months",
+                "3",
+            ]
+        )
+        assert ret == 0
+
+    def _compare_trees(left: Path, right: Path) -> None:
+        left_files = {p.relative_to(left): p for p in left.rglob("*") if p.is_file()}
+        right_files = {p.relative_to(right): p for p in right.rglob("*") if p.is_file()}
+        assert left_files.keys() == right_files.keys(), (
+            f"bundle file sets differ: left_only={set(left_files) - set(right_files)}, "
+            f"right_only={set(right_files) - set(left_files)}"
+        )
+        for rel, lp in left_files.items():
+            rp = right_files[rel]
+            assert lp.read_bytes() == rp.read_bytes(), f"bundle files differ at {rel}"
+
+    _compare_trees(out1, out2)
 
 
 def test_intraday_study_does_not_import_network_or_provider_modules():

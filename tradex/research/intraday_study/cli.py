@@ -2,16 +2,17 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
 import sys
-import time
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from tradex.research.intraday_engine.models import as_json_dict
-from tradex.research.intraday_engine.spec import IntradaySpec, load_spec
+from tradex.research.intraday_engine.spec import IntradaySpec, SpecError, load_spec
 
 from .artifacts import (
     write_artifact_bundle,
@@ -24,14 +25,16 @@ from .freeze import (
     verify_frozen_evaluation_code,
 )
 from .manifest import (
+    ManifestError,
     SymbolMonth,
     load_dataset_plan,
+    sha256_of_file,
     verify_dataset_bundle,
     verify_dataset_integrity,
     verify_dataset_plan_linkage,
 )
 from .split import SplitName
-from .study import run_split
+from .study import StudyError, run_split
 
 
 class StudyCLIError(Exception):
@@ -62,6 +65,45 @@ def _default_spec_path() -> Path:
 
 def _default_dataset_plan_path(dataset_root: Path) -> Path:
     return dataset_root / "dataset_plan.lock.json"
+
+
+def _verify_spec_and_amendment_hashes(
+    spec_path: Path,
+    dataset_plan: dict[str, Any],
+    repo_root: Path,
+) -> Path:
+    """Fail closed if the actual spec or amendment files do not match the dataset plan.
+
+    The dataset plan records the expected SHA-256 hashes of the locked spec and the
+    data-sufficiency amendment.  We compare the on-disk files (the spec that was
+    passed to the CLI and the amendment referenced by the plan) to those hashes so
+    that a structurally valid plan cannot be paired with a tampered strategy or
+    amendment.
+    """
+    spec_actual = sha256_of_file(spec_path)
+    spec_expected = dataset_plan.get("original_strategy_spec", {}).get("sha256")
+    if spec_expected is None:
+        raise StudyCLIError("dataset plan missing original_strategy_spec.sha256")
+    if spec_actual != spec_expected:
+        raise StudyCLIError(
+            f"spec file hash mismatch: expected {spec_expected}, got {spec_actual}"
+        )
+
+    amendment_relative = dataset_plan.get("data_sufficiency_amendment", {}).get("path")
+    amendment_expected = dataset_plan.get("data_sufficiency_amendment", {}).get("sha256")
+    if amendment_relative is None or amendment_expected is None:
+        raise StudyCLIError(
+            "dataset plan missing data_sufficiency_amendment path and/or sha256"
+        )
+    amendment_path = (repo_root / amendment_relative).resolve()
+    if not amendment_path.is_file():
+        raise StudyCLIError(f"amendment file not found: {amendment_path}")
+    amendment_actual = sha256_of_file(amendment_path)
+    if amendment_actual != amendment_expected:
+        raise StudyCLIError(
+            f"amendment file hash mismatch: expected {amendment_expected}, got {amendment_actual}"
+        )
+    return amendment_path
 
 
 def _parse_generated_at(value: str) -> datetime:
@@ -152,6 +194,30 @@ def _holdout_ledger_path(dataset_id: str) -> Path:
     return _default_holdout_ledger_dir() / dataset_id / "ledger.json"
 
 
+@contextmanager
+def _holdout_ledger_lock(ledger_path: Path):
+    """Acquire an exclusive, non-blocking advisory lock on the holdout ledger.
+
+    The lock is held for the lifetime of the context.  A second concurrent process
+    attempting to reserve the same dataset receives a ``StudyCLIError`` instead of
+    racing the read-check-write sequence.
+    """
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(str(ledger_path), os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (OSError, BlockingIOError) as e:
+        os.close(fd)
+        raise StudyCLIError(f"holdout ledger is already reserved: {ledger_path}") from e
+    try:
+        yield fd
+    finally:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
+
+
 def _ledger_identity(freeze_record: Any) -> dict[str, str]:
     """Return the frozen identity components stored in the ledger."""
     return {
@@ -163,7 +229,7 @@ def _ledger_identity(freeze_record: Any) -> dict[str, str]:
 
 
 def _read_holdout_ledger(ledger_path: Path) -> dict[str, Any] | None:
-    if ledger_path.is_file():
+    if ledger_path.is_file() and ledger_path.stat().st_size > 0:
         return json.loads(ledger_path.read_text(encoding="utf-8"))
     return None
 
@@ -244,7 +310,6 @@ def _write_split_artifacts(
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
-    start_time = time.perf_counter()
     dataset_root = Path(args.dataset_root).expanduser().resolve()
     output_dir = Path(args.output).expanduser().resolve()
     if args.manifest_lock:
@@ -272,6 +337,10 @@ def _cmd_run(args: argparse.Namespace) -> int:
         raise StudyCLIError("committed INTRA-001B-dataset-v1.json not found")
     dataset_plan_sha = verify_dataset_plan_linkage(dataset_plan_path, committed_plan_path)
     dataset_plan = load_dataset_plan(dataset_plan_path)
+
+    # Fail closed if the CLI-supplied spec or the referenced amendment file has been
+    # tampered with, even if the dataset plan's reference strings still match.
+    _verify_spec_and_amendment_hashes(spec_path, dataset_plan, repo_root)
     amendment_sha = dataset_plan.get("data_sufficiency_amendment", {}).get("sha256")
 
     # Phase 1: verify the entire locked dataset bundle (set equality, identity,
@@ -292,7 +361,6 @@ def _cmd_run(args: argparse.Namespace) -> int:
     dataset_id = _dataset_id_from_root(dataset_root)
 
     # Phase 2: development diagnostics (not evidence-eligible).
-    dev_start = time.perf_counter()
     dev_symbol_months = verified.by_split.get("development", [])
     dev_result, _, dev_monthly = run_split(
         dataset_root,
@@ -303,7 +371,6 @@ def _cmd_run(args: argparse.Namespace) -> int:
         evidence_eligible=False,
     )
     dev_result.evidence_eligible = False
-    dev_runtime = time.perf_counter() - dev_start
     dev_summary = _write_split_artifacts(
         dev_result,
         "development",
@@ -318,27 +385,27 @@ def _cmd_run(args: argparse.Namespace) -> int:
         holdout_status="gated_by_validation_disposition",
         production_promotion_eligible=False,
         monthly_rejection_summary=dev_monthly,
-        runtime_seconds=dev_runtime,
+        runtime_seconds=None,
     )
 
     # Phase 3: freeze evaluation code.  A dirty tracked worktree aborts validation
-    # and holdout because the frozen-code guarantee cannot be made.
-    freeze_start = time.perf_counter()
+    # and holdout because the frozen-code guarantee cannot be made.  We pin the
+    # freeze timestamp to the fixed ``generated_at`` so repeated runs with the same
+    # inputs produce byte-identical artifacts.
     freeze_record = freeze_evaluation_code(
         repo_root,
         spec.sha256,
         amendment_sha256=amendment_sha,
         dataset_plan_sha256=dataset_plan_sha,
+        frozen_at=generated_at,
     )
     if not freeze_record.repository_clean:
         raise StudyCLIError(
             "evaluation-code worktree is not clean; validation and holdout aborted"
         )
     verify_frozen_evaluation_code(repo_root, freeze_record)
-    freeze_runtime = time.perf_counter() - freeze_start
 
     # Phase 4: validation.
-    val_start = time.perf_counter()
     val_symbol_months = verified.by_split.get("validation", [])
     val_result, _, val_monthly = run_split(
         dataset_root,
@@ -351,14 +418,17 @@ def _cmd_run(args: argparse.Namespace) -> int:
     val_result.evidence_eligible = (
         val_result.outcome is not None and val_result.outcome.disposition == "supported"
     )
-    val_runtime = time.perf_counter() - val_start
 
     # Phase 5: holdout firewall.
+    # The ledger file is protected by an exclusive advisory lock for the entire
+    # holdout decision.  This prevents two concurrent invocations from both seeing
+    # an empty ledger and parsing holdout twice.
     holdout_result = None
     holdout_monthly = None
     holdout_access_count = 0
     holdout_parse_count = 0
     holdout_disposition = None
+    holdout_status = "gated_by_validation_disposition"
 
     ledger_path = _holdout_ledger_path(dataset_id)
 
@@ -385,83 +455,82 @@ def _cmd_run(args: argparse.Namespace) -> int:
                 f"{ledger_path}; cannot rerun"
             )
 
-    if val_result.outcome is None or val_result.outcome.disposition != "supported":
-        holdout_status = (
-            f"not_run_validation_{val_result.outcome.disposition if val_result.outcome else 'none'}"
-        )
-        # Hash verification of holdout files is an access; parse count remains zero.
-        holdout_access_count = holdout_files_hash_verified_count
-        holdout_parse_count = 0
-        _write_holdout_status(
-            output_dir,
-            status="not_run",
-            access_count=holdout_access_count,
-            parse_count=holdout_parse_count,
-            reason=holdout_status,
-            files_hash_verified_count=holdout_files_hash_verified_count,
-        )
+    with _holdout_ledger_lock(ledger_path):
         existing_ledger = _read_holdout_ledger(ledger_path)
         _raise_if_ledger_blocks(existing_ledger)
-        _write_holdout_ledger(
-            ledger_path,
-            dataset_id=dataset_id,
-            freeze_record=freeze_record,
-            status="not_run",
-            access_count=holdout_access_count,
-            parse_count=holdout_parse_count,
-            files_hash_verified_count=holdout_files_hash_verified_count,
-        )
-    else:
-        existing_ledger = _read_holdout_ledger(ledger_path)
-        _raise_if_ledger_blocks(existing_ledger)
-        # Record a started tombstone before any holdout Parquet is deserialized.
-        # A crash during parsing leaves this tombstone and blocks reruns.
-        _write_holdout_ledger(
-            ledger_path,
-            dataset_id=dataset_id,
-            freeze_record=freeze_record,
-            status="started",
-            access_count=0,
-            parse_count=0,
-            files_hash_verified_count=holdout_files_hash_verified_count,
-        )
-        holdout_start = time.perf_counter()
-        verify_frozen_evaluation_code(repo_root, freeze_record)
-        holdout_symbol_months = verified.by_split.get("holdout", [])
-        holdout_result, holdout_ticker_inputs, holdout_monthly = run_split(
-            dataset_root,
-            "holdout",
-            spec,
-            generated_at,
-            symbol_months=holdout_symbol_months,
-            evidence_eligible=True,
-        )
-        holdout_result.evidence_eligible = (
-            holdout_result.outcome is not None
-            and holdout_result.outcome.disposition == "supported"
-        )
-        holdout_disposition = holdout_result.outcome.disposition if holdout_result.outcome else None
-        holdout_access_count = len(holdout_symbol_months)
-        holdout_parse_count = sum(1 for ti in holdout_ticker_inputs if ti.parquet_loaded)
-        holdout_runtime = time.perf_counter() - holdout_start
-        holdout_status = f"completed_disposition_{holdout_disposition}"
-        _write_holdout_status(
-            output_dir,
-            status="completed",
-            access_count=holdout_access_count,
-            parse_count=holdout_parse_count,
-            reason=holdout_status,
-            files_hash_verified_count=holdout_files_hash_verified_count,
-        )
-        _write_holdout_ledger(
-            ledger_path,
-            dataset_id=dataset_id,
-            freeze_record=freeze_record,
-            status="completed",
-            access_count=holdout_access_count,
-            parse_count=holdout_parse_count,
-            files_hash_verified_count=holdout_files_hash_verified_count,
-        )
+
+        if val_result.outcome is None or val_result.outcome.disposition != "supported":
+            holdout_status = (
+                f"not_run_validation_{val_result.outcome.disposition if val_result.outcome else 'none'}"
+            )
+            # Hash verification of holdout files is an access; parse count remains zero.
+            holdout_access_count = holdout_files_hash_verified_count
+            holdout_parse_count = 0
+            _write_holdout_status(
+                output_dir,
+                status="not_run",
+                access_count=holdout_access_count,
+                parse_count=holdout_parse_count,
+                reason=holdout_status,
+                files_hash_verified_count=holdout_files_hash_verified_count,
+            )
+            _write_holdout_ledger(
+                ledger_path,
+                dataset_id=dataset_id,
+                freeze_record=freeze_record,
+                status="not_run",
+                access_count=holdout_access_count,
+                parse_count=holdout_parse_count,
+                files_hash_verified_count=holdout_files_hash_verified_count,
+            )
+        else:
+            # Record a started tombstone before any holdout Parquet is deserialized.
+            # A crash during parsing leaves this tombstone in place while the lock is
+            # released on process exit, blocking any rerun.
+            _write_holdout_ledger(
+                ledger_path,
+                dataset_id=dataset_id,
+                freeze_record=freeze_record,
+                status="started",
+                access_count=0,
+                parse_count=0,
+                files_hash_verified_count=holdout_files_hash_verified_count,
+            )
+            verify_frozen_evaluation_code(repo_root, freeze_record)
+            holdout_symbol_months = verified.by_split.get("holdout", [])
+            holdout_result, holdout_ticker_inputs, holdout_monthly = run_split(
+                dataset_root,
+                "holdout",
+                spec,
+                generated_at,
+                symbol_months=holdout_symbol_months,
+                evidence_eligible=True,
+            )
+            holdout_result.evidence_eligible = (
+                holdout_result.outcome is not None
+                and holdout_result.outcome.disposition == "supported"
+            )
+            holdout_disposition = holdout_result.outcome.disposition if holdout_result.outcome else None
+            holdout_access_count = len(holdout_symbol_months)
+            holdout_parse_count = sum(1 for ti in holdout_ticker_inputs if ti.parquet_loaded)
+            holdout_status = f"completed_disposition_{holdout_disposition}"
+            _write_holdout_status(
+                output_dir,
+                status="completed",
+                access_count=holdout_access_count,
+                parse_count=holdout_parse_count,
+                reason=holdout_status,
+                files_hash_verified_count=holdout_files_hash_verified_count,
+            )
+            _write_holdout_ledger(
+                ledger_path,
+                dataset_id=dataset_id,
+                freeze_record=freeze_record,
+                status="completed",
+                access_count=holdout_access_count,
+                parse_count=holdout_parse_count,
+                files_hash_verified_count=holdout_files_hash_verified_count,
+            )
 
     production_promotion_eligible = (
         val_result.outcome is not None
@@ -494,7 +563,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         holdout_status=holdout_status,
         production_promotion_eligible=production_promotion_eligible,
         monthly_rejection_summary=val_monthly,
-        runtime_seconds=val_runtime,
+        runtime_seconds=None,
     )
 
     holdout_summary: dict[str, Any] = {
@@ -524,10 +593,11 @@ def _cmd_run(args: argparse.Namespace) -> int:
             holdout_status=holdout_status,
             production_promotion_eligible=production_promotion_eligible,
             monthly_rejection_summary=holdout_monthly,
-            runtime_seconds=holdout_runtime,
+            runtime_seconds=None,
         )
 
-    total_runtime = time.perf_counter() - start_time
+    # Operational timing is intentionally omitted from the artifact bundle so that
+    # fixed inputs plus a fixed generated_at produce byte-identical safe artifacts.
     summary = {
         "study_id": "INTRA-001D",
         "generated_at": generated_at.isoformat(),
@@ -536,7 +606,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         "dataset_plan_sha256": dataset_plan_sha,
         "manifest_lock_sha256": verified.manifest_sha256,
         "freeze": freeze_record_to_dict(freeze_record),
-        "freeze_verification_seconds": freeze_runtime,
+        "freeze_verification_seconds": None,
         "holdout": {
             "status": holdout_status,
             "access_count": holdout_access_count,
@@ -547,7 +617,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         "final_disposition": final_disposition,
         "production_promotion_eligible": production_promotion_eligible,
         "no_provider_calls": True,
-        "runtime_seconds": total_runtime,
+        "runtime_seconds": None,
     }
     _safe_json_dump(summary, output_dir / "study_summary.json")
     print(json.dumps(as_json_dict(summary), indent=2, allow_nan=False))
@@ -614,7 +684,7 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_run(args)
         if args.command == "freeze":
             return _cmd_freeze(args)
-    except (StudyCLIError, FreezeError) as e:
+    except (StudyCLIError, FreezeError, SpecError, ManifestError, StudyError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
     return 0

@@ -87,6 +87,7 @@ def freeze_evaluation_code(
     *,
     amendment_sha256: str | None = None,
     dataset_plan_sha256: str | None = None,
+    frozen_at: datetime | None = None,
 ) -> FreezeRecord:
     """Record the current git HEAD and evaluation-code file hashes."""
     repo_root = Path(repo_root).expanduser().resolve()
@@ -98,7 +99,7 @@ def freeze_evaluation_code(
     return FreezeRecord(
         evaluation_code_sha=head,
         repository_clean=clean,
-        frozen_at=datetime.now(UTC),
+        frozen_at=frozen_at if frozen_at is not None else datetime.now(UTC),
         spec_sha256=spec_sha256,
         amendment_sha256=amendment_sha256,
         dataset_plan_sha256=dataset_plan_sha256,

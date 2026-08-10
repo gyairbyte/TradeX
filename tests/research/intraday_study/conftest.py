@@ -178,6 +178,7 @@ def _append_month(
     start_date: date,
     pit_date: str,
     seed: int = 42,
+    n_sessions: int = 42,
 ) -> list:
     """Generate one month of synthetic data and append it to an existing dataset root."""
     (tmp_path / "ohlcv").mkdir(parents=True, exist_ok=True)
@@ -188,7 +189,7 @@ def _append_month(
         seed=seed,
         n_stock_tickers=2,
         n_etf_tickers=1,
-        n_sessions=42,
+        n_sessions=n_sessions,
         start_date=start_date,
     )
 
