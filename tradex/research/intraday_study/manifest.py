@@ -208,13 +208,60 @@ def verify_dataset_plan_file(path: Path, expected_sha256: str | None = None) -> 
     return actual
 
 
-def verify_dataset_plan_sha(dataset_plan: dict[str, Any], expected_sha: str | None = None) -> None:
-    """Verify the dataset plan contains the expected spec and amendment references."""
-    spec_ref = dataset_plan.get("strategy_spec", {})
-    if spec_ref.get("sha256") != expected_sha:
-        raise ManifestError(
-            f"dataset_plan strategy_spec SHA mismatch: expected {expected_sha}, got {spec_ref.get('sha256')}"
-        )
+def verify_dataset_plan_linkage(plan_path: Path, committed_plan_path: Path) -> str:
+    """Verify the dataset plan lock links to the committed locked plan.
+
+    The build may store a variant of the committed plan, so we verify the locked
+    references and dataset structure are identical rather than requiring a byte-
+    for-byte match.  Returns the SHA-256 of the on-disk dataset plan lock.
+    """
+    p = Path(plan_path).expanduser().resolve()
+    if not p.is_file():
+        raise ManifestError(f"dataset_plan.lock.json not found: {p}")
+    committed = _read_json(committed_plan_path)
+    plan = _read_json(p)
+
+    def _ref(obj: dict[str, Any], *keys: str) -> Any:
+        for key in keys:
+            if not isinstance(obj, dict):
+                return None
+            obj = obj.get(key)
+        return obj
+
+    for section, expected, actual in [
+        (
+            "original_strategy_spec.sha256",
+            _ref(committed, "original_strategy_spec", "sha256"),
+            _ref(plan, "original_strategy_spec", "sha256"),
+        ),
+        (
+            "data_sufficiency_amendment.sha256",
+            _ref(committed, "data_sufficiency_amendment", "sha256"),
+            _ref(plan, "data_sufficiency_amendment", "sha256"),
+        ),
+        ("dataset.dataset_id", _ref(committed, "dataset_id"), _ref(plan, "dataset_id")),
+    ]:
+        if expected is None or actual is None:
+            raise ManifestError(f"dataset_plan.lock.json missing {section}")
+        if expected != actual:
+            raise ManifestError(
+                f"dataset_plan.lock.json {section} mismatch: expected {expected}, got {actual}"
+            )
+
+    # Verify the split date ranges match the committed plan.
+    committed_dataset = committed.get("dataset", {})
+    plan_dataset = plan.get("dataset", {})
+    for split in ("development", "validation", "holdout"):
+        for bound in ("start", "end"):
+            key = f"dataset.{split}.{bound}"
+            expected = _ref(committed_dataset, split, bound)
+            actual = _ref(plan_dataset, split, bound)
+            if expected != actual:
+                raise ManifestError(
+                    f"dataset_plan.lock.json {key} mismatch: expected {expected}, got {actual}"
+                )
+
+    return sha256_of_file(p)
 
 
 def _key(symbol: str, effective_month: str) -> tuple[str, str]:

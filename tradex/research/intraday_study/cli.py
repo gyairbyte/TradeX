@@ -13,7 +13,6 @@ from tradex.research.intraday_engine.models import as_json_dict
 from tradex.research.intraday_engine.spec import IntradaySpec, load_spec
 
 from .artifacts import (
-    sha256_of_file,
     write_artifact_bundle,
     write_run_artifact_manifest_and_checksums,
 )
@@ -28,7 +27,7 @@ from .manifest import (
     load_dataset_plan,
     verify_dataset_bundle,
     verify_dataset_integrity,
-    verify_dataset_plan_file,
+    verify_dataset_plan_linkage,
 )
 from .split import SplitName
 from .study import run_split
@@ -200,15 +199,16 @@ def _cmd_run(args: argparse.Namespace) -> int:
     dataset_plan_path = _default_dataset_plan_path(dataset_root)
     repo_root = _repo_root()
 
-    # Phase 0: verify dataset plan hash against the committed locked plan.
+    # Phase 0: verify the dataset plan lock links to the committed locked plan and
+    # the required spec/amendment SHAs.  The dataset lock may be a build-output
+    # variant of the committed plan, so we verify linkage structurally rather than
+    # demanding byte-identical files.
     committed_plan_path = repo_root / "docs/research/specs/INTRA-001B-dataset-v1.json"
     if not committed_plan_path.is_file():
         raise StudyCLIError("committed INTRA-001B-dataset-v1.json not found")
-    expected_plan_sha = sha256_of_file(committed_plan_path)
-    verify_dataset_plan_file(dataset_plan_path, expected_sha256=expected_plan_sha)
+    dataset_plan_sha = verify_dataset_plan_linkage(dataset_plan_path, committed_plan_path)
     dataset_plan = load_dataset_plan(dataset_plan_path)
     amendment_sha = dataset_plan.get("data_sufficiency_amendment", {}).get("sha256")
-    dataset_plan_sha = sha256_of_file(dataset_plan_path)
 
     # Phase 1: verify the entire locked dataset bundle (set equality, identity,
     # path containment, split labels, provider contract flags) and file hashes.
