@@ -1,12 +1,12 @@
 # INTRA-001D Real-Data Study Report
 
 ## Study status
-- **Holdout status:** not_yet_determined
+- **Holdout status:** gated_by_validation_disposition
 - **Production promotion eligible:** False
 - **Dataset evidence label:** locked INTRA-001B-DATASET-V1 with verified manifest.lock.json, data_quality.csv, and universe_manifest.csv
 - **Evidence eligible:** False
 - **Split:** development
-- **Runtime (seconds):** 1091.8556
+- **Runtime (seconds):** 1185.5516
 - **Disposition:** `inconclusive`
 - **Reason:** sample_or_data_sufficiency_minimums_not_met: executed_candidate_trades_232_below_300; etf_stratum_trades_32_below_75; data_sufficiency_failed; missing_bar_rate_0.0991_above_5% (1 symbol-month); missing_bar_rate_0.1213_above_5% (1 symbol-month); missing_bar_rate_0.1345_above_5% (1 symbol-month); missing_bar_rate_0.2324_above_5% (1 symbol-month); pre_normalization_metrics_unavailable (378 symbol-months)
 

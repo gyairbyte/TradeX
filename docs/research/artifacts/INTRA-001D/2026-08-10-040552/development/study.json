@@ -8954,7 +8954,7 @@
       "reason": "concentration_within_limits"
     }
   ],
-  "generated_at": "2026-08-10T03:17:48+00:00",
+  "generated_at": "2026-08-10T04:05:52+00:00",
   "generated_at_fixed": false,
   "invalid_reasons": [],
   "manifest_lock_relative": "ohlcv_manifest.csv",

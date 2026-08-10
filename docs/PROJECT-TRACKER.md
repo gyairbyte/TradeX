@@ -475,7 +475,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** Redesign intraday scorer around a specific setup
 - **Category:** Intraday trading
 - **Priority:** Medium
-- **Status:** `INTRA-001D` complete on `devin/intra-001-d-locked-study` — the locked `INTRA-001B-DATASET-V1` snapshot was integrity-verified, the `INTRA-001C` engine was loaded through a narrowly scoped real-data adapter (`tradex/research/intraday_study/`), and development, validation, and conditional holdout splits were run with frozen evaluation code and no live provider calls; the study returned `inconclusive` because pre-normalization duplicate/malformed metrics are unavailable on the stored Parquet and the locked sample-minimum gates were not met; holdout was correctly not parsed; `production_promotion_eligible=false`; no production behavior changed
+- **Status:** `INTRA-001D` complete on `devin/intra-001-d-locked-study` — the locked `INTRA-001B-DATASET-V1` snapshot was integrity-verified, the `INTRA-001C` engine was loaded through a narrowly scoped real-data adapter (`tradex/research/intraday_study/`), and development, validation, and conditional holdout splits were run with frozen evaluation code and no live provider calls; eligibility semantics now separate `pre_normalization_metrics_unavailable` (a split-level sufficiency/inconclusive condition) from observed `missing_bar_rate` rejections; monthly rejection summaries are split-scoped; a persistent holdout ledger keyed by dataset/freeze/spec identity blocks reruns independently of `--output`; the study returned `inconclusive` because pre-normalization duplicate/malformed metrics are unavailable on the stored Parquet and the locked sample-minimum gates were not met; holdout was correctly not parsed; `production_promotion_eligible=false`; no production behavior changed
 - **Research specification:** `docs/research/INTRA-001-SPEC.md`
 - **Locked machine-readable strategy spec:** `docs/research/specs/INTRA-001-v1.json` (SHA-256 unchanged)
 - **Data-sufficiency amendment v3:** `docs/research/specs/INTRA-001-data-sufficiency-amendment-v3.json` and `docs/research/INTRA-001-DATA-SUFFICIENCY-AMENDMENT-V3.md`
@@ -498,7 +498,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **INTRA-001C implementation doc:** `docs/research/INTRA-001C-IMPLEMENTATION.md`
 - **INTRA-001C engine package:** `tradex/research/intraday_engine/`
 - **INTRA-001C tests:** `tests/research/intraday_engine/`
-- **INTRA-001C status:** Synthetic engine complete; third-round ChatGPT review blockers addressed — `run_study` now uses genuine end-to-end synthetic `TickerInput` fixtures (candidate, Baseline A, Baseline B, execution, aggregation, gates, and JSON-safe serialization) with exact dispositions/statuses for supported, not_supported, and rejected paths; no monkeypatched strategy evaluators; no real-data or provider calls; no production behavior changed; `INTRA-001D` not started
+- **INTRA-001C status:** Synthetic engine complete and merged; `run_study` uses genuine end-to-end synthetic `TickerInput` fixtures (candidate, Baseline A, Baseline B, execution, aggregation, gates, and JSON-safe serialization) with exact dispositions/statuses for supported, not_supported, and rejected paths; no monkeypatched strategy evaluators; no real-data or provider calls; no production behavior changed
 - **INTRA-001B monthly stock counts:** 50 selected stocks per month, 12 months
 - **INTRA-001B fixed ETF stratum:** 13 ETFs per month
 - **INTRA-001B unique selected symbols:** 97 distinct stocks + 13 ETFs
@@ -510,20 +510,19 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Ranking formula:** `session_dollar_volume = Alpaca SIP 1Day close * Alpaca SIP 1Day volume`; median over prior 20 complete XNYS sessions; 1Day volume accepted as a total-liquidity proxy that includes pre/post-market activity
 - **Holdout protection:** OHLCV bars downloaded and validated; no VWAP, signals, entries, exits, returns, metrics, or holdout-performance inspected for real data; synthetic engine does not access the locked INTRA-001B real-data directory
 - **INTRA-001C holdout protection:** Engine operates on purely synthetic tickers (`SYNTH-STK-*`, `SYNTH-ETF-*`) and writes only to a user-supplied output directory; it never downloads, reads, or evaluates real symbols
-- **INTRA-001D branch:** `devin/intra-001-d-locked-study` (current head `c30f5dac5c6399628cdba5e70b640dacee35e26c`)
+- **INTRA-001D branch:** `devin/intra-001-d-locked-study` (current head `837409cffc2b41460f66bddc488ea212acff0a30` after review fixes)
 - **INTRA-001D starting main SHA:** `a7249f2f1ebf5230947c6fa601cbb1634365f25e`
-- **INTRA-001D evaluation-code freeze SHA:** `b974d916800f540de9bcd84c79d1546f85d574b1` (clean tracked commit used to run development/validation)
-- **INTRA-001D branch head after review fixes:** `c30f5dac5c6399628cdba5e70b640dacee35e26c`
-- **INTRA-001D safe artifacts:** `docs/research/artifacts/INTRA-001D/2026-08-10-013859/`
-- **INTRA-001D development outcome:** `inconclusive` — `pre_normalization_metrics_unavailable` on all 378 symbol-months, so no symbol-month is eligible to signal or trade; candidate executed trades=0, below the locked `executed_candidate_trades_min=300`; represented stock symbols=0; ETF stratum trades=0; six BKNG months exceed the 5% missing-bar threshold (Jan 23.2372%, Feb 13.4451%, Mar 12.1326%, Apr 9.9124%, plus validation Jul and holdout Nov)
-- **INTRA-001D validation outcome:** `inconclusive` — `pre_normalization_metrics_unavailable` on all 189 symbol-months, so no symbol-month is eligible to signal or trade; candidate executed trades=0, below 300; stock stratum trades=0; ETF stratum trades=0; one BKNG month (Jul) exceeds the 5% missing-bar threshold
-- **INTRA-001D holdout access status:** Not parsed — validation disposition was not `supported`; holdout files received hash-only integrity checks for all 189 holdout symbol-months before validation; zero holdout OHLCV parses occurred
-- **INTRA-001D final disposition:** `inconclusive`; `production_promotion_eligible=false`; all 756 symbol-months are data-quality rejected, 750 for `pre_normalization_metrics_unavailable` and 6 BKNG for `missing_bar_rate; pre_normalization_metrics_unavailable`
+- **INTRA-001D evaluation-code freeze SHA:** `837409cffc2b41460f66bddc488ea212acff0a30` (clean tracked commit used to run development/validation)
+- **INTRA-001D safe artifacts:** `docs/research/artifacts/INTRA-001D/2026-08-10-040552/`
+- **INTRA-001D development outcome:** `inconclusive` — candidate executed trades=232, below the locked `executed_candidate_trades_min=300`; ETF stratum trades=32, below 75; four BKNG symbol-months exceed the 5% per-symbol missing-bar threshold (Jan 23.2372%, Feb 13.4451%, Mar 12.1326%, Apr 9.9124%); all 378 symbol-months have `pre_normalization_metrics_unavailable`, keeping split disposition `inconclusive` while still allowing diagnostic trade/sample metrics
+- **INTRA-001D validation outcome:** `inconclusive` — candidate executed trades=103, below 300; represented ETFs=7, below 8; stock stratum trades=95, below 100; ETF stratum trades=8, below 75; one BKNG month (Jul, 29.4559%) exceeds the 5% per-symbol missing-bar threshold; all 189 symbol-months have `pre_normalization_metrics_unavailable`
+- **INTRA-001D holdout access status:** Not parsed — validation disposition was not `supported`; all 189 holdout symbol-month files received hash-only integrity checks (`access_count=189`) and zero holdout Parquet parses occurred (`parse_count=0`); a persistent holdout ledger keyed by dataset/freeze/spec identity blocks reruns independently of `--output`
+- **INTRA-001D final disposition:** `inconclusive`; `production_promotion_eligible=false`; 6 of 756 symbol-months (0.7937%) are data-quality rejected for `missing_bar_rate`, all BKNG (Jan/Feb/Mar/Apr in development, Jul in validation, Nov in holdout); the remaining 750 symbol-months are unverified due to unavailable pre-normalization duplicate/malformed metrics and cannot be counted as clean, forcing the honest `inconclusive` classification
 - **INTRA-001D production-promotion eligible:** `false`
 - **INTRA-001D dataset:** `INTRA-001B-DATASET-V1` private snapshot at `~/.tradex/research/INTRA-001B-DATASET-V1/` (not committed)
 - **INTRA-001D provider calls:** 0
 - **Problem statement:** The intraday score is a loose bundle of indicators without VWAP, time-of-day, or liquidity context.
-- **Recommended action:** `INTRA-001D` is complete. The real-data study returned `inconclusive` due to unrecoverable pre-normalization data sufficiency and sub-threshold sample counts. No production promotion is warranted. Future work on this hypothesis requires either recovery of pre-normalization duplicate/malformed metrics or a new Gary-approved study with an amended data-sufficiency gate.
+- **Recommended action:** `INTRA-001D` is complete. The real-data study returned `inconclusive` due to unavailable pre-normalization duplicate/malformed metrics (750 symbol-months), the six observed BKNG `missing_bar_rate` rejections, and sub-threshold sample counts. No production promotion is warranted. Future work on this hypothesis requires either recovery of pre-normalization duplicate/malformed metrics or a new Gary-approved study with an amended data-sufficiency gate.
 
 - **Reason:** A generic score is not actionable for intraday trading. The concrete open-drive VWAP pullback setup and its two baselines are pre-registered before any code changes.
 - **Dependencies:** VAL-001
@@ -725,21 +724,20 @@ This is the master backlog for recommendations from the Devin review. Items are 
 
 | Status | Count |
 |---|---|
-| Completed | 31 |
+| Completed | 32 |
 | Deferred | 0 |
 | Proposed | 0 |
-| In progress | 1 |
+| In progress | 0 |
 | Blocked | 0 |
 
-The original engineering-foundation and UI-refactor backlog is substantially complete. `SHORT-001` is closed as Completed — Not supported. `INTRA-001B` produced a locked 2025 dataset manifest and safe artifacts with the 1Day-ranking amendment accepted. `INTRA-001C` is complete and accepted: the synthetic intraday engine and its tests produce deterministic `synthetic=true`, `evidence_eligible=false` artifacts and do not access real data or production behavior. `INTRA-001D` is the next real-data phase and requires separate Gary approval before any work on a new branch. Production promotion remains a separate Gary-approved PR only if the locked study supports it. No V5 reference-provider probe is authorized.
+The original engineering-foundation and UI-refactor backlog is substantially complete. `SHORT-001` is closed as Completed — Not supported. `INTRA-001B` produced a locked 2025 dataset manifest and safe artifacts with the 1Day-ranking amendment accepted. `INTRA-001C` is complete and accepted: the synthetic intraday engine and its tests produce deterministic `synthetic=true`, `evidence_eligible=false` artifacts and do not access real data or production behavior. `INTRA-001D` is complete: the locked real-data study ran on `INTRA-001B-DATASET-V1` with frozen evaluation code, produced real diagnostic trade/sample metrics, and returned `inconclusive`; the holdout was not parsed. Production promotion remains a separate Gary-approved PR only if the locked study supports it. No V5 reference-provider probe is authorized.
 
 **Remaining non-completed items:**
-- `INTRA-001D`: Not started — separately approved real-data study on `INTRA-001B-DATASET-V1` using the locked `tradex/research/intraday_engine/`; no work until explicit approval.
+None — `INTRA-001D` is complete and this PR is ready for final review. No further work on this hypothesis is authorized without a new Gary-approved plan.
 
 **Recommended next work order:**
-1. **`devin/intra-001-d-locked-study`** — Build manifest, run dev/validation split on the locked 2025 dataset, holdout only if gates pass, commit safe artifacts (requires Gary approval to start).
-2. **Separate Gary-approved production PR** — Only if `INTRA-001D` gates pass and the methodology remains valid.
+1. **Separate Gary-approved production PR** — Only if `INTRA-001D` gates had passed and the methodology remains valid. They did not, so no production promotion is warranted.
 
 **Recommended next pull request order:**
-1. `devin/intra-001-d-locked-study` (locked real-data study; start only after explicit approval).
+1. `devin/intra-001-d-locked-study` (final review of the locked real-data study; no further commits without Gary approval).
 

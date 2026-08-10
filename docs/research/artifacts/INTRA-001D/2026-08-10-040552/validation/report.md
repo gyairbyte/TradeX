@@ -6,7 +6,7 @@
 - **Dataset evidence label:** locked INTRA-001B-DATASET-V1 with verified manifest.lock.json, data_quality.csv, and universe_manifest.csv
 - **Evidence eligible:** False
 - **Split:** validation
-- **Runtime (seconds):** 679.3383
+- **Runtime (seconds):** 602.9668
 - **Disposition:** `inconclusive`
 - **Reason:** sample_or_data_sufficiency_minimums_not_met: executed_candidate_trades_103_below_300; represented_etfs_7_below_8; stock_stratum_trades_95_below_100; etf_stratum_trades_8_below_75; data_sufficiency_failed; missing_bar_rate_0.2946_above_5% (1 symbol-month); pre_normalization_metrics_unavailable (189 symbol-months)
 

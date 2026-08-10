@@ -4421,8 +4421,8 @@
   "engine_version": "1.0.0",
   "evidence_eligible": false,
   "freeze": {
-    "evaluation_code_sha": "a98d38dde5dbbc570dacf495d2e45f9a4eac44ab",
-    "frozen_at": "2026-08-10T03:36:12.505100+00:00",
+    "evaluation_code_sha": "837409cffc2b41460f66bddc488ea212acff0a30",
+    "frozen_at": "2026-08-10T04:25:47.280356+00:00",
     "repository_clean": true
   },
   "gap_bucket_metrics": {
@@ -5176,7 +5176,7 @@
       "reason": "concentration_within_limits"
     }
   ],
-  "generated_at": "2026-08-10T03:17:48+00:00",
+  "generated_at": "2026-08-10T04:05:52+00:00",
   "generated_at_fixed": false,
   "invalid_reasons": [],
   "manifest_lock_relative": "ohlcv_manifest.csv",

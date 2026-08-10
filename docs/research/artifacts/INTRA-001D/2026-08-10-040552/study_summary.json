@@ -5,7 +5,7 @@
   "freeze": {
     "amendment_sha256": "94cc27820c97086a27252e2392c6fcf5ebcba4be482e026e1a80ff523ed1e48b",
     "dataset_plan_sha256": "5b922c377d36463dab4025bcd29915a93ea229f092be1a6d653349baedc43f28",
-    "evaluation_code_sha": "a98d38dde5dbbc570dacf495d2e45f9a4eac44ab",
+    "evaluation_code_sha": "837409cffc2b41460f66bddc488ea212acff0a30",
     "evaluation_files": {
       "docs/research/INTRA-001-DATA-SUFFICIENCY-AMENDMENT-V3.md": "480f1219223bf8bc1cf2d48057b4647ca4731210f4cc53dbdc61922d681239fb",
       "docs/research/INTRA-001-SPEC.md": "894bbc8562a3485aa395e7c065a124bbae63bd2335163c19b3340a761b0e5f15",
@@ -17,7 +17,7 @@
       "docs/research/specs/INTRA-001B-dataset-v1.json": "12a373f82f180777ab8c3b0e6a4b67d4d8b35b9ce0c396fde84652663265724d",
       "tests/research/intraday_engine/test_intra001c.py": "ca732e2bcceaf2c0a47c345ff27afe7dd4f097b561ab3f3a5bdcddbc0f5709be",
       "tests/research/intraday_study/conftest.py": "5f8c25e0a9d3a9402ab3a1cb6f39d2dec6e225bcf5d1da87865a48a69e14906a",
-      "tests/research/intraday_study/test_study.py": "35e5997f524c08c858b157ab98ed8c4645fee61567823cebdb06293cf0c16d04",
+      "tests/research/intraday_study/test_study.py": "f9c917a656ef6e0dd7a9e80919f5145c99ed476e67f7af5261435ae096e573b0",
       "tradex/research/intraday_engine/__init__.py": "a30d4cbfbef95b1f13b7343c28bb5c8126456e5e3b04cd49adfbee45ac9ee701",
       "tradex/research/intraday_engine/__main__.py": "12290091e9b0d0aa7dbbc0370ec1edffe0b5dc6e4638cc55b4962574c2334f13",
       "tradex/research/intraday_engine/baseline_a.py": "55176e035bb7611756c8599b4b7b8483c4275bcd9cec7ac3610c0b43574e9b65",
@@ -41,21 +41,21 @@
       "tradex/research/intraday_study/__init__.py": "c686b0b05947ef360f9d646bded784965f394b25a1f6ef4b3b88a648a5df95ca",
       "tradex/research/intraday_study/__main__.py": "1668061f8f1e2fd51a19b102a5764b2c88785ba01b96d65d817d95b8459fa700",
       "tradex/research/intraday_study/artifacts.py": "961e82b59ef7a7c94f446727f04fd24dcce156ff14d4f6ee20aaca6c0488438a",
-      "tradex/research/intraday_study/cli.py": "156058ab31664e9b14afb29d4179d836bbb1533c4b0bbfddddfb42d5089cf398",
+      "tradex/research/intraday_study/cli.py": "ab7b2c11d57136b3735e0edea05e0a0ddbde2de6798ac0cdcdf811ace0755bfb",
       "tradex/research/intraday_study/freeze.py": "d7a528ceacb2f0451d2aa0f9341abe01f5c1c0be722de4953dda4fbee2eaa145",
       "tradex/research/intraday_study/loader.py": "5f07fa25839d594ab81f2b47223a7d35d3dfb54703cebeb49cf216a19314b1a8",
       "tradex/research/intraday_study/manifest.py": "38d40f063dd3b485914823d6dbaaa978aad7da41275b456a268d24bd5934fddc",
       "tradex/research/intraday_study/split.py": "7394f1894e7c6ec0199e8ecc6862be52d8890e03c0f6865cd9e4c1f6070bfdf0",
       "tradex/research/intraday_study/study.py": "e47aab35cc9ecdb2767533405dfd7ac9e38fd5ddb4e80908c172ea2c4b1a854c"
     },
-    "frozen_at": "2026-08-10T03:36:12.505100+00:00",
+    "frozen_at": "2026-08-10T04:25:47.280356+00:00",
     "repository_clean": true,
     "spec_sha256": "09394d038928433529ec4c5f5ba5ff0392c764d5b59f1af71d95f4f3957c0464"
   },
-  "freeze_verification_seconds": 0.010958975999528775,
-  "generated_at": "2026-08-10T03:17:48+00:00",
+  "freeze_verification_seconds": 0.011192915999345132,
+  "generated_at": "2026-08-10T04:05:52+00:00",
   "holdout": {
-    "access_count": 0,
+    "access_count": 189,
     "files_hash_verified_count": 189,
     "parse_count": 0,
     "status": "not_run_validation_inconclusive"
@@ -63,7 +63,7 @@
   "manifest_lock_sha256": "2284f8e162d86171237b5b3bb320273c8ec41fb18c4c63424caf271115551a37",
   "no_provider_calls": true,
   "production_promotion_eligible": false,
-  "runtime_seconds": 1777.4845927290007,
+  "runtime_seconds": 1796.2082143450007,
   "spec_sha256": "09394d038928433529ec4c5f5ba5ff0392c764d5b59f1af71d95f4f3957c0464",
   "splits": [
     {
@@ -81,7 +81,7 @@
       "split": "validation"
     },
     {
-      "access_count": 0,
+      "access_count": 189,
       "disposition": null,
       "evidence_eligible": false,
       "parse_count": 0,
