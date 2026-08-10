@@ -510,8 +510,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Ranking formula:** `session_dollar_volume = Alpaca SIP 1Day close * Alpaca SIP 1Day volume`; median over prior 20 complete XNYS sessions; 1Day volume accepted as a total-liquidity proxy that includes pre/post-market activity
 - **Holdout protection:** OHLCV bars downloaded and validated; no VWAP, signals, entries, exits, returns, metrics, or holdout-performance inspected for real data; synthetic engine does not access the locked INTRA-001B real-data directory
 - **INTRA-001C holdout protection:** Engine operates on purely synthetic tickers (`SYNTH-STK-*`, `SYNTH-ETF-*`) and writes only to a user-supplied output directory; it never downloads, reads, or evaluates real symbols
-- **INTRA-001D branch:** `devin/intra-001-d-locked-study`
-- **INTRA-001D live PR head:** `5e215800a10ea89965663481fa7fe56617757b47`
+- **INTRA-001D branch:** `devin/intra-001-d-locked-study` (live PR head is the branch tip; see the PR description for the exact SHA)
 - **INTRA-001D starting main SHA:** `a7249f2f1ebf5230947c6fa601cbb1634365f25e`
 - **INTRA-001D evaluation-code freeze SHA:** `b88a93c4f811d1ff19ff88374b03018db42d4df5` (clean tracked commit used to run development/validation; distinct from the live PR head)
 - **INTRA-001D safe artifacts:** `docs/research/artifacts/INTRA-001D/2026-08-10-131410/`
