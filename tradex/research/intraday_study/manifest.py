@@ -354,16 +354,19 @@ def verify_dataset_bundle(
     dq_keys = _keys(dq_df)
     universe_keys = _keys(universe_df, symbol_col="ticker")
 
-    if not (lock_keys == ohlcv_keys == dq_keys == universe_keys):
-        missing_lock = (ohlcv_keys | dq_keys | universe_keys) - lock_keys
-        missing_ohlcv = lock_keys - ohlcv_keys
-        missing_dq = lock_keys - dq_keys
-        missing_universe = lock_keys - universe_keys
+    if lock_keys != ohlcv_keys or lock_keys != dq_keys:
         raise ManifestError(
             f"symbol-month identity set mismatch: lock={len(lock_keys)} ohlcv={len(ohlcv_keys)} "
-            f"dq={len(dq_keys)} universe={len(universe_keys)}; "
-            f"missing_lock={sorted(missing_lock)} missing_ohlcv={sorted(missing_ohlcv)} "
-            f"missing_dq={sorted(missing_dq)} missing_universe={sorted(missing_universe)}"
+            f"dq={len(dq_keys)}; "
+            f"missing_ohlcv={sorted(lock_keys - ohlcv_keys)} "
+            f"missing_dq={sorted(lock_keys - dq_keys)}"
+        )
+
+    missing_universe = lock_keys - universe_keys
+    if missing_universe:
+        raise ManifestError(
+            f"symbol-month identity set mismatch: {len(missing_universe)} selected symbol-months "
+            f"missing from universe_manifest.csv: {sorted(missing_universe)}"
         )
 
     if expected_count is not None and len(lock_keys) != expected_count:
