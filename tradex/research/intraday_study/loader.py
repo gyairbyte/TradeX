@@ -65,22 +65,26 @@ def _build_meta_from_universe(
         median_dv = _float_or_none(universe_row.get("median_prior_20_dollar_volume"))
         included = _bool_or_false(universe_row.get("included"))
 
-    # Data-quality rejection overrides eligibility, but universe inclusion is the
-    # primary source of truth for the monthly PIT universe.
+    # Any data-quality rejection disables trading for that symbol-month.  Provider
+    # contract failures (symbol mismatch, pagination incomplete, hash mismatch) are
+    # also fatal to eligibility; the engine's contract checks surface them as
+    # ``invalid`` reasons.  Pre-normalization unavailability is a data-sufficiency
+    # gate and is surfaced at the split level.
     rejected = False
-    rejection_reason = ""
+    contract_fail = False
     if data_quality_row is not None:
         rejected = _bool_or_false(data_quality_row.get("rejected"))
-        rejection_reason = _clean_str(data_quality_row.get("rejection_reason"))
-        # A missing-bar or zero-volume rejection is a data-sufficiency gate.
-        # Pre-normalization unavailability is handled at the DataQualitySummary level.
-        if rejected and "missing_bar_rate" in rejection_reason:
-            included = False
+        if _bool_or_false(data_quality_row.get("symbol_mismatch")):
+            contract_fail = True
+        if _bool_or_false(data_quality_row.get("pagination_complete")) is False:
+            contract_fail = True
+        if _bool_or_false(data_quality_row.get("file_sha256_match")) is False:
+            contract_fail = True
 
     return TickerMeta(
         ticker=symbol,
         is_etf=is_etf,
-        is_eligible=included,
+        is_eligible=included and not rejected and not contract_fail,
         prior_close=prior_close,
         prior_20_median_dollar_volume=median_dv,
         security_type=security_type,
@@ -103,35 +107,84 @@ def _build_quality_summary_from_row(
             return default
 
     pre_norm = row.get("pre_normalization_metrics_available")
-    if isinstance(pre_norm, bool):
-        pre_norm_available = pre_norm
-    elif isinstance(pre_norm, str):
-        pre_norm_available = pre_norm.lower() == "true"
-    else:
+    pre_norm_available = _bool_or_none(pre_norm) if pre_norm is not None else False
+    if pre_norm_available is None:
         # Default to False because the stored Parquet is already normalized/deduplicated.
         pre_norm_available = False
 
-    # If this row reports missing bars, reflect them in the summary.
-    expected = _int("expected_bars")
+    # Use the locked data-quality row for counts.  expected_sessions is the calendar
+    # denominator for the per-symbol missing-bar-rate check.
     actual = _int("actual_bars")
     missing = _int("missing_bars")
-    valid_bars = max(0, actual - missing) if expected else 1
-    sessions = _int("actual_sessions") or _int("expected_sessions") or 1
+    valid_bars = max(0, actual - missing)
+    sessions = _int("expected_sessions")
+    if sessions == 0:
+        sessions = _int("actual_sessions")
 
     return DataQualitySummary(
         ticker=symbol,
         total_rows=actual,
-        duplicate_timestamps=0,
+        duplicate_timestamps=_int("pre_dedup_duplicate_bars"),
         naive_timestamps=0,
         off_grid_bars=_int("off_grid_bars"),
         invalid_ohlc_rows=_int("invalid_ohlc_rows"),
-        non_finite_rows=0,
+        non_finite_rows=_int("malformed_rows"),
         zero_volume_bars=_int("zero_volume_bars"),
         missing_bars=missing,
         valid_bars=valid_bars,
         sessions=sessions,
         pre_normalization_metrics_available=pre_norm_available,
+        effective_month=effective_month,
+        pagination_complete=_bool_or_none(row.get("pagination_complete")),
+        symbol_mismatch=_bool_or_none(row.get("symbol_mismatch")),
+        file_sha256_match=_bool_or_none(row.get("file_sha256_match")),
+        requested_symbol=_clean_str(row.get("requested_symbol")),
+        returned_symbol=_clean_str(row.get("returned_symbol")),
     )
+
+
+def _bool_or_none(value: Any) -> bool | None:
+    if pd.isna(value) or value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.lower() == "true"
+    return bool(value)
+
+
+def _apply_data_quality_flags_to_summary(
+    summary: DataQualitySummary,
+    row: pd.Series,
+    effective_month: str,
+) -> None:
+    """Overlay the locked data_quality.csv contract/sufficiency flags onto a normalized summary."""
+    pre_norm = row.get("pre_normalization_metrics_available")
+    pre_norm_available = _bool_or_none(pre_norm) if pre_norm is not None else False
+    summary.pre_normalization_metrics_available = bool(pre_norm_available) if pre_norm_available is not None else False
+
+    summary.effective_month = effective_month
+    summary.pagination_complete = _bool_or_none(row.get("pagination_complete"))
+    summary.symbol_mismatch = _bool_or_none(row.get("symbol_mismatch"))
+    summary.file_sha256_match = _bool_or_none(row.get("file_sha256_match"))
+    summary.requested_symbol = _clean_str(row.get("requested_symbol"))
+    summary.returned_symbol = _clean_str(row.get("returned_symbol"))
+
+    # When pre-normalization metrics are available, prefer the locked builder counts
+    # for duplicate/malformed rows over recomputation from the stored Parquet.
+    if summary.pre_normalization_metrics_available is True:
+        pre_dup = row.get("pre_dedup_duplicate_bars")
+        if pre_dup is not None and not pd.isna(pre_dup):
+            try:
+                summary.duplicate_timestamps = max(0, int(float(pre_dup)))
+            except (TypeError, ValueError):
+                pass
+        malformed = row.get("malformed_rows")
+        if malformed is not None and not pd.isna(malformed):
+            try:
+                summary.non_finite_rows = max(0, int(float(malformed)))
+            except (TypeError, ValueError):
+                pass
 
 
 def _evaluation_dates_for_month(
@@ -161,24 +214,18 @@ def load_symbol_month(
     month = symbol_month.effective_month
     parquet_path = Path(dataset_root).expanduser().resolve() / ohlcv_subdir / symbol_month.relative_path
 
+    if data_quality_row is None:
+        raise LoaderError(f"missing data_quality row for {symbol}/{month}")
+    if universe_row is None:
+        raise LoaderError(f"missing universe_manifest row for {symbol}/{month}")
+
     meta = _build_meta_from_universe(symbol, month, universe_row, data_quality_row)
 
-    # If the monthly PIT universe did not include this symbol, do not load bars.
+    # If the monthly PIT universe did not include this symbol or it is data-quality
+    # rejected, do not load bars.  The quality summary is still returned so the
+    # split-level data-sufficiency/contract evaluation sees the symbol-month.
     if not meta.is_eligible:
-        summary = _build_quality_summary_from_row(symbol, data_quality_row, month) if data_quality_row is not None else DataQualitySummary(
-            ticker=symbol,
-            total_rows=0,
-            duplicate_timestamps=0,
-            naive_timestamps=0,
-            off_grid_bars=0,
-            invalid_ohlc_rows=0,
-            non_finite_rows=0,
-            zero_volume_bars=0,
-            missing_bars=0,
-            valid_bars=0,
-            sessions=0,
-            pre_normalization_metrics_available=False,
-        )
+        summary = _build_quality_summary_from_row(symbol, data_quality_row, month)
         return TickerInput(ticker=symbol, meta=meta, sessions=[], quality_summary=summary)
 
     if not parquet_path.is_file():
@@ -194,17 +241,7 @@ def load_symbol_month(
     if normalize:
         try:
             sessions, summary = normalize_to_sessions(df, symbol)
-            # For real stored Parquet, pre-normalization duplicate/malformed counts
-            # are not recoverable. The caller is responsible for setting this flag
-            # from the locked data_quality.csv row.
-            if data_quality_row is not None:
-                pre_norm = data_quality_row.get("pre_normalization_metrics_available")
-                if isinstance(pre_norm, bool):
-                    summary.pre_normalization_metrics_available = pre_norm
-                elif isinstance(pre_norm, str):
-                    summary.pre_normalization_metrics_available = pre_norm.lower() == "true"
-                else:
-                    summary.pre_normalization_metrics_available = False
+            _apply_data_quality_flags_to_summary(summary, data_quality_row, month)
             eval_dates = _evaluation_dates_for_month(sessions, month)
             return TickerInput(
                 ticker=symbol,

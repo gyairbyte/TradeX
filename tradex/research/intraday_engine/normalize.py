@@ -216,6 +216,14 @@ def evaluate_data_contract(summary: DataQualitySummary) -> tuple[bool, list[str]
         reasons.append(f"invalid_ohlc_rows={summary.invalid_ohlc_rows}")
     if summary.non_finite_rows > 0:
         reasons.append(f"non_finite_rows={summary.non_finite_rows}")
+    if summary.symbol_mismatch:
+        reasons.append(
+            f"symbol_mismatch requested={summary.requested_symbol} returned={summary.returned_symbol}"
+        )
+    if summary.file_sha256_match is False:
+        reasons.append("file_sha256_mismatch")
+    if summary.pagination_complete is False:
+        reasons.append("pagination_incomplete")
     return (not reasons), reasons
 
 

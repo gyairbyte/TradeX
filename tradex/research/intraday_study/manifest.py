@@ -10,6 +10,8 @@ from typing import Any
 
 import pandas as pd
 
+from .split import split_for_effective_month
+
 
 class ManifestError(Exception):
     """Raised when a manifest or file integrity check fails."""
@@ -26,6 +28,18 @@ class SymbolMonth:
     relative_path: str
     sha256: str
     file_size_bytes: int
+
+
+@dataclass(frozen=True)
+class VerifiedDataset:
+    """A verified, locked dataset bundle."""
+
+    symbol_months: list[SymbolMonth]
+    by_split: dict[str, list[SymbolMonth]]
+    manifest_sha256: str
+    ohlcv_manifest: pd.DataFrame
+    data_quality: pd.DataFrame
+    universe_manifest: pd.DataFrame
 
 
 def _read_json(path: Path) -> Any:
@@ -53,6 +67,22 @@ def load_manifest_lock(path: Path) -> list[dict[str, Any]]:
     return files
 
 
+def _safe_relative_path(root: Path, rel: str, ohlcv_subdir: str) -> Path:
+    """Return a contained file path and reject traversal or absolute paths."""
+    if not rel or rel.startswith(("/", "\\")):
+        raise ManifestError(f"absolute or empty relative_path: {rel!r}")
+    parts = Path(rel).parts
+    if any(part == ".." for part in parts):
+        raise ManifestError(f"relative_path contains '..': {rel!r}")
+    target = (root / ohlcv_subdir / rel).resolve()
+    base = (root / ohlcv_subdir).resolve()
+    try:
+        target.relative_to(base)
+    except ValueError as e:
+        raise ManifestError(f"relative_path escapes ohlcv root: {rel!r}") from e
+    return target
+
+
 def verify_dataset_integrity(
     dataset_root: Path,
     manifest_records: list[dict[str, Any]],
@@ -74,7 +104,11 @@ def verify_dataset_integrity(
         if not rel or not expected_sha:
             errors.append(f"manifest record missing required fields: {rec}")
             continue
-        file_path = root / ohlcv_subdir / rel
+        try:
+            file_path = _safe_relative_path(root, rel, ohlcv_subdir)
+        except ManifestError as e:
+            errors.append(str(e))
+            continue
         if not file_path.is_file():
             errors.append(f"missing file: {rel}")
             continue
@@ -84,6 +118,7 @@ def verify_dataset_integrity(
                 f"sha256 mismatch for {rel}: expected {expected_sha}, got {actual_sha}"
             )
             continue
+        split = split_for_effective_month(effective_month) if effective_month else ""
         verified.append(
             SymbolMonth(
                 manifest_id=manifest_id,
@@ -92,7 +127,7 @@ def verify_dataset_integrity(
                 relative_path=rel,
                 sha256=expected_sha,
                 file_size_bytes=int(rec.get("file_size_bytes", 0) or 0),
-                split="",
+                split=split,
             )
         )
     if errors:
@@ -160,6 +195,19 @@ def load_dataset_plan(path: Path) -> dict[str, Any]:
     return data
 
 
+def verify_dataset_plan_file(path: Path, expected_sha256: str | None = None) -> str:
+    """Verify the dataset plan file hash and return it."""
+    p = Path(path).expanduser().resolve()
+    if not p.is_file():
+        raise ManifestError(f"dataset_plan.lock.json not found: {p}")
+    actual = sha256_of_file(p)
+    if expected_sha256 is not None and actual != expected_sha256:
+        raise ManifestError(
+            f"dataset_plan.lock.json SHA-256 mismatch: expected {expected_sha256}, got {actual}"
+        )
+    return actual
+
+
 def verify_dataset_plan_sha(dataset_plan: dict[str, Any], expected_sha: str | None = None) -> None:
     """Verify the dataset plan contains the expected spec and amendment references."""
     spec_ref = dataset_plan.get("strategy_spec", {})
@@ -169,23 +217,213 @@ def verify_dataset_plan_sha(dataset_plan: dict[str, Any], expected_sha: str | No
         )
 
 
-def month_split(effective_month: str) -> str:
-    """Map an effective month to development/validation/holdout split."""
-    split_map = {
-        "2025-01": "development",
-        "2025-02": "development",
-        "2025-03": "development",
-        "2025-04": "development",
-        "2025-05": "development",
-        "2025-06": "development",
-        "2025-07": "validation",
-        "2025-08": "validation",
-        "2025-09": "validation",
-        "2025-10": "holdout",
-        "2025-11": "holdout",
-        "2025-12": "holdout",
+def _key(symbol: str, effective_month: str) -> tuple[str, str]:
+    return (symbol, effective_month)
+
+
+def _as_bool_or_none(value: Any) -> bool | None:
+    if pd.isna(value) or value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.lower() == "true"
+    return bool(value)
+
+
+def _as_str(value: Any) -> str:
+    return "" if pd.isna(value) or value is None else str(value)
+
+
+def verify_dataset_bundle(
+    dataset_root: Path,
+    *,
+    expected_count: int | None = 756,
+    ohlcv_subdir: str = "ohlcv",
+    universe_subdir: str = "universe",
+) -> VerifiedDataset:
+    """Cross-check manifest.lock.json, ohlcv_manifest.csv, data_quality.csv, and universe_manifest.csv.
+
+    Raises ManifestError on any identity, hash, path, split, or set-equality mismatch.
+    """
+    root = Path(dataset_root).expanduser().resolve()
+
+    manifest_path = root / "manifest.lock.json"
+    ohlcv_manifest_path = root / ohlcv_subdir / "ohlcv_manifest.csv"
+    data_quality_path = root / ohlcv_subdir / "data_quality.csv"
+    universe_path = root / universe_subdir / "universe_manifest.csv"
+
+    for p in [manifest_path, ohlcv_manifest_path, data_quality_path, universe_path]:
+        if not p.is_file():
+            raise ManifestError(f"required dataset file not found: {p}")
+
+    manifest_lock = _read_json(manifest_path)
+    manifest_records = manifest_lock.get("files", [])
+    if not isinstance(manifest_records, list):
+        raise ManifestError("manifest.lock.json 'files' must be a list")
+
+    ohlcv_df = load_ohlcv_manifest(ohlcv_manifest_path)
+    dq_df = load_data_quality(data_quality_path)
+    universe_df = load_universe_manifest(universe_path)
+
+    def _keys(df: pd.DataFrame, symbol_col: str = "symbol", month_col: str = "effective_month") -> set[tuple[str, str]]:
+        return {(_as_str(r[symbol_col]), _as_str(r[month_col])) for _, r in df.iterrows()}
+
+    def _assert_no_duplicate_keys(df: pd.DataFrame, name: str, symbol_col: str, month_col: str) -> None:
+        keys: list[tuple[str, str]] = []
+        seen: set[tuple[str, str]] = set()
+        for _, r in df.iterrows():
+            key = (_as_str(r[symbol_col]), _as_str(r[month_col]))
+            if key in seen:
+                raise ManifestError(f"duplicate {name} row for {key}")
+            seen.add(key)
+            keys.append(key)
+
+    _assert_no_duplicate_keys(ohlcv_df, "ohlcv_manifest", "symbol", "effective_month")
+    _assert_no_duplicate_keys(dq_df, "data_quality", "symbol", "effective_month")
+    _assert_no_duplicate_keys(universe_df, "universe_manifest", "ticker", "effective_month")
+
+    lock_keys = set()
+    lock_by_key: dict[tuple[str, str], dict[str, Any]] = {}
+    lock_ids: list[tuple[str, str]] = []
+    for rec in manifest_records:
+        symbol = _as_str(rec.get("symbol"))
+        month = _as_str(rec.get("effective_month"))
+        key = _key(symbol, month)
+        if key in lock_keys:
+            raise ManifestError(f"duplicate manifest.lock.json record for {symbol}/{month}")
+        lock_keys.add(key)
+        lock_by_key[key] = rec
+        lock_ids.append(key)
+
+    ohlcv_keys = _keys(ohlcv_df)
+    dq_keys = _keys(dq_df)
+    universe_keys = _keys(universe_df, symbol_col="ticker")
+
+    if not (lock_keys == ohlcv_keys == dq_keys == universe_keys):
+        missing_lock = (ohlcv_keys | dq_keys | universe_keys) - lock_keys
+        missing_ohlcv = lock_keys - ohlcv_keys
+        missing_dq = lock_keys - dq_keys
+        missing_universe = lock_keys - universe_keys
+        raise ManifestError(
+            f"symbol-month identity set mismatch: lock={len(lock_keys)} ohlcv={len(ohlcv_keys)} "
+            f"dq={len(dq_keys)} universe={len(universe_keys)}; "
+            f"missing_lock={sorted(missing_lock)} missing_ohlcv={sorted(missing_ohlcv)} "
+            f"missing_dq={sorted(missing_dq)} missing_universe={sorted(missing_universe)}"
+        )
+
+    if expected_count is not None and len(lock_keys) != expected_count:
+        raise ManifestError(
+            f"expected {expected_count} symbol-months, found {len(lock_keys)}"
+        )
+
+    # Row-level consistency and path safety.
+    errors: list[str] = []
+    ohlcv_by_key = {
+        _key(_as_str(r["symbol"]), _as_str(r["effective_month"])): r
+        for _, r in ohlcv_df.iterrows()
     }
-    return split_map.get(effective_month, "unknown")
+    dq_by_key = {
+        _key(_as_str(r["symbol"]), _as_str(r["effective_month"])): r
+        for _, r in dq_df.iterrows()
+    }
+    universe_by_key = {
+        _key(_as_str(r["ticker"]), _as_str(r["effective_month"])): r
+        for _, r in universe_df.iterrows()
+    }
+
+    symbol_months: list[SymbolMonth] = []
+    for key in lock_ids:
+        symbol, month = key
+        lock_rec = lock_by_key[key]
+        ohlcv_row = ohlcv_by_key[key]
+        dq_row = dq_by_key[key]
+        universe_row = universe_by_key[key]
+
+        lock_rel = _as_str(lock_rec.get("relative_path"))
+        ohlcv_rel = _as_str(ohlcv_row.get("relative_path"))
+        dq_rel = _as_str(dq_row.get("relative_path"))
+        if not (lock_rel == ohlcv_rel == dq_rel):
+            errors.append(
+                f"{symbol}/{month}: relative_path mismatch lock={lock_rel} ohlcv={ohlcv_rel} dq={dq_rel}"
+            )
+            continue
+
+        lock_sha = _as_str(lock_rec.get("sha256"))
+        ohlcv_sha = _as_str(ohlcv_row.get("sha256"))
+        dq_sha = _as_str(dq_row.get("file_sha256"))
+        if not (lock_sha and lock_sha == ohlcv_sha == dq_sha):
+            errors.append(
+                f"{symbol}/{month}: sha256 mismatch lock={lock_sha} ohlcv={ohlcv_sha} dq={dq_sha}"
+            )
+            continue
+
+        requested = _as_str(dq_row.get("requested_symbol"))
+        returned = _as_str(dq_row.get("returned_symbol"))
+        if requested != symbol or returned != symbol:
+            errors.append(
+                f"{symbol}/{month}: symbol identity mismatch requested={requested} returned={returned}"
+            )
+            continue
+
+        if _as_bool_or_none(dq_row.get("symbol_mismatch")) is True:
+            errors.append(f"{symbol}/{month}: symbol_mismatch=True")
+            continue
+
+        if _as_bool_or_none(dq_row.get("pagination_complete")) is False:
+            errors.append(f"{symbol}/{month}: pagination_complete=False")
+            continue
+
+        if _as_bool_or_none(dq_row.get("file_sha256_match")) is False:
+            errors.append(f"{symbol}/{month}: file_sha256_match=False")
+            continue
+
+        try:
+            _safe_relative_path(root, lock_rel, ohlcv_subdir)
+        except ManifestError as e:
+            errors.append(f"{symbol}/{month}: {e}")
+            continue
+
+        dq_split = _as_str(dq_row.get("split"))
+        expected_split = split_for_effective_month(month)
+        if dq_split != expected_split:
+            errors.append(
+                f"{symbol}/{month}: split mismatch dq={dq_split!r} expected={expected_split!r}"
+            )
+            continue
+
+        included = _as_bool_or_none(universe_row.get("included"))
+        if included is not True:
+            errors.append(f"{symbol}/{month}: universe included={included}")
+            continue
+
+        symbol_months.append(
+            SymbolMonth(
+                manifest_id=_as_str(lock_rec.get("manifest_id") or f"{month}/{symbol}"),
+                symbol=symbol,
+                effective_month=month,
+                split=dq_split,
+                relative_path=lock_rel,
+                sha256=lock_sha,
+                file_size_bytes=int(lock_rec.get("file_size_bytes", 0) or 0),
+            )
+        )
+
+    if errors:
+        raise ManifestError("dataset bundle verification failed: " + "; ".join(errors))
+
+    by_split: dict[str, list[SymbolMonth]] = {}
+    for sm in symbol_months:
+        by_split.setdefault(sm.split, []).append(sm)
+
+    return VerifiedDataset(
+        symbol_months=symbol_months,
+        by_split=by_split,
+        manifest_sha256=sha256_of_file(manifest_path),
+        ohlcv_manifest=ohlcv_df,
+        data_quality=dq_df,
+        universe_manifest=universe_df,
+    )
 
 
 def get_symbol_months_for_split(

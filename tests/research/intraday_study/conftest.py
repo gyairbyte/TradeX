@@ -103,6 +103,7 @@ def _data_quality_row(
     rel_path: str,
     sha256: str,
 ) -> dict:
+    # split is passed explicitly so tests can target development/validation/holdout months
     n_sessions = len(ticker_input.sessions)
     n_bars = sum(len(s.bars) for s in ticker_input.sessions)
     return {
@@ -190,6 +191,9 @@ def _build_dataset(tmp_path: Path, n_sessions: int = 42, effective_month: str = 
     dq_rows = []
     universe_rows = []
 
+    from tradex.research.intraday_study.split import split_for_effective_month
+
+    split = split_for_effective_month(effective_month)
     for i, ti in enumerate(inputs):
         rel = _write_ticker_parquet(tmp_path, ti, effective_month)
         file_path = tmp_path / "ohlcv" / rel
@@ -198,7 +202,7 @@ def _build_dataset(tmp_path: Path, n_sessions: int = 42, effective_month: str = 
         sha = hashlib.sha256(file_path.read_bytes()).hexdigest()
         file_size = file_path.stat().st_size
         manifest_records.append(_manifest_row(ti, rel, effective_month, sha, file_size, file_path))
-        dq_rows.append(_data_quality_row(ti, effective_month, "development", rel, sha))
+        dq_rows.append(_data_quality_row(ti, effective_month, split, rel, sha))
         universe_rows.append(_universe_row(ti, effective_month, "2025-01-31", i + 1))
 
     # manifest.lock.json
@@ -224,14 +228,17 @@ def _build_dataset(tmp_path: Path, n_sessions: int = 42, effective_month: str = 
         json.dumps({"dataset_id": "INTRA-001B-DATASET-TEST", "version": "1.0"}), encoding="utf-8"
     )
 
-    # dataset_plan.lock.json
+    # dataset_plan.lock.json — copy the committed locked plan byte-for-byte so the
+    # CLI hash verification matches docs/research/specs/INTRA-001B-dataset-v1.json.
     if DATASET_PLAN_PATH.is_file():
-        plan = json.loads(DATASET_PLAN_PATH.read_text(encoding="utf-8"))
+        import shutil
+
+        shutil.copy2(DATASET_PLAN_PATH, tmp_path / "dataset_plan.lock.json")
     else:
-        plan = {"dataset_id": "INTRA-001B-DATASET-TEST"}
-    (tmp_path / "dataset_plan.lock.json").write_text(
-        json.dumps(plan, indent=2), encoding="utf-8"
-    )
+        (tmp_path / "dataset_plan.lock.json").write_text(
+            json.dumps({"dataset_id": "INTRA-001B-DATASET-TEST"}, indent=2),
+            encoding="utf-8",
+        )
 
     return inputs, spec
 

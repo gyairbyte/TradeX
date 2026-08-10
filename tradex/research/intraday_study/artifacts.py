@@ -17,8 +17,112 @@ from tradex.research.intraday_engine.models import (
     StudyResult,
     as_json_dict,
 )
+from tradex.research.intraday_engine.report import build_report
+from tradex.research.intraday_engine.spec import IntradaySpec
 
 from .freeze import FreezeRecord
+
+_STUDY_METRICS_EXTRA_FIELDS = [
+    "cost_scenario_name",
+    "entry_slippage_bps",
+    "exit_slippage_bps",
+    "entry_commission_bps",
+    "exit_commission_bps",
+    "strategy",
+    "month",
+    "baseline",
+]
+
+
+_SIGNAL_FIELDS = [
+    "ticker",
+    "session_date",
+    "strategy",
+    "signal_bar_start",
+    "signal_time",
+    "opening_drive_qualified",
+    "score",
+    "stop_price",
+    "target_price",
+    "entry_open",
+    "entry_fill",
+    "risk_per_share",
+    "status",
+    "reason",
+    "executed",
+    "entry_time",
+    "entry_bar_start",
+    "exit_time",
+    "exit_bar_start",
+    "raw_exit_price",
+    "exit_fill",
+    "profit",
+    "net_r",
+    "exit_type",
+    "holding_minutes",
+    "opening_gap_pct",
+    "fallback_reason",
+    "same_bar_ambiguity",
+]
+
+
+_TRADE_FIELDS = [
+    "ticker",
+    "session_date",
+    "strategy",
+    "signal_time",
+    "signal_bar_start",
+    "entry_time",
+    "entry_bar_start",
+    "entry_open",
+    "entry_fill",
+    "stop_price",
+    "target_price",
+    "risk_per_share",
+    "exit_time",
+    "exit_bar_start",
+    "raw_exit_price",
+    "exit_fill",
+    "profit",
+    "net_r",
+    "exit_type",
+    "holding_minutes",
+    "opening_gap_pct",
+    "fallback_reason",
+    "same_bar_ambiguity",
+    "entry_bar_index",
+    "exit_bar_index",
+    "status",
+    "rejection_reason",
+]
+
+
+_SESSION_FEATURE_FIELDS = [
+    "ticker",
+    "session_date",
+    "candidate_status",
+    "candidate_reason",
+    "candidate_opening_drive_qualified",
+    "baseline_a_status",
+    "baseline_a_score",
+    "baseline_b_status",
+]
+
+
+_TICKER_COMPARISON_FIELDS = [
+    "ticker",
+    "is_etf",
+    "candidate_trade_count",
+    "candidate_total_return",
+    "candidate_mean_expectancy",
+    "candidate_maximum_drawdown_pct",
+    "baseline_a_trade_count",
+    "baseline_a_mean_expectancy",
+    "baseline_b_trade_count",
+    "baseline_b_mean_expectancy",
+    "candidate_beat_a",
+    "candidate_beat_b",
+]
 
 
 def _iso_or_none(value: Any) -> str | None:
@@ -29,25 +133,35 @@ def _iso_or_none(value: Any) -> str | None:
     return str(value)
 
 
-def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
-    if not rows:
-        path.write_text("\n")
-        return
-    fieldnames = list(rows[0].keys())
+def _write_csv(path: Path, rows: list[dict[str, Any]], fieldnames: list[str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         for row in rows:
-            clean = {k: _iso_or_none(v) for k, v in row.items()}
+            clean = {k: _iso_or_none(v) for k, v in row.items() if k in fieldnames}
             writer.writerow(clean)
 
 
-def _study_metrics_to_row(metrics: StudyMetrics) -> dict[str, Any]:
+def _safe_json_dump(data: Any, path: Path, *, indent: int = 2) -> None:
+    """Write JSON with no NaN/Infinity and stable key ordering."""
+    path.write_text(
+        json.dumps(
+            as_json_dict(data),
+            indent=indent,
+            allow_nan=False,
+            ensure_ascii=False,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _study_metrics_to_row(metrics: StudyMetrics, *, extra: dict[str, Any] | None = None) -> dict[str, Any]:
     """Flatten a StudyMetrics object into a CSV row."""
     d = asdict(metrics)
-    # Remove nested per-symbol dict.
+    # Remove nested per-symbol dict and nested cost_scenario object.
     d.pop("per_symbol", None)
-    # Flatten cost_scenario.
     cost = d.pop("cost_scenario", None)
     if isinstance(cost, CostScenario):
         d["cost_scenario_name"] = cost.name
@@ -57,7 +171,53 @@ def _study_metrics_to_row(metrics: StudyMetrics) -> dict[str, Any]:
         d["exit_commission_bps"] = cost.exit_commission_bps
     else:
         d["cost_scenario_name"] = None
+        d["entry_slippage_bps"] = None
+        d["exit_slippage_bps"] = None
+        d["entry_commission_bps"] = None
+        d["exit_commission_bps"] = None
+    if extra:
+        d.update(extra)
     return d
+
+
+def _study_metrics_fieldnames(metrics: StudyMetrics | None = None) -> list[str]:
+    """Return a stable fieldname list for a StudyMetrics-derived CSV."""
+    if metrics is None:
+        # Build from an empty StudyMetrics with dummy cost scenario so all fields exist.
+        metrics = StudyMetrics(
+            strategy="candidate",
+            cost_scenario=CostScenario(name="primary_5bps", entry_slippage_bps=5.0, exit_slippage_bps=5.0),
+            total_signals=0,
+            executed_trades=0,
+            rejected_signals=0,
+            no_signal_count=0,
+            total_trades=0,
+            pooled_expectancy=0.0,
+            pooled_total_return=0.0,
+            overall_maximum_drawdown_pct=0.0,
+            median_per_symbol_expectancy=None,
+            equal_weighted_per_symbol_mean_expectancy=None,
+            positive_symbol_rate=None,
+            median_per_symbol_total_return=None,
+            median_per_symbol_maximum_drawdown_pct=None,
+            median_per_symbol_profit_factor_order=None,
+            median_per_symbol_profit_factor_value=None,
+            trade_count_concentration=0.0,
+            net_profit_concentration=None,
+            absolute_loss_concentration=None,
+            stock_stratum_trade_count=0,
+            etf_stratum_trade_count=0,
+            stock_stratum_pooled_expectancy=0.0,
+            etf_stratum_pooled_expectancy=0.0,
+            represented_stock_symbols=0,
+            represented_etf_symbols=0,
+        )
+    row = _study_metrics_to_row(metrics)
+    # Ensure extras are present for downstream CSV variants.
+    for field in _STUDY_METRICS_EXTRA_FIELDS:
+        if field not in row:
+            row[field] = None
+    return list(row.keys())
 
 
 def _signal_to_row(signal: Signal, include_trade: bool = True) -> dict[str, Any]:
@@ -153,7 +313,7 @@ def write_signals_csv(result: StudyResult, path: Path) -> None:
     for signals in [result.candidate_signals, result.baseline_a_signals, result.baseline_b_signals]:
         for s in signals:
             rows.append(_signal_to_row(s, include_trade=True))
-    _write_csv(path, rows)
+    _write_csv(path, rows, _SIGNAL_FIELDS)
 
 
 def write_trades_csv(result: StudyResult, path: Path) -> None:
@@ -161,38 +321,41 @@ def write_trades_csv(result: StudyResult, path: Path) -> None:
     for strategy, trades in result.trades.items():
         for t in trades:
             rows.append(_trade_to_row(t, strategy))
-    _write_csv(path, rows)
+    _write_csv(path, rows, _TRADE_FIELDS)
 
 
 def write_candidate_metrics_csv(result: StudyResult, path: Path) -> None:
     rows: list[dict[str, Any]] = []
+    fieldnames = _study_metrics_fieldnames()
     for name, metrics in result.metrics_by_strategy["candidate"].items():
-        row = _study_metrics_to_row(metrics)
-        row["cost_scenario_name"] = name
+        row = _study_metrics_to_row(metrics, extra={"cost_scenario_name": name})
         rows.append(row)
-    _write_csv(path, rows)
+    _write_csv(path, rows, fieldnames)
 
 
 def write_baseline_metrics_csv(result: StudyResult, path: Path) -> None:
     rows: list[dict[str, Any]] = []
+    fieldnames = _study_metrics_fieldnames()
     for strategy in ["baseline_a", "baseline_b"]:
         for name, metrics in result.metrics_by_strategy[strategy].items():
-            row = _study_metrics_to_row(metrics)
-            row["cost_scenario_name"] = name
-            row["baseline"] = strategy
+            row = _study_metrics_to_row(metrics, extra={"cost_scenario_name": name, "baseline": strategy})
             rows.append(row)
-    _write_csv(path, rows)
+    if "baseline" not in fieldnames:
+        fieldnames.append("baseline")
+    _write_csv(path, rows, fieldnames)
 
 
 def write_cost_sensitivity_csv(result: StudyResult, path: Path) -> None:
     rows: list[dict[str, Any]] = []
+    fieldnames = _study_metrics_fieldnames()
     for strategy in ["candidate", "baseline_a", "baseline_b"]:
         for name, metrics in result.metrics_by_strategy[strategy].items():
-            row = _study_metrics_to_row(metrics)
-            row["strategy"] = strategy
-            row["cost_scenario_name"] = name
+            row = _study_metrics_to_row(metrics, extra={"strategy": strategy, "cost_scenario_name": name})
             rows.append(row)
-    _write_csv(path, rows)
+    for field in ["strategy"]:
+        if field not in fieldnames:
+            fieldnames.insert(0, field)
+    _write_csv(path, rows, fieldnames)
 
 
 def write_ticker_comparison_csv(result: StudyResult, path: Path) -> None:
@@ -217,18 +380,20 @@ def write_ticker_comparison_csv(result: StudyResult, path: Path) -> None:
             "candidate_beat_a": (cand.mean_expectancy > a.mean_expectancy) if a else None,
             "candidate_beat_b": (cand.mean_expectancy > b.mean_expectancy) if b else None,
         })
-    _write_csv(path, rows)
+    _write_csv(path, rows, _TICKER_COMPARISON_FIELDS)
 
 
 def write_monthly_comparison_csv(result: StudyResult, path: Path) -> None:
     rows: list[dict[str, Any]] = []
+    fieldnames = _study_metrics_fieldnames()
     for key, metrics in result.monthly_metrics.items():
         strategy, month = key.split(":", 1)
-        row = _study_metrics_to_row(metrics)
-        row["strategy"] = strategy
-        row["month"] = month
+        row = _study_metrics_to_row(metrics, extra={"strategy": strategy, "month": month})
         rows.append(row)
-    _write_csv(path, rows)
+    for field in ["strategy", "month"]:
+        if field not in fieldnames:
+            fieldnames.insert(0, field)
+    _write_csv(path, rows, fieldnames)
 
 
 def write_session_features_csv(result: StudyResult, path: Path) -> None:
@@ -258,7 +423,7 @@ def write_session_features_csv(result: StudyResult, path: Path) -> None:
             "baseline_a_score": a.score if a else None,
             "baseline_b_status": b.status if b else "no_signal",
         })
-    _write_csv(path, rows)
+    _write_csv(path, rows, _SESSION_FEATURE_FIELDS)
 
 
 def write_study_json(
@@ -269,7 +434,7 @@ def write_study_json(
     dataset_id: str,
     freeze_record: FreezeRecord | None = None,
     manifest_sha256: str | None = None,
-    manifest_lock_path: Path | None = None,
+    monthly_rejection_summary: dict[str, dict[str, Any]] | None = None,
 ) -> None:
     """Write a JSON summary of the study outcome and metrics."""
     cost_rows: dict[str, dict[str, Any]] = {}
@@ -304,6 +469,7 @@ def write_study_json(
         "gap_bucket_metrics": gap_rows,
         "data_quality_summaries": as_json_dict(result.data_quality_summaries),
         "invalid_reasons": result.invalid_reasons,
+        "monthly_rejection_summary": monthly_rejection_summary or {},
     }
     if freeze_record is not None:
         data["freeze"] = {
@@ -313,15 +479,66 @@ def write_study_json(
         }
     if manifest_sha256:
         data["manifest_sha256"] = manifest_sha256
-    if manifest_lock_path:
-        data["manifest_lock_path"] = str(manifest_lock_path)
+    # Relative references to the copied lock files inside this split bundle.
+    data["manifest_lock_relative"] = "manifest.lock.json"
+    data["spec_lock_relative"] = "spec.lock.json"
+    data["universe_manifest_relative"] = "universe_manifest.csv"
+    data["data_quality_relative"] = "data_quality.csv"
 
-    path.write_text(json.dumps(as_json_dict(data), indent=2), encoding="utf-8")
+    _safe_json_dump(data, path)
 
 
 def _copy_locked_file(src: Path, dst: Path) -> None:
     if src and src.is_file():
         shutil.copy2(src, dst)
+
+
+def _render_report(
+    result: StudyResult,
+    spec: IntradaySpec,
+    *,
+    split: str,
+    dataset_id: str,
+    holdout_status: str,
+    production_promotion_eligible: bool,
+    monthly_rejection_summary: dict[str, dict[str, Any]] | None = None,
+    runtime_seconds: float | None = None,
+) -> str:
+    return build_report(
+        result.candidate_signals,
+        result.baseline_a_signals,
+        result.baseline_b_signals,
+        result.cost_scenarios,
+        result.outcome if result.outcome else None,
+        spec,
+        synthetic=result.synthetic,
+        split=split,
+        dataset_id=dataset_id,
+        holdout_status=holdout_status,
+        production_promotion_eligible=production_promotion_eligible,
+        evidence_eligible=result.evidence_eligible,
+        monthly_metrics=result.monthly_metrics,
+        gap_bucket_metrics=result.gap_bucket_metrics,
+        invalid_reasons=result.invalid_reasons,
+        monthly_rejection_summary=monthly_rejection_summary,
+        runtime_seconds=runtime_seconds,
+    )
+
+
+def _write_split_artifact_manifest(output_dir: Path) -> None:
+    manifest: dict[str, str] = {}
+    for p in sorted(output_dir.iterdir()):
+        if p.is_file() and p.name not in {"artifact_manifest.json", "checksums.sha256"}:
+            manifest[p.name] = sha256_of_file(p)
+    _safe_json_dump({"schema_version": "1.0", "files": manifest}, output_dir / "artifact_manifest.json")
+
+
+def _write_split_checksums(output_dir: Path) -> None:
+    lines: list[str] = []
+    for p in sorted(output_dir.iterdir()):
+        if p.is_file() and p.name != "checksums.sha256":
+            lines.append(f"{sha256_of_file(p)}  {p.name}")
+    (output_dir / "checksums.sha256").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def write_artifact_bundle(
@@ -330,19 +547,40 @@ def write_artifact_bundle(
     *,
     split: str,
     dataset_id: str,
+    spec: IntradaySpec,
     freeze_record: FreezeRecord | None = None,
     manifest_lock_path: Path | None = None,
     universe_manifest_path: Path | None = None,
     data_quality_path: Path | None = None,
     spec_path: Path | None = None,
+    holdout_status: str = "Gated by validation disposition",
+    production_promotion_eligible: bool = False,
+    monthly_rejection_summary: dict[str, dict[str, Any]] | None = None,
+    runtime_seconds: float | None = None,
 ) -> dict[str, Path]:
     """Write the full safe artifact bundle for one split."""
     output_dir = Path(output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     written: dict[str, Path] = {}
 
-    study_json = output_dir / "study.json"
+    report_md = output_dir / "report.md"
+    report_md.write_text(
+        _render_report(
+            result,
+            spec,
+            split=split,
+            dataset_id=dataset_id,
+            holdout_status=holdout_status,
+            production_promotion_eligible=production_promotion_eligible,
+            monthly_rejection_summary=monthly_rejection_summary,
+            runtime_seconds=runtime_seconds,
+        ),
+        encoding="utf-8",
+    )
+    written["report.md"] = report_md
+
     manifest_sha = sha256_of_file(manifest_lock_path) if manifest_lock_path else None
+    study_json = output_dir / "study.json"
     write_study_json(
         result,
         study_json,
@@ -350,13 +588,9 @@ def write_artifact_bundle(
         dataset_id=dataset_id,
         freeze_record=freeze_record,
         manifest_sha256=manifest_sha,
-        manifest_lock_path=manifest_lock_path,
+        monthly_rejection_summary=monthly_rejection_summary,
     )
     written["study.json"] = study_json
-
-    report_md = output_dir / "report.md"
-    report_md.write_text(result.report_markdown, encoding="utf-8")
-    written["report.md"] = report_md
 
     if spec_path:
         dst = output_dir / "spec.lock.json"
@@ -392,28 +626,30 @@ def write_artifact_bundle(
         func(result, path)
         written[name] = path
 
-    _write_artifact_manifest(output_dir)
-    _write_checksums(output_dir)
+    _write_split_artifact_manifest(output_dir)
+    _write_split_checksums(output_dir)
     return written
 
 
-def _write_artifact_manifest(output_dir: Path) -> None:
+def write_run_artifact_manifest_and_checksums(output_dir: Path) -> None:
+    """Write a top-level artifact manifest and checksums covering the entire run bundle."""
+    output_dir = Path(output_dir).expanduser().resolve()
     manifest: dict[str, str] = {}
-    for p in sorted(output_dir.iterdir()):
+    for p in sorted(output_dir.rglob("*")):
         if p.is_file() and p.name not in {"artifact_manifest.json", "checksums.sha256"}:
-            manifest[p.name] = sha256_of_file(p)
-    (output_dir / "artifact_manifest.json").write_text(
-        json.dumps({"schema_version": "1.0", "files": manifest}, indent=2),
-        encoding="utf-8",
-    )
+            rel = p.relative_to(output_dir).as_posix()
+            if rel in ("artifact_manifest.json", "checksums.sha256"):
+                continue
+            manifest[rel] = sha256_of_file(p)
+    _safe_json_dump({"schema_version": "1.0", "files": manifest}, output_dir / "artifact_manifest.json")
 
-
-def _write_checksums(output_dir: Path) -> None:
     lines: list[str] = []
-    for p in sorted(output_dir.iterdir()):
-        if p.is_file() and p.name != "checksums.sha256":
-            lines.append(f"{sha256_of_file(p)}  {p.name}")
-    (output_dir / "checksums.sha256").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    checksum_path = output_dir / "checksums.sha256"
+    for p in sorted(output_dir.rglob("*")):
+        if p.is_file() and p != checksum_path:
+            rel = p.relative_to(output_dir).as_posix()
+            lines.append(f"{sha256_of_file(p)}  {rel}")
+    checksum_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def sha256_of_file(path: Path) -> str:

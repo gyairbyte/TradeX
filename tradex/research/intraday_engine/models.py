@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any, Literal
 
+import numpy as np
+
 
 @dataclass
 class Bar:
@@ -274,6 +276,12 @@ class DataQualitySummary:
     valid_bars: int
     sessions: int
     pre_normalization_metrics_available: bool | None = None
+    effective_month: str | None = None
+    pagination_complete: bool | None = None
+    symbol_mismatch: bool | None = None
+    file_sha256_match: bool | None = None
+    requested_symbol: str | None = None
+    returned_symbol: str | None = None
 
 
 def _json_clean(value: Any) -> Any:
@@ -282,16 +290,27 @@ def _json_clean(value: Any) -> Any:
         return None
     if isinstance(value, bool):
         return value
+    if isinstance(value, np.integer):
+        return int(value)
     if isinstance(value, (int, float)):
         if math.isnan(value):
             return None
         if math.isinf(value):
             return None
         return value
+    if isinstance(value, np.floating):
+        f = float(value)
+        if math.isnan(f):
+            return None
+        if math.isinf(f):
+            return None
+        return f
     if isinstance(value, (list, tuple)):
-        return [_json_clean(v) for v in value]
+        return [as_json_dict(v) for v in value]
     if isinstance(value, dict):
-        return {k: _json_clean(v) for k, v in value.items()}
+        return {k: as_json_dict(v) for k, v in value.items()}
+    if isinstance(value, set):
+        return sorted(as_json_dict(v) for v in value)
     if isinstance(value, datetime):
         return value.isoformat()
     if isinstance(value, date):

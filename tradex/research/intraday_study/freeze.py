@@ -109,10 +109,29 @@ def freeze_evaluation_code(
 def verify_frozen_evaluation_code(
     repo_root: Path,
     record: FreezeRecord,
-) -> bool:
-    """Verify the current git HEAD matches the frozen record."""
+) -> None:
+    """Verify the current git HEAD, worktree cleanliness, and evaluation-file hashes.
+
+    Raises FreezeError on any mismatch so validation/holdout cannot proceed with
+    drifted code.
+    """
+    repo_root = Path(repo_root).expanduser().resolve()
     head = _git("rev-parse", "HEAD", cwd=repo_root)
-    return head == record.evaluation_code_sha
+    if head != record.evaluation_code_sha:
+        raise FreezeError(
+            f"evaluation-code HEAD mismatch: frozen {record.evaluation_code_sha}, current {head}"
+        )
+    if not _clean_worktree(repo_root):
+        raise FreezeError("evaluation-code worktree is not clean (tracked files changed)")
+    for rel, expected_sha in (record.evaluation_files or {}).items():
+        p = repo_root / rel
+        if not p.is_file():
+            raise FreezeError(f"frozen evaluation file missing: {rel}")
+        actual = sha256_of_file(p)
+        if actual != expected_sha:
+            raise FreezeError(
+                f"frozen evaluation file hash mismatch for {rel}: expected {expected_sha}, got {actual}"
+            )
 
 
 def freeze_record_to_dict(record: FreezeRecord) -> dict[str, Any]:
