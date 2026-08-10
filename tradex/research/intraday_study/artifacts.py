@@ -162,7 +162,8 @@ def _study_metrics_to_row(metrics: StudyMetrics, *, extra: dict[str, Any] | None
     d = asdict(metrics)
     # Remove nested per-symbol dict and nested cost_scenario object.
     d.pop("per_symbol", None)
-    cost = d.pop("cost_scenario", None)
+    d.pop("cost_scenario", None)
+    cost = metrics.cost_scenario
     if isinstance(cost, CostScenario):
         d["cost_scenario_name"] = cost.name
         d["entry_slippage_bps"] = cost.entry_slippage_bps
