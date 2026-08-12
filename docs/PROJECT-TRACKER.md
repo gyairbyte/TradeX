@@ -370,16 +370,16 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Problem statement:** A dedicated rapid-upside research program is needed that is distinct from LONG-001 and INTRA-001, with a locked contract before any provider investigation or outcome analysis.
 - **B-phase results:** `docs/research/LONG-002B-DATA-FEASIBILITY.md`
 - **B-phase probe spec:** `docs/research/specs/LONG-002B-probe-v1.json` (SHA-256: `002a0795096ba0f6f77ba1f2e673b5d3e6a2008730a57f7f87e71cf86b949a98`)
-- **B-phase data contract:** `docs/research/specs/LONG-002B-data-contract-v1.json`
-- **Safe artifact bundle:** `docs/research/artifacts/LONG-002B/2026-08-12-205632/`
-- **Overall disposition:** `supported_with_documented_limitations`
+- **B-phase data contract:** `docs/research/specs/LONG-002B-data-contract-v1.json` (SHA-256: `f8ad6655e482fe5c9e8847467643bf0b03949686ad914180599323758cbf555a`)
+- **Safe artifact bundle:** `docs/research/artifacts/LONG-002B/2026-08-14-0015/`
+- **Overall disposition:** `not_supported`
 - **Per-family dispositions:**
-  - Daily market data: `supported_with_documented_limitations` (Alpaca fallback, `sip`/`raw`, single as-of probe)
-  - Security master & corporate actions: `supported_with_documented_limitations` (Massive primary, active PIT snapshots)
-  - Issuer fundamentals & shares: `supported_with_documented_limitations` (SEC EDGAR primary, CIK-based)
+  - Daily market data: `supported_with_documented_limitations` (Alpaca fallback after Massive/Polygon `v2/aggs` 403 entitlement; full 2020 XNYS completeness; explicit `raw` and `split` policies; Massive corporate-action provenance)
+  - Security master & corporate actions: `supported_with_documented_limitations` (Massive primary, per-ticker PIT active/inactive identity joins and split/dividend event endpoints)
+  - Issuer fundamentals & shares: `supported_with_documented_limitations` (SEC EDGAR primary; CIK identity; filing acceptance-time control; PIT market-cap pathway)
   - Earnings event timing: `not_supported` (no historical known-at-time schedule source identified within bounded budget)
-- **Provider call budget:** 24 of 120 HTTP requests used; 0 retries; 0 provider switches
-- **Recommended action:** A Gary-approved amendment should identify and verify a historical earnings-calendar source or adopt the `unknown` earnings treatment before a full LONG-002 dataset is built; the Massive/Polygon daily-bar endpoint should be exercised under the same bounded discipline.
+- **Provider call budget:** 41 of 120 HTTP requests used; 0 retries; 1 provider switch (Massive/Polygon daily bars → Alpaca fallback)
+- **Recommended action:** A Gary-approved amendment must identify and verify a historical earnings-calendar source or formally adopt the `unknown` earnings treatment before `LONG-002C` full dataset construction. No production behavior is authorized.
 - **Testing requirements:** `tests/research/long_002_data_feasibility/test_spec.py`; `tests/research/long_002_data_feasibility/test_probe.py`; `uv run ruff`; `uv run pytest`; `git diff --check`.
 - **Acceptance criteria:** Bounded provider probes produce auditable dispositions for each core data family; PIT identity/ticker join, raw-vs-normalized, adjustment/split, timestamp, and data-quality rules are encoded; no full historical dataset is built; no validation/holdout outcomes are accessed; no production behavior changes.
 - **Intended pull request:** `devin/long-002b-core-data-feasibility`

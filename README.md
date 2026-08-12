@@ -403,16 +403,17 @@ uv run python -m tradex.research.short_context evaluate --help
 uv run python -m tradex.research.long_002_data_feasibility --repo-root .
 ```
 
-* **LONG-002B overall disposition:** `supported_with_documented_limitations`
-* **Safe artifacts:** `docs/research/artifacts/LONG-002B/2026-08-12-205632/`
+* **LONG-002B overall disposition:** `not_supported`
+* **Safe artifacts:** `docs/research/artifacts/LONG-002B/2026-08-14-0015/`
 * **B-phase report:** `docs/research/LONG-002B-DATA-FEASIBILITY.md`
+* **Code commit:** `7be1be5764ccd1ff6b00b73f903d1d6370288d02`
 * **Per-family dispositions:**
-  * Daily market data: `supported_with_documented_limitations` (Alpaca fallback, `sip`/`raw`, single as-of probe)
-  * Security master & corporate actions: `supported_with_documented_limitations` (Massive primary, active PIT snapshots)
-  * Issuer fundamentals & shares: `supported_with_documented_limitations` (SEC EDGAR primary, CIK-based)
+  * Daily market data: `supported_with_documented_limitations` (Alpaca fallback after Massive/Polygon `v2/aggs` 403 entitlement; explicit `raw`/`split` policies; Massive corporate-action provenance)
+  * Security master & corporate actions: `supported_with_documented_limitations` (Massive primary; per-ticker PIT active/inactive identity joins; split/dividend events)
+  * Issuer fundamentals & shares: `supported_with_documented_limitations` (SEC EDGAR primary; CIK identity; filing acceptance-time control; PIT market-cap pathway)
   * Earnings event timing: `not_supported` (no historical known-at-time schedule source identified)
 
-`LONG-002B` used 24 of 120 allowed HTTP requests and did not access any validation/holdout outcomes or build the full historical dataset. No provider calls, historical outcome analysis, model fitting, or validation/holdout access occur in `LONG-002A` or `LONG-002B`.
+`LONG-002B` used 41 of 120 allowed HTTP requests, with 1 recorded provider switch (Massive/Polygon daily bars entitlement 403 → Alpaca fallback), and did not access any validation/holdout outcomes or build the full historical dataset. No provider calls, historical outcome analysis, model fitting, or validation/holdout access occur in `LONG-002A` or `LONG-002B`.
 
 ---
 
