@@ -8,6 +8,7 @@ providers, or validation/holdout outcomes.
 from __future__ import annotations
 
 import json
+import re
 from datetime import date
 from itertools import product
 from pathlib import Path
@@ -15,12 +16,18 @@ from pathlib import Path
 import pytest
 
 SPEC_PATH = Path("docs/research/specs/LONG-002-v1.json")
+MD_PATH = Path("docs/research/LONG-002.md")
 
 
 @pytest.fixture(scope="module")
 def spec() -> dict:
     with SPEC_PATH.open("r", encoding="utf-8") as f:
         return json.load(f)
+
+
+@pytest.fixture(scope="module")
+def long_002_md_text() -> str:
+    return MD_PATH.read_text(encoding="utf-8")
 
 
 def test_spec_json_parses_and_is_json_safe(spec: dict) -> None:
@@ -185,21 +192,38 @@ def test_spec_file_is_deterministic_relative_path() -> None:
     assert SPEC_PATH.suffix == ".json"
 
 
-def _assert_prospectively_supported_separate(text: str) -> None:
-    lowered = text.lower()
-    assert "separate" in lowered
-    assert "prospectively supported" in lowered or "prospectively_supported" in lowered
-
-
 def test_production_progression_requires_long_002j_then_separate_pr(spec: dict) -> None:
-    """Holdout support alone does not authorize production; only prospective shadow then a separate PR."""
-    prod_boundary = spec["production_boundary"]["production_promotion_requires"]
-    assert "LONG-002J" in prod_boundary
-    _assert_prospectively_supported_separate(prod_boundary)
+    """The promotion gate is exactly: I -> J prospectively_supported -> separate PR."""
+    prod_boundary = spec["production_boundary"]["production_promotion_requires"].lower()
+    # LONG-002I does not authorize production; it authorizes only the J shadow.
+    assert "long-002i" in prod_boundary
+    assert "long-002j" in prod_boundary
+    assert "prospectively supported" in prod_boundary or "prospectively_supported" in prod_boundary
+    assert "separate" in prod_boundary
+    assert "gary-approved" in prod_boundary
+    assert prod_boundary.index("long-002j") > prod_boundary.index("long-002i")
+    assert "production" in prod_boundary.split("long-002j")[-1]
 
-    shadow_note = spec["prospective_shadow_contract"]["prospective_support_authorizes_only_consideration"]
-    _assert_prospectively_supported_separate(shadow_note)
-    assert "Gary-approved" in shadow_note
+    shadow_note = spec["prospective_shadow_contract"]["prospective_support_authorizes_only_consideration"].lower()
+    assert "prospectively_supported" in shadow_note or "prospectively supported" in shadow_note
+    assert "long-002j" in shadow_note
+    assert "separate" in shadow_note
+    assert "gary-approved" in shadow_note
+    assert "does not by itself authorize production deployment" in shadow_note
+    assert "long-002i" in shadow_note
+    assert "prospective shadow" in shadow_note
+    assert "not production promotion" in shadow_note
+    assert "authorizes only the" in shadow_note
+
+    i_desc = spec["phased_program"]["LONG-002I"]["description"].lower()
+    assert "authorizes only long-002j prospective shadow" in i_desc
+    assert "not production deployment" in i_desc
+
+    j_desc = spec["phased_program"]["LONG-002J"]["description"].lower()
+    assert "prospectively supported" in j_desc or "prospectively_supported" in j_desc
+    assert "authorizes only consideration of a separate" in j_desc
+    assert "gary-approved" in j_desc
+    assert "production" in j_desc
 
 
 def test_universe_exclusions_are_complete(spec: dict) -> None:
@@ -219,63 +243,163 @@ def test_universe_exclusions_are_complete(spec: dict) -> None:
     assert required.issubset(exclusions)
 
 
-def test_pit_constituent_policy_and_no_current_substitution(spec: dict) -> None:
-    policy = spec["universe"]["pit_constituent_policy"]
+def test_universe_and_pit_invariants(spec: dict) -> None:
+    universe = spec["universe"]
+    assert universe["primary_security_types"] == ["U.S.-listed operating-company common stocks"]
+    assert universe["index_membership_is_not_a_predictor"] is True
+    assert "not primary stock candidates" in universe["etf_usage"].lower()
+
+    policy = universe["pit_constituent_policy"]
     assert policy["use_best_reliable_point_in_time_membership"] is True
     assert policy["never_substitute_current_membership_as_historical_fact"] is True
     assert policy["document_survivorship_and_constituent_limitations"] is True
     assert policy["perfect_pit_constituent_history_not_a_hard_blocker"] is True
+    assert policy["apply_to_index_membership_aids"] is True
 
 
-def test_validation_tie_break_order_and_ecvm_formula(spec: dict) -> None:
+def test_validation_tie_break_order_is_exactly_six_steps(spec: dict) -> None:
     ranking = spec["ranking_objective"]
     tie_break = ranking["validation_tie_break_order"]
-    assert tie_break[0]["criterion"] == "pass_all_risk_actionability_calibration_sample_gates"
-    assert any("precision" in t["criterion"].lower() for t in tie_break)
+    assert len(tie_break) == 6
+    expected_order = [
+        "pass_all_risk_actionability_calibration_sample_gates",
+        "highest_clean_target_precision_at_locked_top_k",
+        "highest_expected_clean_move_value_at_same_k",
+        "lower_adverse_rate",
+        "better_calibration",
+        "simpler_more_explainable_when_materially_similar",
+    ]
+    assert [t["criterion"] for t in tie_break] == expected_order
+    for i, t in enumerate(tie_break, start=1):
+        assert t["step"] == i
 
-    ecvm = ranking["expected_clean_move_value"]
+
+def test_expected_clean_move_value_formula_and_speed_treatment(spec: dict) -> None:
+    ecvm = spec["ranking_objective"]["expected_clean_move_value"]
     assert ecvm["operates_on_mutually_exclusive_highest_target_tiers"] is True
     assert ecvm["capped_at"] == 30
-    assert "10%" in ecvm["formula"]
-    assert "20%" in ecvm["formula"]
-    assert "30%" in ecvm["formula"]
+    formula = ecvm["formula"]
+    # Mutually exclusive weighted highest-tier formula.
+    assert "10%" in formula
+    assert "20%" in formula
+    assert "30%" in formula
+    assert "P(" in formula
+    assert "highest clean tier" in formula
+    # The formula is a weighted sum of three mutually exclusive highest-tier probabilities.
+    assert formula.startswith("10% * P(")
+    assert "+ 20% * P(" in formula
+    assert "+ 30% * P(" in formula
 
-    primary = set(ranking["primary_metrics"])
-    assert "clean_target_precision_at_10" in primary
-    assert "expected_clean_move_value_at_10" in primary
-    assert ranking["candidate_feature_families_are_hypotheses_not_assumed_signals"] is True
+    speed = ecvm["speed_preference_and_discount"].lower()
+    assert "frozen before validation" in speed
+    assert "not tuned post-hoc" in speed
 
 
-def test_blinded_review_frozen_label_schema(spec: dict) -> None:
+def test_primary_metrics_are_complete_and_locked(spec: dict) -> None:
+    primary = set(spec["ranking_objective"]["primary_metrics"])
+    expected = {
+        "clean_target_precision_at_10",
+        "clean_target_precision_at_25",
+        "expected_clean_move_value_at_10",
+        "expected_clean_move_value_at_25",
+        "adverse_rate",
+        "calibration",
+        "actionability",
+        "time_to_target",
+        "lift_over_strongest_simple_baseline",
+        "opportunities_per_week",
+        "product_diagnostics_at_7_12_31",
+    }
+    assert primary == expected
+    assert spec["ranking_objective"]["candidate_feature_families_are_hypotheses_not_assumed_signals"] is True
+
+
+def test_blinded_review_frozen_label_schema_is_complete(spec: dict) -> None:
     schema = spec["blinded_chart_review_protocol"]["main_sample"]["frozen_label_schema"]
+    expected_keys = {
+        "surface_decision",
+        "visible_state_if_surfaced",
+        "expected_target_and_horizon",
+        "qualitative_confidence",
+        "setup_archetype",
+        "entry_plan",
+        "trigger_zone",
+        "max_five_session_validity",
+        "gap_handling",
+        "invalidation",
+        "max_three_primary_positive_reasons",
+        "material_risks_and_counterarguments",
+        "preserve_stage_a_and_b_labels_independently",
+    }
+    assert set(schema.keys()) == expected_keys
+
     assert set(schema["surface_decision"]) == {"surface", "do_not_surface"}
     assert set(schema["visible_state_if_surfaced"]) == {"Enter Now", "Armed", "Qualified Waitlist"}
+    assert schema["expected_target_and_horizon"] is True
     assert schema["qualitative_confidence"] == "1-5 scale"
-    assert schema["preserve_stage_a_and_b_labels_independently"] is True
-    assert schema["max_three_primary_positive_reasons"] is True
+    assert set(schema["setup_archetype"]) == {"setup_archetype", "other", "unclear"}
+    for key in (
+        "entry_plan",
+        "trigger_zone",
+        "max_five_session_validity",
+        "gap_handling",
+        "invalidation",
+        "max_three_primary_positive_reasons",
+        "material_risks_and_counterarguments",
+        "preserve_stage_a_and_b_labels_independently",
+    ):
+        assert schema[key] is True
 
 
-def test_provider_search_budget_and_no_silent_switch(spec: dict) -> None:
-    provider = spec["data_provider_governance"]["provider_search_budget"]
-    assert provider["per_data_family"]["preferred_provider"] == 1
-    assert provider["per_data_family"]["named_fallback_candidates_max"] == 2
-    assert provider["no_silent_provider_switch"] is True
-    assert provider["bounded_retries_api_calls_runtime"] is True
+def test_provider_search_budget_and_governance_are_locked(spec: dict) -> None:
+    gov = spec["data_provider_governance"]
+    budget = gov["provider_search_budget"]
+    assert budget["per_data_family"]["preferred_provider"] == 1
+    assert budget["per_data_family"]["named_fallback_candidates_max"] == 2
+    assert budget["bounded_retries_api_calls_runtime"] is True
+    assert budget["no_silent_provider_switch"] is True
+    assert "minimum usable data" in budget["stop_condition"].lower()
+    assert "provider exploration stops" in budget["stop_condition"].lower()
+
+    assert gov["additional_provider_hunting_requires_gary_approval"] is True
+    assert gov["additional_provider_hunting_must_address_calculation_invalidating_blocker"] is True
+    assert gov["this_pr_makes_zero_provider_calls"] is True
+    assert gov["this_pr_makes_zero_provider_selection"] is True
 
 
-def test_reference_position_notionals(spec: dict) -> None:
+def test_reference_position_notionals_are_locked_and_synced(spec: dict, long_002_md_text: str) -> None:
     notionals = spec["eligibility_defaults"]["live_execution_gates"]["reference_position_notionals_usd"]
     assert notionals["typical_min"] == 10_000
     assert notionals["typical_max"] == 20_000
+
+    # The human contract must also state the $10K-$20K reference notional in the live execution gates section.
+    section_match = re.search(
+        r"### Live execution gates.*?(?=\n## |\n### |\Z)", long_002_md_text, re.DOTALL
+    )
+    assert section_match, "Live execution gates section not found in LONG-002.md"
+    section = section_match.group(0)
+    assert "10,000" in section or "$10K" in section
+    assert "20,000" in section or "$20K" in section
+    assert "reference" in section.lower()
 
 
 def test_no_locked_future_artifact_list(spec: dict) -> None:
     """Future artifact filenames are not locked in LONG-002A."""
     assert "required_artifacts_for_future_phases" not in spec
     assert "future_artifacts_policy" in spec
-    assert "non-binding" in spec["future_artifacts_policy"].lower() or "illustrative" in spec["future_artifacts_policy"].lower()
+    policy = spec["future_artifacts_policy"].lower()
+    assert "non-binding" in policy or "illustrative" in policy
 
 
 def test_recommendation_episode_lifecycle_is_deferred(spec: dict) -> None:
-    items = [item["item"] for item in spec["deferred_decisions"]["items"]]
-    assert any("recommendation episode lifecycle" in item for item in items)
+    episode = next(
+        (item for item in spec["deferred_decisions"]["items"] if "recommendation episode lifecycle" in item["item"]),
+        None,
+    )
+    assert episode is not None
+    assert episode["status"] == "deferred"
+    when = episode["when_decided"].lower()
+    assert "before long-002e" in when
+    assert "development-only" in when
+    data = episode["data_may_be_used"].lower()
+    assert "no validation/holdout" in data or "no validation" in data or "no holdout" in data
