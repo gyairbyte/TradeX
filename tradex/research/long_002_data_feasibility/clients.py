@@ -85,6 +85,7 @@ class Long002MassiveClient:
         base_url: str | None = None,
         budget: RequestBudget | None = None,
         request_func: Callable[[str], bytes] | None = None,
+        min_interval_seconds: float | None = None,
     ) -> None:
         if not api_key or not api_key.strip():
             raise Long002ProviderAuthError("Massive/Polygon API key is required")
@@ -93,11 +94,12 @@ class Long002MassiveClient:
         self.budget = budget or RequestBudget()
         self._last_request_time: float = 0.0
         self._request_func = request_func
+        self._min_interval_seconds = min_interval_seconds if min_interval_seconds is not None else self._MIN_INTERVAL_SECONDS
 
     def _fetch_once(self, url: str) -> tuple[bytes, int | None, str | None]:
         elapsed = time.monotonic() - self._last_request_time
-        if elapsed < self._MIN_INTERVAL_SECONDS:
-            time.sleep(self._MIN_INTERVAL_SECONDS - elapsed)
+        if elapsed < self._min_interval_seconds:
+            time.sleep(self._min_interval_seconds - elapsed)
         self._last_request_time = time.monotonic()
         if self._request_func:
             return self._request_func(url), 200, None
@@ -214,6 +216,169 @@ class Long002MassiveClient:
             "snapshot_sha256": full_hash,
         }
 
+    def fetch_ticker_detail(
+        self,
+        ticker: str,
+        pit_date: str,
+        active: bool | None = None,
+    ) -> dict[str, Any]:
+        """Fetch a single ticker's PIT identity record."""
+        self.budget.charge(1)
+        params: dict[str, Any] = {
+            "ticker": ticker,
+            "date": pit_date,
+            "market": "stocks",
+            "locale": "us",
+            "limit": 10,
+            "sort": "ticker",
+            "order": "asc",
+        }
+        if active is not None:
+            params["active"] = "true" if active else "false"
+        url = self._url("/v3/reference/tickers", params)
+        data, status, error = self._fetch_json(url)
+        if error:
+            return {
+                "provider": "massive",
+                "ticker": ticker,
+                "pit_date": pit_date,
+                "status": status,
+                "error": error,
+                "row": None,
+                "type": None,
+                "primary_exchange": None,
+                "cik": None,
+            }
+        results = data.get("results", []) if isinstance(data, dict) else []
+        row = results[0] if results else None
+        return {
+            "provider": "massive",
+            "ticker": ticker,
+            "pit_date": pit_date,
+            "status": status,
+            "error": None,
+            "row": row,
+            "type": row.get("type") if row else None,
+            "primary_exchange": row.get("primary_exchange") if row else None,
+            "cik": row.get("cik") if row else None,
+        }
+
+    def fetch_daily_bars(
+        self,
+        ticker: str,
+        start: str,
+        end: str,
+        *,
+        adjusted: bool = False,
+    ) -> dict[str, Any]:
+        """Attempt Polygon/Massive daily aggregate bars for a single ticker."""
+        self.budget.charge(1)
+        path = f"/v2/aggs/ticker/{ticker.upper()}/range/1/day/{start}/{end}"
+        params: dict[str, Any] = {"adjusted": "true" if adjusted else "false"}
+        url = self._url(path, params)
+        data, status, error = self._fetch_json(url)
+        if error:
+            return {
+                "provider": "massive/polygon",
+                "ticker": ticker,
+                "start": start,
+                "end": end,
+                "status": status,
+                "error": error,
+                "bars": [],
+                "results_count": 0,
+                "pagination_complete": False,
+                "adjusted": adjusted,
+            }
+        results = data.get("results", []) if isinstance(data, dict) else []
+        bars: list[dict[str, Any]] = []
+        for r in results:
+            if not all(isinstance(r.get(k), (int, float)) for k in ("o", "h", "l", "c", "v")):
+                return {
+                    "provider": "massive/polygon",
+                    "ticker": ticker,
+                    "start": start,
+                    "end": end,
+                    "status": status,
+                    "error": "invalid_bar_fields",
+                    "bars": [],
+                    "results_count": 0,
+                    "pagination_complete": False,
+                    "adjusted": adjusted,
+                }
+            ts = r.get("t")
+            if isinstance(ts, int):
+                ts_dt = datetime.fromtimestamp(ts / 1000.0, tz=UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+            else:
+                ts_dt = str(ts)
+            bars.append({
+                "t": ts_dt,
+                "o": r.get("o"),
+                "h": r.get("h"),
+                "l": r.get("l"),
+                "c": r.get("c"),
+                "v": r.get("v"),
+                "vw": r.get("vw"),
+                "n": r.get("n"),
+            })
+        return {
+            "provider": "massive/polygon",
+            "ticker": ticker,
+            "start": start,
+            "end": end,
+            "status": status,
+            "error": None,
+            "bars": bars,
+            "results_count": len(bars),
+            "pagination_complete": True,
+            "adjusted": adjusted,
+        }
+
+    def fetch_splits(self, ticker: str) -> dict[str, Any]:
+        """Fetch split events for a single ticker."""
+        self.budget.charge(1)
+        url = self._url("/v3/reference/splits", {"ticker": ticker, "limit": 1000})
+        data, status, error = self._fetch_json(url)
+        results = data.get("results", []) if isinstance(data, dict) and not error else []
+        return {
+            "provider": "massive",
+            "ticker": ticker,
+            "event_type": "split",
+            "status": status,
+            "error": error,
+            "events": results,
+            "event_count": len(results),
+        }
+
+    def fetch_dividends(self, ticker: str) -> dict[str, Any]:
+        """Fetch dividend events for a single ticker."""
+        self.budget.charge(1)
+        url = self._url("/v3/reference/dividends", {"ticker": ticker, "limit": 1000})
+        data, status, error = self._fetch_json(url)
+        results = data.get("results", []) if isinstance(data, dict) and not error else []
+        return {
+            "provider": "massive",
+            "ticker": ticker,
+            "event_type": "dividend",
+            "status": status,
+            "error": error,
+            "events": results,
+            "event_count": len(results),
+        }
+
+    def fetch_corporate_actions(self, ticker: str) -> dict[str, Any]:
+        """Fetch both split and dividend events for a single ticker."""
+        splits = self.fetch_splits(ticker)
+        dividends = self.fetch_dividends(ticker)
+        return {
+            "provider": "massive",
+            "ticker": ticker,
+            "splits": splits,
+            "dividends": dividends,
+            "status": 200 if splits["status"] == 200 and dividends["status"] == 200 else (splits["status"] or dividends["status"]),
+            "error": splits.get("error") or dividends.get("error"),
+        }
+
 
 class Long002AlpacaClient:
     """Research-only daily-bars client built on the existing Alpaca REST pattern."""
@@ -287,7 +452,7 @@ class Long002AlpacaClient:
         feed: str = "sip",
         adjustment: str = "raw",
     ) -> dict[str, Any]:
-        """Fetch daily bars for a symbol and provenance summary."""
+        """Fetch daily bars for a symbol and provenance summary, with pagination."""
         url = f"{self.host}/v2/stocks/{symbol.upper()}/bars"
         params: dict[str, Any] = {
             "timeframe": "1Day",
@@ -296,61 +461,88 @@ class Long002AlpacaClient:
             "feed": feed,
             "adjustment": adjustment,
             "sort": "asc",
-            "limit": 1000,
+            "limit": 10000,
         }
-        self.budget.charge(1)
-        try:
-            resp, attempts = self._get(url, params)
-        except Long002ProviderTransientError:
-            return {
-                "provider": "alpaca",
-                "symbol": symbol,
-                "http_status": None,
-                "error_classification": "network_error",
-                "retry_count": attempts - 1,
-                "bars": [],
-                "page_count": 0,
-                "pagination_complete": False,
-            }
-        status = resp.status_code
-        safe_error = self._error_class(status)
-        if status != 200:
-            return {
-                "provider": "alpaca",
-                "symbol": symbol,
-                "http_status": status,
-                "error_classification": safe_error,
-                "retry_count": attempts - 1,
-                "bars": [],
-                "page_count": 0,
-                "pagination_complete": False,
-            }
-        try:
-            data = resp.json()
-        except Exception:  # noqa: BLE001
-            return {
-                "provider": "alpaca",
-                "symbol": symbol,
-                "http_status": status,
-                "error_classification": "invalid_response",
-                "retry_count": attempts - 1,
-                "bars": [],
-                "page_count": 0,
-                "pagination_complete": False,
-            }
-        bars = data.get("bars", []) if isinstance(data, dict) else []
-        if isinstance(bars, dict):
-            bars = bars.get(symbol.upper(), [])
+        all_bars: list[dict[str, Any]] = []
+        page = 0
+        pagination_complete = False
+        total_attempts = 0
+        status: int | None = None
+        safe_error = "none"
+        while page < 50:
+            page += 1
+            self.budget.charge(1)
+            try:
+                resp, attempts = self._get(url, params)
+            except Long002ProviderTransientError as exc:
+                return {
+                    "provider": "alpaca",
+                    "symbol": symbol,
+                    "http_status": None,
+                    "error_classification": "network_error",
+                    "retry_count": total_attempts,
+                    "bars": [],
+                    "bar_count": 0,
+                    "page_count": page,
+                    "pagination_complete": False,
+                    "feed": feed,
+                    "adjustment": adjustment,
+                    "error": str(exc),
+                }
+            status = resp.status_code
+            safe_error = self._error_class(status)
+            total_attempts += attempts
+            if status != 200:
+                return {
+                    "provider": "alpaca",
+                    "symbol": symbol,
+                    "http_status": status,
+                    "error_classification": safe_error,
+                    "retry_count": total_attempts - 1,
+                    "bars": [],
+                    "bar_count": 0,
+                    "page_count": page,
+                    "pagination_complete": False,
+                    "feed": feed,
+                    "adjustment": adjustment,
+                    "error": safe_error,
+                }
+            try:
+                data = resp.json()
+            except Exception:  # noqa: BLE001
+                return {
+                    "provider": "alpaca",
+                    "symbol": symbol,
+                    "http_status": status,
+                    "error_classification": "invalid_response",
+                    "retry_count": total_attempts - 1,
+                    "bars": [],
+                    "bar_count": 0,
+                    "page_count": page,
+                    "pagination_complete": False,
+                    "feed": feed,
+                    "adjustment": adjustment,
+                    "error": "invalid_response",
+                }
+            bars = data.get("bars", []) if isinstance(data, dict) else []
+            if isinstance(bars, dict):
+                bars = bars.get(symbol.upper(), [])
+            all_bars.extend(bars)
+            next_token = data.get("next_page_token") if isinstance(data, dict) else None
+            if not next_token:
+                pagination_complete = True
+                break
+            params["page_token"] = next_token
         return {
             "provider": "alpaca",
             "symbol": symbol,
             "http_status": status,
             "error_classification": safe_error,
-            "retry_count": attempts - 1,
-            "bars": bars,
-            "bar_count": len(bars),
-            "page_count": 1,
-            "pagination_complete": True,
+            "retry_count": total_attempts - page if total_attempts >= page else 0,
+            "bars": all_bars,
+            "bar_count": len(all_bars),
+            "page_count": page,
+            "pagination_complete": pagination_complete,
             "feed": feed,
             "adjustment": adjustment,
         }

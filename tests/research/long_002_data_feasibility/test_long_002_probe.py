@@ -7,9 +7,15 @@ from typing import Any
 
 import pytest
 
+from tradex.research.long_002_data_feasibility.clients import (
+    Long002AlpacaClient,
+    Long002MassiveClient,
+    RequestBudget,
+)
 from tradex.research.long_002_data_feasibility.models import DataFamilyResult
 from tradex.research.long_002_data_feasibility.probe import (
     _overall_disposition,
+    _probe_daily_market_data,
     _recommended_next_action,
     run_probe,
 )
@@ -92,7 +98,7 @@ def test_overall_disposition_supported() -> None:
 def test_overall_disposition_mixed() -> None:
     f1 = DataFamilyResult("a", "supported", "strong_evidence")
     f2 = DataFamilyResult("b", "not_supported", "invalid_evidence")
-    assert _overall_disposition([f1, f2]) == "supported_with_documented_limitations"
+    assert _overall_disposition([f1, f2]) == "not_supported"
 
 
 def test_overall_disposition_all_not_supported() -> None:
@@ -104,3 +110,88 @@ def test_overall_disposition_all_not_supported() -> None:
 def test_recommended_next_action_for_not_supported() -> None:
     report = type("R", (), {"overall_disposition": "not_supported"})()
     assert "Perform no further" in _recommended_next_action(report)
+
+
+def _make_alpaca_bar() -> dict[str, Any]:
+    return {
+        "t": "2020-08-31T04:00:00Z",
+        "o": 120.0,
+        "h": 125.0,
+        "l": 119.0,
+        "c": 124.0,
+        "v": 1000000.0,
+    }
+
+
+def test_daily_market_data_records_massive_failure_and_alpaca_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Massive 403 is a provider response, not a capability gap; Alpaca fallback is reported as such."""
+    panel = [{"identifier": "AAPL", "as_of_dates": ["2020-12-31"]}]
+    budget = RequestBudget(max_requests=120)
+    creds = {"massive_api_key": "test", "alpaca_api_key": "test", "alpaca_secret_key": "test"}
+    min_contract = {}
+
+    def fake_massive_daily_bars(self: Any, ticker: str, start: str, end: str, *, adjusted: bool = False) -> dict[str, Any]:
+        return {
+            "provider": "massive/polygon",
+            "ticker": ticker,
+            "start": start,
+            "end": end,
+            "status": 403,
+            "error": "Forbidden",
+            "bars": [],
+            "results_count": 0,
+            "pagination_complete": False,
+            "adjusted": adjusted,
+        }
+
+    def fake_alpaca_daily_bars(
+        self: Any, symbol: str, start_utc: str, end_utc: str, *, feed: str = "sip", adjustment: str = "raw",
+    ) -> dict[str, Any]:
+        return {
+            "provider": "alpaca",
+            "symbol": symbol,
+            "http_status": 200,
+            "error_classification": "none",
+            "bars": [_make_alpaca_bar()],
+            "bar_count": 1,
+            "page_count": 1,
+            "pagination_complete": True,
+            "feed": feed,
+            "adjustment": adjustment,
+        }
+
+    monkeypatch.setattr(Long002MassiveClient, "fetch_daily_bars", fake_massive_daily_bars)
+    monkeypatch.setattr(Long002AlpacaClient, "fetch_daily_bars", fake_alpaca_daily_bars)
+
+    result, evidence, _any_attempted, _raw_bars = _probe_daily_market_data(
+        ["massive/polygon", "alpaca"], panel, budget, creds, min_contract, test_inject=None,
+    )
+
+    massive_records = [r for r in result.records if r.provider == "massive/polygon"]
+    alpaca_records = [r for r in result.records if r.provider == "alpaca"]
+    assert massive_records, "expected a Massive/Polygon attempt record"
+    assert alpaca_records, "expected an Alpaca fallback record"
+    assert massive_records[0].error_classification == "entitlement"
+    assert result.provider_selected == "alpaca"
+    assert result.provider_role == "fallback"
+    assert evidence.notes
+    assert "stopping preferred-provider exercise" in evidence.notes[0].lower()
+
+
+def test_daily_market_data_unexercised_preferred_provider_not_capability_failure() -> None:
+    """If the preferred provider is never attempted, it is not a provider capability failure."""
+    panel = [{"identifier": "AAPL", "as_of_dates": ["2020-12-31"]}]
+    budget = RequestBudget(max_requests=120)
+    creds: dict[str, Any] = {}
+    min_contract = {}
+
+    result, evidence, _any_attempted, _raw_bars = _probe_daily_market_data(
+        ["massive/polygon", "alpaca"], panel, budget, creds, min_contract, test_inject=None,
+    )
+    # With no credentials, no provider is exercised.
+    assert not any(r.provider == "massive/polygon" and r.http_status == 200 for r in result.records)
+    assert not any(r.provider == "alpaca" and r.http_status == 200 for r in result.records)
+    # The notes should record the missing attempt, not classify as unsupported capability.
+    assert any("missing" in n.lower() or "not attempted" in n.lower() for n in evidence.notes)
+    assert result.provider_selected is None
+    assert result.provider_role is None
