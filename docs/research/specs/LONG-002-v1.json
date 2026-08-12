@@ -1,0 +1,1363 @@
+{
+  "schema_version": "1.0",
+  "task_id": "LONG-002",
+  "spec_version": 1,
+  "spec_name": "LONG-002: Long-only rapid-upside opportunity research program",
+  "status": "pre_registered_not_executed",
+  "classification": "research-only",
+  "production_promotion_eligible": false,
+  "hypothesis": "An explainable, long-only rapid-upside opportunity system can be built for U.S.-listed mid-, large-, and mega-cap common stocks by combining price/volume behavior, relative strength, market context, earnings/fundamentals, and auditable catalyst information to rank stocks by the probability and capturable potential of clean +10%, +20%, and +30% moves over 5, 10, and 21 trading sessions from an executable entry.",
+  "objective": "LONG-002 researches an explainable, long-only rapid-upside opportunity system for U.S.-listed mid-, large-, and mega-cap common stocks. At each point-in-time decision snapshot, the eventual system will estimate the probability and capturable potential of clean +10%, +20%, and +30% moves over 5, 10, and 21 trading sessions from an executable entry. Move potential, entry readiness, downside risk, data confidence, evidence strength, candidate applicability, and explanations remain distinct concepts.",
+  "decision_support_disclaimer": "LONG-002 is decision support, not automated execution. The system ultimately surfaces only Enter Now, Armed — next 1-5 sessions, and Qualified Waitlist. Nonqualifying stocks are retained internally when applicable to research/auditability but are not shown as a giant user-facing Skip list.",
+  "scope_note": "This specification locks the research contract and phased plan. No provider calls, outcome census, feature selection, model fitting, or validation/holdout parsing occur in LONG-002A.",
+  "universe": {
+    "primary_security_types": [
+      "U.S.-listed operating-company common stocks"
+    ],
+    "primary_market_cap": "Mid-, large-, and mega-cap",
+    "index_membership_aids": [
+      "Russell 1000",
+      "S&P 500",
+      "S&P MidCap 400",
+      "DJIA",
+      "Other qualifying liquid U.S. common stocks"
+    ],
+    "deduplication": "Deduplicated across overlapping index sources",
+    "index_membership_is_not_a_predictor": true,
+    "etf_usage": "ETFs/ETNs are not primary stock candidates; they may be used for benchmarks, sector/market context, and robustness analysis.",
+    "exclusions": [
+      "OTC",
+      "warrant",
+      "right",
+      "unit",
+      "preferred_stock",
+      "ETN",
+      "non-operating-company shells",
+      "closed_end_fund",
+      "pre_merger_spac",
+      "shell_company",
+      "other_structurally_incomparable_securities"
+    ],
+    "pit_constituent_policy": {
+      "use_best_reliable_point_in_time_membership": true,
+      "perfect_pit_constituent_history_not_a_hard_blocker": true,
+      "document_survivorship_and_constituent_limitations": true,
+      "never_substitute_current_membership_as_historical_fact": true,
+      "apply_to_index_membership_aids": true
+    }
+  },
+  "eligibility_defaults": {
+    "market_cap": {
+      "non_index_floor_usd": 3000000000,
+      "index_membership_may_allow_below_floor": true,
+      "allowed_index_paths": [
+        "Verified point-in-time Russell 1000",
+        "Verified point-in-time S&P MidCap 400",
+        "Verified point-in-time S&P 500",
+        "Verified point-in-time DJIA"
+      ],
+      "development_sensitivity_floors_usd": [
+        3000000000,
+        5000000000,
+        7000000000
+      ],
+      "default_floor_usd": 3000000000,
+      "reporting_cohorts": [
+        "3000000000-4999999999",
+        "5000000000-19999999999",
+        "20000000000-199999999999",
+        "200000000000+"
+      ]
+    },
+    "price": {
+      "current_close_min_usd": 5,
+      "prior_20_session_median_close_min_usd": 5,
+      "use_as_traded_price": true
+    },
+    "liquidity": {
+      "primary_metric": "dollar_volume",
+      "prior_20_session_median_dollar_volume_min_usd": 20000000,
+      "prior_60_session_median_dollar_volume_min_usd": 10000000,
+      "development_sensitivity_20_session_floors_usd": [
+        10000000,
+        20000000,
+        50000000
+      ]
+    },
+    "trading_history": {
+      "established_min_sessions": 252,
+      "recent_ipo_min_sessions": 63,
+      "recent_ipo_max_sessions": 251,
+      "recent_ipo_is_separate_cohort": true,
+      "features_requiring_longer_history_remain_unavailable": true
+    },
+    "fundamentals": {
+      "full_cohort_min_quarters": 6,
+      "full_cohort_preferred_quarters": 8,
+      "recent_ipo_min_quarters": 2,
+      "latest_filing_not_overdue": true,
+      "max_filing_age_days": 120,
+      "missing_facts_remain_null": true
+    },
+    "live_execution_gates": {
+      "preferred_spread_bps_max": 25,
+      "max_spread_for_enter_now_or_armed_bps": 50,
+      "preferred_reference_position_participation_pct_of_median_daily_dollar_volume_max": 0.1,
+      "max_reference_position_participation_pct_of_median_daily_dollar_volume_max": 0.25,
+      "reference_position_notionals_usd": {
+        "typical_min": 10000,
+        "typical_max": 20000
+      },
+      "live_execution_gates_are_not_historical_eligibility_gates": true,
+      "position_sizing_remains_user_controlled": true
+    },
+    "earnings_risk": {
+      "ordinary_non_earnings_setup_excludes_enter_now_or_armed_when_earnings_within_sessions": 5,
+      "earnings_schedule_must_be_known_point_in_time": true,
+      "may_remain_waitlist_if_otherwise_qualified": true,
+      "pre_earnings_speculation_requires_separate_research": true
+    }
+  },
+  "security_identity_and_pit_rules": {
+    "required_identities": [
+      "issuer-level identity such as CIK",
+      "stable security/share-class identity when available"
+    ],
+    "historical_ticker_mapping": "Historical tickers map to immutable identities.",
+    "sector_classification": "For sector-relative predictive features, use a classification valid at the historical decision timestamp. Current sector classifications may be descriptive only if point-in-time history is unavailable; do not silently backfill current classifications into historical predictive features.",
+    "market_cap_hierarchy": [
+      "Reliable historical market cap",
+      "Latest known point-in-time shares outstanding * actual historical close",
+      "Otherwise the stock cannot use the non-index $3B eligibility pathway"
+    ],
+    "do_not_use_todays_market_cap_or_share_count": true
+  },
+  "price_and_corporate_action_representations": {
+    "as_traded_series": {
+      "purpose": [
+        "Share-price eligibility",
+        "Dollar-volume eligibility",
+        "Reference/actual entry",
+        "Gap behavior",
+        "Execution diagnostics"
+      ]
+    },
+    "split_normalized_dividend_unadjusted_series": {
+      "purpose": [
+        "Technical calculations",
+        "Historical returns spanning splits",
+        "Moving averages",
+        "Relative strength",
+        "MFE/MAE across split boundaries"
+      ],
+      "note": "LONG-002 is researching price moves, not long-horizon total return."
+    },
+    "corporate_action_metadata": [
+      "Splits",
+      "Ordinary dividends",
+      "Special dividends",
+      "Spin-offs",
+      "Rights distributions",
+      "Mergers",
+      "Other material transformations"
+    ],
+    "special_distribution_policy": "If a special distribution/spin-off or similar event cannot be reconstructed correctly, affected forward-return labels must be excluded rather than interpreted as genuine market moves."
+  },
+  "snapshot_cutoffs": {
+    "timezone": "America/New_York",
+    "calendar": "XNYS",
+    "evening_snapshot": {
+      "time": "20:30",
+      "note": "Primary research/ranking snapshot. It may use only information available by that timestamp. The evening research population is the primary initial discovery population. An evening immediately actionable result is internally enter_next_session_provisional, not already executable.",
+      "use_only_information_available_by_cutoff": true
+    },
+    "morning_snapshot": {
+      "time": "09:00",
+      "note": "Second official snapshot. It reevaluates the eligible universe using overnight information and may add, upgrade, downgrade, or remove candidates. The morning snapshot may convert a provisional evening entry into enter_now.",
+      "may_convert_provisional_to_enter_now": true
+    },
+    "intraday_policy": "LONG-002 does not continuously rerank the universe intraday. Intraday processing is limited to previously defined execution/risk events such as Armed trigger, protective stop, profit target, gap/entry validity, and approved material-event checks. Continuous intraday opportunity discovery belongs to DAYTRADE-001.",
+    "use_adr_0001_timezone_and_calendar": true
+  },
+  "historical_periods": {
+    "warmup": {
+      "start": "2015-01-01",
+      "end": "2015-12-31"
+    },
+    "development": {
+      "start": "2016-01-01",
+      "end": "2020-12-31"
+    },
+    "validation": {
+      "start": "2021-01-01",
+      "end": "2022-12-31"
+    },
+    "holdout": {
+      "start": "2023-01-01",
+      "end": "2025-12-31",
+      "untouched": true
+    },
+    "shadow_replay": {
+      "start": "2026-01-01",
+      "note": "Separate from historical holdout."
+    },
+    "chronological": true,
+    "no_random_train_test_split": true,
+    "observation_split_rule": "An observation may belong to a split only if its full potential five-session entry window and full 21-session forward outcome window remain within that split.",
+    "boundary_purge_policy": "Use the exchange calendar rather than hard-coded calendar-day subtraction. The maximum boundary purge is conceptually five trigger sessions plus 21 outcome sessions.",
+    "do_not_inspect_holdout_before_authorized_access": true
+  },
+  "outcome_and_entry_contract": {
+    "evening_discovery_reference": {
+      "signal_known_after": "official evening information cutoff",
+      "reference_entry": "actual next regular-session open plus applicable modeled entry friction",
+      "no_hindsight_entry": "No use of the future day's low, best first-hour price, retrospectively selected VWAP, or other hindsight-optimized entry."
+    },
+    "armed_entries": {
+      "trigger_execution": "Use the first historically executable occurrence of the frozen trigger.",
+      "max_validity_sessions": 5,
+      "expiration_is_not_a_trade": "If never triggered, record expiration; do not count it as a trade win/loss.",
+      "gap_beyond_entry_band": "If price gaps beyond the frozen acceptable entry band, record gapped_beyond_entry; do not assume a fictitious trigger-price fill."
+    },
+    "waitlist": {
+      "active_outcome_clock": false,
+      "must_become_armed_or_enter_now": "It must first become Armed or Enter Now and produce an executable entry."
+    },
+    "target_grid": {
+      "all_nine_targets_must_be_calculated": [
+        {
+          "target_pct": 10,
+          "horizon_sessions": 5
+        },
+        {
+          "target_pct": 10,
+          "horizon_sessions": 10
+        },
+        {
+          "target_pct": 10,
+          "horizon_sessions": 21
+        },
+        {
+          "target_pct": 20,
+          "horizon_sessions": 5
+        },
+        {
+          "target_pct": 20,
+          "horizon_sessions": 10
+        },
+        {
+          "target_pct": 20,
+          "horizon_sessions": 21
+        },
+        {
+          "target_pct": 30,
+          "horizon_sessions": 5
+        },
+        {
+          "target_pct": 30,
+          "horizon_sessions": 10
+        },
+        {
+          "target_pct": 30,
+          "horizon_sessions": 21
+        }
+      ]
+    },
+    "confirmatory_hierarchy": {
+      "primary": {
+        "target_pct": 10,
+        "horizon_sessions": 10,
+        "label": "clean +10% within 10 trading sessions"
+      },
+      "key_magnitude_secondary": {
+        "target_pct": 20,
+        "horizon_sessions": 21,
+        "label": "clean +20% within 21 sessions"
+      },
+      "speed_secondary": {
+        "target_pct": 10,
+        "horizon_sessions": 5,
+        "label": "clean +10% within 5 sessions"
+      },
+      "stretch": {
+        "target_pct": 30,
+        "horizon_sessions": 21,
+        "label": "clean +30% within 21 sessions"
+      },
+      "all_nine_remain_available_diagnostically": true,
+      "feasibility_fallback": {
+        "target_pct": 10,
+        "horizon_sessions": 21,
+        "label": "clean +10% within 21 sessions",
+        "invocation_rule": "The fallback may be invoked only by a label-only development census showing that the primary +10%/10 endpoint lacks the preregistered independent-event sample required for meaningful evaluation. It must occur before KPI/model discovery and may not depend on predictive model performance."
+      }
+    }
+  },
+  "transaction_costs": {
+    "gross_move_note": "The +10/+20/+30 target labels remain gross market-price move labels from an executable market reference.",
+    "primary_scenario_bps_per_side": 10,
+    "sensitivity_scenarios_bps_per_side": [
+      5,
+      25
+    ],
+    "stress_diagnostic_bps_per_side": 50,
+    "stress_applies_to": "Event-driven/lower-liquidity cohorts where applicable",
+    "treatment": "All-in modeled execution friction rather than pretending to know exact historical spread/slippage decomposition where quote-level PIT data is unavailable.",
+    "do_not_fabricate_historical_quote_spreads": true
+  },
+  "outcome_quality_taxonomy": {
+    "do_not_force_single_winner_loser_bucket": true,
+    "per_target_horizon_fields": [
+      "target_reached",
+      "target_progress_ratio",
+      "near_miss",
+      "partial_move",
+      "mae_pct",
+      "mae_atr",
+      "adverse_excursion",
+      "clean_target_reached",
+      "path_sequence_ambiguous",
+      "end_of_horizon_return",
+      "retention_ratio",
+      "sustained_target",
+      "time_to_target",
+      "time_to_mae"
+    ],
+    "target_progress_ratio_formula": "MFE / target",
+    "target_progress_bands": [
+      {
+        "min": 1.0,
+        "label": "target_reached",
+        "description": "target reached"
+      },
+      {
+        "min": 0.8,
+        "max": 1.0,
+        "label": "near_miss",
+        "description": "near miss"
+      },
+      {
+        "min": 0.5,
+        "max": 0.8,
+        "label": "partial_move",
+        "description": "partial move"
+      },
+      {
+        "max": 0.5,
+        "label": "did_not_approach_target",
+        "description": "did not approach target"
+      }
+    ],
+    "adverse_excursion_barrier_formula": "max(5%, 1.5 * pre-entry ATR as % of entry)",
+    "adverse_excursion_role": "Research comparison barrier, not the final stop-loss rule.",
+    "clean_target": {
+      "allowable_pre_target_adverse_movement_formula": "min(target / 2, adverse_barrier)",
+      "requires": [
+        "executable/valid entry",
+        "target reached",
+        "pre-target MAE no worse than the clean-risk cap",
+        "no unresolved same-bar sequencing ambiguity"
+      ]
+    },
+    "same_bar_ambiguity": {
+      "condition": "If daily data touches both relevant target and downside barrier and order cannot be known",
+      "set_path_sequence_ambiguous": true,
+      "may_still_be_gross_target_touch": true,
+      "cannot_count_as_clean_target": true
+    },
+    "persistence": {
+      "condition": "sustained_target when target reached and end-of-horizon return is at least 50% of the target magnitude",
+      "persistence_separate_from_target_attainment": true
+    }
+  },
+  "master_episodes": {
+    "daily_observations_canonical_unit": true,
+    "definition": {
+      "anchor": "Earliest currently unassigned observation for a stock that reaches at least +10% within 21 trading sessions from the next-open reference entry.",
+      "window_sessions": 21,
+      "do_not_close_when_target_reached": true,
+      "do_not_recursively_extend": true,
+      "no_new_episode_until_window_ends": true,
+      "nested_targets_belong_to_same_episode": true,
+      "official_metrics_measured_from_first_anchor_entry": true,
+      "preserve_all_constituent_daily_observations": true
+    },
+    "constituent_tags": [
+      "pre_target",
+      "target_session",
+      "post_target"
+    ],
+    "anchor_is_ex_post_label": "The master anchor is an ex-post labeling construct and must not be described as model detection."
+  },
+  "controls": {
+    "preserve_natural_prevalence": true,
+    "do_not_balance_winners_and_losers": true,
+    "matched_controls_for_discovery_only": true,
+    "structural_controls": {
+      "preferred_matching": [
+        "exact decision date",
+        "sector",
+        "market-cap cohort"
+      ]
+    },
+    "capacity_matched_challenge_controls": {
+      "may_additionally_match": [
+        "pre-signal volatility",
+        "liquidity"
+      ]
+    },
+    "prohibited_control_matching_variables": [
+      "momentum/relative strength",
+      "price structure",
+      "volume pattern",
+      "earnings",
+      "earnings surprise",
+      "news",
+      "guidance",
+      "fundamental acceleration"
+    ],
+    "control_exclusion_rules": [
+      "A control must not be inside an active positive master episode.",
+      "Do not reuse the exact same control observation.",
+      "Do not repeatedly reuse one ticker within a rolling 21-session window for chart-review controls.",
+      "If an honest match does not exist, record an unmatched case rather than forcing a bad match."
+    ]
+  },
+  "blinded_chart_review_protocol": {
+    "purpose": "Development-only hypothesis discovery.",
+    "pilot": {
+      "count": 24,
+      "use": "Refine presentation/labeling workflow.",
+      "exclusion": "Pilot cases are permanently excluded from the main blinded sample and any human-label performance claim."
+    },
+    "main_sample": {
+      "count": 240,
+      "composition": {
+        "positive_master_episodes": 120,
+        "ordinary_non_movers": 40,
+        "near_misses": 40,
+        "adverse_trap_cases": 40
+      },
+      "deterministic_sampling": true,
+      "recorded_random_seed": true,
+      "immutable_answer_key": true,
+      "diversity_dimensions": [
+        "target magnitude",
+        "speed",
+        "development years",
+        "sectors",
+        "market-cap cohorts",
+        "earnings/non-earnings",
+        "event/non-event",
+        "volatility/regime"
+      ],
+      "ticker_reuse_guideline": "A ticker should normally appear no more than twice.",
+      "do_not_force_unavailable_quotas": true,
+      "stage_a": {
+        "description": "Anonymized technical/market view.",
+        "hide": [
+          "ticker",
+          "company",
+          "exact calendar date",
+          "future bars",
+          "result",
+          "positive/control class"
+        ]
+      },
+      "stage_b": {
+        "description": "Add anonymized PIT fundamentals, earnings, guidance, analyst revisions, news/catalyst information, and data confidence.",
+        "preserve_both_stage_labels": true
+      },
+      "no_per_case_reveal": "No per-case outcome reveal, running accuracy, or class hint until all 240 main cases are locked.",
+      "batching": "Suggested 12 batches of 20 while keeping outcomes hidden until completion.",
+      "not_final_training_population": "This review is for hypothesis/archetype/explanation discovery only. It must not be used as the final calibrated model training population.",
+      "frozen_label_schema": {
+        "surface_decision": [
+          "surface",
+          "do_not_surface"
+        ],
+        "visible_state_if_surfaced": [
+          "Enter Now",
+          "Armed",
+          "Qualified Waitlist"
+        ],
+        "expected_target_and_horizon": true,
+        "qualitative_confidence": "1-5 scale",
+        "setup_archetype": [
+          "setup_archetype",
+          "other",
+          "unclear"
+        ],
+        "entry_plan": true,
+        "trigger_zone": true,
+        "max_five_session_validity": true,
+        "gap_handling": true,
+        "invalidation": true,
+        "max_three_primary_positive_reasons": true,
+        "material_risks_and_counterarguments": true,
+        "preserve_stage_a_and_b_labels_independently": true
+      }
+    }
+  },
+  "data_layer_hierarchy": {
+    "mandatory_core": [
+      "Security identity",
+      "PIT universe eligibility",
+      "As-traded OHLCV",
+      "Split-normalized analytical price history",
+      "Corporate-action integrity",
+      "Market benchmark data",
+      "PIT sector context where valid",
+      "Complete outcome windows",
+      "Price/trend features",
+      "Volume/liquidity features",
+      "Volatility/range features",
+      "Relative-strength/context features"
+    ],
+    "full_fundamental_cohort": {
+      "min_quarters": 6,
+      "preferred_quarters": 8,
+      "families": [
+        "revenue growth and acceleration",
+        "EPS growth and acceleration",
+        "gross/operating margin level/change where applicable",
+        "operating income",
+        "operating cash flow",
+        "capex/free cash flow",
+        "cash/debt/net debt",
+        "share-count change/dilution",
+        "asset growth",
+        "economically appropriate return/capital measures",
+        "valuation where denominators are meaningful",
+        "filing freshness/data quality",
+        "post-filing/post-earnings reaction features"
+      ],
+      "sector_aware_applicability": true
+    },
+    "technical_candidates": {
+      "transparent_primitives_across_approved_horizons": [
+        "returns/momentum across short and medium lookbacks",
+        "acceleration",
+        "trend/location",
+        "moving-average distance/slope",
+        "proximity to highs/lows",
+        "consolidation/tightness",
+        "breakout proximity",
+        "ATR%",
+        "realized volatility",
+        "volatility percentile",
+        "compression/expansion",
+        "gap behavior",
+        "relative volume",
+        "dollar-volume trends",
+        "up/down volume behavior",
+        "price/volume confirmation/divergence"
+      ]
+    },
+    "relative_strength_context": [
+      "stock vs SPY",
+      "stock vs PIT sector where valid",
+      "cross-sectional ranks among historically eligible securities",
+      "relative-strength acceleration/persistence",
+      "sector relative strength",
+      "sector/market breadth where valid",
+      "market trend/regime",
+      "volatility regime",
+      "beta/correlation where appropriate"
+    ],
+    "challenger_layers": [
+      {
+        "name": "analyst",
+        "description": "Analyst estimates/revisions/consensus surprise when genuine vintage/PIT data is available."
+      },
+      {
+        "name": "news_catalyst",
+        "description": "Only with auditable timestamp and coverage semantics. Missing news means unknown coverage unless the provider contract legitimately establishes otherwise."
+      },
+      {
+        "name": "exploratory",
+        "items": [
+          "options",
+          "short interest",
+          "insider activity",
+          "institutional ownership/positioning"
+        ],
+        "do_not_mislabel_delayed_aggregate_chain_data": "Do not mislabel delayed/aggregate chain data as transaction-level institutional options flow."
+      }
+    ],
+    "coverage_principles": {
+      "core_technical_context_coverage_target_pct": 99,
+      "broad_universe_fundamental_overall_coverage_target_pct": 80,
+      "broad_universe_fundamental_per_major_sector_target_pct": 60,
+      "sector_specific_fundamental_cohort_target_pct": 80,
+      "news_analyst_require_qualified_coverage_intervals": true,
+      "common_coverage_for_model_comparisons": true,
+      "missing_data_never_silently_zero_or_absence": true
+    }
+  },
+  "baseline_family": {
+    "universe_base_rate": {
+      "description": "Natural target/horizon prevalence."
+    },
+    "simple_momentum_family": {
+      "allowed_lookback_sessions": [
+        5,
+        10,
+        20,
+        60
+      ]
+    },
+    "spy_relative_family": {
+      "horizons_sessions": [
+        5,
+        10,
+        20,
+        60
+      ],
+      "formula": "Stock return minus SPY return over the horizon.",
+      "pit_sector_relative_may_be_secondary": true
+    },
+    "volatility_aware_momentum_family": {
+      "formula": "Fixed equal-weight rank combination: 50% cross-sectional momentum percentile + 50% cross-sectional ATR%-movement-capacity percentile.",
+      "do_not_optimize_50_50_weights": true,
+      "use_same_allowed_momentum_lookbacks": true
+    },
+    "existing_tradex_long_term_scorer": {
+      "description": "Run the existing production scorer exactly as it exists with fresh default settings/weights and no LONG-002 tuning.",
+      "role": "Comparator, not LONG-002 methodology."
+    },
+    "strongest_simple_comparator_rule": {
+      "description": "A dedicated baseline-only development census selects the strongest permitted simple comparator for the applicable primary endpoint. Freeze that comparator before candidate-system evaluation. Do not change it based on validation/holdout.",
+      "paired_comparison_identity": "All paired comparisons use identical observations, timestamps, fills, costs, and exclusions."
+    }
+  },
+  "ranking_objective": {
+    "primary": "Top-of-list precision for clean, executable moves of at least +10%, subject to explicit downside, execution, calibration, and confidence constraints.",
+    "reward": [
+      "larger credible +20/+30 outcomes",
+      "faster attainment",
+      "expected clean move value"
+    ],
+    "penalize": [
+      "adverse risk",
+      "execution failure",
+      "gap-through risk",
+      "uncertainty",
+      "insufficient applicability/support"
+    ],
+    "probability_handling": "Do not naively sum nested +10/+20/+30 probabilities. The eventual expected-clean-move calculation should operate on mutually exclusive highest-target tiers.",
+    "rank_separately_by_state": [
+      "Enter Now",
+      "Armed",
+      "Qualified Waitlist"
+    ],
+    "recall_and_generic_accuracy": "secondary",
+    "candidate_feature_families_are_hypotheses_not_assumed_signals": true,
+    "validation_tie_break_order": [
+      {
+        "step": 1,
+        "criterion": "pass_all_risk_actionability_calibration_sample_gates",
+        "description": "Pass all risk, actionability, calibration, and sample-count gates."
+      },
+      {
+        "step": 2,
+        "criterion": "highest_clean_target_precision_at_locked_top_k",
+        "description": "Highest clean-target Precision at the locked top-K (primary K=10; secondary K=25)."
+      },
+      {
+        "step": 3,
+        "criterion": "highest_expected_clean_move_value_at_same_k",
+        "description": "Highest expected clean move value at the same K."
+      },
+      {
+        "step": 4,
+        "criterion": "lower_adverse_rate",
+        "description": "Lower adverse rate."
+      },
+      {
+        "step": 5,
+        "criterion": "better_calibration",
+        "description": "Better calibration (lower Brier / better reliability)."
+      },
+      {
+        "step": 6,
+        "criterion": "simpler_more_explainable_when_materially_similar",
+        "description": "Simpler/more explainable system when results are materially similar."
+      }
+    ],
+    "expected_clean_move_value": {
+      "operates_on_mutually_exclusive_highest_target_tiers": true,
+      "capped_at": 30,
+      "formula": "10% * P(highest clean tier is +10%) + 20% * P(highest clean tier is +20%) + 30% * P(highest clean tier is +30% or more)",
+      "speed_preference_and_discount": "Development-derived speed preference/discount is frozen before validation; not tuned post-hoc."
+    },
+    "primary_metrics": [
+      "clean_target_precision_at_10",
+      "clean_target_precision_at_25",
+      "expected_clean_move_value_at_10",
+      "expected_clean_move_value_at_25",
+      "adverse_rate",
+      "calibration",
+      "actionability",
+      "time_to_target",
+      "lift_over_strongest_simple_baseline",
+      "opportunities_per_week",
+      "product_diagnostics_at_7_12_31"
+    ]
+  },
+  "display_contract": {
+    "qualification_before_ranking_and_display": true,
+    "caps_not_quotas": true,
+    "max_enter_now": 7,
+    "max_armed": 12,
+    "max_qualified_waitlist": 12,
+    "max_default_focus_list": 31,
+    "zero_candidates_is_valid": true,
+    "do_not_backfill_to_reach_cap": true,
+    "expanded_view_may_show_all_genuinely_qualified": true,
+    "do_not_impose_artificial_sector_diversification": "Disclose concentration instead."
+  },
+  "state_architecture": {
+    "layers": [
+      "Security/data eligibility",
+      "Opportunity qualification",
+      "Entry-state assignment",
+      "Within-state ranking/display"
+    ],
+    "precedence": "Enter Now > Armed > Qualified Waitlist > Hidden",
+    "one_visible_state_at_a_time": true,
+    "recompute_each_snapshot": true,
+    "do_not_persist_yesterday_state_automatically": true,
+    "enter_now": {
+      "requires": [
+        "already qualified opportunity",
+        "executable current/next defined entry",
+        "acceptable live execution conditions",
+        "no unresolved material invalidation",
+        "no additional trigger required"
+      ],
+      "expires_if_not_executed": true
+    },
+    "armed": {
+      "requires": [
+        "qualified opportunity",
+        "explicit frozen trigger",
+        "maximum five-session validity",
+        "frozen invalidation",
+        "gap-through handling",
+        "live liquidity/spread requirements",
+        "sufficient trigger probability",
+        "trigger-adjusted opportunity value"
+      ],
+      "do_not_silently_move_trigger": true,
+      "changing_entry_plan_creates_new_id": true
+    },
+    "qualified_waitlist": {
+      "requires": [
+        "strong underlying opportunity potential",
+        "entry currently inadequate",
+        "specific plausible path to Armed or Enter Now",
+        "explicit promotion condition",
+        "explicit removal condition"
+      ],
+      "not_generic_watchlist": true,
+      "requalified_each_snapshot": true,
+      "hysteresis_buffers_deferred": true,
+      "preserve_deterministic_transition_reason_codes": true
+    }
+  },
+  "allowed_model_families": {
+    "model_fitting_status": "No model fitting occurs in this PR.",
+    "allowlist": [
+      {
+        "id": "cross_sectional_rank_score",
+        "name": "Transparent cross-sectional rank/score system",
+        "requirements": "Must retain an equal-weight reference form. Any alternative weighting scheme comes from a small registered set, not continuous unconstrained optimization."
+      },
+      {
+        "id": "regularized_probabilistic_time_to_event",
+        "name": "Regularized probabilistic/time-to-event system",
+        "examples": [
+          "regularized logistic",
+          "discrete-time logistic hazard-style approaches"
+        ]
+      },
+      {
+        "id": "shallow_strongly_regularized_gbdt",
+        "name": "Shallow strongly regularized gradient-boosted trees",
+        "role": "Only nonlinear challenger."
+      }
+    ],
+    "explicitly_out_of_scope": [
+      "neural networks",
+      "transformers for prediction",
+      "reinforcement learning",
+      "genetic/evolutionary search",
+      "AutoML",
+      "unrestricted stacking/ensembles",
+      "unlimited automated hyperparameter search",
+      "LLM-generated trading probabilities",
+      "unrestricted indicator-period search"
+    ],
+    "feature_registry": {
+      "status": "deferred",
+      "freeze_required_before_model_experiments": true,
+      "amendment_rule": "Adding outcome-informed features afterward requires a documented development amendment.",
+      "when_decided": "Before LONG-002E model experiments begin.",
+      "data_may_be_used": "Development-only inspection of candidate families and locked data contract; no validation or holdout outcomes."
+    },
+    "search_budget": {
+      "round_1": {
+        "max_material_configurations_per_family": 12,
+        "max_total_material_configurations": 36
+      },
+      "round_2": {
+        "max_additional_material_configurations_across_all_families": 12
+      },
+      "initial_total_max": 48,
+      "experiment_ledger": "Every attempted configuration, including failures, must remain in an experiment ledger."
+    }
+  },
+  "trigger_families": {
+    "research_contract": "Future entry research must separate stock-selection potential from timing.",
+    "immediate_next_session_entry_is_fixed_control": true,
+    "core_daily_data_trigger_families": [
+      "Breakout continuation",
+      "Pullback / retest / reclaim",
+      "Catalyst-gap continuation"
+    ],
+    "definition_rule": "All levels, confirmation rules, invalidation, extension handling, and five-session validity must be defined from information available at the original decision timestamp.",
+    "core_daily_logic": "Core daily triggers should use completed-bar logic and subsequent executable entry rather than infer unknowable intraday sequencing.",
+    "intraday_refinements": "Intraday breakout/reclaim/VWAP/anchored-VWAP refinements are challengers only when trustworthy intraday data supports them and may not block the daily-data core study.",
+    "search_budget": {
+      "max_material_non_control_configurations": 12
+    },
+    "apply_to_complete_qualifying_candidate_population": "Apply trigger research to the complete qualifying candidate population, not known winners only."
+  },
+  "stop_and_exit_management": {
+    "scope_note": "Post-entry management remains separate from stock selection and entry research.",
+    "m1_downside_invalidation_research": {
+      "bounded_concepts": [
+        "no-protective-stop control",
+        "fixed-percentage stop",
+        "volatility-normalized stop",
+        "setup-structural invalidation",
+        "justified hybrid where applicable"
+      ],
+      "max_material_configurations": 8,
+      "stop_may_tighten_or_remain_unchanged": true,
+      "stop_may_never_be_widened_to_rescue_loss": true,
+      "thesis_invalidation_and_protective_stop_distinct": true
+    },
+    "daily_bar_stop_execution": {
+      "gap_through_stop": "If opening price gaps through stop, use actual open plus exit friction.",
+      "low_crosses_stop": "Otherwise if low crosses stop, use stop price plus friction.",
+      "stop_and_target_same_bar": {
+        "primary_policy": "stop-first",
+        "ambiguity_flag": true,
+        "target_first_may_be_sensitivity_only": true
+      }
+    },
+    "m2_profit_exit_research": {
+      "advancement_rule": "At most two M1 policies may advance.",
+      "bounded_concepts": [
+        "time exit",
+        "fixed target",
+        "staged target ladder",
+        "target then trail"
+      ],
+      "max_material_configurations": 8,
+      "normal_lifetime_sessions": 21,
+      "fresh_qualification_required_after_lifetime": "A later opportunity requires fresh qualification rather than silently extending the old trade."
+    }
+  },
+  "statistical_evidence_and_uncertainty": {
+    "do_not_use_raw_daily_row_count_as_sufficiency": true,
+    "track_separately": [
+      "daily observations",
+      "surfaced opportunities",
+      "unique recommendation episodes",
+      "independent master opportunity episodes",
+      "distinct tickers",
+      "chronological coverage",
+      "cohort concentration"
+    ],
+    "planning_figures_are_not_hard_gates": "Earlier planning figures such as 300/100/150 positive episodes are planning targets only, not locked hard gates.",
+    "actual_minimums": {
+      "status": "deferred",
+      "when_decided": "Actual minimum episode/recommendation counts must be determined from development-only endpoint feasibility and frozen before validation.",
+      "data_may_be_used": "Development-only census of primary endpoint independent events; no validation/holdout outcomes."
+    },
+    "primary_uncertainty": {
+      "method": "paired LONG-002-versus-frozen-baseline time-block resampling",
+      "primary_block_sessions": 21,
+      "robustness_sensitivity_block_sessions": 42,
+      "keep_market_cross_section_together": true,
+      "episode_analysis_uses_ticker_aware_robustness": true
+    },
+    "reporting": {
+      "report_95_pct_uncertainty_intervals": true,
+      "do_not_use_p_values_alone": true,
+      "concentration_triggers_robustness_analysis": true
+    },
+    "holdout_policy": "Do not inspect holdout event counts in advance. If realized holdout sample is insufficient after authorized access, the result may be inconclusive; do not lower the gate afterward."
+  },
+  "advancement_disposition_framework": {
+    "exact_thresholds_deferred": "No exact numerical advancement thresholds are invented in this PR where they were intentionally deferred.",
+    "thresholds_derived_from_development_only": "Those must be derived from development-only evidence and locked before validation.",
+    "structural_requirements": {
+      "max_frozen_candidate_systems_from_development": 3,
+      "validation_selects_at_most": 1,
+      "normally_one_fully_frozen_system_enters_holdout": true,
+      "failed_validation_means_no_holdout_parsing": true,
+      "validation_uses_deterministic_selection_tie_break_rules": true,
+      "complex_systems_must_show_incremental_value": true
+    },
+    "dual_requirement": "Require both absolute product-usefulness gates and relative improvement over the strongest frozen simple comparator.",
+    "final_dispositions": [
+      "supported_for_production_consideration",
+      "not_supported",
+      "inconclusive",
+      "invalid_evidence"
+    ],
+    "evidence_confidence_labels": [
+      "strong_evidence",
+      "moderate_evidence",
+      "limited_but_usable_evidence",
+      "invalid_evidence"
+    ],
+    "supported_still_does_not_authorize_production": "A supported research result still does not authorize production changes."
+  },
+  "explanation_and_confidence_contract": {
+    "required_separation": [
+      "Predicted opportunity",
+      "Active-model data quality",
+      "Overall model evidence strength",
+      "Candidate-specific applicability/support"
+    ],
+    "applicability_states": [
+      "well represented",
+      "partially represented",
+      "sparse historical support",
+      "outside supported range"
+    ],
+    "outside_range_policy": "Outside-supported-range candidates should normally be prevented from actionable states unless separately validated.",
+    "probability_display": "Do not display falsely precise probabilities. Internally preserve full model probabilities, but user-facing output may use sensible rounding/ranges and should suppress probability claims when calibration or support is inadequate.",
+    "canonical_explanations": {
+      "deterministic_structured_outputs": true,
+      "summary_limits": {
+        "max_principal_positive_reasons": 3,
+        "typical_counterarguments": "2-3"
+      },
+      "mandatory_warnings_may_not_be_hidden": true,
+      "traceability": "A displayed reason must be traceable to an actual active-model feature/rule and point-in-time source.",
+      "generated_prose_rule": "Generated prose, if ever added later, may improve readability but may not invent evidence, alter ranking/state/probability, or omit mandatory risks.",
+      "historical_snapshots_reproducible": true
+    }
+  },
+  "candidate_and_position_monitoring": {
+    "scope": "Future candidate monitoring.",
+    "implementation_status": "deferred",
+    "when_decided": "After LONG-002E candidate-system development and before prospective shadow.",
+    "data_may_be_used": "Development/validation model behavior and locked trigger/invalidation rules; no holdout outcomes.",
+    "requirements": [
+      "reevaluate at every official snapshot",
+      "preserve state transition history",
+      "use deterministic reason codes",
+      "permit Armed -> Waitlist when the active trigger closes but the stock independently requalifies",
+      "prevent trivial score changes from causing churn through later frozen hysteresis rules"
+    ],
+    "user_positions": {
+      "never_infer_entered": "TradeX must never infer that Gary entered merely because a trigger fired.",
+      "mvp_concept": [
+        "Mark as Entered",
+        "prepopulate recommendation metadata",
+        "require/confirm actual fill price",
+        "require/confirm actual entry timestamp",
+        "position size optional unless dollar P&L/risk tracking is desired"
+      ],
+      "sizing_remains_user_controlled": true,
+      "brokerage_connectivity_not_in_scope": "No brokerage connectivity or automated order execution is part of LONG-002A.",
+      "future_progression": [
+        "manual one-click confirmation",
+        "broker-fill import",
+        "read-only brokerage synchronization"
+      ],
+      "future_progression_are_product_concepts_only": true
+    }
+  },
+  "prospective_shadow_contract": {
+    "condition": "If and only if historical validation and holdout pass, future LONG-002 prospective evaluation begins research-only shadow mode.",
+    "burn_in": {
+      "sessions": 10,
+      "purpose": "operational verification only",
+      "excluded": true
+    },
+    "official_minimum": {
+      "sessions": 126,
+      "min_unique_actionable_recommendation_episodes": 50,
+      "min_mechanically_executable_shadow_entries": 30
+    },
+    "continue_if_calendar_minimum_reached_before_event_minimum": true,
+    "logic_remains_frozen": "Model/ranking/qualification/entry/management/calibration/comparator/explanation logic remains frozen during the official shadow period.",
+    "snapshot_completion_target_pct": 99,
+    "no_retrospective_reconstruction": true,
+    "prospective_dispositions": [
+      "prospectively_supported",
+      "prospectively_not_supported",
+      "prospectively_inconclusive",
+      "operationally_not_ready",
+      "invalid_evidence"
+    ],
+    "prospective_support_authorizes_only_consideration": "A `prospectively_supported` `LONG-002J` result authorizes only **consideration** of a separate Gary-approved production decision-support PR. It does not by itself authorize production deployment. Historical holdout support (`LONG-002I`) alone authorizes only the `LONG-002J` prospective shadow, not production promotion."
+  },
+  "data_provider_governance": {
+    "this_pr_makes_zero_provider_calls": true,
+    "this_pr_makes_zero_provider_selection": true,
+    "future_investigation_rules": [
+      "define preferred provider/history",
+      "define minimum usable contract",
+      "define accepted limitations",
+      "define genuine blockers",
+      "define named fallback candidates",
+      "bound retries/API calls/runtime",
+      "define stop condition"
+    ],
+    "stop_condition": "Once minimum usable data is found, provider exploration stops.",
+    "additional_provider_hunting_requires_gary_approval": true,
+    "additional_provider_hunting_must_address_calculation_invalidating_blocker": true,
+    "long_002b_is_data_feasibility_phase": true,
+    "provider_search_budget": {
+      "per_data_family": {
+        "preferred_provider": 1,
+        "named_fallback_candidates_max": 2
+      },
+      "bounded_retries_api_calls_runtime": true,
+      "no_silent_provider_switch": true,
+      "stop_condition": "Once minimum usable data is found, provider exploration stops.",
+      "additional_provider_hunting_requires_gary_approval": true,
+      "additional_provider_hunting_must_address_calculation_invalidating_blocker": true
+    }
+  },
+  "phased_program": {
+    "LONG-002A": {
+      "title": "Locked research/discovery contract",
+      "description": "This PR. Documentation/specification only.",
+      "status": "in_progress"
+    },
+    "LONG-002B": {
+      "title": "Core data feasibility and PIT dataset contract",
+      "description": "Bounded provider/data audit, PIT universe feasibility, data-manifest design, no predictive model.",
+      "status": "deferred",
+      "when_decided": "After LONG-002A acceptance.",
+      "data_may_be_used": "Bounded provider/data feasibility probes only; no outcomes, no KPIs, no model fitting."
+    },
+    "LONG-002C": {
+      "title": "Outcome census, master episodes, and frozen baselines",
+      "description": "Development-only labels/base rates/episodes/baseline census.",
+      "status": "deferred",
+      "when_decided": "After LONG-002B dataset contract is locked.",
+      "data_may_be_used": "Locked development split only."
+    },
+    "LONG-002D": {
+      "title": "KPI discovery and blinded-review tooling",
+      "description": "Feature registry, development-only descriptive analytics, blinded chart-study tooling.",
+      "status": "deferred",
+      "when_decided": "After LONG-002C outcome census and frozen baselines.",
+      "data_may_be_used": "Development-only observations and controls; no validation/holdout outcomes."
+    },
+    "LONG-002E": {
+      "title": "Bounded candidate-system development",
+      "description": "Maximum 48 material model configurations.",
+      "status": "deferred",
+      "when_decided": "After LONG-002D KPI discovery and feature registry freeze.",
+      "data_may_be_used": "Development split and locked experiment ledger only."
+    },
+    "LONG-002F": {
+      "title": "Entry-trigger research",
+      "description": "Bounded trigger development.",
+      "status": "deferred",
+      "when_decided": "After LONG-002E candidate systems locked.",
+      "data_may_be_used": "Development split and locked feature registry; no validation/holdout outcomes."
+    },
+    "LONG-002G": {
+      "title": "Management research",
+      "description": "M1/M2 downside and exit research.",
+      "status": "deferred",
+      "when_decided": "After LONG-002F trigger family frozen.",
+      "data_may_be_used": "Development split; maximum two M1 policies advance."
+    },
+    "LONG-002H": {
+      "title": "Locked validation",
+      "description": "No iterative tuning.",
+      "status": "deferred",
+      "when_decided": "After LONG-002G management research locked.",
+      "data_may_be_used": "Validation split only, exactly once per frozen system."
+    },
+    "LONG-002I": {
+      "title": "Locked historical holdout",
+      "description": "Locked historical holdout. A supported result authorizes only LONG-002J prospective shadow, not production deployment.",
+      "status": "deferred",
+      "when_decided": "After LONG-002H validation passes and authorizes holdout.",
+      "data_may_be_used": "Holdout split only, exactly once."
+    },
+    "LONG-002J": {
+      "title": "Prospective shadow",
+      "description": "Prospective shadow. A prospectively supported result authorizes only consideration of a separate Gary-approved production decision-support PR.",
+      "status": "deferred",
+      "when_decided": "After LONG-002I holdout passes.",
+      "data_may_be_used": "Forward shadow/replay observations only."
+    }
+  },
+  "deferred_decisions": {
+    "note": "For every deferred item, the JSON specifies when it may be decided and what data may be used. Do not replace deferred with a plausible-looking default merely to make the JSON complete.",
+    "items": [
+      {
+        "item": "final model feature set",
+        "status": "deferred",
+        "when_decided": "LONG-002D, after blinded chart review and KPI discovery.",
+        "data_may_be_used": "Development-only candidate families, controls, and locked data contract; no validation/holdout outcomes."
+      },
+      {
+        "item": "final model weights/coefficients",
+        "status": "deferred",
+        "when_decided": "LONG-002E, after feature registry freeze and model family selection.",
+        "data_may_be_used": "Development split and experiment ledger only."
+      },
+      {
+        "item": "final qualification probability thresholds",
+        "status": "deferred",
+        "when_decided": "LONG-002E, after model family search budget.",
+        "data_may_be_used": "Development-only candidate scores and base rates; no validation/holdout."
+      },
+      {
+        "item": "final adverse-risk qualification ceiling",
+        "status": "deferred",
+        "when_decided": "LONG-002E, during candidate-system search.",
+        "data_may_be_used": "Development split outcomes and base rates."
+      },
+      {
+        "item": "final opportunity-value threshold",
+        "status": "deferred",
+        "when_decided": "LONG-002E, during candidate-system search.",
+        "data_may_be_used": "Development split outcomes and expected clean move estimates."
+      },
+      {
+        "item": "exact probability display formatting",
+        "status": "deferred",
+        "when_decided": "LONG-002E calibration stage, after evidence-strength assessment.",
+        "data_may_be_used": "Development split calibration data only."
+      },
+      {
+        "item": "exact ranking speed discount/weights",
+        "status": "deferred",
+        "when_decided": "LONG-002E, after candidate family evaluation.",
+        "data_may_be_used": "Development split outcomes and base rates."
+      },
+      {
+        "item": "exact practical-improvement gate over baseline",
+        "status": "deferred",
+        "when_decided": "Before LONG-002H validation, derived from development-only evidence.",
+        "data_may_be_used": "Development split candidate-versus-baseline comparison."
+      },
+      {
+        "item": "final independent-episode/sample-count gates",
+        "status": "deferred",
+        "when_decided": "LONG-002C development-only endpoint feasibility census.",
+        "data_may_be_used": "Development split master episodes and base rates."
+      },
+      {
+        "item": "exact state hysteresis buffers",
+        "status": "deferred",
+        "when_decided": "Future monitoring phase, after LONG-002E candidate system and before shadow.",
+        "data_may_be_used": "Development/validation state transition simulation; no holdout."
+      },
+      {
+        "item": "exact breakout/retest/catalyst trigger formulas/lookbacks",
+        "status": "deferred",
+        "when_decided": "LONG-002F trigger research, after LONG-002E systems locked.",
+        "data_may_be_used": "Development split and locked feature registry."
+      },
+      {
+        "item": "exact acceptable gap/extension bands by setup",
+        "status": "deferred",
+        "when_decided": "LONG-002F trigger research.",
+        "data_may_be_used": "Development split entry-gap diagnostics."
+      },
+      {
+        "item": "exact stop percentages/ATR multiples",
+        "status": "deferred",
+        "when_decided": "LONG-002G M1 research.",
+        "data_may_be_used": "Development split downside/invalidation simulation."
+      },
+      {
+        "item": "exact target allocation/trailing parameters",
+        "status": "deferred",
+        "when_decided": "LONG-002G M2 research.",
+        "data_may_be_used": "Development split exit simulations."
+      },
+      {
+        "item": "final optional provider choices",
+        "status": "deferred",
+        "when_decided": "LONG-002B, after bounded provider feasibility audit.",
+        "data_may_be_used": "Provider contract and coverage data; no model outcomes."
+      },
+      {
+        "item": "final optional news/analyst/options inclusion",
+        "status": "deferred",
+        "when_decided": "LONG-002D feature registry and LONG-002E model search.",
+        "data_may_be_used": "Development-only coverage and incremental value tests; no validation/holdout."
+      },
+      {
+        "item": "final production behavior",
+        "status": "deferred",
+        "when_decided": "Separate Gary-approved production decision-support PR, only after LONG-002J prospective shadow returns `prospectively_supported` and evidence supports promotion consideration.",
+        "data_may_be_used": "Locked validation, holdout, and prospective shadow evidence only."
+      },
+      {
+        "item": "unique recommendation episode lifecycle and grouping rule",
+        "status": "deferred",
+        "when_decided": "Before LONG-002E model-evaluation sample gates are used; must be defined from development-only evidence.",
+        "data_may_be_used": "Development-only master episodes and recommendation-timestamp data; no validation/holdout outcomes."
+      }
+    ]
+  },
+  "prohibited_actions": [
+    "No market-data/provider API calls.",
+    "No historical OHLCV download.",
+    "No fundamental download.",
+    "No news download.",
+    "No analyst-estimate download.",
+    "No options download.",
+    "No creation of a LONG-002 real-data snapshot.",
+    "No outcome census.",
+    "No winner/loser event sampling.",
+    "No chart-review execution.",
+    "No KPI calculation.",
+    "No feature selection.",
+    "No model fitting.",
+    "No hyperparameter tuning.",
+    "No baseline performance calculation.",
+    "No trigger implementation or testing.",
+    "No stop/exit simulation.",
+    "No development-period performance analysis.",
+    "No validation access.",
+    "No holdout access.",
+    "No 2026 outcome analysis.",
+    "No production signal changes.",
+    "No production long-term scorer changes.",
+    "No weight changes.",
+    "No threshold changes.",
+    "No ranking changes.",
+    "No confluence changes.",
+    "No alert changes.",
+    "No dashboard implementation.",
+    "No positions dashboard.",
+    "No Mark as Entered implementation.",
+    "No brokerage or account integration.",
+    "No automated trading.",
+    "No raw market data committed.",
+    "No new claim that any LONG-002 feature, model, or setup has predictive value.",
+    "No unrelated cleanup/refactoring.",
+    "No creation of tradex/research/long_002/ dataset/model/evaluator scaffolding unless a tiny pure spec helper is absolutely necessary."
+  ],
+  "reuse_and_non_reuse": {
+    "concepts_infrastructure_patterns_reusable_later": [
+      "Immutable study specifications",
+      "SHA/hash identity",
+      "Dataset manifests",
+      "Fail-closed verification",
+      "PIT timing",
+      "XNYS calendar handling",
+      "Cross-split exclusion",
+      "Separate network snapshot from offline evaluation",
+      "Fresh model/settings configuration",
+      "No saved user weights",
+      "Event-study versus executable-policy distinction",
+      "Deterministic artifacts",
+      "Cost sensitivity",
+      "Benchmark reporting",
+      "Cohort reporting",
+      "Stable JSON-safe schemas"
+    ],
+    "long_001_methodology_not_inherited_automatically": [
+      "Fixed 30-stock + 12-ETF universe",
+      "Threshold 40",
+      "40-week SMA sole baseline",
+      "13/26-week holding horizons",
+      "Existing production long-term feature set",
+      "Existing long-term weights",
+      "LONG-001 promotion gates",
+      "Weekly-only methodology"
+    ],
+    "intra_001_is_separate": "INTRA-001 is also complete and separate. Its opening-drive/VWAP-pullback hypothesis must not be treated as Gary's generic day-trading or long-term strategy."
+  },
+  "production_boundary": {
+    "this_pr_changes_production_code": false,
+    "this_pr_changes_trading_behavior": false,
+    "this_pr_adds_research_implementation": false,
+    "this_pr_retrieves_real_market_data": false,
+    "this_pr_evaluates_historical_outcomes": false,
+    "this_pr_accesses_validation_or_holdout": false,
+    "production_promotion_requires": "LONG-002I historical holdout support authorizes only proceeding to LONG-002J prospective shadow. A prospectively supported LONG-002J result authorizes only consideration of a separate Gary-approved production decision-support PR."
+  },
+  "data_integrity": {
+    "historical_bar_requirements": [
+      "As-traded OHLCV",
+      "Split-normalized analytical series",
+      "Corporate-action metadata",
+      "Provider provenance",
+      "Timestamp convention",
+      "Timezone",
+      "Adjustment policy",
+      "Missing/duplicate/malformed counts",
+      "Exchange calendar version",
+      "Point-in-time universe membership"
+    ],
+    "daily_bar_integrity_for_established_stocks": {
+      "recent_20_sessions_observed_pct": 100,
+      "trailing_year_completeness_min_pct": 99,
+      "max_unexplained_missing_sessions_across_252": 2,
+      "max_consecutive_unexplained_missing_sessions": 1,
+      "duplicate_timestamps": "zero unresolved",
+      "malformed_invalid_ohlcv_rows": "zero unresolved",
+      "positive_prices": true,
+      "nonnegative_volume": true,
+      "internally_valid_ohlc_relationships": true,
+      "sorted_unique_normalized_timestamps": true,
+      "verified_trading_halt_distinct_from_provider_missing": true
+    },
+    "recent_ipo_cohort_may_have_reduced_history": "Reduced-history cohorts are separately identified; features requiring longer history remain unavailable rather than fabricated."
+  },
+  "research_integrity_requirements": [
+    "Lookahead bias",
+    "Survivorship bias",
+    "Delisting bias",
+    "Selection bias",
+    "Data leakage",
+    "Cross-split contamination",
+    "Duplicate events",
+    "Overlapping outcomes",
+    "Parameter fishing",
+    "Threshold fishing",
+    "Multiple-comparison risk",
+    "Corporate actions",
+    "Adjusted versus unadjusted prices",
+    "Timestamp and timezone errors",
+    "Market-calendar errors",
+    "Missing bars",
+    "Duplicate bars",
+    "Zero-volume bars",
+    "Trading halts",
+    "Provider changes",
+    "Slippage",
+    "Liquidity and capacity",
+    "Regime dependence",
+    "Saved user weights",
+    "Hidden local configuration",
+    "Determinism"
+  ],
+  "spec_file_path": "docs/research/specs/LONG-002-v1.json",
+  "canonical_md_path": "docs/research/LONG-002.md",
+  "future_artifacts_policy": "Exact artifact names, schemas, and required outputs for each future phase are decided by the implementation PR for that phase. No artifact list is locked in LONG-002A; any illustrative list would be non-binding."
+}
