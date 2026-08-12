@@ -344,7 +344,48 @@ This is the master backlog for recommendations from the Devin review. Items are 
   - A valid outcome is `insufficient evidence to change the production score`; the study does not force a recommendation.
 - **Intended pull request:** `devin/reevaluate-scores-with-validated-data`
 - **Affects trading behavior:** No
-- **Next recommended PR:** `devin/short-001-real-data-study` (SHORT-001 approved Schwab real-data study; INTRA-001B resumes after it)
+- **Next recommended PR:** `devin/long-002a-locked-research-contract` — `SHORT-001` is complete and `INTRA-001` is complete and inconclusive; the active research program is now `LONG-002`.
+
+### LONG-002: Long-only rapid-upside opportunity research program
+
+- **ID:** LONG-002
+- **Title:** Long-only rapid-upside opportunity research program
+- **Category:** Long-term trading
+- **Priority:** High
+- **Status:** In progress
+- **Current phase:** `LONG-002A` — locked research/discovery contract
+- **Research contract:** `docs/research/LONG-002.md`
+- **Locked machine-readable specification:** `docs/research/specs/LONG-002-v1.json`
+- **Objective:** Research an explainable, long-only rapid-upside opportunity system for U.S.-listed mid-, large-, and mega-cap common stocks, estimating the probability and capturable potential of clean +10%, +20%, and +30% moves over 5, 10, and 21 trading sessions from an executable entry.
+- **Classification:** Research-only
+- **Production promotion:** Unauthorized (`production_promotion_eligible=false`); historical holdout support (`LONG-002I`) authorizes only `LONG-002J` prospective shadow, and a `prospectively_supported` shadow authorizes only consideration of a separate Gary-approved production decision-support PR
+- **Historical periods:** Warm-up 2015, development 2016-2020, validation 2021-2022, untouched holdout 2023-2025, shadow/replay 2026+
+- **Official snapshots:** 20:30 and 09:00 America/New_York on XNYS calendar
+- **Display caps:** Enter Now 7, Armed 12, Qualified Waitlist 12, default focus list 31
+- **Model search budget:** 48 material configurations across three allowed families
+- **Trigger/M1/M2 budgets:** 12 / 8 / 8 material configurations
+- **Provider search budget:** One preferred provider plus at most two named fallbacks per data family
+- **Deferred decisions:** Final feature set, weights, thresholds, stop/target parameters, provider choices, recommendation-episode lifecycle, and production behavior are explicitly deferred to later phases.
+- **Problem statement:** A dedicated rapid-upside research program is needed that is distinct from LONG-001 and INTRA-001, with a locked contract before any provider investigation or outcome analysis.
+- **Recommended action:** Accept `LONG-002A` to lock the research contract and phased plan; proceed to `LONG-002B` (core data feasibility and PIT dataset contract) only after `LONG-002A` acceptance.
+- **Testing requirements:** Deterministic spec tests in `tests/research/test_long_002_spec.py`; `git diff --check`; `ruff`; `pytest`.
+- **Acceptance criteria:** Human-readable and machine-readable specifications are coherent, non-contradictory, research-only, and lock all material decisions; deferred items state when and on what data they may be decided; tracker/README/CLAUDE are synchronized; no provider calls or outcomes generated.
+- **Intended pull request:** `devin/long-002a-locked-research-contract`
+- **Affects trading behavior:** No — this is a specification/preregistration PR only; no production scorer, score, weight, threshold, ranking, eligibility, confluence, alert, or dashboard trading logic changes.
+- **Next phase:** `LONG-002B` — core data feasibility and point-in-time dataset contract.
+
+### DAYTRADE-001: Future real-time day-trading decision-support program
+
+- **ID:** DAYTRADE-001
+- **Title:** Future real-time day-trading decision-support program
+- **Category:** Intraday trading
+- **Priority:** High
+- **Status:** Deferred
+- **Description:** A separate future real-time day-trading decision-support program based on Gary's actual 3-year daily, 133-tick, 1-minute, and 50-tick workflow.
+- **Note:** Not equivalent to INTRA-001; not assumed to be VWAP-based.
+- **Sequencing:** After LONG-002 unless Gary explicitly reprioritizes.
+- **Affects trading behavior:** No
+- **Do not start DAYTRADE-001 work in this PR.**
 
 ---
 
@@ -453,8 +494,8 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **V2 real-data report:** `docs/research/SHORT-001-SCHWAB-STUDY-V2.md`
 - **Safe artifacts:** `docs/research/artifacts/SHORT-001/2026-08-01-5ae8a420/` (v1, preserved unchanged); `docs/research/artifacts/SHORT-001/2026-08-07-e5b64b56/` (v2)
 - **Problem statement:** The short-term score does not account for whether the broad market or sector is trending.
-- **Recommended action:** The v2 ingestion remediation and rerun are complete. The data-quality issue was resolved by dropping 23 malformed rows and producing deterministic audit evidence. The unchanged candidate-selection gate produced no qualifying policy, so SHORT-001 is closed as Completed — Not supported and no production integration is warranted. The next research priority is to resume INTRA-001B: empirically probe Schwab multi-year five-minute history and lock the intraday data-source decision.
-- **Next recommended PR:** `devin/intra-001b-alternative-ohlcv-source` (Schwab cannot supply the required multi-year five-minute history; evaluate Alpaca, IBKR, Polygon, or other provider for 2022–2025 five-minute regular-session OHLCV)
+- **Recommended action:** The v2 ingestion remediation and rerun are complete. The data-quality issue was resolved by dropping 23 malformed rows and producing deterministic audit evidence. The unchanged candidate-selection gate produced no qualifying policy, so SHORT-001 is closed as Completed — Not supported and no production integration is warranted. The next research priority is now `LONG-002` (locked rapid-upside long opportunity program); the `INTRA-001B` through `INTRA-001D` work is complete and inconclusive.
+- **Next recommended PR:** `devin/long-002a-locked-research-contract` — `INTRA-001B` through `INTRA-001D` are complete and inconclusive; the active research program is now `LONG-002`.
 - **Reason:** Buying pullbacks in a bear market or weak sector is a different proposition than in a strong bull market.
 - **Dependencies:** VAL-001 (backtesting harness), VAL-002 (score validation study)
 - **Files affected:** `tradex/market/__init__.py`, `tradex/market/context.py`, `tradex/market/models.py`, `tradex/signals/short_term.py`, `tradex/screener/engine.py`, `tradex/research/short_context/*`, `tests/market/test_context.py`, `tests/research/short_context/*`, `README.md`, `SETUP.md`, `.agents/skills/tradex-local-testing/SKILL.md`, `docs/PROJECT-TRACKER.md`, `docs/research/SHORT-001.md`
@@ -523,14 +564,14 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **INTRA-001D dataset:** `INTRA-001B-DATASET-V1` private snapshot at `~/.tradex/research/INTRA-001B-DATASET-V1/` (not committed)
 - **INTRA-001D provider calls:** 0
 - **Problem statement:** The intraday score is a loose bundle of indicators without VWAP, time-of-day, or liquidity context.
-- **Recommended action:** `INTRA-001D` is complete. The real-data study returned `inconclusive` due to unavailable pre-normalization duplicate/malformed metrics (750 symbol-months), the six observed BKNG `missing_bar_rate` rejections, and sub-threshold sample counts. No production promotion is warranted. Future work on this hypothesis requires either recovery of pre-normalization duplicate/malformed metrics or a new Gary-approved study with an amended data-sufficiency gate.
+- **Recommended action:** `INTRA-001D` is complete and inconclusive; the holdout was not parsed and no production promotion is warranted. No further work on this hypothesis is authorized without a new Gary-approved plan.
 
 - **Reason:** A generic score is not actionable for intraday trading. The concrete open-drive VWAP pullback setup and its two baselines are pre-registered before any code changes.
 - **Dependencies:** VAL-001
 - **Files likely affected:** `docs/research/INTRA-001-SPEC.md`, `docs/research/specs/INTRA-001-v1.json`, `docs/research/specs/INTRA-001-data-sufficiency-amendment-v3.json`, `docs/research/INTRA-001-DATA-SUFFICIENCY-AMENDMENT-V3.md`, `docs/research/specs/INTRA-001B-dataset-v1.json`, `docs/research/INTRA-001B-DATASET-V1-1DAY-AMENDMENT.md`, `tradex/research/intraday_dataset/`, `tradex/research/intraday_engine/`, `tradex/research/intraday_study/`, `docs/research/INTRA-001C-IMPLEMENTATION.md`, `docs/research/INTRA-001D-IMPLEMENTATION.md`, `docs/PROJECT-TRACKER.md`
 - **Testing requirements:** JSON schema validation; focused dataset tests; full test suite; documentation/search audit; artifact checksum verification; secret/path/token/cursor scan.
 - **Acceptance criteria:** 12 monthly PIT universes built, 13-ETF stratum preserved, Alpaca SIP 5Min OHLCV manifest locked, data-quality gates evaluated and reported under the locked disposition hierarchy, safe artifact bundle produced, `INTRA-001-v1.json` / amendment v3 / frozen V4 artifacts unchanged; `INTRA-001C` engine implemented with locked session/VWAP/opening-drive/reclaim/entry/exit/cost semantics, Baseline A calling fresh `IntradayWeights()`, Baseline B simple VWAP reclaim, synthetic-only `synthetic=true` artifacts, no real-data/provider access, no production behavior change; `INTRA-001D` adapter implemented, real-data development/validation/holdout run under frozen evaluation code, holdout parsed only if validation `supported`, final disposition and `production_promotion_eligible` recorded.
-- **Intended pull request:** `devin/intra-001d-locked-study` (requires Gary approval to start)
+- **Intended pull request:** `devin/intra-001d-locked-study` (completed and merged; no further work on this hypothesis without a new Gary-approved plan)
 - **Affects trading behavior:** No — `INTRA-001C` is research-only and `INTRA-001D` is a separately approved real-data study; no production code, scores, weights, thresholds, rankings, or eligibility changed.
 - **This PR changes no trading behavior.**
 
@@ -717,7 +758,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 
 | Priority | Count | Representative first item |
 |---|---|---|
-| High | 15 | DATA-001: Redesign signal history to record all scan observations |
+| High | 17 | LONG-002: Long-only rapid-upside opportunity research program |
 | Medium | 12 | SHORT-001: Add market regime and relative strength to short-term scorer |
 | Low | 5 | DOC-001: Close LONG-001 and restore documentation and tracker consistency |
 
@@ -726,19 +767,22 @@ This is the master backlog for recommendations from the Devin review. Items are 
 | Status | Count |
 |---|---|
 | Completed | 32 |
-| Deferred | 0 |
+| Deferred | 1 |
 | Proposed | 0 |
-| In progress | 0 |
+| In progress | 1 |
 | Blocked | 0 |
 
-The original engineering-foundation and UI-refactor backlog is substantially complete. `SHORT-001` is closed as Completed — Not supported. `INTRA-001B` produced a locked 2025 dataset manifest and safe artifacts with the 1Day-ranking amendment accepted. `INTRA-001C` is complete and accepted: the synthetic intraday engine and its tests produce deterministic `synthetic=true`, `evidence_eligible=false` artifacts and do not access real data or production behavior. `INTRA-001D` is complete: the locked real-data study ran on `INTRA-001B-DATASET-V1` with frozen evaluation code, produced real diagnostic trade/sample metrics, and returned `inconclusive`; the holdout was not parsed. Production promotion remains a separate Gary-approved PR only if the locked study supports it. No V5 reference-provider probe is authorized.
+The original engineering-foundation and UI-refactor backlog is substantially complete. `SHORT-001` is closed as Completed — Not supported. `INTRA-001B` produced a locked 2025 dataset manifest and safe artifacts with the 1Day-ranking amendment accepted. `INTRA-001C` is complete and accepted: the synthetic intraday engine and its tests produce deterministic `synthetic=true`, `evidence_eligible=false` artifacts and do not access real data or production behavior. `INTRA-001D` is complete: the locked real-data study ran on `INTRA-001B-DATASET-V1` with frozen evaluation code, produced real diagnostic trade/sample metrics, and returned `inconclusive`; the holdout was not parsed. No further work on the `INTRA-001` hypothesis is authorized without a new Gary-approved plan. `LONG-002A` is now the active research contract: a locked, research-only rapid-upside opportunity program distinct from `LONG-001` and `INTRA-001`. `DAYTRADE-001` is a future, deferred real-time day-trading program sequenced after `LONG-002` unless Gary explicitly reprioritizes.
 
 **Remaining non-completed items:**
-None — `INTRA-001D` is complete and this PR is ready for final review. No further work on this hypothesis is authorized without a new Gary-approved plan.
+1. **LONG-002** — `LONG-002A` locked research contract (in progress on `devin/long-002a-locked-research-contract`).
+2. **DAYTRADE-001** — Future real-time day-trading decision-support program (deferred until after `LONG-002`).
 
 **Recommended next work order:**
-1. **Separate Gary-approved production PR** — Only if `INTRA-001D` gates had passed and the methodology remains valid. They did not, so no production promotion is warranted.
+1. **LONG-002A** — Review and accept the locked `LONG-002` research contract.
+2. **LONG-002B** — Core data feasibility and point-in-time dataset contract, only after `LONG-002A` acceptance.
+3. **Separate Gary-approved production PR** — Only if a future research phase (e.g., `LONG-002I`) passes validation and holdout and the methodology remains valid. No production promotion is currently warranted.
 
 **Recommended next pull request order:**
-1. `devin/intra-001-d-locked-study` (final review of the locked real-data study; no further commits without Gary approval).
+1. `devin/long-002a-locked-research-contract` — `LONG-002A` locked research/discovery contract.
 

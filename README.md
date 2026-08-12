@@ -381,7 +381,22 @@ uv run python -m tradex.research.short_context evaluate --help
 - **Baselines:** The current production `intraday.score` (first score \>= 40 in the window, with an explicit signal-bar stop and 1.5R target) and a simple VWAP reclaim (no opening-drive filters).
 - **Data contract:** Five-minute OHLCV, point-in-time monthly top-50 stock universe + fixed ETF list, locked 2022–2025 splits, manifest-locked inputs, and explicit consolidated/venue volume disclosure.
 
-No `INTRA-001` detector, execution engine, backtester, or production scorer exists yet. The current production intraday score remains the four-component additive score described above. `INTRA-001B` empirically probed Schwab multi-year five-minute history; the result is `not_supported` because Schwab returned only the most recent ~30 regular sessions for the 2022–2025 full-range request and empty payloads for all bounded 2022–2024 windows. The locked probe report is at `docs/research/INTRA-001B-SCHWAB-DATA-PROBE.md` and safe artifacts are at `docs/research/artifacts/INTRA-001B/2026-08-07-133704/`. The recommended next research work is `devin/intra-001b-alternative-ohlcv-source` (evaluate Alpaca, IBKR, Polygon, or another provider for 2022–2025 five-minute regular-session OHLCV). A separate Gary-approved production PR is required only if all gates pass.
+`INTRA-001` is now complete and inconclusive. The locked real-data study at `docs/research/artifacts/INTRA-001D/2026-08-10-151816/` returned `inconclusive` with `production_promotion_eligible=false`; the holdout was not parsed. No further work on this hypothesis is authorized without a new Gary-approved plan.
+
+### Rapid-upside long opportunity research (LONG-002)
+
+`docs/research/LONG-002.md` and `docs/research/specs/LONG-002-v1.json` lock a new, research-only rapid-upside opportunity program for U.S.-listed mid-, large-, and mega-cap common stocks. It studies clean `+10%`, `+20%`, and `+30%` moves over `5`, `10`, and `21` trading sessions using price/volume behavior, relative strength, market context, and auditable fundamentals/catalysts.
+
+* **Classification:** `research-only`
+* **Production promotion:** Not eligible (`production_promotion_eligible=false`); historical holdout support (`LONG-002I`) authorizes only `LONG-002J` prospective shadow, and a `prospectively_supported` shadow authorizes only a separate Gary-approved production decision-support PR
+* **Production behavior:** Unchanged
+* **Current phase:** `LONG-002A` — locked research contract
+* **Official snapshots:** 8:30 p.m. and 9:00 a.m. `America/New_York` on the XNYS calendar
+* **Display caps:** Enter Now 7, Armed 12, Qualified Waitlist 12
+* **Model search budget:** 48 material configurations across three allowed families
+
+No provider calls, historical outcome analysis, model fitting, or
+validation/holdout access occur in `LONG-002A`.
 
 ---
 
@@ -601,8 +616,10 @@ Save and switch between named ticker lists (e.g. "Semis", "Crypto-adjacent", "Ea
 - [x] Scoring weight customization — per-signal sliders in the Weights tab, persisted to ~/.tradex/weights.json
 - [x] Split `dashboard.py` into tab and component modules (UI-001 — Completed, PR #34)
 - [x] Deterministic credential-free test foundation with over 1,200 tests covering providers, persistence, backtesting, research, and UI
+- [x] Intraday open-drive VWAP pullback research (INTRA-001) — completed `INTRA-001D` real-data study returned `inconclusive`; holdout not parsed; `production_promotion_eligible=false`
 
 ### Still on the list
+- [ ] Rapid-upside long opportunity research (LONG-002A) — locked research contract; research-only; no provider calls or outcomes
 - [ ] Portfolio-level risk view
 
 ### Nice-to-have enhancements

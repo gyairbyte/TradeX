@@ -448,7 +448,7 @@ The candidate policies are `off` (baseline), `market_rs`, and `market_sector_rs`
 
 `docs/research/INTRA-001-SPEC.md` pre-registers a concrete, research-only intraday setup. It defines the candidate long open-drive VWAP pullback continuation strategy, two baselines (current production `intraday.score` and a simple VWAP reclaim), locked 2022–2025 splits, sample minimums, validation/holdout gates, and a provider-feasibility review.
 
-No `INTRA-001` implementation code exists yet. The current production intraday scorer remains unchanged. `INTRA-001B` empirically probed Schwab multi-year five-minute history; the result is `not_supported` because Schwab returned only the most recent ~30 regular sessions for the 2022–2025 full-range request and empty payloads for all bounded 2022–2024 windows. The locked probe report is at `docs/research/INTRA-001B-SCHWAB-DATA-PROBE.md` and safe artifacts are at `docs/research/artifacts/INTRA-001B/2026-08-07-133704/`. The recommended next research work is `devin/intra-001b-alternative-ohlcv-source` (evaluate Alpaca, IBKR, Polygon, or another provider for 2022–2025 five-minute regular-session OHLCV). A separate Gary-approved production PR is required before any production scorer, weight, threshold, ranking, screener, UI, or alert change.
+`INTRA-001` is now complete and inconclusive. The locked real-data study at `docs/research/artifacts/INTRA-001D/2026-08-10-151816/` returned `inconclusive` with `production_promotion_eligible=false`; the holdout was not parsed. No further work on this hypothesis is authorized without a new Gary-approved plan. The current research program is `LONG-002` (see `docs/research/LONG-002.md`).
 
 ---
 
