@@ -801,7 +801,6 @@ def _probe_fundamentals(
                     continue
                 try:
                     submissions = client.fetch_submissions(cik)
-                    facts = client.fetch_company_facts(cik)
                 except BudgetError:
                     raise
                 except Exception as exc:  # noqa: BLE001
@@ -812,6 +811,33 @@ def _probe_fundamentals(
                     ))
                     continue
                 any_attempted = True
+                result.records.append(_record(
+                    "issuer_fundamentals_and_shares", "sec_edgar", symbol, None,
+                    "submissions/CIK{cik}.json", 200 if submissions else None,
+                    "none" if submissions else "response", 0,
+                    {"submissions_present": bool(submissions), "cik": cik},
+                    {"cik": cik},
+                ))
+
+                try:
+                    facts = client.fetch_company_facts(cik)
+                except BudgetError:
+                    raise
+                except Exception as exc:  # noqa: BLE001
+                    result.records.append(_record(
+                        "issuer_fundamentals_and_shares", "sec_edgar", symbol, None,
+                        "api/xbrl/companyfacts/CIK{cik}.json", None, _classify_error(exc), 0,
+                        {}, {"cik": cik, "exception": str(exc)},
+                    ))
+                    continue
+                result.records.append(_record(
+                    "issuer_fundamentals_and_shares", "sec_edgar", symbol, None,
+                    "api/xbrl/companyfacts/CIK{cik}.json", 200 if facts else None,
+                    "none" if facts else "response", 0,
+                    {"facts_present": bool(facts), "cik": cik},
+                    {"cik": cik},
+                ))
+
                 resolved_count += 1
                 has_acceptance = bool(
                     submissions.get("filings", {}).get("recent", {}).get("acceptanceDateTime")
@@ -819,13 +845,6 @@ def _probe_fundamentals(
                 has_filed = _fundamentals_have_filed_facts(facts)
                 if has_acceptance and has_filed:
                     acceptance_controlled = True
-                result.records.append(_record(
-                    "issuer_fundamentals_and_shares", "sec_edgar", symbol, None,
-                    "submissions/CIK{cik}.json", 200 if submissions else None,
-                    "none" if submissions else "response", 0,
-                    {"submissions_present": bool(submissions), "facts_present": bool(facts), "cik": cik},
-                    {"cik": cik},
-                ))
 
                 # Attempt a PIT market-cap pathway for this issuer.
                 shares = _extract_filed_shares_fact(facts, as_of="2020-12-31")
