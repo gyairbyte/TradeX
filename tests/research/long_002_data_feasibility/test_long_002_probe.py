@@ -16,6 +16,8 @@ from tradex.research.long_002_data_feasibility.models import DataFamilyResult
 from tradex.research.long_002_data_feasibility.probe import (
     _overall_disposition,
     _probe_daily_market_data,
+    _probe_earnings,
+    _probe_security_master,
     _recommended_next_action,
     run_probe,
 )
@@ -195,3 +197,76 @@ def test_daily_market_data_unexercised_preferred_provider_not_capability_failure
     assert any("missing" in n.lower() or "not attempted" in n.lower() for n in evidence.notes)
     assert result.provider_selected is None
     assert result.provider_role is None
+
+
+def test_security_master_nonempty_type_and_exchange_not_sufficient(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A single PIT row with nonempty type/exchange per symbol is not enough to prove
+    lifecycle coverage or defensible exclusion-type classification."""
+    panel = [
+        {"identifier": "AAPL", "as_of_dates": ["2016-03-31"]},
+        {"identifier": "SPY", "as_of_dates": ["2016-03-31"]},
+        {"identifier": "IPOD", "as_of_dates": ["2020-12-31"]},
+    ]
+    budget = RequestBudget(max_requests=120)
+    creds = {"massive_api_key": "test"}
+    min_contract = {
+        "stable_identity_effective_ticker_join_for_probe_panel": True,
+        "corporate_action_provenance_for_splits_and_dividends": True,
+        "security_type_and_exchange_for_probe_panel": True,
+    }
+
+    def fake_ticker_detail(self: Any, ticker: str, date: str, *, active: bool = True) -> dict[str, Any]:
+        return {
+            "provider": "massive",
+            "ticker": ticker,
+            "pit_date": date,
+            "status": 200,
+            "error": None,
+            "row": {
+                "ticker": ticker,
+                "name": f"{ticker} Inc.",
+                "type": "CS" if ticker != "SPY" else "INDEX",
+                "primary_exchange": "XNAS",
+                "active": active,
+                "cik": f"000{ticker}",
+            },
+            "type": "CS" if ticker != "SPY" else "INDEX",
+            "primary_exchange": "XNAS",
+            "cik": f"000{ticker}",
+        }
+
+    monkeypatch.setattr(Long002MassiveClient, "fetch_ticker_detail", fake_ticker_detail)
+    monkeypatch.setattr(Long002MassiveClient, "fetch_splits", lambda self, ticker: {"status": 200, "event_count": 0})
+    monkeypatch.setattr(Long002MassiveClient, "fetch_dividends", lambda self, ticker: {"status": 200, "event_count": 0})
+
+    result, evidence, any_attempted = _probe_security_master(
+        ["massive", "alpaca", "sec_edgar"], panel, budget, creds, min_contract, test_inject=None, context={},
+    )
+
+    assert any_attempted is True
+    assert evidence.flags["stable_identity_effective_ticker_join_for_probe_panel"] is False
+    assert evidence.flags["security_type_and_exchange_for_probe_panel"] is False
+    assert "type" in str(evidence.notes).lower() or "lifecycle" in str(evidence.notes).lower()
+
+
+def test_earnings_uncalled_candidates_are_unverified_not_attempted_failures() -> None:
+    """Earnings providers that are not actually called must be recorded as unverified,
+    not as attempted provider failures, and request accounting must be zero."""
+    panel = [{"identifier": "AAPL", "as_of_dates": ["2020-12-31"]}]
+    budget = RequestBudget(max_requests=120)
+    creds: dict[str, Any] = {}
+    min_contract = {
+        "historical_known_at_time_schedule": True,
+        "unknown_treatment_fail_closed": True,
+    }
+
+    result, evidence, any_attempted = _probe_earnings(
+        ["massive", "yahoo_earnings_calendar", "sec_edgar"], panel, budget, creds, min_contract, test_inject=None,
+    )
+
+    assert any_attempted is False
+    assert result.request_count == 0
+    assert not any(r.http_status is not None for r in result.records)
+    assert not any(r.error_classification == "unsupported_capability" for r in result.records)
+    assert any("unverified" in n.lower() for n in evidence.notes)
+    assert evidence.flags["unknown_treatment_fail_closed"] is True

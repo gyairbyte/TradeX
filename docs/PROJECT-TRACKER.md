@@ -374,10 +374,10 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Safe artifact bundle:** `docs/research/artifacts/LONG-002B/2026-08-14-0015/`
 - **Overall disposition:** `not_supported`
 - **Per-family dispositions:**
-  - Daily market data: `supported_with_documented_limitations` (Alpaca fallback after Massive/Polygon `v2/aggs` 403 entitlement; full 2020 XNYS completeness; explicit `raw` and `split` policies; Massive corporate-action provenance)
-  - Security master & corporate actions: `supported_with_documented_limitations` (Massive primary, per-ticker PIT active/inactive identity joins and split/dividend event endpoints)
+  - Daily market data: `supported_with_documented_limitations` (Alpaca fallback after Massive/Polygon `v2/aggs` 403 entitlement; 1259 bars from 2016-01-04 through 2020-12-31; complete 2020 XNYS completeness; explicit `raw` and `split` policies; Massive corporate-action provenance)
+  - Security master & corporate actions: `not_supported` (Massive per-ticker PIT rows returned, but one PIT row per symbol does not demonstrate active/inactive lifecycle coverage and `type` values `CS`/`INDEX` do not defensibly identify the locked excluded security types; split/dividend event endpoints returned events)
   - Issuer fundamentals & shares: `supported_with_documented_limitations` (SEC EDGAR primary; CIK identity; filing acceptance-time control; PIT market-cap pathway)
-  - Earnings event timing: `not_supported` (no historical known-at-time schedule source identified within bounded budget)
+  - Earnings event timing: `not_supported` (no live provider calls; preregistered candidates remain unverified; no historical known-at-time schedule source identified within bounded budget)
 - **Provider call budget:** 41 of 120 HTTP requests used; 0 retries; 1 provider switch (Massive/Polygon daily bars → Alpaca fallback)
 - **Recommended action:** A Gary-approved amendment must identify and verify a historical earnings-calendar source or formally adopt the `unknown` earnings treatment before `LONG-002C` full dataset construction. No production behavior is authorized.
 - **Testing requirements:** `tests/research/long_002_data_feasibility/test_spec.py`; `tests/research/long_002_data_feasibility/test_probe.py`; `uv run ruff`; `uv run pytest`; `git diff --check`.

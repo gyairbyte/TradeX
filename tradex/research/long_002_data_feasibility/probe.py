@@ -553,7 +553,15 @@ def _probe_daily_market_data(
                     evidence.flags["daily_bar_integrity_compatible_with_99pct_trailing_year"] = True
                 evidence.flags["no_unresolved_duplicates"] = quality["duplicate_count"] == 0
                 evidence.flags["no_unresolved_malformed_rows"] = quality["malformed_count"] == 0
-                evidence.notes.append(f"Alpaca {symbol} bar quality: {quality}")
+                first_bar = _bar_date(raw["bars"][0]) if raw.get("bars") else None
+                last_bar = _bar_date(raw["bars"][-1]) if raw.get("bars") else None
+                evidence.notes.append(
+                    f"Alpaca {symbol}: {quality['total_bars']} bars ({first_bar} to {last_bar}); "
+                    f"development year {quality['dev_actual_sessions']}/{quality['dev_expected_sessions']} "
+                    f"({quality['dev_completeness']:.2%}); all-window {quality['all_actual_sessions']}/"
+                    f"{quality['all_expected_sessions']} ({quality['all_completeness']:.2%}, 2015 warmup sessions absent); "
+                    f"trailing year {quality['trailing_completeness']:.2%}; duplicates={quality['duplicate_count']}, malformed={quality['malformed_count']}."
+                )
 
                 adj = client.fetch_daily_bars(
                     symbol,
@@ -628,7 +636,13 @@ def _resolve_identity(
     dates: list[str],
     result: DataFamilyResult,
 ) -> dict[str, Any] | None:
-    """Try each PIT date (active then inactive) and return the best identity row."""
+    """Try each PIT date (active then inactive) and return the best identity row.
+
+    A "best" row is one that has both a populated security type and exchange. We
+    intentionally do not claim lifecycle coverage or classification from a
+    single returned row; those flags are evaluated separately in
+    `_probe_security_master` using the full set of attempts recorded here.
+    """
     best: dict[str, Any] | None = None
     for date in dates:
         for active in (True, False):
@@ -646,6 +660,7 @@ def _resolve_identity(
                     "primary_exchange": detail.get("primary_exchange"),
                     "active": active,
                     "pit_date": date,
+                    "row": detail.get("row"),
                 }
                 if candidate["type"] and candidate["primary_exchange"]:
                     return candidate
@@ -695,10 +710,53 @@ def _probe_security_master(
                 else:
                     all_found = False
 
-            evidence.flags["stable_identity_effective_ticker_join_for_probe_panel"] = all_found
-            evidence.flags["security_type_and_exchange_for_probe_panel"] = all_found and all(
-                identities[s].get("type") and identities[s].get("primary_exchange") for s in identities
+            # Lifecycle coverage requires, for every panel symbol, either an
+            # inactive (`active=false`) returned row or at least two distinct PIT
+            # dates with returned rows sharing the same ticker/CIK. The current
+            # bounded probe does not demonstrate this for the full panel, so the
+            # flag is set conservatively.
+            lifecycle_rows_per_symbol: dict[str, set[str]] = {}
+            inactive_row_found_per_symbol: dict[str, bool] = {}
+            for r in result.records:
+                if r.family != "security_master_and_corporate_actions" or r.provider != "massive":
+                    continue
+                summary = r.response_summary or {}
+                if not summary.get("row_found"):
+                    continue
+                sym = r.symbol or summary.get("ticker")
+                if not sym:
+                    continue
+                if summary.get("active") is False:
+                    inactive_row_found_per_symbol[sym] = True
+                date = r.as_of_date or summary.get("pit_date")
+                if date:
+                    lifecycle_rows_per_symbol.setdefault(sym, set()).add(date)
+
+            lifecycle_coverage_for_all = all_found and all(
+                inactive_row_found_per_symbol.get(s)
+                or len(lifecycle_rows_per_symbol.get(s, set())) >= 2
+                for s in identities
             )
+
+            # Massive's `type` values (e.g. `CS`, `INDEX`) are not a defensible
+            # mapping to the locked exclusion categories (ETF, preferred ETF,
+            # closed-end fund, pre-merger SPAC). The panel contains symbols whose
+            # returned `type` does not match the intended category (SPY/PFF as
+            # `INDEX`, IGR as `CS`, IPOD as `CS`), so this minimum is not satisfied
+            # from a single PIT row per symbol.
+            defensible_exclusion_classification = False
+
+            evidence.flags["stable_identity_effective_ticker_join_for_probe_panel"] = all_found and lifecycle_coverage_for_all
+            evidence.flags["security_type_and_exchange_for_probe_panel"] = all_found and defensible_exclusion_classification
+
+            if not lifecycle_coverage_for_all:
+                evidence.notes.append(
+                    "Massive per-ticker lookups did not demonstrate active/inactive lifecycle coverage or ticker-change evidence for every panel symbol; stable identity join flag not satisfied."
+                )
+            if not defensible_exclusion_classification:
+                evidence.notes.append(
+                    "Massive `type` values (CS/INDEX) do not provide a defensible mapping to the locked exclusion categories; security type and exchange flag not satisfied."
+                )
 
             # Demonstrate split/dividend provenance for AAPL and GOOGL.
             split_count = 0
@@ -910,31 +968,17 @@ def _probe_earnings(
     any_attempted = False
     selected = None
 
-    for provider in providers:
-        if provider == "massive":
-            any_attempted = True
-            result.records.append(_record(
-                "earnings_event_timing", "massive", None, None,
-                "historical earnings schedule", None, "unsupported_capability", 0,
-                {"reason": "Massive historical earnings endpoint not identified in this probe"}, {"provider": "massive"},
-            ))
-            evidence.unverified.append("Massive historical earnings schedule")
-        if provider == "yahoo_earnings_calendar":
-            any_attempted = True
-            result.records.append(_record(
-                "earnings_event_timing", "yahoo_earnings_calendar", None, None,
-                "calendar/earnings", None, "unsupported_capability", 0,
-                {"reason": "Yahoo earnings calendar is current/prospective only"}, {"provider": "yahoo_earnings_calendar"},
-            ))
-            evidence.unverified.append("Yahoo earnings calendar")
-        if provider == "sec_edgar":
-            any_attempted = True
-            result.records.append(_record(
-                "earnings_event_timing", "sec_edgar", None, None,
-                "filing acceptance timestamps", None, "unsupported_capability", 0,
-                {"reason": "EDGAR provides actual disclosure timing, not future schedule"}, {"provider": "sec_edgar"},
-            ))
-            evidence.unverified.append("EDGAR disclosure timing as schedule proxy")
+    # No live provider calls are made for earnings-event timing. The
+    # preregistered candidates are documented as unverified capabilities rather
+    # than attempted provider failures, so `any_attempted` stays `False`.
+    evidence.notes.append(
+        "No live provider calls made for earnings-event timing; preregistered candidates (Massive, Yahoo earnings calendar, SEC EDGAR) remain unverified."
+    )
+    evidence.unverified.extend([
+        "Massive historical earnings schedule",
+        "Yahoo earnings calendar",
+        "EDGAR disclosure timing as schedule proxy",
+    ])
 
     # The min contract requires a historical known-at-time schedule. None of the
     # preregistered providers demonstrated one, so the `unknown` treatment is
