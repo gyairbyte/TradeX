@@ -6,7 +6,7 @@
     "long_002_v1_path": "docs/research/specs/LONG-002-v1.json",
     "long_002_v1_sha256": "f3df2845543500985c88568f9b855812576e9e4a10901f8a5f7a1834a319b3b5",
     "probe_spec_path": "docs/research/specs/LONG-002B-probe-v1.json",
-    "probe_spec_sha256": "TO_BE_FILLED_BY_TEST"
+    "probe_spec_sha256": "002a0795096ba0f6f77ba1f2e673b5d3e6a2008730a57f7f87e71cf86b949a98"
   },
   "dataset_manifest_schema": {
     "dataset_id": "string",

@@ -390,13 +390,29 @@ uv run python -m tradex.research.short_context evaluate --help
 * **Classification:** `research-only`
 * **Production promotion:** Not eligible (`production_promotion_eligible=false`); historical holdout support (`LONG-002I`) authorizes only `LONG-002J` prospective shadow, and a `prospectively_supported` shadow authorizes only a separate Gary-approved production decision-support PR
 * **Production behavior:** Unchanged
-* **Current phase:** `LONG-002A` — locked research contract
+* **Completed phase:** `LONG-002A` — locked research contract (merged in PR #48)
+* **Current phase:** `LONG-002B` — core data feasibility and point-in-time dataset contract
 * **Official snapshots:** 8:30 p.m. and 9:00 a.m. `America/New_York` on the XNYS calendar
 * **Display caps:** Enter Now 7, Armed 12, Qualified Waitlist 12
 * **Model search budget:** 48 material configurations across three allowed families
 
-No provider calls, historical outcome analysis, model fitting, or
-validation/holdout access occur in `LONG-002A`.
+`LONG-002B` performed bounded provider probes for the four data families required by LONG-002. The CLI entry point is `python -m tradex.research.long_002_data_feasibility`.
+
+```bash
+# Run the bounded probe against live providers and write a safe artifact bundle
+uv run python -m tradex.research.long_002_data_feasibility --repo-root .
+```
+
+* **LONG-002B overall disposition:** `supported_with_documented_limitations`
+* **Safe artifacts:** `docs/research/artifacts/LONG-002B/2026-08-12-205122/`
+* **B-phase report:** `docs/research/LONG-002B-DATA-FEASIBILITY.md`
+* **Per-family dispositions:**
+  * Daily market data: `supported_with_documented_limitations` (Alpaca fallback, `sip`/`raw`, single as-of probe)
+  * Security master & corporate actions: `supported_with_documented_limitations` (Massive primary, active PIT snapshots)
+  * Issuer fundamentals & shares: `supported_with_documented_limitations` (SEC EDGAR primary, CIK-based)
+  * Earnings event timing: `not_supported` (no historical known-at-time schedule source identified)
+
+`LONG-002B` used 24 of 120 allowed HTTP requests and did not access any validation/holdout outcomes or build the full historical dataset. No provider calls, historical outcome analysis, model fitting, or validation/holdout access occur in `LONG-002A` or `LONG-002B`.
 
 ---
 
@@ -619,7 +635,8 @@ Save and switch between named ticker lists (e.g. "Semis", "Crypto-adjacent", "Ea
 - [x] Intraday open-drive VWAP pullback research (INTRA-001) — completed `INTRA-001D` real-data study returned `inconclusive`; holdout not parsed; `production_promotion_eligible=false`
 
 ### Still on the list
-- [ ] Rapid-upside long opportunity research (LONG-002A) — locked research contract; research-only; no provider calls or outcomes
+- [x] Rapid-upside long opportunity research (LONG-002A) — locked research contract (merged in PR #48)
+- [ ] Rapid-upside long opportunity research (LONG-002B) — core data feasibility and PIT dataset contract; research-only; bounded provider probes; no full dataset
 - [ ] Portfolio-level risk view
 
 ### Nice-to-have enhancements
