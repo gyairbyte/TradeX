@@ -404,7 +404,7 @@ uv run python -m tradex.research.long_002_data_feasibility --repo-root .
 ```
 
 * **LONG-002B overall disposition:** `supported_with_documented_limitations`
-* **Safe artifacts:** `docs/research/artifacts/LONG-002B/2026-08-12-205122/`
+* **Safe artifacts:** `docs/research/artifacts/LONG-002B/2026-08-12-205632/`
 * **B-phase report:** `docs/research/LONG-002B-DATA-FEASIBILITY.md`
 * **Per-family dispositions:**
   * Daily market data: `supported_with_documented_limitations` (Alpaca fallback, `sip`/`raw`, single as-of probe)

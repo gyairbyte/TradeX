@@ -2,7 +2,7 @@
   "blockers": [
     "No provider demonstrated historical known-at-the-decision-time earnings scheduling."
   ],
-  "code_commit_sha": "00e0ed23f4829292173f6d9513f82683e10eeee3",
+  "code_commit_sha": "1617a88be26d6006849f7a3f677f9402c87773b2",
   "data_contract_sha256": "f8ad6655e482fe5c9e8847467643bf0b03949686ad914180599323758cbf555a",
   "data_families": [
     {
@@ -28,7 +28,7 @@
             "provider": "massive/polygon"
           },
           "provider": "massive/polygon",
-          "request_timestamp_utc": "2026-08-12T20:50:17.286864Z",
+          "request_timestamp_utc": "2026-08-12T20:55:26.450883Z",
           "response_summary": {
             "reason": "Massive daily bars client not implemented in this probe"
           },
@@ -46,7 +46,7 @@
             "feed": "sip"
           },
           "provider": "alpaca",
-          "request_timestamp_utc": "2026-08-12T20:50:17.539683Z",
+          "request_timestamp_utc": "2026-08-12T20:55:26.696003Z",
           "response_summary": {
             "adjustment": "raw",
             "bar_count": 1,
@@ -76,7 +76,7 @@
             "feed": "sip"
           },
           "provider": "alpaca",
-          "request_timestamp_utc": "2026-08-12T20:50:17.791710Z",
+          "request_timestamp_utc": "2026-08-12T20:55:26.949244Z",
           "response_summary": {
             "adjustment": "raw",
             "bar_count": 1,
@@ -106,7 +106,7 @@
             "feed": "sip"
           },
           "provider": "alpaca",
-          "request_timestamp_utc": "2026-08-12T20:50:18.063241Z",
+          "request_timestamp_utc": "2026-08-12T20:55:27.241392Z",
           "response_summary": {
             "adjustment": "raw",
             "bar_count": 1,
@@ -136,7 +136,7 @@
             "feed": "sip"
           },
           "provider": "alpaca",
-          "request_timestamp_utc": "2026-08-12T20:50:18.323318Z",
+          "request_timestamp_utc": "2026-08-12T20:55:27.499575Z",
           "response_summary": {
             "adjustment": "raw",
             "bar_count": 1,
@@ -166,7 +166,7 @@
             "feed": "sip"
           },
           "provider": "alpaca",
-          "request_timestamp_utc": "2026-08-12T20:50:18.576140Z",
+          "request_timestamp_utc": "2026-08-12T20:55:27.745699Z",
           "response_summary": {
             "adjustment": "raw",
             "bar_count": 1,
@@ -196,7 +196,7 @@
             "feed": "sip"
           },
           "provider": "alpaca",
-          "request_timestamp_utc": "2026-08-12T20:50:18.829655Z",
+          "request_timestamp_utc": "2026-08-12T20:55:27.999843Z",
           "response_summary": {
             "adjustment": "raw",
             "bar_count": 1,
@@ -226,7 +226,7 @@
             "feed": "sip"
           },
           "provider": "alpaca",
-          "request_timestamp_utc": "2026-08-12T20:50:19.086574Z",
+          "request_timestamp_utc": "2026-08-12T20:55:28.263640Z",
           "response_summary": {
             "adjustment": "raw",
             "bar_count": 1,
@@ -256,7 +256,7 @@
             "feed": "sip"
           },
           "provider": "alpaca",
-          "request_timestamp_utc": "2026-08-12T20:50:19.347446Z",
+          "request_timestamp_utc": "2026-08-12T20:55:28.509141Z",
           "response_summary": {
             "adjustment": "raw",
             "bar_count": 1,
@@ -286,7 +286,7 @@
             "feed": "sip"
           },
           "provider": "alpaca",
-          "request_timestamp_utc": "2026-08-12T20:50:19.602410Z",
+          "request_timestamp_utc": "2026-08-12T20:55:28.767957Z",
           "response_summary": {
             "adjustment": "raw",
             "bar_count": 1,
@@ -315,7 +315,7 @@
             "exception": "object of type 'NoneType' has no len()"
           },
           "provider": "alpaca",
-          "request_timestamp_utc": "2026-08-12T20:50:19.867902Z",
+          "request_timestamp_utc": "2026-08-12T20:55:29.068640Z",
           "response_summary": {},
           "retry_count": 0,
           "symbol": "IPOD"
@@ -331,7 +331,7 @@
             "feed": "sip"
           },
           "provider": "alpaca",
-          "request_timestamp_utc": "2026-08-12T20:50:20.118670Z",
+          "request_timestamp_utc": "2026-08-12T20:55:29.328818Z",
           "response_summary": {
             "adjustment": "raw",
             "bar_count": 1,
@@ -361,7 +361,7 @@
             "feed": "sip"
           },
           "provider": "alpaca",
-          "request_timestamp_utc": "2026-08-12T20:50:20.367350Z",
+          "request_timestamp_utc": "2026-08-12T20:55:29.578594Z",
           "response_summary": {
             "adjustment": "raw",
             "bar_count": 1,
@@ -409,7 +409,7 @@
             "state": "active"
           },
           "provider": "massive",
-          "request_timestamp_utc": "2026-08-12T20:50:45.026755Z",
+          "request_timestamp_utc": "2026-08-12T20:55:54.499516Z",
           "response_summary": {
             "active": true,
             "error": "safety_max_pages (3) reached",
@@ -439,7 +439,7 @@
             "state": "active"
           },
           "provider": "massive",
-          "request_timestamp_utc": "2026-08-12T20:51:21.579436Z",
+          "request_timestamp_utc": "2026-08-12T20:56:30.569655Z",
           "response_summary": {
             "active": true,
             "error": "safety_max_pages (3) reached",
@@ -487,7 +487,7 @@
             "cik": "320193"
           },
           "provider": "sec_edgar",
-          "request_timestamp_utc": "2026-08-12T20:51:22.067190Z",
+          "request_timestamp_utc": "2026-08-12T20:56:30.962313Z",
           "response_summary": {
             "cik": "320193",
             "facts_present": true,
@@ -506,7 +506,7 @@
             "provider": "sec_edgar"
           },
           "provider": "sec_edgar",
-          "request_timestamp_utc": "2026-08-12T20:51:22.067222Z",
+          "request_timestamp_utc": "2026-08-12T20:56:30.962345Z",
           "response_summary": {
             "reason": "CIK not resolved for symbol"
           },
@@ -523,7 +523,7 @@
             "cik": "1048911"
           },
           "provider": "sec_edgar",
-          "request_timestamp_utc": "2026-08-12T20:51:22.443771Z",
+          "request_timestamp_utc": "2026-08-12T20:56:31.795986Z",
           "response_summary": {
             "cik": "1048911",
             "facts_present": true,
@@ -542,7 +542,7 @@
             "cik": "1326801"
           },
           "provider": "sec_edgar",
-          "request_timestamp_utc": "2026-08-12T20:51:22.871284Z",
+          "request_timestamp_utc": "2026-08-12T20:56:32.164272Z",
           "response_summary": {
             "cik": "1326801",
             "facts_present": true,
@@ -581,7 +581,7 @@
             "provider": "massive"
           },
           "provider": "massive",
-          "request_timestamp_utc": "2026-08-12T20:51:22.874332Z",
+          "request_timestamp_utc": "2026-08-12T20:56:32.167324Z",
           "response_summary": {
             "reason": "Massive historical earnings endpoint not identified in this probe"
           },
@@ -598,7 +598,7 @@
             "provider": "yahoo_earnings_calendar"
           },
           "provider": "yahoo_earnings_calendar",
-          "request_timestamp_utc": "2026-08-12T20:51:22.874351Z",
+          "request_timestamp_utc": "2026-08-12T20:56:32.167343Z",
           "response_summary": {
             "reason": "Yahoo earnings calendar is current/prospective only"
           },
@@ -615,7 +615,7 @@
             "provider": "sec_edgar"
           },
           "provider": "sec_edgar",
-          "request_timestamp_utc": "2026-08-12T20:51:22.874356Z",
+          "request_timestamp_utc": "2026-08-12T20:56:32.167347Z",
           "response_summary": {
             "reason": "EDGAR provides actual disclosure timing, not future schedule"
           },
@@ -641,7 +641,7 @@
   "overall_evidence_confidence": "limited_but_usable_evidence",
   "probe_spec_sha256": "002a0795096ba0f6f77ba1f2e673b5d3e6a2008730a57f7f87e71cf86b949a98",
   "recommended_next_action": "Request a specific Gary-approved data-sufficiency amendment before LONG-002C for the unsupported families",
-  "runtime_seconds": 65.58751742800087,
+  "runtime_seconds": 65.71648718799952,
   "task_id": "LONG-002B",
   "total_http_requests": 24
 }

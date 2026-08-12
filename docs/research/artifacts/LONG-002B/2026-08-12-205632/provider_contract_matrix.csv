@@ -1,0 +1,23 @@
+family,provider,symbol,as_of_date,endpoint_pattern,http_status,error_classification,retry_count,request_timestamp_utc
+daily_market_data,massive/polygon,,,v2/aggs/ticker/{ticker}/range/1/day/{start}/{end},,unsupported_capability,0,2026-08-12T20:55:26.450883Z
+daily_market_data,alpaca,AAPL,2016-03-31,/v2/stocks/{symbol}/bars,200,none,0,2026-08-12T20:55:26.696003Z
+daily_market_data,alpaca,GOOGL,2016-03-31,/v2/stocks/{symbol}/bars,200,none,0,2026-08-12T20:55:26.949244Z
+daily_market_data,alpaca,FDX,2016-03-31,/v2/stocks/{symbol}/bars,200,none,0,2026-08-12T20:55:27.241392Z
+daily_market_data,alpaca,FB,2016-03-31,/v2/stocks/{symbol}/bars,200,none,0,2026-08-12T20:55:27.499575Z
+daily_market_data,alpaca,PYPL,2016-03-31,/v2/stocks/{symbol}/bars,200,none,0,2026-08-12T20:55:27.745699Z
+daily_market_data,alpaca,YHOO,2016-03-31,/v2/stocks/{symbol}/bars,200,none,0,2026-08-12T20:55:27.999843Z
+daily_market_data,alpaca,SPY,2016-03-31,/v2/stocks/{symbol}/bars,200,none,0,2026-08-12T20:55:28.263640Z
+daily_market_data,alpaca,PFF,2016-03-31,/v2/stocks/{symbol}/bars,200,none,0,2026-08-12T20:55:28.509141Z
+daily_market_data,alpaca,IGR,2016-03-31,/v2/stocks/{symbol}/bars,200,none,0,2026-08-12T20:55:28.767957Z
+daily_market_data,alpaca,IPOD,2020-09-30,/v2/stocks/{symbol}/bars,,unknown,0,2026-08-12T20:55:29.068640Z
+daily_market_data,alpaca,TWX,2016-03-31,/v2/stocks/{symbol}/bars,200,none,0,2026-08-12T20:55:29.328818Z
+daily_market_data,alpaca,SIRI,2016-03-31,/v2/stocks/{symbol}/bars,200,none,0,2026-08-12T20:55:29.578594Z
+security_master_and_corporate_actions,massive,,2016-03-31,/v3/reference/tickers,200,response,0,2026-08-12T20:55:54.499516Z
+security_master_and_corporate_actions,massive,,2020-09-30,/v3/reference/tickers,200,response,0,2026-08-12T20:56:30.569655Z
+issuer_fundamentals_and_shares,sec_edgar,AAPL,,submissions/CIK{cik}.json,200,none,0,2026-08-12T20:56:30.962313Z
+issuer_fundamentals_and_shares,sec_edgar,GOOGL,,submissions/CIK{cik}.json,,unknown,0,2026-08-12T20:56:30.962345Z
+issuer_fundamentals_and_shares,sec_edgar,FDX,,submissions/CIK{cik}.json,200,none,0,2026-08-12T20:56:31.795986Z
+issuer_fundamentals_and_shares,sec_edgar,FB,,submissions/CIK{cik}.json,200,none,0,2026-08-12T20:56:32.164272Z
+earnings_event_timing,massive,,,historical earnings schedule,,unsupported_capability,0,2026-08-12T20:56:32.167324Z
+earnings_event_timing,yahoo_earnings_calendar,,,calendar/earnings,,unsupported_capability,0,2026-08-12T20:56:32.167343Z
+earnings_event_timing,sec_edgar,,,filing acceptance timestamps,,unsupported_capability,0,2026-08-12T20:56:32.167347Z

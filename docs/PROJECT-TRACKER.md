@@ -371,7 +371,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **B-phase results:** `docs/research/LONG-002B-DATA-FEASIBILITY.md`
 - **B-phase probe spec:** `docs/research/specs/LONG-002B-probe-v1.json` (SHA-256: `002a0795096ba0f6f77ba1f2e673b5d3e6a2008730a57f7f87e71cf86b949a98`)
 - **B-phase data contract:** `docs/research/specs/LONG-002B-data-contract-v1.json`
-- **Safe artifact bundle:** `docs/research/artifacts/LONG-002B/2026-08-12-205122/`
+- **Safe artifact bundle:** `docs/research/artifacts/LONG-002B/2026-08-12-205632/`
 - **Overall disposition:** `supported_with_documented_limitations`
 - **Per-family dispositions:**
   - Daily market data: `supported_with_documented_limitations` (Alpaca fallback, `sip`/`raw`, single as-of probe)

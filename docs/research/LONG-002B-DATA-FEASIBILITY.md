@@ -25,7 +25,7 @@ Locked upstream contracts preserved unchanged:
 
 ## Safe artifacts
 
-The live probe produced one safe bundle under `docs/research/artifacts/LONG-002B/2026-08-12-205122/`:
+The live probe produced one safe bundle under `docs/research/artifacts/LONG-002B/2026-08-12-205632/`:
 
 - `artifact_manifest.json`
 - `feasibility_report.json`
@@ -49,7 +49,7 @@ The bundle contains no raw OHLCV, no full provider payloads, no secrets, no curr
 
 - Starting `main` SHA: `cc30788ac191289548538c3ebdac4b8eae25651d`
 - Branch: `devin/long-002b-core-data-feasibility`
-- Probe run artifact path: `docs/research/artifacts/LONG-002B/2026-08-12-205122/`
+- Probe run artifact path: `docs/research/artifacts/LONG-002B/2026-08-12-205632/`
 - Total HTTP requests: 24 (well under the 120 budget)
 - Runtime: within the 30-minute wall-clock limit
 - Provider calls:
