@@ -1,0 +1,193 @@
+{
+  "schema_version": "1.0",
+  "contract_id": "LONG-002B-data-contract-v1",
+  "task_id": "LONG-002",
+  "locked_specs": {
+    "long_002_v1_path": "docs/research/specs/LONG-002-v1.json",
+    "long_002_v1_sha256": "f3df2845543500985c88568f9b855812576e9e4a10901f8a5f7a1834a319b3b5",
+    "probe_spec_path": "docs/research/specs/LONG-002B-probe-v1.json",
+    "probe_spec_sha256": "TO_BE_FILLED_BY_TEST"
+  },
+  "dataset_manifest_schema": {
+    "dataset_id": "string",
+    "schema_version": "1.0",
+    "long_002_spec_sha256": "string",
+    "b_contract_sha256": "string",
+    "code_commit_sha": "string",
+    "generated_at": "ISO-8601 UTC timestamp or null when fixed",
+    "provider_roles": {
+      "description": "map of field family -> provider name and role (primary/fallback)",
+      "type": "object"
+    },
+    "per_field_family": {
+      "daily_market_data": {
+        "provider": "massive|alpaca|schwab|other",
+        "role": "primary|fallback",
+        "endpoint": "string (non-secret path/pattern)",
+        "request_parameters": "object of non-secret parameters",
+        "retrieval_timestamp": "ISO-8601 UTC timestamp",
+        "as_of_timestamp": "ISO-8601 UTC timestamp",
+        "requested_start_date": "YYYY-MM-DD",
+        "requested_end_date": "YYYY-MM-DD",
+        "actual_start_date": "YYYY-MM-DD or null",
+        "actual_end_date": "YYYY-MM-DD or null",
+        "timezone": "America/New_York",
+        "exchange_calendar": "XNYS",
+        "adjustment_policy": "as_traded|split_adjusted|split_and_dividend_adjusted",
+        "volume_policy": "as_traded|consolidated_feed_specified",
+        "raw_files": [
+          {
+            "relative_path": "string",
+            "sha256": "string",
+            "row_count": "int",
+            "schema": ["date", "open", "high", "low", "close", "volume", "symbol", "provider"]
+          }
+        ]
+      },
+      "security_master_and_corporate_actions": {
+        "provider": "massive|alpaca|sec_edgar|other",
+        "role": "primary|fallback",
+        "endpoint": "string",
+        "retrieval_timestamp": "ISO-8601 UTC timestamp",
+        "as_of_timestamp": "ISO-8601 UTC timestamp",
+        "raw_files": [
+          {
+            "relative_path": "string",
+            "sha256": "string",
+            "row_count": "int",
+            "schema": [
+              "immutable_issuer_id",
+              "immutable_security_id",
+              "ticker",
+              "effective_date",
+              "name",
+              "type",
+              "exchange",
+              "active",
+              "cik",
+              "figi",
+              "composite_figi",
+              "provider"
+            ]
+          }
+        ],
+        "corporate_action_events": {
+          "relative_path": "string",
+          "sha256": "string",
+          "row_count": "int",
+          "schema": [
+            "immutable_security_id",
+            "event_type",
+            "ex_date",
+            "record_date",
+            "pay_date",
+            "factor",
+            "description",
+            "provider"
+          ]
+        }
+      },
+      "issuer_fundamentals_and_shares": {
+        "provider": "sec_edgar|massive|yahoo|other",
+        "role": "primary|fallback",
+        "endpoint": "string",
+        "retrieval_timestamp": "ISO-8601 UTC timestamp",
+        "as_of_timestamp": "ISO-8601 UTC timestamp",
+        "raw_files": [
+          {
+            "relative_path": "string",
+            "sha256": "string",
+            "row_count": "int",
+            "schema": [
+              "immutable_issuer_id",
+              "filing_acceptance_timestamp",
+              "form",
+              "fact_name",
+              "value",
+              "unit",
+              "period_start",
+              "period_end",
+              "provider"
+            ]
+          }
+        ]
+      },
+      "earnings_event_timing": {
+        "provider": "massive|yahoo_earnings_calendar|sec_edgar|other",
+        "role": "primary|fallback",
+        "endpoint": "string",
+        "retrieval_timestamp": "ISO-8601 UTC timestamp",
+        "as_of_timestamp": "ISO-8601 UTC timestamp",
+        "raw_files": [
+          {
+            "relative_path": "string",
+            "sha256": "string",
+            "row_count": "int",
+            "schema": [
+              "immutable_issuer_id",
+              "announcement_date",
+              "filing_acceptance_timestamp_or_known_at_time",
+              "source_type",
+              "provider"
+            ]
+          }
+        ]
+      }
+    },
+    "universe_and_identity": {
+      "immutable_issuer_id_field": "CIK when available",
+      "immutable_security_id_field": "exchange|ticker|share_class or FIGI when available",
+      "effective_ticker_mapping": {
+        "relative_path": "string",
+        "sha256": "string",
+        "row_count": "int",
+        "schema": [
+          "immutable_security_id",
+          "ticker",
+          "start_date",
+          "end_date",
+          "provider"
+        ]
+      }
+    },
+    "quality_and_integrity": {
+      "missing_counts": "object per file",
+      "duplicate_counts": "object per file",
+      "malformed_counts": "object per file",
+      "zero_volume_counts": "object per file",
+      "exclusion_counts": "object per file",
+      "provider_failures": "list",
+      "fallback_events": "list"
+    },
+    "splits_and_adjustments": {
+      "split_events_file": "string",
+      "raw_series_policy": "as_traded",
+      "normalized_series_policy": "split_normalized_dividend_unadjusted",
+      "split_boundary_holdout_safeguard": "true"
+    },
+    "known_limitations": "string or object",
+    "evidence_confidence_label": "string",
+    "holdout_access_safeguard": {
+      "holdout_parsed": "boolean",
+      "access_count": "int",
+      "authorization": "LONG-002I only"
+    }
+  },
+  "point_in_time_rules": {
+    "no_current_membership_backfill": true,
+    "no_current_sector_backfill": true,
+    "no_current_shares_backfill": true,
+    "no_future_information_in_features": true,
+    "filing_acceptance_time_controls_availability": true,
+    "missing_values_remain_null": true,
+    "unknown_earnings_schedule_treated_as_unknown": true
+  },
+  "data_quality_thresholds": {
+    "trailing_year_completeness_pct_min": 99,
+    "max_unexplained_missing_sessions_trailing_252": 2,
+    "max_consecutive_missing_sessions": 1,
+    "allow_verified_halt_distinct_from_provider_missing": true,
+    "zero_unresolved_duplicate_timestamps": true,
+    "zero_unresolved_malformed_rows": true
+  }
+}

@@ -1,0 +1,302 @@
+{
+  "schema_version": "1.0",
+  "task_id": "LONG-002B",
+  "spec_name": "LONG-002B: Core data feasibility and point-in-time dataset contract probe",
+  "classification": "research-only",
+  "production_promotion_eligible": false,
+  "purpose": "Determine, with bounded and auditable provider probes, whether the core data required by LONG-002 can be constructed point-in-time correctly.",
+  "locked_long_002_spec_path": "docs/research/specs/LONG-002-v1.json",
+  "locked_long_002_spec_sha256": "f3df2845543500985c88568f9b855812576e9e4a10901f8a5f7a1834a319b3b5",
+  "data_families": {
+    "daily_market_data": {
+      "role": "Primary OHLCV, volume, and close-series history for eligibility, technical features, and outcome labels",
+      "preferred_provider": {
+        "name": "massive/polygon",
+        "endpoint_family": "v2/aggs/ticker/{ticker}/range/1/day/{start}/{end}",
+        "required_capabilities": [
+          "as-traded daily OHLCV",
+          "explicit adjustment setting",
+          "volume provenance",
+          "sorted ascending timestamps",
+          "pagination",
+          "inactive/delisted symbol handling"
+        ],
+        "preferred_history": {
+          "start": "2015-01-01",
+          "end": "2025-12-31"
+        }
+      },
+      "fallback_order": [
+        {
+          "name": "alpaca",
+          "endpoint_family": "data.alpaca.markets/v2/stocks/{symbol}/bars",
+          "required_capabilities": [
+            "consolidated daily bars",
+            "explicit feed (sip/iex)",
+            "pagination",
+            "adjustment parameter"
+          ]
+        },
+        {
+          "name": "schwab",
+          "endpoint_family": "Schwab Market Data API priceHistory",
+          "required_capabilities": [
+            "date-ranged daily candles",
+            "as-traded or split-adjusted semantics",
+            "active and inactive symbols subject to entitlement"
+          ]
+        }
+      ],
+      "minimum_usable_contract": {
+        "one_complete_dev_year_plus_prior_history": true,
+        "daily_bar_integrity_compatible_with_99pct_trailing_year": true,
+        "no_unresolved_duplicates": true,
+        "no_unresolved_malformed_rows": true,
+        "explicit_raw_as_traded_policy": true,
+        "explicit_split_adjusted_policy": true,
+        "reconstructable_split_handling": true,
+        "stable_identity_join": true
+      },
+      "stop_condition": "Stop provider exploration once one complete development-period year of daily bars is retrieved with the minimum usable contract satisfied and no genuine blocker."
+    },
+    "security_master_and_corporate_actions": {
+      "role": "Security identity, ticker history, share class, exchange, type, splits, dividends, spin-offs, mergers, and delistings",
+      "preferred_provider": {
+        "name": "massive",
+        "endpoint_family": "v3/reference/tickers, v3/reference/ticker/{ticker}, v3/reference/splits, v3/reference/dividends",
+        "required_capabilities": [
+          "stable issuer and security identity",
+          "effective-dated ticker/listing history",
+          "active and inactive securities",
+          "security type and exchange provenance",
+          "split and dividend event metadata",
+          "spin-off/merger/delisting event metadata"
+        ]
+      },
+      "fallback_order": [
+        {
+          "name": "alpaca",
+          "endpoint_family": "assets and corporate actions endpoints",
+          "required_capabilities": [
+            "asset metadata",
+            "corporate actions by symbol",
+            "inactive symbol status"
+          ]
+        },
+        {
+          "name": "sec_edgar",
+          "endpoint_family": "SEC EDGAR submissions metadata",
+          "required_capabilities": [
+            "issuer identity (CIK)",
+            "names",
+            "tickers",
+            "exchanges",
+            "filing history",
+            "partial split/dividend disclosure"
+          ],
+          "partial_warning": "EDGAR submissions metadata alone does not supply a complete exchange security master or corporate-action history; must be reported as partial."
+        }
+      ],
+      "minimum_usable_contract": {
+        "stable_identity_effective_ticker_join_for_probe_panel": true,
+        "corporate_action_provenance_for_splits_and_dividends": true,
+        "security_type_and_exchange_for_probe_panel": true
+      },
+      "stop_condition": "Stop provider exploration once the probe panel's identities and effective ticker mappings are stable and at least split/dividend event metadata is available with provenance."
+    },
+    "issuer_fundamentals_and_shares": {
+      "role": "Issuer-level fundamentals, shares outstanding, and market-cap pathway",
+      "preferred_provider": {
+        "name": "sec_edgar",
+        "endpoint_family": "submissions/CIK{cik}.json, api/xbrl/companyfacts/CIK{cik}.json",
+        "required_capabilities": [
+          "CIK as issuer identity",
+          "filing acceptance timestamps",
+          "XBRL facts",
+          "shares outstanding and common stock contexts"
+        ]
+      },
+      "fallback_order": [
+        {
+          "name": "massive",
+          "endpoint_family": "ticker-reference and financial endpoints",
+          "required_capabilities": [
+            "market cap or shares",
+            "PIT semantics demonstrated"
+          ],
+          "caution": "Use only where entitlement and point-in-time semantics are demonstrated."
+        },
+        {
+          "name": "yahoo",
+          "endpoint_family": "finance quote/history endpoints",
+          "required_capabilities": [],
+          "restriction": "Coverage diagnostic only; never as historical PIT fact without defensible vintage timestamps."
+        }
+      ],
+      "minimum_usable_contract": {
+        "ciK_identity_for_probe_issuers": true,
+        "filing_acceptance_time_controls_availability": true,
+        "viable_non_index_market_cap_pathway": true,
+        "missing_facts_remain_null": true
+      },
+      "stop_condition": "Stop provider exploration once CIK identity and at least one point-in-time shares/financial fact source is available for the probe panel."
+    },
+    "earnings_event_timing": {
+      "role": "Historical known-at-the-decision-time earnings scheduling",
+      "preferred_provider": {
+        "name": "massive",
+        "endpoint_family": "reference or upcoming/endpoint if historical earnings schedule can be demonstrated",
+        "required_capabilities": [
+          "historical known-at-the-decision-time earnings dates"
+        ]
+      },
+      "fallback_order": [
+        {
+          "name": "yahoo_earnings_calendar",
+          "endpoint_family": "finance calendar/earnings",
+          "restriction": "Current/prospective operational diagnostics only; cannot substitute historical knowledge."
+        },
+        {
+          "name": "sec_edgar",
+          "endpoint_family": "filing acceptance timestamps",
+          "restriction": "Actual disclosure timing only; not a future schedule."
+        }
+      ],
+      "minimum_usable_contract": {
+        "historical_known_at_time_schedule": true,
+        "unknown_treatment_fail_closed": true
+      },
+      "stop_condition": "Stop provider exploration once at least one source demonstrates historical known-at-time earnings scheduling for the probe panel or all candidates fail and an explicit 'unknown' treatment is recorded."
+    }
+  },
+  "pit_index_and_sector": {
+    "perfect_historical_membership_not_hard_blocker": true,
+    "no_current_membership_backfill": true,
+    "preferred_pathway": "Locked non-index eligibility using historical market cap or latest-known PIT shares outstanding multiplied by actual historical close",
+    "index_membership_usage": "Only when reliable effective-dated membership is available",
+    "sector_classification_usage": "Descriptive only when PIT classification is unavailable; never as historical predictive fact",
+    "no_unlicensed_scraping": true
+  },
+  "probe_panel": {
+    "max_securities": 12,
+    "max_as_of_dates_per_security": 4,
+    "selection_must_cover": [
+      "Active mega-cap common stock",
+      "Active mid-cap common stock",
+      "Multiple share classes",
+      "Recent IPO cohort",
+      "Historical ticker/name change",
+      "Split or reverse split",
+      "Spin-off or special distribution",
+      "Merger/acquisition or delisting",
+      "At least one excluded security type (ETF, ETN, preferred, warrant, unit, closed-end fund, pre-merger SPAC)"
+    ],
+    "locked_panel": [
+      {
+        "identifier": "AAPL",
+        "category": "active mega-cap; split (2020-08-31 4-for-1) within development",
+        "as_of_dates": ["2016-03-31", "2018-06-29", "2020-08-31", "2020-12-31"]
+      },
+      {
+        "identifier": "GOOGL",
+        "category": "active mega-cap; multiple share classes",
+        "as_of_dates": ["2016-03-31", "2018-06-29", "2020-03-31", "2020-12-31"]
+      },
+      {
+        "identifier": "FDX",
+        "category": "active mid-/large-cap",
+        "as_of_dates": ["2016-03-31", "2018-06-29", "2020-03-31", "2020-12-31"]
+      },
+      {
+        "identifier": "FB",
+        "category": "recent IPO cohort; later renamed META (holdout)",
+        "as_of_dates": ["2016-03-31", "2018-06-29", "2020-03-31", "2020-12-31"]
+      },
+      {
+        "identifier": "PYPL",
+        "category": "spin-off from EBAY (2015); active mid-cap",
+        "as_of_dates": ["2016-03-31", "2018-06-29", "2020-03-31", "2020-12-31"]
+      },
+      {
+        "identifier": "YHOO",
+        "category": "merger/acquisition/delisting (Verizon, 2017)",
+        "as_of_dates": ["2016-03-31", "2017-03-31"]
+      },
+      {
+        "identifier": "SPY",
+        "category": "excluded ETF; benchmark/context only",
+        "as_of_dates": ["2016-03-31", "2018-06-29", "2020-03-31", "2020-12-31"]
+      },
+      {
+        "identifier": "PFF",
+        "category": "excluded preferred stock ETF; excluded type diagnostic",
+        "as_of_dates": ["2016-03-31", "2020-12-31"]
+      },
+      {
+        "identifier": "IGR",
+        "category": "excluded closed-end fund; excluded type diagnostic",
+        "as_of_dates": ["2016-03-31", "2020-12-31"]
+      },
+      {
+        "identifier": "IPOD",
+        "category": "pre-merger SPAC; excluded type diagnostic",
+        "as_of_dates": ["2020-09-30", "2020-12-31"]
+      },
+      {
+        "identifier": "TWX",
+        "category": "merger/acquisition (AT&T, 2018); delisting",
+        "as_of_dates": ["2016-03-31", "2017-12-29", "2018-06-14"]
+      },
+      {
+        "identifier": "SIRI",
+        "category": "active mid-cap; reverse split consideration",
+        "as_of_dates": ["2016-03-31", "2018-06-29", "2020-03-31", "2020-12-31"]
+      }
+    ]
+  },
+  "hard_network_budget": {
+    "max_preferred_plus_named_fallbacks_per_family": "1 preferred + 2 fallbacks",
+    "max_probe_securities": 12,
+    "max_as_of_dates_per_security": 4,
+    "max_total_http_requests": 120,
+    "max_retries_for_transient_failure": 1,
+    "no_retry_for": [
+      "authentication",
+      "entitlement",
+      "configuration",
+      "malformed response",
+      "unsupported capability"
+    ],
+    "max_runtime_minutes": 30,
+    "stop_on_minimum_usable": true,
+    "no_extra_provider_hunting_without_gary_approval": true
+  },
+  "expected_safe_artifacts": [
+    "docs/research/specs/LONG-002B-probe-v1.json",
+    "docs/research/specs/LONG-002B-data-contract-v1.json",
+    "docs/research/LONG-002B-DATA-FEASIBILITY.md",
+    "docs/research/artifacts/LONG-002B/<run-id>/probe_manifest.json",
+    "docs/research/artifacts/LONG-002B/<run-id>/provider_contract_matrix.csv",
+    "docs/research/artifacts/LONG-002B/<run-id>/coverage_summary.csv",
+    "docs/research/artifacts/LONG-002B/<run-id>/data_quality_summary.csv",
+    "docs/research/artifacts/LONG-002B/<run-id>/artifact_manifest.json"
+  ],
+  "explicit_prohibitions": [
+    "No full historical dataset construction",
+    "No outcome census or target-label calculation",
+    "No winner/loser event sampling",
+    "No forward-return, MFE, MAE, clean-target, or adverse-rate calculation",
+    "No KPI or feature discovery",
+    "No blinded chart review",
+    "No baseline performance calculation",
+    "No model fitting or configuration search",
+    "No trigger research",
+    "No validation/holdout return or outcome access",
+    "No production signal, score, weight, threshold, ranking, eligibility, or default screener changes"
+  ],
+  "disposition_labels": {
+    "per_family": ["supported", "supported_with_documented_limitations", "not_supported", "invalid_evidence"],
+    "overall": ["supported", "supported_with_documented_limitations", "not_supported", "invalid_evidence"]
+  },
+  "evidence_confidence_labels": ["strong_evidence", "moderate_evidence", "limited_but_usable_evidence", "invalid_evidence"]
+}
