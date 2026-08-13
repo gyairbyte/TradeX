@@ -26,7 +26,7 @@ Locked upstream contracts preserved unchanged:
 
 ## Safe artifacts
 
-The live probe produced one safe bundle under `docs/research/artifacts/LONG-002B/2026-08-14-0015/`:
+The live probe produced one safe bundle under `docs/research/artifacts/LONG-002B/2026-08-12-234939/`:
 
 - `artifact_manifest.json`
 - `feasibility_report.json`
@@ -53,8 +53,8 @@ Every disposition is determined by the locked `minimum_usable_contract` in `docs
 ## Probe execution facts
 
 - Branch: `devin/long-002b-core-data-feasibility`
-- Code commit SHA: `7be1be5764ccd1ff6b00b73f903d1d6370288d02`
-- Probe run artifact path: `docs/research/artifacts/LONG-002B/2026-08-14-0015/`
+- Code commit SHA: `7a36ad5cf8b975309cc658910042272ebaf2afd4`
+- Probe run artifact path: `docs/research/artifacts/LONG-002B/2026-08-12-234939/`
 - Total HTTP requests: 41 of 120 allowed
 - Runtime: ~6 minutes (367 s), within the 30-minute wall-clock limit
 - Retries: 0

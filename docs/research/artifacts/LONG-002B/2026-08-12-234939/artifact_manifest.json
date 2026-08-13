@@ -1,0 +1,20 @@
+{
+  "bundle_path": "docs/research/artifacts/LONG-002B/2026-08-12-234939",
+  "code_commit_sha": "7a36ad5cf8b975309cc658910042272ebaf2afd4",
+  "data_contract_sha256": "f8ad6655e482fe5c9e8847467643bf0b03949686ad914180599323758cbf555a",
+  "files": {
+    "coverage_summary.csv": "39905a491c48b2ffa6e5730bb099292148f0a33d8c68991d502e4d901dc02950",
+    "data_quality_summary.csv": "ea41ec9541b2727d3ef9e2d4f538aaf938027839d14f568011b84caeab5b3c98",
+    "feasibility_report.json": "16b03ed2c290f59c64e647dfddf8a0095eb19e738730f08763e166a02e7b7f09",
+    "provider_contract_matrix.csv": "71046a48f6e6a12c6f0c4f4f18ed9bbb7854aaf58ef0709a3600f48afa8025de"
+  },
+  "generated_at": "2026-08-12-234939",
+  "long_002_spec_sha256": "f3df2845543500985c88568f9b855812576e9e4a10901f8a5f7a1834a319b3b5",
+  "overall_disposition": "not_supported",
+  "overall_evidence_confidence": "limited_but_usable_evidence",
+  "probe_spec_sha256": "002a0795096ba0f6f77ba1f2e673b5d3e6a2008730a57f7f87e71cf86b949a98",
+  "run_id": "2026-08-12-234939",
+  "runtime_seconds": 366.94701741300014,
+  "task_id": "LONG-002B",
+  "total_http_requests": 41
+}

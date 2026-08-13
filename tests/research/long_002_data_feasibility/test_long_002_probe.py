@@ -239,7 +239,7 @@ def test_security_master_nonempty_type_and_exchange_not_sufficient(monkeypatch: 
     monkeypatch.setattr(Long002MassiveClient, "fetch_splits", lambda self, ticker: {"status": 200, "event_count": 0})
     monkeypatch.setattr(Long002MassiveClient, "fetch_dividends", lambda self, ticker: {"status": 200, "event_count": 0})
 
-    result, evidence, any_attempted = _probe_security_master(
+    _result, evidence, any_attempted = _probe_security_master(
         ["massive", "alpaca", "sec_edgar"], panel, budget, creds, min_contract, test_inject=None, context={},
     )
 

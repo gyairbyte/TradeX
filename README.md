@@ -404,9 +404,9 @@ uv run python -m tradex.research.long_002_data_feasibility --repo-root .
 ```
 
 * **LONG-002B overall disposition:** `not_supported`
-* **Safe artifacts:** `docs/research/artifacts/LONG-002B/2026-08-14-0015/`
+* **Safe artifacts:** `docs/research/artifacts/LONG-002B/2026-08-12-234939/`
 * **B-phase report:** `docs/research/LONG-002B-DATA-FEASIBILITY.md`
-* **Code commit:** `7be1be5764ccd1ff6b00b73f903d1d6370288d02`
+* **Code commit:** `7a36ad5cf8b975309cc658910042272ebaf2afd4`
 * **Per-family dispositions:**
   * Daily market data: `supported_with_documented_limitations` (Alpaca fallback after Massive/Polygon `v2/aggs` 403 entitlement; 1259 bars from 2016-01-04 through 2020-12-31; complete 2020 development year; explicit `raw`/`split` policies; Massive corporate-action provenance)
   * Security master & corporate actions: `not_supported` (Massive per-ticker PIT rows returned, but one PIT row per symbol does not demonstrate lifecycle coverage and `type` values `CS`/`INDEX` do not defensibly identify the locked excluded security types; split/dividend events returned for AAPL/GOOGL)
