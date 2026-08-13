@@ -11,6 +11,7 @@ PROBE_SPEC = REPO_ROOT / "docs" / "research" / "specs" / "LONG-002B-probe-v1.jso
 DATA_CONTRACT = REPO_ROOT / "docs" / "research" / "specs" / "LONG-002B-data-contract-v1.json"
 
 LOCKED_LONG_002_SHA256 = "f3df2845543500985c88568f9b855812576e9e4a10901f8a5f7a1834a319b3b5"
+README = REPO_ROOT / "README.md"
 
 
 def _sha256(path: Path) -> str:
@@ -114,6 +115,20 @@ def test_data_contract_schema_covers_required_fields() -> None:
     assert contract["point_in_time_rules"]["no_current_membership_backfill"] is True
     assert contract["point_in_time_rules"]["missing_values_remain_null"] is True
     assert schema["holdout_access_safeguard"]["holdout_parsed"] == "boolean"
+
+
+def test_readme_long_002b_provider_claims_are_consistent() -> None:
+    """README must correctly attribute provider-call usage to LONG-002B only and
+    keep the shared no-outcome/no-holdout/no-model-fitting statement for both phases."""
+    text = README.read_text(encoding="utf-8")
+    section_start = text.find("* **Completed phase:** `LONG-002A`")
+    assert section_start != -1, "LONG-002A section not found in README"
+    # Slice a bounded block covering the LONG-002B paragraph.
+    block = text[section_start:section_start + 5000]
+    assert "`LONG-002B` used 41 of 120 allowed HTTP requests" in block
+    assert "1 recorded provider switch (Massive/Polygon daily bars entitlement 403" in block
+    assert "`LONG-002A` made no provider calls" in block
+    assert "neither `LONG-002A` nor `LONG-002B` performed historical outcome analysis" in block
 
 
 def test_probe_spec_dispositions_are_valid() -> None:

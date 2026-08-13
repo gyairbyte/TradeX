@@ -413,7 +413,7 @@ uv run python -m tradex.research.long_002_data_feasibility --repo-root .
   * Issuer fundamentals & shares: `supported_with_documented_limitations` (SEC EDGAR primary; CIK identity; filing acceptance-time control; PIT market-cap pathway)
   * Earnings event timing: `not_supported` (no live provider calls; preregistered candidates remain unverified)
 
-`LONG-002B` used 41 of 120 allowed HTTP requests, with 1 recorded provider switch (Massive/Polygon daily bars entitlement 403 → Alpaca fallback), and did not access any validation/holdout outcomes or build the full historical dataset. No provider calls, historical outcome analysis, model fitting, or validation/holdout access occur in `LONG-002A` or `LONG-002B`.
+`LONG-002B` used 41 of 120 allowed HTTP requests, with 1 recorded provider switch (Massive/Polygon daily bars entitlement 403 → Alpaca fallback), and did not access any validation/holdout outcomes or build the full historical dataset. `LONG-002A` made no provider calls; neither `LONG-002A` nor `LONG-002B` performed historical outcome analysis, model fitting, or validation/holdout access.
 
 ---
 
