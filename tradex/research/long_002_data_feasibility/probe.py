@@ -319,13 +319,23 @@ def _bar_date(bar: dict[str, Any]) -> datetime | None:
         return None
 
 
-def _lookup_close_on_or_before(df: pd.DataFrame, target_date_str: str) -> float | None:
-    """Return the close for the last trading day on or before target_date_str."""
+def _lookup_close_on_or_before(df: pd.DataFrame, target_date_str: str, max_lookback_days: int = 5) -> float | None:
+    """Return the close for the PIT decision date, rejecting materially stale bars.
+
+    The target is treated as end-of-day on `target_date_str` so a daily bar whose
+    session timestamp falls on that calendar day is included. If the most recent
+    bar on or before the target is older than `max_lookback_days`, it is not a
+    valid PIT close for the decision date and `None` is returned.
+    """
     if df.empty:
         return None
-    target = pd.Timestamp(target_date_str, tz="UTC")
-    subset = df[df.index <= target]
+    target_eod = pd.Timestamp(target_date_str, tz="UTC") + pd.Timedelta(hours=23, minutes=59, seconds=59)
+    subset = df[df.index <= target_eod]
     if subset.empty:
+        return None
+    latest = subset.index[-1]
+    lookback = pd.Timestamp(target_date_str, tz="UTC") - pd.Timedelta(days=max_lookback_days)
+    if latest < lookback:
         return None
     return float(subset["close"].iloc[-1])
 
@@ -346,10 +356,29 @@ def _extract_acceptance_datetime_for_accn(submissions: dict[str, Any], accn: str
     return None
 
 
-def _extract_filed_shares_fact(facts: dict[str, Any], as_of: str = "2020-12-31") -> dict[str, Any] | None:
-    """Return the most recent PIT shares fact with a filed date and value."""
+def _extract_filed_shares_fact(
+    facts: dict[str, Any],
+    as_of: str = "2020-12-31",
+    submissions: dict[str, Any] | None = None,
+    *,
+    require_acceptance: bool = True,
+) -> dict[str, Any] | None:
+    """Return the most recent PIT shares fact that is available by `as_of`.
+
+    A shares fact is only considered PIT-available when:
+      - the reporting period `end` is on or before `as_of`;
+      - the SEC `filed` date is on or before `as_of`; and
+      - the matched `acceptanceDateTime` for the fact's accession number is on
+        or before `as_of` (when `require_acceptance` is True).
+
+    This prevents pairing a future-released shares figure (e.g. filed in January
+    for a December period end) with a stale historical close.
+    """
     if not isinstance(facts, dict):
         return None
+    # Acceptance time is an instant; a fact accepted at any point on the as_of
+    # calendar day is available by end of that day.
+    as_of_eod = pd.Timestamp(as_of, tz="UTC") + pd.Timedelta(hours=23, minutes=59, seconds=59)
     concepts = ("EntityCommonStockSharesOutstanding", "CommonStockSharesOutstanding")
     best: dict[str, Any] | None = None
     for concept in concepts:
@@ -369,15 +398,27 @@ def _extract_filed_shares_fact(facts: dict[str, Any], as_of: str = "2020-12-31")
                 val = entry.get("val")
                 filed = entry.get("filed")
                 accn = entry.get("accn")
-                if end and str(end) <= as_of and isinstance(val, (int, float)) and val > 0 and (best is None or str(end) > str(best["end"])):
+                if not end or not filed:
+                    continue
+                if str(end) > as_of or str(filed) > as_of:
+                    continue
+                if not isinstance(val, (int, float)) or val <= 0:
+                    continue
+                if require_acceptance:
+                    acc_time = _extract_acceptance_datetime_for_accn(submissions or {}, accn)
+                    if not acc_time:
+                        continue
+                    if pd.Timestamp(acc_time, tz="UTC") > as_of_eod:
+                        continue
+                if best is None or str(end) > str(best["end"]) or (str(end) == str(best["end"]) and str(filed) > str(best["filed"])):
                     best = {
-                            "concept": concept,
-                            "unit": unit,
-                            "end": end,
-                            "filed": filed,
-                            "accn": accn,
-                            "value": val,
-                        }
+                        "concept": concept,
+                        "unit": unit,
+                        "end": end,
+                        "filed": filed,
+                        "accn": accn,
+                        "value": val,
+                    }
     return best
 
 
@@ -846,8 +887,11 @@ def _probe_fundamentals(
                 probe_symbols = [i["identifier"] for i in panel[:3]]
 
             resolved_count = 0
-            acceptance_controlled = False
+            pit_pathway_found = False
             market_cap_computed = False
+            # The PIT decision timestamp for this bounded probe is end-of-day on the
+            # latest development-period date for which daily bars are available.
+            decision_date = "2020-12-31"
             for symbol in probe_symbols:
                 cik = symbol_to_cik.get(symbol.upper())
                 if not cik:
@@ -897,38 +941,38 @@ def _probe_fundamentals(
                 ))
 
                 resolved_count += 1
-                has_acceptance = bool(
-                    submissions.get("filings", {}).get("recent", {}).get("acceptanceDateTime")
-                )
-                has_filed = _fundamentals_have_filed_facts(facts)
-                if has_acceptance and has_filed:
-                    acceptance_controlled = True
 
-                # Attempt a PIT market-cap pathway for this issuer.
-                shares = _extract_filed_shares_fact(facts, as_of="2020-12-31")
+                # Attempt a PIT market-cap pathway for this issuer. The selected
+                # shares fact must be available on or before the decision date,
+                # its acceptance timestamp must be on or before the decision date,
+                # and the close must be the decision-date (or most recent prior)
+                # bar -- not a future-filed fact paired with a stale close.
+                shares = _extract_filed_shares_fact(facts, as_of=decision_date, submissions=submissions)
                 if shares and symbol.upper() in context.get("daily_bars", {}):
                     close = _lookup_close_on_or_before(
                         _bar_dataframe(context["daily_bars"][symbol.upper()]),
-                        str(shares["filed"]) if shares.get("filed") else str(shares["end"]),
+                        decision_date,
                     )
-                    if close and shares["value"]:
+                    if close and shares["value"] and close > 0:
                         market_cap = close * shares["value"]
-                        market_cap_computed = market_cap > 0
+                        market_cap_computed = True
+                        pit_pathway_found = True
                         evidence.notes.append(
                             f"{symbol} market-cap pathway: close={close}, shares={shares['value']}, "
-                            f"mcap={market_cap:.2f}, filed={shares.get('filed') or shares.get('end')}"
+                            f"mcap={market_cap:.2f}, end={shares['end']}, filed={shares.get('filed')}, "
+                            f"decision_date={decision_date}"
                         )
-                        # Acceptance-time control: match accn to submission acceptance timestamp.
-                        if shares.get("accn"):
-                            acc_time = _extract_acceptance_datetime_for_accn(submissions, shares["accn"])
-                            if acc_time:
-                                acceptance_controlled = True
-                                evidence.notes.append(
-                                    f"{symbol} accession {shares['accn']} acceptance timestamp: {acc_time}"
-                                )
+                        acc_time = _extract_acceptance_datetime_for_accn(submissions, shares["accn"])
+                        if acc_time:
+                            evidence.notes.append(
+                                f"{symbol} accession {shares['accn']} acceptance timestamp: {acc_time}"
+                            )
 
             evidence.flags["ciK_identity_for_probe_issuers"] = resolved_count == len(probe_symbols) and resolved_count > 0
-            evidence.flags["filing_acceptance_time_controls_availability"] = acceptance_controlled
+            # Both PIT flags are set together from one demonstrably PIT-valid
+            # shares+close pathway. A generic acceptance timestamp or filed fact
+            # without a matched, decision-date-valid shares figure is insufficient.
+            evidence.flags["filing_acceptance_time_controls_availability"] = pit_pathway_found
             evidence.flags["viable_non_index_market_cap_pathway"] = market_cap_computed
             evidence.flags["missing_facts_remain_null"] = True  # No fabricated placeholders are inserted.
             selected = "sec_edgar"

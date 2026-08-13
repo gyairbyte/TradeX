@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -14,9 +15,11 @@ from tradex.research.long_002_data_feasibility.clients import (
 )
 from tradex.research.long_002_data_feasibility.models import DataFamilyResult
 from tradex.research.long_002_data_feasibility.probe import (
+    _extract_filed_shares_fact,
     _overall_disposition,
     _probe_daily_market_data,
     _probe_earnings,
+    _probe_fundamentals,
     _probe_security_master,
     _recommended_next_action,
     run_probe,
@@ -270,3 +273,164 @@ def test_earnings_uncalled_candidates_are_unverified_not_attempted_failures() ->
     assert not any(r.error_classification == "unsupported_capability" for r in result.records)
     assert any("unverified" in n.lower() for n in evidence.notes)
     assert evidence.flags["unknown_treatment_fail_closed"] is True
+
+
+def _make_edgar_request(
+    submissions: dict[str, Any], facts: dict[str, Any],
+) -> Callable[[str], bytes]:
+    def request(url: str) -> bytes:
+        if "submissions" in url:
+            return json.dumps(submissions).encode("utf-8")
+        return json.dumps(facts).encode("utf-8")
+    return request
+
+
+def _make_daily_bars(close: float = 100.0, timestamp: str = "2020-12-31T05:00:00Z") -> list[dict[str, Any]]:
+    return [
+        {
+            "t": timestamp,
+            "o": close,
+            "h": close,
+            "l": close,
+            "c": close,
+            "v": 1000,
+        }
+    ]
+
+
+def _make_facts(
+    end: str = "2020-12-31",
+    filed: str = "2020-12-31",
+    accn: str = "0000320193-20-000100",
+    val: float = 1_000_000_000.0,
+) -> dict[str, Any]:
+    return {
+        "cik": "0000320193",
+        "facts": {
+            "dei": {
+                "EntityCommonStockSharesOutstanding": {
+                    "units": {
+                        "shares": [
+                            {
+                                "end": end,
+                                "filed": filed,
+                                "accn": accn,
+                                "val": val,
+                            }
+                        ]
+                    }
+                }
+            }
+        },
+    }
+
+
+def _make_submissions(pairs: list[tuple[str, str]]) -> dict[str, Any]:
+    return {
+        "cik": "0000320193",
+        "filings": {
+            "recent": {
+                "accessionNumber": [p[0] for p in pairs],
+                "acceptanceDateTime": [p[1] for p in pairs],
+            }
+        },
+    }
+
+
+def test_fundamentals_future_filed_fact_is_not_pit_available() -> None:
+    """A shares fact whose reporting period ends before the cutoff but is filed
+    and accepted after the PIT decision date cannot be used."""
+    facts = _make_facts(end="2020-12-31", filed="2021-01-28", accn="0000320193-21-000010")
+    submissions = _make_submissions([("0000320193-21-000010", "2021-01-27T16:00:00.000Z")])
+    assert _extract_filed_shares_fact(facts, as_of="2020-12-31", submissions=submissions) is None
+
+    panel = [{"identifier": "AAPL", "as_of_dates": ["2020-12-31"]}]
+    context = {
+        "symbol_to_cik": {"AAPL": "320193"},
+        "daily_bars": {"AAPL": _make_daily_bars()},
+    }
+    _result, evidence, any_attempted = _probe_fundamentals(
+        ["sec_edgar"],
+        panel,
+        RequestBudget(max_requests=120),
+        {},
+        {},
+        {"edgar_request_func": _make_edgar_request(submissions, facts), "symbol_to_cik": {"AAPL": "320193"}},
+        context,
+    )
+    assert any_attempted is True
+    assert evidence.flags["filing_acceptance_time_controls_availability"] is False
+    assert evidence.flags["viable_non_index_market_cap_pathway"] is False
+
+
+def test_fundamentals_unmatched_acceptance_timestamp_cannot_promote_flag() -> None:
+    """Generic presence of acceptance timestamps without a match to the selected
+    fact's accession number is not enough to prove acceptance-time control."""
+    facts = _make_facts(end="2020-09-30", filed="2020-11-15", accn="0000320193-20-000999")
+    submissions = _make_submissions([("0000320193-20-000100", "2020-11-15T16:00:00.000Z")])
+    panel = [{"identifier": "AAPL", "as_of_dates": ["2020-12-31"]}]
+    context = {
+        "symbol_to_cik": {"AAPL": "320193"},
+        "daily_bars": {"AAPL": _make_daily_bars()},
+    }
+    _result, evidence, any_attempted = _probe_fundamentals(
+        ["sec_edgar"],
+        panel,
+        RequestBudget(max_requests=120),
+        {},
+        {},
+        {"edgar_request_func": _make_edgar_request(submissions, facts), "symbol_to_cik": {"AAPL": "320193"}},
+        context,
+    )
+    assert any_attempted is True
+    assert evidence.flags["filing_acceptance_time_controls_availability"] is False
+    assert evidence.flags["viable_non_index_market_cap_pathway"] is False
+
+
+def test_fundamentals_stale_close_does_not_promote_market_cap_pathway() -> None:
+    """A PIT-valid shares fact must be paired with a close on or near the decision
+    date; a materially stale last bar must not silently produce a market cap."""
+    facts = _make_facts(end="2020-12-31", filed="2020-12-31", accn="0000320193-20-000100")
+    submissions = _make_submissions([("0000320193-20-000100", "2020-12-31T16:00:00.000Z")])
+    stale_bars = _make_daily_bars(close=100.0, timestamp="2020-11-30T05:00:00Z")
+    panel = [{"identifier": "AAPL", "as_of_dates": ["2020-12-31"]}]
+    context = {
+        "symbol_to_cik": {"AAPL": "320193"},
+        "daily_bars": {"AAPL": stale_bars},
+    }
+    _result, evidence, any_attempted = _probe_fundamentals(
+        ["sec_edgar"],
+        panel,
+        RequestBudget(max_requests=120),
+        {},
+        {},
+        {"edgar_request_func": _make_edgar_request(submissions, facts), "symbol_to_cik": {"AAPL": "320193"}},
+        context,
+    )
+    assert any_attempted is True
+    assert evidence.flags["viable_non_index_market_cap_pathway"] is False
+    assert evidence.flags["filing_acceptance_time_controls_availability"] is False
+
+
+def test_fundamentals_valid_pit_pathway_promotes_flags() -> None:
+    """When a shares fact, its matched acceptance timestamp, and the decision-date
+    close are all PIT-valid, the acceptance-time and market-cap flags are true."""
+    facts = _make_facts(end="2020-12-31", filed="2020-12-31", accn="0000320193-20-000100")
+    submissions = _make_submissions([("0000320193-20-000100", "2020-12-31T16:00:00.000Z")])
+    panel = [{"identifier": "AAPL", "as_of_dates": ["2020-12-31"]}]
+    context = {
+        "symbol_to_cik": {"AAPL": "320193"},
+        "daily_bars": {"AAPL": _make_daily_bars()},
+    }
+    _result, evidence, any_attempted = _probe_fundamentals(
+        ["sec_edgar"],
+        panel,
+        RequestBudget(max_requests=120),
+        {},
+        {},
+        {"edgar_request_func": _make_edgar_request(submissions, facts), "symbol_to_cik": {"AAPL": "320193"}},
+        context,
+    )
+    assert any_attempted is True
+    assert evidence.flags["filing_acceptance_time_controls_availability"] is True
+    assert evidence.flags["viable_non_index_market_cap_pathway"] is True
