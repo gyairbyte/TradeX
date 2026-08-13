@@ -26,7 +26,7 @@ Locked upstream contracts preserved unchanged:
 
 ## Safe artifacts
 
-The live probe produced one safe bundle under `docs/research/artifacts/LONG-002B/2026-08-12-234939/`:
+The live probe produced one safe bundle under `docs/research/artifacts/LONG-002B/2026-08-13-044204/`:
 
 - `artifact_manifest.json`
 - `feasibility_report.json`
@@ -45,7 +45,7 @@ Every disposition is determined by the locked `minimum_usable_contract` in `docs
 |---|---|---|---|---|---|
 | Daily market data | `supported_with_documented_limitations` | Alpaca | fallback | `limited_but_usable_evidence` | Massive/Polygon `v2/aggs` daily bars exercised for AAPL and returned 403 entitlement; Alpaca returned 1259 consolidated `sip`/`raw` daily bars from 2016-01-04 through 2020-12-31 with a complete 2020 development year (253/253 sessions), 100% trailing-year completeness, zero duplicates/malformed rows, explicit `raw` and `split` policies, and Massive `splits`/`dividends` provenance. |
 | Security master & corporate actions | `not_supported` | Massive | primary | `limited_but_usable_evidence` | Massive per-ticker `/v3/reference/tickers` calls returned `ticker`/`cik`/`primary_exchange` rows for the panel, but the locked minimums are not satisfied: (a) one PIT row per symbol does not demonstrate active/inactive lifecycle coverage or ticker-change evidence, and (b) the provider's `type` values (`CS`/`INDEX`) do not map defensibly to the locked exclusion categories (ETF, preferred ETF, closed-end fund, pre-merger SPAC). `/v3/reference/splits` and `/v3/reference/dividends` returned split/dividend events. |
-| Issuer fundamentals & shares | `supported_with_documented_limitations` | SEC EDGAR | primary | `limited_but_usable_evidence` | CIK identity resolved for AAPL/GOOGL/FDX; EDGAR `submissions` and `companyfacts` demonstrate filing acceptance timestamps controlling fact availability and a viable non-index market-cap pathway (`shares outstanding * PIT close`). Missing facts remain null. |
+| Issuer fundamentals & shares | `supported_with_documented_limitations` | SEC EDGAR | primary | `limited_but_usable_evidence` | CIK identity resolved for AAPL/GOOGL/FDX; EDGAR `submissions` and `companyfacts` demonstrate filing acceptance timestamps linked to the selected shares fact and a PIT market-cap pathway for AAPL (`shares outstanding * PIT close`; accession `0000320193-20-000096` accepted 2020-10-29, period end 2020-10-16, filed 2020-10-30, paired with the 2020-12-31 close). Missing facts remain null. |
 | Earnings event timing | `not_supported` | none | n/a | `limited_but_usable_evidence` | No live provider calls were made; the preregistered candidates (Massive, Yahoo earnings calendar, SEC EDGAR) remain unverified. No source demonstrated a historical known-at-the-decision-time earnings schedule. `unknown` treatment is fail-closed. |
 
 **Overall result:** `not_supported` because mandatory families (security master & corporate actions and earnings event timing) are `not_supported` and no Gary-approved amendment authorizes an alternative source or the `unknown` treatment for full dataset construction.
@@ -53,8 +53,8 @@ Every disposition is determined by the locked `minimum_usable_contract` in `docs
 ## Probe execution facts
 
 - Branch: `devin/long-002b-core-data-feasibility`
-- Code commit SHA: `7a36ad5cf8b975309cc658910042272ebaf2afd4`
-- Probe run artifact path: `docs/research/artifacts/LONG-002B/2026-08-12-234939/`
+- Code commit SHA: `760df4fea68fdc1d9b311c427d30ce122640d5e9`
+- Probe run artifact path: `docs/research/artifacts/LONG-002B/2026-08-13-044204/`
 - Total HTTP requests: 41 of 120 allowed
 - Runtime: ~6 minutes (367 s), within the 30-minute wall-clock limit
 - Retries: 0
@@ -104,7 +104,7 @@ Two of four data families satisfy their locked `minimum_usable_contract` with bo
 
 - **Daily market data:** Alpaca returned 1259 consolidated SIP daily bars from 2016-01-04 through 2020-12-31. The complete 2020 development year (253/253 XNYS sessions) and trailing 252-session window are 100% complete. The missing 2015 warmup sessions account for the 83.32% all-window completeness against the requested 2015-01-01/2020-12-31 range. The preferred Massive/Polygon `v2/aggs` endpoint returned 403 (entitlement), and Alpaca served as an explicit fallback; the fallback and switch are recorded. Explicit `raw` and `split` policies were exercised; Massive split/dividend events confirm reconstructable corporate-action handling.
 - **Security master & corporate actions:** Massive's per-ticker PIT endpoint returned rows with `cik`, `primary_exchange`, and `type` for the probe panel, and `/v3/reference/splits` and `/v3/reference/dividends` returned events for AAPL and GOOGL. However, the family is `not_supported` because (a) a single PIT row per symbol does not demonstrate active/inactive lifecycle coverage or ticker-change evidence, and (b) the provider's `type` taxonomy (`CS`/`INDEX`) does not defensibly identify the locked excluded security types (ETF, preferred ETF, closed-end fund, pre-merger SPAC).
-- **Fundamentals/shares:** SEC EDGAR submissions and company facts are reachable; CIK identity resolves via the security-master join; a PIT market-cap pathway is demonstrated (`shares outstanding * PIT close`) with filing acceptance time controlling availability.
+- **Fundamentals/shares:** SEC EDGAR submissions and company facts are reachable; CIK identity resolves via the security-master join; a PIT market-cap pathway is demonstrated for AAPL (`shares outstanding * PIT close`) with the selected fact's matched acceptance timestamp (`2020-10-29T22:06:25.000Z` for accession `0000320193-20-000096`) on or before the decision date and the close on the decision date (2020-12-31).
 - **Earnings timing:** No provider demonstrated a historical known-at-the-decision-time earnings calendar. This is the blocking gap.
 - **PIT index/sector membership:** Not probed. LONG-002's non-index eligibility pathway ($3B+ floor) is viable using historical market cap from PIT shares × PIT close.
 

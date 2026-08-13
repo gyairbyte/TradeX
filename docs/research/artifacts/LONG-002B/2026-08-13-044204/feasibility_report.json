@@ -1,0 +1,1174 @@
+{
+  "blockers": [
+    "minimum_usable_contract.stable_identity_effective_ticker_join_for_probe_panel not satisfied",
+    "minimum_usable_contract.security_type_and_exchange_for_probe_panel not satisfied",
+    "minimum_usable_contract.historical_known_at_time_schedule not satisfied"
+  ],
+  "code_commit_sha": "760df4fea68fdc1d9b311c427d30ce122640d5e9",
+  "data_contract_sha256": "f8ad6655e482fe5c9e8847467643bf0b03949686ad914180599323758cbf555a",
+  "data_families": [
+    {
+      "blockers": [],
+      "disposition": "supported_with_documented_limitations",
+      "evidence_confidence": "limited_but_usable_evidence",
+      "family": "daily_market_data",
+      "limitations": [
+        "Massive/Polygon daily bars for AAPL: HTTP Error 403: Forbidden (entitlement); stopping preferred-provider exercise.",
+        "Alpaca AAPL: 1259 bars (2016-01-04 to 2020-12-31); development year 253/253 (100.00%); all-window 1259/1511 (83.32%, 2015 warmup sessions absent); trailing year 100.00%; duplicates=0, malformed=0."
+      ],
+      "provider_role": "fallback",
+      "provider_selected": "alpaca",
+      "records": [
+        {
+          "as_of_date": null,
+          "endpoint_pattern": "v2/aggs/ticker/{ticker}/range/1/day/{start}/{end}",
+          "error_classification": "entitlement",
+          "family": "daily_market_data",
+          "http_status": 403,
+          "provenance": {
+            "adjusted": false
+          },
+          "provider": "massive/polygon",
+          "request_timestamp_utc": "2026-08-13T04:35:56.867223Z",
+          "response_summary": {
+            "adjustment": false,
+            "bar_count": 0,
+            "error": "HTTP Error 403: Forbidden",
+            "error_classification": null,
+            "feed": null,
+            "http_status": 403,
+            "page_count": null,
+            "pagination_complete": false,
+            "provider": "massive/polygon",
+            "retry_count": 0,
+            "symbol": "AAPL"
+          },
+          "retry_count": 0,
+          "symbol": "AAPL"
+        },
+        {
+          "as_of_date": null,
+          "endpoint_pattern": "/v2/stocks/{symbol}/bars",
+          "error_classification": "none",
+          "family": "daily_market_data",
+          "http_status": 200,
+          "provenance": {
+            "adjustment": "raw",
+            "feed": "sip"
+          },
+          "provider": "alpaca",
+          "request_timestamp_utc": "2026-08-13T04:35:57.256002Z",
+          "response_summary": {
+            "adjustment": "raw",
+            "bar_count": 1259,
+            "bar_payload_sha256": "f2efef79fef30e4b6fff7a65ec82fcd0e38330ca87583ed6db51c9cd32a84d14",
+            "error": null,
+            "error_classification": "none",
+            "feed": "sip",
+            "first_bar_timestamp": "2016-01-04T05:00:00Z",
+            "http_status": 200,
+            "last_bar_timestamp": "2020-12-31T05:00:00Z",
+            "page_count": 1,
+            "pagination_complete": true,
+            "provider": "alpaca",
+            "retry_count": 0,
+            "symbol": "AAPL"
+          },
+          "retry_count": 0,
+          "symbol": "AAPL"
+        },
+        {
+          "as_of_date": null,
+          "endpoint_pattern": "/v2/stocks/{symbol}/bars",
+          "error_classification": "none",
+          "family": "daily_market_data",
+          "http_status": 200,
+          "provenance": {
+            "adjustment": "split",
+            "feed": "sip"
+          },
+          "provider": "alpaca",
+          "request_timestamp_utc": "2026-08-13T04:35:59.924715Z",
+          "response_summary": {
+            "adjustment": "split",
+            "bar_count": 1259,
+            "bar_payload_sha256": "e4947792aee753425c9c559f360a0cda8e11ca7c7c0f1742b14278a11e89dc45",
+            "error": null,
+            "error_classification": "none",
+            "feed": "sip",
+            "first_bar_timestamp": "2016-01-04T05:00:00Z",
+            "http_status": 200,
+            "last_bar_timestamp": "2020-12-31T05:00:00Z",
+            "page_count": 1,
+            "pagination_complete": true,
+            "provider": "alpaca",
+            "retry_count": 0,
+            "symbol": "AAPL"
+          },
+          "retry_count": 0,
+          "symbol": "AAPL"
+        },
+        {
+          "as_of_date": null,
+          "endpoint_pattern": "/v3/reference/splits?ticker={ticker}",
+          "error_classification": "none",
+          "family": "daily_market_data",
+          "http_status": 200,
+          "provenance": {
+            "event_type": "split"
+          },
+          "provider": "massive/polygon",
+          "request_timestamp_utc": "2026-08-13T04:36:00.122336Z",
+          "response_summary": {
+            "error": null,
+            "event_count": 5,
+            "event_type": "split",
+            "http_status": 200,
+            "provider": "massive",
+            "ticker": "AAPL"
+          },
+          "retry_count": 0,
+          "symbol": "AAPL"
+        },
+        {
+          "as_of_date": null,
+          "endpoint_pattern": "/v3/reference/dividends?ticker={ticker}",
+          "error_classification": "none",
+          "family": "daily_market_data",
+          "http_status": 200,
+          "provenance": {
+            "event_type": "dividend"
+          },
+          "provider": "massive/polygon",
+          "request_timestamp_utc": "2026-08-13T04:36:12.280286Z",
+          "response_summary": {
+            "error": null,
+            "event_count": 57,
+            "event_type": "dividend",
+            "http_status": 200,
+            "provider": "massive",
+            "ticker": "AAPL"
+          },
+          "retry_count": 0,
+          "symbol": "AAPL"
+        }
+      ],
+      "request_count": 5,
+      "summary": {
+        "family": "daily_market_data",
+        "flags": {
+          "daily_bar_integrity_compatible_with_99pct_trailing_year": true,
+          "explicit_raw_as_traded_policy": true,
+          "explicit_split_adjusted_policy": true,
+          "no_unresolved_duplicates": true,
+          "no_unresolved_malformed_rows": true,
+          "one_complete_dev_year_plus_prior_history": true,
+          "reconstructable_split_handling": true,
+          "stable_identity_join": true
+        },
+        "notes": [
+          "Massive/Polygon daily bars for AAPL: HTTP Error 403: Forbidden (entitlement); stopping preferred-provider exercise.",
+          "Alpaca AAPL: 1259 bars (2016-01-04 to 2020-12-31); development year 253/253 (100.00%); all-window 1259/1511 (83.32%, 2015 warmup sessions absent); trailing year 100.00%; duplicates=0, malformed=0."
+        ],
+        "unverified": []
+      }
+    },
+    {
+      "blockers": [
+        "minimum_usable_contract.stable_identity_effective_ticker_join_for_probe_panel not satisfied",
+        "minimum_usable_contract.security_type_and_exchange_for_probe_panel not satisfied"
+      ],
+      "disposition": "not_supported",
+      "evidence_confidence": "limited_but_usable_evidence",
+      "family": "security_master_and_corporate_actions",
+      "limitations": [
+        "Massive per-ticker lookups did not demonstrate active/inactive lifecycle coverage or ticker-change evidence for every panel symbol; stable identity join flag not satisfied.",
+        "Massive `type` values (CS/INDEX) do not provide a defensible mapping to the locked exclusion categories; security type and exchange flag not satisfied."
+      ],
+      "provider_role": "primary",
+      "provider_selected": "massive",
+      "records": [
+        {
+          "as_of_date": "2016-03-31",
+          "endpoint_pattern": "/v3/reference/tickers?ticker={ticker}&date={date}&active=True",
+          "error_classification": "none",
+          "family": "security_master_and_corporate_actions",
+          "http_status": 200,
+          "provenance": {
+            "active_filter": true
+          },
+          "provider": "massive",
+          "request_timestamp_utc": "2026-08-13T04:36:12.532748Z",
+          "response_summary": {
+            "active": true,
+            "cik": "0000320193",
+            "error": null,
+            "http_status": 200,
+            "pit_date": "2016-03-31",
+            "primary_exchange": "XNAS",
+            "provider": "massive",
+            "row_found": true,
+            "row_sha256": "cfe2a3ce374f6d80d1aa7fcb0058db9c4247a6f31fb075cbeb0d50c25499b594",
+            "ticker": "AAPL",
+            "type": null
+          },
+          "retry_count": 0,
+          "symbol": "AAPL"
+        },
+        {
+          "as_of_date": "2016-03-31",
+          "endpoint_pattern": "/v3/reference/tickers?ticker={ticker}&date={date}&active=False",
+          "error_classification": "none",
+          "family": "security_master_and_corporate_actions",
+          "http_status": 200,
+          "provenance": {
+            "active_filter": false
+          },
+          "provider": "massive",
+          "request_timestamp_utc": "2026-08-13T04:36:24.620068Z",
+          "response_summary": {
+            "active": null,
+            "cik": null,
+            "error": null,
+            "http_status": 200,
+            "pit_date": "2016-03-31",
+            "primary_exchange": null,
+            "provider": "massive",
+            "row_found": false,
+            "ticker": "AAPL",
+            "type": null
+          },
+          "retry_count": 0,
+          "symbol": "AAPL"
+        },
+        {
+          "as_of_date": "2018-06-29",
+          "endpoint_pattern": "/v3/reference/tickers?ticker={ticker}&date={date}&active=True",
+          "error_classification": "none",
+          "family": "security_master_and_corporate_actions",
+          "http_status": 200,
+          "provenance": {
+            "active_filter": true
+          },
+          "provider": "massive",
+          "request_timestamp_utc": "2026-08-13T04:36:36.818764Z",
+          "response_summary": {
+            "active": true,
+            "cik": "0000320193",
+            "error": null,
+            "http_status": 200,
+            "pit_date": "2018-06-29",
+            "primary_exchange": "XNAS",
+            "provider": "massive",
+            "row_found": true,
+            "row_sha256": "de8ace7e79529e29efa9a8a1808082e847b9f31d83cb6c941a5d5ba4005afbb7",
+            "ticker": "AAPL",
+            "type": "CS"
+          },
+          "retry_count": 0,
+          "symbol": "AAPL"
+        },
+        {
+          "as_of_date": "2016-03-31",
+          "endpoint_pattern": "/v3/reference/tickers?ticker={ticker}&date={date}&active=True",
+          "error_classification": "none",
+          "family": "security_master_and_corporate_actions",
+          "http_status": 200,
+          "provenance": {
+            "active_filter": true
+          },
+          "provider": "massive",
+          "request_timestamp_utc": "2026-08-13T04:36:48.825128Z",
+          "response_summary": {
+            "active": null,
+            "cik": null,
+            "error": null,
+            "http_status": 200,
+            "pit_date": "2016-03-31",
+            "primary_exchange": null,
+            "provider": "massive",
+            "row_found": false,
+            "ticker": "GOOGL",
+            "type": null
+          },
+          "retry_count": 0,
+          "symbol": "GOOGL"
+        },
+        {
+          "as_of_date": "2016-03-31",
+          "endpoint_pattern": "/v3/reference/tickers?ticker={ticker}&date={date}&active=False",
+          "error_classification": "none",
+          "family": "security_master_and_corporate_actions",
+          "http_status": 200,
+          "provenance": {
+            "active_filter": false
+          },
+          "provider": "massive",
+          "request_timestamp_utc": "2026-08-13T04:37:03.631841Z",
+          "response_summary": {
+            "active": null,
+            "cik": null,
+            "error": null,
+            "http_status": 200,
+            "pit_date": "2016-03-31",
+            "primary_exchange": null,
+            "provider": "massive",
+            "row_found": false,
+            "ticker": "GOOGL",
+            "type": null
+          },
+          "retry_count": 0,
+          "symbol": "GOOGL"
+        },
+        {
+          "as_of_date": "2018-06-29",
+          "endpoint_pattern": "/v3/reference/tickers?ticker={ticker}&date={date}&active=True",
+          "error_classification": "none",
+          "family": "security_master_and_corporate_actions",
+          "http_status": 200,
+          "provenance": {
+            "active_filter": true
+          },
+          "provider": "massive",
+          "request_timestamp_utc": "2026-08-13T04:37:13.061385Z",
+          "response_summary": {
+            "active": true,
+            "cik": "0001652044",
+            "error": null,
+            "http_status": 200,
+            "pit_date": "2018-06-29",
+            "primary_exchange": "XNAS",
+            "provider": "massive",
+            "row_found": true,
+            "row_sha256": "2bbafc6a36622b3682e34f26c34a77ad983876082149b70c15862337faa6efbe",
+            "ticker": "GOOGL",
+            "type": "CS"
+          },
+          "retry_count": 0,
+          "symbol": "GOOGL"
+        },
+        {
+          "as_of_date": "2016-03-31",
+          "endpoint_pattern": "/v3/reference/tickers?ticker={ticker}&date={date}&active=True",
+          "error_classification": "none",
+          "family": "security_master_and_corporate_actions",
+          "http_status": 200,
+          "provenance": {
+            "active_filter": true
+          },
+          "provider": "massive",
+          "request_timestamp_utc": "2026-08-13T04:37:25.123011Z",
+          "response_summary": {
+            "active": true,
+            "cik": "0001048911",
+            "error": null,
+            "http_status": 200,
+            "pit_date": "2016-03-31",
+            "primary_exchange": "XNYS",
+            "provider": "massive",
+            "row_found": true,
+            "row_sha256": "c8fcdc2061ebe5fa011dde90a77ec547d5b8306f279a98cf7def92ca99e1726b",
+            "ticker": "FDX",
+            "type": "CS"
+          },
+          "retry_count": 0,
+          "symbol": "FDX"
+        },
+        {
+          "as_of_date": "2016-03-31",
+          "endpoint_pattern": "/v3/reference/tickers?ticker={ticker}&date={date}&active=True",
+          "error_classification": "none",
+          "family": "security_master_and_corporate_actions",
+          "http_status": 200,
+          "provenance": {
+            "active_filter": true
+          },
+          "provider": "massive",
+          "request_timestamp_utc": "2026-08-13T04:37:37.254970Z",
+          "response_summary": {
+            "active": true,
+            "cik": "0001326801",
+            "error": null,
+            "http_status": 200,
+            "pit_date": "2016-03-31",
+            "primary_exchange": "XNAS",
+            "provider": "massive",
+            "row_found": true,
+            "row_sha256": "9bfc1e3e67a347f90dc7a052574dd3d70083f868b4758db45d35f9f654bae8e2",
+            "ticker": "FB",
+            "type": null
+          },
+          "retry_count": 0,
+          "symbol": "FB"
+        },
+        {
+          "as_of_date": "2016-03-31",
+          "endpoint_pattern": "/v3/reference/tickers?ticker={ticker}&date={date}&active=False",
+          "error_classification": "none",
+          "family": "security_master_and_corporate_actions",
+          "http_status": 200,
+          "provenance": {
+            "active_filter": false
+          },
+          "provider": "massive",
+          "request_timestamp_utc": "2026-08-13T04:37:49.336099Z",
+          "response_summary": {
+            "active": null,
+            "cik": null,
+            "error": null,
+            "http_status": 200,
+            "pit_date": "2016-03-31",
+            "primary_exchange": null,
+            "provider": "massive",
+            "row_found": false,
+            "ticker": "FB",
+            "type": null
+          },
+          "retry_count": 0,
+          "symbol": "FB"
+        },
+        {
+          "as_of_date": "2018-06-29",
+          "endpoint_pattern": "/v3/reference/tickers?ticker={ticker}&date={date}&active=True",
+          "error_classification": "none",
+          "family": "security_master_and_corporate_actions",
+          "http_status": 200,
+          "provenance": {
+            "active_filter": true
+          },
+          "provider": "massive",
+          "request_timestamp_utc": "2026-08-13T04:38:01.427769Z",
+          "response_summary": {
+            "active": true,
+            "cik": "0001326801",
+            "error": null,
+            "http_status": 200,
+            "pit_date": "2018-06-29",
+            "primary_exchange": "XNAS",
+            "provider": "massive",
+            "row_found": true,
+            "row_sha256": "b3c3187526de804cac645529a581be820c905680b62483ba3dcd7ada2c7b2a61",
+            "ticker": "FB",
+            "type": "CS"
+          },
+          "retry_count": 0,
+          "symbol": "FB"
+        },
+        {
+          "as_of_date": "2016-03-31",
+          "endpoint_pattern": "/v3/reference/tickers?ticker={ticker}&date={date}&active=True",
+          "error_classification": "none",
+          "family": "security_master_and_corporate_actions",
+          "http_status": 200,
+          "provenance": {
+            "active_filter": true
+          },
+          "provider": "massive",
+          "request_timestamp_utc": "2026-08-13T04:38:13.616928Z",
+          "response_summary": {
+            "active": true,
+            "cik": "0001633917",
+            "error": null,
+            "http_status": 200,
+            "pit_date": "2016-03-31",
+            "primary_exchange": "XNAS",
+            "provider": "massive",
+            "row_found": true,
+            "row_sha256": "8abbec2b0d4e615a8caaf1576f57a3aa3e2920f43a4cf62a66083d53ac8c78f3",
+            "ticker": "PYPL",
+            "type": null
+          },
+          "retry_count": 0,
+          "symbol": "PYPL"
+        },
+        {
+          "as_of_date": "2016-03-31",
+          "endpoint_pattern": "/v3/reference/tickers?ticker={ticker}&date={date}&active=False",
+          "error_classification": "none",
+          "family": "security_master_and_corporate_actions",
+          "http_status": 200,
+          "provenance": {
+            "active_filter": false
+          },
+          "provider": "massive",
+          "request_timestamp_utc": "2026-08-13T04:38:25.625088Z",
+          "response_summary": {
+            "active": null,
+            "cik": null,
+            "error": null,
+            "http_status": 200,
+            "pit_date": "2016-03-31",
+            "primary_exchange": null,
+            "provider": "massive",
+            "row_found": false,
+            "ticker": "PYPL",
+            "type": null
+          },
+          "retry_count": 0,
+          "symbol": "PYPL"
+        },
+        {
+          "as_of_date": "2018-06-29",
+          "endpoint_pattern": "/v3/reference/tickers?ticker={ticker}&date={date}&active=True",
+          "error_classification": "none",
+          "family": "security_master_and_corporate_actions",
+          "http_status": 200,
+          "provenance": {
+            "active_filter": true
+          },
+          "provider": "massive",
+          "request_timestamp_utc": "2026-08-13T04:38:38.031174Z",
+          "response_summary": {
+            "active": true,
+            "cik": "0001633917",
+            "error": null,
+            "http_status": 200,
+            "pit_date": "2018-06-29",
+            "primary_exchange": "XNAS",
+            "provider": "massive",
+            "row_found": true,
+            "row_sha256": "7892e92ac1bbe8496417f76e72e8ed8a1321f29aebfcbcc75b2f1b7e465c3f2a",
+            "ticker": "PYPL",
+            "type": "CS"
+          },
+          "retry_count": 0,
+          "symbol": "PYPL"
+        },
+        {
+          "as_of_date": "2016-03-31",
+          "endpoint_pattern": "/v3/reference/tickers?ticker={ticker}&date={date}&active=True",
+          "error_classification": "none",
+          "family": "security_master_and_corporate_actions",
+          "http_status": 200,
+          "provenance": {
+            "active_filter": true
+          },
+          "provider": "massive",
+          "request_timestamp_utc": "2026-08-13T04:38:49.837206Z",
+          "response_summary": {
+            "active": true,
+            "cik": "0000316736",
+            "error": null,
+            "http_status": 200,
+            "pit_date": "2016-03-31",
+            "primary_exchange": "XNAS",
+            "provider": "massive",
+            "row_found": true,
+            "row_sha256": "fb2958e11d0726a08fdc58780d56e0db51b06023375146e79caec12ddadc69db",
+            "ticker": "YHOO",
+            "type": null
+          },
+          "retry_count": 0,
+          "symbol": "YHOO"
+        },
+        {
+          "as_of_date": "2016-03-31",
+          "endpoint_pattern": "/v3/reference/tickers?ticker={ticker}&date={date}&active=False",
+          "error_classification": "none",
+          "family": "security_master_and_corporate_actions",
+          "http_status": 200,
+          "provenance": {
+            "active_filter": false
+          },
+          "provider": "massive",
+          "request_timestamp_utc": "2026-08-13T04:39:01.932208Z",
+          "response_summary": {
+            "active": null,
+            "cik": null,
+            "error": null,
+            "http_status": 200,
+            "pit_date": "2016-03-31",
+            "primary_exchange": null,
+            "provider": "massive",
+            "row_found": false,
+            "ticker": "YHOO",
+            "type": null
+          },
+          "retry_count": 0,
+          "symbol": "YHOO"
+        },
+        {
+          "as_of_date": "2017-03-31",
+          "endpoint_pattern": "/v3/reference/tickers?ticker={ticker}&date={date}&active=True",
+          "error_classification": "none",
+          "family": "security_master_and_corporate_actions",
+          "http_status": 200,
+          "provenance": {
+            "active_filter": true
+          },
+          "provider": "massive",
+          "request_timestamp_utc": "2026-08-13T04:39:14.035470Z",
+          "response_summary": {
+            "active": true,
+            "cik": "0000316736",
+            "error": null,
+            "http_status": 200,
+            "pit_date": "2017-03-31",
+            "primary_exchange": "XNAS",
+            "provider": "massive",
+            "row_found": true,
+            "row_sha256": "5e005f2cb97350f490f9a8304670e5bcb28486eb3d4f102cbda780d54f7fe93e",
+            "ticker": "YHOO",
+            "type": "CS"
+          },
+          "retry_count": 0,
+          "symbol": "YHOO"
+        },
+        {
+          "as_of_date": "2016-03-31",
+          "endpoint_pattern": "/v3/reference/tickers?ticker={ticker}&date={date}&active=True",
+          "error_classification": "none",
+          "family": "security_master_and_corporate_actions",
+          "http_status": 200,
+          "provenance": {
+            "active_filter": true
+          },
+          "provider": "massive",
+          "request_timestamp_utc": "2026-08-13T04:39:26.582724Z",
+          "response_summary": {
+            "active": true,
+            "cik": "0000884394",
+            "error": null,
+            "http_status": 200,
+            "pit_date": "2016-03-31",
+            "primary_exchange": "ARCX",
+            "provider": "massive",
+            "row_found": true,
+            "row_sha256": "07df799228f75539326f7724907cf69643499cfb1dbe8222865f3ae053a549b3",
+            "ticker": "SPY",
+            "type": "INDEX"
+          },
+          "retry_count": 0,
+          "symbol": "SPY"
+        },
+        {
+          "as_of_date": "2016-03-31",
+          "endpoint_pattern": "/v3/reference/tickers?ticker={ticker}&date={date}&active=True",
+          "error_classification": "none",
+          "family": "security_master_and_corporate_actions",
+          "http_status": 200,
+          "provenance": {
+            "active_filter": true
+          },
+          "provider": "massive",
+          "request_timestamp_utc": "2026-08-13T04:39:38.527991Z",
+          "response_summary": {
+            "active": true,
+            "cik": "0001100663",
+            "error": null,
+            "http_status": 200,
+            "pit_date": "2016-03-31",
+            "primary_exchange": "ARCX",
+            "provider": "massive",
+            "row_found": true,
+            "row_sha256": "77b81eec81c4358413bf105dd0fe82f4f0afdaeba27bf22096b53a9ff13434e1",
+            "ticker": "PFF",
+            "type": "INDEX"
+          },
+          "retry_count": 0,
+          "symbol": "PFF"
+        },
+        {
+          "as_of_date": "2016-03-31",
+          "endpoint_pattern": "/v3/reference/tickers?ticker={ticker}&date={date}&active=True",
+          "error_classification": "none",
+          "family": "security_master_and_corporate_actions",
+          "http_status": 200,
+          "provenance": {
+            "active_filter": true
+          },
+          "provider": "massive",
+          "request_timestamp_utc": "2026-08-13T04:39:50.420737Z",
+          "response_summary": {
+            "active": true,
+            "cik": "0001268884",
+            "error": null,
+            "http_status": 200,
+            "pit_date": "2016-03-31",
+            "primary_exchange": "XNYS",
+            "provider": "massive",
+            "row_found": true,
+            "row_sha256": "9ce2abe813be4ce95d413dd537840fb464eb28d36f2335c6bbe0e64f34186593",
+            "ticker": "IGR",
+            "type": "CS"
+          },
+          "retry_count": 0,
+          "symbol": "IGR"
+        },
+        {
+          "as_of_date": "2020-09-30",
+          "endpoint_pattern": "/v3/reference/tickers?ticker={ticker}&date={date}&active=True",
+          "error_classification": "none",
+          "family": "security_master_and_corporate_actions",
+          "http_status": 200,
+          "provenance": {
+            "active_filter": true
+          },
+          "provider": "massive",
+          "request_timestamp_utc": "2026-08-13T04:40:02.461044Z",
+          "response_summary": {
+            "active": null,
+            "cik": null,
+            "error": null,
+            "http_status": 200,
+            "pit_date": "2020-09-30",
+            "primary_exchange": null,
+            "provider": "massive",
+            "row_found": false,
+            "ticker": "IPOD",
+            "type": null
+          },
+          "retry_count": 0,
+          "symbol": "IPOD"
+        },
+        {
+          "as_of_date": "2020-09-30",
+          "endpoint_pattern": "/v3/reference/tickers?ticker={ticker}&date={date}&active=False",
+          "error_classification": "none",
+          "family": "security_master_and_corporate_actions",
+          "http_status": 200,
+          "provenance": {
+            "active_filter": false
+          },
+          "provider": "massive",
+          "request_timestamp_utc": "2026-08-13T04:40:14.770197Z",
+          "response_summary": {
+            "active": null,
+            "cik": null,
+            "error": null,
+            "http_status": 200,
+            "pit_date": "2020-09-30",
+            "primary_exchange": null,
+            "provider": "massive",
+            "row_found": false,
+            "ticker": "IPOD",
+            "type": null
+          },
+          "retry_count": 0,
+          "symbol": "IPOD"
+        },
+        {
+          "as_of_date": "2020-12-31",
+          "endpoint_pattern": "/v3/reference/tickers?ticker={ticker}&date={date}&active=True",
+          "error_classification": "none",
+          "family": "security_master_and_corporate_actions",
+          "http_status": 200,
+          "provenance": {
+            "active_filter": true
+          },
+          "provider": "massive",
+          "request_timestamp_utc": "2026-08-13T04:40:26.673483Z",
+          "response_summary": {
+            "active": true,
+            "cik": "0001818876",
+            "error": null,
+            "http_status": 200,
+            "pit_date": "2020-12-31",
+            "primary_exchange": "XNYS",
+            "provider": "massive",
+            "row_found": true,
+            "row_sha256": "368796bd9675af324a1d1c4fbb206cbd8272878adce9593dd4dd43cbcc0cc2cc",
+            "ticker": "IPOD",
+            "type": "CS"
+          },
+          "retry_count": 0,
+          "symbol": "IPOD"
+        },
+        {
+          "as_of_date": "2016-03-31",
+          "endpoint_pattern": "/v3/reference/tickers?ticker={ticker}&date={date}&active=True",
+          "error_classification": "none",
+          "family": "security_master_and_corporate_actions",
+          "http_status": 200,
+          "provenance": {
+            "active_filter": true
+          },
+          "provider": "massive",
+          "request_timestamp_utc": "2026-08-13T04:40:38.765763Z",
+          "response_summary": {
+            "active": true,
+            "cik": "0001105705",
+            "error": null,
+            "http_status": 200,
+            "pit_date": "2016-03-31",
+            "primary_exchange": "XNYS",
+            "provider": "massive",
+            "row_found": true,
+            "row_sha256": "8c855d7973b928d991ea6c600746b674bc1e5b054bd764fe9337cc8d6f14fca3",
+            "ticker": "TWX",
+            "type": "CS"
+          },
+          "retry_count": 0,
+          "symbol": "TWX"
+        },
+        {
+          "as_of_date": "2016-03-31",
+          "endpoint_pattern": "/v3/reference/tickers?ticker={ticker}&date={date}&active=True",
+          "error_classification": "none",
+          "family": "security_master_and_corporate_actions",
+          "http_status": 200,
+          "provenance": {
+            "active_filter": true
+          },
+          "provider": "massive",
+          "request_timestamp_utc": "2026-08-13T04:40:50.896619Z",
+          "response_summary": {
+            "active": true,
+            "cik": "0000908937",
+            "error": null,
+            "http_status": 200,
+            "pit_date": "2016-03-31",
+            "primary_exchange": "XNAS",
+            "provider": "massive",
+            "row_found": true,
+            "row_sha256": "2611a029565223636f1137aff760d3cb4b0f37862d72bd911abeb4a016cd03da",
+            "ticker": "SIRI",
+            "type": null
+          },
+          "retry_count": 0,
+          "symbol": "SIRI"
+        },
+        {
+          "as_of_date": "2016-03-31",
+          "endpoint_pattern": "/v3/reference/tickers?ticker={ticker}&date={date}&active=False",
+          "error_classification": "none",
+          "family": "security_master_and_corporate_actions",
+          "http_status": 200,
+          "provenance": {
+            "active_filter": false
+          },
+          "provider": "massive",
+          "request_timestamp_utc": "2026-08-13T04:41:03.664187Z",
+          "response_summary": {
+            "active": null,
+            "cik": null,
+            "error": null,
+            "http_status": 200,
+            "pit_date": "2016-03-31",
+            "primary_exchange": null,
+            "provider": "massive",
+            "row_found": false,
+            "ticker": "SIRI",
+            "type": null
+          },
+          "retry_count": 0,
+          "symbol": "SIRI"
+        },
+        {
+          "as_of_date": "2018-06-29",
+          "endpoint_pattern": "/v3/reference/tickers?ticker={ticker}&date={date}&active=True",
+          "error_classification": "none",
+          "family": "security_master_and_corporate_actions",
+          "http_status": 200,
+          "provenance": {
+            "active_filter": true
+          },
+          "provider": "massive",
+          "request_timestamp_utc": "2026-08-13T04:41:15.048771Z",
+          "response_summary": {
+            "active": true,
+            "cik": "0000908937",
+            "error": null,
+            "http_status": 200,
+            "pit_date": "2018-06-29",
+            "primary_exchange": "XNAS",
+            "provider": "massive",
+            "row_found": true,
+            "row_sha256": "983856355fe4aad4beb52982722ec5dfec35f8511e0b1f02d3f20750bc77e771",
+            "ticker": "SIRI",
+            "type": "CS"
+          },
+          "retry_count": 0,
+          "symbol": "SIRI"
+        },
+        {
+          "as_of_date": null,
+          "endpoint_pattern": "/v3/reference/splits?ticker={ticker}",
+          "error_classification": "none",
+          "family": "security_master_and_corporate_actions",
+          "http_status": 200,
+          "provenance": {
+            "event_type": "split"
+          },
+          "provider": "massive",
+          "request_timestamp_utc": "2026-08-13T04:41:27.083210Z",
+          "response_summary": {
+            "error": null,
+            "event_count": 5,
+            "event_type": "split",
+            "http_status": 200,
+            "provider": "massive",
+            "ticker": "AAPL"
+          },
+          "retry_count": 0,
+          "symbol": "AAPL"
+        },
+        {
+          "as_of_date": null,
+          "endpoint_pattern": "/v3/reference/dividends?ticker={ticker}",
+          "error_classification": "none",
+          "family": "security_master_and_corporate_actions",
+          "http_status": 200,
+          "provenance": {
+            "event_type": "dividend"
+          },
+          "provider": "massive",
+          "request_timestamp_utc": "2026-08-13T04:41:39.238847Z",
+          "response_summary": {
+            "error": null,
+            "event_count": 57,
+            "event_type": "dividend",
+            "http_status": 200,
+            "provider": "massive",
+            "ticker": "AAPL"
+          },
+          "retry_count": 0,
+          "symbol": "AAPL"
+        },
+        {
+          "as_of_date": null,
+          "endpoint_pattern": "/v3/reference/splits?ticker={ticker}",
+          "error_classification": "none",
+          "family": "security_master_and_corporate_actions",
+          "http_status": 200,
+          "provenance": {
+            "event_type": "split"
+          },
+          "provider": "massive",
+          "request_timestamp_utc": "2026-08-13T04:41:51.276516Z",
+          "response_summary": {
+            "error": null,
+            "event_count": 1,
+            "event_type": "split",
+            "http_status": 200,
+            "provider": "massive",
+            "ticker": "GOOGL"
+          },
+          "retry_count": 0,
+          "symbol": "GOOGL"
+        },
+        {
+          "as_of_date": null,
+          "endpoint_pattern": "/v3/reference/dividends?ticker={ticker}",
+          "error_classification": "none",
+          "family": "security_master_and_corporate_actions",
+          "http_status": 200,
+          "provenance": {
+            "event_type": "dividend"
+          },
+          "provider": "massive",
+          "request_timestamp_utc": "2026-08-13T04:42:03.380906Z",
+          "response_summary": {
+            "error": null,
+            "event_count": 10,
+            "event_type": "dividend",
+            "http_status": 200,
+            "provider": "massive",
+            "ticker": "GOOGL"
+          },
+          "retry_count": 0,
+          "symbol": "GOOGL"
+        }
+      ],
+      "request_count": 30,
+      "summary": {
+        "family": "security_master_and_corporate_actions",
+        "flags": {
+          "corporate_action_provenance_for_splits_and_dividends": true,
+          "security_type_and_exchange_for_probe_panel": false,
+          "stable_identity_effective_ticker_join_for_probe_panel": false
+        },
+        "notes": [
+          "Massive per-ticker lookups did not demonstrate active/inactive lifecycle coverage or ticker-change evidence for every panel symbol; stable identity join flag not satisfied.",
+          "Massive `type` values (CS/INDEX) do not provide a defensible mapping to the locked exclusion categories; security type and exchange flag not satisfied."
+        ],
+        "unverified": []
+      }
+    },
+    {
+      "blockers": [],
+      "disposition": "supported_with_documented_limitations",
+      "evidence_confidence": "limited_but_usable_evidence",
+      "family": "issuer_fundamentals_and_shares",
+      "limitations": [
+        "AAPL market-cap pathway: close=132.69, shares=17001802000, mcap=2255969107380.00, end=2020-10-16, filed=2020-10-30, decision_date=2020-12-31",
+        "AAPL accession 0000320193-20-000096 acceptance timestamp: 2020-10-29T22:06:25.000Z"
+      ],
+      "provider_role": "primary",
+      "provider_selected": "sec_edgar",
+      "records": [
+        {
+          "as_of_date": null,
+          "endpoint_pattern": "submissions/CIK{cik}.json",
+          "error_classification": "none",
+          "family": "issuer_fundamentals_and_shares",
+          "http_status": 200,
+          "provenance": {
+            "cik": "320193"
+          },
+          "provider": "sec_edgar",
+          "request_timestamp_utc": "2026-08-13T04:42:03.490307Z",
+          "response_summary": {
+            "cik": "320193",
+            "submissions_present": true
+          },
+          "retry_count": 0,
+          "symbol": "AAPL"
+        },
+        {
+          "as_of_date": null,
+          "endpoint_pattern": "api/xbrl/companyfacts/CIK{cik}.json",
+          "error_classification": "none",
+          "family": "issuer_fundamentals_and_shares",
+          "http_status": 200,
+          "provenance": {
+            "cik": "320193"
+          },
+          "provider": "sec_edgar",
+          "request_timestamp_utc": "2026-08-13T04:42:03.674614Z",
+          "response_summary": {
+            "cik": "320193",
+            "facts_present": true
+          },
+          "retry_count": 0,
+          "symbol": "AAPL"
+        },
+        {
+          "as_of_date": null,
+          "endpoint_pattern": "submissions/CIK{cik}.json",
+          "error_classification": "none",
+          "family": "issuer_fundamentals_and_shares",
+          "http_status": 200,
+          "provenance": {
+            "cik": "1652044"
+          },
+          "provider": "sec_edgar",
+          "request_timestamp_utc": "2026-08-13T04:42:03.734381Z",
+          "response_summary": {
+            "cik": "1652044",
+            "submissions_present": true
+          },
+          "retry_count": 0,
+          "symbol": "GOOGL"
+        },
+        {
+          "as_of_date": null,
+          "endpoint_pattern": "api/xbrl/companyfacts/CIK{cik}.json",
+          "error_classification": "none",
+          "family": "issuer_fundamentals_and_shares",
+          "http_status": 200,
+          "provenance": {
+            "cik": "1652044"
+          },
+          "provider": "sec_edgar",
+          "request_timestamp_utc": "2026-08-13T04:42:03.955940Z",
+          "response_summary": {
+            "cik": "1652044",
+            "facts_present": true
+          },
+          "retry_count": 0,
+          "symbol": "GOOGL"
+        },
+        {
+          "as_of_date": null,
+          "endpoint_pattern": "submissions/CIK{cik}.json",
+          "error_classification": "none",
+          "family": "issuer_fundamentals_and_shares",
+          "http_status": 200,
+          "provenance": {
+            "cik": "1048911"
+          },
+          "provider": "sec_edgar",
+          "request_timestamp_utc": "2026-08-13T04:42:04.228870Z",
+          "response_summary": {
+            "cik": "1048911",
+            "submissions_present": true
+          },
+          "retry_count": 0,
+          "symbol": "FDX"
+        },
+        {
+          "as_of_date": null,
+          "endpoint_pattern": "api/xbrl/companyfacts/CIK{cik}.json",
+          "error_classification": "none",
+          "family": "issuer_fundamentals_and_shares",
+          "http_status": 200,
+          "provenance": {
+            "cik": "1048911"
+          },
+          "provider": "sec_edgar",
+          "request_timestamp_utc": "2026-08-13T04:42:04.679384Z",
+          "response_summary": {
+            "cik": "1048911",
+            "facts_present": true
+          },
+          "retry_count": 0,
+          "symbol": "FDX"
+        }
+      ],
+      "request_count": 6,
+      "summary": {
+        "family": "issuer_fundamentals_and_shares",
+        "flags": {
+          "ciK_identity_for_probe_issuers": true,
+          "filing_acceptance_time_controls_availability": true,
+          "missing_facts_remain_null": true,
+          "viable_non_index_market_cap_pathway": true
+        },
+        "notes": [
+          "AAPL market-cap pathway: close=132.69, shares=17001802000, mcap=2255969107380.00, end=2020-10-16, filed=2020-10-30, decision_date=2020-12-31",
+          "AAPL accession 0000320193-20-000096 acceptance timestamp: 2020-10-29T22:06:25.000Z"
+        ],
+        "unverified": []
+      }
+    },
+    {
+      "blockers": [
+        "minimum_usable_contract.historical_known_at_time_schedule not satisfied"
+      ],
+      "disposition": "not_supported",
+      "evidence_confidence": "limited_but_usable_evidence",
+      "family": "earnings_event_timing",
+      "limitations": [
+        "No live provider calls made for earnings-event timing; preregistered candidates (Massive, Yahoo earnings calendar, SEC EDGAR) remain unverified.",
+        "No provider attempt recorded for this family."
+      ],
+      "provider_role": null,
+      "provider_selected": null,
+      "records": [],
+      "request_count": 0,
+      "summary": {
+        "family": "earnings_event_timing",
+        "flags": {
+          "unknown_treatment_fail_closed": true
+        },
+        "notes": [
+          "No live provider calls made for earnings-event timing; preregistered candidates (Massive, Yahoo earnings calendar, SEC EDGAR) remain unverified."
+        ],
+        "unverified": [
+          "Massive historical earnings schedule",
+          "Yahoo earnings calendar",
+          "EDGAR disclosure timing as schedule proxy"
+        ]
+      }
+    }
+  ],
+  "limitations": [
+    "Massive/Polygon daily bars for AAPL: HTTP Error 403: Forbidden (entitlement); stopping preferred-provider exercise.",
+    "Alpaca AAPL: 1259 bars (2016-01-04 to 2020-12-31); development year 253/253 (100.00%); all-window 1259/1511 (83.32%, 2015 warmup sessions absent); trailing year 100.00%; duplicates=0, malformed=0.",
+    "Massive per-ticker lookups did not demonstrate active/inactive lifecycle coverage or ticker-change evidence for every panel symbol; stable identity join flag not satisfied.",
+    "Massive `type` values (CS/INDEX) do not provide a defensible mapping to the locked exclusion categories; security type and exchange flag not satisfied.",
+    "AAPL market-cap pathway: close=132.69, shares=17001802000, mcap=2255969107380.00, end=2020-10-16, filed=2020-10-30, decision_date=2020-12-31",
+    "AAPL accession 0000320193-20-000096 acceptance timestamp: 2020-10-29T22:06:25.000Z",
+    "No live provider calls made for earnings-event timing; preregistered candidates (Massive, Yahoo earnings calendar, SEC EDGAR) remain unverified.",
+    "No provider attempt recorded for this family."
+  ],
+  "long_002_spec_sha256": "f3df2845543500985c88568f9b855812576e9e4a10901f8a5f7a1834a319b3b5",
+  "overall_disposition": "not_supported",
+  "overall_evidence_confidence": "limited_but_usable_evidence",
+  "probe_spec_sha256": "002a0795096ba0f6f77ba1f2e673b5d3e6a2008730a57f7f87e71cf86b949a98",
+  "recommended_next_action": "Perform no further LONG-002 work on the unsupported families until provider capability improves or a Gary-approved amendment is granted",
+  "runtime_seconds": 368.01302404,
+  "task_id": "LONG-002B",
+  "total_http_requests": 41
+}

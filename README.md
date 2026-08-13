@@ -404,13 +404,13 @@ uv run python -m tradex.research.long_002_data_feasibility --repo-root .
 ```
 
 * **LONG-002B overall disposition:** `not_supported`
-* **Safe artifacts:** `docs/research/artifacts/LONG-002B/2026-08-12-234939/`
+* **Safe artifacts:** `docs/research/artifacts/LONG-002B/2026-08-13-044204/`
 * **B-phase report:** `docs/research/LONG-002B-DATA-FEASIBILITY.md`
-* **Code commit:** `7a36ad5cf8b975309cc658910042272ebaf2afd4`
+* **Code commit:** `760df4fea68fdc1d9b311c427d30ce122640d5e9`
 * **Per-family dispositions:**
   * Daily market data: `supported_with_documented_limitations` (Alpaca fallback after Massive/Polygon `v2/aggs` 403 entitlement; 1259 bars from 2016-01-04 through 2020-12-31; complete 2020 development year; explicit `raw`/`split` policies; Massive corporate-action provenance)
   * Security master & corporate actions: `not_supported` (Massive per-ticker PIT rows returned, but one PIT row per symbol does not demonstrate lifecycle coverage and `type` values `CS`/`INDEX` do not defensibly identify the locked excluded security types; split/dividend events returned for AAPL/GOOGL)
-  * Issuer fundamentals & shares: `supported_with_documented_limitations` (SEC EDGAR primary; CIK identity; filing acceptance-time control; PIT market-cap pathway)
+  * Issuer fundamentals & shares: `supported_with_documented_limitations` (SEC EDGAR primary; CIK identity resolved for AAPL/GOOGL/FDX; filing acceptance-time control now linked to the selected shares fact; PIT market-cap pathway demonstrated for AAPL with shares outstanding period end 2020-10-16, filed 2020-10-30, acceptance 2020-10-29, paired with the 2020-12-31 close)
   * Earnings event timing: `not_supported` (no live provider calls; preregistered candidates remain unverified)
 
 `LONG-002B` used 41 of 120 allowed HTTP requests, with 1 recorded provider switch (Massive/Polygon daily bars entitlement 403 → Alpaca fallback), and did not access any validation/holdout outcomes or build the full historical dataset. `LONG-002A` made no provider calls; neither `LONG-002A` nor `LONG-002B` performed historical outcome analysis, model fitting, or validation/holdout access.
