@@ -110,7 +110,7 @@ Safe artifacts must contain no secrets, authorization headers, raw licensed payl
 - **Branch:** `devin/long-002b-amend-001-blocker-resolution`
 - **Starting `main` SHA:** `75a37e872afc7a5d14c349bbed2a4db935b88608`
 - **Preregistration commit SHA:** `75fad17b190d4879d26dd7de6b61241672193f08`
-- **Code commit SHA used for live probe:** `e99bf986eb3dada1333b71824438685048bbe722`
+- **Code commit SHA used for live probe:** `67c37e494177c8615cbf012c4d8d24c8a116bc95`
 - **Amendment probe spec SHA-256:** `38f550b3bf14bc58654ba5286213bbfe894577ccb1502b604f60076e6e239ce7`
 - **Upstream `LONG-002-v1.json` SHA-256:** `f3df2845543500985c88568f9b855812576e9e4a10901f8a5f7a1834a319b3b5`
 - **Upstream `LONG-002B-probe-v1.json` SHA-256:** `002a0795096ba0f6f77ba1f2e673b5d3e6a2008730a57f7f87e71cf86b949a98`
