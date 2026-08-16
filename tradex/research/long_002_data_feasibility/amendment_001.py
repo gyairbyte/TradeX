@@ -728,6 +728,30 @@ def _decision_memo() -> list[str]:
     ]
 
 
+def _preregistration_commit_sha(repo_root: Path) -> str:
+    """Return the commit that first added the amendment spec file."""
+    try:
+        return (
+            subprocess.check_output(
+                [
+                    "git",
+                    "log",
+                    "--follow",
+                    "--diff-filter=A",
+                    "--format=%H",
+                    "--",
+                    str(repo_root / "docs" / "research" / "specs" / "LONG-002B-AMEND-001-probe-v1.json"),
+                ],
+                text=True,
+                cwd=str(repo_root),
+            )
+            .strip()
+            .splitlines()[0]
+        )
+    except Exception:  # noqa: BLE001
+        return "unknown"
+
+
 def run_amendment_probe(
     repo_root: Path | str | None = None,
     *,
@@ -818,6 +842,7 @@ def run_amendment_probe(
         total_http_requests=budget.used,
         runtime_seconds=runtime,
         code_commit_sha="",
+        preregistration_commit_sha=_preregistration_commit_sha(root),
         long_002_spec_sha256=long_002_sha,
         probe_spec_sha256=amendment_sha,
         data_contract_sha256=data_contract_sha,

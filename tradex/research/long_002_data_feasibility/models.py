@@ -73,6 +73,7 @@ class FeasibilityReport:
     total_http_requests: int = 0
     runtime_seconds: float = 0.0
     code_commit_sha: str = ""
+    preregistration_commit_sha: str = ""
     long_002_spec_sha256: str = ""
     probe_spec_sha256: str = ""
     data_contract_sha256: str = ""
@@ -89,6 +90,7 @@ class FeasibilityReport:
             "total_http_requests": self.total_http_requests,
             "runtime_seconds": self.runtime_seconds,
             "code_commit_sha": self.code_commit_sha,
+            "preregistration_commit_sha": self.preregistration_commit_sha,
             "long_002_spec_sha256": self.long_002_spec_sha256,
             "probe_spec_sha256": self.probe_spec_sha256,
             "data_contract_sha256": self.data_contract_sha256,

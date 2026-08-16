@@ -39,6 +39,7 @@ def write_safe_artifacts(
         "bundle_path": str(bundle.relative_to(root)),
         "generated_at": _now_utc(),
         "code_commit_sha": code_commit_sha,
+        "preregistration_commit_sha": report.preregistration_commit_sha,
         "long_002_spec_sha256": report.long_002_spec_sha256,
         "probe_spec_sha256": report.probe_spec_sha256,
         "data_contract_sha256": report.data_contract_sha256,
