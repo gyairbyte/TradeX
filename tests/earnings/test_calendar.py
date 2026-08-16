@@ -1,5 +1,5 @@
 """Tests for earnings-calendar source policy."""
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -31,7 +31,7 @@ def test_resolve_earnings_source_rejects_unsupported():
 
 def test_get_next_earnings_yahoo_and_cache(tmp_path):
     settings = _make_earnings_db(tmp_path)
-    future = date.today() + timedelta(days=7)
+    future = datetime.now(UTC).date() + timedelta(days=7)
     df = pd.DataFrame(
         {"Reported EPS": [1.0]},
         index=pd.to_datetime([future.isoformat()], utc=True),
