@@ -25,7 +25,7 @@ def _make_ticker_detail(
     primary_exchange: str = "XNAS",
     cik: str = "0000000001",
     composite_figi: str = "BBG000000001",
-    name: str = "Test Co",
+    name: str = "Example Co Inc",
     list_date: str = "2010-01-01",
 ) -> dict[str, Any]:
     return {
@@ -67,6 +67,7 @@ def _make_types() -> dict[str, Any]:
             {"code": "RIGHT", "description": "Rights", "asset_class": "stocks", "locale": "us"},
             {"code": "UNIT", "description": "Unit", "asset_class": "stocks", "locale": "us"},
             {"code": "ETN", "description": "Exchange Traded Note", "asset_class": "stocks", "locale": "us"},
+            {"code": "INDEX", "description": "Index", "asset_class": "stocks", "locale": "us"},
         ],
     }
 
@@ -198,14 +199,14 @@ def _panel() -> list[dict[str, Any]]:
 def test_security_family_supported_with_documented_limitations() -> None:
     """A complete PIT identity/classification/corporate-action pathway satisfies the security contract."""
     details: dict[tuple[str, str | None], dict[str, Any]] = {
-        ("AAPL", "2020-12-31"): _make_ticker_detail("AAPL"),
+        ("AAPL", "2020-12-31"): _make_ticker_detail("AAPL", name="Apple Inc"),
         ("SPY", "2020-12-31"): _make_ticker_detail("SPY", type_code="ETF", name="SPDR S&P 500 ETF Trust"),
         ("PFF", "2020-12-31"): _make_ticker_detail("PFF", type_code="ETF", name="iShares Preferred and Income Securities ETF"),
         ("IGR", "2020-12-31"): _make_ticker_detail("IGR", type_code="FUND", name="CBRE Fund", primary_exchange="XNYS"),
         ("IPOD", "2020-12-31"): _make_ticker_detail("IPOD", sic_code="6770", name="Social Capital Hedosophia Holdings Corp. IV"),
-        ("YHOO", "2017-03-31"): _make_ticker_detail("YHOO"),
+        ("YHOO", "2017-03-31"): _make_ticker_detail("YHOO", name="Yahoo Inc"),
         ("YHOO", "2018-03-31"): _make_delisted_404("YHOO"),
-        ("FB", "2020-12-31"): _make_ticker_detail("FB"),
+        ("FB", "2020-12-31"): _make_ticker_detail("FB", name="Meta Platforms Inc"),
     }
     events = {
         "META": _make_ticker_change_events("META", [
@@ -237,10 +238,60 @@ def test_security_family_supported_with_documented_limitations() -> None:
     assert "LONG-002C" in report.recommended_next_action
 
 
-def test_generic_type_field_without_taxonomy_cannot_satisfy_exclusion_contract() -> None:
-    """A provider response with an untaxonomied generic 'INDEX' type does not satisfy defensible classification."""
+def test_per_date_classification_does_not_backfill_from_later_row() -> None:
+    """Each (symbol, as_of_date) PIT row is classified independently from its own fields."""
     details = {
-        ("SPY", "2020-12-31"): _make_ticker_detail("SPY", type_code="INDEX"),
+        ("IGR", "2016-03-31"): _make_ticker_detail("IGR", type_code="CS", name="CBRE Global Real Estate Income Fund", primary_exchange="XNYS"),
+        ("IGR", "2020-12-31"): _make_ticker_detail("IGR", type_code="FUND", name="CBRE Global Real Estate Income Fund", primary_exchange="XNYS"),
+    }
+    events = {
+        "IGR": _make_ticker_change_events("IGR", [
+            {"type": "ticker_change", "date": "2004-02-25", "ticker_change": {"ticker": "IGR"}},
+        ]),
+    }
+    report = run_amendment_probe(
+        REPO_ROOT,
+        test_inject={
+            "massive_request_func": _massive_request_factory(details, events),
+            "panel": [
+                {"identifier": "IGR", "as_of_dates": ["2016-03-31", "2020-12-31"]},
+            ],
+        },
+    )
+    sec = next(f for f in report.data_families if f.family == "security_identity_lifecycle_and_exclusion_classification")
+    assert sec.disposition == "supported_with_documented_limitations"
+    # The 2016 `CS` row is classified from its PIT name as closed_end_fund,
+    # not by backfilling the 2020 `FUND` type.
+    assert any("2016-03-31" in n and "closed_end_fund" in n for n in sec.limitations)
+
+
+def test_unresolved_historical_row_fails_closed() -> None:
+    """A PIT row with a null/missing type and no corroborating name/SIC signal is `unknown`."""
+    details = {
+        ("AAPL", "2016-03-31"): _make_ticker_detail("AAPL", type_code=None, name="Apple Inc"),
+        ("AAPL", "2020-12-31"): _make_ticker_detail("AAPL", type_code="CS", name="Apple Inc"),
+    }
+    events = {
+        "AAPL": _make_ticker_change_events("AAPL", [{"type": "ticker_change", "date": "2003-09-10", "ticker_change": {"ticker": "AAPL"}}]),
+    }
+    report = run_amendment_probe(
+        REPO_ROOT,
+        test_inject={
+            "massive_request_func": _massive_request_factory(details, events),
+            "panel": [
+                {"identifier": "AAPL", "as_of_dates": ["2016-03-31", "2020-12-31"]},
+            ],
+        },
+    )
+    sec = next(f for f in report.data_families if f.family == "security_identity_lifecycle_and_exclusion_classification")
+    assert sec.disposition == "not_supported"
+    assert any("defensible_exclusion_classification" in b for b in sec.blockers)
+
+
+def test_generic_index_type_without_etf_name_cannot_satisfy_exclusion_contract() -> None:
+    """A provider response with an untaxonomied generic 'INDEX' type and no ETF name does not satisfy defensible classification."""
+    details = {
+        ("SPY", "2020-12-31"): _make_ticker_detail("SPY", type_code="INDEX", name="S&P 500 Index"),
     }
     events = {}
     report = run_amendment_probe(
@@ -257,12 +308,53 @@ def test_generic_type_field_without_taxonomy_cannot_satisfy_exclusion_contract()
     assert any("defensible_exclusion_classification" in b for b in sec.blockers)
 
 
+def test_pff_preferred_etf_classified_as_etf_not_preferred_stock() -> None:
+    """A preferred-stock ETF must be classified as ETF (with preferred-stock strategy), not as preferred stock."""
+    row = _make_ticker_detail("PFF", type_code="ETF", name="iShares Preferred and Income Securities ETF")["results"]
+    type_map = {t["code"]: t for t in _make_types()["results"]}
+    assert _classify_security(row, type_map) == "ETF"
+
+
+def test_cs_with_fund_name_is_not_common_stock() -> None:
+    """A generic `CS` row with a closed-end-fund name is classified as closed_end_fund or unknown, never common stock."""
+    row = _make_ticker_detail("IGR", type_code="CS", name="CBRE Global Real Estate Income Fund", primary_exchange="XNYS")["results"]
+    type_map = {t["code"]: t for t in _make_types()["results"]}
+    classification = _classify_security(row, type_map)
+    assert classification in ("closed_end_fund", "unknown"), classification
+    assert classification != "common_stock"
+
+
+def test_lifecycle_evidence_requires_positive_evidence_404_is_not_evidence() -> None:
+    """A missing ticker/event response (HTTP 404) alone cannot satisfy the lifecycle gate."""
+    details = {
+        ("YHOO", "2017-03-31"): _make_ticker_detail("YHOO", name="Yahoo Inc"),
+        ("YHOO", "2018-03-31"): _make_delisted_404("YHOO"),
+    }
+    events = {"YHOO": _make_empty_events()}
+    report = run_amendment_probe(
+        REPO_ROOT,
+        test_inject={
+            "massive_request_func": _massive_request_factory(details, events),
+            "panel": [
+                {"identifier": "YHOO", "as_of_dates": ["2017-03-31"], "lifecycle_supplement_dates": ["2018-03-31"]},
+            ],
+        },
+    )
+    sec = next(f for f in report.data_families if f.family == "security_identity_lifecycle_and_exclusion_classification")
+    # The 404 on the supplement date and the 404 event lookup are not positive
+    # lifecycle evidence. The family fails closed.
+    assert sec.disposition == "not_supported"
+    assert any("active_inactive_lifecycle_evidence" in b for b in sec.blockers)
+    # Confirm no note claims 404 provided lifecycle evidence.
+    assert not any("404" in n and "lifecycle" in n.lower() for n in sec.limitations)
+
+
 def test_lifecycle_evidence_requires_effective_dated_or_inactive_delisted_evidence() -> None:
     """Active-only rows without ticker-change or later delisting evidence do not prove lifecycle coverage."""
     details = {
-        ("AAPL", "2020-12-31"): _make_ticker_detail("AAPL"),
+        ("AAPL", "2020-12-31"): _make_ticker_detail("AAPL", name="Apple Inc"),
     }
-    events = {"AAPL": _make_empty_events_200()}  # Active, no ticker_change events, no delisted 404
+    events = {"AAPL": _make_empty_events_200()}  # Active, no ticker_change events
     report = run_amendment_probe(
         REPO_ROOT,
         test_inject={
@@ -277,10 +369,10 @@ def test_lifecycle_evidence_requires_effective_dated_or_inactive_delisted_eviden
     assert any("active_inactive_lifecycle_evidence" in b for b in sec.blockers)
 
 
-def test_uncalled_providers_are_unverified_not_attempted_failures() -> None:
+def test_earnings_fallbacks_are_unverified_and_recorded() -> None:
     """Fallback providers that are not exercised are recorded as unverified, not as unsupported capability failures."""
     details = {
-        ("AAPL", "2020-12-31"): _make_ticker_detail("AAPL"),
+        ("AAPL", "2020-12-31"): _make_ticker_detail("AAPL", name="Apple Inc"),
     }
     events = {"AAPL": _make_ticker_change_events("AAPL", [{"type": "ticker_change", "date": "2003-09-10", "ticker_change": {"ticker": "AAPL"}}])}
     report = run_amendment_probe(
@@ -292,19 +384,21 @@ def test_uncalled_providers_are_unverified_not_attempted_failures() -> None:
             ],
         },
     )
-    # The earnings family should not claim unsupported capability attempts;
-    # its provider records should be classified as unverified.
     earn = next(f for f in report.data_families if f.family == "earnings_event_timing")
     assert earn.disposition == "not_supported"
-    for r in earn.records:
-        if r.provider in ("sec_edgar", "yahoo_earnings_calendar"):
-            assert r.error_classification == "unverified"
+    fallback_records = [r for r in earn.records if r.provider in ("sec_edgar", "yahoo_earnings_calendar")]
+    assert len(fallback_records) == 2
+    for r in fallback_records:
+        assert r.error_classification == "unverified"
+    # The report should explicitly note that provider search was not exhausted.
+    assert any("not exhausted" in n.lower() for n in earn.limitations)
+    assert any("fallback" in n.lower() and "not evaluated" in n.lower() for n in earn.limitations)
 
 
 def test_earnings_disclosure_timestamps_are_not_schedules() -> None:
     """A successful Massive financials response with filing/period dates does not satisfy the earnings schedule contract."""
     details = {
-        ("AAPL", "2020-12-31"): _make_ticker_detail("AAPL"),
+        ("AAPL", "2020-12-31"): _make_ticker_detail("AAPL", name="Apple Inc"),
     }
     events = {"AAPL": _make_ticker_change_events("AAPL", [{"type": "ticker_change", "date": "2003-09-10", "ticker_change": {"ticker": "AAPL"}}])}
     report = run_amendment_probe(
@@ -319,7 +413,6 @@ def test_earnings_disclosure_timestamps_are_not_schedules() -> None:
     earn = next(f for f in report.data_families if f.family == "earnings_event_timing")
     assert earn.disposition == "not_supported"
     assert any("historical_known_at_time_schedule" in b for b in earn.blockers)
-    # Financials returned 200 but did not contain an earnings schedule field.
     massive_records = [r for r in earn.records if r.provider == "massive"]
     assert any(r.http_status == 200 and "/vX/reference/financials" in r.endpoint_pattern for r in massive_records)
 
@@ -327,7 +420,7 @@ def test_earnings_disclosure_timestamps_are_not_schedules() -> None:
 def test_amendment_does_not_authorize_long_002c_automatically() -> None:
     """Even when security identity is supported, an unsupported earnings family keeps overall not_supported and does not authorize LONG-002C."""
     details = {
-        ("AAPL", "2020-12-31"): _make_ticker_detail("AAPL"),
+        ("AAPL", "2020-12-31"): _make_ticker_detail("AAPL", name="Apple Inc"),
     }
     events = {"AAPL": _make_ticker_change_events("AAPL", [{"type": "ticker_change", "date": "2003-09-10", "ticker_change": {"ticker": "AAPL"}}])}
     report = run_amendment_probe(
@@ -351,14 +444,14 @@ def test_spac_classification_uses_sic_and_name_not_generic_cs() -> None:
     assert _classify_security(row, type_map) == "pre_merger_spac"
 
     # Without the SIC/name signals, the same type would be treated as common stock.
-    row2 = _make_ticker_detail("AAPL", type_code="CS")["results"]
+    row2 = _make_ticker_detail("AAPL", type_code="CS", name="Apple Inc")["results"]
     assert _classify_security(row2, type_map) == "common_stock"
 
 
 def test_write_safe_artifacts_uses_task_id_for_bundle_path(tmp_path: Path) -> None:
     """The artifact bundle is written under a LONG-002B-AMEND-001 directory keyed by task_id."""
     details = {
-        ("AAPL", "2020-12-31"): _make_ticker_detail("AAPL"),
+        ("AAPL", "2020-12-31"): _make_ticker_detail("AAPL", name="Apple Inc"),
     }
     events = {"AAPL": _make_ticker_change_events("AAPL", [{"type": "ticker_change", "date": "2003-09-10", "ticker_change": {"ticker": "AAPL"}}])}
     report = run_amendment_probe(

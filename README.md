@@ -427,17 +427,18 @@ It is research-only and does not authorize `LONG-002C`.
 uv run python -m tradex.research.long_002_data_feasibility.amendment_001 --repo-root .
 ```
 
-* **Overall disposition:** `not_supported` (earnings-event timing remains blocked)
-* **Security identity, lifecycle, and exclusion classification:** `supported_with_documented_limitations`
-  * Provider: `massive` (primary) using `v3/reference/tickers/{ticker}`, `v3/reference/tickers/types`, `vX/reference/tickers/{id}/events`, `v3/reference/splits`, and `v3/reference/dividends`
-  * Defensible classifications for the probe panel: common stock, ETF, preferred-stock ETF, closed-end fund, and pre-merger SPAC/shell (via SIC 6770 / name heuristics)
-  * Ticker-change events demonstrated rename (FB→META) and spin-off (PYPL) pathways; YHOO/TWX event lookup 404s confirmed later delisting/merger
-  * Limitation: older PIT dates sometimes return coarser `INDEX`/`CS` type codes, so the family is documented with limitations
+* **Overall disposition:** `not_supported` (security identity and earnings-event timing both remain blocked; `LONG-002C` is not authorized)
+* **Security identity, lifecycle, and exclusion classification:** `not_supported`
+  * Provider: `massive` (role `partial`) using `v3/reference/tickers/{ticker}`, `v3/reference/tickers/types`, `vX/reference/tickers/{id}/events`, `v3/reference/splits`, and `v3/reference/dividends`
+  * Classification is evaluated independently for every `(symbol, as_of_date)` PIT row. Unresolved historical rows with generic or missing `type` codes (`None`, `CS`, `INDEX`) and no corroborating name/SIC signal fail closed to `unknown`.
+  * PFF is classified as `ETF` (preferred-stock strategy); SPY as `ETF`; IGR as `closed_end_fund`; IPOD as `pre_merger_spac`; the failing rows are unresolved historical ones, not the decision-date row backfilled as historical fact.
+  * A missing ticker/event response (HTTP 404) is not treated as lifecycle evidence. Positive evidence such as `active: false`, `delisted_utc`, or a `ticker_change` record is required.
 * **Earnings-event timing:** `not_supported`
   * No preregistered endpoint returned a historical known-at-time earnings schedule; `vX/reference/financials` returns XBRL financial statements with filing/period dates only
+  * Preregistered `sec_edgar` and `yahoo_earnings_calendar` fallbacks were not exercised and are recorded as `unverified` with `request_count=0`; the report explicitly states provider search was not exhausted
   * Decision memo in `docs/research/LONG-002B-AMEND-001.md` compares continuing to block `LONG-002C`, a fail-closed `unknown` treatment, or a future Gary-approved provider amendment; the amendment does not silently adopt the `unknown` treatment
-* **Provider calls:** 59 of 120 allowed HTTP requests, 0 retries, 0 provider switches, ~11.5 minutes runtime
-* **Safe artifacts:** `docs/research/artifacts/LONG-002B-AMEND-001/2026-08-16-205527/`
+* **Provider calls:** 64 of 120 allowed HTTP requests, 0 retries, 0 provider switches, ~12.5 minutes runtime
+* **Safe artifacts:** `docs/research/artifacts/LONG-002B-AMEND-001/2026-08-16-222647/`
 * **Amendment report:** `docs/research/LONG-002B-AMEND-001.md`
 * **Amendment spec:** `docs/research/specs/LONG-002B-AMEND-001-probe-v1.json`
 

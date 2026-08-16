@@ -387,13 +387,13 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Affects trading behavior:** No — research-only amendment; no production scorer, score, weight, threshold, ranking, eligibility, confluence, alert, or dashboard trading logic changes.
 - **Amendment results:** `docs/research/LONG-002B-AMEND-001.md`
 - **Amendment probe spec:** `docs/research/specs/LONG-002B-AMEND-001-probe-v1.json`
-- **Amendment safe artifact bundle:** `docs/research/artifacts/LONG-002B-AMEND-001/2026-08-16-205527/`
-- **Amendment overall disposition:** `not_supported` (earnings-event timing remains blocked)
+- **Amendment safe artifact bundle:** `docs/research/artifacts/LONG-002B-AMEND-001/2026-08-16-222647/`
+- **Amendment overall disposition:** `not_supported` (security identity and earnings-event timing both remain blocked; `LONG-002C` is not authorized)
 - **Amendment per-family dispositions:**
-  - Security identity, lifecycle, and exclusion classification: `supported_with_documented_limitations` (Massive primary; defensible common-stock, ETF, preferred-stock ETF, closed-end-fund, and pre-merger SPAC/shell classification demonstrated for the probe panel; older PIT dates sometimes return coarser `INDEX`/`CS` type codes)
-  - Earnings-event timing: `not_supported` (no preregistered endpoint returned a historical known-at-time earnings schedule; `vX/reference/financials` provides XBRL filing/period dates only; fail-closed `unknown` treatment is explicitly not adopted)
-- **Amendment provider calls:** 59 of 120 HTTP requests; 0 retries; 0 provider switches; ~12.5 minutes runtime
-- **Next phase:** `LONG-002C` — full historical dataset construction, only after a Gary-approved amendment resolves earnings-calendar and any remaining provider-limitation blockers.
+  - Security identity, lifecycle, and exclusion classification: `not_supported` (Massive partial; every `(symbol, as_of_date)` PIT row is classified independently; unresolved historical rows with generic or missing `type` codes and no corroborating name/SIC signal fail closed to `unknown`; later/current rows are never backfilled as historical fact; PFF classified as `ETF`, SPY as `ETF`, IGR as `closed_end_fund`, IPOD as `pre_merger_spac`)
+  - Earnings-event timing: `not_supported` (no preregistered endpoint returned a historical known-at-time earnings schedule; `vX/reference/financials` provides XBRL filing/period dates only; `sec_edgar` and `yahoo_earnings_calendar` fallbacks were not exercised and are recorded as `unverified` with `request_count=0`; fail-closed `unknown` treatment is explicitly not adopted)
+- **Amendment provider calls:** 64 of 120 HTTP requests; 0 retries; 0 provider switches; ~12.5 minutes runtime
+- **Next phase:** A Gary-approved amendment must resolve the security identity/lifecycle/exclusion classification blocker and the earnings-event timing blocker before `LONG-002C` full dataset construction is authorized.
 
 ### DAYTRADE-001: Future real-time day-trading decision-support program
 

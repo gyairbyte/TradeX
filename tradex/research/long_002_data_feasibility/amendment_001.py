@@ -127,6 +127,7 @@ def _safe_ticker_details_summary(detail: dict[str, Any]) -> dict[str, Any]:
         "http_status": detail.get("status"),
         "error": detail.get("error"),
         "type": row.get("type") if isinstance(row, dict) else None,
+        "name": row.get("name") if isinstance(row, dict) else None,
         "primary_exchange": row.get("primary_exchange") if isinstance(row, dict) else None,
         "cik": row.get("cik") if isinstance(row, dict) else None,
         "active": row.get("active") if isinstance(row, dict) else None,
@@ -228,6 +229,45 @@ _SPAC_KEYWORDS = {
     "newmont acquisition",
 }
 
+# Keywords that identify an ETF regardless of the provider type code.
+_ETF_KEYWORDS = {"etf", "exchange traded fund"}
+
+# Keywords that identify an ETN.
+_ETN_KEYWORDS = {"etn", "exchange traded note"}
+
+# Keywords that identify a preferred-stock security (not a preferred-stock ETF).
+_PREFERRED_KEYWORDS = {
+    "preferred stock",
+    "preference share",
+    "preferred share",
+    "preferred a",
+    "preferred b",
+    "preferred c",
+    "preferred d",
+}
+
+# Keywords that identify warrants, rights, and units.
+_WARRANT_KEYWORDS = {"warrant"}
+_RIGHT_KEYWORDS = {" right", "rights"}
+_UNIT_KEYWORDS = {"unit"}
+
+# Keywords that identify closed-end funds (but not REITs or broad investment trusts).
+_CLOSED_END_FUND_KEYWORDS = {"closed-end", "closed end", "closedend", "fnd"}
+
+# Name signals that corroborate a generic `CS` as common stock.
+_COMMON_STOCK_NAME_SIGNALS = {
+    "inc",
+    "corp",
+    "corporation",
+    "company",
+    "plc",
+    "ltd",
+    "limited",
+    "holdings",
+    "group",
+    "enterprises",
+}
+
 
 def _is_blank_check_spac(row: dict[str, Any]) -> bool:
     """Defensive SPAC/shell classification using SIC code and name."""
@@ -243,8 +283,94 @@ def _is_blank_check_spac(row: dict[str, Any]) -> bool:
     return any(k in name for k in _SPAC_KEYWORDS)
 
 
+def _is_shell_company(row: dict[str, Any]) -> bool:
+    """Detect shell-company indicators from the PIT row."""
+    if not isinstance(row, dict):
+        return False
+    name = str(row.get("name", "")).lower()
+    if "shell company" in name or name.strip() == "shell":
+        return True
+    sic = str(row.get("sic_code", ""))
+    # 6799 is the SIC for shell companies / unspecified investment.
+    return sic == "6799"
+
+
+def _name_category(name: str) -> str | None:
+    """Return a locked category inferred from the PIT security name, or None."""
+    if not name:
+        return None
+    n = name.lower()
+
+    # ETF detection has priority; preferred-stock ETFs remain ETFs.
+    if any(k in n for k in _ETF_KEYWORDS):
+        return "ETF"
+
+    # ETN
+    if any(k in n for k in _ETN_KEYWORDS):
+        return "ETN"
+
+    # Preferred stock (not an ETF, since ETF check came first)
+    if any(k in n for k in _PREFERRED_KEYWORDS):
+        return "preferred_stock"
+
+    # Warrants / rights / units
+    if any(k in n for k in _WARRANT_KEYWORDS):
+        return "warrant"
+    if any(k in n for k in _RIGHT_KEYWORDS):
+        return "right"
+    if any(k in n for k in _UNIT_KEYWORDS):
+        return "unit"
+
+    # Closed-end funds. Avoid flagging REITs ("real estate investment trust")
+    # or broad investment trusts as closed-end funds.
+    if any(k in n for k in _CLOSED_END_FUND_KEYWORDS):
+        return "closed_end_fund"
+    if "fund" in n and "reit" not in n and "investment trust" not in n and "mutual" not in n:
+        return "closed_end_fund"
+
+    # SPAC/shell
+    if any(k in n for k in _SPAC_KEYWORDS):
+        return "pre_merger_spac"
+    if "shell company" in n or n.strip() == "shell":
+        return "shell_company"
+
+    return None
+
+
+def _common_stock_evidence(row: dict[str, Any], type_map: dict[str, dict[str, Any]]) -> bool:
+    """Return True when the PIT row supports a common-stock classification.
+
+    The provider type code `CS` is generic; it is accepted as common stock only
+    when the provider's own taxonomy confirms it, the PIT name contains a
+    common-stock signal, and the name/SIC do not contradict that classification.
+    A missing type field remains unresolved and is not rescued by the name alone.
+    """
+    if not isinstance(row, dict):
+        return False
+    code = str(row.get("type", "") or "").upper()
+    name = str(row.get("name", "") or "").lower()
+    if _name_category(name):
+        return False
+    if _is_blank_check_spac(row) or _is_shell_company(row):
+        return False
+    if code != "CS":
+        return False
+    desc = str(type_map.get("CS", {}).get("description", "")).lower()
+    if "common stock" not in desc:
+        return False
+    if not name:
+        return False
+    # Require a corroborating corporate name signal.
+    return any(signal in name for signal in _COMMON_STOCK_NAME_SIGNALS)
+
+
 def _classify_security(row: dict[str, Any], type_map: dict[str, dict[str, Any]]) -> str:
     """Map a provider row to a locked LONG-002 exclusion category or eligible common stock.
+
+    Classification is performed from the PIT row only; no later or current
+    classification may be substituted as a historical fact. Generic provider
+    codes such as `CS` or `INDEX` are insufficient by themselves and require
+    corroborating PIT name/SIC evidence.
 
     Returns one of:
       common_stock, preferred_stock, warrant, right, unit, ETF, ETN,
@@ -258,24 +384,24 @@ def _classify_security(row: dict[str, Any], type_map: dict[str, dict[str, Any]])
     if market == "otc" or not row.get("primary_exchange"):
         return "OTC"
 
-    code = str(row.get("type", "")).upper()
+    code = str(row.get("type", "") or "").upper()
 
-    # A defensible classification must be grounded in the provider's own
-    # ticker-type taxonomy. Unknown or generic codes (e.g. "INDEX" from a
-    # different endpoint) are not sufficient without a taxonomy entry.
-    if code not in type_map and code != "CS":
-        return "unknown"
-
-    # Direct type-code mapping for most exclusion categories.
+    # Direct type-code mapping for the specific exclusion categories.
     if code in _EXCLUDED_TYPE_CODES:
         return _EXCLUDED_TYPE_CODES[code]
 
+    # SPAC/shell can override a generic `CS` code.
+    if _is_blank_check_spac(row):
+        return "pre_merger_spac"
+    if _is_shell_company(row):
+        return "shell_company"
+
+    # Specific, non-generic provider codes that map directly.
     if code == "ETF":
-        # Distinguish preferred-stock ETFs by name heuristic.
-        name = str(row.get("name", "")).lower()
-        if "preferred" in name:
-            return "preferred_stock"  # preferred ETF variant
         return "ETF"
+
+    if code == "ETN":
+        return "ETN"
 
     if code == "FUND":
         # Closed-end funds are listed on U.S. exchanges; mutual funds are not.
@@ -283,13 +409,24 @@ def _classify_security(row: dict[str, Any], type_map: dict[str, dict[str, Any]])
             return "closed_end_fund"
         return "other_structurally_incomparable_securities"
 
-    if code == "CS":
-        if _is_blank_check_spac(row):
-            # Locked exclusions include both pre-merger SPAC and shell company.
-            return "pre_merger_spac"
+    # Use the PIT security name to disambiguate generic or missing codes.
+    name = str(row.get("name", "") or "")
+    name_cat = _name_category(name)
+    if name_cat:
+        return name_cat
+
+    # Generic `CS` only accepted as common stock when the provider taxonomy
+    # confirms it and the PIT name does not contradict it.
+    if code == "CS" and _common_stock_evidence(row, type_map):
         return "common_stock"
 
-    return "other_structurally_incomparable_securities"
+    # A generic `INDEX` code is insufficient without a PIT name that resolves
+    # it to a concrete locked category such as ETF/ETN.
+    if code == "INDEX":
+        return "unknown"
+
+    # Any other missing or unmapped code is unresolved.
+    return "unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -369,12 +506,12 @@ def _probe_security_identity(
                         row = detail.get("row") or {}
                         identity_by_symbol[symbol] = row
 
-            # 3. Ticker-change / lifecycle event timeline for selected symbols.
-            event_symbols = {"FB", "META", "PYPL", "AAPL", "YHOO", "TWX", "GOOGL", "SIRI"}
+            # 3. Ticker-change / lifecycle event timeline for panel symbols plus
+            # known renamed identifiers (e.g. FB/META).
+            panel_symbols = {i["identifier"] for i in panel}
+            event_symbols = panel_symbols | {"META"}
             events_by_symbol: dict[str, dict[str, Any]] = {}
             for symbol in sorted(event_symbols):
-                if symbol not in {i["identifier"] for i in panel} and symbol not in {"META"}:
-                    continue
                 # For renamed symbols the current ticker is the post-change one.
                 query_id = "META" if symbol == "FB" else symbol
                 events = client.fetch_ticker_events(query_id, event_types="ticker_change")
@@ -442,12 +579,11 @@ def _probe_security_identity(
                     stable_identity = False
                     evidence.notes.append(f"{symbol}: composite_figi changed across PIT dates {figis}")
 
-            # Lifecycle evidence: the family must demonstrate that the provider
-            # can represent active, inactive, renamed, merged, and delisted
-            # securities. At least one panel symbol must show an effective-dated
-            # lifecycle change (inactive, delisted_utc, ticker_change, or a 404
-            # events lookup indicating the ticker no longer exists). Active-only
-            # rows for the remaining symbols are acceptable PIT evidence.
+            # Lifecycle evidence: positive evidence only. A missing response
+            # (HTTP 404) does not prove delisting, merger, inactivity, or an
+            # effective date. Acceptable evidence includes an explicit
+            # `active: false` or `delisted_utc` field, or a `ticker_change`
+            # corporate-action record.
             lifecycle_evidence = False
             for symbol, details in details_by_symbol.items():
                 rows = [d.get("row") for d in details if d.get("status") == 200 and isinstance(d.get("row"), dict)]
@@ -456,12 +592,13 @@ def _probe_security_identity(
                 )
                 events = events_by_symbol.get(symbol, {})
                 event_count = events.get("event_count", 0) if isinstance(events, dict) else 0
-                event_status = events.get("status") if isinstance(events, dict) else None
-                has_lifecycle = any_inactive_or_delisted or bool(event_count) or event_status == 404
+                # A 404 events lookup is not lifecycle evidence; only positive
+                # records count.
+                has_lifecycle = any_inactive_or_delisted or bool(event_count)
                 if has_lifecycle:
                     lifecycle_evidence = True
                     evidence.notes.append(
-                        f"{symbol}: lifecycle evidence found (inactive/delisted, ticker_change, or 404 event lookup)"
+                        f"{symbol}: positive lifecycle evidence found (inactive/delisted or ticker_change)"
                     )
             if not lifecycle_evidence:
                 evidence.notes.append(
@@ -490,43 +627,45 @@ def _probe_security_identity(
                     exchange_provenance = False
                     evidence.notes.append(f"{symbol}: missing primary_exchange")
 
-            # Defensible exclusion classification: classify each symbol using
-            # the most recent PIT row that has a non-null `type` field. Earlier
-            # rows with coarser or null `type` values are recorded as limitations
-            # but do not block the family, because the decision-time
-            # classification is what matters for the locked universe contract.
+            # Defensible exclusion classification: evaluate each PIT (symbol,
+            # as_of_date) independently. Current or later classifications must
+            # never be substituted as historical facts. An unresolved historical
+            # row remains `unknown` and fails closed.
             classification_evidence = True
-            classification_by_symbol: dict[str, str] = {}
-            for symbol, details in details_by_symbol.items():
-                rows = [
-                    d for d in details
-                    if d.get("status") == 200
-                    and isinstance(d.get("row"), dict)
-                    and d["row"].get("type")
-                ]
-                if not rows:
-                    classification_evidence = False
-                    evidence.notes.append(f"{symbol}: cannot classify, no successful PIT rows with a non-null type")
-                    continue
-                # Latest PIT date is the authoritative decision-time row.
-                rows_sorted = sorted(rows, key=lambda d: d.get("date") or "")
-                latest_row = rows_sorted[-1]["row"]
-                latest_class = _classify_security(latest_row, type_map)
-                if latest_class == "unknown":
-                    classification_evidence = False
-                    evidence.notes.append(
-                        f"{symbol}: latest PIT date {rows_sorted[-1].get('date')} has unmapped type {latest_row.get('type')}"
-                    )
-                    continue
-                # Surface earlier-date inconsistencies as limitations.
-                for d in rows_sorted[:-1]:
-                    earlier_class = _classify_security(d["row"], type_map)
-                    if earlier_class not in (latest_class, "unknown"):
+            classification_by_symbol: dict[str, dict[str, str]] = {}
+            for item in panel:
+                symbol = item["identifier"]
+                details = details_by_symbol.get(symbol, [])
+                as_of_dates = list(item.get("as_of_dates", []))
+                if symbol not in classification_by_symbol:
+                    classification_by_symbol[symbol] = {}
+
+                for target_date in as_of_dates:
+                    detail = next((d for d in details if d.get("date") == target_date), None)
+                    if detail is None or detail.get("status") != 200:
+                        classification_evidence = False
+                        evidence.notes.append(f"{symbol}: PIT date {target_date} has no successful detail row")
+                        continue
+                    row = detail.get("row") or {}
+                    classification = _classify_security(row, type_map)
+                    classification_by_symbol[symbol][target_date] = classification
+                    if classification == "unknown":
+                        classification_evidence = False
                         evidence.notes.append(
-                            f"{symbol}: PIT date {d.get('date')} classification {earlier_class} "
-                            f"differs from latest {latest_class}"
+                            f"{symbol}: PIT date {target_date} classification is unknown (type={row.get('type')})"
                         )
-                classification_by_symbol[symbol] = latest_class
+                    else:
+                        evidence.notes.append(
+                            f"{symbol}: PIT date {target_date} classified as {classification}"
+                        )
+
+            # Record the per-PIT (symbol, date) classifications for
+            # transparency. The locked universe contract requires each PIT
+            # (symbol, date) row to be defensibly classifiable; a single later
+            # row is not used as a backfill for earlier dates.
+            evidence.notes.append(
+                f"Massive singular ticker details returned per-PIT classifications: {classification_by_symbol}"
+            )
 
             # Corporate-action provenance for splits and dividends.
             corporate_action_provenance = split_count > 0 and dividend_count > 0
@@ -631,6 +770,8 @@ def _probe_earnings_schedule(
                 symbol = item["identifier"]
                 fin = client.fetch_stock_financials_vx(symbol, limit=1)
                 any_attempted = True
+                selected = "massive"
+                role = "primary"
                 result.records.append(_record(
                     "earnings_event_timing", "massive", symbol, None,
                     "/vX/reference/financials", fin.get("status"),
@@ -642,18 +783,20 @@ def _probe_earnings_schedule(
                 "Massive vX/reference/financials returns XBRL financial statements with filing_date and period_of_report_date; "
                 "it does not provide a historical known-at-the-decision-time earnings announcement schedule."
             )
-            selected = "massive"
-            role = "primary"
-            break
+            continue
 
         if provider == "sec_edgar":
             # EDGAR actual filing timestamps are not a future schedule.
+            # This fallback was preregistered but not exercised within the locked
+            # budget because Massive already failed the minimum contract.
             result.records.append(_record(
                 "earnings_event_timing", "sec_edgar", None, None,
                 "submissions/CIK{cik}.json", None, "unverified", 0,
                 {"reason": "EDGAR provides actual disclosure timestamps, not a previously known schedule"},
                 {"provider": "sec_edgar"},
             ))
+            evidence.unverified.append("SEC EDGAR as historical earnings schedule proxy")
+            continue
 
         if provider == "yahoo_earnings_calendar":
             result.records.append(_record(
@@ -662,6 +805,8 @@ def _probe_earnings_schedule(
                 {"reason": "Yahoo earnings calendar is prospective/current only; cannot substitute historical PIT knowledge"},
                 {"provider": "yahoo_earnings_calendar"},
             ))
+            evidence.unverified.append("Yahoo earnings calendar as historical earnings schedule source")
+            continue
 
     # The contract requires a historical known-at-time schedule. No provider
     # demonstrated one, so the fail-closed unknown treatment is explicitly
@@ -674,7 +819,9 @@ def _probe_earnings_schedule(
     evidence.flags["unknown_treatment_fail_closed"] = True
 
     evidence.notes.append(
-        "Earnings-event timing remains not_supported: no preregistered endpoint returned a historical known-at-time schedule."
+        "Earnings-event timing remains not_supported: Massive vX/reference/financials did not return a historical "
+        "known-at-time earnings schedule. Provider search was not exhausted: the preregistered SEC EDGAR and "
+        "Yahoo earnings calendar fallbacks were not evaluated within the locked budget."
     )
     evidence.unverified.extend([
         "Massive historical earnings schedule",

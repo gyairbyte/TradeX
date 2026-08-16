@@ -109,25 +109,28 @@ Safe artifacts must contain no secrets, authorization headers, raw licensed payl
 
 - **Branch:** `devin/long-002b-amend-001-blocker-resolution`
 - **Starting `main` SHA:** `75a37e872afc7a5d14c349bbed2a4db935b88608`
-- **Preregistration commit SHA:** `75fad1760c49ef9ffd2723b5f335a3f5b9d72c77`
-- **Code commit SHA used for live probe:** `464d5a9299a42ab73075a8cc41583fa516c7a912`
+- **Preregistration commit SHA:** `75fad17b190d4879d26dd7de6b61241672193f08`
+- **Code commit SHA used for live probe:** `{LIVE_PROBE_CODE_COMMIT_SHA}`
 - **Amendment probe spec SHA-256:** `38f550b3bf14bc58654ba5286213bbfe894577ccb1502b604f60076e6e239ce7`
 - **Upstream `LONG-002-v1.json` SHA-256:** `f3df2845543500985c88568f9b855812576e9e4a10901f8a5f7a1834a319b3b5`
 - **Upstream `LONG-002B-probe-v1.json` SHA-256:** `002a0795096ba0f6f77ba1f2e673b5d3e6a2008730a57f7f87e71cf86b949a98`
 - **Upstream `LONG-002B-data-contract-v1.json` SHA-256:** `f8ad6655e482fe5c9e8847467643bf0b03949686ad914180599323758cbf555a`
-- **Overall amendment disposition:** `not_supported` (earnings-event timing remains blocked)
-- **Security identity, lifecycle, and exclusion classification:** `supported_with_documented_limitations`
-  - Provider: `massive` (primary)
+- **Overall amendment disposition:** `not_supported` (security identity and earnings-event timing both remain blocked; LONG-002C is not authorized)
+- **Security identity, lifecycle, and exclusion classification:** `not_supported`
+  - Provider: `massive` (role `partial`)
   - Endpoints: `v3/reference/tickers/{ticker}`, `v3/reference/tickers/types`, `vX/reference/tickers/{id}/events`, `v3/reference/splits`, `v3/reference/dividends`
-  - No fallback providers were exercised; Massive satisfied the minimum contract.
+  - No fallback providers were exercised.
+  - The probe panel contained multiple `(symbol, as_of_date)` rows whose `type` was `None`, `CS`, or `INDEX` with no corroborating PIT name/SIC evidence; those historical rows fail closed to `unknown` and prevent the minimum exclusion-classification contract from being satisfied.
+  - PFF is correctly classified as `ETF` (preferred-stock strategy); SPY is correctly classified as `ETF`; IGR is correctly classified as `closed_end_fund`; IPOD is correctly classified as `pre_merger_spac`; the failing rows are unresolved historical ones, not the decision-date row substituted as historical fact.
 - **Earnings-event timing:** `not_supported`
-  - Provider: `massive` (primary); fallbacks `sec_edgar` and `yahoo_earnings_calendar` recorded as `unverified`.
+  - Provider: `massive` (primary)
   - `vX/reference/financials` returns XBRL financial statements with `filing_date` and `period_of_report_date` only; it does not expose a historical known-at-the-decision-time earnings schedule.
-- **HTTP requests:** 59 of 120
+  - Fallbacks `sec_edgar` and `yahoo_earnings_calendar` were not exercised and are recorded as `unverified` with `request_count=0`. The report explicitly states that provider search was not exhausted.
+- **HTTP requests:** 64 of 120
 - **Retries:** 0
 - **Provider switches:** 0
-- **Runtime:** ~690 seconds (~11.5 minutes)
-- **Safe artifact bundle:** `docs/research/artifacts/LONG-002B-AMEND-001/2026-08-16-205527/`
+- **Runtime:** ~751 seconds (~12.5 minutes)
+- **Safe artifact bundle:** `docs/research/artifacts/LONG-002B-AMEND-001/2026-08-16-222647/`
 
 ## Decision memo: earnings-event timing
 
@@ -141,6 +144,7 @@ The current branch records the blocker and preserves the fail-closed default; it
 
 ## Limitations
 
-- Classification for older PIT dates can be coarser (`INDEX`/`CS`) than the final decision-date row; classification is evaluated using the latest PIT row with a non-null `type` field.
-- The `vX/reference/tickers/{id}/events` endpoint currently supports only `ticker_change` events; spin-off, merger, and delisting metadata are inferred from `ticker_change` history and 404 responses rather than explicit corporate-action event records.
-- Earnings-event timing has no identified historical PIT schedule source within the preregistered provider set.
+- The evaluator evaluates every `(symbol, as_of_date)` PIT row independently; unresolved historical rows with generic or missing `type` codes (`None`, `CS`, `INDEX`) and no corroborating name/SIC signal remain `unknown` and fail closed. Later or current rows are never substituted as historical fact.
+- A missing ticker or event response (HTTP 404) is not treated as lifecycle evidence. The evaluator requires positive, effective-dated lifecycle or identity-link evidence such as an explicit `active: false`, `delisted_utc`, or `ticker_change` record.
+- The `vX/reference/tickers/{id}/events` endpoint supports `ticker_change` events; spin-off, merger, and delisting metadata are only inferred from those `ticker_change` records, not from 404s.
+- Earnings-event timing has no identified historical PIT schedule source within the preregistered provider set; the SEC EDGAR and Yahoo earnings-calendar fallbacks were not evaluated within the locked budget.
