@@ -391,7 +391,8 @@ uv run python -m tradex.research.short_context evaluate --help
 * **Production promotion:** Not eligible (`production_promotion_eligible=false`); historical holdout support (`LONG-002I`) authorizes only `LONG-002J` prospective shadow, and a `prospectively_supported` shadow authorizes only a separate Gary-approved production decision-support PR
 * **Production behavior:** Unchanged
 * **Completed phase:** `LONG-002A` — locked research contract (merged in PR #48)
-* **Current phase:** `LONG-002B` — core data feasibility and point-in-time dataset contract
+* **Completed phase:** `LONG-002B` — core data feasibility and point-in-time dataset contract (merged in PR #49)
+* **Current phase:** `LONG-002B-AMEND-001` — blocked data-family resolution (security identity/lifecycle/exclusion classification and earnings-event timing)
 * **Official snapshots:** 8:30 p.m. and 9:00 a.m. `America/New_York` on the XNYS calendar
 * **Display caps:** Enter Now 7, Armed 12, Qualified Waitlist 12
 * **Model search budget:** 48 material configurations across three allowed families
@@ -414,6 +415,31 @@ uv run python -m tradex.research.long_002_data_feasibility --repo-root .
   * Earnings event timing: `not_supported` (no live provider calls; preregistered candidates remain unverified)
 
 `LONG-002B` used 41 of 120 allowed HTTP requests, with 1 recorded provider switch (Massive/Polygon daily bars entitlement 403 → Alpaca fallback), and did not access any validation/holdout outcomes or build the full historical dataset. `LONG-002A` made no provider calls; neither `LONG-002A` nor `LONG-002B` performed historical outcome analysis, model fitting, or validation/holdout access.
+
+#### LONG-002B-AMEND-001: blocked data-family resolution
+
+`LONG-002B-AMEND-001` is a Gary-approved bounded amendment to the two `not_supported` blockers from `LONG-002B`:
+security identity / lifecycle / exclusion classification, and historical known-at-the-decision-time earnings scheduling.
+It is research-only and does not authorize `LONG-002C`.
+
+```bash
+# Run the bounded amendment probe against live providers and write a safe artifact bundle
+uv run python -m tradex.research.long_002_data_feasibility.amendment_001 --repo-root .
+```
+
+* **Overall disposition:** `not_supported` (earnings-event timing remains blocked)
+* **Security identity, lifecycle, and exclusion classification:** `supported_with_documented_limitations`
+  * Provider: `massive` (primary) using `v3/reference/tickers/{ticker}`, `v3/reference/tickers/types`, `vX/reference/tickers/{id}/events`, `v3/reference/splits`, and `v3/reference/dividends`
+  * Defensible classifications for the probe panel: common stock, ETF, preferred-stock ETF, closed-end fund, and pre-merger SPAC/shell (via SIC 6770 / name heuristics)
+  * Ticker-change events demonstrated rename (FB→META) and spin-off (PYPL) pathways; YHOO/TWX event lookup 404s confirmed later delisting/merger
+  * Limitation: older PIT dates sometimes return coarser `INDEX`/`CS` type codes, so the family is documented with limitations
+* **Earnings-event timing:** `not_supported`
+  * No preregistered endpoint returned a historical known-at-time earnings schedule; `vX/reference/financials` returns XBRL financial statements with filing/period dates only
+  * Decision memo in `docs/research/LONG-002B-AMEND-001.md` compares continuing to block `LONG-002C`, a fail-closed `unknown` treatment, or a future Gary-approved provider amendment; the amendment does not silently adopt the `unknown` treatment
+* **Provider calls:** 59 of 120 allowed HTTP requests, 0 retries, 0 provider switches, ~12.5 minutes runtime
+* **Safe artifacts:** `docs/research/artifacts/LONG-002B-AMEND-001/2026-08-16-200052/`
+* **Amendment report:** `docs/research/LONG-002B-AMEND-001.md`
+* **Amendment spec:** `docs/research/specs/LONG-002B-AMEND-001-probe-v1.json`
 
 ---
 

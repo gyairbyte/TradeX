@@ -107,4 +107,41 @@ Safe artifacts must contain no secrets, authorization headers, raw licensed payl
 
 ## Results
 
-_Updated after the live probe run. See the safe artifact bundle under `docs/research/artifacts/LONG-002B-AMEND-001/<run-id>/feasibility_report.json` for the exact per-family dispositions, request/retry/provider-switch totals, and blockers._
+- **Branch:** `devin/long-002b-amend-001-blocker-resolution`
+- **Starting `main` SHA:** `75a37e872afc7a5d14c349bbed2a4db935b88608`
+- **Final head SHA:** `f3552e3c3488b57e5d0df36df56db0d260c9f3d9`
+- **Preregistration commit SHA:** `75fad1760c49ef9ffd2723b5f335a3f5b9d72c77`
+- **Code commit SHA:** `f3552e3c3488b57e5d0df36df56db0d260c9f3d9`
+- **Amendment probe spec SHA-256:** `38f550b3bf14bc58654ba5286213bbfe894577ccb1502b604f60076e6e239ce7`
+- **Upstream `LONG-002-v1.json` SHA-256:** `f3df2845543500985c88568f9b855812576e9e4a10901f8a5f7a1834a319b3b5`
+- **Upstream `LONG-002B-probe-v1.json` SHA-256:** `002a0795096ba0f6f77ba1f2e673b5d3e6a2008730a57f7f87e71cf86b949a98`
+- **Upstream `LONG-002B-data-contract-v1.json` SHA-256:** `f8ad6655e482fe5c9e8847467643bf0b03949686ad914180599323758cbf555a`
+- **Overall amendment disposition:** `not_supported` (earnings-event timing remains blocked)
+- **Security identity, lifecycle, and exclusion classification:** `supported_with_documented_limitations`
+  - Provider: `massive` (primary)
+  - Endpoints: `v3/reference/tickers/{ticker}`, `v3/reference/tickers/types`, `vX/reference/tickers/{id}/events`, `v3/reference/splits`, `v3/reference/dividends`
+  - No fallback providers were exercised; Massive satisfied the minimum contract.
+- **Earnings-event timing:** `not_supported`
+  - Provider: `massive` (primary); fallbacks `sec_edgar` and `yahoo_earnings_calendar` recorded as `unverified`.
+  - `vX/reference/financials` returns XBRL financial statements with `filing_date` and `period_of_report_date` only; it does not expose a historical known-at-the-decision-time earnings schedule.
+- **HTTP requests:** 59 of 120
+- **Retries:** 0
+- **Provider switches:** 0
+- **Runtime:** ~750 seconds (~12.5 minutes)
+- **Safe artifact bundle:** `docs/research/artifacts/LONG-002B-AMEND-001/2026-08-16-200052/`
+
+## Decision memo: earnings-event timing
+
+No preregistered endpoint satisfied the `historical_known_at_time_schedule` contract. The amendment therefore produces a separated decision memo and does **not** adopt any option automatically:
+
+1. **Continue blocking `LONG-002C`** until a provider demonstrates historical known-at-time earnings schedules.
+2. **Formally adopt a fail-closed `unknown` treatment** for earnings dates at the `LONG-002` decision timestamp; this requires a Gary/ChatGPT methodology decision.
+3. **Request a future Gary-approved provider amendment** targeted at a historical earnings-calendar source.
+
+The current branch records the blocker and preserves the fail-closed default; it does not silently treat earnings dates as `unknown`.
+
+## Limitations
+
+- Classification for older PIT dates can be coarser (`INDEX`/`CS`) than the final decision-date row; classification is evaluated using the latest PIT row with a non-null `type` field.
+- The `vX/reference/tickers/{id}/events` endpoint currently supports only `ticker_change` events; spin-off, merger, and delisting metadata are inferred from `ticker_change` history and 404 responses rather than explicit corporate-action event records.
+- Earnings-event timing has no identified historical PIT schedule source within the preregistered provider set.
