@@ -604,7 +604,8 @@ def _probe_earnings_schedule(
     result = DataFamilyResult(family="earnings_event_timing")
     evidence = FamilyEvidence(family="earnings_event_timing")
     any_attempted = False
-    selected = None
+    selected: str | None = None
+    role: str | None = None
 
     for provider in providers:
         if provider == "massive":
@@ -641,6 +642,7 @@ def _probe_earnings_schedule(
                 "it does not provide a historical known-at-the-decision-time earnings announcement schedule."
             )
             selected = "massive"
+            role = "primary"
             break
 
         if provider == "sec_edgar":
@@ -680,6 +682,7 @@ def _probe_earnings_schedule(
     ])
 
     result.provider_selected = selected
+    result.provider_role = role
     result.summary = evidence.to_dict()
     return result, evidence, any_attempted
 
