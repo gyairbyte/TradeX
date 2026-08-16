@@ -28,7 +28,8 @@ def write_safe_artifacts(
     """Write the LONG-002B safe artifact bundle and return the bundle directory."""
     root = Path(repo_root)
     run_id = run_id or _now_utc()
-    bundle = root / "docs" / "research" / "artifacts" / "LONG-002B" / run_id
+    artifact_task = report.task_id or "LONG-002B"
+    bundle = root / "docs" / "research" / "artifacts" / artifact_task / run_id
     bundle.mkdir(parents=True, exist_ok=True)
 
     report.code_commit_sha = code_commit_sha

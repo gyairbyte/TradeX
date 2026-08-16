@@ -113,12 +113,12 @@
       {"identifier": "FDX", "category": "active mid-/large-cap", "as_of_dates": ["2016-03-31", "2018-06-29", "2020-03-31", "2020-12-31"]},
       {"identifier": "FB", "category": "recent IPO cohort; later renamed META (holdout)", "as_of_dates": ["2016-03-31", "2018-06-29", "2020-03-31", "2020-12-31"]},
       {"identifier": "PYPL", "category": "spin-off from EBAY (2015); active mid-cap", "as_of_dates": ["2016-03-31", "2018-06-29", "2020-03-31", "2020-12-31"]},
-      {"identifier": "YHOO", "category": "merger/acquisition/delisting (Verizon, 2017)", "as_of_dates": ["2016-03-31", "2017-03-31"]},
+      {"identifier": "YHOO", "category": "merger/acquisition/delisting (Verizon, 2017)", "as_of_dates": ["2016-03-31", "2017-03-31"], "lifecycle_supplement_dates": ["2018-03-31"]},
       {"identifier": "SPY", "category": "excluded ETF; benchmark/context only", "as_of_dates": ["2016-03-31", "2018-06-29", "2020-03-31", "2020-12-31"]},
       {"identifier": "PFF", "category": "excluded preferred stock ETF; excluded type diagnostic", "as_of_dates": ["2016-03-31", "2020-12-31"]},
       {"identifier": "IGR", "category": "excluded closed-end fund; excluded type diagnostic", "as_of_dates": ["2016-03-31", "2020-12-31"]},
       {"identifier": "IPOD", "category": "pre-merger SPAC; excluded type diagnostic", "as_of_dates": ["2020-09-30", "2020-12-31"]},
-      {"identifier": "TWX", "category": "merger/acquisition (AT&T, 2018); delisting", "as_of_dates": ["2016-03-31", "2017-12-29", "2018-06-14"]},
+      {"identifier": "TWX", "category": "merger/acquisition (AT&T, 2018); delisting", "as_of_dates": ["2016-03-31", "2017-12-29", "2018-06-14"], "lifecycle_supplement_dates": ["2019-03-31"]},
       {"identifier": "SIRI", "category": "active mid-cap; reverse split consideration", "as_of_dates": ["2016-03-31", "2018-06-29", "2020-03-31", "2020-12-31"]}
     ]
   },

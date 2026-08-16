@@ -379,6 +379,145 @@ class Long002MassiveClient:
             "error": splits.get("error") or dividends.get("error"),
         }
 
+    def fetch_ticker_types(
+        self,
+        *,
+        asset_class: str = "stocks",
+        locale: str = "us",
+        limit: int = 1000,
+    ) -> dict[str, Any]:
+        """Fetch the ticker-type taxonomy from Polygon/Massive.
+
+        Returns a mapping of type codes to descriptive metadata so that
+        per-ticker `type` values can be interpreted defensively.
+        """
+        self.budget.charge(1)
+        url = self._url("/v3/reference/tickers/types", {"asset_class": asset_class, "locale": locale, "limit": limit})
+        data, status, error = self._fetch_json(url)
+        results = data.get("results", []) if isinstance(data, dict) and not error else []
+        return {
+            "provider": "massive",
+            "asset_class": asset_class,
+            "locale": locale,
+            "status": status,
+            "error": error,
+            "types": results,
+            "type_count": len(results),
+        }
+
+    def fetch_ticker_details(
+        self,
+        ticker: str,
+        date: str | None = None,
+    ) -> dict[str, Any]:
+        """Fetch a single ticker's detailed PIT identity record.
+
+        Uses the singular `v3/reference/tickers/{ticker}` endpoint with an
+        optional `date` parameter. This returns richer identity and
+        classification fields (type, sic_code, list_date, delisted_utc,
+        primary_exchange, composite_figi, share_class_figi, etc.) than the
+        list-style `/v3/reference/tickers` endpoint.
+        """
+        self.budget.charge(1)
+        params: dict[str, Any] = {}
+        if date:
+            params["date"] = date
+        url = self._url(f"/v3/reference/tickers/{ticker.upper()}", params)
+        data, status, error = self._fetch_json(url)
+        if error:
+            return {
+                "provider": "massive",
+                "ticker": ticker,
+                "date": date,
+                "status": status,
+                "error": error,
+                "row": None,
+            }
+        row = data.get("results") if isinstance(data, dict) else None
+        if isinstance(row, list):
+            row = row[0] if row else None
+        return {
+            "provider": "massive",
+            "ticker": ticker,
+            "date": date,
+            "status": status,
+            "error": error,
+            "row": row,
+        }
+
+    def fetch_ticker_events(
+        self,
+        identifier: str,
+        *,
+        event_types: str | None = None,
+    ) -> dict[str, Any]:
+        """Fetch the event timeline for a ticker/FIGI/CUSIP.
+
+        The endpoint currently supports `ticker_change` events. A 404
+        response for a delisted/m merged ticker is recorded, not treated as a
+        retryable error.
+        """
+        self.budget.charge(1)
+        params: dict[str, Any] = {}
+        if event_types:
+            params["types"] = event_types
+        url = self._url(f"/vX/reference/tickers/{identifier.upper()}/events", params)
+        data, status, error = self._fetch_json(url)
+        if error:
+            return {
+                "provider": "massive",
+                "identifier": identifier,
+                "status": status,
+                "error": error,
+                "events": [],
+                "event_count": 0,
+            }
+        results = data.get("results") if isinstance(data, dict) else None
+        events: list[dict[str, Any]] = []
+        if isinstance(results, dict):
+            raw_events = results.get("events", [])
+            if isinstance(raw_events, list):
+                events = raw_events
+        return {
+            "provider": "massive",
+            "identifier": identifier,
+            "status": status,
+            "error": error,
+            "events": events,
+            "event_count": len(events),
+        }
+
+    def fetch_stock_financials_vx(
+        self,
+        ticker: str,
+        *,
+        limit: int = 10,
+        sort: str = "filing_date",
+        order: str = "desc",
+    ) -> dict[str, Any]:
+        """Fetch Polygon/Massive vX stock financials.
+
+        This endpoint returns XBRL-derived financial statements and filing
+        metadata. It is not a source of future earnings schedules, but it is
+        the most relevant Massive endpoint for earnings-related metadata and
+        is probed to confirm that limitation.
+        """
+        self.budget.charge(1)
+        url = self._url(
+            "/vX/reference/financials",
+            {"ticker": ticker.upper(), "limit": limit, "sort": sort, "order": order},
+        )
+        data, status, error = self._fetch_json(url)
+        results = data.get("results", []) if isinstance(data, dict) and not error else []
+        return {
+            "provider": "massive",
+            "ticker": ticker,
+            "status": status,
+            "error": error,
+            "results": results,
+            "result_count": len(results),
+        }
+
 
 class Long002AlpacaClient:
     """Research-only daily-bars client built on the existing Alpaca REST pattern."""
