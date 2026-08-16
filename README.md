@@ -390,13 +390,30 @@ uv run python -m tradex.research.short_context evaluate --help
 * **Classification:** `research-only`
 * **Production promotion:** Not eligible (`production_promotion_eligible=false`); historical holdout support (`LONG-002I`) authorizes only `LONG-002J` prospective shadow, and a `prospectively_supported` shadow authorizes only a separate Gary-approved production decision-support PR
 * **Production behavior:** Unchanged
-* **Current phase:** `LONG-002A` — locked research contract
+* **Completed phase:** `LONG-002A` — locked research contract (merged in PR #48)
+* **Current phase:** `LONG-002B` — core data feasibility and point-in-time dataset contract
 * **Official snapshots:** 8:30 p.m. and 9:00 a.m. `America/New_York` on the XNYS calendar
 * **Display caps:** Enter Now 7, Armed 12, Qualified Waitlist 12
 * **Model search budget:** 48 material configurations across three allowed families
 
-No provider calls, historical outcome analysis, model fitting, or
-validation/holdout access occur in `LONG-002A`.
+`LONG-002B` performed bounded provider probes for the four data families required by LONG-002. The CLI entry point is `python -m tradex.research.long_002_data_feasibility`.
+
+```bash
+# Run the bounded probe against live providers and write a safe artifact bundle
+uv run python -m tradex.research.long_002_data_feasibility --repo-root .
+```
+
+* **LONG-002B overall disposition:** `not_supported`
+* **Safe artifacts:** `docs/research/artifacts/LONG-002B/2026-08-13-044204/`
+* **B-phase report:** `docs/research/LONG-002B-DATA-FEASIBILITY.md`
+* **Code commit:** `760df4fea68fdc1d9b311c427d30ce122640d5e9`
+* **Per-family dispositions:**
+  * Daily market data: `supported_with_documented_limitations` (Alpaca fallback after Massive/Polygon `v2/aggs` 403 entitlement; 1259 bars from 2016-01-04 through 2020-12-31; complete 2020 development year; explicit `raw`/`split` policies; Massive corporate-action provenance)
+  * Security master & corporate actions: `not_supported` (Massive per-ticker PIT rows returned, but one PIT row per symbol does not demonstrate lifecycle coverage and `type` values `CS`/`INDEX` do not defensibly identify the locked excluded security types; split/dividend events returned for AAPL/GOOGL)
+  * Issuer fundamentals & shares: `supported_with_documented_limitations` (SEC EDGAR primary; CIK identity resolved for AAPL/GOOGL/FDX; filing acceptance-time control now linked to the selected shares fact; PIT market-cap pathway demonstrated for AAPL with shares outstanding period end 2020-10-16, filed 2020-10-30, acceptance 2020-10-29, paired with the 2020-12-31 close)
+  * Earnings event timing: `not_supported` (no live provider calls; preregistered candidates remain unverified)
+
+`LONG-002B` used 41 of 120 allowed HTTP requests, with 1 recorded provider switch (Massive/Polygon daily bars entitlement 403 → Alpaca fallback), and did not access any validation/holdout outcomes or build the full historical dataset. `LONG-002A` made no provider calls; neither `LONG-002A` nor `LONG-002B` performed historical outcome analysis, model fitting, or validation/holdout access.
 
 ---
 
@@ -619,7 +636,8 @@ Save and switch between named ticker lists (e.g. "Semis", "Crypto-adjacent", "Ea
 - [x] Intraday open-drive VWAP pullback research (INTRA-001) — completed `INTRA-001D` real-data study returned `inconclusive`; holdout not parsed; `production_promotion_eligible=false`
 
 ### Still on the list
-- [ ] Rapid-upside long opportunity research (LONG-002A) — locked research contract; research-only; no provider calls or outcomes
+- [x] Rapid-upside long opportunity research (LONG-002A) — locked research contract (merged in PR #48)
+- [ ] Rapid-upside long opportunity research (LONG-002B) — core data feasibility and PIT dataset contract; research-only; bounded provider probes; no full dataset
 - [ ] Portfolio-level risk view
 
 ### Nice-to-have enhancements

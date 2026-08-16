@@ -353,7 +353,8 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Category:** Long-term trading
 - **Priority:** High
 - **Status:** In progress
-- **Current phase:** `LONG-002A` — locked research/discovery contract
+- **Completed phase:** `LONG-002A` — locked research/discovery contract (merged in PR #48)
+- **Current phase:** `LONG-002B` — core data feasibility and point-in-time dataset contract
 - **Research contract:** `docs/research/LONG-002.md`
 - **Locked machine-readable specification:** `docs/research/specs/LONG-002-v1.json`
 - **Objective:** Research an explainable, long-only rapid-upside opportunity system for U.S.-listed mid-, large-, and mega-cap common stocks, estimating the probability and capturable potential of clean +10%, +20%, and +30% moves over 5, 10, and 21 trading sessions from an executable entry.
@@ -367,12 +368,23 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Provider search budget:** One preferred provider plus at most two named fallbacks per data family
 - **Deferred decisions:** Final feature set, weights, thresholds, stop/target parameters, provider choices, recommendation-episode lifecycle, and production behavior are explicitly deferred to later phases.
 - **Problem statement:** A dedicated rapid-upside research program is needed that is distinct from LONG-001 and INTRA-001, with a locked contract before any provider investigation or outcome analysis.
-- **Recommended action:** Accept `LONG-002A` to lock the research contract and phased plan; proceed to `LONG-002B` (core data feasibility and PIT dataset contract) only after `LONG-002A` acceptance.
-- **Testing requirements:** Deterministic spec tests in `tests/research/test_long_002_spec.py`; `git diff --check`; `ruff`; `pytest`.
-- **Acceptance criteria:** Human-readable and machine-readable specifications are coherent, non-contradictory, research-only, and lock all material decisions; deferred items state when and on what data they may be decided; tracker/README/CLAUDE are synchronized; no provider calls or outcomes generated.
-- **Intended pull request:** `devin/long-002a-locked-research-contract`
-- **Affects trading behavior:** No — this is a specification/preregistration PR only; no production scorer, score, weight, threshold, ranking, eligibility, confluence, alert, or dashboard trading logic changes.
-- **Next phase:** `LONG-002B` — core data feasibility and point-in-time dataset contract.
+- **B-phase results:** `docs/research/LONG-002B-DATA-FEASIBILITY.md`
+- **B-phase probe spec:** `docs/research/specs/LONG-002B-probe-v1.json` (SHA-256: `002a0795096ba0f6f77ba1f2e673b5d3e6a2008730a57f7f87e71cf86b949a98`)
+- **B-phase data contract:** `docs/research/specs/LONG-002B-data-contract-v1.json` (SHA-256: `f8ad6655e482fe5c9e8847467643bf0b03949686ad914180599323758cbf555a`)
+- **Safe artifact bundle:** `docs/research/artifacts/LONG-002B/2026-08-13-044204/`
+- **Overall disposition:** `not_supported`
+- **Per-family dispositions:**
+  - Daily market data: `supported_with_documented_limitations` (Alpaca fallback after Massive/Polygon `v2/aggs` 403 entitlement; 1259 bars from 2016-01-04 through 2020-12-31; complete 2020 XNYS completeness; explicit `raw` and `split` policies; Massive corporate-action provenance)
+  - Security master & corporate actions: `not_supported` (Massive per-ticker PIT rows returned, but one PIT row per symbol does not demonstrate active/inactive lifecycle coverage and `type` values `CS`/`INDEX` do not defensibly identify the locked excluded security types; split/dividend event endpoints returned events)
+  - Issuer fundamentals & shares: `supported_with_documented_limitations` (SEC EDGAR primary; CIK identity resolved for AAPL/GOOGL/FDX; filing acceptance-time control linked to the selected shares fact; PIT market-cap pathway demonstrated for AAPL with shares outstanding period end 2020-10-16, filed 2020-10-30, acceptance 2020-10-29, paired with the 2020-12-31 close)
+  - Earnings event timing: `not_supported` (no live provider calls; preregistered candidates remain unverified; no historical known-at-time schedule source identified within bounded budget)
+- **Provider call budget:** 41 of 120 HTTP requests used; 0 retries; 1 provider switch (Massive/Polygon daily bars → Alpaca fallback)
+- **Recommended action:** A Gary-approved amendment must identify and verify a historical earnings-calendar source or formally adopt the `unknown` earnings treatment before `LONG-002C` full dataset construction. No production behavior is authorized.
+- **Testing requirements:** `tests/research/long_002_data_feasibility/test_spec.py`; `tests/research/long_002_data_feasibility/test_probe.py`; `uv run ruff`; `uv run pytest`; `git diff --check`.
+- **Acceptance criteria:** Bounded provider probes produce auditable dispositions for each core data family; PIT identity/ticker join, raw-vs-normalized, adjustment/split, timestamp, and data-quality rules are encoded; no full historical dataset is built; no validation/holdout outcomes are accessed; no production behavior changes.
+- **Intended pull request:** `devin/long-002b-core-data-feasibility`
+- **Affects trading behavior:** No — research-only feasibility and contract PR; no production scorer, score, weight, threshold, ranking, eligibility, confluence, alert, or dashboard trading logic changes.
+- **Next phase:** `LONG-002C` — full historical dataset construction, only after a Gary-approved amendment resolves earnings-calendar and any remaining provider-limitation blockers.
 
 ### DAYTRADE-001: Future real-time day-trading decision-support program
 

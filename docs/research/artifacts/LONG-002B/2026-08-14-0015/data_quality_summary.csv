@@ -1,0 +1,5 @@
+family,total_records,successful_requests,auth_failures,transient_failures,response_failures,unsupported_failures
+daily_market_data,5,4,0,0,0,0
+security_master_and_corporate_actions,30,30,0,0,0,0
+issuer_fundamentals_and_shares,6,6,0,0,0,0
+earnings_event_timing,3,0,0,0,0,3
