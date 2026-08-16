@@ -1,0 +1,21 @@
+{
+  "bundle_path": "docs/research/artifacts/LONG-002B-AMEND-001/2026-08-16-205527",
+  "code_commit_sha": "464d5a9299a42ab73075a8cc41583fa516c7a912",
+  "data_contract_sha256": "f8ad6655e482fe5c9e8847467643bf0b03949686ad914180599323758cbf555a",
+  "files": {
+    "coverage_summary.csv": "9264040fb5f46c7240b449dfdcd586800a01cb0f07b39521fb085da4aa47ef01",
+    "data_quality_summary.csv": "396961ae7344334572b84e47fa5898cf11fbe1874ada746b18113aede2d422e1",
+    "feasibility_report.json": "82b3e5570bf2e0d6e520d67cff90a05a11066bbf80f16bed4c14733dedfa5592",
+    "provider_contract_matrix.csv": "1272a8c68c087a136e714ea30c825a014b50429d9f1f5655fdb0d8581ae583cd"
+  },
+  "generated_at": "2026-08-16-205527",
+  "long_002_spec_sha256": "f3df2845543500985c88568f9b855812576e9e4a10901f8a5f7a1834a319b3b5",
+  "overall_disposition": "not_supported",
+  "overall_evidence_confidence": "limited_but_usable_evidence",
+  "preregistration_commit_sha": "75fad17b190d4879d26dd7de6b61241672193f08",
+  "probe_spec_sha256": "38f550b3bf14bc58654ba5286213bbfe894577ccb1502b604f60076e6e239ce7",
+  "run_id": "2026-08-16-205527",
+  "runtime_seconds": 690.0954931029992,
+  "task_id": "LONG-002B-AMEND-001",
+  "total_http_requests": 59
+}

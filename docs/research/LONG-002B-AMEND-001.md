@@ -110,7 +110,7 @@ Safe artifacts must contain no secrets, authorization headers, raw licensed payl
 - **Branch:** `devin/long-002b-amend-001-blocker-resolution`
 - **Starting `main` SHA:** `75a37e872afc7a5d14c349bbed2a4db935b88608`
 - **Preregistration commit SHA:** `75fad1760c49ef9ffd2723b5f335a3f5b9d72c77`
-- **Code commit SHA used for live probe:** `f3552e3c3488b57e5d0df36df56db0d260c9f3d9`
+- **Code commit SHA used for live probe:** `464d5a9299a42ab73075a8cc41583fa516c7a912`
 - **Amendment probe spec SHA-256:** `38f550b3bf14bc58654ba5286213bbfe894577ccb1502b604f60076e6e239ce7`
 - **Upstream `LONG-002-v1.json` SHA-256:** `f3df2845543500985c88568f9b855812576e9e4a10901f8a5f7a1834a319b3b5`
 - **Upstream `LONG-002B-probe-v1.json` SHA-256:** `002a0795096ba0f6f77ba1f2e673b5d3e6a2008730a57f7f87e71cf86b949a98`
@@ -126,8 +126,8 @@ Safe artifacts must contain no secrets, authorization headers, raw licensed payl
 - **HTTP requests:** 59 of 120
 - **Retries:** 0
 - **Provider switches:** 0
-- **Runtime:** ~750 seconds (~12.5 minutes)
-- **Safe artifact bundle:** `docs/research/artifacts/LONG-002B-AMEND-001/2026-08-16-200052/`
+- **Runtime:** ~690 seconds (~11.5 minutes)
+- **Safe artifact bundle:** `docs/research/artifacts/LONG-002B-AMEND-001/2026-08-16-205527/`
 
 ## Decision memo: earnings-event timing
 

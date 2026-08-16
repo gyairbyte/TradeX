@@ -436,8 +436,8 @@ uv run python -m tradex.research.long_002_data_feasibility.amendment_001 --repo-
 * **Earnings-event timing:** `not_supported`
   * No preregistered endpoint returned a historical known-at-time earnings schedule; `vX/reference/financials` returns XBRL financial statements with filing/period dates only
   * Decision memo in `docs/research/LONG-002B-AMEND-001.md` compares continuing to block `LONG-002C`, a fail-closed `unknown` treatment, or a future Gary-approved provider amendment; the amendment does not silently adopt the `unknown` treatment
-* **Provider calls:** 59 of 120 allowed HTTP requests, 0 retries, 0 provider switches, ~12.5 minutes runtime
-* **Safe artifacts:** `docs/research/artifacts/LONG-002B-AMEND-001/2026-08-16-200052/`
+* **Provider calls:** 59 of 120 allowed HTTP requests, 0 retries, 0 provider switches, ~11.5 minutes runtime
+* **Safe artifacts:** `docs/research/artifacts/LONG-002B-AMEND-001/2026-08-16-205527/`
 * **Amendment report:** `docs/research/LONG-002B-AMEND-001.md`
 * **Amendment spec:** `docs/research/specs/LONG-002B-AMEND-001-probe-v1.json`
 

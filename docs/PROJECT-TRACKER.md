@@ -387,7 +387,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Affects trading behavior:** No — research-only amendment; no production scorer, score, weight, threshold, ranking, eligibility, confluence, alert, or dashboard trading logic changes.
 - **Amendment results:** `docs/research/LONG-002B-AMEND-001.md`
 - **Amendment probe spec:** `docs/research/specs/LONG-002B-AMEND-001-probe-v1.json`
-- **Amendment safe artifact bundle:** `docs/research/artifacts/LONG-002B-AMEND-001/2026-08-16-200052/`
+- **Amendment safe artifact bundle:** `docs/research/artifacts/LONG-002B-AMEND-001/2026-08-16-205527/`
 - **Amendment overall disposition:** `not_supported` (earnings-event timing remains blocked)
 - **Amendment per-family dispositions:**
   - Security identity, lifecycle, and exclusion classification: `supported_with_documented_limitations` (Massive primary; defensible common-stock, ETF, preferred-stock ETF, closed-end-fund, and pre-merger SPAC/shell classification demonstrated for the probe panel; older PIT dates sometimes return coarser `INDEX`/`CS` type codes)
