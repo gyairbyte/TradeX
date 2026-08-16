@@ -1,11 +1,11 @@
 {
   "bundle_path": "docs/research/artifacts/LONG-002B-AMEND-001/2026-08-16-222647",
-  "code_commit_sha": "42f1d93f43adf1cdef8f3b91c07370026544e764",
+  "code_commit_sha": "e99bf986eb3dada1333b71824438685048bbe722",
   "data_contract_sha256": "f8ad6655e482fe5c9e8847467643bf0b03949686ad914180599323758cbf555a",
   "files": {
     "coverage_summary.csv": "622cfbddf0780af22948cb8f622f176f086bcb370c1b84a08b9d14098eac84e1",
     "data_quality_summary.csv": "8214fdbfbb50e49d1a84fe9ba45547032022c697406f9e7bf3a6be7665853b16",
-    "feasibility_report.json": "bbf27f92e063b4dacb22f4d71f8b0a2edbd1bf767b0590f7ebe057ac12b73e26",
+    "feasibility_report.json": "9c9fc470b15503e0f77c5cd1f6223b366486b03a62e21b388d9b1c875600b30c",
     "provider_contract_matrix.csv": "09ccac5854f1aea77cfc667efdfe1569f19314a3fa7f9c745251b23853bd593e"
   },
   "generated_at": "2026-08-16-222647",

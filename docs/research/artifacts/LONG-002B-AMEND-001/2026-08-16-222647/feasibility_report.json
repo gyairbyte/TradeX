@@ -13,7 +13,7 @@
     "  3. Request a new Gary-approved provider amendment targeted at historical earnings calendars.",
     "This amendment does not select option 2 or 3 automatically; it records the blocker and preserves the fail-closed default."
   ],
-  "code_commit_sha": "42f1d93f43adf1cdef8f3b91c07370026544e764",
+  "code_commit_sha": "e99bf986eb3dada1333b71824438685048bbe722",
   "data_contract_sha256": "f8ad6655e482fe5c9e8847467643bf0b03949686ad914180599323758cbf555a",
   "data_families": [
     {
