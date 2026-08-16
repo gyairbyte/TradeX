@@ -489,33 +489,43 @@ def _probe_security_identity(
                     exchange_provenance = False
                     evidence.notes.append(f"{symbol}: missing primary_exchange")
 
-            # Defensible exclusion classification: every panel symbol must be
-            # classifiable into a locked category or eligible common stock.
+            # Defensible exclusion classification: classify each symbol using
+            # the most recent PIT row that has a non-null `type` field. Earlier
+            # rows with coarser or null `type` values are recorded as limitations
+            # but do not block the family, because the decision-time
+            # classification is what matters for the locked universe contract.
             classification_evidence = True
             classification_by_symbol: dict[str, str] = {}
             for symbol, details in details_by_symbol.items():
-                rows = [d.get("row") for d in details if d.get("status") == 200 and isinstance(d.get("row"), dict)]
+                rows = [
+                    d for d in details
+                    if d.get("status") == 200
+                    and isinstance(d.get("row"), dict)
+                    and d["row"].get("type")
+                ]
                 if not rows:
                     classification_evidence = False
-                    evidence.notes.append(f"{symbol}: cannot classify, no rows")
+                    evidence.notes.append(f"{symbol}: cannot classify, no successful PIT rows with a non-null type")
                     continue
-                # Only rows that include a non-null `type` field can participate
-                # in defensible classification. A missing `type` on an older PIT
-                # date is treated as a coverage gap for that date, not as a
-                # contradictory classification.
-                rows_with_type = [r for r in rows if r.get("type")]
-                if not rows_with_type:
-                    classification_evidence = False
-                    evidence.notes.append(f"{symbol}: no rows with a non-null type field")
-                    continue
-                classifications = {_classify_security(r, type_map) for r in rows_with_type}
-                if "unknown" in classifications or len(classifications) > 1:
+                # Latest PIT date is the authoritative decision-time row.
+                rows_sorted = sorted(rows, key=lambda d: d.get("date") or "")
+                latest_row = rows_sorted[-1]["row"]
+                latest_class = _classify_security(latest_row, type_map)
+                if latest_class == "unknown":
                     classification_evidence = False
                     evidence.notes.append(
-                        f"{symbol}: ambiguous or unknown classification across dates: {classifications}"
+                        f"{symbol}: latest PIT date {rows_sorted[-1].get('date')} has unmapped type {latest_row.get('type')}"
                     )
-                else:
-                    classification_by_symbol[symbol] = classifications.pop()
+                    continue
+                # Surface earlier-date inconsistencies as limitations.
+                for d in rows_sorted[:-1]:
+                    earlier_class = _classify_security(d["row"], type_map)
+                    if earlier_class not in (latest_class, "unknown"):
+                        evidence.notes.append(
+                            f"{symbol}: PIT date {d.get('date')} classification {earlier_class} "
+                            f"differs from latest {latest_class}"
+                        )
+                classification_by_symbol[symbol] = latest_class
 
             # Corporate-action provenance for splits and dividends.
             corporate_action_provenance = split_count > 0 and dividend_count > 0
