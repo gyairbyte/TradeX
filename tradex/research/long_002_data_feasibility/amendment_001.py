@@ -499,8 +499,16 @@ def _probe_security_identity(
                     classification_evidence = False
                     evidence.notes.append(f"{symbol}: cannot classify, no rows")
                     continue
-                # Use the most recent successful PIT row for classification.
-                classifications = {_classify_security(r, type_map) for r in rows}
+                # Only rows that include a non-null `type` field can participate
+                # in defensible classification. A missing `type` on an older PIT
+                # date is treated as a coverage gap for that date, not as a
+                # contradictory classification.
+                rows_with_type = [r for r in rows if r.get("type")]
+                if not rows_with_type:
+                    classification_evidence = False
+                    evidence.notes.append(f"{symbol}: no rows with a non-null type field")
+                    continue
+                classifications = {_classify_security(r, type_map) for r in rows_with_type}
                 if "unknown" in classifications or len(classifications) > 1:
                     classification_evidence = False
                     evidence.notes.append(

@@ -7,8 +7,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-import pytest
-
 from tradex.research.long_002_data_feasibility.amendment_001 import (
     _classify_security,
     run_amendment_probe,
