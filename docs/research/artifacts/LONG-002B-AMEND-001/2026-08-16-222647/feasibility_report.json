@@ -5,7 +5,7 @@
     "minimum_usable_contract.distinguishes_future_schedule_known_at_time not satisfied",
     "minimum_usable_contract.distinguishes_subsequent_revisions not satisfied",
     "minimum_usable_contract.distinguishes_actual_release_timestamp not satisfied",
-    "Security identity/lifecycle/exclusion classification: Massive singular ticker details + type taxonomy + ticker-change events provide a defensible PIT pathway for the probe panel, subject to the documented type/SIC classification heuristics.",
+    "Security identity/lifecycle/exclusion classification: not_supported. Multiple required (symbol, as_of_date) PIT rows returned generic or missing type fields (None, CS, INDEX) with no corroborating PIT name/SIC evidence, so they fail closed to unknown and the minimum exclusion-classification contract is not satisfied. PFF is classified as ETF (preferred-stock strategy), SPY as ETF, IGR as closed_end_fund, and IPOD as pre_merger_spac, but unresolved historical rows prevent the panel-wide pathway from being called defensible.",
     "Earnings-event timing: no preregistered endpoint returned a historical known-at-the-decision-time earnings schedule. Massive vX/reference/financials returns XBRL financial statements (filing/period dates only). SEC EDGAR gives actual disclosure timestamps. Yahoo earnings calendar is prospective/current. The family is therefore not_supported.",
     "Decision options:",
     "  1. Continue to block LONG-002C until a provider amendment delivers historical PIT earnings schedules.",
@@ -13,7 +13,8 @@
     "  3. Request a new Gary-approved provider amendment targeted at historical earnings calendars.",
     "This amendment does not select option 2 or 3 automatically; it records the blocker and preserves the fail-closed default."
   ],
-  "code_commit_sha": "53643572303df7006610d04381200680809bab77",
+  "code_commit_sha": "42f1d93f43adf1cdef8f3b91c07370026544e764",
+  "code_source_tree_sha": "d66639038e15059527ce61ec4c28bf6fdcb54d50",
   "data_contract_sha256": "f8ad6655e482fe5c9e8847467643bf0b03949686ad914180599323758cbf555a",
   "data_families": [
     {
@@ -2363,10 +2364,15 @@
     "Earnings-event timing remains not_supported: Massive vX/reference/financials did not return a historical known-at-time earnings schedule. Provider search was not exhausted: the preregistered SEC EDGAR and Yahoo earnings calendar fallbacks were not evaluated within the locked budget."
   ],
   "long_002_spec_sha256": "f3df2845543500985c88568f9b855812576e9e4a10901f8a5f7a1834a319b3b5",
+  "original_implementation_commit_sha": "e99bf986eb3dada1333b71824438685048bbe722",
+  "original_preregistration_commit_sha": "75fad17b190d4879d26dd7de6b61241672193f08",
   "overall_disposition": "not_supported",
   "overall_evidence_confidence": "limited_but_usable_evidence",
   "preregistration_commit_sha": "75fad17b190d4879d26dd7de6b61241672193f08",
   "probe_spec_sha256": "38f550b3bf14bc58654ba5286213bbfe894577ccb1502b604f60076e6e239ce7",
+  "provenance_note": "Live probe 2026-08-16-222647 was executed from an uncommitted working tree at code commit 42f1d93f43adf1cdef8f3b91c07370026544e764. The same evaluator source tree (tradex/research/long_002_data_feasibility tree d66639038e15059527ce61ec4c28bf6fdcb54d50) was subsequently committed as e99bf986eb3dada1333b71824438685048bbe722 (pre-rebase) and rebased to 1d881e682223398f37f18738e5ff7d687115ca95. The amendment probe spec is identical between the original preregistration 75fad17b190d4879d26dd7de6b61241672193f08 and the rebased preregistration 179f6e7b31e99c613bb6ab797c6d5f06a83f5054 (same blob). No live provider rerun was performed for this metadata-only correction.",
+  "rebased_code_commit_sha": "1d881e682223398f37f18738e5ff7d687115ca95",
+  "rebased_preregistration_commit_sha": "179f6e7b31e99c613bb6ab797c6d5f06a83f5054",
   "recommended_next_action": "Do not proceed to LONG-002C. Options: (1) continue blocking until a provider demonstrates historical known-at-time earnings schedules, (2) formally adopt a fail-closed unknown treatment via Gary/ChatGPT approval, or (3) request a new Gary-approved provider amendment.",
   "runtime_seconds": 750.5951825169996,
   "task_id": "LONG-002B-AMEND-001",

@@ -860,8 +860,11 @@ def _recommended_next_action(report: FeasibilityReport) -> str:
 def _decision_memo() -> list[str]:
     return [
         (
-            "Security identity/lifecycle/exclusion classification: Massive singular ticker details + type taxonomy + ticker-change events "
-            "provide a defensible PIT pathway for the probe panel, subject to the documented type/SIC classification heuristics."
+            "Security identity/lifecycle/exclusion classification: not_supported. "
+            "Multiple required (symbol, as_of_date) PIT rows returned generic or missing type fields (None, CS, INDEX) with no corroborating PIT name/SIC evidence, "
+            "so they fail closed to unknown and the minimum exclusion-classification contract is not satisfied. "
+            "PFF is classified as ETF (preferred-stock strategy), SPY as ETF, IGR as closed_end_fund, and IPOD as pre_merger_spac, "
+            "but unresolved historical rows prevent the panel-wide pathway from being called defensible."
         ),
         (
             "Earnings-event timing: no preregistered endpoint returned a historical known-at-the-decision-time earnings schedule. "
@@ -876,8 +879,34 @@ def _decision_memo() -> list[str]:
     ]
 
 
-def _preregistration_commit_sha(repo_root: Path) -> str:
-    """Return the commit that first added the amendment spec file."""
+def _original_preregistration_commit_sha(repo_root: Path) -> str:
+    """Return the original (possibly pre-rebase) commit that first added the amendment spec file."""
+    try:
+        lines = (
+            subprocess.check_output(
+                [
+                    "git",
+                    "log",
+                    "--all",
+                    "--follow",
+                    "--diff-filter=A",
+                    "--format=%H",
+                    "--",
+                    str(repo_root / "docs" / "research" / "specs" / "LONG-002B-AMEND-001-probe-v1.json"),
+                ],
+                text=True,
+                cwd=str(repo_root),
+            )
+            .strip()
+            .splitlines()
+        )
+        return lines[-1] if lines else "unknown"
+    except Exception:  # noqa: BLE001
+        return "unknown"
+
+
+def _rebased_preregistration_commit_sha(repo_root: Path) -> str:
+    """Return the current branch's first commit that added the amendment spec file."""
     try:
         return (
             subprocess.check_output(
@@ -983,6 +1012,8 @@ def run_amendment_probe(
     runtime = time.monotonic() - start
     overall, overall_confidence = evaluate_overall([(f.family, f.disposition) for f in family_results])
 
+    original_prereg = _original_preregistration_commit_sha(root)
+    rebased_prereg = _rebased_preregistration_commit_sha(root)
     report = FeasibilityReport(
         task_id="LONG-002B-AMEND-001",
         overall_disposition=overall,
@@ -990,7 +1021,13 @@ def run_amendment_probe(
         total_http_requests=budget.used,
         runtime_seconds=runtime,
         code_commit_sha="",
-        preregistration_commit_sha=_preregistration_commit_sha(root),
+        preregistration_commit_sha=original_prereg,
+        original_preregistration_commit_sha=original_prereg,
+        rebased_preregistration_commit_sha=rebased_prereg,
+        rebased_code_commit_sha="",
+        original_implementation_commit_sha="",
+        code_source_tree_sha="",
+        provenance_note="",
         long_002_spec_sha256=long_002_sha,
         probe_spec_sha256=amendment_sha,
         data_contract_sha256=data_contract_sha,
@@ -1003,6 +1040,28 @@ def run_amendment_probe(
     return report
 
 
+def _source_tree_sha(repo_root: Path) -> str:
+    """Return the git tree SHA for the evaluator source directory at HEAD."""
+    try:
+        return (
+            subprocess.check_output(
+                [
+                    "git",
+                    "ls-tree",
+                    "-d",
+                    "HEAD",
+                    "tradex/research/long_002_data_feasibility",
+                ],
+                text=True,
+                cwd=str(repo_root),
+            )
+            .strip()
+            .split()[2]
+        )
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def main(argv: list[str] | None = None) -> None:
     import argparse
     import subprocess
@@ -1010,7 +1069,10 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="LONG-002B-AMEND-001 blocked-family resolution probe")
     parser.add_argument("--repo-root", type=Path, default=Path("."), help="Repository root containing docs/research/specs")
     parser.add_argument("--run-id", type=str, default=None, help="Artifact bundle run ID (default timestamp)")
-    parser.add_argument("--commit-sha", type=str, default=None, help="Code commit SHA to record in artifacts")
+    parser.add_argument("--commit-sha", type=str, default=None, help="Code commit SHA in effect at the live run (e.g. HEAD before uncommitted changes)")
+    parser.add_argument("--rebased-code-commit-sha", type=str, default=None, help="Rebased-equivalent commit for the code used in the live run")
+    parser.add_argument("--original-implementation-commit-sha", type=str, default=None, help="First commit that captured the code used in the live run, if different from --commit-sha")
+    parser.add_argument("--provenance-note", type=str, default=None, help="Free-form note describing execution provenance")
     args = parser.parse_args(argv)
 
     report = run_amendment_probe(args.repo_root)
@@ -1018,7 +1080,21 @@ def main(argv: list[str] | None = None) -> None:
         commit_sha = args.commit_sha or subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     except Exception:  # noqa: BLE001
         commit_sha = "unknown"
-    bundle = write_safe_artifacts(report, args.repo_root, run_id=args.run_id, code_commit_sha=commit_sha)
+    try:
+        rebased_code = args.rebased_code_commit_sha or subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    except Exception:  # noqa: BLE001
+        rebased_code = ""
+    code_tree = _source_tree_sha(args.repo_root)
+    bundle = write_safe_artifacts(
+        report,
+        args.repo_root,
+        run_id=args.run_id,
+        code_commit_sha=commit_sha,
+        rebased_code_commit_sha=rebased_code,
+        original_implementation_commit_sha=args.original_implementation_commit_sha or "",
+        code_source_tree_sha=code_tree,
+        provenance_note=args.provenance_note or "",
+    )
     print(f"LONG-002B-AMEND-001 bundle written to: {bundle}")
     print(f"Overall disposition: {report.overall_disposition}")
     print(f"Total HTTP requests: {report.total_http_requests}")

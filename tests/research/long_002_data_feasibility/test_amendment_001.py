@@ -468,3 +468,60 @@ def test_write_safe_artifacts_uses_task_id_for_bundle_path(tmp_path: Path) -> No
     assert bundle.name == "test-run"
     assert bundle.parent.name == "LONG-002B-AMEND-001"
     assert (bundle / "feasibility_report.json").exists()
+
+
+def test_security_not_supported_report_blockers_do_not_claim_defensible_pathway() -> None:
+    """A not_supported security family cannot be summarized as having satisfied its minimum pathway."""
+    details = {
+        ("SPY", "2020-12-31"): _make_ticker_detail("SPY", type_code="INDEX", name="S&P 500 Index"),
+    }
+    events = {}
+    report = run_amendment_probe(
+        REPO_ROOT,
+        test_inject={
+            "massive_request_func": _massive_request_factory(details, events),
+            "panel": [
+                {"identifier": "SPY", "as_of_dates": ["2020-12-31"]},
+            ],
+        },
+    )
+    sec = next(f for f in report.data_families if f.family == "security_identity_lifecycle_and_exclusion_classification")
+    assert sec.disposition == "not_supported"
+    assert any("defensible_exclusion_classification" in b for b in sec.blockers)
+    assert all("provide a defensible PIT pathway" not in b.lower() for b in report.blockers)
+    assert all("provide a defensible PIT pathway" not in b.lower() for b in sec.blockers)
+
+
+def test_write_safe_artifacts_records_all_provenance_fields(tmp_path: Path) -> None:
+    """The artifact bundle preserves original and rebased code/preregistration provenance."""
+    details = {
+        ("AAPL", "2020-12-31"): _make_ticker_detail("AAPL", name="Apple Inc"),
+    }
+    events = {"AAPL": _make_ticker_change_events("AAPL", [{"type": "ticker_change", "date": "2003-09-10", "ticker_change": {"ticker": "AAPL"}}])}
+    report = run_amendment_probe(
+        REPO_ROOT,
+        test_inject={
+            "massive_request_func": _massive_request_factory(details, events),
+            "panel": [
+                {"identifier": "AAPL", "as_of_dates": ["2020-12-31"]},
+            ],
+        },
+    )
+    bundle = write_safe_artifacts(
+        report,
+        tmp_path,
+        run_id="provenance-test-run",
+        code_commit_sha="originallivehead",
+        rebased_code_commit_sha="rebasedimpl",
+        original_implementation_commit_sha="originalimpl",
+        code_source_tree_sha="treesha123",
+        provenance_note="Live probe executed from uncommitted changes on top of originallivehead.",
+    )
+    fr = json.loads((bundle / "feasibility_report.json").read_text())
+    am = json.loads((bundle / "artifact_manifest.json").read_text())
+    for key in ("code_commit_sha", "rebased_code_commit_sha", "original_implementation_commit_sha", "code_source_tree_sha", "provenance_note"):
+        assert fr[key] == am[key]
+    assert fr["code_commit_sha"] == "originallivehead"
+    assert fr["rebased_code_commit_sha"] == "rebasedimpl"
+    assert "originallivehead" in fr["provenance_note"]
+    assert (bundle / "checksums.sha256").exists()

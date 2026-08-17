@@ -109,8 +109,12 @@ Safe artifacts must contain no secrets, authorization headers, raw licensed payl
 
 - **Branch:** `devin/long-002b-amend-001-blocker-resolution`
 - **Starting `main` SHA:** `75a37e872afc7a5d14c349bbed2a4db935b88608`
-- **Preregistration commit SHA:** `75fad17b190d4879d26dd7de6b61241672193f08`
-- **Code commit SHA used for live probe:** `53643572303df7006610d04381200680809bab77`
+- **Preregistration commit SHA (original, pre-rebase):** `75fad17b190d4879d26dd7de6b61241672193f08`
+- **Preregistration commit SHA (rebased equivalent on current branch):** `179f6e7b31e99c613bb6ab797c6d5f06a83f5054`
+- **Code commit SHA in effect during live probe:** `42f1d93f43adf1cdef8f3b91c07370026544e764` (HEAD before uncommitted evaluator changes were applied)
+- **Original implementation commit (first commit capturing the live-run source tree):** `e99bf986eb3dada1333b71824438685048bbe722`
+- **Rebased implementation commit SHA:** `1d881e682223398f37f18738e5ff7d687115ca95`
+- **Evaluator source tree SHA (`tradex/research/long_002_data_feasibility`):** `d66639038e15059527ce61ec4c28bf6fdcb54d50`
 - **Amendment probe spec SHA-256:** `38f550b3bf14bc58654ba5286213bbfe894577ccb1502b604f60076e6e239ce7`
 - **Upstream `LONG-002-v1.json` SHA-256:** `f3df2845543500985c88568f9b855812576e9e4a10901f8a5f7a1834a319b3b5`
 - **Upstream `LONG-002B-probe-v1.json` SHA-256:** `002a0795096ba0f6f77ba1f2e673b5d3e6a2008730a57f7f87e71cf86b949a98`
