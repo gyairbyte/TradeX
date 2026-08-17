@@ -24,20 +24,40 @@ def write_safe_artifacts(
     *,
     run_id: str | None = None,
     code_commit_sha: str = "",
+    rebased_code_commit_sha: str = "",
+    original_implementation_commit_sha: str = "",
+    code_source_tree_sha: str = "",
+    provenance_note: str = "",
 ) -> Path:
     """Write the LONG-002B safe artifact bundle and return the bundle directory."""
     root = Path(repo_root)
     run_id = run_id or _now_utc()
-    bundle = root / "docs" / "research" / "artifacts" / "LONG-002B" / run_id
+    artifact_task = report.task_id or "LONG-002B"
+    bundle = root / "docs" / "research" / "artifacts" / artifact_task / run_id
     bundle.mkdir(parents=True, exist_ok=True)
 
-    report.code_commit_sha = code_commit_sha
+    report.code_commit_sha = code_commit_sha or report.code_commit_sha
+    if rebased_code_commit_sha:
+        report.rebased_code_commit_sha = rebased_code_commit_sha
+    if original_implementation_commit_sha:
+        report.original_implementation_commit_sha = original_implementation_commit_sha
+    if code_source_tree_sha:
+        report.code_source_tree_sha = code_source_tree_sha
+    if provenance_note:
+        report.provenance_note = provenance_note
     manifest: dict[str, Any] = {
         "task_id": report.task_id,
         "run_id": run_id,
         "bundle_path": str(bundle.relative_to(root)),
         "generated_at": _now_utc(),
-        "code_commit_sha": code_commit_sha,
+        "code_commit_sha": report.code_commit_sha,
+        "preregistration_commit_sha": report.preregistration_commit_sha,
+        "original_preregistration_commit_sha": report.original_preregistration_commit_sha,
+        "rebased_preregistration_commit_sha": report.rebased_preregistration_commit_sha,
+        "rebased_code_commit_sha": report.rebased_code_commit_sha,
+        "original_implementation_commit_sha": report.original_implementation_commit_sha,
+        "code_source_tree_sha": report.code_source_tree_sha,
+        "provenance_note": report.provenance_note,
         "long_002_spec_sha256": report.long_002_spec_sha256,
         "probe_spec_sha256": report.probe_spec_sha256,
         "data_contract_sha256": report.data_contract_sha256,

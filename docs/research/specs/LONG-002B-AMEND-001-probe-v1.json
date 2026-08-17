@@ -1,0 +1,170 @@
+{
+  "schema_version": "1.0",
+  "task_id": "LONG-002B-AMEND-001",
+  "amendment_id": "LONG-002B-AMEND-001",
+  "spec_name": "LONG-002B-AMEND-001: Blocked data-family resolution (security identity/lifecycle/exclusions and earnings-event timing)",
+  "classification": "research-only",
+  "production_promotion_eligible": false,
+  "purpose": "Determine, with bounded and auditable provider probes, whether a defensible point-in-time pathway exists for the two LONG-002B blockers: (1) security identity, lifecycle, and exclusion classification; and (2) historical known-at-the-decision-time earnings scheduling. This amendment does not authorize LONG-002C dataset construction.",
+  "upstream_specs": {
+    "long_002_v1_path": "docs/research/specs/LONG-002-v1.json",
+    "long_002_v1_sha256": "f3df2845543500985c88568f9b855812576e9e4a10901f8a5f7a1834a319b3b5",
+    "long_002b_probe_path": "docs/research/specs/LONG-002B-probe-v1.json",
+    "long_002b_probe_sha256": "002a0795096ba0f6f77ba1f2e673b5d3e6a2008730a57f7f87e71cf86b949a98",
+    "long_002b_data_contract_path": "docs/research/specs/LONG-002B-data-contract-v1.json",
+    "long_002b_data_contract_sha256": "f8ad6655e482fe5c9e8847467643bf0b03949686ad914180599323758cbf555a"
+  },
+  "blocked_families": [
+    "security_identity_lifecycle_and_exclusion_classification",
+    "earnings_event_timing"
+  ],
+  "data_families": {
+    "security_identity_lifecycle_and_exclusion_classification": {
+      "role": "Point-in-time security identity, effective-dated ticker/listing history, active/inactive/renamed/merged/delisted securities, exchange and listing provenance, and defensible classification for the locked LONG-002 exclusions",
+      "preferred_provider": {
+        "name": "massive",
+        "endpoint_family": "v3/reference/tickers/{ticker}, v3/reference/tickers/types, vX/reference/tickers/{id}/events, v3/reference/splits, v3/reference/dividends",
+        "required_capabilities": [
+          "single-ticker PIT details with list_date, delisted_utc, active, primary_exchange, type, cik, composite_figi, share_class_figi",
+          "ticker type taxonomy with asset_class and description",
+          "ticker_change event timeline",
+          "split and dividend event metadata with ex/pay/record dates",
+          "inactive/delisted symbol handling"
+        ]
+      },
+      "fallback_order": [
+        {
+          "name": "alpaca",
+          "endpoint_family": "https://api.alpaca.markets/v2/assets/{symbol} and corporate actions",
+          "required_capabilities": [
+            "asset metadata",
+            "active/inactive status",
+            "exchange and class"
+          ],
+          "caution": "Alpaca asset class does not distinguish ETFs/ETNs/CEFs/pre-merger SPACs."
+        },
+        {
+          "name": "sec_edgar",
+          "endpoint_family": "submissions/CIK{cik}.json",
+          "required_capabilities": [
+            "issuer identity (CIK)",
+            "historical names and tickers",
+            "filing history"
+          ],
+          "restriction": "EDGAR submissions do not provide a complete exchange security master or security-type classification."
+        }
+      ],
+      "minimum_usable_contract": {
+        "stable_identity_effective_ticker_join_for_probe_panel": true,
+        "active_inactive_lifecycle_evidence_for_probe_panel": true,
+        "ticker_change_or_rename_evidence_for_probe_panel": true,
+        "exchange_and_listing_provenance_for_probe_panel": true,
+        "defensible_exclusion_classification_for_probe_panel": true,
+        "corporate_action_provenance_for_splits_and_dividends": true
+      },
+      "stop_condition": "Stop provider exploration once the probe panel demonstrates stable PIT identity, lifecycle evidence (active/inactive/delisted/renamed), defensible exclusion-type classification, and split/dividend provenance."
+    },
+    "earnings_event_timing": {
+      "role": "Historical known-at-the-decision-time earnings scheduling: future earnings dates known at the decision timestamp, subsequent revisions, actual release timestamps, and separation from SEC filing/disclosure timestamps and current/prospective calendars",
+      "preferred_provider": {
+        "name": "massive",
+        "endpoint_family": "v3/reference/tickers/{ticker}, vX/reference/financials, vX/reference/tickers/{id}/events",
+        "required_capabilities": [
+          "historical earnings announcement or report dates",
+          "vintage information distinguishing when a future date was known",
+          "separation of schedule from actual SEC filing acceptance"
+        ]
+      },
+      "fallback_order": [
+        {
+          "name": "sec_edgar",
+          "endpoint_family": "submissions/CIK{cik}.json and filing index metadata",
+          "required_capabilities": [
+            "filing acceptance timestamps",
+            "8-K/earnings release detection"
+          ],
+          "restriction": "Actual disclosure timing only; cannot substitute for a previously known future schedule."
+        },
+        {
+          "name": "yahoo_earnings_calendar",
+          "endpoint_family": "finance/calendar/earnings",
+          "required_capabilities": [],
+          "restriction": "Current/prospective operational diagnostics only; cannot substitute historical knowledge."
+        }
+      ],
+      "minimum_usable_contract": {
+        "historical_known_at_time_schedule": true,
+        "distinguishes_future_schedule_known_at_time": true,
+        "distinguishes_subsequent_revisions": true,
+        "distinguishes_actual_release_timestamp": true,
+        "separates_sec_filing_timestamp_from_schedule": true,
+        "unknown_treatment_fail_closed": true
+      },
+      "stop_condition": "Stop once at least one source demonstrates historical known-at-time earnings scheduling for the probe panel, or all preregistered candidates fail and an explicit 'unknown' treatment is recorded."
+    }
+  },
+  "probe_panel": {
+    "max_securities": 12,
+    "max_as_of_dates_per_security": 4,
+    "reuse_locked_panel": "docs/research/specs/LONG-002B-probe-v1.json",
+    "locked_panel": [
+      {"identifier": "AAPL", "category": "active mega-cap; split (2020-08-31 4-for-1) within development", "as_of_dates": ["2016-03-31", "2018-06-29", "2020-08-31", "2020-12-31"]},
+      {"identifier": "GOOGL", "category": "active mega-cap; multiple share classes", "as_of_dates": ["2016-03-31", "2018-06-29", "2020-03-31", "2020-12-31"]},
+      {"identifier": "FDX", "category": "active mid-/large-cap", "as_of_dates": ["2016-03-31", "2018-06-29", "2020-03-31", "2020-12-31"]},
+      {"identifier": "FB", "category": "recent IPO cohort; later renamed META (holdout)", "as_of_dates": ["2016-03-31", "2018-06-29", "2020-03-31", "2020-12-31"]},
+      {"identifier": "PYPL", "category": "spin-off from EBAY (2015); active mid-cap", "as_of_dates": ["2016-03-31", "2018-06-29", "2020-03-31", "2020-12-31"]},
+      {"identifier": "YHOO", "category": "merger/acquisition/delisting (Verizon, 2017)", "as_of_dates": ["2016-03-31", "2017-03-31"], "lifecycle_supplement_dates": ["2018-03-31"]},
+      {"identifier": "SPY", "category": "excluded ETF; benchmark/context only", "as_of_dates": ["2016-03-31", "2018-06-29", "2020-03-31", "2020-12-31"]},
+      {"identifier": "PFF", "category": "excluded preferred stock ETF; excluded type diagnostic", "as_of_dates": ["2016-03-31", "2020-12-31"]},
+      {"identifier": "IGR", "category": "excluded closed-end fund; excluded type diagnostic", "as_of_dates": ["2016-03-31", "2020-12-31"]},
+      {"identifier": "IPOD", "category": "pre-merger SPAC; excluded type diagnostic", "as_of_dates": ["2020-09-30", "2020-12-31"]},
+      {"identifier": "TWX", "category": "merger/acquisition (AT&T, 2018); delisting", "as_of_dates": ["2016-03-31", "2017-12-29", "2018-06-14"], "lifecycle_supplement_dates": ["2019-03-31"]},
+      {"identifier": "SIRI", "category": "active mid-cap; reverse split consideration", "as_of_dates": ["2016-03-31", "2018-06-29", "2020-03-31", "2020-12-31"]}
+    ]
+  },
+  "hard_network_budget": {
+    "max_preferred_plus_named_fallbacks_per_family": "1 preferred + 2 fallbacks",
+    "max_probe_securities": 12,
+    "max_as_of_dates_per_security": 4,
+    "max_total_http_requests": 120,
+    "max_retries_for_transient_failure": 1,
+    "no_retry_for": [
+      "authentication",
+      "entitlement",
+      "configuration",
+      "malformed response",
+      "unsupported capability"
+    ],
+    "max_runtime_minutes": 30,
+    "stop_on_minimum_usable": true,
+    "no_extra_provider_hunting_without_gary_approval": true
+  },
+  "expected_safe_artifacts": [
+    "docs/research/specs/LONG-002B-AMEND-001-probe-v1.json",
+    "docs/research/LONG-002B-AMEND-001.md",
+    "docs/research/artifacts/LONG-002B-AMEND-001/<run-id>/artifact_manifest.json",
+    "docs/research/artifacts/LONG-002B-AMEND-001/<run-id>/provider_contract_matrix.csv",
+    "docs/research/artifacts/LONG-002B-AMEND-001/<run-id>/coverage_summary.csv",
+    "docs/research/artifacts/LONG-002B-AMEND-001/<run-id>/data_quality_summary.csv",
+    "docs/research/artifacts/LONG-002B-AMEND-001/<run-id>/feasibility_report.json"
+  ],
+  "explicit_prohibitions": [
+    "No full LONG-002 historical dataset construction",
+    "No LONG-002C dataset construction",
+    "No outcome census or target-label calculation",
+    "No forward-return, MFE, MAE, clean-target, or adverse-rate calculation",
+    "No KPI or feature discovery",
+    "No model fitting or configuration search",
+    "No trigger research",
+    "No validation/holdout return or outcome access",
+    "No production signal, score, weight, threshold, ranking, eligibility, or default screener changes",
+    "No production promotion",
+    "No brokerage or account data access",
+    "No new provider beyond the preregistered candidates without a separate Gary-approved amendment"
+  ],
+  "disposition_labels": {
+    "per_family": ["supported", "supported_with_documented_limitations", "not_supported", "invalid_evidence"],
+    "overall": ["supported", "supported_with_documented_limitations", "not_supported", "invalid_evidence"]
+  },
+  "evidence_confidence_labels": ["strong_evidence", "moderate_evidence", "limited_but_usable_evidence", "invalid_evidence"]
+}

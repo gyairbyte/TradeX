@@ -354,7 +354,8 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Priority:** High
 - **Status:** In progress
 - **Completed phase:** `LONG-002A` — locked research/discovery contract (merged in PR #48)
-- **Current phase:** `LONG-002B` — core data feasibility and point-in-time dataset contract
+- **Completed phase:** `LONG-002B` — core data feasibility and point-in-time dataset contract (merged in PR #49)
+- **Current phase:** `LONG-002B-AMEND-001` — blocked data-family resolution (security identity/lifecycle/exclusion classification and earnings-event timing)
 - **Research contract:** `docs/research/LONG-002.md`
 - **Locked machine-readable specification:** `docs/research/specs/LONG-002-v1.json`
 - **Objective:** Research an explainable, long-only rapid-upside opportunity system for U.S.-listed mid-, large-, and mega-cap common stocks, estimating the probability and capturable potential of clean +10%, +20%, and +30% moves over 5, 10, and 21 trading sessions from an executable entry.
@@ -371,8 +372,8 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **B-phase results:** `docs/research/LONG-002B-DATA-FEASIBILITY.md`
 - **B-phase probe spec:** `docs/research/specs/LONG-002B-probe-v1.json` (SHA-256: `002a0795096ba0f6f77ba1f2e673b5d3e6a2008730a57f7f87e71cf86b949a98`)
 - **B-phase data contract:** `docs/research/specs/LONG-002B-data-contract-v1.json` (SHA-256: `f8ad6655e482fe5c9e8847467643bf0b03949686ad914180599323758cbf555a`)
-- **Safe artifact bundle:** `docs/research/artifacts/LONG-002B/2026-08-13-044204/`
-- **Overall disposition:** `not_supported`
+- **B-phase safe artifact bundle:** `docs/research/artifacts/LONG-002B/2026-08-13-044204/`
+- **B-phase overall disposition:** `not_supported`
 - **Per-family dispositions:**
   - Daily market data: `supported_with_documented_limitations` (Alpaca fallback after Massive/Polygon `v2/aggs` 403 entitlement; 1259 bars from 2016-01-04 through 2020-12-31; complete 2020 XNYS completeness; explicit `raw` and `split` policies; Massive corporate-action provenance)
   - Security master & corporate actions: `not_supported` (Massive per-ticker PIT rows returned, but one PIT row per symbol does not demonstrate active/inactive lifecycle coverage and `type` values `CS`/`INDEX` do not defensibly identify the locked excluded security types; split/dividend event endpoints returned events)
@@ -380,11 +381,19 @@ This is the master backlog for recommendations from the Devin review. Items are 
   - Earnings event timing: `not_supported` (no live provider calls; preregistered candidates remain unverified; no historical known-at-time schedule source identified within bounded budget)
 - **Provider call budget:** 41 of 120 HTTP requests used; 0 retries; 1 provider switch (Massive/Polygon daily bars → Alpaca fallback)
 - **Recommended action:** A Gary-approved amendment must identify and verify a historical earnings-calendar source or formally adopt the `unknown` earnings treatment before `LONG-002C` full dataset construction. No production behavior is authorized.
-- **Testing requirements:** `tests/research/long_002_data_feasibility/test_spec.py`; `tests/research/long_002_data_feasibility/test_probe.py`; `uv run ruff`; `uv run pytest`; `git diff --check`.
-- **Acceptance criteria:** Bounded provider probes produce auditable dispositions for each core data family; PIT identity/ticker join, raw-vs-normalized, adjustment/split, timestamp, and data-quality rules are encoded; no full historical dataset is built; no validation/holdout outcomes are accessed; no production behavior changes.
-- **Intended pull request:** `devin/long-002b-core-data-feasibility`
-- **Affects trading behavior:** No — research-only feasibility and contract PR; no production scorer, score, weight, threshold, ranking, eligibility, confluence, alert, or dashboard trading logic changes.
-- **Next phase:** `LONG-002C` — full historical dataset construction, only after a Gary-approved amendment resolves earnings-calendar and any remaining provider-limitation blockers.
+- **Testing requirements:** `tests/research/long_002_data_feasibility/test_spec.py`; `tests/research/long_002_data_feasibility/test_probe.py`; `tests/research/long_002_data_feasibility/test_amendment_001.py`; `uv run ruff`; `uv run pytest`; `git diff --check`.
+- **Acceptance criteria:** Bounded provider probes produce auditable dispositions for each core data family; `LONG-002B-AMEND-001` resolves the minimum-contract gating for security identity/lifecycle/exclusion classification with deterministic tests; no full historical dataset is built; no validation/holdout outcomes are accessed; no production behavior changes.
+- **Intended pull request:** `devin/long-002b-amend-001-blocker-resolution` (draft)
+- **Affects trading behavior:** No — research-only amendment; no production scorer, score, weight, threshold, ranking, eligibility, confluence, alert, or dashboard trading logic changes.
+- **Amendment results:** `docs/research/LONG-002B-AMEND-001.md`
+- **Amendment probe spec:** `docs/research/specs/LONG-002B-AMEND-001-probe-v1.json`
+- **Amendment safe artifact bundle:** `docs/research/artifacts/LONG-002B-AMEND-001/2026-08-16-222647/`
+- **Amendment overall disposition:** `not_supported` (security identity and earnings-event timing both remain blocked; `LONG-002C` is not authorized)
+- **Amendment per-family dispositions:**
+  - Security identity, lifecycle, and exclusion classification: `not_supported` (Massive partial; every `(symbol, as_of_date)` PIT row is classified independently; unresolved historical rows with generic or missing `type` codes and no corroborating name/SIC signal fail closed to `unknown`; later/current rows are never backfilled as historical fact; PFF classified as `ETF`, SPY as `ETF`, IGR as `closed_end_fund`, IPOD as `pre_merger_spac`)
+  - Earnings-event timing: `not_supported` (no preregistered endpoint returned a historical known-at-time earnings schedule; `vX/reference/financials` provides XBRL filing/period dates only; `sec_edgar` and `yahoo_earnings_calendar` fallbacks were not exercised and are recorded as `unverified` with `request_count=0`; fail-closed `unknown` treatment is explicitly not adopted)
+- **Amendment provider calls:** 64 of 120 HTTP requests; 0 retries; 0 provider switches; ~12.5 minutes runtime
+- **Next phase:** A Gary-approved amendment must resolve the security identity/lifecycle/exclusion classification blocker and the earnings-event timing blocker before `LONG-002C` full dataset construction is authorized.
 
 ### DAYTRADE-001: Future real-time day-trading decision-support program
 

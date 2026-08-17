@@ -1,0 +1,27 @@
+{
+  "bundle_path": "docs/research/artifacts/LONG-002B-AMEND-001/2026-08-16-222647",
+  "code_commit_sha": "42f1d93f43adf1cdef8f3b91c07370026544e764",
+  "code_source_tree_sha": "d66639038e15059527ce61ec4c28bf6fdcb54d50",
+  "data_contract_sha256": "f8ad6655e482fe5c9e8847467643bf0b03949686ad914180599323758cbf555a",
+  "files": {
+    "coverage_summary.csv": "622cfbddf0780af22948cb8f622f176f086bcb370c1b84a08b9d14098eac84e1",
+    "data_quality_summary.csv": "8214fdbfbb50e49d1a84fe9ba45547032022c697406f9e7bf3a6be7665853b16",
+    "feasibility_report.json": "9f580e17dca0cf760dbdcb765d5fc2ef972120066c67eabc702d80febd03acd5",
+    "provider_contract_matrix.csv": "09ccac5854f1aea77cfc667efdfe1569f19314a3fa7f9c745251b23853bd593e"
+  },
+  "generated_at": "2026-08-16-222647",
+  "long_002_spec_sha256": "f3df2845543500985c88568f9b855812576e9e4a10901f8a5f7a1834a319b3b5",
+  "original_implementation_commit_sha": "e99bf986eb3dada1333b71824438685048bbe722",
+  "original_preregistration_commit_sha": "75fad17b190d4879d26dd7de6b61241672193f08",
+  "overall_disposition": "not_supported",
+  "overall_evidence_confidence": "limited_but_usable_evidence",
+  "preregistration_commit_sha": "75fad17b190d4879d26dd7de6b61241672193f08",
+  "probe_spec_sha256": "38f550b3bf14bc58654ba5286213bbfe894577ccb1502b604f60076e6e239ce7",
+  "provenance_note": "Live probe 2026-08-16-222647 was executed from an uncommitted working tree at code commit 42f1d93f43adf1cdef8f3b91c07370026544e764. The same evaluator source tree (tradex/research/long_002_data_feasibility tree d66639038e15059527ce61ec4c28bf6fdcb54d50) was subsequently committed as e99bf986eb3dada1333b71824438685048bbe722 (pre-rebase) and rebased to 1d881e682223398f37f18738e5ff7d687115ca95. The amendment probe spec is identical between the original preregistration 75fad17b190d4879d26dd7de6b61241672193f08 and the rebased preregistration 179f6e7b31e99c613bb6ab797c6d5f06a83f5054 (same blob). No live provider rerun was performed for this metadata-only correction.",
+  "rebased_code_commit_sha": "1d881e682223398f37f18738e5ff7d687115ca95",
+  "rebased_preregistration_commit_sha": "179f6e7b31e99c613bb6ab797c6d5f06a83f5054",
+  "run_id": "2026-08-16-222647",
+  "runtime_seconds": 750.5951825169996,
+  "task_id": "LONG-002B-AMEND-001",
+  "total_http_requests": 64
+}
