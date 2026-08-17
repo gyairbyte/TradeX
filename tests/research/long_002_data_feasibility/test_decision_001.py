@@ -77,8 +77,29 @@ def test_fail_closed_unknown_policy_contract_is_complete() -> None:
     assert terms["earnings_schedule_fields_remain_unknown_when_historical_known_at_time_evidence_unavailable"] is True
     assert terms["current_calendars_sec_filing_timestamps_or_actual_release_dates_may_not_be_substituted_for_previously_known_schedules"] is True
     assert terms["unavailable_earnings_timing_cannot_become_predictive_feature_or_ranking_input"] is True
+    assert terms["unknown_earnings_schedule_cannot_be_labeled_confirmed_non_earnings_setup"] is True
+    assert terms["unknown_earnings_schedule_cannot_reach_enter_now_or_armed_under_ordinary_policy"] is True
+    assert terms["unknown_earnings_maximum_actionable_state_waitlist_or_do_not_surface"] is True
+    assert terms["no_retrospective_actionability_from_current_calendars_actual_release_or_sec_timestamps"] is True
+    assert terms["actionability_and_kpi_reporting_mark_unknown_earnings_observations_unavailable"] is True
+    assert terms["insufficient_known_schedule_coverage_makes_executable_policy_evaluation_inconclusive"] is True
     assert terms["coverage_selection_bias_comparability_and_sample_sufficiency_risks_documented"] is True
     assert terms["authorizes_only_a_separate_long_002c_design_pr_after_explicit_gary_approval"] is True
+
+
+def test_option_2_earnings_unknown_is_strictly_fail_closed() -> None:
+    """Unknown earnings schedule cannot bypass the locked five-session earnings-risk gate."""
+    packet = build_decision_packet(REPO_ROOT)
+    option_2 = next(o for o in packet["options"] if o["id"] == "2")
+    desc = option_2["description"].lower()
+    assert "unknown schedule" in desc
+    assert "enter now" in desc or "armed" in desc
+    assert "waitlist" in desc or "do_not_surface" in desc
+    assert "retrospective" in desc or "retrospectively" in desc
+    risks = " ".join(r.lower() for r in packet["advisory_recommendation"]["risks"])
+    assert "enter now" in risks or "armed" in risks
+    assert "unknown" in risks
+    assert "inconclusive" in risks
 
 
 def test_option_3_is_documentation_only_and_requires_separate_approval() -> None:
@@ -96,6 +117,37 @@ def test_option_3_is_documentation_only_and_requires_separate_approval() -> None
     assert "earnings_event_timing" in proposal
     assert len(proposal["security_identity_lifecycle_and_exclusion_classification"]["fallbacks"]) <= 2
     assert len(proposal["earnings_event_timing"]["fallbacks"]) <= 2
+
+
+def _assert_provider_slot_is_specifically_named(provider: dict[str, object], slot_name: str) -> None:
+    """A provider slot must have exactly one name, no 'or'/'or similar' placeholders, and cost/access notes."""
+    name = provider["name"]
+    assert isinstance(name, str)
+    assert " or " not in name
+    assert not name.endswith("_or_similar")
+    assert not name.endswith("_or_nasdaq_data_link")
+    assert "cost_access_licensing" in provider
+    cal = provider["cost_access_licensing"]
+    assert "confirmed_by_official_source" in cal
+    assert "expected_tier" in cal
+    assert "notes" in cal
+
+
+def test_option_3_providers_are_specifically_named_with_cost_notes() -> None:
+    """Option 3 names exactly one preferred provider and at most two specifically named fallbacks per family."""
+    packet = build_decision_packet(REPO_ROOT)
+    option_3 = next(o for o in packet["options"] if o["id"] == "3")
+    proposal = option_3["provider_amendment_proposal"]
+    for family in ("security_identity_lifecycle_and_exclusion_classification", "earnings_event_timing"):
+        family_spec = proposal[family]
+        preferred = family_spec["preferred_provider"]
+        _assert_provider_slot_is_specifically_named(preferred, "preferred")
+        assert len(family_spec["fallbacks"]) <= 2
+        seen: set[str] = {preferred["name"]}
+        for fallback in family_spec["fallbacks"]:
+            _assert_provider_slot_is_specifically_named(fallback, "fallback")
+            assert fallback["name"] not in seen, "fallback names must be distinct from preferred and each other"
+            seen.add(fallback["name"])
 
 
 def test_recommendation_does_not_change_status_or_authorize() -> None:
