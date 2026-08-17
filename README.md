@@ -442,6 +442,18 @@ uv run python -m tradex.research.long_002_data_feasibility.amendment_001 --repo-
 * **Amendment report:** `docs/research/LONG-002B-AMEND-001.md`
 * **Amendment spec:** `docs/research/specs/LONG-002B-AMEND-001-probe-v1.json`
 
+#### LONG-002B-DEC-001: blocker disposition decision packet
+
+`LONG-002B-DEC-001` is a research-governance-only decision packet that presents Gary with three mutually exclusive options for resolving the two remaining `LONG-002B` blockers and makes an advisory recommendation. It does not authorize or begin `LONG-002C`.
+
+* **Decision packet:** `docs/research/LONG-002B-DEC-001.md`
+* **Decision payload (machine-readable):** `docs/research/specs/LONG-002B-DEC-001.json`
+* **Status:** `pending_gary_decision`
+* **LONG-002C authorized:** `false`
+* **Production promotion eligible:** `false`
+* **Options:** continue blocking `LONG-002`; adopt a fail-closed `unknown` policy (advisory recommendation); or authorize one final bounded provider amendment
+* **No provider calls, credentials, dataset construction, or production changes occur in this PR.**
+
 ---
 
 ## Data Providers
