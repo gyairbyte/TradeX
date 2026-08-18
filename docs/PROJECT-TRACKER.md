@@ -355,7 +355,8 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Status:** In progress
 - **Completed phase:** `LONG-002A` — locked research/discovery contract (merged in PR #48)
 - **Completed phase:** `LONG-002B` — core data feasibility and point-in-time dataset contract (merged in PR #49)
-- **Current phase:** `MVP-ARCH-001` — product consolidation decision packet; `LONG-002C` design PR is authorized but explicitly paused while MVP architecture is completed
+- **Completed phase:** `LONG-002B-AMEND-002` — Gary-approved selection of Option 2 fail-closed unknown policy (merged in PR #52)
+- **Current phase:** `LONG-002C` design PR is authorized by PR #52 but explicitly paused by Gary while the separate `MVP-ARCH-001` product-architecture workstream is completed
 - **Research contract:** `docs/research/LONG-002.md`
 - **Locked machine-readable specification:** `docs/research/specs/LONG-002-v1.json`
 - **Objective:** Research an explainable, long-only rapid-upside opportunity system for U.S.-listed mid-, large-, and mega-cap common stocks, estimating the probability and capturable potential of clean +10%, +20%, and +30% moves over 5, 10, and 21 trading sessions from an executable entry.
@@ -400,7 +401,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **LONG-002C design PR authorized:** `true`
 - **LONG-002C dataset construction authorized:** `false`
 - **Production promotion eligible:** `false`
-- **Next phase:** A Gary-approved `MVP-ARCH-001` consolidation plan, then separate bounded implementation PRs (truthful labels, provider lifecycle, navigation consolidation, alert gating, candidate contract, journal replacement, prospective PIT capture); only after those are accepted may `LONG-002C` design work resume.
+- **Next phase:** Complete the separate `MVP-ARCH-001` product consolidation decision packet, then implement approved bounded consolidation PRs; `LONG-002C` design work may resume only after those are accepted.
 
 ### MVP-ARCH-001: TradeX product consolidation decision packet
 
@@ -414,7 +415,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Recommended action:** Produce a decision-only packet that inventories providers, dashboard tabs, strategies/evidence states, and defines the smallest coherent MVP operating model (Today / Candidate Detail / Journal / Research Lab / Settings), a candidate contract, a future journal contract, and a gated rollout sequence.
 - **Reason:** Without explicit consolidation, the product risks surfacing unvalidated heuristics as actionable signals.
 - **Dependencies:** `LONG-002B-AMEND-002` (merged PR #52)
-- **Files affected:** `docs/product/MVP-ARCH-001.md`, `docs/product/MVP-ARCH-001.json`, `tradex/product/mvp_arch_001.py`, `tests/product/test_mvp_arch_001.py`, `README.md`, `CLAUDE.md`, `docs/PROJECT-TRACKER.md`
+- **Files affected:** `docs/product/MVP-ARCH-001.md`, `docs/product/MVP-ARCH-001.json`, `tests/product/test_mvp_arch_001.py`, `README.md`, `CLAUDE.md`, `docs/PROJECT-TRACKER.md`
 - **Testing requirements:** Deterministic `tests/product/test_mvp_arch_001.py`; scoped lint; `git diff --check`; full `pytest`; GitHub CI.
 - **Acceptance criteria:** Packet is human-readable, machine-readable, fully auditable, makes no implementation/provider/dashboard/alert/schema/data changes, and leaves all final consolidation decisions pending Gary.
 - **Intended pull request:** `devin/mvp-arch-001-consolidation-decision`

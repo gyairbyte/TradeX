@@ -392,7 +392,8 @@ uv run python -m tradex.research.short_context evaluate --help
 * **Production behavior:** Unchanged
 * **Completed phase:** `LONG-002A` — locked research contract (merged in PR #48)
 * **Completed phase:** `LONG-002B` — core data feasibility and point-in-time dataset contract (merged in PR #49)
-* **Current phase:** `MVP-ARCH-001` — product consolidation decision packet; `LONG-002C` design PR is authorized but explicitly paused while the consolidation plan is completed
+* **Completed phase:** `LONG-002B-AMEND-002` — Gary-approved selection of Option 2 fail-closed unknown policy (merged in PR #52)
+* **LONG-002C status:** Design PR authorized by PR #52, but explicitly paused by Gary while the separate `MVP-ARCH-001` product consolidation workstream is completed; dataset construction and production promotion unauthorized
 * **Official snapshots:** 8:30 p.m. and 9:00 a.m. `America/New_York` on the XNYS calendar
 * **Display caps:** Enter Now 7, Armed 12, Qualified Waitlist 12
 * **Model search budget:** 48 material configurations across three allowed families
