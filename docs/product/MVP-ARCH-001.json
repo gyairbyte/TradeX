@@ -1,0 +1,723 @@
+{
+  "alert_boundary": [
+    "Only separately approved actionable strategies may generate automatic actionable alerts.",
+    "Research, rejected, inconclusive, archived, and legacy heuristic outputs cannot generate actionable alerts.",
+    "Shadow strategies may record telemetry but may not send normal actionable alerts.",
+    "Context and event detectors may be attached to an approved candidate but cannot independently imply a trade.",
+    "Provider degradation or unknown mandatory data must prevent unsupported actionability."
+  ],
+  "artifact_id": "MVP-ARCH-001",
+  "authorization": {
+    "alert_changes_authorized": false,
+    "dashboard_changes_authorized": false,
+    "database_migration_authorized": false,
+    "long_002c_work_authorized": false,
+    "pr_merge_authorized_without_gary_decision": false,
+    "production_behavior_changes_authorized": false,
+    "provider_calls_authorized": false,
+    "provider_removal_authorized": false,
+    "strategy_promotion_authorized": false
+  },
+  "candidate_contract": {
+    "fields": [
+      "strategy_id",
+      "strategy_version",
+      "symbol",
+      "security_identity_version",
+      "decision_timestamp",
+      "candidate_state",
+      "setup_quality_score",
+      "move_potential",
+      "entry_readiness",
+      "downside_risk",
+      "data_confidence",
+      "evidence_state",
+      "human_readable_reasons",
+      "missing_or_unknown_inputs",
+      "provider_provenance",
+      "entry_plan",
+      "invalidation_stop",
+      "target_or_expiration"
+    ],
+    "purpose": "Keep distinct concepts separate before any candidate can be shown as Enter Now / Armed / Waitlist.",
+    "rules": [
+      "A single 0-100 score is not probability, cross-strategy comparability, evidence strength, or actionability.",
+      "setup_quality, move_potential, entry_readiness, downside/risk, and data_confidence are separate fields.",
+      "missing_or_unknown_inputs are explicit and cannot be backfilled with current or later data."
+    ]
+  },
+  "classification": "product-architecture-and-governance-design-only",
+  "dashboard_inventory": [
+    {
+      "actionable": false,
+      "classification": "exploratory_scorer",
+      "current_overstatement": "UI language treats high scores as 'setups' and the sidebar labels higher scores as 'higher conviction'.",
+      "data_and_logic": "Runs one of three timeframe scorers (intraday/short/long) over a watchlist and returns a 0-100 additive score with reasons.",
+      "outcome_measurement_valid": false,
+      "recommended_action": "Relabel as 'Scanner (exploratory)' and add evidence badges distinguishing signal, context, and unvalidated heuristic.",
+      "recommended_disposition": "keep_but_relabel",
+      "supporting_disposition": "Production scorers are legacy heuristics; no research program validated them as executable strategies.",
+      "tab": "Scanner",
+      "user_problem": "Which stocks are currently scoring highest on technical conditions?"
+    },
+    {
+      "actionable": false,
+      "classification": "context",
+      "current_overstatement": "Help text describes coils as letting you 'get positioned before the obvious move'.",
+      "data_and_logic": "Reads signal_history / scan_observations and scores persistence, active-session ratio, and score trend.",
+      "outcome_measurement_valid": false,
+      "recommended_action": "Move to Research Lab as 'Coil context'; keep the code and tests intact.",
+      "recommended_disposition": "move_to_research_lab",
+      "supporting_disposition": "Exploratory; coil_strength formula is a heuristic, not a validated edge.",
+      "tab": "Coil Detector",
+      "user_problem": "Which stocks have appeared repeatedly without breaking out?"
+    },
+    {
+      "actionable": false,
+      "classification": "context",
+      "current_overstatement": "Caption calls results 'much higher conviction setups' and 'all timeframes aligned'.",
+      "data_and_logic": "Weighted coverage-aware aggregation of the three unvalidated timeframe scores.",
+      "outcome_measurement_valid": false,
+      "recommended_action": "Keep as context-only; replace 'conviction' language with 'alignment of exploratory scores' and show coverage/missing-timeframe metadata.",
+      "recommended_disposition": "keep_but_relabel",
+      "supporting_disposition": "VAL-002 and related score validation do not establish that confluence predicts executable outcomes.",
+      "tab": "Confluence",
+      "user_problem": "Which stocks look strong across multiple timeframes?"
+    },
+    {
+      "actionable": false,
+      "classification": "research_only",
+      "current_overstatement": "Help tab lists Pattern Match as a recommended third step in a first session.",
+      "data_and_logic": "Pearson similarity against mined fingerprints from a fixed universe.",
+      "outcome_measurement_valid": false,
+      "recommended_action": "Remove from primary navigation; preserve code, tests, and artifact bundle in Research Lab.",
+      "recommended_disposition": "archive",
+      "supporting_disposition": "PATTERN-001 was rejected on holdout; production promotion is false.",
+      "tab": "Pattern Similarity",
+      "user_problem": "Which stocks resemble historical run-up/decline shapes?"
+    },
+    {
+      "actionable": false,
+      "classification": "event_detector",
+      "current_overstatement": "Tier labels like 'large' and 'massive' gap can be read as trade recommendations.",
+      "data_and_logic": "Pre-market bars, previous close, catalyst context, liquidity, and spread filters.",
+      "outcome_measurement_valid": false,
+      "recommended_action": "Retain as event/context discovery; add badges showing gap is not an approved strategy entry.",
+      "recommended_disposition": "keep_but_relabel",
+      "supporting_disposition": "Gap scanner is source-aware and marks failures visibly; only Yahoo supports pre-market bars.",
+      "tab": "Pre-Market",
+      "user_problem": "Which stocks are gapping before the open and why?"
+    },
+    {
+      "actionable": false,
+      "classification": "context",
+      "current_overstatement": "Tab name implies actionability; most users will have no true-flow source configured.",
+      "data_and_logic": "Resolves Unusual Whales (true flow), Tradier, or Yahoo chain snapshots; computes put/call balance.",
+      "outcome_measurement_valid": false,
+      "recommended_action": "Remove from primary navigation unless a separately approved strategy and source are defined.",
+      "recommended_disposition": "archive",
+      "supporting_disposition": "No defined strategy uses options data; no validated PIT options edge.",
+      "tab": "Options Activity",
+      "user_problem": "Is there unusual options flow or chain activity?"
+    },
+    {
+      "actionable": true,
+      "classification": "settings_infrastructure",
+      "current_overstatement": "Alerts are presented as if coil/confluence/gap outputs are actionable thresholds.",
+      "data_and_logic": "Cooldown policy, atomic claim, Discord/email delivery for coil, confluence, and gap thresholds.",
+      "outcome_measurement_valid": false,
+      "recommended_action": "Keep the delivery infrastructure; move configuration into a future Settings area and gate automatic actionable alerts to approved strategies only.",
+      "recommended_disposition": "merge_into_workflow",
+      "supporting_disposition": "Alert infrastructure is sound, but it currently fires on unvalidated heuristics.",
+      "tab": "Alerts",
+      "user_problem": "Notify me when thresholds are crossed."
+    },
+    {
+      "actionable": false,
+      "classification": "legacy_signal_telemetry",
+      "current_overstatement": "Help text claims expectancy is 'the most important number' and positive expectancy means the strategy has edge.",
+      "data_and_logic": "Compares signal close to 1/3/5-session later closes and computes win rate/expectancy.",
+      "outcome_measurement_valid": false,
+      "recommended_action": "Replace the primary Journal tab with a future executable-strategy journal; preserve existing SQLite rows as legacy_signal_telemetry.",
+      "recommended_disposition": "replace",
+      "supporting_disposition": "Uses generic horizons, not strategy-specific entry/stop/target/expiration; does not prove edge.",
+      "tab": "Signal Journal",
+      "user_problem": "Did my signals work?"
+    },
+    {
+      "actionable": false,
+      "classification": "settings_infrastructure",
+      "current_overstatement": "Presentation as a tuning UI implies the user can improve the score without research control.",
+      "data_and_logic": "User-editable Intraday/Short/Long weights persisted to ~/.tradex/weights.json.",
+      "outcome_measurement_valid": false,
+      "recommended_action": "Remove from normal user workflow; future strategy parameters must be versioned and research-controlled.",
+      "recommended_disposition": "archive",
+      "supporting_disposition": "Weights are unvalidated and can be post-hoc tuned on uncontrolled observations.",
+      "tab": "Weights",
+      "user_problem": "Tune how many points each component contributes."
+    },
+    {
+      "actionable": false,
+      "classification": "settings_infrastructure",
+      "current_overstatement": "Quick-start still lists Pattern Match as a recommended step.",
+      "data_and_logic": "In-app markdown documentation.",
+      "outcome_measurement_valid": false,
+      "recommended_action": "Retain but rewrite inaccurate or overstated explanations; make evidence-state and research-status explicit.",
+      "recommended_disposition": "keep_but_relabel",
+      "supporting_disposition": "Currently recommends Pattern Match and Signal Journal as if they are validated workflows.",
+      "tab": "Help",
+      "user_problem": "How do I use TradeX?"
+    }
+  ],
+  "decision_status": "pending_gary_decision",
+  "gary_approval_source": "pending; this packet is advisory and requires Gary's explicit selection before any implementation PR",
+  "governance_invariants": [
+    "No implementation, provider call, dashboard change, alert change, database migration, or production signal change occurs in this PR.",
+    "No existing strategy is relabeled production_approved.",
+    "LONG-002C design was authorized by PR #52 but is explicitly paused while MVP architecture work is completed.",
+    "LONG-002C dataset construction remains unauthorized.",
+    "Production promotion remains unauthorized.",
+    "Final consolidation decisions remain pending Gary approval.",
+    "Existing research artifacts and locked specifications are referenced, not modified."
+  ],
+  "journal_outcome_contract": {
+    "current_state": "legacy_signal_telemetry",
+    "future_contract_fields": [
+      "strategy_id_and_version",
+      "candidate_id",
+      "planned_entry",
+      "realized_fill",
+      "stop_price",
+      "target_price",
+      "expiration",
+      "invalidation_rule",
+      "exit_reason",
+      "exit_fill",
+      "slippage_and_costs",
+      "net_return",
+      "strategy_drawdown",
+      "provider_provenance",
+      "outcome_confidence"
+    ],
+    "notes": "Existing SQLite rows must be preserved and labeled legacy_signal_telemetry. No data migration in this PR.",
+    "why_current_invalid_for_strategy_proof": [
+      "Uses signal close as reference, not the next executable entry fill.",
+      "Measures later closes at generic 1/3/5-session horizons, not strategy-specific stop/target/expiration.",
+      "Does not evaluate invalidation, stop, target, or expiration consistently.",
+      "Expectancy formula is signal telemetry, not executable strategy expectancy.",
+      "Encourages post-hoc threshold adjustment from uncontrolled observations."
+    ]
+  },
+  "material_discrepancies_found": [
+    "README.md LONG-002 'Current phase' still names LONG-002B-AMEND-001 even though LONG-002B-AMEND-002 is merged; this should be synchronized.",
+    "Help tab quick-start recommends Pattern Match as step 3, but PATTERN-001 was rejected and pattern similarity is research-only.",
+    "Signal Journal help text presents expectancy as proof of strategy edge, but the underlying outcome windows are generic 1/3/5-session signal telemetry.",
+    "Coil Detector help text uses 'before the crowd sees them' and 'bigger potential release' language that implies a validated edge.",
+    "Confluence tab caption calls the weighted score 'much higher conviction' though it is an aggregation of unvalidated heuristics.",
+    "Options Activity tab label implies actionability, but no options source is configured by default and no strategy uses the output.",
+    "Weights tab allows user tuning of component points persisted to ~/.tradex/weights.json without research versioning or validation.",
+    "PROJECT-TRACKER current phase is LONG-002B-AMEND-002 and does not yet reflect Gary's pause for MVP architecture work."
+  ],
+  "prerequisite_commit": "52cff71fd73105c7a2a01bc6f9ccc19c3ae204a2",
+  "product_questions": [
+    {
+      "answer": "Discover, evaluate, monitor, and review a small set of actionable long-only swing candidates each trading day.",
+      "question": "What is TradeX's primary daily job for Gary?"
+    },
+    {
+      "answer": "Today \u2014 Enter Now, Armed, and Waitlist candidates with context and data-confidence badges.",
+      "question": "What should Gary see first when opening the application?"
+    },
+    {
+      "answer": "Scanner (after relabeling), Pre-Market (as context), Candidate Detail (future), and Journal (future).",
+      "question": "Which current features directly support that job?"
+    },
+    {
+      "answer": "Pre-Market gaps, earnings proximity, confluence aggregation, and coil detector persistence metrics.",
+      "question": "Which features are useful only as context?"
+    },
+    {
+      "answer": "Pattern Similarity, Score validation (VAL-002), LONG-001/SHORT-001/INTRA-001/LONG-002 artifacts, and research-only parameter studies.",
+      "question": "Which features belong exclusively in Research Lab?"
+    },
+    {
+      "answer": "Pattern Similarity primary navigation, Options Activity primary navigation, Signal Journal as a performance claim, and Weights as an untuned user-facing control.",
+      "question": "Which features should be archived?"
+    },
+    {
+      "answer": "None of the existing numeric scores or heuristics are validated as executable strategies; they may be used only as discovery/context. A candidate must carry an approved strategy ID, entry plan, stop, target, and invalidation before it can be actioned.",
+      "question": "Which outputs can currently support actionability, and which cannot?"
+    },
+    {
+      "answer": "A locked research protocol, development evidence, validation and untouched-holdout gates, paired executable backtests, and a separate Gary-approved production PR that defines strategy ID, version, entry/stop/target/expiration, and universe.",
+      "question": "What evidence must exist before an experimental system becomes part of the primary workflow?"
+    },
+    {
+      "answer": "Using an executable journal that records the planned entry, realized fill, stop/target/expiration outcome, slippage, costs, and provider provenance per strategy version \u2014 not generic 1/3/5-session signal returns.",
+      "question": "How should TradeX measure whether a complete strategy worked?"
+    },
+    {
+      "answer": "1. Truthful labels and evidence badges; 2. Provider lifecycle/config simplification; 3. Navigation consolidation; 4. Alert gating; 5. Candidate persistence contract; 6. Journal/outcome replacement; 7. Prospective PIT data capture; 8. Later LONG-002C resumption.",
+      "question": "What is the smallest sequence of changes that turns the existing foundation into a cohesive MVP?"
+    }
+  ],
+  "product_summary": {
+    "diagnosis": "TradeX has a strong modular technical and research foundation, but the current product is a collection of scanners, context tools, and research pipelines rather than one cohesive daily decision-support workflow. The MVP objective is to consolidate around a single understandable daily job: surface, evaluate, and review a small set of actionable long-candidates while quarantining research, context, and unproven heuristics.",
+    "first_screen": "The Today view: a prioritized list of Enter Now / Armed / Waitlist candidates, with pre-market, earnings, and market context attached. Nothing else competes for attention until Gary clicks into a candidate.",
+    "primary_daily_job": "Help Gary discover, evaluate, monitor, and review a small set of actionable long-only swing candidates each trading day, with explicit evidence, data confidence, and unknown-value handling."
+  },
+  "program_id": "TradeX",
+  "prospective_capture_recommendation": [
+    "Capture earnings schedules as known at 8:30 p.m. and 9:00 a.m. America/New_York decision timestamps.",
+    "Capture security classification and reference facts at decision timestamps.",
+    "Record provider and request provenance for every candidate observation.",
+    "Record missing/unknown status explicitly rather than leaving it implicit."
+  ],
+  "provider_inventory": [
+    {
+      "credential_burden": "none",
+      "delay_feed_entitlement": "15-min delayed intraday; free daily/weekly; no entitlement check",
+      "fallback_behavior": "Default OHLCV provider; pre-market only supports Yahoo; no silent fallback from other providers to Yahoo for intraday execution",
+      "mix_in_scan_or_outcome": "FetchReport records actual_provider; signal_history and outcome_tracker store provider provenance; mixing is visible, not hidden",
+      "name": "yahoo",
+      "pit_reliability": "not point-in-time; historical adjustments and splits may differ from premium sources",
+      "production_runtime": true,
+      "recommended_lifecycle": "operational_fallback",
+      "recommended_role": "Daily/weekly/research OHLCV fallback; earnings treated as current/prospective only; unknown values must fail visibly",
+      "research_use": true,
+      "roles": [
+        "ohlcv",
+        "premarket_bars",
+        "earnings",
+        "market_cap_ranking",
+        "options_chain_snapshot"
+      ]
+    },
+    {
+      "credential_burden": "Schwab brokerage account + OAuth app + local token file",
+      "delay_feed_entitlement": "Real-time US equity data if entitled; account required",
+      "fallback_behavior": "Configured as DATA_PROVIDER; whole-scan fallback disabled unless explicitly set via OHLCV_FALLBACK_ORDER",
+      "mix_in_scan_or_outcome": "Provenance stored separately; outcome tracker may use different provider from signal provider",
+      "name": "schwab",
+      "pit_reliability": "Used for PATTERN-001, SHORT-001, and other research with UTC-indexed, sorted, de-duplicated daily bars",
+      "production_runtime": true,
+      "recommended_lifecycle": "operational_primary",
+      "recommended_role": "Primary operational OHLCV provider when configured; used for daily-history and outcome resolution",
+      "research_use": true,
+      "roles": [
+        "ohlcv",
+        "market_cap_ranking",
+        "liquidity_filter_fundamentals"
+      ]
+    },
+    {
+      "credential_burden": "API key + secret key",
+      "delay_feed_entitlement": "Free tier IEX feed; real-time but may differ from SIP/consolidated tape",
+      "fallback_behavior": "Currently a whole-scan fallback if configured in OHLCV_FALLBACK_ORDER",
+      "mix_in_scan_or_outcome": "actual_provider recorded in FetchReport and signal_history",
+      "name": "alpaca",
+      "pit_reliability": "Historical daily bars validated in LONG-002B; SIP/feed limitations must be exposed",
+      "production_runtime": true,
+      "recommended_lifecycle": "operational_fallback",
+      "recommended_role": "Explicitly degraded intraday fallback only if IEX/feed limitations are visible and tested; not a silent replacement for Schwab",
+      "research_use": true,
+      "roles": [
+        "ohlcv"
+      ]
+    },
+    {
+      "credential_burden": "IB account + TWS/IB Gateway running locally",
+      "delay_feed_entitlement": "Real-time global markets; requires local gateway",
+      "fallback_behavior": "Supported in fetcher but not configured by default",
+      "mix_in_scan_or_outcome": "Could be primary or fallback if configured",
+      "name": "ibkr",
+      "pit_reliability": "Not used in any research artifact",
+      "production_runtime": true,
+      "recommended_lifecycle": "archived",
+      "recommended_role": "Archive from MVP unless Gary explicitly selects IBKR as intended brokerage or global-market platform",
+      "research_use": false,
+      "roles": [
+        "ohlcv"
+      ]
+    },
+    {
+      "credential_burden": "API key",
+      "delay_feed_entitlement": "Paid/institutional entitlement; v2/aggs returned 403 in LONG-002B probes",
+      "fallback_behavior": "Used as research/reference only; not integrated into operational fallback chain",
+      "mix_in_scan_or_outcome": "Not used in production scans",
+      "name": "massive_polygon",
+      "pit_reliability": "Reference endpoints provide per-ticker PIT rows but generic type codes do not satisfy LONG-002 exclusion contract",
+      "production_runtime": false,
+      "recommended_lifecycle": "research_only",
+      "recommended_role": "Retain for research/reference and PIT data-family probes; do not promote to operational primary without a new Gary-approved amendment",
+      "research_use": true,
+      "roles": [
+        "ohlcv",
+        "reference_ticker_data",
+        "corporate_actions"
+      ]
+    },
+    {
+      "credential_burden": "none (public, rate-limited)",
+      "delay_feed_entitlement": "Public filing acceptance timestamps; not real-time quotes",
+      "fallback_behavior": "Specialized source used directly in long_002_data_feasibility; not a general fallback",
+      "mix_in_scan_or_outcome": "Not mixed with OHLCV outcomes; used for fundamental/identity validation",
+      "name": "sec_edgar",
+      "pit_reliability": "Demonstrated PIT shares/filing acceptance-time control in LONG-002B; acceptance timestamps are actual disclosure, not previously known schedules",
+      "production_runtime": false,
+      "recommended_lifecycle": "specialized_reference",
+      "recommended_role": "Primary specialized filing/fundamental source; useful for identity and shares, not for earnings-calendar scheduling",
+      "research_use": true,
+      "roles": [
+        "filings",
+        "fundamentals",
+        "shares",
+        "issuer_identity"
+      ]
+    },
+    {
+      "credential_burden": "Paid API key",
+      "delay_feed_entitlement": "Transaction-level options flow if paid and configured",
+      "fallback_behavior": "Chain/flow source resolution is explicit; no silent fallback",
+      "mix_in_scan_or_outcome": "Not used in signal or outcome records",
+      "name": "unusual_whales",
+      "pit_reliability": "Not validated as a decision input; no research artifact uses it",
+      "production_runtime": false,
+      "recommended_lifecycle": "experimental",
+      "recommended_role": "Archive from core MVP unless a defined strategy and adequate source are approved separately; true flow may return to Research Lab",
+      "research_use": false,
+      "roles": [
+        "options_true_flow"
+      ]
+    },
+    {
+      "credential_burden": "API key",
+      "delay_feed_entitlement": "Option-chain snapshots; not transaction flow",
+      "fallback_behavior": "Explicit options source selection only",
+      "mix_in_scan_or_outcome": "Not used in signal or outcome records",
+      "name": "tradier",
+      "pit_reliability": "Not validated as a decision input",
+      "production_runtime": false,
+      "recommended_lifecycle": "experimental",
+      "recommended_role": "Archive from core MVP unless a defined options use case is approved; chain snapshots are not directional signal evidence",
+      "research_use": false,
+      "roles": [
+        "options_chain_snapshot"
+      ]
+    },
+    {
+      "credential_burden": "none; web scraping with user-agent header",
+      "delay_feed_entitlement": "Current index constituents only; no historical PIT membership",
+      "fallback_behavior": "Not a fallback for market data",
+      "mix_in_scan_or_outcome": "Used only for watchlist preset refresh",
+      "name": "wikipedia",
+      "pit_reliability": "Not point-in-time; rebalancing drift and survivorship bias",
+      "production_runtime": true,
+      "recommended_lifecycle": "specialized_reference",
+      "recommended_role": "Continue as watchlist constituent source, refreshed explicitly, with no claim of historical accuracy",
+      "research_use": false,
+      "roles": [
+        "constituent_lists"
+      ]
+    }
+  ],
+  "provider_recommendation": {
+    "mapping": {
+      "constituents": {
+        "note": "Point-in-time membership must be confirmed separately before any research production.",
+        "primary": "wikipedia"
+      },
+      "earnings": {
+        "current": "yahoo",
+        "note": "Yahoo earnings are current/prospective, not historical PIT. Unknown values must fail visibly; do not substitute SEC filing or actual release timestamps.",
+        "primary": "(none verified)"
+      },
+      "filings_fundamentals_shares": {
+        "note": "Use acceptance-time controls and keep filing dates separate from known-at-time earnings schedules.",
+        "primary": "sec_edgar"
+      },
+      "global_brokerage": {
+        "note": "IBKR archived unless Gary later selects it as the intended brokerage or global-market platform.",
+        "status": "archived"
+      },
+      "ohlcv": {
+        "fallback": "alpaca (only as explicitly degraded intraday fallback with visible IEX/feed limitations)",
+        "primary": "schwab",
+        "research_fallback": "yahoo (daily/weekly research and fallback; not silent actionable intraday fallback)"
+      },
+      "options": {
+        "note": "Options Activity should be archived from primary navigation unless a defined strategy and adequate source are approved in a separate PR.",
+        "status": "removed from core MVP"
+      },
+      "premarket_bars": {
+        "note": "Only Yahoo currently supports pre-market bars; this is a known capability gap, not a recommendation to treat Yahoo as equivalent to real-time OHLCV.",
+        "primary": "yahoo"
+      },
+      "research_reference": {
+        "note": "Retain for research/reference and data-family probes only.",
+        "primary": "massive_polygon"
+      }
+    },
+    "notes": "Fallbacks must never silently convert delayed, partial, or differently sourced data into equivalent actionable evidence.",
+    "target_principle": "one authoritative provider per capability, with at most one explicit fallback"
+  },
+  "rollout_plan": [
+    {
+      "dependencies": [
+        "MVP-ARCH-001 approval"
+      ],
+      "objective": "Add evidence-state badges to all existing tabs and rewrite Help to stop recommending rejected/inconclusive features.",
+      "order": 1,
+      "pr": "Truthful UI/help labeling and evidence badges",
+      "production_trading_impact": "None; labels only.",
+      "requires_gary_approval": true,
+      "rollback": "Revert label/markdown changes; no data migration."
+    },
+    {
+      "dependencies": [
+        "Step 1"
+      ],
+      "objective": "Make Schwab primary, Alpaca/Yahoo fallback roles explicit, archive IBKR default, and make unknown earnings fail visibly.",
+      "order": 2,
+      "pr": "Provider lifecycle/configuration simplification",
+      "production_trading_impact": "Could change default provider selection; no signal logic changes.",
+      "requires_gary_approval": true,
+      "rollback": "Restore previous defaults via .env or settings."
+    },
+    {
+      "dependencies": [
+        "Step 1"
+      ],
+      "objective": "Move Coil Detector, Pattern Similarity, and Options Activity to Research Lab; reorganize Settings.",
+      "order": 3,
+      "pr": "Navigation consolidation",
+      "production_trading_impact": "None; UI navigation only.",
+      "requires_gary_approval": true,
+      "rollback": "Restore previous tab list in dashboard.py."
+    },
+    {
+      "dependencies": [
+        "Step 3"
+      ],
+      "objective": "Gate automatic actionable alerts on approved strategy evidence-state; keep delivery infrastructure.",
+      "order": 4,
+      "pr": "Alert gating",
+      "production_trading_impact": "Reduces false alerts; requires approved strategy list.",
+      "requires_gary_approval": true,
+      "rollback": "Disable gating or restore previous alert threshold check."
+    },
+    {
+      "dependencies": [
+        "Step 2"
+      ],
+      "objective": "Introduce candidate table/schema that stores the candidate contract fields.",
+      "order": 5,
+      "pr": "Candidate persistence contract",
+      "production_trading_impact": "Adds schema; no changes to existing signal_history.",
+      "requires_gary_approval": true,
+      "rollback": "Drop new table; existing tables untouched."
+    },
+    {
+      "dependencies": [
+        "Step 5"
+      ],
+      "objective": "Add executable strategy journal; keep legacy signal_history rows labeled legacy_signal_telemetry.",
+      "order": 6,
+      "pr": "Journal/outcome replacement",
+      "production_trading_impact": "Replaces Signal Journal primary UI; does not delete data.",
+      "requires_gary_approval": true,
+      "rollback": "Restore Signal Journal tab; new journal table remains empty."
+    },
+    {
+      "dependencies": [
+        "Step 2"
+      ],
+      "objective": "Schedule lightweight capture of earnings, classification, and provider provenance at decision timestamps.",
+      "order": 7,
+      "pr": "Prospective PIT data capture",
+      "production_trading_impact": "None until used by an approved strategy.",
+      "requires_gary_approval": true,
+      "rollback": "Disable capture job."
+    },
+    {
+      "dependencies": [
+        "Step 5",
+        "Step 6"
+      ],
+      "objective": "Resume LONG-002C design PR only after MVP architecture and candidate/journal contracts are approved.",
+      "order": 8,
+      "pr": "Later resumption of LONG-002C design",
+      "production_trading_impact": "None until a separate production PR is approved.",
+      "requires_gary_approval": true,
+      "rollback": "Continue pausing LONG-002C; no dataset built."
+    }
+  ],
+  "schema_version": "1.0",
+  "starting_main_sha": "52cff71fd73105c7a2a01bc6f9ccc19c3ae204a2",
+  "strategy_evidence_inventory": [
+    {
+      "component": "Production intraday scorer",
+      "evidence_state": "legacy_heuristic",
+      "may_generate_automatic_alerts": false,
+      "may_rank_candidates": true,
+      "may_use_actionable_labels": false,
+      "notes": "Additive 0-100 indicator; no validated executable edge."
+    },
+    {
+      "component": "Production short-term scorer",
+      "evidence_state": "legacy_heuristic",
+      "may_generate_automatic_alerts": false,
+      "may_rank_candidates": true,
+      "may_use_actionable_labels": false,
+      "notes": "VAL-002 did not authorize production changes; SHORT-001 is not supported."
+    },
+    {
+      "component": "Production long-term scorer",
+      "evidence_state": "legacy_heuristic",
+      "may_generate_automatic_alerts": false,
+      "may_rank_candidates": true,
+      "may_use_actionable_labels": false,
+      "notes": "LONG-001 was inconclusive."
+    },
+    {
+      "component": "Coil detector",
+      "evidence_state": "exploratory",
+      "may_generate_automatic_alerts": false,
+      "may_rank_candidates": false,
+      "may_use_actionable_labels": false,
+      "notes": "Heuristic persistence metric; move to Research Lab."
+    },
+    {
+      "component": "Confluence",
+      "evidence_state": "exploratory",
+      "may_generate_automatic_alerts": false,
+      "may_rank_candidates": false,
+      "may_use_actionable_labels": false,
+      "notes": "Coverage-aware aggregation of unvalidated scores; context only."
+    },
+    {
+      "component": "Premarket gaps",
+      "evidence_state": "exploratory",
+      "may_generate_automatic_alerts": false,
+      "may_rank_candidates": false,
+      "may_use_actionable_labels": false,
+      "notes": "Event detector; not an approved strategy."
+    },
+    {
+      "component": "Options activity",
+      "evidence_state": "exploratory",
+      "may_generate_automatic_alerts": false,
+      "may_rank_candidates": false,
+      "may_use_actionable_labels": false,
+      "notes": "Archive from primary workflow unless separately approved."
+    },
+    {
+      "component": "Pattern similarity / PATTERN-001",
+      "evidence_state": "rejected",
+      "may_generate_automatic_alerts": false,
+      "may_rank_candidates": false,
+      "may_use_actionable_labels": false,
+      "notes": "Rejected on holdout; quarantined from production."
+    },
+    {
+      "component": "SHORT-001",
+      "evidence_state": "not_supported",
+      "may_generate_automatic_alerts": false,
+      "may_rank_candidates": false,
+      "may_use_actionable_labels": false,
+      "notes": "No candidate policy passed development/validation; context not promoted."
+    },
+    {
+      "component": "LONG-001",
+      "evidence_state": "inconclusive",
+      "may_generate_automatic_alerts": false,
+      "may_rank_candidates": false,
+      "may_use_actionable_labels": false,
+      "notes": "Production long-term score vs 40-week MA baseline; no promotion."
+    },
+    {
+      "component": "INTRA-001",
+      "evidence_state": "inconclusive",
+      "may_generate_automatic_alerts": false,
+      "may_rank_candidates": false,
+      "may_use_actionable_labels": false,
+      "notes": "Real-data study inconclusive; holdout not parsed."
+    },
+    {
+      "component": "VAL-002",
+      "evidence_state": "inconclusive",
+      "may_generate_automatic_alerts": false,
+      "may_rank_candidates": false,
+      "may_use_actionable_labels": false,
+      "notes": "Score validation study complete; did not force a production change recommendation."
+    },
+    {
+      "component": "LONG-002",
+      "evidence_state": "research_only",
+      "may_generate_automatic_alerts": false,
+      "may_rank_candidates": false,
+      "may_use_actionable_labels": false,
+      "notes": "Rapid-upside research program; design PR authorized, dataset construction and production promotion unauthorized; currently paused for MVP architecture work."
+    }
+  ],
+  "target_navigation": [
+    {
+      "area": "Today",
+      "contains": [
+        "ranked candidate list",
+        "premarket context",
+        "earnings context",
+        "data confidence badges"
+      ],
+      "purpose": "Enter Now, Armed, and Waitlist candidates with context badges."
+    },
+    {
+      "area": "Candidate Detail",
+      "contains": [
+        "setup",
+        "readiness",
+        "risk",
+        "invalidation",
+        "evidence",
+        "missing data",
+        "chart",
+        "provenance"
+      ],
+      "purpose": "Deep-dive on one candidate."
+    },
+    {
+      "area": "Journal",
+      "contains": [
+        "planned trades",
+        "fills",
+        "stops",
+        "targets",
+        "strategy-specific results"
+      ],
+      "purpose": "Planned decisions and executable strategy outcomes."
+    },
+    {
+      "area": "Research Lab",
+      "contains": [
+        "Pattern Similarity",
+        "Coil context",
+        "score validation",
+        "LONG-001/SHORT-001/INTRA-001/LONG-002 artifacts",
+        "parameter studies"
+      ],
+      "purpose": "Experimental, rejected, inconclusive, shadow, and archived systems."
+    },
+    {
+      "area": "Settings",
+      "contains": [
+        "provider lifecycle",
+        "alert channels",
+        "watchlists",
+        "diagnostics",
+        "read-only strategy versions"
+      ],
+      "purpose": "Providers, watchlists, alert delivery, diagnostics, read-only strategy config."
+    }
+  ],
+  "task_id": "MVP-ARCH-001"
+}

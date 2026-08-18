@@ -355,7 +355,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Status:** In progress
 - **Completed phase:** `LONG-002A` — locked research/discovery contract (merged in PR #48)
 - **Completed phase:** `LONG-002B` — core data feasibility and point-in-time dataset contract (merged in PR #49)
-- **Current phase:** `LONG-002B-AMEND-001` — blocked data-family resolution (security identity/lifecycle/exclusion classification and earnings-event timing)
+- **Current phase:** `MVP-ARCH-001` — product consolidation decision packet; `LONG-002C` design PR is authorized but explicitly paused while MVP architecture is completed
 - **Research contract:** `docs/research/LONG-002.md`
 - **Locked machine-readable specification:** `docs/research/specs/LONG-002-v1.json`
 - **Objective:** Research an explainable, long-only rapid-upside opportunity system for U.S.-listed mid-, large-, and mega-cap common stocks, estimating the probability and capturable potential of clean +10%, +20%, and +30% moves over 5, 10, and 21 trading sessions from an executable entry.
@@ -400,7 +400,26 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **LONG-002C design PR authorized:** `true`
 - **LONG-002C dataset construction authorized:** `false`
 - **Production promotion eligible:** `false`
-- **Next phase:** A separate, explicitly approved `LONG-002C` design/specification PR; no dataset construction, provider calls, outcome analysis, or production changes until then.
+- **Next phase:** A Gary-approved `MVP-ARCH-001` consolidation plan, then separate bounded implementation PRs (truthful labels, provider lifecycle, navigation consolidation, alert gating, candidate contract, journal replacement, prospective PIT capture); only after those are accepted may `LONG-002C` design work resume.
+
+### MVP-ARCH-001: TradeX product consolidation decision packet
+
+- **ID:** MVP-ARCH-001
+- **Title:** TradeX provider, strategy, and dashboard consolidation plan
+- **Category:** Architecture / Product
+- **Priority:** High
+- **Status:** In progress
+- **Branch:** `devin/mvp-arch-001-consolidation-decision`
+- **Problem statement:** TradeX has a strong modular foundation but presents as a collection of scanners, context tools, and research pipelines; a single understandable daily decision workflow for Gary is needed before any further research-to-production promotion.
+- **Recommended action:** Produce a decision-only packet that inventories providers, dashboard tabs, strategies/evidence states, and defines the smallest coherent MVP operating model (Today / Candidate Detail / Journal / Research Lab / Settings), a candidate contract, a future journal contract, and a gated rollout sequence.
+- **Reason:** Without explicit consolidation, the product risks surfacing unvalidated heuristics as actionable signals.
+- **Dependencies:** `LONG-002B-AMEND-002` (merged PR #52)
+- **Files affected:** `docs/product/MVP-ARCH-001.md`, `docs/product/MVP-ARCH-001.json`, `tradex/product/mvp_arch_001.py`, `tests/product/test_mvp_arch_001.py`, `README.md`, `CLAUDE.md`, `docs/PROJECT-TRACKER.md`
+- **Testing requirements:** Deterministic `tests/product/test_mvp_arch_001.py`; scoped lint; `git diff --check`; full `pytest`; GitHub CI.
+- **Acceptance criteria:** Packet is human-readable, machine-readable, fully auditable, makes no implementation/provider/dashboard/alert/schema/data changes, and leaves all final consolidation decisions pending Gary.
+- **Intended pull request:** `devin/mvp-arch-001-consolidation-decision`
+- **Affects trading behavior:** No
+- **Authorization status:** `pending_gary_decision`; `long_002c_work_authorized`: `false`; `production_promotion_eligible`: `false`
 
 ### DAYTRADE-001: Future real-time day-trading decision-support program
 
