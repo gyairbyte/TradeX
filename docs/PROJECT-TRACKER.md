@@ -393,12 +393,14 @@ This is the master backlog for recommendations from the Devin review. Items are 
   - Security identity, lifecycle, and exclusion classification: `not_supported` (Massive partial; every `(symbol, as_of_date)` PIT row is classified independently; unresolved historical rows with generic or missing `type` codes and no corroborating name/SIC signal fail closed to `unknown`; later/current rows are never backfilled as historical fact; PFF classified as `ETF`, SPY as `ETF`, IGR as `closed_end_fund`, IPOD as `pre_merger_spac`)
   - Earnings-event timing: `not_supported` (no preregistered endpoint returned a historical known-at-time earnings schedule; `vX/reference/financials` provides XBRL filing/period dates only; `sec_edgar` and `yahoo_earnings_calendar` fallbacks were not exercised and are recorded as `unverified` with `request_count=0`; fail-closed `unknown` treatment is explicitly not adopted)
 - **Amendment provider calls:** 64 of 120 HTTP requests; 0 retries; 0 provider switches; ~12.5 minutes runtime
-- **Current phase:** `LONG-002B-DEC-001` — blocker disposition decision packet (pending Gary decision; research-governance only)
-- **Decision packet:** `docs/research/LONG-002B-DEC-001.md`
-- **Decision payload (machine-readable):** `docs/research/specs/LONG-002B-DEC-001.json`
-- **Decision status:** `pending_gary_decision`
-- **Recommended option (advisory):** Option 2 — adopt an explicit fail-closed `unknown` policy subject to a separate Gary/ChatGPT approval and a separate `LONG-002C` design PR
-- **Next phase:** A Gary-approved amendment or fail-closed unknown policy must resolve the two blockers before `LONG-002C` full dataset construction is authorized.
+- **Current phase:** `LONG-002B-AMEND-002` — Gary-approved selection of Option 2 (fail-closed unknown policy) and contract amendment before `LONG-002C` design PR
+- **Selection amendment:** `docs/research/LONG-002B-AMEND-002.md`
+- **Selection payload (machine-readable):** `docs/research/specs/LONG-002B-DEC-001.json` and `docs/research/specs/LONG-002B-AMEND-002.json`
+- **Decision status:** `gary_approved` (selected Option 2)
+- **LONG-002C design PR authorized:** `true`
+- **LONG-002C dataset construction authorized:** `false`
+- **Production promotion eligible:** `false`
+- **Next phase:** A separate, explicitly approved `LONG-002C` design/specification PR; no dataset construction, provider calls, outcome analysis, or production changes until then.
 
 ### DAYTRADE-001: Future real-time day-trading decision-support program
 

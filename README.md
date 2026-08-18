@@ -454,6 +454,18 @@ uv run python -m tradex.research.long_002_data_feasibility.amendment_001 --repo-
 * **Options:** continue blocking `LONG-002`; adopt a fail-closed `unknown` policy (advisory recommendation); or authorize one final bounded provider amendment
 * **No provider calls, credentials, dataset construction, or production changes occur in this PR.**
 
+#### LONG-002B-AMEND-002: Option 2 selected and fail-closed unknown policy locked
+
+`LONG-002B-AMEND-002` records Gary's approval of Option 2 from `LONG-002B-DEC-001` and locks the contract amendment that governs the two blocked data families. It authorizes only a separate `LONG-002C` design/specification PR; it does not authorize dataset construction, provider calls, outcome analysis, or production changes.
+
+* **Selection amendment:** `docs/research/LONG-002B-AMEND-002.md`
+* **Selection payload (machine-readable):** `docs/research/specs/LONG-002B-AMEND-002.json`
+* **Status:** `gary_approved` (Option 2 selected)
+* **LONG-002C design PR authorized:** `true`
+* **LONG-002C dataset construction authorized:** `false`
+* **Production promotion eligible:** `false`
+* **No provider calls, credentials, dataset construction, or production changes occur in this PR.**
+
 ---
 
 ## Data Providers
