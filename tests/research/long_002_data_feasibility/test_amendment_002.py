@@ -32,7 +32,7 @@ def test_selection_record_status_and_authorization() -> None:
     assert record["long_002c_dataset_construction_authorized"] is False
     assert record["production_promotion_eligible"] is False
     assert record["starting_main_sha"] == STARTING_MAIN_SHA
-    assert record["pr_51_merge_commit"] == STARTING_MAIN_SHA
+    assert record["prerequisite_decision_packet_commit"] == STARTING_MAIN_SHA
     assert "dataset construction" in record["authorization_boundary"].lower()
 
 
@@ -118,6 +118,27 @@ def test_insufficient_schedule_coverage_inconclusive() -> None:
     assert "inconclusive" in record["locked_earnings_policy"]["insufficient_coverage_inconclusive"].lower()
     assert "relaxed" not in record["locked_earnings_policy"]["insufficient_coverage_inconclusive"].lower()
     assert "weaken" in record["locked_earnings_policy"]["no_weakening_for_sample_size"].lower()
+
+
+def test_task_identity_is_amendment_not_program() -> None:
+    """The selection record is scoped to LONG-002B-AMEND-002 and preserves LONG-002 as program_id."""
+    record = build_selection_record(REPO_ROOT)
+    assert record["task_id"] == "LONG-002B-AMEND-002"
+    assert record["amendment_id"] == "LONG-002B-AMEND-002"
+    assert record["program_id"] == "LONG-002"
+
+
+def test_approval_provenance_is_post_pr51_assignment_not_pr_itself() -> None:
+    """PR #51 was the prerequisite decision packet, not the approval source; the selection came from the assignment."""
+    record = build_selection_record(REPO_ROOT)
+    assert record["starting_main_sha"] == STARTING_MAIN_SHA
+    assert record["prerequisite_decision_packet_commit"] == STARTING_MAIN_SHA
+    source = record["gary_approval_source"].lower()
+    assert "pr #51" not in source or "not" in source
+    assert "assignment" in source
+    assert "explicit option 2" in source or "option 2 selection" in source
+    assert "prerequisite" in source
+    assert "merge commit" in source
 
 
 def test_only_long_002c_design_pr_authorized() -> None:

@@ -1,8 +1,9 @@
 # LONG-002B-AMEND-002: Option 2 — Fail-closed unknown policy selection
 
 **Amendment:** `LONG-002B-AMEND-002`
-**Selection source:** Gary/ChatGPT selection from `LONG-002B-DEC-001`
-**PR #51 merge commit:** `f6413a2ba66859a78c536242fa787d1cdf204eb2`
+**Task:** `LONG-002B-AMEND-002` | **Program:** `LONG-002`
+**Selection source:** Gary/ChatGPT explicit Option 2 selection in the LONG-002B-AMEND-002 assignment issued after PR #51 merged. The merge commit is preserved only as the prerequisite decision-packet reference, not as the approval source.
+**Prerequisite decision-packet commit (PR #51 merge SHA):** `f6413a2ba66859a78c536242fa787d1cdf204eb2`
 **Starting `main` SHA:** `f6413a2ba66859a78c536242fa787d1cdf204eb2`
 **Decision status:** `gary_approved`
 **Selected option:** `2` — Adopt an explicit fail-closed unknown policy

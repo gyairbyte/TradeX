@@ -93,18 +93,23 @@ def build_selection_record(repo_root: Path | str) -> dict[str, Any]:
     record: dict[str, Any] = {
         "schema_version": "1.0",
         "amendment_id": "LONG-002B-AMEND-002",
-        "task_id": "LONG-002",
+        "task_id": "LONG-002B-AMEND-002",
+        "program_id": "LONG-002",
         "classification": "research-governance-only",
         "status": "gary_approved",
         "selected_option_id": "2",
         "selected_option_label": option_2["label"],
-        "gary_approval_source": "GitHub PR #51 review/selection (merge commit f6413a2ba66859a78c536242fa787d1cdf204eb2)",
+        "gary_approval_source": (
+            "Gary/ChatGPT explicit Option 2 selection in the LONG-002B-AMEND-002 assignment "
+            "issued after PR #51 merged. The merge commit is preserved only as the prerequisite "
+            "decision-packet reference, not as the approval source."
+        ),
         "fail_closed_unknown_policy_approved": True,
         "long_002c_design_pr_authorized": True,
         "long_002c_dataset_construction_authorized": False,
         "production_promotion_eligible": False,
         "starting_main_sha": STARTING_MAIN_SHA,
-        "pr_51_merge_commit": STARTING_MAIN_SHA,
+        "prerequisite_decision_packet_commit": STARTING_MAIN_SHA,
         "authorization_boundary": (
             "This amendment authorizes only a separate LONG-002C design/specification PR. "
             "It does not authorize LONG-002C dataset construction, implementation, provider calls, "
@@ -197,9 +202,10 @@ def to_markdown(record: dict[str, Any]) -> str:
     lines: list[str] = [
         "# LONG-002B-AMEND-002: Option 2 — Fail-closed unknown policy selection",
         "",
-        "**Amendment:** `LONG-002B-AMEND-002`",
-        "**Selection source:** Gary/ChatGPT selection from `LONG-002B-DEC-001`",
-        "**PR #51 merge commit:** `{}`".format(record["pr_51_merge_commit"]),
+        "**Amendment:** `{}`".format(record["amendment_id"]),
+        "**Task:** `{}` | **Program:** `{}`".format(record["task_id"], record["program_id"]),
+        "**Selection source:** {}".format(record["gary_approval_source"]),
+        "**Prerequisite decision-packet commit (PR #51 merge SHA):** `{}`".format(record["prerequisite_decision_packet_commit"]),
         "**Starting `main` SHA:** `{}`".format(record["starting_main_sha"]),
         "**Decision status:** `gary_approved`",
         "**Selected option:** `{}` — {}".format(record["selected_option_id"], record["selected_option_label"]),

@@ -17,7 +17,7 @@
     "selected_option_recommendation": "2"
   },
   "fail_closed_unknown_policy_approved": true,
-  "gary_approval_source": "GitHub PR #51 review/selection (merge commit f6413a2ba66859a78c536242fa787d1cdf204eb2)",
+  "gary_approval_source": "Gary/ChatGPT explicit Option 2 selection in the LONG-002B-AMEND-002 assignment issued after PR #51 merged. The merge commit is preserved only as the prerequisite decision-packet reference, not as the approval source.",
   "governance_invariants": [
     "Option 2 is explicitly selected and Gary-approved; Options 1 and 3 are not selected or authorized.",
     "Prior not_supported feasibility findings from LONG-002B and LONG-002B-AMEND-001 remain unchanged.",
@@ -53,14 +53,15 @@
   },
   "long_002c_dataset_construction_authorized": false,
   "long_002c_design_pr_authorized": true,
-  "pr_51_merge_commit": "f6413a2ba66859a78c536242fa787d1cdf204eb2",
+  "prerequisite_decision_packet_commit": "f6413a2ba66859a78c536242fa787d1cdf204eb2",
   "production_promotion_eligible": false,
+  "program_id": "LONG-002",
   "schema_version": "1.0",
   "selected_option_id": "2",
   "selected_option_label": "Adopt an explicit fail-closed unknown policy",
   "starting_main_sha": "f6413a2ba66859a78c536242fa787d1cdf204eb2",
   "status": "gary_approved",
-  "task_id": "LONG-002",
+  "task_id": "LONG-002B-AMEND-002",
   "upstream_spec_hashes": {
     "LONG-002-v1.json": "f3df2845543500985c88568f9b855812576e9e4a10901f8a5f7a1834a319b3b5",
     "LONG-002B-AMEND-001-probe-v1.json": "38f550b3bf14bc58654ba5286213bbfe894577ccb1502b604f60076e6e239ce7",
