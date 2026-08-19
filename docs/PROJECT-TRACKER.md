@@ -344,7 +344,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
   - A valid outcome is `insufficient evidence to change the production score`; the study does not force a recommendation.
 - **Intended pull request:** `devin/reevaluate-scores-with-validated-data`
 - **Affects trading behavior:** No
-- **Next recommended PR:** `devin/long-002a-locked-research-contract` — `SHORT-001` is complete and `INTRA-001` is complete and inconclusive; the active research program is now `LONG-002`.
+- **Next recommended PR:** `devin/mvp-arch-001-consolidation-decision` — `LONG-002A`, `LONG-002B`, and `LONG-002B-AMEND-002` are completed; `LONG-002C` design is authorized by PR #52 but paused by Gary while `MVP-ARCH-001` is completed.
 
 ### LONG-002: Long-only rapid-upside opportunity research program
 
@@ -381,11 +381,12 @@ This is the master backlog for recommendations from the Devin review. Items are 
   - Issuer fundamentals & shares: `supported_with_documented_limitations` (SEC EDGAR primary; CIK identity resolved for AAPL/GOOGL/FDX; filing acceptance-time control linked to the selected shares fact; PIT market-cap pathway demonstrated for AAPL with shares outstanding period end 2020-10-16, filed 2020-10-30, acceptance 2020-10-29, paired with the 2020-12-31 close)
   - Earnings event timing: `not_supported` (no live provider calls; preregistered candidates remain unverified; no historical known-at-time schedule source identified within bounded budget)
 - **Provider call budget:** 41 of 120 HTTP requests used; 0 retries; 1 provider switch (Massive/Polygon daily bars → Alpaca fallback)
-- **Recommended action:** A Gary-approved amendment must identify and verify a historical earnings-calendar source or formally adopt the `unknown` earnings treatment before `LONG-002C` full dataset construction. No production behavior is authorized.
+- **Recommended action:** `LONG-002B-AMEND-002` has formally selected the fail-closed `unknown` policy, so `LONG-002C` dataset construction is not authorized until after `MVP-ARCH-001` is completed and a separate Gary/ChatGPT decision approves resuming `LONG-002C` design/specification work. No production behavior is authorized.
 - **Testing requirements:** `tests/research/long_002_data_feasibility/test_spec.py`; `tests/research/long_002_data_feasibility/test_probe.py`; `tests/research/long_002_data_feasibility/test_amendment_001.py`; `uv run ruff`; `uv run pytest`; `git diff --check`.
 - **Acceptance criteria:** Bounded provider probes produce auditable dispositions for each core data family; `LONG-002B-AMEND-001` resolves the minimum-contract gating for security identity/lifecycle/exclusion classification with deterministic tests; no full historical dataset is built; no validation/holdout outcomes are accessed; no production behavior changes.
 - **Intended pull request:** `devin/long-002b-amend-001-blocker-resolution` (draft)
 - **Affects trading behavior:** No — research-only amendment; no production scorer, score, weight, threshold, ranking, eligibility, confluence, alert, or dashboard trading logic changes.
+- **Historical note:** `LONG-002B-AMEND-001` results are preserved as historical artifacts and are superseded by the later `LONG-002B-AMEND-002` Option 2 decision.
 - **Amendment results:** `docs/research/LONG-002B-AMEND-001.md`
 - **Amendment probe spec:** `docs/research/specs/LONG-002B-AMEND-001-probe-v1.json`
 - **Amendment safe artifact bundle:** `docs/research/artifacts/LONG-002B-AMEND-001/2026-08-16-222647/`
@@ -394,7 +395,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
   - Security identity, lifecycle, and exclusion classification: `not_supported` (Massive partial; every `(symbol, as_of_date)` PIT row is classified independently; unresolved historical rows with generic or missing `type` codes and no corroborating name/SIC signal fail closed to `unknown`; later/current rows are never backfilled as historical fact; PFF classified as `ETF`, SPY as `ETF`, IGR as `closed_end_fund`, IPOD as `pre_merger_spac`)
   - Earnings-event timing: `not_supported` (no preregistered endpoint returned a historical known-at-time earnings schedule; `vX/reference/financials` provides XBRL filing/period dates only; `sec_edgar` and `yahoo_earnings_calendar` fallbacks were not exercised and are recorded as `unverified` with `request_count=0`; fail-closed `unknown` treatment is explicitly not adopted)
 - **Amendment provider calls:** 64 of 120 HTTP requests; 0 retries; 0 provider switches; ~12.5 minutes runtime
-- **Current phase:** `LONG-002B-AMEND-002` — Gary-approved selection of Option 2 (fail-closed unknown policy) and contract amendment before `LONG-002C` design PR
+- **Completed phase:** `LONG-002B-AMEND-002` — Gary-approved selection of Option 2 (fail-closed unknown policy) and contract amendment before `LONG-002C` design PR
 - **Selection amendment:** `docs/research/LONG-002B-AMEND-002.md`
 - **Selection payload (machine-readable):** `docs/research/specs/LONG-002B-DEC-001.json` and `docs/research/specs/LONG-002B-AMEND-002.json`
 - **Decision status:** `gary_approved` (selected Option 2)
@@ -420,7 +421,12 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Acceptance criteria:** Packet is human-readable, machine-readable, fully auditable, makes no implementation/provider/dashboard/alert/schema/data changes, and leaves all final consolidation decisions pending Gary.
 - **Intended pull request:** `devin/mvp-arch-001-consolidation-decision`
 - **Affects trading behavior:** No
-- **Authorization status:** `pending_gary_decision`; `long_002c_work_authorized`: `false`; `production_promotion_eligible`: `false`
+- **Authorization status:** `pending_gary_decision`; `production_promotion_eligible`: `false`
+- `long_002b_amend_002_completed`: `true`
+- `long_002c_design_authorized_by_pr52`: `true`
+- `long_002c_currently_paused_by_gary`: `true`
+- `long_002c_dataset_construction_authorized`: `false`
+- `long_002c_work_authorized_by_mvp_arch_001`: `false`
 
 ### DAYTRADE-001: Future real-time day-trading decision-support program
 
@@ -542,8 +548,8 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **V2 real-data report:** `docs/research/SHORT-001-SCHWAB-STUDY-V2.md`
 - **Safe artifacts:** `docs/research/artifacts/SHORT-001/2026-08-01-5ae8a420/` (v1, preserved unchanged); `docs/research/artifacts/SHORT-001/2026-08-07-e5b64b56/` (v2)
 - **Problem statement:** The short-term score does not account for whether the broad market or sector is trending.
-- **Recommended action:** The v2 ingestion remediation and rerun are complete. The data-quality issue was resolved by dropping 23 malformed rows and producing deterministic audit evidence. The unchanged candidate-selection gate produced no qualifying policy, so SHORT-001 is closed as Completed — Not supported and no production integration is warranted. The next research priority is now `LONG-002` (locked rapid-upside long opportunity program); the `INTRA-001B` through `INTRA-001D` work is complete and inconclusive.
-- **Next recommended PR:** `devin/long-002a-locked-research-contract` — `INTRA-001B` through `INTRA-001D` are complete and inconclusive; the active research program is now `LONG-002`.
+- **Recommended action:** The v2 ingestion remediation and rerun are complete. The data-quality issue was resolved by dropping 23 malformed rows and producing deterministic audit evidence. The unchanged candidate-selection gate produced no qualifying policy, so SHORT-001 is closed as Completed — Not supported and no production integration is warranted. `LONG-002A`, `LONG-002B`, and `LONG-002B-AMEND-002` are completed; `LONG-002C` design is authorized by PR #52 but paused by Gary while `MVP-ARCH-001` is completed; the `INTRA-001B` through `INTRA-001D` work is complete and inconclusive.
+- **Next recommended PR:** `devin/mvp-arch-001-consolidation-decision` — `INTRA-001B` through `INTRA-001D` are complete and inconclusive; `LONG-002A`, `LONG-002B`, and `LONG-002B-AMEND-002` are completed; `LONG-002C` design is authorized by PR #52 but paused by Gary while `MVP-ARCH-001` is completed.
 - **Reason:** Buying pullbacks in a bear market or weak sector is a different proposition than in a strong bull market.
 - **Dependencies:** VAL-001 (backtesting harness), VAL-002 (score validation study)
 - **Files affected:** `tradex/market/__init__.py`, `tradex/market/context.py`, `tradex/market/models.py`, `tradex/signals/short_term.py`, `tradex/screener/engine.py`, `tradex/research/short_context/*`, `tests/market/test_context.py`, `tests/research/short_context/*`, `README.md`, `SETUP.md`, `.agents/skills/tradex-local-testing/SKILL.md`, `docs/PROJECT-TRACKER.md`, `docs/research/SHORT-001.md`
@@ -806,7 +812,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 
 | Priority | Count | Representative first item |
 |---|---|---|
-| High | 17 | LONG-002: Long-only rapid-upside opportunity research program |
+| High | 18 | MVP-ARCH-001: TradeX product consolidation decision packet |
 | Medium | 12 | SHORT-001: Add market regime and relative strength to short-term scorer |
 | Low | 5 | DOC-001: Close LONG-001 and restore documentation and tracker consistency |
 
@@ -817,20 +823,22 @@ This is the master backlog for recommendations from the Devin review. Items are 
 | Completed | 32 |
 | Deferred | 1 |
 | Proposed | 0 |
-| In progress | 1 |
+| In progress | 2 |
 | Blocked | 0 |
 
-The original engineering-foundation and UI-refactor backlog is substantially complete. `SHORT-001` is closed as Completed — Not supported. `INTRA-001B` produced a locked 2025 dataset manifest and safe artifacts with the 1Day-ranking amendment accepted. `INTRA-001C` is complete and accepted: the synthetic intraday engine and its tests produce deterministic `synthetic=true`, `evidence_eligible=false` artifacts and do not access real data or production behavior. `INTRA-001D` is complete: the locked real-data study ran on `INTRA-001B-DATASET-V1` with frozen evaluation code, produced real diagnostic trade/sample metrics, and returned `inconclusive`; the holdout was not parsed. No further work on the `INTRA-001` hypothesis is authorized without a new Gary-approved plan. `LONG-002A` is now the active research contract: a locked, research-only rapid-upside opportunity program distinct from `LONG-001` and `INTRA-001`. `DAYTRADE-001` is a future, deferred real-time day-trading program sequenced after `LONG-002` unless Gary explicitly reprioritizes.
+The original engineering-foundation and UI-refactor backlog is substantially complete. `SHORT-001` is closed as Completed — Not supported. `INTRA-001B` through `INTRA-001D` are complete and `INTRA-001` returned `inconclusive` without parsing the holdout; no further work on the `INTRA-001` hypothesis is authorized without a new Gary-approved plan. `LONG-002A` and `LONG-002B` are completed. `LONG-002B-AMEND-002` is completed and merged through PR #52. `LONG-002C` design/specification PR is authorized by PR #52 but its execution is explicitly paused by Gary while the separate `MVP-ARCH-001` product-architecture workstream is completed. `MVP-ARCH-001` is the active, in-progress decision packet and does not authorize `LONG-002C` dataset construction, implementation, or production promotion. `DAYTRADE-001` remains a future, deferred real-time day-trading program until Gary reprioritizes.
 
 **Remaining non-completed items:**
-1. **LONG-002** — `LONG-002A` locked research contract (in progress on `devin/long-002a-locked-research-contract`).
-2. **DAYTRADE-001** — Future real-time day-trading decision-support program (deferred until after `LONG-002`).
+1. **MVP-ARCH-001** — TradeX product consolidation decision packet (`devin/mvp-arch-001-consolidation-decision`, in progress, `pending_gary_decision`).
+2. **LONG-002C** — Design/specification PR authorized by PR #52 but paused by Gary; dataset construction and production promotion unauthorized.
+3. **DAYTRADE-001** — Future real-time day-trading decision-support program (deferred until after `LONG-002`).
 
 **Recommended next work order:**
-1. **LONG-002A** — Review and accept the locked `LONG-002` research contract.
-2. **LONG-002B** — Core data feasibility and point-in-time dataset contract, only after `LONG-002A` acceptance.
-3. **Separate Gary-approved production PR** — Only if a future research phase (e.g., `LONG-002I`) passes validation and holdout and the methodology remains valid. No production promotion is currently warranted.
+1. **MVP-ARCH-001** — Complete the product consolidation decision packet and submit it for Gary review.
+2. **Bounded MVP consolidation PRs** — Only after `MVP-ARCH-001` is approved.
+3. **LONG-002C design work** — Resume only after the approved consolidation PRs are accepted.
+4. No `LONG-002C` dataset construction, production promotion, or trading-behavior change is authorized without separate Gary approval.
 
 **Recommended next pull request order:**
-1. `devin/long-002a-locked-research-contract` — `LONG-002A` locked research/discovery contract.
+1. `devin/mvp-arch-001-consolidation-decision` — finalize the product consolidation decision packet.
 

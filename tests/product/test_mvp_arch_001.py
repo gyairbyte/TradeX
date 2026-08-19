@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 JSON_PATH = REPO_ROOT / "docs" / "product" / "MVP-ARCH-001.json"
 MD_PATH = REPO_ROOT / "docs" / "product" / "MVP-ARCH-001.md"
+TRACKER_PATH = REPO_ROOT / "docs" / "PROJECT-TRACKER.md"
 
 _ALLOWED_LIFECYCLES = {
     "operational_primary",
@@ -275,3 +277,152 @@ def test_committed_json_is_authoritative_and_valid(inv: dict) -> None:
     assert "strategy_evidence_inventory" in inv
     assert "candidate_contract" in inv
     assert "rollout_plan" in inv
+
+
+@pytest.fixture
+def tracker_text() -> str:
+    assert TRACKER_PATH.exists(), f"Missing {TRACKER_PATH}"
+    return TRACKER_PATH.read_text(encoding="utf-8")
+
+
+_LONG_002_AUTH_KEYS = {
+    "long_002b_amend_002_completed": True,
+    "long_002c_design_authorized_by_pr52": True,
+    "long_002c_currently_paused_by_gary": True,
+    "long_002c_dataset_construction_authorized": False,
+    "long_002c_work_authorized_by_mvp_arch_001": False,
+}
+
+
+def test_tracker_contains_explicit_long_002_authorization(tracker_text: str) -> None:
+    lower = tracker_text.lower()
+    for key, value in _LONG_002_AUTH_KEYS.items():
+        assert key in tracker_text, f"Missing explicit LONG-002 key: {key}"
+        # Each key is followed by the expected boolean string value (possibly in backticks).
+        bool_token = "true" if value else "false"
+        assert re.search(rf"{re.escape(key)}[^\n]{{0,40}}`?{bool_token}`?", lower), key
+
+
+def test_tracker_does_not_contain_ambiguous_long_002c_authorization(
+    tracker_text: str,
+) -> None:
+    """`long_002c_work_authorized` (without suffix) is gone; the explicit MVP-bound key remains."""
+    assert re.search(r"\blong_002c_work_authorized\b", tracker_text) is None
+    assert "long_002c_work_authorized_by_mvp_arch_001" in tracker_text
+
+
+def test_tracker_long_002b_amend_002_is_not_current_phase(tracker_text: str) -> None:
+    assert (
+        re.search(r"\*\*Current phase:\*\*.*?LONG-002B-AMEND-002", tracker_text) is None
+    )
+    # It is, however, listed as a completed phase.
+    assert "**Completed phase:** `LONG-002B-AMEND-002`" in tracker_text
+
+
+def test_tracker_does_not_say_long_002a_is_active_or_in_progress(tracker_text: str) -> None:
+    lower = tracker_text.lower()
+    assert "devin/long-002a-locked-research-contract" not in lower
+    assert re.search(r"long[-_]002a.*(?:is now the active|active research contract|in progress|current phase)", lower) is None
+    assert re.search(r"(?:active research contract|current phase).*(?:long[-_]002a)", lower) is None
+
+
+def test_tracker_does_not_recommend_starting_long_002a_or_002b(
+    tracker_text: str,
+) -> None:
+    text = tracker_text.lower()
+    # Capture the remaining-work and recommended-order sections.
+    m = re.search(r"(?si)\*\*Remaining non-completed items:\*\*(.*?)\Z", text)
+    assert m, "Could not find remaining-work section"
+    tail = m.group(1)
+    stale = [
+        "review and accept the locked `long-002`",
+        "long-002b — core data feasibility",
+        "long-002a locked research contract",
+        "long-002a is now the active",
+        "active research program is now `long-002`",
+        "devin/long-002a-locked-research-contract",
+    ]
+    for phrase in stale:
+        assert phrase not in tail, f"Stale recommendation remains: {phrase!r}"
+
+
+def test_tracker_mvp_arch_001_is_separate_and_pending(tracker_text: str) -> None:
+    lower = tracker_text.lower()
+    assert "mvp-arch-001" in lower
+    assert "pending_gary_decision" in lower
+    # The tracker repeats the explicit assertion from the JSON: MVP-ARCH-001 does
+    # not authorize LONG-002C work.
+    assert "long_002c_work_authorized_by_mvp_arch_001" in tracker_text
+
+
+def _section(text: str, header: str) -> str:
+    m = re.search(rf"(?si){re.escape(header)}(.*?)(?:\n## |\n\*\*|\Z)", text)
+    assert m, f"Could not find section: {header}"
+    return m.group(1)
+
+
+def test_tracker_summary_and_remaining_work_are_consistent(tracker_text: str) -> None:
+    remaining = _section(tracker_text, "**Remaining non-completed items:**")
+    work_order = _section(tracker_text, "**Recommended next work order:**")
+    pr_order = _section(tracker_text, "**Recommended next pull request order:**")
+
+    # Remaining work identifies the real current workstreams.
+    assert "MVP-ARCH-001" in remaining
+    assert "LONG-002C" in remaining
+    assert "DAYTRADE-001" in remaining
+    assert "LONG-002A" not in remaining
+    assert "LONG-002B" not in remaining
+
+    # The recommended orders point at the in-progress consolidation packet.
+    assert "MVP-ARCH-001" in work_order
+    assert "devin/mvp-arch-001-consolidation-decision" in pr_order
+    assert "long-002a-locked-research-contract" not in tracker_text.lower()
+
+
+_STATUS_ORDER = ["Completed", "Deferred", "Proposed", "In progress", "Blocked", "Rejected"]
+
+
+def _parse_tracker_status_counts(text: str) -> dict[str, int]:
+    counts: dict[str, int] = {s: 0 for s in _STATUS_ORDER}
+    for line in re.findall(r"(?m)^- \*\*Status:\*\* (.+)$", text):
+        if re.search(r"\bin progress\b", line, re.IGNORECASE):
+            counts["In progress"] += 1
+        elif re.search(r"\b(?:completed?|complete)\b", line, re.IGNORECASE):
+            counts["Completed"] += 1
+        else:
+            for status in _STATUS_ORDER:
+                if re.match(rf"{re.escape(status)}(?:\b|$)", line, re.IGNORECASE):
+                    counts[status] += 1
+                    break
+    return counts
+
+
+def _parse_tracker_priority_counts(text: str) -> dict[str, int]:
+    counts: dict[str, int] = {"High": 0, "Medium": 0, "Low": 0}
+    for p in re.findall(r"(?m)^- \*\*Priority:\*\* (High|Medium|Low)$", text):
+        counts[p] += 1
+    return counts
+
+
+def _parse_summary_table(text: str, table_name: str) -> dict[str, int]:
+    pattern = rf"(?msi)^## Summary by {re.escape(table_name)}\s*\n(.*?)(?:\n## |\n\*\*|\Z)"
+    m = re.search(pattern, text)
+    assert m, f"Could not find summary table: {table_name}"
+    section = m.group(1)
+    rows = re.findall(r"\|\s*([^|]+?)\s*\|\s*(\d+)\s*\|", section)
+    return {k.strip(): int(v) for k, v in rows if k.strip().lower() != "status"}
+
+
+def test_tracker_summary_status_counts_match_entries(tracker_text: str) -> None:
+    actual = _parse_tracker_status_counts(tracker_text)
+    table = _parse_summary_table(tracker_text, "status")
+    # The table must list the same totals that appear in the task entries.
+    for status in _STATUS_ORDER:
+        assert actual[status] == table.get(status, 0), f"{status}: entries={actual[status]}, table={table.get(status, 0)}"
+
+
+def test_tracker_summary_priority_counts_match_entries(tracker_text: str) -> None:
+    actual = _parse_tracker_priority_counts(tracker_text)
+    table = _parse_summary_table(tracker_text, "priority")
+    for priority in ["High", "Medium", "Low"]:
+        assert actual[priority] == table.get(priority, 0), f"{priority}: entries={actual[priority]}, table={table.get(priority, 0)}"
