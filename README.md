@@ -469,12 +469,14 @@ uv run python -m tradex.research.long_002_data_feasibility.amendment_001 --repo-
 
 #### MVP-ARCH-001: Product consolidation decision packet
 
-`MVP-ARCH-001` is a design-only decision packet that audits TradeX and proposes a bounded consolidation plan. It does not implement the consolidation, nor does it begin `LONG-002C`.
+`MVP-ARCH-001` is a design-only decision packet that audits TradeX and proposes a bounded consolidation plan. It has been approved by Gary Yang on 2026-08-19 as the product-architecture direction. It does not implement the consolidation, nor does it begin `LONG-002C`.
 
 * **Human-readable plan:** `docs/product/MVP-ARCH-001.md`
 * **Machine-readable inventory:** `docs/product/MVP-ARCH-001.json`
-* **Status:** `pending_gary_decision`
-* **Authorization:** no provider calls, dashboard changes, alert changes, database migrations, strategy promotion, or `LONG-002C` work is authorized by this packet
+* **Status:** `gary_approved` (design-only)
+* **Approved by:** `Gary Yang`
+* **Approved on:** `2026-08-19`
+* **Authorization:** no provider calls, dashboard changes, alert changes, database migrations, strategy promotion, `LONG-002C` dataset construction, rollout implementation, or `LONG-002C` work is authorized by this approval. Each rollout step requires separate Gary approval.
 * **Starting `main` SHA:** `52cff71fd73105c7a2a01bc6f9ccc19c3ae204a2` (merged PR #52)
 
 ---

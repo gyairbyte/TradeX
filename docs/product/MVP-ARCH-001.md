@@ -2,13 +2,16 @@
 
 **Artifact:** `MVP-ARCH-001`
 **Classification:** `product-architecture-and-governance-design-only`
-**Decision status:** `pending_gary_decision`
+**Decision status:** `gary_approved` (design-only)
+**Approved by:** `Gary Yang`
+**Approved on:** `2026-08-19`
+**Approval scope:** `design_only` — this approval does not authorize implementation, production trading changes, provider calls, LONG-002C dataset construction, or any rollout step without separate Gary approval.
 **Starting `main` SHA:** `52cff71fd73105c7a2a01bc6f9ccc19c3ae204a2`
 **Prerequisite commit:** `52cff71fd73105c7a2a01bc6f9ccc19c3ae204a2` (merged PR #52)
 
 ## Authorization boundary
 
-This packet is design-only. No implementation, provider call, dashboard change, alert change, database migration, production signal change, or LONG-002C work is authorized.
+This packet is design-only and has been approved by Gary Yang on 2026-08-19 as the product-architecture direction. No implementation, provider call, dashboard change, alert change, database migration, production signal change, LONG-002C work, or rollout step is authorized by this approval. Each rollout step listed below requires separate Gary approval.
 
 - **Alert Changes Authorized:** `False`
 - **Dashboard Changes Authorized:** `False`
@@ -207,7 +210,7 @@ TradeX has a strong modular technical and research foundation, but the current p
 ## Governance invariants
 
 - Production promotion remains unauthorized.
-- Final consolidation decisions remain pending Gary approval.
+- The design-only direction is approved; each rollout implementation step remains pending separate Gary approval.
 - Existing research artifacts and locked specifications are referenced, not modified.
 - LONG-002B-AMEND-002 is completed and merged; LONG-002C design is authorized by PR #52 but explicitly paused by Gary; MVP-ARCH-001 is a separate product-architecture workstream.
 - This packet does not authorize LONG-002C dataset construction, provider calls, dashboard changes, alert changes, database migrations, strategy promotion, or production behavior changes.

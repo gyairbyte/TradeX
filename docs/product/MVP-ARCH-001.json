@@ -179,11 +179,19 @@
       "user_problem": "How do I use TradeX?"
     }
   ],
-  "decision_status": "pending_gary_decision",
-  "gary_approval_source": "pending; this packet is advisory and requires Gary's explicit selection before any implementation PR",
+  "decision_status": "gary_approved",
+  "approval_record": {
+    "approved_by": "Gary Yang",
+    "approved_on": "2026-08-19",
+    "approval_scope": "design_only",
+    "implementation_authorized": false,
+    "production_trading_changes_authorized": false,
+    "long_002c_dataset_construction_authorized": false,
+    "decision_quote": "I approve MVP-ARCH-001 as the design-only product architecture direction. This does not authorize implementation, production trading changes, or LONG-002C dataset construction."
+  },
   "governance_invariants": [
     "Production promotion remains unauthorized.",
-    "Final consolidation decisions remain pending Gary approval.",
+    "The design-only direction is approved; each rollout implementation step remains pending separate Gary approval.",
     "Existing research artifacts and locked specifications are referenced, not modified.",
     "LONG-002B-AMEND-002 is completed and merged; LONG-002C design is authorized by PR #52 but explicitly paused by Gary; MVP-ARCH-001 is a separate product-architecture workstream.",
     "This packet does not authorize LONG-002C dataset construction, provider calls, dashboard changes, alert changes, database migrations, strategy promotion, or production behavior changes.",
@@ -223,7 +231,7 @@
     "long_002c_dataset_construction_authorized": false,
     "long_002c_design_authorized_by_pr52": true,
     "long_002c_work_authorized_by_mvp_arch_001": false,
-    "notes": "LONG-002B-AMEND-002 is completed and merged. LONG-002C design is authorized by PR #52, but Gary has explicitly paused its execution while MVP-ARCH-001 is completed. MVP-ARCH-001 is a separate product-architecture workstream and does not alter LONG-002 authorization."
+    "notes": "LONG-002B-AMEND-002 is completed and merged. LONG-002C design is authorized by PR #52, but Gary has explicitly paused its execution. MVP-ARCH-001 is now completed and Gary-approved as the design-only product-architecture direction; it is a separate product-architecture workstream and does not alter LONG-002 authorization."
   },
   "material_discrepancies_found": [
     "README.md and PROJECT-TRACKER need to clearly separate LONG-002B-AMEND-002 completion, LONG-002C design authorized-but-paused, and MVP-ARCH-001 as a separate workstream.",
@@ -236,7 +244,7 @@
   ],
   "mvp_arch_001_status": {
     "classification": "product-architecture-and-governance-design-only",
-    "decision_status": "pending_gary_decision",
+    "decision_status": "gary_approved",
     "does_not_authorize_long_002c": true,
     "separate_workstream_from_long_002": true
   },

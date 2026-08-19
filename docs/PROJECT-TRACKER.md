@@ -381,7 +381,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
   - Issuer fundamentals & shares: `supported_with_documented_limitations` (SEC EDGAR primary; CIK identity resolved for AAPL/GOOGL/FDX; filing acceptance-time control linked to the selected shares fact; PIT market-cap pathway demonstrated for AAPL with shares outstanding period end 2020-10-16, filed 2020-10-30, acceptance 2020-10-29, paired with the 2020-12-31 close)
   - Earnings event timing: `not_supported` (no live provider calls; preregistered candidates remain unverified; no historical known-at-time schedule source identified within bounded budget)
 - **Provider call budget:** 41 of 120 HTTP requests used; 0 retries; 1 provider switch (Massive/Polygon daily bars → Alpaca fallback)
-- **Recommended action:** `LONG-002B-AMEND-002` has formally selected the fail-closed `unknown` policy, so `LONG-002C` dataset construction is not authorized until after `MVP-ARCH-001` is completed and a separate Gary/ChatGPT decision approves resuming `LONG-002C` design/specification work. No production behavior is authorized.
+- **Recommended action:** `LONG-002B-AMEND-002` has formally selected the fail-closed `unknown` policy, so `LONG-002C` dataset construction is not authorized. `MVP-ARCH-001` is now completed and Gary-approved as the design-only product-architecture direction; `LONG-002C` design/specification work may resume only after a separate Gary/ChatGPT decision. No production behavior is authorized.
 - **Testing requirements:** `tests/research/long_002_data_feasibility/test_spec.py`; `tests/research/long_002_data_feasibility/test_probe.py`; `tests/research/long_002_data_feasibility/test_amendment_001.py`; `uv run ruff`; `uv run pytest`; `git diff --check`.
 - **Acceptance criteria:** Bounded provider probes produce auditable dispositions for each core data family; `LONG-002B-AMEND-001` resolves the minimum-contract gating for security identity/lifecycle/exclusion classification with deterministic tests; no full historical dataset is built; no validation/holdout outcomes are accessed; no production behavior changes.
 - **Intended pull request:** `devin/long-002b-amend-001-blocker-resolution` (draft)
@@ -410,18 +410,18 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Title:** TradeX provider, strategy, and dashboard consolidation plan
 - **Category:** Architecture / Product
 - **Priority:** High
-- **Status:** In progress
+- **Status:** Completed — Gary approved (design-only)
 - **Branch:** `devin/mvp-arch-001-consolidation-decision`
 - **Problem statement:** TradeX has a strong modular foundation but presents as a collection of scanners, context tools, and research pipelines; a single understandable daily decision workflow for Gary is needed before any further research-to-production promotion.
-- **Recommended action:** Produce a decision-only packet that inventories providers, dashboard tabs, strategies/evidence states, and defines the smallest coherent MVP operating model (Today / Candidate Detail / Journal / Research Lab / Settings), a candidate contract, a future journal contract, and a gated rollout sequence.
+- **Recommended action:** The design-only product-architecture direction has been approved by Gary Yang on 2026-08-19. Each consolidation rollout step now requires separate Gary approval before implementation. No implementation, provider call, dashboard change, alert change, database migration, `LONG-002C` dataset construction, or production behavior change is authorized by this approval.
 - **Reason:** Without explicit consolidation, the product risks surfacing unvalidated heuristics as actionable signals.
 - **Dependencies:** `LONG-002B-AMEND-002` (merged PR #52)
 - **Files affected:** `docs/product/MVP-ARCH-001.md`, `docs/product/MVP-ARCH-001.json`, `tests/product/test_mvp_arch_001.py`, `README.md`, `CLAUDE.md`, `docs/PROJECT-TRACKER.md`
 - **Testing requirements:** Deterministic `tests/product/test_mvp_arch_001.py`; scoped lint; `git diff --check`; full `pytest`; GitHub CI.
-- **Acceptance criteria:** Packet is human-readable, machine-readable, fully auditable, makes no implementation/provider/dashboard/alert/schema/data changes, and leaves all final consolidation decisions pending Gary.
+- **Acceptance criteria:** Packet is human-readable, machine-readable, fully auditable, makes no implementation/provider/dashboard/alert/schema/data changes, records Gary's design-only approval, and keeps all rollout implementation steps pending separate Gary approval.
 - **Intended pull request:** `devin/mvp-arch-001-consolidation-decision`
 - **Affects trading behavior:** No
-- **Authorization status:** `pending_gary_decision`; `production_promotion_eligible`: `false`
+- **Authorization status:** `gary_approved` (design-only); `production_promotion_eligible`: `false`
 - `long_002b_amend_002_completed`: `true`
 - `long_002c_design_authorized_by_pr52`: `true`
 - `long_002c_currently_paused_by_gary`: `true`
@@ -812,7 +812,7 @@ This is the master backlog for recommendations from the Devin review. Items are 
 
 | Priority | Count | Representative first item |
 |---|---|---|
-| High | 18 | MVP-ARCH-001: TradeX product consolidation decision packet |
+| High | 18 | LONG-002: Rapid-upside long opportunity research program |
 | Medium | 12 | SHORT-001: Add market regime and relative strength to short-term scorer |
 | Low | 5 | DOC-001: Close LONG-001 and restore documentation and tracker consistency |
 
@@ -820,25 +820,23 @@ This is the master backlog for recommendations from the Devin review. Items are 
 
 | Status | Count |
 |---|---|
-| Completed | 32 |
+| Completed | 33 |
 | Deferred | 1 |
 | Proposed | 0 |
-| In progress | 2 |
+| In progress | 1 |
 | Blocked | 0 |
 
-The original engineering-foundation and UI-refactor backlog is substantially complete. `SHORT-001` is closed as Completed — Not supported. `INTRA-001B` through `INTRA-001D` are complete and `INTRA-001` returned `inconclusive` without parsing the holdout; no further work on the `INTRA-001` hypothesis is authorized without a new Gary-approved plan. `LONG-002A` and `LONG-002B` are completed. `LONG-002B-AMEND-002` is completed and merged through PR #52. `LONG-002C` design/specification PR is authorized by PR #52 but its execution is explicitly paused by Gary while the separate `MVP-ARCH-001` product-architecture workstream is completed. `MVP-ARCH-001` is the active, in-progress decision packet and does not authorize `LONG-002C` dataset construction, implementation, or production promotion. `DAYTRADE-001` remains a future, deferred real-time day-trading program until Gary reprioritizes.
+The original engineering-foundation and UI-refactor backlog is substantially complete. `SHORT-001` is closed as Completed — Not supported. `INTRA-001B` through `INTRA-001D` are complete and `INTRA-001` returned `inconclusive` without parsing the holdout; no further work on the `INTRA-001` hypothesis is authorized without a new Gary-approved plan. `LONG-002A` and `LONG-002B` are completed. `LONG-002B-AMEND-002` is completed and merged through PR #52. `LONG-002C` design/specification PR is authorized by PR #52 but its execution is explicitly paused by Gary. `MVP-ARCH-001` is now completed and Gary-approved as the design-only product-architecture direction; this approval does not authorize implementation, `LONG-002C` dataset construction, provider calls, dashboard changes, alert changes, database migrations, strategy promotion, or production behavior changes. Each consolidation rollout step and any resumption of `LONG-002C` work require separate Gary approval. `DAYTRADE-001` remains a future, deferred real-time day-trading program until Gary reprioritizes.
 
 **Remaining non-completed items:**
-1. **MVP-ARCH-001** — TradeX product consolidation decision packet (`devin/mvp-arch-001-consolidation-decision`, in progress, `pending_gary_decision`).
-2. **LONG-002C** — Design/specification PR authorized by PR #52 but paused by Gary; dataset construction and production promotion unauthorized.
-3. **DAYTRADE-001** — Future real-time day-trading decision-support program (deferred until after `LONG-002`).
+1. **LONG-002C** — Design/specification PR authorized by PR #52 but paused by Gary; dataset construction and production promotion unauthorized.
+2. **DAYTRADE-001** — Future real-time day-trading decision-support program (deferred until after `LONG-002`).
 
 **Recommended next work order:**
-1. **MVP-ARCH-001** — Complete the product consolidation decision packet and submit it for Gary review.
-2. **Bounded MVP consolidation PRs** — Only after `MVP-ARCH-001` is approved.
-3. **LONG-002C design work** — Resume only after the approved consolidation PRs are accepted.
-4. No `LONG-002C` dataset construction, production promotion, or trading-behavior change is authorized without separate Gary approval.
+1. **No MVP-ARCH-001 implementation** is authorized by the design-only approval; each consolidation rollout step requires separate Gary approval.
+2. **LONG-002C design work** — May resume only after a separate Gary/ChatGPT decision; no implementation, dataset construction, or production behavior change is authorized.
+3. **DAYTRADE-001** — Deferred until `LONG-002` is complete or Gary reprioritizes.
 
 **Recommended next pull request order:**
-1. `devin/mvp-arch-001-consolidation-decision` — finalize the product consolidation decision packet.
+1. `devin/mvp-arch-001-consolidation-decision` — merge-gate cleanup only; no implementation PRs are currently authorized.
 

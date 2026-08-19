@@ -56,12 +56,15 @@ def test_artifact_files_exist() -> None:
     assert MD_PATH.exists()
     text = MD_PATH.read_text(encoding="utf-8")
     assert "MVP-ARCH-001" in text
-    assert "pending_gary_decision" in text
+    assert "gary_approved" in text
+    assert "Gary Yang" in text
+    assert "2026-08-19" in text
 
 
 def test_classification_and_status(inv: dict) -> None:
     assert inv["classification"] == "product-architecture-and-governance-design-only"
-    assert inv["decision_status"] == "pending_gary_decision"
+    assert inv["decision_status"] == "gary_approved"
+    assert inv["mvp_arch_001_status"]["decision_status"] == "gary_approved"
     assert inv["mvp_arch_001_status"]["separate_workstream_from_long_002"] is True
     assert inv["mvp_arch_001_status"]["does_not_authorize_long_002c"] is True
 
@@ -346,10 +349,16 @@ def test_tracker_does_not_recommend_starting_long_002a_or_002b(
         assert phrase not in tail, f"Stale recommendation remains: {phrase!r}"
 
 
-def test_tracker_mvp_arch_001_is_separate_and_pending(tracker_text: str) -> None:
+def test_tracker_mvp_arch_001_is_separate_and_gary_approved(tracker_text: str) -> None:
     lower = tracker_text.lower()
     assert "mvp-arch-001" in lower
-    assert "pending_gary_decision" in lower
+    # The tracker marks MVP-ARCH-001 completed/Gary approved and does not list it
+    # as pending, in progress, or current phase.
+    mvp_section = _section(tracker_text, "### MVP-ARCH-001:")
+    assert "gary_approved" in mvp_section.lower()
+    assert "pending_gary_decision" not in mvp_section.lower()
+    assert "in progress" not in mvp_section.lower()
+    assert "**Current phase:**" not in mvp_section
     # The tracker repeats the explicit assertion from the JSON: MVP-ARCH-001 does
     # not authorize LONG-002C work.
     assert "long_002c_work_authorized_by_mvp_arch_001" in tracker_text
@@ -366,16 +375,20 @@ def test_tracker_summary_and_remaining_work_are_consistent(tracker_text: str) ->
     work_order = _section(tracker_text, "**Recommended next work order:**")
     pr_order = _section(tracker_text, "**Recommended next pull request order:**")
 
-    # Remaining work identifies the real current workstreams.
-    assert "MVP-ARCH-001" in remaining
+    # MVP-ARCH-001 is now completed/Gary approved and must not appear as a
+    # remaining non-completed workstream.
+    assert "MVP-ARCH-001" not in remaining
     assert "LONG-002C" in remaining
     assert "DAYTRADE-001" in remaining
     assert "LONG-002A" not in remaining
     assert "LONG-002B" not in remaining
 
-    # The recommended orders point at the in-progress consolidation packet.
-    assert "MVP-ARCH-001" in work_order
+    # The recommended work order says no implementation is authorized.
+    assert "no mvp-arch-001 implementation" in work_order.lower()
+    assert "LONG-002C" in work_order
+    assert "DAYTRADE-001" in work_order
     assert "devin/mvp-arch-001-consolidation-decision" in pr_order
+    assert "no implementation" in pr_order.lower()
     assert "long-002a-locked-research-contract" not in tracker_text.lower()
 
 
@@ -426,3 +439,91 @@ def test_tracker_summary_priority_counts_match_entries(tracker_text: str) -> Non
     table = _parse_summary_table(tracker_text, "priority")
     for priority in ["High", "Medium", "Low"]:
         assert actual[priority] == table.get(priority, 0), f"{priority}: entries={actual[priority]}, table={table.get(priority, 0)}"
+
+
+def test_decision_record_fields(inv: dict) -> None:
+    """The machine-readable decision record contains Gary's design-only approval."""
+    record = inv["approval_record"]
+    assert record["approved_by"] == "Gary Yang"
+    assert record["approved_on"] == "2026-08-19"
+    assert record["approval_scope"] == "design_only"
+    assert record["implementation_authorized"] is False
+    assert record["production_trading_changes_authorized"] is False
+    assert record["long_002c_dataset_construction_authorized"] is False
+    assert "MVP-ARCH-001" in record["decision_quote"]
+
+
+def test_design_approval_does_not_authorize_implementation(inv: dict) -> None:
+    """Every implementation/production authorization boolean remains false."""
+    auth = inv["authorization"]
+    for key, value in auth.items():
+        assert value is False, f"authorization.{key}={value}"
+    assert inv["approval_record"]["implementation_authorized"] is False
+    assert inv["approval_record"]["production_trading_changes_authorized"] is False
+    assert inv["approval_record"]["long_002c_dataset_construction_authorized"] is False
+    assert inv["long_002_status"]["long_002c_dataset_construction_authorized"] is False
+    assert inv["long_002_status"]["long_002c_work_authorized_by_mvp_arch_001"] is False
+
+
+def test_rollout_steps_require_separate_gary_approval(inv: dict) -> None:
+    for step in inv["rollout_plan"]:
+        assert step["requires_gary_approval"] is True, step["pr"]
+
+
+def _file_contains_mvp_approved_boundary(path: Path, patterns: list[str]) -> None:
+    text = path.read_text(encoding="utf-8")
+    section: str | None = None
+    for pattern in patterns:
+        m = re.search(pattern, text)
+        if m:
+            section = m.group(0)
+            break
+    assert section is not None, f"No MVP-ARCH-001 section found in {path}"
+    section_lower = section.lower()
+    assert "gary_approved" in section_lower, path
+    assert "design-only" in section_lower or "design_only" in section_lower, path
+    assert "implementation" in section_lower, path
+    assert "2026-08-19" in section_lower, path
+    assert "gary yang" in section_lower, path
+    # The boundary statement must not be contradicted by an implementation
+    # authorization claim in the same section.
+    assert re.search(r"implementation(?:_authorized)?\s*[:=]?\s*true", section_lower) is None, path
+
+
+def test_markdown_agrees_with_approved_json() -> None:
+    _file_contains_mvp_approved_boundary(
+        MD_PATH,
+        [r"(?msi)^# MVP-ARCH-001:.*?(?=^## |\Z)"],
+    )
+
+
+def test_readme_agrees_with_approved_json() -> None:
+    readme = REPO_ROOT / "README.md"
+    _file_contains_mvp_approved_boundary(
+        readme,
+        [r"(?msi)^#### MVP-ARCH-001:.*?(?=^#### |^### |^## |\Z)"],
+    )
+
+
+def test_claude_agrees_with_approved_json() -> None:
+    claude = REPO_ROOT / "CLAUDE.md"
+    _file_contains_mvp_approved_boundary(
+        claude,
+        [r"(?msi)^- \*\*Product consolidation \(MVP-ARCH-001\).*?(?=^- \*\*|^## |^### |^#### |\Z)"],
+    )
+
+
+def test_tracker_mvp_arch_001_marked_completed(tracker_text: str) -> None:
+    mvp = _section(tracker_text, "### MVP-ARCH-001:")
+    assert "gary_approved" in mvp.lower()
+    assert "completed" in mvp.lower()
+    assert "pending_gary_decision" not in mvp.lower()
+    assert "in progress" not in mvp.lower()
+
+
+def test_tracker_long_002c_authorized_but_paused(tracker_text: str) -> None:
+    lower = tracker_text.lower()
+    assert "long_002c_design_authorized_by_pr52" in lower
+    assert "long_002c_currently_paused_by_gary" in lower
+    assert "long_002c_dataset_construction_authorized" in lower
+    assert "long_002c_work_authorized_by_mvp_arch_001" in lower
