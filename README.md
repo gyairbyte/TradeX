@@ -392,7 +392,8 @@ uv run python -m tradex.research.short_context evaluate --help
 * **Production behavior:** Unchanged
 * **Completed phase:** `LONG-002A` — locked research contract (merged in PR #48)
 * **Completed phase:** `LONG-002B` — core data feasibility and point-in-time dataset contract (merged in PR #49)
-* **Current phase:** `LONG-002B-AMEND-001` — blocked data-family resolution (security identity/lifecycle/exclusion classification and earnings-event timing)
+* **Completed phase:** `LONG-002B-AMEND-002` — Gary-approved selection of Option 2 fail-closed unknown policy (merged in PR #52)
+* **LONG-002C status:** Design PR authorized by PR #52, but explicitly paused by Gary while the separate `MVP-ARCH-001` product consolidation workstream is completed; dataset construction and production promotion unauthorized
 * **Official snapshots:** 8:30 p.m. and 9:00 a.m. `America/New_York` on the XNYS calendar
 * **Display caps:** Enter Now 7, Armed 12, Qualified Waitlist 12
 * **Model search budget:** 48 material configurations across three allowed families
@@ -465,6 +466,18 @@ uv run python -m tradex.research.long_002_data_feasibility.amendment_001 --repo-
 * **LONG-002C dataset construction authorized:** `false`
 * **Production promotion eligible:** `false`
 * **No provider calls, credentials, dataset construction, or production changes occur in this PR.**
+
+#### MVP-ARCH-001: Product consolidation decision packet
+
+`MVP-ARCH-001` is a design-only decision packet that audits TradeX and proposes a bounded consolidation plan. It has been approved by Gary Yang on 2026-08-19 as the product-architecture direction. It does not implement the consolidation, nor does it begin `LONG-002C`.
+
+* **Human-readable plan:** `docs/product/MVP-ARCH-001.md`
+* **Machine-readable inventory:** `docs/product/MVP-ARCH-001.json`
+* **Status:** `gary_approved` (design-only)
+* **Approved by:** `Gary Yang`
+* **Approved on:** `2026-08-19`
+* **Authorization:** no provider calls, dashboard changes, alert changes, database migrations, strategy promotion, `LONG-002C` dataset construction, rollout implementation, or `LONG-002C` work is authorized by this approval. Each rollout step requires separate Gary approval.
+* **Starting `main` SHA:** `52cff71fd73105c7a2a01bc6f9ccc19c3ae204a2` (merged PR #52)
 
 ---
 
