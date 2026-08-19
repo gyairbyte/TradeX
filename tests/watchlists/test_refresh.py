@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 import pandas as pd
 import pytest
 
+from tradex.config import settings_from_mapping
 from tradex.data import fetcher
 from tradex.data.fetcher import ProviderCapabilityError
 from tradex.watchlists import refresh
@@ -34,8 +35,14 @@ def test_fetch_market_caps_yahoo_source():
 
 
 def test_fetch_market_caps_schwab_unconfigured_raises():
-    with pytest.raises(ProviderCapabilityError):
-        refresh.fetch_market_caps(["AAPL"], source="schwab")
+    """Unconfigured Schwab settings raise ProviderCapabilityError without calling Schwab auth."""
+    settings = settings_from_mapping({})
+    with (
+        patch("schwab.auth.client_from_token_file") as mock_schwab_auth,
+        pytest.raises(ProviderCapabilityError),
+    ):
+        refresh.fetch_market_caps(["AAPL"], source="schwab", settings=settings)
+    mock_schwab_auth.assert_not_called()
 
 
 def test_fetch_market_caps_unknown_source_raises():
@@ -45,9 +52,14 @@ def test_fetch_market_caps_unknown_source_raises():
 
 def test_schwab_liquidity_filter_degrades_gracefully():
     """When Schwab is not configured, the liquidity filter returns all tickers and warns."""
-    survivors, warnings = refresh._schwab_liquidity_filter(["AAPL", "MSFT"])
+    settings = settings_from_mapping({})
+    with patch("schwab.auth.client_from_token_file") as mock_schwab_auth:
+        survivors, warnings = refresh._schwab_liquidity_filter(
+            ["AAPL", "MSFT"], settings=settings
+        )
     assert survivors == {"AAPL", "MSFT"}
     assert any("Schwab not configured" in w for w in warnings)
+    mock_schwab_auth.assert_not_called()
 
 
 def test_refresh_all_records_sources():
@@ -56,6 +68,7 @@ def test_refresh_all_records_sources():
     r1k = sp500.copy()
     caps = {"AAPL": 1_000_000_000, "MSFT": 2_000_000_000}
 
+    settings = settings_from_mapping({})
     with (
         patch.object(refresh, "_fetch_sp500", return_value=sp500),
         patch.object(refresh, "_fetch_dow", return_value=["AAPL"]),
@@ -64,7 +77,7 @@ def test_refresh_all_records_sources():
         patch.object(refresh, "fetch_market_caps", return_value=caps),
         patch.object(refresh, "_schwab_liquidity_filter", return_value=({"AAPL", "MSFT"}, [])) as mock_filter,
     ):
-        result = refresh.refresh_all(top_n_per_sector=1, market_cap_source="yahoo")
+        result = refresh.refresh_all(top_n_per_sector=1, market_cap_source="yahoo", settings=settings)
 
     assert result.constituent_source == "wikipedia"
     assert result.market_cap_source == "yahoo"
@@ -77,6 +90,7 @@ def test_refresh_all_market_cap_source_propagated():
     sp500 = pd.DataFrame({"ticker": ["AAPL"], "sector": ["Technology"]})
     r1k = sp500.copy()
 
+    settings = settings_from_mapping({})
     with (
         patch.object(refresh, "_fetch_sp500", return_value=sp500),
         patch.object(refresh, "_fetch_dow", return_value=["AAPL"]),
@@ -85,7 +99,7 @@ def test_refresh_all_market_cap_source_propagated():
         patch.object(refresh, "fetch_market_caps", return_value={"AAPL": 1.0}) as mock_caps,
         patch.object(refresh, "_schwab_liquidity_filter", return_value=({"AAPL"}, [])),
     ):
-        refresh.refresh_all(market_cap_source="schwab")
+        refresh.refresh_all(market_cap_source="schwab", settings=settings)
 
     _, kwargs = mock_caps.call_args
     assert kwargs["source"] == "schwab"
@@ -107,33 +121,39 @@ def test_yahoo_market_cap_logs_do_not_leak_provider_exception(caplog):
     assert "AAPL" in caplog.text
 
 
-def test_schwab_market_caps_uses_shared_hardened_client_and_rejects_repo_local_token(monkeypatch, tmp_path):
+def test_schwab_market_caps_uses_shared_hardened_client_and_rejects_repo_local_token(tmp_path):
     """The explicit Schwab market-cap path uses the shared _get_schwab_client and
     refuses a repo-local token file without leaking raw exception text."""
     token_file = tmp_path / "token.json"
     token_file.write_text("{}")
 
-    monkeypatch.setenv("SCHWAB_APP_KEY", "app_key")
-    monkeypatch.setenv("SCHWAB_APP_SECRET", "app_secret")
-    monkeypatch.setenv("SCHWAB_TOKEN_PATH", str(token_file))
+    settings = settings_from_mapping({
+        "SCHWAB_APP_KEY": "app_key",
+        "SCHWAB_APP_SECRET": "app_secret",
+        "SCHWAB_TOKEN_PATH": str(token_file),
+    })
 
     with (
+        patch("schwab.auth.client_from_token_file") as mock_schwab_auth,
         patch.object(fetcher, "_repo_root", return_value=tmp_path),
         pytest.raises(ValueError) as exc_info,
     ):
-        refresh._fetch_schwab_market_caps(["AAPL"])
+        refresh._fetch_schwab_market_caps(["AAPL"], settings=settings)
 
     assert "token path must not be inside the repository" in str(exc_info.value).lower()
+    mock_schwab_auth.assert_not_called()
 
 
-def test_schwab_market_caps_uses_shared_client(monkeypatch, tmp_path):
+def test_schwab_market_caps_uses_shared_client(tmp_path):
     """The explicit Schwab market-cap path calls the shared _get_schwab_client."""
     token_file = tmp_path / "token.json"
     token_file.write_text("{}")
 
-    monkeypatch.setenv("SCHWAB_APP_KEY", "app_key")
-    monkeypatch.setenv("SCHWAB_APP_SECRET", "app_secret")
-    monkeypatch.setenv("SCHWAB_TOKEN_PATH", str(token_file))
+    settings = settings_from_mapping({
+        "SCHWAB_APP_KEY": "app_key",
+        "SCHWAB_APP_SECRET": "app_secret",
+        "SCHWAB_TOKEN_PATH": str(token_file),
+    })
 
     fake_client = Mock()
     fake_client.get_instruments.return_value = Mock(
@@ -145,7 +165,7 @@ def test_schwab_market_caps_uses_shared_client(monkeypatch, tmp_path):
     )
 
     with patch("schwab.auth.client_from_token_file", return_value=fake_client):
-        caps = refresh._fetch_schwab_market_caps(["AAPL"])
+        caps = refresh._fetch_schwab_market_caps(["AAPL"], settings=settings)
 
     assert caps == {"AAPL": 2_500_000_000_000.0}
 
@@ -164,9 +184,10 @@ def test_schwab_liquidity_filter_debug_logs_do_not_leak_exception_text(caplog):
     )
     fake_client.get_quotes.side_effect = RuntimeError(sentinel)
 
+    settings = settings_from_mapping({})
     with patch.object(fetcher, "_get_schwab_client", return_value=fake_client):
         caplog.set_level(logging.DEBUG, logger="tradex.watchlists.refresh")
-        _survivors, warnings = refresh._schwab_liquidity_filter(["AAPL"])
+        _survivors, warnings = refresh._schwab_liquidity_filter(["AAPL"], settings=settings)
 
     assert sentinel not in caplog.text
     assert any("Schwab quotes batch" in w for w in warnings)
@@ -178,6 +199,7 @@ def test_refresh_all_market_cap_warning_does_not_leak_exception_text():
     sp500 = pd.DataFrame({"ticker": ["AAPL"], "sector": ["Technology"]})
     r1k = sp500.copy()
 
+    settings = settings_from_mapping({})
     with (
         patch.object(refresh, "_fetch_sp500", return_value=sp500),
         patch.object(refresh, "_fetch_dow", return_value=["AAPL"]),
@@ -186,7 +208,7 @@ def test_refresh_all_market_cap_warning_does_not_leak_exception_text():
         patch.object(refresh, "fetch_market_caps", side_effect=RuntimeError(sentinel)),
         patch.object(refresh, "_schwab_liquidity_filter", return_value=({"AAPL"}, [])),
     ):
-        result = refresh.refresh_all(market_cap_source="schwab")
+        result = refresh.refresh_all(market_cap_source="schwab", settings=settings)
 
     assert any("Market-cap fetch failed" in w for w in result.warnings)
     assert all(sentinel not in w for w in result.warnings)
