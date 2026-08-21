@@ -387,8 +387,7 @@ def test_tracker_summary_and_remaining_work_are_consistent(tracker_text: str) ->
     assert "no mvp-arch-001 implementation" in work_order.lower()
     assert "LONG-002C" in work_order
     assert "DAYTRADE-001" in work_order
-    assert "devin/mvp-arch-001-consolidation-decision" in pr_order
-    assert "no implementation" in pr_order.lower()
+    assert "no product or research implementation pr is currently authorized" in pr_order.lower()
     assert "long-002a-locked-research-contract" not in tracker_text.lower()
 
 

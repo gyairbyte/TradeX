@@ -2,7 +2,7 @@
 
 > **Setting up the app on this machine?** See [`SETUP.md`](SETUP.md) — it's the canonical install procedure (Mac + Windows, venv, `.env`, launchers, verification). If the user asks to "set up TradeX" or "install this", execute SETUP.md rather than improvising.
 >
-> **AI agents and contributors:** Before significant implementation or research work, read the canonical governance documents: [`docs/AI-DEVELOPMENT-WORKFLOW.md`](docs/AI-DEVELOPMENT-WORKFLOW.md) for the ChatGPT–Devin–Codex workflow, [`docs/RESEARCH-PROTOCOL.md`](docs/RESEARCH-PROTOCOL.md) for trading-research safeguards, and [`docs/PROJECT-TRACKER.md`](docs/PROJECT-TRACKER.md) for the current backlog.
+> **AI agents and contributors:** Before significant implementation or research work, read the canonical governance documents: [`docs/AI-DEVELOPMENT-WORKFLOW.md`](docs/AI-DEVELOPMENT-WORKFLOW.md) for the ChatGPT–Antigravity–Codex workflow, [`docs/RESEARCH-PROTOCOL.md`](docs/RESEARCH-PROTOCOL.md) for trading-research safeguards, and [`docs/PROJECT-TRACKER.md`](docs/PROJECT-TRACKER.md) for the current backlog.
 
 ## What This Project Is
 

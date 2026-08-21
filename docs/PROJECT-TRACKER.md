@@ -1,6 +1,8 @@
 # TradeX Project Tracker
 
-This is the master backlog for recommendations from the Devin review. Items are grouped by priority (High, Medium, Low) and then by category. Update this tracker as work is accepted, started, blocked, completed, or rejected.
+This is the master backlog for TradeX engineering and research tasks, originating from the initial repository review. Items are grouped by priority (High, Medium, Low) and then by category. Update this tracker as work is accepted, started, blocked, completed, or rejected.
+
+> **Implementation-Agent Governance Note:** Prospective implementation and build work is executed by **Antigravity** under the ChatGPT–Antigravity–Codex workflow (see [`docs/AI-DEVELOPMENT-WORKFLOW.md`](AI-DEVELOPMENT-WORKFLOW.md)) using `antigravity/` branch naming. Historical references to `devin/...` branches, PRs, and completion records are intentionally preserved throughout this tracker to maintain an accurate historical record of previously completed work.
 
 ---
 
@@ -806,6 +808,24 @@ This is the master backlog for recommendations from the Devin review. Items are 
 - **Intended pull request:** `devin/add-initial-adrs`
 - **Affects trading behavior:** No
 
+### DOC-003: Transition TradeX implementation-agent governance from Devin to Antigravity
+
+- **ID:** DOC-003
+- **Title:** Transition TradeX implementation-agent governance from Devin to Antigravity
+- **Category:** Documentation
+- **Priority:** Low
+- **Status:** Completed
+- **Resolved by:** `antigravity/doc-003-agent-governance-transition`
+- **Problem statement:** TradeX transitioned from Devin to Antigravity for repository-level implementation work, but canonical development governance still described Devin as the primary builder and framed workflows and assignments in Devin-specific terms.
+- **Recommended action:** Update canonical AI development workflow documentation, CLAUDE.md, and project tracker so Antigravity is the default prospective builder under the ChatGPT–Antigravity–Codex workflow; document Antigravity workspace and `antigravity/` branch conventions without hardcoding Gemini model versions; preserve Gary, ChatGPT, and Codex roles; preserve all research safeguards and production-trading boundaries; preserve historical Devin records; explicitly affirm that no product/research implementation is authorized.
+- **Reason:** Aligns canonical repository governance with the active operating model while preserving historical integrity and product boundaries.
+- **Dependencies:** DOC-002
+- **Files likely affected:** `docs/AI-DEVELOPMENT-WORKFLOW.md`, `CLAUDE.md`, `docs/PROJECT-TRACKER.md`
+- **Testing requirements:** `git diff --check`; `uv run ruff check tests scripts`; `uv run pytest tests/product/test_mvp_arch_001.py`; audit of remaining Devin references.
+- **Acceptance criteria:** Canonical prospective workflow identifies Antigravity as default builder; ChatGPT/Gary/Codex roles preserved; workspace and branch conventions documented; no Gemini version hardcoding; historical Devin references preserved; no production or research code changes; no MVP-ARCH-001 or LONG-002C authorization change; tracker summary tables match entries.
+- **Intended pull request:** `antigravity/doc-003-agent-governance-transition`
+- **Affects trading behavior:** No — documentation and governance transition only; does not authorize product implementation.
+
 ---
 
 ## Summary by priority
@@ -814,13 +834,13 @@ This is the master backlog for recommendations from the Devin review. Items are 
 |---|---|---|
 | High | 18 | LONG-002: Rapid-upside long opportunity research program |
 | Medium | 12 | SHORT-001: Add market regime and relative strength to short-term scorer |
-| Low | 5 | DOC-001: Close LONG-001 and restore documentation and tracker consistency |
+| Low | 6 | DOC-001: Close LONG-001 and restore documentation and tracker consistency |
 
 ## Summary by status
 
 | Status | Count |
 |---|---|
-| Completed | 33 |
+| Completed | 34 |
 | Deferred | 1 |
 | Proposed | 0 |
 | In progress | 1 |
@@ -838,5 +858,7 @@ The original engineering-foundation and UI-refactor backlog is substantially com
 3. **DAYTRADE-001** — Deferred until `LONG-002` is complete or Gary reprioritizes.
 
 **Recommended next pull request order:**
-1. `devin/mvp-arch-001-consolidation-decision` — merge-gate cleanup only; no implementation PRs are currently authorized.
+1. **No product or research implementation PR is currently authorized.**
+2. The next substantive implementation or research PR requires a separate Gary/ChatGPT decision.
+3. Possible future decisions include a separately approved bounded `MVP-ARCH-001` rollout step or resumption of `LONG-002C` design; this `DOC-003` governance transition does not authorize either one.
 
