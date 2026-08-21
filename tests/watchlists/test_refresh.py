@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 import pandas as pd
 import pytest
 
+from tradex.config import settings_from_mapping
 from tradex.data import fetcher
 from tradex.data.fetcher import ProviderCapabilityError
 from tradex.watchlists import refresh
@@ -34,8 +35,20 @@ def test_fetch_market_caps_yahoo_source():
 
 
 def test_fetch_market_caps_schwab_unconfigured_raises():
-    with pytest.raises(ProviderCapabilityError):
-        refresh.fetch_market_caps(["AAPL"], source="schwab")
+    unconfigured_settings = settings_from_mapping({})
+    with (
+        patch("tradex.watchlists.refresh.load_runtime_settings") as mock_refresh_load_settings,
+        patch("tradex.data.fetcher.load_runtime_settings") as mock_fetcher_load_settings,
+        patch("schwab.auth.client_from_token_file") as mock_client_from_token_file,
+        pytest.raises(ProviderCapabilityError),
+    ):
+        refresh.fetch_market_caps(
+            ["AAPL"], source="schwab", settings=unconfigured_settings
+        )
+
+    mock_refresh_load_settings.assert_not_called()
+    mock_fetcher_load_settings.assert_not_called()
+    mock_client_from_token_file.assert_not_called()
 
 
 def test_fetch_market_caps_unknown_source_raises():
@@ -45,7 +58,19 @@ def test_fetch_market_caps_unknown_source_raises():
 
 def test_schwab_liquidity_filter_degrades_gracefully():
     """When Schwab is not configured, the liquidity filter returns all tickers and warns."""
-    survivors, warnings = refresh._schwab_liquidity_filter(["AAPL", "MSFT"])
+    unconfigured_settings = settings_from_mapping({})
+    with (
+        patch("tradex.watchlists.refresh.load_runtime_settings") as mock_refresh_load_settings,
+        patch("tradex.data.fetcher.load_runtime_settings") as mock_fetcher_load_settings,
+        patch("schwab.auth.client_from_token_file") as mock_client_from_token_file,
+    ):
+        survivors, warnings = refresh._schwab_liquidity_filter(
+            ["AAPL", "MSFT"], settings=unconfigured_settings
+        )
+
+    mock_refresh_load_settings.assert_not_called()
+    mock_fetcher_load_settings.assert_not_called()
+    mock_client_from_token_file.assert_not_called()
     assert survivors == {"AAPL", "MSFT"}
     assert any("Schwab not configured" in w for w in warnings)
 
