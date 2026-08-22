@@ -298,11 +298,12 @@ ALERT_EMAIL_USER=your-email@example.com
 ALERT_EMAIL_PASS=your-password
 ```
 
-**Trigger criteria:**
-- Automatic alerts trigger on legacy heuristic scores and exploratory thresholds (coil strength, confluence, gap size).
-- Pattern similarity is quarantined and does not trigger automatic alerts.
+**Trigger criteria & Gating:**
+- Automatic market alerts are fail-closed and gated because TradeX currently has no production-approved actionable strategy.
+- Coil, Confluence, pre-market gap, Pattern Similarity, and legacy heuristic scores do not trigger automatic external notifications.
+- Manual test alerts remain available for channel diagnostics.
 
-**Evidence classification:** Delivery infrastructure. Current automatic alerts are based on unvalidated legacy/exploratory outputs, not production-approved actionable strategies.
+**Evidence classification:** Delivery infrastructure — automatic market alerts gated. Current automatic alerts are blocked fail-closed pending approved actionable strategies.
         """)
 
     st.markdown("---")
@@ -428,6 +429,6 @@ cd /Users/gary.yang/tradex
 The background watcher:
 - Runs the Scanner every N minutes and logs results to `~/.tradex/signals.db`.
 - Builds historical scan persistence for the Coil Detector.
-- Evaluates alert thresholds and dispatches configured notifications.
+- Evaluates observation thresholds and logs alert telemetry while automatic external delivery remains gated.
 - Executes pre-market gap scans at 8:00am ET and outcome resolution passes at 4:30pm ET.
     """)

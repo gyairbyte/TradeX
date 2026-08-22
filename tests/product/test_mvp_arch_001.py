@@ -283,8 +283,8 @@ def test_governance_invariants_present(inv: dict) -> None:
     assert any("MVP-ARCH-001-R1" in g for g in invariants)
 
 
-def test_governance_invariants_distinguish_r1_r2_r3_from_later_steps(inv: dict) -> None:
-    """Invariants prove R1/R2/R3 are Gary-approved while Steps 4-8 remain pending and broad booleans are false."""
+def test_governance_invariants_distinguish_r1_r2_r3_r4_from_later_steps(inv: dict) -> None:
+    """Invariants prove R1/R2/R3/R4 are Gary-approved while Steps 5-8 remain pending and broad booleans are false."""
     invariants = inv["governance_invariants"]
     # 1. No invariant claims EVERY rollout step remains pending.
     assert not any(
@@ -294,19 +294,22 @@ def test_governance_invariants_distinguish_r1_r2_r3_from_later_steps(inv: dict) 
         "every rollout implementation step remains pending" in g.lower() for g in invariants
     )
 
-    # 2. Invariant accurately distinguishes R1, R2, and R3 from Steps 4-8.
+    # 2. Invariant accurately distinguishes R1, R2, R3, and R4 from Steps 5-8.
     r_invariant = next(
         (
             g
             for g in invariants
-            if "MVP-ARCH-001-R1" in g and "MVP-ARCH-001-R2" in g and "MVP-ARCH-001-R3" in g
+            if "MVP-ARCH-001-R1" in g
+            and "MVP-ARCH-001-R2" in g
+            and "MVP-ARCH-001-R3" in g
+            and "MVP-ARCH-001-R4" in g
         ),
         None,
     )
-    assert r_invariant is not None, "Missing R1/R2/R3 governance invariant"
+    assert r_invariant is not None, "Missing R1/R2/R3/R4 governance invariant"
     assert "design-only" in r_invariant.lower()
     assert "separately gary-approved" in r_invariant.lower()
-    assert re.search(r"steps 4[\u2013-]8 remain pending", r_invariant, re.IGNORECASE)
+    assert re.search(r"steps 5[\u2013-]8 remain pending", r_invariant, re.IGNORECASE)
     assert "does not authorize production trading changes" in r_invariant.lower()
 
     # 3. Markdown matches the JSON invariant.
@@ -317,6 +320,7 @@ def test_governance_invariants_distinguish_r1_r2_r3_from_later_steps(inv: dict) 
     assert "MVP-ARCH-001-R1" in md_text
     assert "MVP-ARCH-001-R2" in md_text
     assert "MVP-ARCH-001-R3" in md_text
+    assert "MVP-ARCH-001-R4" in md_text
 
     # 4. Broad authorization booleans remain false.
     auth = inv["authorization"]
@@ -360,6 +364,45 @@ def test_governance_invariants_do_not_contain_blanket_dashboard_prohibition(inv:
     assert r3["pit_capture_authorized"] is False
     assert r3["strategy_promotion_authorized"] is False
     assert r3["long_002c_work_authorized"] is False
+
+
+def test_governance_invariants_do_not_contain_blanket_alert_prohibition(inv: dict) -> None:
+    """Governance invariants must qualify alert prohibitions to avoid contradicting R4."""
+    invariants = inv["governance_invariants"]
+    # 1. No invariant contains an unqualified blanket prohibition on alert changes.
+    for g in invariants:
+        if "alert changes" in g:
+            assert "beyond the separately approved r4 gating scope" in g.lower(), g
+
+    # 2. Markdown matches JSON qualification.
+    md_text = MD_PATH.read_text(encoding="utf-8")
+    for match in re.finditer(r"alert changes?(.*?)(?:\.|\n)", md_text, re.IGNORECASE):
+        line = match.group(0).lower()
+        if "does not authorize" in line or "does not implement" in line:
+            assert "beyond the separately approved r4 gating scope" in line, line
+
+    # 3. R4 is explicitly alert-gating authorized while Steps 5-8 and trading remain unauthorized.
+    r4 = next(a for a in inv["rollout_approvals"] if a["task_id"] == "MVP-ARCH-001-R4")
+    assert r4["implementation_authorized"] is True
+    assert r4["alert_behavior_changes_authorized"] is True
+    assert r4["automatic_actionable_alert_gating_authorized"] is True
+    assert r4["production_trading_changes_authorized"] is False
+    assert r4["signal_logic_changes_authorized"] is False
+    assert r4["score_changes_authorized"] is False
+    assert r4["weight_changes_authorized"] is False
+    assert r4["threshold_changes_authorized"] is False
+    assert r4["ranking_changes_authorized"] is False
+    assert r4["candidate_eligibility_changes_authorized"] is False
+    assert r4["navigation_changes_authorized"] is False
+    assert r4["provider_changes_authorized"] is False
+    assert r4["provider_calls_authorized"] is False
+    assert r4["live_provider_calls_authorized"] is False
+    assert r4["database_migration_authorized"] is False
+    assert r4["candidate_persistence_authorized"] is False
+    assert r4["journal_replacement_authorized"] is False
+    assert r4["pit_capture_authorized"] is False
+    assert r4["strategy_promotion_authorized"] is False
+    assert r4["long_002c_work_authorized"] is False
 
 
 def test_target_navigation_has_five_areas(inv: dict) -> None:
@@ -482,12 +525,20 @@ def test_tracker_summary_and_remaining_work_are_consistent(tracker_text: str) ->
     assert "LONG-002A" not in remaining
     assert "LONG-002B" not in remaining
 
-    # The recommended work order states only bounded R3 navigation implementation is authorized.
-    assert "only the bounded mvp-arch-001-r3 navigation implementation" in work_order.lower()
+    # The tracker narrative documents the completed/merged R1-R3 steps, separately approved R4 implemented by PR #60,
+    # and unauthorized status of subsequent steps.
+    assert "r4 was separately gary-approved on 2026-08-22 for fail-closed automatic market alert gating and implemented by pr #60" in tracker_text.lower()
+    assert "no production strategy was promoted" in tracker_text.lower()
+    assert "steps 5–8 remain pending separate gary approval" in tracker_text.lower() or "steps 5-8 remain pending separate gary approval" in tracker_text.lower()
+    assert "candidate persistence, journal replacement, pit capture, strategy promotion, database migrations, provider calls, and production trading changes remain unauthorized" in tracker_text.lower()
+
+    # The recommended work order states a separate Gary/ChatGPT decision is required and no next PR is already authorized.
+    assert "separate gary/chatgpt sequencing and approval decision" in work_order.lower()
+    assert "no next rollout implementation pr is currently authorized" in work_order.lower()
     assert "LONG-002C" in work_order
     assert "DAYTRADE-001" in work_order
     assert (
-        "only the bounded mvp-arch-001-r3 navigation implementation pr is currently authorized"
+        "no next implementation pr is currently authorized"
         in pr_order.lower()
     )
     assert "long-002a-locked-research-contract" not in tracker_text.lower()
@@ -731,3 +782,31 @@ def test_rollout_approvals_record(inv: dict) -> None:
     assert r3["pit_capture_authorized"] is False
     assert r3["strategy_promotion_authorized"] is False
     assert r3["long_002c_work_authorized"] is False
+
+    r4 = next((a for a in approvals if a.get("task_id") == "MVP-ARCH-001-R4"), None)
+    assert r4 is not None
+    assert r4["rollout_order"] == 4
+    assert r4["approval_status"] == "gary_approved"
+    assert r4["approved_by"] == "Gary Yang"
+    assert r4["approved_on"] == "2026-08-22"
+    assert r4["scope"] == "fail-closed automatic market alert gating only"
+    assert r4["implementation_authorized"] is True
+    assert r4["alert_behavior_changes_authorized"] is True
+    assert r4["automatic_actionable_alert_gating_authorized"] is True
+    assert r4["production_trading_changes_authorized"] is False
+    assert r4["signal_logic_changes_authorized"] is False
+    assert r4["score_changes_authorized"] is False
+    assert r4["weight_changes_authorized"] is False
+    assert r4["threshold_changes_authorized"] is False
+    assert r4["ranking_changes_authorized"] is False
+    assert r4["candidate_eligibility_changes_authorized"] is False
+    assert r4["navigation_changes_authorized"] is False
+    assert r4["provider_changes_authorized"] is False
+    assert r4["provider_calls_authorized"] is False
+    assert r4["live_provider_calls_authorized"] is False
+    assert r4["database_migration_authorized"] is False
+    assert r4["candidate_persistence_authorized"] is False
+    assert r4["journal_replacement_authorized"] is False
+    assert r4["pit_capture_authorized"] is False
+    assert r4["strategy_promotion_authorized"] is False
+    assert r4["long_002c_work_authorized"] is False

@@ -95,7 +95,7 @@ if __name__ == "__main__":
     st.set_page_config(page_title="TradeX", layout="wide")
     st.title("TradeX — Market Opportunity Scanner")
     st.caption(
-        "Scan, track, and get alerted on technical indicators and market context across intraday, short-term, and long-term timeframes."
+        "Scan, track, and evaluate technical indicators and market context across intraday, short-term, and long-term timeframes (automatic market alerts are gated pending approved actionable strategies)."
     )
 
     settings = load_runtime_settings()

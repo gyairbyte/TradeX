@@ -14,12 +14,12 @@ from typing import Any
 import pandas as pd
 
 from tradex.alerts.models import (
-    AlertDecision,
-    AlertKey,
-    AlertPolicyError,
     _CONTROL_RE,
     _MAX_ALERT_TYPE_LEN,
     _MAX_KEY_LEN,
+    AlertDecision,
+    AlertKey,
+    AlertPolicyError,
     ensure_aware_utc,
 )
 
@@ -525,6 +525,100 @@ class AlertStore:
                 raise
         except sqlite3.Error as exc:
             raise AlertStateError(f"alert state finalize failed: {exc}") from exc
+        finally:
+            conn.close()
+
+    def record_suppression(
+        self,
+        key: AlertKey,
+        observed_at: datetime,
+        decision: AlertDecision,
+        reason: str,
+        *,
+        subject: str | None = None,
+        payload_hash: str | None = None,
+    ) -> None:
+        """Record an alert suppression (e.g. SUPPRESSED_EVIDENCE_GATE) for audit.
+
+        Updates or inserts an alert_state row with:
+        - suppressed_count incremented
+        - last_attempt_at, last_decision, last_reason, updated_at set
+        - last_subject and last_payload_hash updated if provided
+        - claim_token, claim_expires_at, cooldown_until, sent_count, and failed_count untouched.
+
+        Fail-closed: raises AlertStateError on database error.
+        """
+        observed_at = ensure_aware_utc(observed_at)
+        observed_iso = _to_iso(observed_at)
+
+        conn = self._connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("BEGIN IMMEDIATE")
+            try:
+                row = cur.execute(
+                    """
+                    SELECT 1
+                    FROM alert_state
+                    WHERE ticker = ? AND alert_type = ? AND timeframe = ?
+                    """,
+                    (key.ticker, key.alert_type, key.timeframe),
+                ).fetchone()
+
+                if row is not None:
+                    cur.execute(
+                        """
+                        UPDATE alert_state
+                        SET suppressed_count = suppressed_count + 1,
+                            last_attempt_at = ?,
+                            last_decision = ?,
+                            last_reason = ?,
+                            last_subject = COALESCE(?, last_subject),
+                            last_payload_hash = COALESCE(?, last_payload_hash),
+                            updated_at = ?
+                        WHERE ticker = ? AND alert_type = ? AND timeframe = ?
+                        """,
+                        (
+                            observed_iso,
+                            decision.value if isinstance(decision, AlertDecision) else str(decision),
+                            reason,
+                            subject,
+                            payload_hash,
+                            observed_iso,
+                            key.ticker,
+                            key.alert_type,
+                            key.timeframe,
+                        ),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        INSERT INTO alert_state (
+                            ticker, alert_type, timeframe,
+                            last_attempt_at, last_decision, last_reason,
+                            last_subject, last_payload_hash,
+                            suppressed_count, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                        """,
+                        (
+                            key.ticker,
+                            key.alert_type,
+                            key.timeframe,
+                            observed_iso,
+                            decision.value if isinstance(decision, AlertDecision) else str(decision),
+                            reason,
+                            subject,
+                            payload_hash,
+                            observed_iso,
+                            observed_iso,
+                        ),
+                    )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        except sqlite3.Error as exc:
+            raise AlertStateError(f"alert state record suppression failed: {exc}") from exc
         finally:
             conn.close()
 

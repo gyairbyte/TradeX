@@ -41,7 +41,6 @@ from tradex.alerts.models import (
     AlertDecision,
     AlertDispatchResult,
     AlertKey,
-    _sanitize_channel_results,
     ensure_aware_utc,
 )
 from tradex.config import (
@@ -50,7 +49,6 @@ from tradex.config import (
     TradeXSettings,
     load_runtime_settings,
 )
-
 
 # Public defaults used when no runtime settings are provided (e.g. direct imports
 # without an explicit settings object). Real channel/threshold values are read
@@ -221,51 +219,18 @@ def _dispatch_or_raw(
     *,
     settings: TradeXSettings | None = None,
 ) -> AlertDispatchResult:
-    """Dispatch through a policy if provided, otherwise send raw and return a result."""
+    """Dispatch through the provided policy or construct the default policy.
+
+    All automatic market alerts must pass through the policy and its fail-closed
+    eligibility gate. Passing policy=None builds a default AlertPolicy to enforce
+    evidence gating rather than bypassing to raw external transport.
+    """
     observed_at = ensure_aware_utc(observed_at)
-    if policy is not None:
-        return policy.dispatch(key, subject, body, color_key=color_key, observed_at=observed_at)
-    try:
-        raw_results = send_alert(subject, body, color_key, settings=settings)
-    except Exception as exc:  # noqa: BLE001
-        return AlertDispatchResult(
-            key=key,
-            decision=AlertDecision.DELIVERY_FAILED,
-            observed_at=observed_at,
-            cooldown_minutes=None,
-            last_success_at=None,
-            next_eligible_at=None,
-            reason=f"Raw send failed: {exc}",
-            channel_results={},
-            error=str(exc)[:500],
-        )
+    if policy is None:
+        from tradex.alerts.policy import AlertPolicy
 
-    try:
-        channel_results = _sanitize_channel_results(raw_results)
-    except ValueError as exc:
-        return AlertDispatchResult(
-            key=key,
-            decision=AlertDecision.DELIVERY_FAILED,
-            observed_at=observed_at,
-            cooldown_minutes=None,
-            last_success_at=None,
-            next_eligible_at=None,
-            reason=f"Malformed raw send result: {exc}",
-            channel_results={},
-            error=str(exc)[:500],
-        )
-
-    decision, reason = _decision_from_raw_send(channel_results, settings=settings)
-    return AlertDispatchResult(
-        key=key,
-        decision=decision,
-        observed_at=observed_at,
-        cooldown_minutes=None,
-        last_success_at=None,
-        next_eligible_at=None,
-        reason=reason,
-        channel_results=channel_results,
-    )
+        policy = AlertPolicy(settings=settings)
+    return policy.dispatch(key, subject, body, color_key=color_key, observed_at=observed_at)
 
 
 def _below_threshold_result(

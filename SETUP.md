@@ -224,7 +224,7 @@ If the dashboard fails to start, check the log at `~/.tradex/dashboard.log` (Mac
 
 ## 6. Optional: scheduled background scanner
 
-The watcher runs the screener on an interval and writes results to `~/.tradex/signals.db`. This is what powers the **Research Lab → Coil Context** and **Signal Journal** tabs over time. It evaluates automatic alerts for coil, confluence, and pre-market gap setups, using a separate `~/.tradex/alerts.db` state database for cooldown and deduplication. Pattern matching is research-only and is quarantined from automatic watcher alerts.
+The watcher runs the screener on an interval and writes results to `~/.tradex/signals.db`. This is what powers the **Research Lab → Coil Context** and **Signal Journal** tabs over time. It evaluates observation thresholds for coil, confluence, and pre-market gap setups, using a separate `~/.tradex/alerts.db` state database for suppression audit and delivery governance. Automatic external market alerts are gated fail-closed because TradeX currently has no production-approved actionable strategy. Pattern matching is research-only and is quarantined from automatic watcher alerts.
 
 ```bash
 # macOS / Linux
@@ -236,20 +236,20 @@ The watcher runs the screener on an interval and writes results to `~/.tradex/si
 
 Run during market hours. With `--market-hours-only`, scans are skipped outside the NYSE regular session (weekends, NYSE holidays including Good Friday, and early-close days are handled automatically via the `exchange-calendars` XNYS calendar). Manual one-off scans omit the flag. The daily pre-market gap scan fires at `08:00 America/New_York` and the outcome pass at `16:30 America/New_York`; both stay at the same New York wall-clock time across DST changes and skip non-trading days. The watcher persists the effective `provider` with each scan run and outcome pass.
 
-Alert cooldown is enabled by default. Override it at runtime:
+Alert cooldown is enabled by default for future eligible alerts. Override it at runtime:
 
 ```bash
 # 120-minute default cooldown
 .venv/bin/python -m tradex.tracker.watcher --timeframe intraday --interval 5 --alert-cooldown-minutes 120
 
-# Disable cooldown entirely (send every eligible alert)
+# Disable cooldown entirely (does not bypass fail-closed evidence gating)
 .venv/bin/python -m tradex.tracker.watcher --timeframe intraday --interval 5 --disable-alert-cooldown
 
 # Use a custom alert state database
 .venv/bin/python -m tradex.tracker.watcher --timeframe intraday --interval 5 --alert-state-path /path/to/alerts.db
 ```
 
-Each automatic alert is keyed by `(ticker, alert_type, timeframe)`. The first eligible alert is sent and starts a cooldown; repeats during that window are suppressed and recorded in the state database. Cooldown only starts when at least one configured channel successfully receives the alert. Manual test alerts from the dashboard bypass cooldown.
+Each automatic alert event is keyed by `(ticker, alert_type, timeframe)`. Ineligible market events are blocked by the evidence gate and recorded as suppressed in `alerts.db` without triggering external transport or cooldown. Manual test alerts from the dashboard bypass cooldown and test transport connectivity.
 
 ---
 

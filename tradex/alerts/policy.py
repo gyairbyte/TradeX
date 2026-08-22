@@ -6,11 +6,12 @@ import json
 import re
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from functools import partial
+from typing import Any
 
 import pandas as pd
 
-from functools import partial
-
+from tradex.alerts.eligibility import check_automatic_alert_eligibility
 from tradex.alerts.models import (
     AlertCooldownConfig,
     AlertDecision,
@@ -241,15 +242,70 @@ class AlertPolicy:
         *,
         color_key: str = "test",
         observed_at: datetime | None = None,
+        strategy_id: str | None = None,
+        strategy_version: str | None = None,
+        evidence_state: str | None = None,
     ) -> AlertDispatchResult:
-        """Dispatch an automatic alert under the cooldown policy.
+        """Dispatch an automatic alert under the eligibility and cooldown policy.
 
-        Returns an immutable ``AlertDispatchResult``. The transport call happens
-        outside any database lock, and state is only mutated for successful sends
-        (to start cooldown) or delivery failures (to increment counters).
+        Returns an immutable ``AlertDispatchResult``. Evaluates domain eligibility
+        before any claim, cooldown check, or external transport. State is recorded
+        for suppression audit, successful sends, or delivery failures.
         """
         observed_at = ensure_aware_utc(observed_at)
         cooldown_minutes = self._cooldown_minutes_for(key)
+
+        # 1. Central eligibility boundary executes BEFORE cooldown, claim, or transport.
+        eligibility = check_automatic_alert_eligibility(
+            key,
+            strategy_id=strategy_id,
+            strategy_version=strategy_version,
+            evidence_state=evidence_state,
+        )
+        if not eligibility.eligible:
+            decision = AlertDecision.SUPPRESSED_EVIDENCE_GATE
+            reason = eligibility.reason
+            payload_hash = _payload_hash(subject, body, color_key)
+
+            # Record suppression audit in alert_state if store is available.
+            try:
+                self.store.record_suppression(
+                    key,
+                    observed_at,
+                    decision,
+                    reason,
+                    subject=subject,
+                    payload_hash=payload_hash,
+                )
+            except AlertStateError as exc:
+                return AlertDispatchResult(
+                    key=key,
+                    decision=AlertDecision.POLICY_ERROR,
+                    observed_at=observed_at,
+                    cooldown_minutes=cooldown_minutes,
+                    last_success_at=None,
+                    next_eligible_at=None,
+                    reason=f"State store error recording evidence gate suppression: {exc}",
+                    channel_results={},
+                    error=str(exc),
+                )
+
+            try:
+                existing_state = self.store.get_state(key)
+                last_success_at = existing_state.last_success_at if existing_state else None
+            except AlertStateError:
+                last_success_at = None
+
+            return AlertDispatchResult(
+                key=key,
+                decision=decision,
+                observed_at=observed_at,
+                cooldown_minutes=cooldown_minutes,
+                last_success_at=last_success_at,
+                next_eligible_at=None,
+                reason=reason,
+                channel_results={},
+            )
 
         if not self.config.enabled or cooldown_minutes is None:
             return self._send_without_cooldown(key, subject, body, color_key, observed_at)

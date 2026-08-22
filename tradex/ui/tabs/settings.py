@@ -18,8 +18,8 @@ def render_settings_tab(
     st.info(
         "This transitional Settings surface groups existing operational controls. "
         "Global provider and watchlist controls remain in the sidebar for this rollout. "
-        "Automatic alert gating has not been implemented (alerts continue to use delivery "
-        "infrastructure over legacy/exploratory triggers), and legacy weight controls remain unvalidated."
+        "Automatic market alert gating is active fail-closed (no approved actionable strategy exists), "
+        "and legacy weight controls remain unvalidated."
     )
 
     tab_alerts, tab_weights = st.tabs(

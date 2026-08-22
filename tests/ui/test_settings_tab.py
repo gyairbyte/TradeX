@@ -53,9 +53,7 @@ def test_render_shows_subheader_and_transitional_guidance(settings_module, fake_
     fake_settings_st.subheader.assert_called_once_with("Settings")
     assert fake_settings_st.info.call_count == 1
     info_text = str(fake_settings_st.info.call_args[0][0])
-    assert "groups existing operational controls" in info_text
-    assert "Global provider and watchlist controls remain in the sidebar" in info_text
-    assert "alert gating has not been implemented" in info_text.lower()
+    assert "automatic market alert gating is active fail-closed" in info_text.lower()
     assert "legacy weight controls remain unvalidated" in info_text
 
 

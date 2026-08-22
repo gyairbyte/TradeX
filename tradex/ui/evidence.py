@@ -91,11 +91,12 @@ EVIDENCE_NOTICES: dict[str, EvidenceNotice] = {
     "alerts": EvidenceNotice(
         tab_id="alerts",
         evidence_state="settings_infrastructure",
-        badge_label="Delivery Infrastructure — Legacy/Exploratory Triggers",
+        badge_label="Delivery Infrastructure — Automatic Market Alerts Gated",
         summary=(
-            "Alert channels provide delivery infrastructure. Current automatic alerts trigger on legacy "
-            "heuristic scores and exploratory thresholds (coil strength, confluence, gap size) rather than "
-            "production-approved actionable strategies. They must not be interpreted as validated strategy alerts."
+            "Alert channels provide delivery infrastructure. Automatic market alerts are fail-closed "
+            "and gated because TradeX currently has no production-approved actionable strategy. Legacy "
+            "heuristic scores, coil strength, confluence, and gap thresholds do not trigger automatic "
+            "external notifications. Manual test alerts remain available for channel diagnostics."
         ),
         level="info",
     ),
