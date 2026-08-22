@@ -6,7 +6,7 @@ import plotly.express as px
 import streamlit as st
 
 from tradex.config import TradeXSettings
-from tradex.tracker.confluence import run_confluence_screen
+from tradex.tracker.confluence import run_confluence_screen_with_report
 from tradex.ui.evidence import render_evidence_notice
 
 
@@ -80,7 +80,7 @@ Most screeners evaluate a single timeframe. The Confluence Scanner measures whet
         help="Score each watchlist ticker across all three timeframes simultaneously. Takes ~3x longer than a single-timeframe scan.",
     ):
         with st.spinner(f"Scoring {len(watchlist)} tickers across all timeframes…"):
-            conf_results = run_confluence_screen(
+            report = run_confluence_screen_with_report(
                 watchlist,
                 settings=settings,
                 min_confluence=min_confluence,
@@ -88,8 +88,37 @@ Most screeners evaluate a single timeframe. The Confluence Scanner measures whet
                 provider=provider,
                 earnings_source=earnings_source,
             )
+            conf_results = report.results
+
+        has_earnings_failures = bool(report.earnings_failures)
+        if earnings_buffer > 0 and has_earnings_failures:
+            failed_tickers = ", ".join(sorted(report.earnings_failures.keys()))
+            st.warning(
+                f"Earnings date unavailable for {len(report.earnings_failures)} symbol(s) ({failed_tickers}); "
+                f"excluded from scoring because earnings buffer was active ({earnings_buffer}d)."
+            )
+        elif earnings_buffer == 0 and has_earnings_failures:
+            failed_tickers = ", ".join(sorted(report.earnings_failures.keys()))
+            st.info(
+                f"Earnings date unavailable for {len(report.earnings_failures)} symbol(s) ({failed_tickers}); "
+                f"scored normally with earnings date unknown."
+            )
+
         if conf_results.empty:
-            st.warning("No confluence setups found. Lower the min confluence score.")
+            if report.total_earnings_excluded == len(watchlist):
+                st.warning(
+                    f"No confluence setups found. All {report.total_earnings_excluded} tickers "
+                    f"were excluded due to upcoming earnings within {earnings_buffer}d."
+                )
+            elif (
+                earnings_buffer > 0
+                and (len(report.earnings_failures) + report.total_earnings_excluded) == len(watchlist)
+            ):
+                st.warning(
+                    "No confluence setups found. All tickers were excluded (upcoming earnings or unavailable earnings date)."
+                )
+            else:
+                st.warning("No confluence setups found. Lower the min confluence score.")
         else:
             if earnings_buffer > 0:
                 st.success(

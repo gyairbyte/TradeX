@@ -24,10 +24,14 @@ import pandas as pd
 import yfinance as yf
 
 from tradex.config import TradeXSettings, load_runtime_settings
-from tradex.data.fetcher import ProviderCapabilityError
+from tradex.data.fetcher import ProviderCapabilityError, ProviderDataUnavailableError
 
 DEFAULT_CACHE_DB = Path("~/.tradex/earnings_cache.db")
 CACHE_TTL_HOURS = 24
+
+
+class EarningsDataUnavailableError(ProviderDataUnavailableError):
+    """Raised when earnings data is unavailable, unparseable, or has no usable upcoming date."""
 
 
 def _resolve_cache_db(settings: TradeXSettings | None = None) -> Path:
@@ -131,13 +135,13 @@ def _cache_put(
         )
 
 
-def _fetch_from_yahoo(ticker: str) -> date | None:
+def _fetch_from_yahoo(ticker: str) -> date:
     """
     Pull the next upcoming earnings date from yfinance.
 
     Tries get_earnings_dates() first (returns past + future); falls back to
-    the older .calendar attribute. Returns None if nothing in the future is
-    available (e.g., ETFs, recently-delisted, or Yahoo just doesn't have it).
+    the older .calendar attribute. Raises EarningsDataUnavailableError if nothing
+    in the future is available or if provider lookups fail.
     """
     t = yf.Ticker(ticker)
     today = date.today()
@@ -171,7 +175,9 @@ def _fetch_from_yahoo(ticker: str) -> date | None:
     except Exception:  # noqa: BLE001
         pass
 
-    return None
+    # Neither method yielded a valid upcoming date.
+    # Ensure safe error message containing no secrets, tokens, credentials, or paths.
+    raise EarningsDataUnavailableError(f"Upcoming earnings date unavailable for {ticker}")
 
 
 def get_next_earnings(
@@ -181,11 +187,12 @@ def get_next_earnings(
     use_cache: bool = True,
     *,
     settings: TradeXSettings | None = None,
-) -> date | None:
-    """Return the next earnings date for `ticker`, or None if unavailable.
+) -> date:
+    """Return the next earnings date for `ticker`.
 
     ``source`` is explicit; defaults to ``EARNINGS_DATA_SOURCE`` or ``yahoo``.
     Unsupported sources raise ProviderCapabilityError.
+    Unavailable/unparseable/missing future dates raise EarningsDataUnavailableError.
 
     When ``use_cache`` is False the Yahoo lookup is still used, but no SQLite
     cache file is read or written. This is the path used by the pre-market gap
@@ -211,12 +218,14 @@ def days_until_earnings(
     source: str | None = None,
     *,
     settings: TradeXSettings | None = None,
-) -> int | None:
+) -> int:
+    """Return the number of calendar days until next earnings date.
+
+    Raises `EarningsDataUnavailableError` or `ProviderCapabilityError` if earnings data is unavailable.
+    """
     next_date = get_next_earnings(
         ticker, force_refresh=force_refresh, source=source, settings=settings
     )
-    if next_date is None:
-        return None
     return (next_date - date.today()).days
 
 
@@ -227,9 +236,13 @@ def is_within_earnings_window(
     *,
     settings: TradeXSettings | None = None,
 ) -> bool:
-    """True if the ticker has earnings within `within_days` calendar days."""
+    """True if the ticker has earnings within `within_days` calendar days.
+
+    Propagates `EarningsDataUnavailableError` or `ProviderCapabilityError` if
+    earnings data cannot be verified.
+    """
     days = days_until_earnings(ticker, source=source, settings=settings)
-    return days is not None and 0 <= days <= within_days
+    return 0 <= days <= within_days
 
 
 def annotate(
@@ -237,20 +250,41 @@ def annotate(
 ) -> pd.DataFrame:
     """
     Return a DataFrame with one row per ticker:
-      ticker | next_earnings (date or NaT) | days_until (int or NaN)
+      ticker | next_earnings (date or NaT) | days_until (int or NaN) |
+      earnings_status ("known" | "unavailable") | error_category | error_message
     Useful for the dashboard's earnings tab.
     """
     rows = []
     for t in tickers:
+        nxt: date | None = None
+        days: int | None = None
+        status = "known"
+        error_category: str | None = None
+        error_message: str | None = None
         try:
             nxt = get_next_earnings(t, source=source, settings=settings)
-        except ProviderCapabilityError:
+            days = (nxt - date.today()).days
+        except (ProviderDataUnavailableError, ProviderCapabilityError) as exc:
             nxt = None
+            days = None
+            status = "unavailable"
+            error_category = type(exc).__name__
+            error_message = str(exc)
+        except Exception as exc:  # noqa: BLE001
+            nxt = None
+            days = None
+            status = "unavailable"
+            error_category = "EarningsDataUnavailableError"
+            error_message = f"Earnings lookup failed for {t}"
+
         rows.append(
             {
                 "ticker": t,
                 "next_earnings": nxt,
-                "days_until": (nxt - date.today()).days if nxt else None,
+                "days_until": days,
+                "earnings_status": status,
+                "error_category": error_category,
+                "error_message": error_message,
             }
         )
     return pd.DataFrame(rows)

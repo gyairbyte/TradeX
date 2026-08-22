@@ -149,6 +149,57 @@ def test_fetch_catalyst_context_require_catalyst_filters_no_earnings():
     assert ctx.status == "unavailable"
 
 
+def test_fetch_catalyst_context_earnings_unavailable_exception():
+    """When get_next_earnings raises EarningsDataUnavailableError, earnings_status is unavailable."""
+    from tradex.earnings.calendar import EarningsDataUnavailableError
+
+    as_of = datetime(2024, 1, 3, 13, 0, tzinfo=UTC)
+    with (
+        patch.object(
+            catalysts,
+            "get_next_earnings",
+            side_effect=EarningsDataUnavailableError("Upcoming earnings date unavailable for AAPL"),
+        ),
+        patch.object(catalysts, "_fetch_yahoo_headlines", return_value=(None, None)),
+        patch.object(catalysts, "_utc_today", return_value=as_of.date()),
+    ):
+        ctx = catalysts.fetch_catalyst_context(
+            "AAPL",
+            date(2024, 1, 3),
+            as_of,
+            include_catalysts=True,
+            require_catalyst=False,
+            lookback_hours=24.0,
+            earnings_source="yahoo",
+            headline_source=None,
+        )
+    assert ctx.earnings_status == "unavailable"
+    assert ctx.status == "unavailable"
+
+
+def test_fetch_catalyst_context_earnings_outside_window_none_detected():
+    """When upcoming earnings date is beyond lookback_hours window, status is none_detected."""
+    as_of = datetime(2024, 1, 3, 13, 0, tzinfo=UTC)
+    with (
+        patch.object(catalysts, "get_next_earnings", return_value=date(2024, 1, 20)),
+        patch.object(catalysts, "_fetch_yahoo_headlines", return_value=([], None)),
+        patch.object(catalysts, "_utc_today", return_value=as_of.date()),
+    ):
+        ctx = catalysts.fetch_catalyst_context(
+            "AAPL",
+            date(2024, 1, 3),
+            as_of,
+            include_catalysts=True,
+            require_catalyst=False,
+            lookback_hours=24.0,
+            earnings_source="yahoo",
+            headline_source="yahoo",
+        )
+    assert ctx.earnings_status == "none_detected"
+    assert ctx.headline_status == "none_detected"
+    assert ctx.status == "none_detected"
+
+
 def test_fetch_catalyst_context_no_earnings_cache_db(tmp_path, monkeypatch):
     """The pre-market scanner must not create the earnings cache database."""
     monkeypatch.setenv("TRADEX_EARNINGS_CACHE_PATH", str(tmp_path / "earnings_cache.db"))

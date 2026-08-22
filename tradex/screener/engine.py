@@ -317,25 +317,31 @@ def run_with_report(
     total_earnings_excluded = 0
     eligible_tickers: list[str] = []
     earnings_failures: dict[str, ProviderError] = {}
+    earnings_err_map: dict[str, ProviderError] = {}
     days_map: dict[str, int | None] = {}
     observations: list[dict] = []
     filter_enabled = exclude_earnings_within is not None and exclude_earnings_within > 0
 
     for ticker in unique_tickers:
+        days_to_er = None
+        earnings_err = None
         try:
             days_to_er = days_until_earnings(ticker, source=earnings_source, settings=settings)
+        except ProviderError as exc:
+            earnings_err = exc
+        except Exception as exc:  # noqa: BLE001
+            earnings_err = ProviderDataUnavailableError(f"Earnings lookup failed for {ticker}")
+
+        if earnings_err is not None:
+            earnings_failures[ticker] = earnings_err
+            earnings_err_map[ticker] = earnings_err
+            days_map[ticker] = None
+        else:
             days_map[ticker] = days_to_er
-        except Exception:  # noqa: BLE001
-            err = ProviderDataUnavailableError(f"Earnings lookup failed for {ticker}")
-            earnings_failures[ticker] = err
-            observations.append(
-                _build_observation_row(ticker, ObservationStatus.EARNINGS_FAILURE, error=err)
-            )
-            continue
 
         if filter_enabled:
-            if days_to_er is None:
-                err = ProviderDataUnavailableError(
+            if earnings_err is not None or days_to_er is None:
+                err = earnings_err or ProviderDataUnavailableError(
                     f"Earnings date unknown for {ticker}; cannot evaluate exclusion window"
                 )
                 earnings_failures[ticker] = err
@@ -428,6 +434,7 @@ def run_with_report(
         total_scored += 1
         reasons = _format_reasons(result)
         obs_provider = actual_provider or requested_provider
+        obs_earnings_err = earnings_err_map.get(ticker)
 
         # Canonicalize the scored row once so both `results` and the signal
         # observation share identical values and pass validation.
@@ -455,6 +462,7 @@ def run_with_report(
                     days_until_earnings=canonical["days_until_earnings"],
                     reasons=canonical["reasons"],
                     provider=canonical["provider"],
+                    error=obs_earnings_err,
                 )
             )
             continue
@@ -472,6 +480,7 @@ def run_with_report(
                 days_until_earnings=canonical["days_until_earnings"],
                 reasons=canonical["reasons"],
                 provider=canonical["provider"],
+                error=obs_earnings_err,
             )
         )
 

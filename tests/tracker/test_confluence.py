@@ -496,3 +496,112 @@ def test_confluence_screen_passes_through_when_filter_disabled_and_earnings_unkn
     assert len(result) == 1
     assert result.iloc[0]["ticker"] == "AAPL"
     assert result.iloc[0]["days_until_earnings"] is None
+
+
+def test_run_confluence_screen_with_report_filter_disabled_earnings_unavailable():
+    """Filter disabled + earnings unavailable -> score computed, report exposes earnings failure."""
+    fake_result = {
+        "ticker": "AAPL",
+        "confluence_score": 75,
+        "tier": "strong confluence",
+        "active_timeframes": ["intraday", "short"],
+        "available_timeframes": ["intraday", "short"],
+        "missing_timeframes": ["long"],
+        "timeframe_coverage": "2/3",
+        "complete_timeframe_coverage": False,
+        "scores": {"intraday": 75, "short": 75},
+        "reasons": {},
+        "last_close": 150.0,
+        "errors": {},
+    }
+
+    with (
+        patch.object(confluence, "score_confluence", return_value=fake_result),
+        patch.object(
+            confluence,
+            "days_until_earnings",
+            side_effect=RuntimeError("Yahoo earnings API connection failed"),
+        ),
+    ):
+        report = confluence.run_confluence_screen_with_report(
+            ["AAPL"], min_confluence=50, exclude_earnings_within=None
+        )
+
+    assert isinstance(report, confluence.ConfluenceReport)
+    assert len(report.results) == 1
+    assert report.results.iloc[0]["ticker"] == "AAPL"
+    assert report.results.iloc[0]["days_until_earnings"] is None
+    assert "AAPL" in report.earnings_failures
+    assert report.total_requested == 1
+    assert report.total_scored == 1
+    assert report.total_earnings_excluded == 0
+
+
+def test_run_confluence_screen_with_report_filter_enabled_earnings_unavailable():
+    """Filter enabled + earnings unavailable -> ticker not scored, report exposes failure."""
+    score_called = []
+
+    def fake_score(ticker, **kwargs):
+        score_called.append(ticker)
+        return {}
+
+    with (
+        patch.object(confluence, "score_confluence", side_effect=fake_score),
+        patch.object(
+            confluence,
+            "days_until_earnings",
+            side_effect=RuntimeError("Yahoo earnings API connection failed"),
+        ),
+    ):
+        report = confluence.run_confluence_screen_with_report(
+            ["AAPL"], min_confluence=50, exclude_earnings_within=5
+        )
+
+    assert report.results.empty
+    assert score_called == []
+    assert "AAPL" in report.earnings_failures
+    assert report.total_requested == 1
+    assert report.total_scored == 0
+    assert report.total_earnings_excluded == 0
+
+
+def test_run_confluence_screen_with_report_filter_enabled_in_and_out_of_window():
+    """Filter enabled: in-window excluded, out-of-window scored."""
+    fake_result = {
+        "ticker": "OUT_WINDOW",
+        "confluence_score": 85,
+        "tier": "all timeframes aligned",
+        "active_timeframes": ["intraday", "short", "long"],
+        "available_timeframes": ["intraday", "short", "long"],
+        "missing_timeframes": [],
+        "timeframe_coverage": "3/3",
+        "complete_timeframe_coverage": True,
+        "scores": {"intraday": 85, "short": 85, "long": 85},
+        "reasons": {},
+        "last_close": 200.0,
+        "errors": {},
+    }
+
+    def fake_days(ticker, **kwargs):
+        if ticker == "IN_WINDOW":
+            return 2
+        if ticker == "OUT_WINDOW":
+            return 20
+        return None
+
+    with (
+        patch.object(confluence, "score_confluence", return_value=fake_result),
+        patch.object(confluence, "days_until_earnings", side_effect=fake_days),
+    ):
+        report = confluence.run_confluence_screen_with_report(
+            ["IN_WINDOW", "OUT_WINDOW"], min_confluence=50, exclude_earnings_within=5
+        )
+
+    assert len(report.results) == 1
+    assert report.results.iloc[0]["ticker"] == "OUT_WINDOW"
+    assert report.results.iloc[0]["days_until_earnings"] == 20
+    assert report.earnings_excluded == ["IN_WINDOW"]
+    assert report.total_requested == 2
+    assert report.total_scored == 1
+    assert report.total_earnings_excluded == 1
+    assert report.earnings_failures == {}
