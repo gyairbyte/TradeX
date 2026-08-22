@@ -10,6 +10,7 @@ Missing timeframes contribute zero and are recorded explicitly in the result
 metadata. Tiers reflect both the corrected score and how many timeframes
 actually contributed.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -20,7 +21,6 @@ from tradex.config import TradeXSettings, load_runtime_settings
 from tradex.data.fetcher import fetch
 from tradex.earnings import days_until_earnings
 from tradex.signals import intraday, long_term, short_term
-
 
 # Weight by timeframe — the denominator is always the sum of all three weights
 # so missing timeframes penalize the confluence score.
@@ -95,8 +95,8 @@ def score_confluence(
 
     fetchers: dict[str, tuple[Any, str]] = {
         "intraday": (intraday.score, "intraday"),
-        "short":    (short_term.score, "short"),
-        "long":     (long_term.score, "long"),
+        "short": (short_term.score, "short"),
+        "long": (long_term.score, "long"),
     }
 
     if settings is None:
@@ -164,36 +164,39 @@ def run_confluence_screen(
     """
     if settings is None:
         settings = load_runtime_settings()
+    filter_enabled = exclude_earnings_within is not None and exclude_earnings_within > 0
     rows = []
     for ticker in tickers:
         try:
-            days_to_er = days_until_earnings(
-                ticker, source=earnings_source, settings=settings
-            )
-            if (
-                exclude_earnings_within is not None
-                and days_to_er is not None
-                and 0 <= days_to_er <= exclude_earnings_within
-            ):
-                print(f"[skip] {ticker}: earnings in {days_to_er}d")
-                continue
+            days_to_er = days_until_earnings(ticker, source=earnings_source, settings=settings)
+            if filter_enabled:
+                if days_to_er is None:
+                    print(
+                        f"[skip] {ticker}: earnings date unknown/unavailable; cannot evaluate exclusion window"
+                    )
+                    continue
+                if 0 <= days_to_er <= exclude_earnings_within:
+                    print(f"[skip] {ticker}: earnings in {days_to_er}d")
+                    continue
 
             result = score_confluence(ticker, provider=provider, settings=settings)
             if result["confluence_score"] >= min_confluence:
-                rows.append({
-                    "ticker":                    result["ticker"],
-                    "confluence_score":          result["confluence_score"],
-                    "tier":                      result["tier"],
-                    "active_timeframes":         ", ".join(result["active_timeframes"]),
-                    "timeframe_coverage":        result["timeframe_coverage"],
-                    "available_timeframes":      ", ".join(result["available_timeframes"]),
-                    "missing_timeframes":        ", ".join(result["missing_timeframes"]),
-                    "score_intraday":            result["scores"].get("intraday", "-"),
-                    "score_short":               result["scores"].get("short", "-"),
-                    "score_long":                result["scores"].get("long", "-"),
-                    "days_until_earnings":       days_to_er,
-                    "last_close":                result.get("last_close"),
-                })
+                rows.append(
+                    {
+                        "ticker": result["ticker"],
+                        "confluence_score": result["confluence_score"],
+                        "tier": result["tier"],
+                        "active_timeframes": ", ".join(result["active_timeframes"]),
+                        "timeframe_coverage": result["timeframe_coverage"],
+                        "available_timeframes": ", ".join(result["available_timeframes"]),
+                        "missing_timeframes": ", ".join(result["missing_timeframes"]),
+                        "score_intraday": result["scores"].get("intraday", "-"),
+                        "score_short": result["scores"].get("short", "-"),
+                        "score_long": result["scores"].get("long", "-"),
+                        "days_until_earnings": days_to_er,
+                        "last_close": result.get("last_close"),
+                    }
+                )
         except Exception as e:
             print(f"[skip] {ticker}: {e}")
 

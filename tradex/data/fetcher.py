@@ -8,6 +8,7 @@ OHLCV data fetcher supporting four providers:
 
 Set the provider via the DATA_PROVIDER env var or pass it explicitly to fetch().
 """
+
 import hashlib
 import json
 import os
@@ -22,7 +23,11 @@ from typing import Any
 import pandas as pd
 import yfinance as yf
 
-from tradex.config import TradeXSettings, load_runtime_settings
+from tradex.config import (
+    DEFAULT_OHLCV_PROVIDER,
+    TradeXSettings,
+    load_runtime_settings,
+)
 
 
 class ProviderError(RuntimeError):
@@ -56,12 +61,12 @@ class ProviderResponseError(ProviderError):
 # ── timeframe presets ────────────────────────────────────────────────────────
 # Each provider maps these to its own param names internally.
 TIMEFRAMES = {
-    "intraday": {"period": "5d",  "interval": "5m"},
-    "short":    {"period": "60d", "interval": "1d"},
-    "long":     {"period": "2y",  "interval": "1wk"},
+    "intraday": {"period": "5d", "interval": "5m"},
+    "short": {"period": "60d", "interval": "1d"},
+    "long": {"period": "2y", "interval": "1wk"},
 }
 
-DEFAULT_PROVIDER = "yahoo"
+DEFAULT_PROVIDER = DEFAULT_OHLCV_PROVIDER
 
 
 _MAX_ALLOWED_RETRIES = 3
@@ -69,7 +74,7 @@ _MAX_ALLOWED_RETRIES = 3
 
 def _default_backoff(attempt: int) -> float:
     """Default deterministic exponential backoff with a small cap."""
-    return min(2 ** attempt, 8.0)
+    return min(2**attempt, 8.0)
 
 
 @dataclass(frozen=True)
@@ -209,7 +214,9 @@ def normalize_yahoo_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ── Yahoo Finance ─────────────────────────────────────────────────────────────
-def _fetch_yahoo(ticker: str, timeframe: str, *, settings: TradeXSettings | None = None) -> pd.DataFrame:
+def _fetch_yahoo(
+    ticker: str, timeframe: str, *, settings: TradeXSettings | None = None
+) -> pd.DataFrame:
     _ = settings
     tf = TIMEFRAMES[timeframe]
     df = yf.download(
@@ -228,16 +235,19 @@ def _fetch_yahoo(ticker: str, timeframe: str, *, settings: TradeXSettings | None
 # Free tier gives real-time IEX feed; paid gives SIP (full NBBO).
 _ALPACA_INTERVAL_MAP = {
     "intraday": "5Min",
-    "short":    "1Day",
-    "long":     "1Week",
+    "short": "1Day",
+    "long": "1Week",
 }
 _ALPACA_LIMIT_MAP = {
-    "intraday": 1000,   # ~5 trading days of 5m bars
-    "short":    60,
-    "long":     104,    # 2 years of weekly bars
+    "intraday": 1000,  # ~5 trading days of 5m bars
+    "short": 60,
+    "long": 104,  # 2 years of weekly bars
 }
 
-def _fetch_alpaca(ticker: str, timeframe: str, *, settings: TradeXSettings | None = None) -> pd.DataFrame:
+
+def _fetch_alpaca(
+    ticker: str, timeframe: str, *, settings: TradeXSettings | None = None
+) -> pd.DataFrame:
     if settings is None:
         settings = load_runtime_settings()
 
@@ -257,12 +267,13 @@ def _fetch_alpaca(ticker: str, timeframe: str, *, settings: TradeXSettings | Non
 
     tf_str = _ALPACA_INTERVAL_MAP[timeframe]
     tf_map = {
-        "5Min":  TimeFrame(5, TimeFrameUnit.Minute),
-        "1Day":  TimeFrame(1, TimeFrameUnit.Day),
+        "5Min": TimeFrame(5, TimeFrameUnit.Minute),
+        "1Day": TimeFrame(1, TimeFrameUnit.Day),
         "1Week": TimeFrame(1, TimeFrameUnit.Week),
     }
 
     from datetime import UTC, datetime, timedelta
+
     lookback_days = {"intraday": 7, "short": 90, "long": 730}
     start = datetime.now(UTC) - timedelta(days=lookback_days[timeframe])
 
@@ -279,8 +290,9 @@ def _fetch_alpaca(ticker: str, timeframe: str, *, settings: TradeXSettings | Non
         bars = bars.xs(ticker, level="symbol")
 
     bars.index.name = "datetime"
-    bars = bars.rename(columns={"open": "open", "high": "high", "low": "low",
-                                 "close": "close", "volume": "volume"})
+    bars = bars.rename(
+        columns={"open": "open", "high": "high", "low": "low", "close": "close", "volume": "volume"}
+    )
     return bars[["open", "high", "low", "close", "volume"]].dropna()
 
 
@@ -290,11 +302,14 @@ def _fetch_alpaca(ticker: str, timeframe: str, *, settings: TradeXSettings | Non
 # Default connection: host=127.0.0.1, port=7497 (paper) or 7496 (live)
 _IBKR_DURATION_MAP = {
     "intraday": ("5 D", "5 mins"),
-    "short":    ("60 D", "1 day"),
-    "long":     ("2 Y",  "1 week"),
+    "short": ("60 D", "1 day"),
+    "long": ("2 Y", "1 week"),
 }
 
-def _fetch_ibkr(ticker: str, timeframe: str, *, settings: TradeXSettings | None = None) -> pd.DataFrame:
+
+def _fetch_ibkr(
+    ticker: str, timeframe: str, *, settings: TradeXSettings | None = None
+) -> pd.DataFrame:
     if settings is None:
         settings = load_runtime_settings()
 
@@ -323,8 +338,15 @@ def _fetch_ibkr(ticker: str, timeframe: str, *, settings: TradeXSettings | None 
         )
         df = util.df(bars).set_index("date")
         df.index = pd.to_datetime(df.index)
-        df = df.rename(columns={"open": "open", "high": "high", "low": "low",
-                                  "close": "close", "volume": "volume"})
+        df = df.rename(
+            columns={
+                "open": "open",
+                "high": "high",
+                "low": "low",
+                "close": "close",
+                "volume": "volume",
+            }
+        )
         return df[["open", "high", "low", "close", "volume"]].dropna()
     finally:
         ib.disconnect()
@@ -369,8 +391,8 @@ def _assert_token_path_outside_repo(token_path: str) -> None:
 # Lookbacks roughly match what other providers return for the same timeframe.
 _SCHWAB_TIMEFRAMES = {
     "intraday": ("get_price_history_every_five_minutes", timedelta(days=5)),
-    "short":    ("get_price_history_every_day",          timedelta(days=120)),
-    "long":     ("get_price_history_every_week",         timedelta(days=730)),
+    "short": ("get_price_history_every_day", timedelta(days=120)),
+    "long": ("get_price_history_every_week", timedelta(days=730)),
 }
 
 _OHLCV_COLUMNS = ["open", "high", "low", "close", "volume"]
@@ -453,8 +475,7 @@ def _get_schwab_client(*, settings: TradeXSettings | None = None):
         from schwab.auth import client_from_token_file
     except ImportError as e:
         raise ImportError(
-            "Install schwab-py to use the Schwab provider: "
-            "uv pip install -e \".[schwab]\""
+            'Install schwab-py to use the Schwab provider: uv pip install -e ".[schwab]"'
         ) from e
 
     app_key = (settings.data.schwab_app_key or "").strip()
@@ -490,7 +511,9 @@ def _get_schwab_client(*, settings: TradeXSettings | None = None):
     return _SCHWAB_CLIENTS[key]
 
 
-def _fetch_schwab(ticker: str, timeframe: str, *, settings: TradeXSettings | None = None) -> pd.DataFrame:
+def _fetch_schwab(
+    ticker: str, timeframe: str, *, settings: TradeXSettings | None = None
+) -> pd.DataFrame:
     """Fetch canonical OHLCV data from the Schwab Market Data API.
 
     Raises:
@@ -562,9 +585,7 @@ def _classify_exception(exc: Exception, ticker: str, timeframe: str) -> Provider
             f"Missing token or credential file for {ticker} ({timeframe})"
         )
     if isinstance(exc, (ConnectionError, TimeoutError)):
-        return ProviderTransientError(
-            f"Network error fetching {ticker} ({timeframe})"
-        )
+        return ProviderTransientError(f"Network error fetching {ticker} ({timeframe})")
     if isinstance(exc, OSError):
         # OSError covers EnvironmentError; in this codebase we raise it for
         # missing env vars. Treat missing credentials as non-retryable auth/config.
@@ -572,16 +593,12 @@ def _classify_exception(exc: Exception, ticker: str, timeframe: str) -> Provider
             f"Missing environment configuration for {ticker} ({timeframe})"
         )
     if isinstance(exc, RuntimeError):
-        return ProviderResponseError(
-            f"Provider request failed for {ticker} ({timeframe})"
-        )
+        return ProviderResponseError(f"Provider request failed for {ticker} ({timeframe})")
     if isinstance(exc, ValueError):
         return ProviderConfigurationError(
             f"Invalid provider configuration or request for {ticker} ({timeframe})"
         )
-    return ProviderResponseError(
-        f"Unexpected provider error for {ticker} ({timeframe})"
-    )
+    return ProviderResponseError(f"Unexpected provider error for {ticker} ({timeframe})")
 
 
 def _fetch_with_retry(
@@ -710,9 +727,7 @@ def fetch_multi_report(
         completed = 0
         total = len(tickers)
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_ticker = {
-                executor.submit(_fetch_one, t): t for t in remaining
-            }
+            future_to_ticker = {executor.submit(_fetch_one, t): t for t in remaining}
             for future in as_completed(future_to_ticker):
                 ticker, result = future.result()
                 completed += 1
@@ -803,9 +818,9 @@ def _has_usable_ohlcv(df: pd.DataFrame) -> bool:
 
 # ── Public API ────────────────────────────────────────────────────────────────
 _PROVIDERS = {
-    "yahoo":  _fetch_yahoo,
+    "yahoo": _fetch_yahoo,
     "alpaca": _fetch_alpaca,
-    "ibkr":   _fetch_ibkr,
+    "ibkr": _fetch_ibkr,
     "schwab": _fetch_schwab,
 }
 
@@ -835,9 +850,7 @@ def resolve_provider(
     else:
         p = load_runtime_settings().data.data_provider
     if p not in _PROVIDERS:
-        raise ValueError(
-            f"provider must be one of {sorted(_PROVIDERS)}; got {p!r}"
-        )
+        raise ValueError(f"provider must be one of {sorted(_PROVIDERS)}; got {p!r}")
     return p
 
 

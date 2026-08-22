@@ -1,4 +1,5 @@
 """Deterministic invariants for the committed MVP-ARCH-001 artifact."""
+
 from __future__ import annotations
 
 import json
@@ -112,7 +113,9 @@ def test_provider_runtime_accessible_is_distinguished(inv: dict) -> None:
         assert "runtime_accessible" in p, p["name"]
         assert "used_in_production_ranking_or_actionability" in p, p["name"]
         assert "production_runtime" not in p, p["name"]
-    options_providers = [p for p in inv["provider_inventory"] if p["name"] in ("unusual_whales", "tradier")]
+    options_providers = [
+        p for p in inv["provider_inventory"] if p["name"] in ("unusual_whales", "tradier")
+    ]
     for p in options_providers:
         assert p["runtime_accessible"] is True, p["name"]
         assert p["used_in_production_ranking_or_actionability"] is False, p["name"]
@@ -151,7 +154,10 @@ def test_dashboard_disposition_and_target_area_are_allowed(inv: dict) -> None:
 
 def test_navigation_converges_to_five_areas(inv: dict) -> None:
     """Scanner -> Today; Confluence/Pre-Market/Help into workflow; Coil/Pattern/Options -> Research Lab; Alerts -> Settings; Journal -> Journal."""
-    mapping = {d["tab"]: (d["recommended_disposition"], d["target_area"]) for d in inv["dashboard_inventory"]}
+    mapping = {
+        d["tab"]: (d["recommended_disposition"], d["target_area"])
+        for d in inv["dashboard_inventory"]
+    }
     assert mapping["Scanner"] == ("merge_into_workflow", "Today")
     assert mapping["Confluence"][0] == "merge_into_workflow"
     assert mapping["Confluence"][1] in {"Today", "Candidate Detail"}
@@ -201,7 +207,14 @@ def test_no_strategy_is_production_approved(inv: dict) -> None:
 
 def test_actionability_separation(inv: dict) -> None:
     for s in inv["strategy_evidence_inventory"]:
-        if s["evidence_state"] in {"rejected", "not_supported", "inconclusive", "research_only", "exploratory", "legacy_heuristic"}:
+        if s["evidence_state"] in {
+            "rejected",
+            "not_supported",
+            "inconclusive",
+            "research_only",
+            "exploratory",
+            "legacy_heuristic",
+        }:
             assert s["may_use_actionable_labels"] is False, s["component"]
             assert s["may_generate_automatic_alerts"] is False, s["component"]
 
@@ -252,7 +265,9 @@ def test_rollout_plan_is_ordered_and_rollback_is_safe(inv: dict) -> None:
     orders = [s["order"] for s in inv["rollout_plan"]]
     assert orders == sorted(orders)
     assert len(orders) == 8
-    candidate_step = next(s for s in inv["rollout_plan"] if s["pr"] == "Candidate persistence contract")
+    candidate_step = next(
+        s for s in inv["rollout_plan"] if s["pr"] == "Candidate persistence contract"
+    )
     assert "drop" not in candidate_step["rollback"].lower()
     journal_step = next(s for s in inv["rollout_plan"] if s["pr"] == "Journal/outcome replacement")
     assert "new executable-strategy journal table remains empty" in journal_step["rollback"].lower()
@@ -268,34 +283,40 @@ def test_governance_invariants_present(inv: dict) -> None:
     assert any("MVP-ARCH-001-R1" in g for g in invariants)
 
 
-def test_governance_invariants_distinguish_r1_from_later_steps(inv: dict) -> None:
-    """Invariants prove R1 is Gary-approved while Steps 2-8 remain pending and broad booleans are false."""
+def test_governance_invariants_distinguish_r1_and_r2_from_later_steps(inv: dict) -> None:
+    """Invariants prove R1/R2 are Gary-approved while Steps 3-8 remain pending and broad booleans are false."""
     invariants = inv["governance_invariants"]
     # 1. No invariant claims EVERY rollout step remains pending.
-    assert not any("each rollout implementation step remains pending" in g.lower() for g in invariants)
-    assert not any("every rollout implementation step remains pending" in g.lower() for g in invariants)
+    assert not any(
+        "each rollout implementation step remains pending" in g.lower() for g in invariants
+    )
+    assert not any(
+        "every rollout implementation step remains pending" in g.lower() for g in invariants
+    )
 
-    # 2. Invariant accurately distinguishes R1 from Steps 2-8.
-    r1_invariant = next(
-        (g for g in invariants if "MVP-ARCH-001-R1" in g),
+    # 2. Invariant accurately distinguishes R1 and R2 from Steps 3-8.
+    r_invariant = next(
+        (g for g in invariants if "MVP-ARCH-001-R1" in g and "MVP-ARCH-001-R2" in g),
         None,
     )
-    assert r1_invariant is not None, "Missing R1 governance invariant"
-    assert "design-only" in r1_invariant.lower()
-    assert "separately gary-approved" in r1_invariant.lower()
-    assert re.search(r"steps 2[\u2013-]8 remain pending", r1_invariant, re.IGNORECASE)
-    assert "does not authorize production trading changes" in r1_invariant.lower()
+    assert r_invariant is not None, "Missing R1/R2 governance invariant"
+    assert "design-only" in r_invariant.lower()
+    assert "separately gary-approved" in r_invariant.lower()
+    assert re.search(r"steps 3[\u2013-]8 remain pending", r_invariant, re.IGNORECASE)
+    assert "does not authorize production trading changes" in r_invariant.lower()
 
     # 3. Markdown matches the JSON invariant.
     md_text = MD_PATH.read_text(encoding="utf-8")
-    assert not re.search(r"each rollout implementation step remains pending", md_text, re.IGNORECASE)
-    assert "MVP-ARCH-001-R1 is separately Gary-approved" in md_text
+    assert not re.search(
+        r"each rollout implementation step remains pending", md_text, re.IGNORECASE
+    )
+    assert "MVP-ARCH-001-R1" in md_text
+    assert "MVP-ARCH-001-R2" in md_text
 
     # 4. Broad authorization booleans remain false.
     auth = inv["authorization"]
     for key, value in auth.items():
         assert value is False, f"authorization.{key}={value}"
-
 
 
 def test_target_navigation_has_five_areas(inv: dict) -> None:
@@ -346,9 +367,7 @@ def test_tracker_does_not_contain_ambiguous_long_002c_authorization(
 
 
 def test_tracker_long_002b_amend_002_is_not_current_phase(tracker_text: str) -> None:
-    assert (
-        re.search(r"\*\*Current phase:\*\*.*?LONG-002B-AMEND-002", tracker_text) is None
-    )
+    assert re.search(r"\*\*Current phase:\*\*.*?LONG-002B-AMEND-002", tracker_text) is None
     # It is, however, listed as a completed phase.
     assert "**Completed phase:** `LONG-002B-AMEND-002`" in tracker_text
 
@@ -356,7 +375,13 @@ def test_tracker_long_002b_amend_002_is_not_current_phase(tracker_text: str) -> 
 def test_tracker_does_not_say_long_002a_is_active_or_in_progress(tracker_text: str) -> None:
     lower = tracker_text.lower()
     assert "devin/long-002a-locked-research-contract" not in lower
-    assert re.search(r"long[-_]002a.*(?:is now the active|active research contract|in progress|current phase)", lower) is None
+    assert (
+        re.search(
+            r"long[-_]002a.*(?:is now the active|active research contract|in progress|current phase)",
+            lower,
+        )
+        is None
+    )
     assert re.search(r"(?:active research contract|current phase).*(?:long[-_]002a)", lower) is None
 
 
@@ -461,14 +486,18 @@ def test_tracker_summary_status_counts_match_entries(tracker_text: str) -> None:
     table = _parse_summary_table(tracker_text, "status")
     # The table must list the same totals that appear in the task entries.
     for status in _STATUS_ORDER:
-        assert actual[status] == table.get(status, 0), f"{status}: entries={actual[status]}, table={table.get(status, 0)}"
+        assert actual[status] == table.get(status, 0), (
+            f"{status}: entries={actual[status]}, table={table.get(status, 0)}"
+        )
 
 
 def test_tracker_summary_priority_counts_match_entries(tracker_text: str) -> None:
     actual = _parse_tracker_priority_counts(tracker_text)
     table = _parse_summary_table(tracker_text, "priority")
     for priority in ["High", "Medium", "Low"]:
-        assert actual[priority] == table.get(priority, 0), f"{priority}: entries={actual[priority]}, table={table.get(priority, 0)}"
+        assert actual[priority] == table.get(priority, 0), (
+            f"{priority}: entries={actual[priority]}, table={table.get(priority, 0)}"
+        )
 
 
 def test_decision_record_fields(inv: dict) -> None:
@@ -560,9 +589,9 @@ def test_tracker_long_002c_authorized_but_paused(tracker_text: str) -> None:
 
 
 def test_rollout_approvals_record(inv: dict) -> None:
-    """The JSON records Gary's scoped approval for MVP-ARCH-001-R1 without broad booleans."""
+    """The JSON records Gary's scoped approvals for MVP-ARCH-001-R1 and R2 without broad booleans."""
     approvals = inv.get("rollout_approvals", [])
-    assert len(approvals) >= 1
+    assert len(approvals) >= 2
     r1 = next((a for a in approvals if a.get("task_id") == "MVP-ARCH-001-R1"), None)
     assert r1 is not None
     assert r1["rollout_order"] == 1
@@ -578,3 +607,27 @@ def test_rollout_approvals_record(inv: dict) -> None:
     assert r1["database_migration_authorized"] is False
     assert r1["strategy_promotion_authorized"] is False
     assert r1["long_002c_work_authorized"] is False
+
+    r2 = next((a for a in approvals if a.get("task_id") == "MVP-ARCH-001-R2"), None)
+    assert r2 is not None
+    assert r2["rollout_order"] == 2
+    assert r2["approval_status"] == "gary_approved"
+    assert r2["approved_by"] == "Gary Yang"
+    assert r2["approved_on"] == "2026-08-21"
+    assert r2["scope"] == "provider lifecycle/configuration simplification only"
+    assert r2["implementation_authorized"] is True
+    assert r2["provider_changes_authorized"] is True
+    assert r2["default_ohlcv_provider_change_authorized"] is True
+    assert r2["premarket_source_decoupling_authorized"] is True
+    assert r2["earnings_unknown_handling_authorized"] is True
+    assert r2["production_trading_changes_authorized"] is False
+    assert r2["signal_logic_changes_authorized"] is False
+    assert r2["score_changes_authorized"] is False
+    assert r2["weight_changes_authorized"] is False
+    assert r2["threshold_changes_authorized"] is False
+    assert r2["navigation_changes_authorized"] is False
+    assert r2["alert_behavior_changes_authorized"] is False
+    assert r2["live_provider_calls_authorized"] is False
+    assert r2["database_migration_authorized"] is False
+    assert r2["strategy_promotion_authorized"] is False
+    assert r2["long_002c_work_authorized"] is False

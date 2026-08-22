@@ -29,6 +29,7 @@ def _utc_today(now: datetime | None = None) -> date:
         now = datetime.now(UTC)
     return now.astimezone(MARKET_TIMEZONE).date()
 
+
 _EARNINGS_STATUSES = (
     "earnings_today",
     "earnings_soon",
@@ -45,9 +46,7 @@ _HEADLINE_STATUSES = (
 )
 
 
-def _resolve_earnings_source(
-    source: str | None, *, settings: TradeXSettings | None = None
-) -> str:
+def _resolve_earnings_source(source: str | None, *, settings: TradeXSettings | None = None) -> str:
     from tradex.earnings.calendar import _resolve_earnings_source as _core_resolve
 
     return _core_resolve(source, settings=settings)
@@ -73,14 +72,16 @@ def _earnings_status(
 ) -> tuple[str, date | None, int | None]:
     """Return stable earnings status and days-until relative to the pre-market session date."""
     if next_earnings is None or session_date is None:
-        return "none_detected", None, None
+        return "unavailable", None, None
     days_until = (next_earnings - session_date).days
     if next_earnings == session_date:
         return "earnings_today", next_earnings, days_until
     window_days = max(1, int(lookback_hours / 24.0 + 0.999999))
     if 0 < days_until <= window_days:
         return "earnings_soon", next_earnings, days_until
-    return "none_detected", None, None
+    if days_until > window_days:
+        return "none_detected", next_earnings, days_until
+    return "unavailable", next_earnings, days_until
 
 
 def _parse_headline_timestamp(value: Any) -> datetime | None:
@@ -239,7 +240,9 @@ def fetch_catalyst_context(
     # Earnings
     if requested_earnings_source:
         try:
-            actual_earnings_source = _resolve_earnings_source(requested_earnings_source, settings=settings)
+            actual_earnings_source = _resolve_earnings_source(
+                requested_earnings_source, settings=settings
+            )
             if historical_replay:
                 # Yahoo's next-earnings calendar is not point-in-time for historical replay.
                 earnings_status = "unavailable"

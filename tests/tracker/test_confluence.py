@@ -1,4 +1,5 @@
 """Characterization tests for confluence scoring."""
+
 from unittest.mock import patch
 
 import pandas as pd
@@ -9,18 +10,21 @@ from tradex.tracker import confluence
 
 def _make_bars(n: int = 31) -> pd.DataFrame:
     """Return a minimal OHLCV DataFrame that satisfies the 30-bar minimum."""
-    return pd.DataFrame({
-        "open": [1.0] * n,
-        "high": [2.0] * n,
-        "low": [0.5] * n,
-        "close": [1.5] * n,
-        "volume": [10] * n,
-    })
+    return pd.DataFrame(
+        {
+            "open": [1.0] * n,
+            "high": [2.0] * n,
+            "low": [0.5] * n,
+            "close": [1.5] * n,
+            "volume": [10] * n,
+        }
+    )
 
 
 def _fake_score(score: int):
     def _fn(df: pd.DataFrame) -> dict:
         return {"score": score, "reasons": ["momentum"], "last_close": 100.0}
+
     return _fn
 
 
@@ -57,8 +61,10 @@ def test_empty_confluence_returns_empty_dataframe():
         "errors": {},
     }
 
-    with patch.object(confluence, "days_until_earnings", return_value=None), \
-         patch.object(confluence, "score_confluence", return_value=low_result):
+    with (
+        patch.object(confluence, "days_until_earnings", return_value=None),
+        patch.object(confluence, "score_confluence", return_value=low_result),
+    ):
         result = confluence.run_confluence_screen(["AAPL"], min_confluence=50)
 
     assert isinstance(result, pd.DataFrame)
@@ -133,11 +139,13 @@ def test_run_confluence_screen_propagates_provider():
 # Fixed-weight scoring regressions
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def _score_confluence_with_scores(scores: dict[str, int | None]):
     """Run score_confluence with mocked fetch/scorer for requested timeframes.
 
     A score of None means the timeframe is unavailable (fetch raises).
     """
+
     def fake_fetch(ticker, timeframe, provider=None, *, settings=None):
         if scores.get(timeframe) is None:
             raise RuntimeError("no data")
@@ -212,6 +220,7 @@ def test_confluence_no_data_result_is_stable():
 # Tier classification regressions
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def test_all_timeframes_aligned_requires_all_three_active_and_high_score():
     result = _score_confluence_with_scores({"intraday": 95, "short": 95, "long": 95})
     assert result["tier"] == "all timeframes aligned"
@@ -261,6 +270,7 @@ def test_three_timeframes_weak_confluence():
 # Coverage metadata regressions
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def test_coverage_metadata_deterministic_order():
     result = _score_confluence_with_scores({"long": 50, "short": 60, "intraday": 70})
     assert result["available_timeframes"] == ["intraday", "short", "long"]
@@ -305,6 +315,7 @@ def test_errors_record_insufficient_data_and_fetch_failures():
 # ═══════════════════════════════════════════════════════════════════════════════
 # run_confluence_screen regressions
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 def test_screen_uses_corrected_score_for_min_confluence_threshold():
     """A single timeframe score of 100 must not pass min_confluence=70."""
@@ -422,3 +433,66 @@ def test_screen_missing_score_placeholder_unchanged():
     assert result.iloc[0]["score_intraday"] == 100
     assert result.iloc[0]["score_short"] == 75
     assert result.iloc[0]["score_long"] == "-"
+
+
+def test_confluence_screen_fails_closed_when_filter_enabled_and_earnings_unknown():
+    """When exclude_earnings_within > 0 and earnings date is unknown, ticker is skipped."""
+    score_called = []
+
+    def fake_score(ticker, **kwargs):
+        score_called.append(ticker)
+        return {
+            "ticker": ticker,
+            "confluence_score": 80,
+            "tier": "strong confluence",
+            "active_timeframes": ["intraday", "short"],
+            "available_timeframes": ["intraday", "short"],
+            "missing_timeframes": ["long"],
+            "timeframe_coverage": "2/3",
+            "complete_timeframe_coverage": False,
+            "scores": {"intraday": 80, "short": 80},
+            "reasons": {},
+            "last_close": 100.0,
+            "errors": {},
+        }
+
+    with (
+        patch.object(confluence, "score_confluence", side_effect=fake_score),
+        patch.object(confluence, "days_until_earnings", return_value=None),
+    ):
+        result = confluence.run_confluence_screen(
+            ["AAPL"], min_confluence=50, exclude_earnings_within=5
+        )
+
+    assert result.empty
+    assert score_called == []
+
+
+def test_confluence_screen_passes_through_when_filter_disabled_and_earnings_unknown():
+    """When exclude_earnings_within is 0 or None and earnings date is unknown, ticker is scored."""
+    fake_result = {
+        "ticker": "AAPL",
+        "confluence_score": 80,
+        "tier": "strong confluence",
+        "active_timeframes": ["intraday", "short"],
+        "available_timeframes": ["intraday", "short"],
+        "missing_timeframes": ["long"],
+        "timeframe_coverage": "2/3",
+        "complete_timeframe_coverage": False,
+        "scores": {"intraday": 80, "short": 80},
+        "reasons": {},
+        "last_close": 100.0,
+        "errors": {},
+    }
+
+    with (
+        patch.object(confluence, "score_confluence", return_value=fake_result),
+        patch.object(confluence, "days_until_earnings", return_value=None),
+    ):
+        result = confluence.run_confluence_screen(
+            ["AAPL"], min_confluence=50, exclude_earnings_within=0
+        )
+
+    assert len(result) == 1
+    assert result.iloc[0]["ticker"] == "AAPL"
+    assert result.iloc[0]["days_until_earnings"] is None

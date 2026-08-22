@@ -13,6 +13,7 @@ Streamlit dashboard — ten tabs:
 
 Run with: streamlit run tradex/ui/dashboard.py
 """
+
 import re
 
 import streamlit as st
@@ -47,9 +48,26 @@ from tradex.watchlists import presets as wl_presets
 from tradex.watchlists import store as wl_store
 
 DEFAULT_TICKERS = [
-    "AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "META", "GOOGL",
-    "AMD", "PLTR", "MSTR", "SPY", "QQQ", "SOXL", "TQQQ",
-    "SMCI", "ARM",  "AVGO", "MU",   "CRWD", "NET",
+    "AAPL",
+    "MSFT",
+    "NVDA",
+    "TSLA",
+    "AMZN",
+    "META",
+    "GOOGL",
+    "AMD",
+    "PLTR",
+    "MSTR",
+    "SPY",
+    "QQQ",
+    "SOXL",
+    "TQQQ",
+    "SMCI",
+    "ARM",
+    "AVGO",
+    "MU",
+    "CRWD",
+    "NET",
 ]
 
 _TICKER_SPLIT_RE = re.compile(r"[\s,;|]+")
@@ -70,7 +88,6 @@ def _parse_pasted_tickers(raw: str) -> list[str]:
     return seen
 
 
-
 def _ensure_stores(settings: TradeXSettings) -> None:
     """Lazy one-time SQLite initialization for the dashboard session."""
     key = "_tradex_stores_initialized"
@@ -83,7 +100,9 @@ def _ensure_stores(settings: TradeXSettings) -> None:
 if __name__ == "__main__":
     st.set_page_config(page_title="TradeX", layout="wide")
     st.title("TradeX — Market Opportunity Scanner")
-    st.caption("Scan, track, and get alerted on technical indicators and market context across intraday, short-term, and long-term timeframes.")
+    st.caption(
+        "Scan, track, and get alerted on technical indicators and market context across intraday, short-term, and long-term timeframes."
+    )
 
     settings = load_runtime_settings()
     _ensure_stores(settings)
@@ -92,7 +111,7 @@ if __name__ == "__main__":
     with st.sidebar:
         st.header("Global Settings")
         st.caption("These settings apply across all tabs.")
-    
+
         timeframe = st.selectbox(
             "Timeframe",
             ["intraday", "short", "long"],
@@ -103,10 +122,12 @@ if __name__ == "__main__":
                 "• **Long** — Weekly bars over 2 years. For multi-week to multi-month trend context."
             ),
         )
-    
+
         min_score = st.slider(
             "Min score",
-            0, 100, 40,
+            0,
+            100,
+            40,
             help=(
                 "Filters out stocks below this signal score. Each stock is scored 0–100 "
                 "based on how many technical conditions are met.\n\n"
@@ -116,31 +137,38 @@ if __name__ == "__main__":
                 "Note: Technical scores are unvalidated discovery heuristics, not a measure of trade conviction or probability."
             ),
         )
-    
-        _PROVIDER_OPTIONS = ["yahoo", "schwab", "alpaca", "ibkr"]
+
+        _PROVIDER_OPTIONS = ["schwab", "alpaca", "yahoo", "ibkr"]
+        _PROVIDER_LABELS = {
+            "schwab": "Schwab — Primary",
+            "alpaca": "Alpaca — Degraded Intraday (IEX)",
+            "yahoo": "Yahoo — Research / Fallback",
+            "ibkr": "IBKR — Archived / Manual",
+        }
         _default_provider = settings.data.data_provider.lower()
         if _default_provider not in _PROVIDER_OPTIONS:
-            _default_provider = "yahoo"
+            _default_provider = "schwab"
         provider = st.selectbox(
             "OHLCV provider",
             _PROVIDER_OPTIONS,
             index=_PROVIDER_OPTIONS.index(_default_provider),
+            format_func=lambda p: _PROVIDER_LABELS.get(p, p),
             help=(
                 "Market data provider used by the scanner, confluence, pattern matching, "
                 "chart drill-downs, and outcome tracking. The selection is passed to the central "
                 "OHLCV fetcher and the daily-history abstraction.\n\n"
-                "• Yahoo requires no local setup.\n"
-                "• Schwab requires a Schwab developer app (API key + secret) and a local "
-                "OAuth token file; selecting Schwab here does not verify it is configured.\n"
-                "• Alpaca and IBKR require their respective credentials or a local gateway.\n"
-                "• There is no automatic fallback: if the selected provider is not configured, "
+                "• **Schwab (Primary)** — Primary TradeX data foundation. Requires a Schwab developer app (API key + secret) and a local OAuth token file.\n"
+                "• **Alpaca (Degraded Intraday)** — Free-tier IEX feed. Lower liquidity coverage than consolidated SIP.\n"
+                "• **Yahoo (Research / Fallback)** — Delayed market data for research, daily/weekly analysis, and the specialized pre-market gap scanner.\n"
+                "• **IBKR (Archived / Manual)** — Requires local TWS or IB Gateway running.\n\n"
+                "• Fallback is explicit, not automatic: if the selected provider is not configured, "
                 "the fetch will surface a safe error rather than silently switching providers.\n\n"
                 "Specialized sources (options, earnings, market-cap ranking, index "
                 "constituents) have their own source controls and are not affected by this selector."
             ),
         )
-        st.caption(f"OHLCV provider: **{provider}**")
-    
+        st.caption(f"OHLCV provider: **{_PROVIDER_LABELS.get(provider, provider)}**")
+
         # Options source is independent of OHLCV provider.
         options_source = st.selectbox(
             "Options source",
@@ -164,7 +192,7 @@ if __name__ == "__main__":
             index=market_cap_source_index(settings),
             help="Source for S&P 100 market-cap ranking when refreshing presets. ``schwab`` requires Schwab credentials.",
         )
-    
+
         # ── Watchlist selector ───────────────────────────────────────────────────
         saved_lists = wl_store.list_all(settings=settings)
         # Build a {name -> ticker_count} lookup for the dropdown formatter
@@ -172,7 +200,7 @@ if __name__ == "__main__":
         # Preset labels (what they get saved under via "Import preset") — used to
         # tag saved watchlists as Preset vs. Custom in the dropdown.
         _preset_labels = {p.label for p in wl_presets.PRESETS}
-    
+
         def _wl_format(name: str) -> str:
             if name == WL_DEFAULT_NAME:
                 return f"🏠 {name} ({len(DEFAULT_TICKERS)})"
@@ -180,12 +208,12 @@ if __name__ == "__main__":
             icon = "📊" if name in _preset_labels else "⭐"
             kind = "Preset" if name in _preset_labels else "Custom"
             return f"{icon} {kind} · {name} ({count})"
-    
+
         # Sort: Default first, then presets, then customs — alphabetical within each group
-        preset_names  = sorted([w["name"] for w in saved_lists if w["name"] in _preset_labels])
-        custom_names  = sorted([w["name"] for w in saved_lists if w["name"] not in _preset_labels])
+        preset_names = sorted([w["name"] for w in saved_lists if w["name"] in _preset_labels])
+        custom_names = sorted([w["name"] for w in saved_lists if w["name"] not in _preset_labels])
         active_options = [WL_DEFAULT_NAME] + preset_names + custom_names
-    
+
         active_name = st.selectbox(
             "Active watchlist",
             active_options,
@@ -202,7 +230,7 @@ if __name__ == "__main__":
             base_tickers = DEFAULT_TICKERS
         else:
             base_tickers = wl_store.load(active_name, settings=settings) or DEFAULT_TICKERS
-    
+
         custom = st.text_input(
             "Add tickers (comma-separated)",
             "",
@@ -211,13 +239,14 @@ if __name__ == "__main__":
         extra = [t.strip().upper() for t in custom.split(",") if t.strip()]
         watchlist = list(dict.fromkeys(base_tickers + extra))
         st.caption(f"{len(watchlist)} tickers in watchlist")
-    
+
         with st.expander("💾 Save / manage watchlists", expanded=False):
             st.caption("Persisted to ~/.tradex/watchlists.db — survives restarts.")
-    
+
             st.markdown("**Create new from paste**")
             create_name = st.text_input(
-                "New watchlist name", key="wl_create_name",
+                "New watchlist name",
+                key="wl_create_name",
                 placeholder="e.g. Semis, Crypto plays, Earnings week",
             )
             pasted = st.text_area(
@@ -236,26 +265,40 @@ if __name__ == "__main__":
                 else:
                     try:
                         wl_store.save(create_name, parsed, settings=settings)
-                        st.success(f"Created '{create_name}' with {len(parsed)} tickers: {', '.join(parsed[:8])}{'…' if len(parsed) > 8 else ''}")
+                        st.success(
+                            f"Created '{create_name}' with {len(parsed)} tickers: {', '.join(parsed[:8])}{'…' if len(parsed) > 8 else ''}"
+                        )
                         st.rerun()
                     except ValueError as e:
                         st.error(str(e))
-    
+
             st.divider()
             st.markdown("**Add a preset**")
-            st.caption("One-click watchlists for common universes. Imports a snapshot into your saved lists.")
-            preset_options = {f"{p.label} ({len(p.tickers)} tickers)": p for p in wl_presets.PRESETS}
+            st.caption(
+                "One-click watchlists for common universes. Imports a snapshot into your saved lists."
+            )
+            preset_options = {
+                f"{p.label} ({len(p.tickers)} tickers)": p for p in wl_presets.PRESETS
+            }
             chosen_label = st.selectbox(
-                "Preset", list(preset_options.keys()), key="wl_preset_pick",
+                "Preset",
+                list(preset_options.keys()),
+                key="wl_preset_pick",
                 help="Imports the selected preset into your saved watchlists under its label. Re-importing overwrites.",
             )
             chosen_preset = preset_options[chosen_label]
             st.caption(chosen_preset.description)
             col_imp, col_refresh = st.columns(2)
-            if col_imp.button("Import preset", key="wl_preset_import_btn", use_container_width=True):
+            if col_imp.button(
+                "Import preset", key="wl_preset_import_btn", use_container_width=True
+            ):
                 try:
-                    wl_store.save(chosen_preset.label, list(chosen_preset.tickers), settings=settings)
-                    st.success(f"Imported '{chosen_preset.label}' ({len(chosen_preset.tickers)} tickers). Select it in 'Active watchlist'.")
+                    wl_store.save(
+                        chosen_preset.label, list(chosen_preset.tickers), settings=settings
+                    )
+                    st.success(
+                        f"Imported '{chosen_preset.label}' ({len(chosen_preset.tickers)} tickers). Select it in 'Active watchlist'."
+                    )
                     st.rerun()
                 except ValueError as e:
                     st.error(str(e))
@@ -266,7 +309,10 @@ if __name__ == "__main__":
                 help="Re-fetch S&P 500 / Dow / NDX constituents from Wikipedia and re-rank sector lists by live market cap. Overwrites previously imported presets. Takes ~30-60s.",
             ):
                 from tradex.watchlists import refresh as wl_refresh
-                with st.spinner("Refreshing presets from Wikipedia + yfinance (this may take ~30-60s)…"):
+
+                with st.spinner(
+                    "Refreshing presets from Wikipedia + yfinance (this may take ~30-60s)…"
+                ):
                     try:
                         result = wl_refresh.refresh_all(market_cap_source=market_cap_source)
                         overrides = wl_refresh.result_to_preset_overrides(result)
@@ -276,17 +322,20 @@ if __name__ == "__main__":
                             if preset and tickers:
                                 wl_store.save(preset.label, tickers, settings=settings)
                                 imported += 1
-                        st.success(f"Refreshed {imported} presets. Active watchlists overwritten with latest constituents.")
+                        st.success(
+                            f"Refreshed {imported} presets. Active watchlists overwritten with latest constituents."
+                        )
                         for w in result.warnings:
                             st.warning(w)
                         st.rerun()
                     except Exception as e:  # noqa: BLE001
                         st.error(f"Refresh failed: {e}")
-    
+
             st.divider()
             st.markdown("**Snapshot current selection**")
             new_name = st.text_input(
-                "Name", key="wl_save_name",
+                "Name",
+                key="wl_save_name",
                 help="Save the active list + comma-separated additions under this name. Re-using an existing name overwrites it.",
             )
             if st.button("Save current", key="wl_save_btn", use_container_width=True):
@@ -296,7 +345,7 @@ if __name__ == "__main__":
                     st.rerun()
                 except ValueError as e:
                     st.error(str(e))
-    
+
             st.divider()
             st.markdown("**🗑️ Delete saved watchlists**")
             if not saved_lists:
@@ -326,13 +375,16 @@ if __name__ == "__main__":
                     if deleted:
                         st.success(f"Deleted: {', '.join(deleted)}")
                         st.rerun()
-    
+
         earnings_buffer = st.slider(
             "Exclude earnings within (days)",
-            0, 21, 0,
+            0,
+            21,
+            0,
             help=(
                 "Filter out stocks with earnings reports within this many calendar days.\n\n"
-                "• **0 (default)** — no earnings filter. Show everything.\n"
+                "• **0 (default)** — earnings exclusion filter disabled. Unknown earnings dates are surfaced in tables and observations but do not block candidate discovery.\n"
+                "• **>0** — earnings exclusion filter enabled. Because proximity to earnings cannot be verified, stocks with unknown/unavailable earnings dates FAIL CLOSED and are not eligible for scoring or ranking under this filter.\n"
                 "• **3–5 days** — avoid being long into a print. Technical setups can be "
                 "wiped out by an earnings gap regardless of how clean they looked.\n"
                 "• **7–14 days** — most conservative. Filters out any setup where the move "
@@ -341,15 +393,39 @@ if __name__ == "__main__":
                 "so you can see the proximity at a glance."
             ),
         )
-    
+
         st.divider()
-        st.markdown("[📖 Help & Documentation](#help)", help="Open the Help tab for full feature explanations.")
-    
-    tab_scanner, tab_coil, tab_confluence, tab_pattern, tab_premarket, tab_options, tab_alerts, tab_journal, tab_weights, tab_help = st.tabs([
-        "Scanner", "Coil Detector", "Confluence", "Pattern Similarity — Experimental Research",
-        "Pre-Market", "Options Activity", "Alerts", "Signal Journal", "Weights", "Help",
-    ])
-    
+        st.markdown(
+            "[📖 Help & Documentation](#help)",
+            help="Open the Help tab for full feature explanations.",
+        )
+
+    (
+        tab_scanner,
+        tab_coil,
+        tab_confluence,
+        tab_pattern,
+        tab_premarket,
+        tab_options,
+        tab_alerts,
+        tab_journal,
+        tab_weights,
+        tab_help,
+    ) = st.tabs(
+        [
+            "Scanner",
+            "Coil Detector",
+            "Confluence",
+            "Pattern Similarity — Experimental Research",
+            "Pre-Market",
+            "Options Activity",
+            "Alerts",
+            "Signal Journal",
+            "Weights",
+            "Help",
+        ]
+    )
+
     # ══════════════════════════════════════════════════════════════════════════════
     # TAB 1 — SCANNER
     # ══════════════════════════════════════════════════════════════════════════════
@@ -363,7 +439,7 @@ if __name__ == "__main__":
             provider=provider,
             earnings_source=earnings_source,
         )
-    
+
     # ══════════════════════════════════════════════════════════════════════════════
     # TAB 2 — COIL DETECTOR
     # ══════════════════════════════════════════════════════════════════════════════
@@ -384,7 +460,7 @@ if __name__ == "__main__":
             provider=provider,
             earnings_source=earnings_source,
         )
-    
+
     # ══════════════════════════════════════════════════════════════════════════════
     # TAB 4 — PATTERN MATCH
     # ══════════════════════════════════════════════════════════════════════════════
@@ -394,7 +470,7 @@ if __name__ == "__main__":
             watchlist=watchlist,
             provider=provider,
         )
-    
+
     # ══════════════════════════════════════════════════════════════════════════════
     # TAB 5 — PRE-MARKET GAP SCANNER
     # ══════════════════════════════════════════════════════════════════════════════
@@ -402,7 +478,7 @@ if __name__ == "__main__":
         render_premarket_tab(
             settings=settings,
             watchlist=watchlist,
-            provider=provider,
+            provider="yahoo",
             earnings_source=earnings_source,
         )
 
@@ -415,7 +491,6 @@ if __name__ == "__main__":
             watchlist=watchlist,
             options_source=options_source,
         )
-
 
     # TAB 7 — ALERTS
     # ══════════════════════════════════════════════════════════════════════════════
@@ -436,7 +511,7 @@ if __name__ == "__main__":
     # ══════════════════════════════════════════════════════════════════════════════
     with tab_weights:
         render_weights_tab(settings=settings)
-    
+
     # ══════════════════════════════════════════════════════════════════════════════
     # TAB 10 — HELP
     # ══════════════════════════════════════════════════════════════════════════════

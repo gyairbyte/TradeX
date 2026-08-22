@@ -1,6 +1,7 @@
 """
 Runs all three signal scorers across a watchlist and returns ranked results.
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -24,8 +25,8 @@ from tradex.signals import intraday, long_term, short_term
 
 SIGNAL_MAP = {
     "intraday": (intraday.score, "intraday"),
-    "short":    (short_term.score, "short"),
-    "long":     (long_term.score, "long"),
+    "short": (short_term.score, "short"),
+    "long": (long_term.score, "long"),
 }
 
 # Concurrent workers for the per-ticker scan loop. Schwab handles this fine;
@@ -119,7 +120,9 @@ class ScanReport:
     total_fetch_eligible: int = 0
     total_retries: int = 0
     attempt_log: list[FetchAttempt] = field(default_factory=list)
-    observations: pd.DataFrame = field(default_factory=lambda: pd.DataFrame(columns=OBSERVATION_COLUMNS))
+    observations: pd.DataFrame = field(
+        default_factory=lambda: pd.DataFrame(columns=OBSERVATION_COLUMNS)
+    )
     min_score: int = 0
 
     def validate(self, expected_tickers: list[str] | None = None) -> None:
@@ -131,7 +134,9 @@ class ScanReport:
             )
 
         if expected_tickers is not None:
-            normalized_expected = list(dict.fromkeys(_normalize_ticker(t) for t in expected_tickers))
+            normalized_expected = list(
+                dict.fromkeys(_normalize_ticker(t) for t in expected_tickers)
+            )
             if len(obs) != len(normalized_expected):
                 raise ValueError(
                     f"Observation count mismatch: {len(obs)} rows for {len(normalized_expected)} unique tickers"
@@ -157,7 +162,9 @@ class ScanReport:
             scored = obs[obs["status"].isin(SUCCESSFUL_STATUSES)]
             scored_providers = set(scored["provider"].dropna().unique())
             if len(scored_providers) > 1:
-                raise ValueError(f"Mixed providers in successful observations: {sorted(scored_providers)}")
+                raise ValueError(
+                    f"Mixed providers in successful observations: {sorted(scored_providers)}"
+                )
 
             if self.actual_provider is not None:
                 for provider in scored_providers:
@@ -177,8 +184,12 @@ class ScanReport:
             expected_counters = {
                 "total_signals": signal_count,
                 "total_below_threshold": below_count,
-                "total_earnings_excluded": int((obs["status"] == ObservationStatus.EARNINGS_EXCLUDED.value).sum()),
-                "total_insufficient_data": int((obs["status"] == ObservationStatus.INSUFFICIENT_DATA.value).sum()),
+                "total_earnings_excluded": int(
+                    (obs["status"] == ObservationStatus.EARNINGS_EXCLUDED.value).sum()
+                ),
+                "total_insufficient_data": int(
+                    (obs["status"] == ObservationStatus.INSUFFICIENT_DATA.value).sum()
+                ),
             }
             for field, expected in expected_counters.items():
                 actual = getattr(self, field)
@@ -206,7 +217,15 @@ class ScanReport:
                     f"results tickers {sorted(result_tickers)} do not match signal observation tickers {sorted(signal_tickers)}"
                 )
 
-            compare_cols = ("score", "last_close", "volume_ratio", "rsi", "days_until_earnings", "reasons", "provider")
+            compare_cols = (
+                "score",
+                "last_close",
+                "volume_ratio",
+                "rsi",
+                "days_until_earnings",
+                "reasons",
+                "provider",
+            )
             for ticker in result_tickers:
                 result_row = result_by_ticker.loc[ticker]
                 signal_row = signal_by_ticker.loc[ticker]
@@ -216,7 +235,9 @@ class ScanReport:
                     a_missing = pd.isna(a)
                     b_missing = pd.isna(b)
                     if a_missing != b_missing:
-                        raise ValueError(f"Signal/results mismatch for {ticker} column '{col}': missing {a_missing} vs {b_missing}")
+                        raise ValueError(
+                            f"Signal/results mismatch for {ticker} column '{col}': missing {a_missing} vs {b_missing}"
+                        )
                     if not a_missing and a != b:
                         raise ValueError(
                             f"Signal/results mismatch for {ticker} column '{col}': {a!r} vs {b!r}"
@@ -298,33 +319,40 @@ def run_with_report(
     earnings_failures: dict[str, ProviderError] = {}
     days_map: dict[str, int | None] = {}
     observations: list[dict] = []
+    filter_enabled = exclude_earnings_within is not None and exclude_earnings_within > 0
 
     for ticker in unique_tickers:
         try:
-            days_to_er = days_until_earnings(
-                ticker, source=earnings_source, settings=settings
-            )
+            days_to_er = days_until_earnings(ticker, source=earnings_source, settings=settings)
             days_map[ticker] = days_to_er
         except Exception:  # noqa: BLE001
             err = ProviderDataUnavailableError(f"Earnings lookup failed for {ticker}")
             earnings_failures[ticker] = err
-            observations.append(_build_observation_row(ticker, ObservationStatus.EARNINGS_FAILURE, error=err))
-            continue
-
-        if (
-            exclude_earnings_within is not None
-            and days_to_er is not None
-            and 0 <= days_to_er <= exclude_earnings_within
-        ):
-            total_earnings_excluded += 1
             observations.append(
-                _build_observation_row(
-                    ticker,
-                    ObservationStatus.EARNINGS_EXCLUDED,
-                    days_until_earnings=days_to_er,
-                )
+                _build_observation_row(ticker, ObservationStatus.EARNINGS_FAILURE, error=err)
             )
             continue
+
+        if filter_enabled:
+            if days_to_er is None:
+                err = ProviderDataUnavailableError(
+                    f"Earnings date unknown for {ticker}; cannot evaluate exclusion window"
+                )
+                earnings_failures[ticker] = err
+                observations.append(
+                    _build_observation_row(ticker, ObservationStatus.EARNINGS_FAILURE, error=err)
+                )
+                continue
+            if 0 <= days_to_er <= exclude_earnings_within:
+                total_earnings_excluded += 1
+                observations.append(
+                    _build_observation_row(
+                        ticker,
+                        ObservationStatus.EARNINGS_EXCLUDED,
+                        days_until_earnings=days_to_er,
+                    )
+                )
+                continue
 
         eligible_tickers.append(ticker)
 
@@ -368,7 +396,9 @@ def run_with_report(
 
         if len(df) < 30:
             total_insufficient_data += 1
-            err = ProviderDataUnavailableError(f"Insufficient OHLCV data for {ticker} ({timeframe})")
+            err = ProviderDataUnavailableError(
+                f"Insufficient OHLCV data for {ticker} ({timeframe})"
+            )
             fetch_failures[ticker] = err
             observations.append(
                 _build_observation_row(
@@ -453,10 +483,18 @@ def run_with_report(
     failures = {**fetch_failures, **scoring_failures}
 
     if not rows:
-        results = pd.DataFrame(columns=[
-            "ticker", "score", "last_close", "volume_ratio", "rsi",
-            "days_until_earnings", "reasons", "provider",
-        ])
+        results = pd.DataFrame(
+            columns=[
+                "ticker",
+                "score",
+                "last_close",
+                "volume_ratio",
+                "rsi",
+                "days_until_earnings",
+                "reasons",
+                "provider",
+            ]
+        )
     else:
         results = pd.DataFrame(rows).sort_values("score", ascending=False).reset_index(drop=True)
 

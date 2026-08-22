@@ -222,12 +222,36 @@ Gary Yang separately approved rollout step 1 on 2026-08-21 with narrow scope:
   - `database_migration_authorized`: `False`
   - `strategy_promotion_authorized`: `False`
   - `long_002c_work_authorized`: `False`
-- **Subsequent steps (Steps 2–8):** Remain pending separate Gary approval.
+- **Status:** Implemented in PR #57.
+
+### MVP-ARCH-001-R2 (Approved 2026-08-21)
+
+Gary Yang separately approved rollout step 2 on 2026-08-21 with narrow scope:
+- **Task ID:** `MVP-ARCH-001-R2`
+- **Scope:** Provider lifecycle and configuration simplification only.
+- **Boundaries:**
+  - `implementation_authorized`: `True` (strictly bounded to provider lifecycle and configuration simplification)
+  - `provider_changes_authorized`: `True`
+  - `default_ohlcv_provider_change_authorized`: `True` (Schwab primary/default; Alpaca/Yahoo explicit fallback; IBKR archived/manual)
+  - `premarket_source_decoupling_authorized`: `True` (Specialized Yahoo pre-market provider decoupled from central OHLCV default)
+  - `earnings_unknown_handling_authorized`: `True` (Fail-closed on unknown earnings when filter enabled)
+  - `production_trading_changes_authorized`: `False`
+  - `signal_logic_changes_authorized`: `False`
+  - `score_changes_authorized`: `False`
+  - `weight_changes_authorized`: `False`
+  - `threshold_changes_authorized`: `False`
+  - `navigation_changes_authorized`: `False`
+  - `alert_behavior_changes_authorized`: `False`
+  - `live_provider_calls_authorized`: `False`
+  - `database_migration_authorized`: `False`
+  - `strategy_promotion_authorized`: `False`
+  - `long_002c_work_authorized`: `False`
+- **Subsequent steps (Steps 3–8):** Remain pending separate Gary approval.
 
 ## Governance invariants
 
 - Production promotion remains unauthorized.
-- MVP-ARCH-001 original architecture approval remains design-only; MVP-ARCH-001-R1 is separately Gary-approved for truthful UI/help labeling and evidence-state notices only; rollout Steps 2–8 remain pending separate Gary approval; R1 does not authorize production trading changes, navigation changes, alert behavior changes, provider changes or calls, database migrations, strategy promotion, or LONG-002C work.
+- MVP-ARCH-001 original architecture approval remains design-only; MVP-ARCH-001-R1 was separately Gary-approved and implemented for truthful UI/help labeling and evidence-state notices only; MVP-ARCH-001-R2 is separately Gary-approved on 2026-08-21 for provider lifecycle and configuration simplification only; rollout Steps 3–8 remain pending separate Gary approval; R2 does not authorize production trading changes, signal logic changes, score/weight/threshold changes, navigation changes, alert behavior changes, live provider calls, database migrations, strategy promotion, or LONG-002C work.
 - Existing research artifacts and locked specifications are referenced, not modified.
 - LONG-002B-AMEND-002 is completed and merged; LONG-002C design is authorized by PR #52 but explicitly paused by Gary; MVP-ARCH-001 is a separate product-architecture workstream.
 - This packet does not authorize LONG-002C dataset construction, provider calls, dashboard changes, alert changes, database migrations, strategy promotion, or production behavior changes.

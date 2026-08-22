@@ -19,6 +19,7 @@ dependencies = [
     "schedule>=1.2.0",
     "lxml>=5.0.0",
     "exchange-calendars>=4.13.2",
+    "schwab-py>=1.4.0",
 ]
 
 [project.optional-dependencies]

@@ -1,4 +1,5 @@
 """Tests for earnings-calendar source policy."""
+
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -69,3 +70,42 @@ def test_annotate_returns_source_agnostic_and_data_provider_not_relabeled():
 
     assert df.iloc[0]["ticker"] == "AAPL"
     assert df.iloc[0]["days_until"] is not None
+
+
+def test_cache_null_not_treated_as_fresh(tmp_path):
+    """Cached NULL/empty rows are treated as stale/non-authoritative."""
+    settings = _make_earnings_db(tmp_path)
+    # Manually insert a row with NULL next_earnings
+    with calendar._conn(settings.paths.earnings_cache_db) as c:
+        c.execute(
+            "INSERT INTO earnings_cache (ticker, source, next_earnings, fetched_at) VALUES (?, ?, ?, ?)",
+            ("XYZ", "yahoo", None, datetime.now(UTC).replace(tzinfo=None).isoformat()),
+        )
+    cached_date, is_fresh = calendar._cache_get("XYZ", "yahoo", settings=settings)
+    assert cached_date is None
+    assert is_fresh is False
+
+
+def test_cache_put_does_not_store_none(tmp_path):
+    """Calling _cache_put with next_earnings=None must not write to the cache."""
+    settings = _make_earnings_db(tmp_path)
+    calendar._cache_put("SPY", "yahoo", None, settings=settings)
+    with calendar._conn(settings.paths.earnings_cache_db) as c:
+        row = c.execute("SELECT * FROM earnings_cache WHERE ticker = ?", ("SPY",)).fetchone()
+    assert row is None
+
+
+def test_get_next_earnings_handles_yfinance_exception_safely(tmp_path):
+    """Network or parsing errors return None without crashing or caching NULL."""
+    settings = _make_earnings_db(tmp_path)
+    fake_ticker = Mock(
+        get_earnings_dates=Mock(side_effect=RuntimeError("Yahoo API connection reset")),
+        calendar={},
+    )
+    with patch.object(calendar.yf, "Ticker", return_value=fake_ticker):
+        result = calendar.get_next_earnings("BADTICKER", source="yahoo", settings=settings)
+    assert result is None
+    # Verify no row was cached for BADTICKER
+    with calendar._conn(settings.paths.earnings_cache_db) as c:
+        row = c.execute("SELECT * FROM earnings_cache WHERE ticker = ?", ("BADTICKER",)).fetchone()
+    assert row is None

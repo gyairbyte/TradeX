@@ -13,10 +13,11 @@ Data source policy:
 Cache:
   ~/.tradex/earnings_cache.db (SQLite, single table). Cached for 24h.
 """
+
 from __future__ import annotations
 
 import sqlite3
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -36,9 +37,7 @@ def _resolve_cache_db(settings: TradeXSettings | None = None) -> Path:
     return settings.paths.earnings_cache_db
 
 
-def _resolve_earnings_source(
-    source: str | None, *, settings: TradeXSettings | None = None
-) -> str:
+def _resolve_earnings_source(source: str | None, *, settings: TradeXSettings | None = None) -> str:
     """Return the validated earnings source. Only Yahoo is supported in this PR."""
     if settings is None:
         settings = load_runtime_settings()
@@ -77,7 +76,11 @@ def _cache_get(
     cache_db: Path | None = None,
     settings: TradeXSettings | None = None,
 ) -> tuple[date | None, bool]:
-    """Return (next_earnings_date_or_None, is_fresh)."""
+    """Return (next_earnings_date_or_None, is_fresh).
+
+    Cached NULL or empty rows are treated as non-authoritative (is_fresh=False)
+    so historical or ambiguous cache entries do not masquerade as proof of no earnings.
+    """
     with _conn(cache_db or _resolve_cache_db(settings)) as c:
         row = c.execute(
             "SELECT next_earnings, fetched_at FROM earnings_cache WHERE ticker = ? AND source = ?",
@@ -86,10 +89,19 @@ def _cache_get(
     if not row:
         return None, False
     next_str, fetched_str = row
-    fetched_at = datetime.fromisoformat(fetched_str)
-    is_fresh = datetime.now(timezone.utc).replace(tzinfo=None) - fetched_at < timedelta(hours=CACHE_TTL_HOURS)
-    next_date = date.fromisoformat(next_str) if next_str else None
-    return next_date, is_fresh
+    if not next_str:
+        return None, False
+    try:
+        fetched_at = datetime.fromisoformat(fetched_str)
+        is_fresh = datetime.now(UTC).replace(tzinfo=None) - fetched_at < timedelta(
+            hours=CACHE_TTL_HOURS
+        )
+        if not is_fresh:
+            return None, False
+
+        return datetime.strptime(next_str, "%Y-%m-%d").date(), True
+    except (ValueError, TypeError):
+        return None, False
 
 
 def _cache_put(
@@ -100,6 +112,12 @@ def _cache_put(
     cache_db: Path | None = None,
     settings: TradeXSettings | None = None,
 ) -> None:
+    """Store only authoritative positive earnings dates.
+
+    Do not cache None / unknown states as authoritative absence.
+    """
+    if next_earnings is None:
+        return
     with _conn(cache_db or _resolve_cache_db(settings)) as c:
         c.execute(
             "INSERT OR REPLACE INTO earnings_cache (ticker, source, next_earnings, fetched_at) "
@@ -107,8 +125,8 @@ def _cache_put(
             (
                 ticker,
                 source,
-                next_earnings.isoformat() if next_earnings else None,
-                datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
+                next_earnings.isoformat(),
+                datetime.now(UTC).replace(tzinfo=None).isoformat(),
             ),
         )
 
@@ -131,21 +149,26 @@ def _fetch_from_yahoo(ticker: str) -> date | None:
             future = [d.date() for d in idx if pd.notna(d) and d.date() >= today]
             if future:
                 return min(future)
-    except Exception:
+    except Exception:  # noqa: BLE001
         pass
 
     try:
         cal = t.calendar
         if isinstance(cal, dict):
             dates = cal.get("Earnings Date") or []
-            future = [d for d in dates if isinstance(d, (date, datetime)) and (d.date() if isinstance(d, datetime) else d) >= today]
+            future = [
+                d
+                for d in dates
+                if isinstance(d, (date, datetime))
+                and (d.date() if isinstance(d, datetime) else d) >= today
+            ]
             if future:
                 return future[0].date() if isinstance(future[0], datetime) else future[0]
         elif isinstance(cal, pd.DataFrame) and not cal.empty:
             val = cal.iloc[0, 0]
             if isinstance(val, (pd.Timestamp, datetime)) and val.date() >= today:
                 return val.date()
-    except Exception:
+    except Exception:  # noqa: BLE001
         pass
 
     return None
@@ -174,10 +197,10 @@ def get_next_earnings(
     cache_db = settings.paths.earnings_cache_db
     if use_cache and not force_refresh:
         cached, fresh = _cache_get(ticker, source, cache_db=cache_db, settings=settings)
-        if fresh:
+        if fresh and cached is not None:
             return cached
     next_date = _fetch_from_yahoo(ticker)
-    if use_cache:
+    if use_cache and next_date is not None:
         _cache_put(ticker, source, next_date, cache_db=cache_db, settings=settings)
     return next_date
 
@@ -223,9 +246,11 @@ def annotate(
             nxt = get_next_earnings(t, source=source, settings=settings)
         except ProviderCapabilityError:
             nxt = None
-        rows.append({
-            "ticker": t,
-            "next_earnings": nxt,
-            "days_until": (nxt - date.today()).days if nxt else None,
-        })
+        rows.append(
+            {
+                "ticker": t,
+                "next_earnings": nxt,
+                "days_until": (nxt - date.today()).days if nxt else None,
+            }
+        )
     return pd.DataFrame(rows)

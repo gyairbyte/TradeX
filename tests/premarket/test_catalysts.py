@@ -43,10 +43,10 @@ def test_earnings_status_soon():
 def test_earnings_status_none():
     assert catalysts._earnings_status(date(2024, 1, 10), date(2024, 1, 3), 24.0) == (
         "none_detected",
-        None,
-        None,
+        date(2024, 1, 10),
+        7,
     )
-    assert catalysts._earnings_status(None, date(2024, 1, 3), 24.0) == ("none_detected", None, None)
+    assert catalysts._earnings_status(None, date(2024, 1, 3), 24.0) == ("unavailable", None, None)
 
 
 def test_parse_headline_timestamp():
@@ -144,7 +144,7 @@ def test_fetch_catalyst_context_require_catalyst_filters_no_earnings():
             earnings_source="yahoo",
             headline_source=None,
         )
-    assert ctx.earnings_status == "none_detected"
+    assert ctx.earnings_status == "unavailable"
     assert ctx.headline_status == "unavailable"
     assert ctx.status == "unavailable"
 

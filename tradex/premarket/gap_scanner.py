@@ -12,7 +12,7 @@ from datetime import UTC, date, datetime
 import pandas as pd
 
 from tradex.config import TradeXSettings, load_runtime_settings
-from tradex.data.fetcher import DEFAULT_PROVIDER, ProviderCapabilityError
+from tradex.data.fetcher import ProviderCapabilityError
 from tradex.data.history import fetch_daily_history
 from tradex.market import (
     MARKET_TIMEZONE,
@@ -53,7 +53,6 @@ from tradex.premarket.models import (
 )
 from tradex.premarket.sources import (
     PREMARKET_OPEN_TIME,
-    _filter_premarket_bars,
     build_premarket_snapshot,
     fetch_daily_liquidity_baseline,
     fetch_premarket_bars,
@@ -172,7 +171,11 @@ def _primary_status_for_filter_reasons(reasons: list[str]) -> str:
         return GAP_STATUS_BELOW_GAP_THRESHOLD
     if reason.startswith("price below"):
         return GAP_STATUS_PRICE_FILTERED
-    if reason.startswith("pre-market volume") or reason.startswith("pre-market dollar volume") or reason.startswith("volume ratio"):
+    if (
+        reason.startswith("pre-market volume")
+        or reason.startswith("pre-market dollar volume")
+        or reason.startswith("volume ratio")
+    ):
         return GAP_STATUS_LIQUIDITY_FILTERED
     if reason.startswith("data age"):
         return GAP_STATUS_STALE_DATA
@@ -534,7 +537,7 @@ def scan_gaps_with_report(
                 ticker,
                 session_date,
                 lookback_sessions=config.liquidity_lookback_sessions,
-                provider=provider,
+                provider=requested_provider,
                 as_of=as_of,
                 settings=settings,
             )
@@ -548,7 +551,7 @@ def scan_gaps_with_report(
                 median_daily_volume=0.0,
                 average_daily_dollar_volume=0.0,
                 median_daily_dollar_volume=0.0,
-                requested_provider=provider,
+                requested_provider=requested_provider,
                 actual_provider=None,
                 error=e,
             )
@@ -603,7 +606,7 @@ def scan_gaps_with_report(
         try:
             bars_result = fetch_premarket_bars(
                 ticker,
-                provider=provider,
+                provider=requested_provider,
                 as_of=as_of,
                 allow_after_open=config.allow_after_open,
                 settings=settings,
@@ -686,7 +689,7 @@ def scan_gaps_with_report(
             continue
 
         # Optional spread and catalyst
-        spread = fetch_spread_snapshot(ticker, as_of, provider=provider)
+        spread = fetch_spread_snapshot(ticker, as_of, provider=requested_provider)
         catalyst = fetch_catalyst_context(
             ticker,
             session_date,
@@ -851,7 +854,10 @@ def run_gap_alerts(
 
     try:
         gaps = scan_gaps(
-            tickers, min_gap_pct=min_gap_pct, provider=provider, as_of=as_of,
+            tickers,
+            min_gap_pct=min_gap_pct,
+            provider=provider,
+            as_of=as_of,
             settings=settings,
         )
     except ProviderCapabilityError as e:

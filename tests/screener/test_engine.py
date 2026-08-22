@@ -1,4 +1,5 @@
 """Tests for the screener engine."""
+
 from unittest.mock import patch
 
 import pandas as pd
@@ -33,7 +34,9 @@ def _make_fetch_report(
     failures = failures or {}
     actual = actual_provider or provider
     providers = providers_attempted or (actual,)
-    total_fetch_attempted = total_fetch_attempted if total_fetch_attempted is not None else len(tickers)
+    total_fetch_attempted = (
+        total_fetch_attempted if total_fetch_attempted is not None else len(tickers)
+    )
     return FetchReport(
         data=data,
         requested_provider=provider,
@@ -96,9 +99,7 @@ def test_engine_propagates_schwab_provider_to_fetch():
         patch.object(engine, "days_until_earnings", return_value=None),
         patch.object(engine, "SIGNAL_MAP", {"intraday": (fake_score, "intraday")}),
     ):
-        result = engine.run(
-            ["AAPL", "MSFT"], timeframe="intraday", provider="schwab"
-        )
+        result = engine.run(["AAPL", "MSFT"], timeframe="intraday", provider="schwab")
 
     assert captured["provider"] == "schwab"
     assert captured["tickers"] == ["AAPL", "MSFT"]
@@ -476,7 +477,9 @@ def test_run_with_report_earnings_source_failure_not_provider_outage():
 
     with (
         patch.object(engine, "fetch_multi_report", side_effect=fake_fetch_multi_report),
-        patch.object(engine, "days_until_earnings", side_effect=RuntimeError("earnings lookup failed")),
+        patch.object(
+            engine, "days_until_earnings", side_effect=RuntimeError("earnings lookup failed")
+        ),
         patch.object(engine, "SIGNAL_MAP", {"intraday": (fake_score, "intraday")}),
     ):
         report = engine.run_with_report(["AAPL"], timeframe="intraday")
@@ -626,10 +629,14 @@ def test_run_with_report_earnings_exclusion_plus_fetch_failure():
 
     with (
         patch.object(engine, "fetch_multi_report", side_effect=fake_fetch_multi_report),
-        patch.object(engine, "days_until_earnings", side_effect=lambda t, **_: 2 if t == "AAPL" else None),
+        patch.object(
+            engine, "days_until_earnings", side_effect=lambda t, **_: 2 if t == "AAPL" else 10
+        ),
         patch.object(engine, "SIGNAL_MAP", {"intraday": (fake_score, "intraday")}),
     ):
-        report = engine.run_with_report(["AAPL", "MSFT"], timeframe="intraday", exclude_earnings_within=5)
+        report = engine.run_with_report(
+            ["AAPL", "MSFT"], timeframe="intraday", exclude_earnings_within=5
+        )
 
     assert report.results.empty
     assert report.total_earnings_excluded == 1
@@ -714,3 +721,63 @@ def test_run_with_report_canonicalizes_non_round_scored_metrics():
     assert obs["last_close"] == res["last_close"]
     assert obs["volume_ratio"] == res["volume_ratio"]
     assert obs["rsi"] == res["rsi"]
+
+
+def test_earnings_filter_fails_closed_when_enabled_and_date_unknown():
+    """When exclude_earnings_within > 0 and earnings date is unknown (None), engine fails closed."""
+    fetch_called = []
+
+    def fake_fetch_multi_report(tickers, tf, **kwargs):
+        fetch_called.extend(tickers)
+        return _make_fetch_report(tickers, data={})
+
+    with (
+        patch.object(engine, "fetch_multi_report", side_effect=fake_fetch_multi_report),
+        patch.object(engine, "days_until_earnings", return_value=None),
+    ):
+        report = engine.run_with_report(
+            ["AAPL"],
+            timeframe="intraday",
+            exclude_earnings_within=5,
+        )
+
+    assert report.total_requested == 1
+    assert report.total_fetch_eligible == 0
+    assert "AAPL" in report.earnings_failures
+    assert fetch_called == []
+    obs = report.observations.iloc[0]
+    assert obs["status"] == "earnings_failure"
+    assert obs["ticker"] == "AAPL"
+
+
+def test_earnings_filter_passes_through_when_disabled_and_date_unknown():
+    """When exclude_earnings_within is 0 or None and earnings date is unknown, engine allows scoring."""
+
+    def fake_score(df):
+        return _make_result(80)
+
+    def fake_fetch_multi_report(tickers, tf, provider=None, **kwargs):
+        return _make_fetch_report(
+            tickers,
+            data={t: pd.DataFrame([0] * 31) for t in tickers},
+            provider=provider,
+            actual_provider=provider,
+        )
+
+    with (
+        patch.object(engine, "fetch_multi_report", side_effect=fake_fetch_multi_report),
+        patch.object(engine, "days_until_earnings", return_value=None),
+        patch.object(engine, "SIGNAL_MAP", {"intraday": (fake_score, "intraday")}),
+    ):
+        report = engine.run_with_report(
+            ["AAPL"],
+            timeframe="intraday",
+            exclude_earnings_within=0,
+        )
+
+    assert report.total_requested == 1
+    assert report.total_fetch_eligible == 1
+    assert report.total_signals == 1
+    res = report.results.iloc[0]
+    assert res["ticker"] == "AAPL"
+    assert res["days_until_earnings"] is None

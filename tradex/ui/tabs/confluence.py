@@ -1,4 +1,5 @@
 """Confluence Streamlit tab renderer."""
+
 from __future__ import annotations
 
 import plotly.express as px
@@ -57,7 +58,11 @@ Most screeners evaluate a single timeframe. The Confluence Scanner measures whet
         """)
 
     min_confluence = st.slider(
-        "Min confluence score", 0, 100, 50, key="min_conf",
+        "Min confluence score",
+        0,
+        100,
+        50,
+        key="min_conf",
         help=(
             "Filters results to stocks where the fixed-denominator weighted score across the "
             "three configured timeframes exceeds this value. Missing timeframes contribute zero, "
@@ -68,8 +73,12 @@ Most screeners evaluate a single timeframe. The Confluence Scanner measures whet
         ),
     )
 
-    if st.button("Run Confluence Scan", key="btn_conf", type="primary",
-                 help="Score each watchlist ticker across all three timeframes simultaneously. Takes ~3x longer than a single-timeframe scan."):
+    if st.button(
+        "Run Confluence Scan",
+        key="btn_conf",
+        type="primary",
+        help="Score each watchlist ticker across all three timeframes simultaneously. Takes ~3x longer than a single-timeframe scan.",
+    ):
         with st.spinner(f"Scoring {len(watchlist)} tickers across all timeframes…"):
             conf_results = run_confluence_screen(
                 watchlist,
@@ -83,46 +92,72 @@ Most screeners evaluate a single timeframe. The Confluence Scanner measures whet
             st.warning("No confluence setups found. Lower the min confluence score.")
         else:
             if earnings_buffer > 0:
-                st.success(f"{len(conf_results)} multi-timeframe setups found (excluded tickers with earnings within {earnings_buffer}d)")
+                st.success(
+                    f"{len(conf_results)} multi-timeframe setups found (excluded tickers with earnings within {earnings_buffer}d)"
+                )
             else:
                 st.success(f"{len(conf_results)} multi-timeframe setups found")
             st.dataframe(
                 conf_results,
                 use_container_width=True,
                 column_config={
-                    "ticker":              st.column_config.TextColumn("Ticker"),
-                    "confluence_score":    st.column_config.ProgressColumn("Confluence", min_value=0, max_value=100, help="Fixed-denominator weighted score across intraday (30%), short (40%), and long (30%). Missing timeframes contribute zero."),
-                    "tier":                st.column_config.TextColumn("Tier"),
-                    "timeframe_coverage":  st.column_config.TextColumn("Coverage", help="Fraction of timeframes that successfully contributed (0/3, 1/3, 2/3, or 3/3)."),
-                    "available_timeframes": st.column_config.TextColumn("Available TFs", help="Timeframes that fetched and scored successfully."),
-                    "missing_timeframes":  st.column_config.TextColumn("Missing TFs", help="Timeframes that did not contribute due to missing data, insufficient bars, or scorer errors."),
-                    "active_timeframes":   st.column_config.TextColumn("Active TFs", help="Timeframes where score ≥ 50."),
-                    "score_intraday":      st.column_config.ProgressColumn("Intraday", min_value=0, max_value=100),
-                    "score_short":         st.column_config.ProgressColumn("Short", min_value=0, max_value=100),
-                    "score_long":          st.column_config.ProgressColumn("Long", min_value=0, max_value=100),
+                    "ticker": st.column_config.TextColumn("Ticker"),
+                    "confluence_score": st.column_config.ProgressColumn(
+                        "Confluence",
+                        min_value=0,
+                        max_value=100,
+                        help="Fixed-denominator weighted score across intraday (30%), short (40%), and long (30%). Missing timeframes contribute zero.",
+                    ),
+                    "tier": st.column_config.TextColumn("Tier"),
+                    "timeframe_coverage": st.column_config.TextColumn(
+                        "Coverage",
+                        help="Fraction of timeframes that successfully contributed (0/3, 1/3, 2/3, or 3/3).",
+                    ),
+                    "available_timeframes": st.column_config.TextColumn(
+                        "Available TFs", help="Timeframes that fetched and scored successfully."
+                    ),
+                    "missing_timeframes": st.column_config.TextColumn(
+                        "Missing TFs",
+                        help="Timeframes that did not contribute due to missing data, insufficient bars, or scorer errors.",
+                    ),
+                    "active_timeframes": st.column_config.TextColumn(
+                        "Active TFs", help="Timeframes where score ≥ 50."
+                    ),
+                    "score_intraday": st.column_config.ProgressColumn(
+                        "Intraday", min_value=0, max_value=100
+                    ),
+                    "score_short": st.column_config.ProgressColumn(
+                        "Short", min_value=0, max_value=100
+                    ),
+                    "score_long": st.column_config.ProgressColumn(
+                        "Long", min_value=0, max_value=100
+                    ),
                     "days_until_earnings": st.column_config.NumberColumn(
                         "Earnings In",
                         format="%d d",
-                        help="Calendar days until the next scheduled earnings report. Blank = none scheduled or unknown.",
+                        help="Calendar days until the next scheduled earnings report. Blank/unavailable means TradeX could not establish a reliable upcoming earnings date; it does not prove there is no scheduled earnings event.",
                     ),
-                    "last_close":          st.column_config.NumberColumn("Last Close", format="$%.2f"),
+                    "last_close": st.column_config.NumberColumn("Last Close", format="$%.2f"),
                 },
             )
             st.session_state["conf_results"] = conf_results
 
     if "conf_results" in st.session_state and not st.session_state["conf_results"].empty:
         st.divider()
-        selected_conf = st.selectbox("Drill down", st.session_state["conf_results"]["ticker"].tolist(), key="sel_conf")
+        selected_conf = st.selectbox(
+            "Drill down", st.session_state["conf_results"]["ticker"].tolist(), key="sel_conf"
+        )
         row = st.session_state["conf_results"][
             st.session_state["conf_results"]["ticker"] == selected_conf
         ].iloc[0]
         scores = {
             "Intraday": row.get("score_intraday", 0),
-            "Short":    row.get("score_short", 0),
-            "Long":     row.get("score_long", 0),
+            "Short": row.get("score_short", 0),
+            "Long": row.get("score_long", 0),
         }
         bar_fig = px.bar(
-            x=list(scores.keys()), y=list(scores.values()),
+            x=list(scores.keys()),
+            y=list(scores.values()),
             labels={"x": "Timeframe", "y": "Score"},
             title=f"{selected_conf} — Confluence Score: {row['confluence_score']} ({row['tier']})",
             color=list(scores.values()),

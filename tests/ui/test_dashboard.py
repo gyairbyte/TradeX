@@ -10,7 +10,9 @@ from tradex.ui import source_defaults
 def test_options_source_index_uses_env_var(monkeypatch):
     """The options source selector default honors OPTIONS_DATA_SOURCE."""
     monkeypatch.setenv("OPTIONS_DATA_SOURCE", "yahoo")
-    assert source_defaults.options_source_index() == source_defaults.options_sources().index("yahoo")
+    assert source_defaults.options_source_index() == source_defaults.options_sources().index(
+        "yahoo"
+    )
 
 
 def test_options_source_index_falls_back_for_invalid_env_var(monkeypatch):
@@ -21,30 +23,42 @@ def test_options_source_index_falls_back_for_invalid_env_var(monkeypatch):
 
 def test_earnings_source_index_uses_env_var(monkeypatch):
     monkeypatch.setenv("EARNINGS_DATA_SOURCE", "yahoo")
-    assert source_defaults.earnings_source_index() == source_defaults.earnings_sources().index("yahoo")
+    assert source_defaults.earnings_source_index() == source_defaults.earnings_sources().index(
+        "yahoo"
+    )
 
 
 def test_earnings_source_index_falls_back_for_invalid_env_var(monkeypatch):
     monkeypatch.setenv("EARNINGS_DATA_SOURCE", "schwab")
-    assert source_defaults.earnings_source_index() == source_defaults.earnings_sources().index("yahoo")
+    assert source_defaults.earnings_source_index() == source_defaults.earnings_sources().index(
+        "yahoo"
+    )
 
 
 def test_market_cap_source_index_uses_env_var(monkeypatch):
     monkeypatch.setenv("MARKET_CAP_DATA_SOURCE", "schwab")
-    assert source_defaults.market_cap_source_index() == source_defaults.market_cap_sources().index("schwab")
+    assert source_defaults.market_cap_source_index() == source_defaults.market_cap_sources().index(
+        "schwab"
+    )
 
 
 def test_market_cap_source_index_falls_back_for_invalid_env_var(monkeypatch):
     monkeypatch.setenv("MARKET_CAP_DATA_SOURCE", "bloomberg")
-    assert source_defaults.market_cap_source_index() == source_defaults.market_cap_sources().index("yahoo")
+    assert source_defaults.market_cap_source_index() == source_defaults.market_cap_sources().index(
+        "yahoo"
+    )
 
 
 def test_default_source_index_is_case_insensitive(monkeypatch):
     monkeypatch.setenv("OPTIONS_DATA_SOURCE", "TRADIER")
-    assert source_defaults.options_source_index() == source_defaults.options_sources().index("tradier")
+    assert source_defaults.options_source_index() == source_defaults.options_sources().index(
+        "tradier"
+    )
 
 
-def test_dashboard_scan_passes_normalized_watchlist_to_record_scan(fresh_signal_db, tmp_path, monkeypatch):
+def test_dashboard_scan_passes_normalized_watchlist_to_record_scan(
+    fresh_signal_db, tmp_path, monkeypatch
+):
     """A user-initiated scan passes the normalized, deduplicated watchlist to record_scan."""
     import sys
     from unittest.mock import MagicMock
@@ -138,6 +152,7 @@ def test_dashboard_scan_passes_normalized_watchlist_to_record_scan(fresh_signal_
 
     # Execute the Streamlit UI as __main__ to trigger the scan.
     import runpy
+
     sys.modules.pop("tradex.ui.tabs.scanner", None)
     sys.modules.pop("tradex.ui.dashboard", None)
     runpy.run_module("tradex.ui.dashboard", run_name="__main__")
@@ -240,3 +255,92 @@ def dashboard_module(fresh_signal_db, tmp_path, monkeypatch):
 
     importlib.reload(dashboard)
     return dashboard
+
+
+def test_dashboard_provider_options_and_labels(monkeypatch, tmp_path):
+    """Dashboard orders providers by lifecycle (Schwab primary, Alpaca, Yahoo, IBKR) with truthful labels."""
+    import runpy
+    import sys
+    from unittest.mock import MagicMock, patch
+
+    from tradex.watchlists import store as wl_store
+
+    monkeypatch.setattr(wl_store, "DB_PATH", tmp_path / "watchlists.db")
+    monkeypatch.setenv("TRADEX_WATCHLISTS_DB_PATH", str(tmp_path / "watchlists.db"))
+    monkeypatch.setenv("TRADEX_FP_DB", str(tmp_path / "fingerprints.db"))
+    monkeypatch.setenv("TRADEX_EARNINGS_CACHE_PATH", str(tmp_path / "earnings_cache.db"))
+    monkeypatch.setenv("TRADEX_WEIGHTS_PATH", str(tmp_path / "weights.json"))
+    monkeypatch.setenv("ALERT_STATE_PATH", str(tmp_path / "alerts.db"))
+
+    captured_selectbox = {}
+
+    def fake_selectbox(label, options, *args, index=0, format_func=None, help=None, **kwargs):
+        captured_selectbox[label] = {
+            "options": options,
+            "index": index,
+            "format_func": format_func,
+            "help": help,
+        }
+        return options[index] if options else None
+
+    st = MagicMock(name="streamlit")
+    st.__version__ = "0.0.0"
+    st.session_state = {}
+    st.button.return_value = False
+    st.slider.return_value = 3.0
+    st.text_input.return_value = ""
+    st.text_area.return_value = ""
+    st.checkbox.return_value = False
+    st.multiselect.return_value = []
+    st.tabs.return_value = [MagicMock() for _ in range(10)]
+    st.progress.return_value = MagicMock()
+    st.sidebar.selectbox.side_effect = fake_selectbox
+    st.selectbox.side_effect = fake_selectbox
+
+    def _columns(spec, *args, **kwargs):
+        n = spec if isinstance(spec, int) else len(spec)
+        cols = []
+        for _ in range(n):
+            col = MagicMock()
+            col.selectbox.side_effect = fake_selectbox
+            col.button.return_value = False
+            col.checkbox.return_value = False
+            col.slider.return_value = 3.0
+            col.text_input.return_value = ""
+            col.text_area.return_value = ""
+            cols.append(col)
+        return cols
+
+    st.columns.side_effect = _columns
+    st.sidebar.columns.side_effect = _columns
+
+    monkeypatch.setitem(sys.modules, "streamlit", st)
+
+    with (
+        patch("tradex.ui.tabs.scanner.render_scanner_tab"),
+        patch("tradex.ui.tabs.premarket.render_premarket_tab") as mock_premarket,
+        patch("tradex.ui.tabs.confluence.render_confluence_tab"),
+        patch("tradex.ui.tabs.coil_detector.render_coil_detector_tab"),
+        patch("tradex.ui.tabs.pattern_similarity.render_pattern_similarity_tab"),
+        patch("tradex.ui.tabs.options_activity.render_options_activity_tab"),
+        patch("tradex.ui.tabs.alerts.render_alerts_tab"),
+        patch("tradex.ui.tabs.signal_journal.render_signal_journal_tab"),
+        patch("tradex.ui.tabs.weights.render_weights_tab"),
+        patch("tradex.ui.tabs.help.render_help_tab"),
+    ):
+        sys.modules.pop("tradex.ui.dashboard", None)
+        runpy.run_module("tradex.ui.dashboard", run_name="__main__")
+
+    ohlcv = captured_selectbox.get("OHLCV provider")
+    assert ohlcv is not None
+    assert ohlcv["options"] == ["schwab", "alpaca", "yahoo", "ibkr"]
+    assert ohlcv["index"] == 0  # schwab
+    fmt = ohlcv["format_func"]
+    assert fmt("schwab") == "Schwab — Primary"
+    assert fmt("alpaca") == "Alpaca — Degraded Intraday (IEX)"
+    assert fmt("yahoo") == "Yahoo — Research / Fallback"
+    assert fmt("ibkr") == "IBKR — Archived / Manual"
+
+    # Pre-market tab was called with provider="yahoo"
+    mock_premarket.assert_called_once()
+    assert mock_premarket.call_args.kwargs["provider"] == "yahoo"

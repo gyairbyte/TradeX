@@ -69,7 +69,9 @@ def _add_scan_parser(subparsers: Any) -> None:
         "--tickers", required=True, type=_parse_tickers, help="Comma-separated tickers"
     )
     parser.add_argument(
-        "--provider", default=None, help="OHLCV provider (default: DATA_PROVIDER/yahoo)"
+        "--provider",
+        default=None,
+        help="Pre-market data provider (default: yahoo; only yahoo is supported in this release)",
     )
     parser.add_argument("--min-gap", type=_parse_float, default=2.0, help="Minimum absolute gap %%")
     parser.add_argument(

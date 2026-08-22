@@ -5,6 +5,7 @@ ARCH-001 requires that no production module reads the process environment, a
 ``tradex.config`` may load environment state, and only inside the public
 ``settings_from_mapping`` / ``load_runtime_settings`` loaders.
 """
+
 from __future__ import annotations
 
 import ast
@@ -107,7 +108,10 @@ def test_no_module_scope_dotenv_loading():
     dotenv_offenders: list[Path] = []
     for path, nodes in offenders:
         lines = path.read_text(encoding="utf-8").splitlines()
-        if any("load_dotenv" in lines[node.lineno - 1] or "dotenv_values" in lines[node.lineno - 1] for node in nodes):
+        if any(
+            "load_dotenv" in lines[node.lineno - 1] or "dotenv_values" in lines[node.lineno - 1]
+            for node in nodes
+        ):
             dotenv_offenders.append(path)
     assert not dotenv_offenders, f"module-scope dotenv loading in: {dotenv_offenders}"
 
@@ -269,6 +273,10 @@ def _subprocess_import_ok(module_name: str) -> None:
             "PYTHONDONTWRITEBYTECODE": "1",
             "TRADEX_GUARD_HOME": str(home),
         }
+        if "SYSTEMROOT" in os.environ:
+            env["SYSTEMROOT"] = os.environ["SYSTEMROOT"]
+        if "SystemRoot" in os.environ:
+            env["SystemRoot"] = os.environ["SystemRoot"]
         # Block any .env in the repo from being found by accident.
         env["PWD"] = str(cwd)
 
