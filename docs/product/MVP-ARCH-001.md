@@ -227,7 +227,7 @@ Gary Yang separately approved rollout step 1 on 2026-08-21 with narrow scope:
 ## Governance invariants
 
 - Production promotion remains unauthorized.
-- The design-only direction is approved; each rollout implementation step remains pending separate Gary approval.
+- MVP-ARCH-001 original architecture approval remains design-only; MVP-ARCH-001-R1 is separately Gary-approved for truthful UI/help labeling and evidence-state notices only; rollout Steps 2–8 remain pending separate Gary approval; R1 does not authorize production trading changes, navigation changes, alert behavior changes, provider changes or calls, database migrations, strategy promotion, or LONG-002C work.
 - Existing research artifacts and locked specifications are referenced, not modified.
 - LONG-002B-AMEND-002 is completed and merged; LONG-002C design is authorized by PR #52 but explicitly paused by Gary; MVP-ARCH-001 is a separate product-architecture workstream.
 - This packet does not authorize LONG-002C dataset construction, provider calls, dashboard changes, alert changes, database migrations, strategy promotion, or production behavior changes.
