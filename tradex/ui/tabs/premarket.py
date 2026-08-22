@@ -16,6 +16,7 @@ from tradex.premarket.models import (
     _OUTSIDE_WINDOW_STATUSES,
     GapScanReport,
 )
+from tradex.ui.evidence import render_evidence_notice
 
 
 def _all_tickers_are(counts: dict[str, int], statuses: set[str]) -> bool:
@@ -40,15 +41,16 @@ def render_premarket_tab(
 ) -> None:
     """Render the Pre-Market Gap Scanner tab."""
     st.subheader("Pre-Market Gap Scanner")
+    render_evidence_notice("premarket", st_module=st)
     st.caption(
         "Identifies stocks that have gapped significantly from their previous close "
         "based on pre-market trading activity. Best run 7am–9:25am ET before market open."
     )
 
-    with st.expander("What is a gap and how do I use this?", expanded=False):
+    with st.expander("What is a gap and how do I read this?", expanded=False):
         st.markdown("""
 A **gap** is the difference between a stock's pre-market price and its previous regular-session close.
-Gaps occur overnight when new information is reflected in prices while the market is closed.
+Gaps occur overnight when new information is reflected in prices while the regular session is closed.
 
 **Gap tiers:**
 | Tier | Size |
@@ -57,15 +59,12 @@ Gaps occur overnight when new information is reflected in prices while the marke
 | 🟠 Large | ≥ 4% |
 | 🟡 Moderate | ≥ 2% |
 
-**How to use:**
-- Run this at 7–9am ET before the market opens.
-- Focus on Large and Massive gaps for follow-through or fade setups.
-- Cross-reference with the Scanner tab for technical confirmation.
+**Data and context notes:**
+- Best run at 7–9am ET before regular trading hours.
+- Gap percentages describe overnight price displacement; they do not predict post-open continuation, fill probability, or trade direction.
 - Data is ~15min delayed on Yahoo Finance (free). Schwab pre-market support is not enabled in this release.
-
-**Spread and catalyst notes:**
 - Spread is shown only when real bid/ask quotes are available; it is never inferred from the candle range.
-- Earnings and headline context is explicitly sourced and shown as reference only; it is not proof the context caused the gap.
+- Earnings and headline context is explicitly sourced and shown as reference only; it is not proof that the reported event caused the price move.
 - No filter is active by default except the minimum absolute gap.
         """)
 

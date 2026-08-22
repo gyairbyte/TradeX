@@ -6,6 +6,7 @@ import streamlit as st
 
 from tradex.config import TradeXSettings
 from tradex.tracker import analyzer
+from tradex.ui.evidence import render_evidence_notice
 
 
 def render_coil_detector_tab(
@@ -13,37 +14,35 @@ def render_coil_detector_tab(
     settings: TradeXSettings,
     timeframe: str,
 ) -> None:
-    """Render the Coil Detector — Pre-Breakout Setups tab."""
-    st.subheader("Coil Detector — Pre-Breakout Setups")
+    """Render the Coil Detector — Multi-Session Persistence tab."""
+    st.subheader("Coil Detector — Multi-Session Persistence")
+    render_evidence_notice("coil_detector", st_module=st)
     st.caption(
-        "Finds stocks that have appeared in multiple scans over several days without breaking out yet. "
-        "These are the setups building pressure before a move — caught *before* the crowd sees them."
+        "Summarizes stocks that have appeared in multiple scans across distinct sessions without large price moves. "
+        "Exploratory context describing persistence and score stability."
     )
 
     with st.expander("What is a coil and how does it work?", expanded=False):
         st.markdown("""
-A **coil** is a stock that is quietly building technical pressure without yet making a large price move.
-Think of it like a spring being compressed — the longer it builds, the bigger the potential release.
+A **coil** is a descriptive observation of repeated appearances and score stability across scan sessions without a large price breakout (≥3%).
 
-**TradeX defines a coil as a stock that:**
+**TradeX defines a coil observation as a stock that:**
 1. Has appeared in scans at least N times within the look-back window
-2. Still has a score above the signal threshold (45+)
-3. Has NOT already made a large price move (≥3% would mean it already broke out)
-4. Has a score that is stable or rising (not fading)
+2. Maintained a score at or above the threshold (45+)
+3. Has NOT already moved ≥3% (which would indicate a prior move has occurred)
+4. Has a score trend that is stable or rising
 
-**Why this matters:** Standard screeners show you what happened. The coil detector shows you what's *building*.
-By the time a stock appears on Finviz or TradingView's trending list, thousands of traders already see it.
-Coils let you get positioned before the obvious move.
+**Exploratory context:** Coil metrics summarize scan persistence. They do not predict upcoming breakouts, guarantee a future move, or establish an executable trading edge.
 
 **Coil Strength score** combines:
-- How many times the stock appeared (more = stronger conviction)
-- The latest signal score (higher = more conditions met)
-- The slope of the score trend (accelerating = higher strength)
+- Number of distinct scan sessions where the stock appeared
+- Latest signal score level
+- Slope of the score trend across sessions
 
 **Score trend directions:**
-- 🟢 **Building** — score is rising each scan. Best setups.
-- 🟡 **Stable** — holding steady. Still valid, not accelerating.
-- 🔴 **Fading** — score declining. Setup may be breaking down.
+- 🟢 **Building** — score is rising across recorded scans.
+- 🟡 **Stable** — holding steady at or above threshold.
+- 🔴 **Fading** — score declining relative to prior scans.
         """)
 
     col1, col2 = st.columns(2)
@@ -51,20 +50,18 @@ Coils let you get positioned before the obvious move.
         "Look-back window (days)", 3, 21, 7, key="coil_days",
         help=(
             "How many calendar days of scan history to search through.\n\n"
-            "• **Shorter (3–5 days)** — only recent setups. Misses slower-building coils.\n"
-            "• **7 days (default)** — one trading week. Good balance.\n"
-            "• **Longer (10–21 days)** — catches slower accumulation patterns. "
-            "More history required (watcher must have been running for that many days)."
+            "• **Shorter (3–5 days)** — only recent sessions.\n"
+            "• **7 days (default)** — one trading week.\n"
+            "• **Longer (10–21 days)** — searches longer scan history (requires watcher to have run for that duration)."
         ),
     )
     min_appearances = col2.slider(
         "Min appearances", 2, 10, 2, key="coil_apps",
         help=(
-            "Minimum number of scan sessions where a stock must have scored above threshold "
-            "to be considered a coil.\n\n"
-            "• **2 (default)** — appeared at least twice. Low bar, catches early setups.\n"
-            "• **3–5** — repeated pattern. More reliable signal.\n"
-            "• **6–10** — long-duration coil. Very persistent setup — could resolve soon.\n\n"
+            "Minimum number of scan sessions where a stock must have scored above threshold.\n\n"
+            "• **2 (default)** — appeared at least twice.\n"
+            "• **3–5** — repeated scan appearance.\n"
+            "• **6–10** — persistent appearance across many recorded sessions.\n\n"
             "Note: this requires the watcher to have run enough sessions to accumulate that history."
         ),
     )

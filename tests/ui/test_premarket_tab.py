@@ -182,6 +182,9 @@ def test_initial_render_and_complete_control_contract(premarket_module, fake_st)
     subheaders = [c[0][0] for c in fake_st.subheader.call_args_list]
     assert subheaders == ["Pre-Market Gap Scanner"]
 
+    info_texts = [str(c[0][0]) for c in fake_st.info.call_args_list]
+    assert any("Exploratory Event Context" in t for t in info_texts)
+
     captions = [str(c[0][0]) for c in fake_st.caption.call_args_list]
     assert captions == [(
         "Identifies stocks that have gapped significantly from their previous close "
@@ -189,7 +192,7 @@ def test_initial_render_and_complete_control_contract(premarket_module, fake_st)
     )]
 
     expander_labels = [c[0][0] for c in fake_st.expander.call_args_list]
-    assert expander_labels == ["What is a gap and how do I use this?"]
+    assert expander_labels == ["What is a gap and how do I read this?"]
 
     slider_calls = _by_key(_collect_calls(fake_st, "slider"))
     assert len(slider_calls) == 1

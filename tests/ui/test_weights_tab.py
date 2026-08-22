@@ -37,7 +37,7 @@ def test_import_does_not_load_weights(weights_tab_module):
 
 
 def test_render_loads_weights_with_settings(weights_tab_module, fake_st):
-    """Rendering loads weights with the explicit settings object."""
+    """Rendering loads weights with the explicit settings object and renders the evidence notice."""
     settings = _default_settings()
     load_mock = MagicMock(return_value=signal_weights.Weights.defaults())
     weights_tab_module.signal_weights.load = load_mock
@@ -45,6 +45,9 @@ def test_render_loads_weights_with_settings(weights_tab_module, fake_st):
     weights_tab_module.render_weights_tab(settings=settings)
 
     load_mock.assert_called_once_with(settings=settings)
+
+    info_texts = [str(c[0][0]) for c in fake_st.info.call_args_list]
+    assert any("Legacy Heuristic Controls" in t for t in info_texts)
 
 
 def test_no_button_click_does_not_write(weights_tab_module, fake_st):

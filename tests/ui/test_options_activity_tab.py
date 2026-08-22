@@ -232,6 +232,9 @@ def test_initial_render_resolves_sources(options_module, fake_st):
     options_module.resolve_flow_source.assert_called_once_with("auto", settings=settings)
     options_module.resolve_chain_source.assert_called_once_with("auto", settings=settings)
 
+    info_texts = [str(c[0][0]) for c in fake_st.info.call_args_list]
+    assert any("Exploratory Context — Non-Directional" in t for t in info_texts)
+
     subheaders = [c[0][0] for c in fake_st.subheader.call_args_list]
     assert subheaders == ["Options Activity", "True Options Flow", "Options Chain Activity", "Call/Put Volume Balance"]
 
@@ -867,4 +870,4 @@ def test_put_call_no_non_directional_message_when_inference_present(options_modu
     )
 
     info_calls = [str(c[0][0]) for c in fake_st.info.call_args_list]
-    assert not any("non-directional" in i for i in info_calls)
+    assert not any("Volume balance is non-directional" in i for i in info_calls)

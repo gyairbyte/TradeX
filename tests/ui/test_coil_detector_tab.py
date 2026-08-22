@@ -115,8 +115,11 @@ def test_initial_render_shows_subheader_caption_and_sliders(coil_detector_module
     subheader = str(fake_st.subheader.call_args[0][0])
     assert "Coil Detector" in subheader
 
+    info_texts = [str(c[0][0]) for c in fake_st.info.call_args_list]
+    assert any("Exploratory Context — Non-Predictive" in t for t in info_texts)
+
     caption_texts = [str(c[0][0]) for c in fake_st.caption.call_args_list]
-    assert any("building pressure" in t for t in caption_texts)
+    assert any("persistence" in t.lower() for t in caption_texts)
 
     assert fake_st.expander.call_count == 1
 

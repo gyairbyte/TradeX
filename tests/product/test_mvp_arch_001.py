@@ -265,6 +265,37 @@ def test_governance_invariants_present(inv: dict) -> None:
     assert any("LONG-002B-AMEND-002" in g and "paused" in g for g in invariants)
     assert any("MVP-ARCH-001 is a separate" in g for g in invariants)
     assert any("production_approved" in g for g in invariants)
+    assert any("MVP-ARCH-001-R1" in g for g in invariants)
+
+
+def test_governance_invariants_distinguish_r1_from_later_steps(inv: dict) -> None:
+    """Invariants prove R1 is Gary-approved while Steps 2-8 remain pending and broad booleans are false."""
+    invariants = inv["governance_invariants"]
+    # 1. No invariant claims EVERY rollout step remains pending.
+    assert not any("each rollout implementation step remains pending" in g.lower() for g in invariants)
+    assert not any("every rollout implementation step remains pending" in g.lower() for g in invariants)
+
+    # 2. Invariant accurately distinguishes R1 from Steps 2-8.
+    r1_invariant = next(
+        (g for g in invariants if "MVP-ARCH-001-R1" in g),
+        None,
+    )
+    assert r1_invariant is not None, "Missing R1 governance invariant"
+    assert "design-only" in r1_invariant.lower()
+    assert "separately gary-approved" in r1_invariant.lower()
+    assert re.search(r"steps 2[\u2013-]8 remain pending", r1_invariant, re.IGNORECASE)
+    assert "does not authorize production trading changes" in r1_invariant.lower()
+
+    # 3. Markdown matches the JSON invariant.
+    md_text = MD_PATH.read_text(encoding="utf-8")
+    assert not re.search(r"each rollout implementation step remains pending", md_text, re.IGNORECASE)
+    assert "MVP-ARCH-001-R1 is separately Gary-approved" in md_text
+
+    # 4. Broad authorization booleans remain false.
+    auth = inv["authorization"]
+    for key, value in auth.items():
+        assert value is False, f"authorization.{key}={value}"
+
 
 
 def test_target_navigation_has_five_areas(inv: dict) -> None:
@@ -526,3 +557,24 @@ def test_tracker_long_002c_authorized_but_paused(tracker_text: str) -> None:
     assert "long_002c_currently_paused_by_gary" in lower
     assert "long_002c_dataset_construction_authorized" in lower
     assert "long_002c_work_authorized_by_mvp_arch_001" in lower
+
+
+def test_rollout_approvals_record(inv: dict) -> None:
+    """The JSON records Gary's scoped approval for MVP-ARCH-001-R1 without broad booleans."""
+    approvals = inv.get("rollout_approvals", [])
+    assert len(approvals) >= 1
+    r1 = next((a for a in approvals if a.get("task_id") == "MVP-ARCH-001-R1"), None)
+    assert r1 is not None
+    assert r1["rollout_order"] == 1
+    assert r1["approval_status"] == "gary_approved"
+    assert r1["approved_by"] == "Gary Yang"
+    assert r1["approved_on"] == "2026-08-21"
+    assert r1["implementation_authorized"] is True
+    assert r1["production_trading_changes_authorized"] is False
+    assert r1["navigation_changes_authorized"] is False
+    assert r1["alert_behavior_changes_authorized"] is False
+    assert r1["provider_changes_authorized"] is False
+    assert r1["provider_calls_authorized"] is False
+    assert r1["database_migration_authorized"] is False
+    assert r1["strategy_promotion_authorized"] is False
+    assert r1["long_002c_work_authorized"] is False

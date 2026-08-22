@@ -13,6 +13,7 @@ from tradex.options.flow import (
     scan_unusual_flow_with_report,
 )
 from tradex.options.models import OptionsActivityReport, OptionsDataKind, OptionsScanStatus
+from tradex.ui.evidence import render_evidence_notice
 
 
 def _options_source_status_message(status) -> str:
@@ -119,6 +120,7 @@ def render_options_activity_tab(
 ) -> None:
     """Render the Options Activity tab."""
     st.subheader("Options Activity")
+    render_evidence_notice("options_activity", st_module=st)
     st.caption(
         "Distinguishes true options-flow events from delayed options-chain snapshots. "
         "Chain volume and open interest describe aggregate positioning, not direction or intent."

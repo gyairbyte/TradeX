@@ -5,17 +5,19 @@ import streamlit as st
 
 from tradex.config import TradeXSettings
 from tradex.signals import weights as signal_weights
+from tradex.ui.evidence import render_evidence_notice
 
 
 def render_weights_tab(
     *,
     settings: TradeXSettings,
 ) -> None:
-    """Render the Scoring Weights — tune signal component point values."""
-    st.subheader("Scoring Weights — Tune Signal Contributions")
+    """Render the Scoring Weights — configure legacy heuristic point values."""
+    st.subheader("Scoring Weights — Configure Heuristic Contributions")
+    render_evidence_notice("weights", st_module=st)
     st.caption(
-        "Adjust how many points each signal component awards when it fires. "
-        "Changes apply to every Scanner and Confluence run after Save. Persisted to ~/.tradex/weights.json."
+        "Adjust how many points each technical condition awards when it fires in legacy heuristic scoring. "
+        "Changes apply to Scanner and Confluence after Save. Persisted to ~/.tradex/weights.json."
     )
 
     with st.expander("How weighting works", expanded=False):
@@ -27,10 +29,11 @@ def render_weights_tab(
     **Tiered signals** (intraday volume + RSI) award full credit for the strong tier and a reduced share for the
     weaker tier (50% for elevated volume, 75% for oversold-bounce RSI). The ratios scale with your configured weight.
 
-    **Tips:**
-    - If you trust volume more than indicators, raise volume weights and lower MACD / RSI.
-    - If you want every clean setup to clear 50, keep the sum of your top 2–3 components ≥ 50.
-    - Use **Reset to defaults** to get back the original 30/20/30/20-style scoring at any time.
+    **Unvalidated configuration notice:**
+    - Adjusting weights modifies the point allocations of legacy discovery heuristics.
+    - Custom weight combinations have not been validated through controlled backtesting or holdout evaluations.
+    - Manually tuning weights to match recent winning setups carries a high risk of post-hoc overfitting.
+    - Use **Reset to defaults** to restore the original baseline heuristic weights at any time.
         """)
 
     current = signal_weights.load(settings=settings)

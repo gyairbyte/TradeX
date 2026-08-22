@@ -49,7 +49,7 @@ def test_import_has_no_side_effects(signal_journal_module, fake_st):
 
 
 def test_empty_journal_shows_info(signal_journal_module, fake_st, monkeypatch):
-    """An empty journal displays the existing empty-state message."""
+    """An empty journal displays the evidence notice and existing empty-state message."""
     settings = _default_settings()
     monkeypatch.setattr(signal_journal_module, "resolve_provider", lambda provider, **kwargs: provider or "yahoo")
     signal_journal_module.store.get_signal_journal.return_value = pd.DataFrame(
@@ -59,6 +59,7 @@ def test_empty_journal_shows_info(signal_journal_module, fake_st, monkeypatch):
     signal_journal_module.render_signal_journal_tab(settings=settings, timeframe="short", provider="yahoo")
 
     info_calls = [str(c[0][0]) for c in fake_st.info.call_args_list]
+    assert any("Legacy Signal Telemetry" in c for c in info_calls)
     assert any("No outcomes yet" in c for c in info_calls)
     assert fake_st.dataframe.call_count == 0
     assert fake_st.plotly_chart.call_count == 0
@@ -101,7 +102,7 @@ def test_no_refresh_button_does_not_call_run_outcome_pass(signal_journal_module,
 
 
 def test_nonempty_journal_renders_metrics(signal_journal_module, fake_st, monkeypatch):
-    """A non-empty journal renders total signals, win rate, avg win/loss, and expectancy."""
+    """A non-empty journal renders total signals, win rate, avg win/loss, and legacy expectancy."""
     settings = _default_settings()
     monkeypatch.setattr(signal_journal_module, "resolve_provider", lambda provider, **kwargs: provider or "yahoo")
     monkeypatch.setattr(signal_journal_module, "get_outcome_stats", lambda *, settings: pd.DataFrame())
@@ -123,7 +124,7 @@ def test_nonempty_journal_renders_metrics(signal_journal_module, fake_st, monkey
     assert "Win Rate" in metric_labels
     assert "Avg Win" in metric_labels
     assert "Avg Loss" in metric_labels
-    assert "Expectancy" in metric_labels
+    assert "Legacy Expectancy" in metric_labels
     assert fake_st.dataframe.call_count >= 1
     assert fake_st.plotly_chart.call_count >= 1
 

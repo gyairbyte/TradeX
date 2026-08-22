@@ -143,6 +143,7 @@ def test_initial_render_shows_header_and_controls(pattern_module, fake_st):
 
     warning_calls = [str(c[0][0]) for c in fake_st.warning.call_args_list]
     assert any("experimental" in w for w in warning_calls)
+    assert any("Rejected on Holdout" in w for w in warning_calls)
 
     caption_calls = [str(c[0][0]) for c in fake_st.caption.call_args_list]
     assert any("Pearson correlation" in c for c in caption_calls)

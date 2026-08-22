@@ -6,6 +6,7 @@ import streamlit as st
 
 from tradex.config import TradeXSettings
 from tradex.tracker.confluence import run_confluence_screen
+from tradex.ui.evidence import render_evidence_notice
 
 
 def render_confluence_tab(
@@ -18,41 +19,41 @@ def render_confluence_tab(
 ) -> None:
     """Render the Confluence Scanner — Multi-Timeframe Alignment tab."""
     st.subheader("Confluence Scanner — Multi-Timeframe Alignment")
+    render_evidence_notice("confluence", st_module=st)
     st.caption(
-        "Finds stocks scoring well across intraday, short-term, AND long-term simultaneously. "
-        "Missing timeframes are penalized; only a true 3/3 result can be labeled 'all timeframes aligned'."
+        "Aggregates legacy technical scores across intraday, short-term, and long-term timeframes using fixed weights. "
+        "Exploratory context describing cross-timeframe score alignment; missing timeframes contribute zero."
     )
 
     with st.expander("Why confluence matters", expanded=False):
         st.markdown("""
-Most screeners only look at one timeframe. A stock can look great on a 5-minute chart but be
-in a downtrend on the daily — that's a low-conviction trade fighting the bigger trend.
+Most screeners evaluate a single timeframe. The Confluence Scanner measures whether multiple timeframe scores are elevated simultaneously.
 
-**Confluence means all timeframes are telling the same story:**
-- The intraday chart (5-min) shows a momentum setup
-- The daily chart (short-term) shows an uptrend structure
-- The weekly chart (long-term) shows the stock in a healthy secular trend
+**Confluence evaluates cross-timeframe score alignment:**
+- Intraday chart (5-min) technical score
+- Daily chart (short-term) technical score
+- Weekly chart (long-term) technical score
 
 **Confluence score weights (fixed denominator — missing timeframes contribute zero):**
 | Timeframe | Weight | Why |
 |---|---|---|
-| Intraday (5m) | 30% | Noisiest — good confirmation but not the driver |
-| Short-term (1d) | 40% | Most actionable timeframe for swing trades |
-| Long-term (1wk) | 30% | Establishes whether the broader trend supports the trade |
+| Intraday (5m) | 30% | Shorter-term technical momentum |
+| Short-term (1d) | 40% | Daily timeframe swing structure |
+| Long-term (1wk) | 30% | Weekly timeframe broader trend |
 
 **Coverage:**
 - `3/3` — All three timeframes fetched and scored successfully.
-- `2/3` — Two timeframes contributed. Strong or moderate tiers are possible if the corrected score and active-timeframe count support it.
-- `1/3` — Single timeframe only, always treated as weak/single-timeframe.
+- `2/3` — Two timeframes contributed.
+- `1/3` — Single timeframe only.
 - `0/3` — No usable data.
 
 **Confluence tiers:**
-- 🟢 **90+ and 3/3 active** — `all timeframes aligned`. Rare and high conviction.
+- 🟢 **90+ and 3/3 active** — `all timeframes aligned` (high scores across all 3 timeframes).
 - 🟡 **70+ with at least two active timeframes** — `strong confluence`.
 - 🟠 **50–69 with at least two active timeframes** — `moderate confluence`.
-- 🔴 **<50 or only one/three timeframes active** — Weak confluence or weak/incomplete timeframes.
+- 🔴 **<50 or only one/three timeframes active** — Weak confluence or incomplete timeframes.
 
-A stock scoring 80+ on intraday alone is interesting, but it is not multi-timeframe confluence. The same stock also scoring 70+ on short and long is a fundamentally different — and better — trade.
+**Exploratory context:** Confluence is a weighted combination of unvalidated discovery heuristics. Cross-timeframe score alignment does not prove predictive edge, trade quality, probability, or expected return.
         """)
 
     min_confluence = st.slider(
@@ -62,8 +63,8 @@ A stock scoring 80+ on intraday alone is interesting, but it is not multi-timefr
             "three configured timeframes exceeds this value. Missing timeframes contribute zero, "
             "so a single 100-score timeframe cannot pass a 70 threshold.\n\n"
             "• **Lower (30–50)** — more results, includes partial alignments.\n"
-            "• **50–70** — meaningful alignment across at least two timeframes.\n"
-            "• **Higher (70–100)** — only the strongest multi-timeframe setups. Fewer but higher quality."
+            "• **50–70** — score alignment across at least two timeframes.\n"
+            "• **Higher (70–100)** — filters to stocks with high score alignment across multiple timeframes."
         ),
     )
 

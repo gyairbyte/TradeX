@@ -189,9 +189,28 @@
     "long_002c_dataset_construction_authorized": false,
     "decision_quote": "I approve MVP-ARCH-001 as the design-only product architecture direction. This does not authorize implementation, production trading changes, or LONG-002C dataset construction."
   },
+  "rollout_approvals": [
+    {
+      "task_id": "MVP-ARCH-001-R1",
+      "rollout_order": 1,
+      "approval_status": "gary_approved",
+      "approved_by": "Gary Yang",
+      "approved_on": "2026-08-21",
+      "scope": "truthful UI/help labeling and evidence-state notices only",
+      "implementation_authorized": true,
+      "production_trading_changes_authorized": false,
+      "navigation_changes_authorized": false,
+      "alert_behavior_changes_authorized": false,
+      "provider_changes_authorized": false,
+      "provider_calls_authorized": false,
+      "database_migration_authorized": false,
+      "strategy_promotion_authorized": false,
+      "long_002c_work_authorized": false
+    }
+  ],
   "governance_invariants": [
     "Production promotion remains unauthorized.",
-    "The design-only direction is approved; each rollout implementation step remains pending separate Gary approval.",
+    "MVP-ARCH-001 original architecture approval remains design-only; MVP-ARCH-001-R1 is separately Gary-approved for truthful UI/help labeling and evidence-state notices only; rollout Steps 2–8 remain pending separate Gary approval; R1 does not authorize production trading changes, navigation changes, alert behavior changes, provider changes or calls, database migrations, strategy promotion, or LONG-002C work.",
     "Existing research artifacts and locked specifications are referenced, not modified.",
     "LONG-002B-AMEND-002 is completed and merged; LONG-002C design is authorized by PR #52 but explicitly paused by Gary; MVP-ARCH-001 is a separate product-architecture workstream.",
     "This packet does not authorize LONG-002C dataset construction, provider calls, dashboard changes, alert changes, database migrations, strategy promotion, or production behavior changes.",
