@@ -224,7 +224,7 @@ If the dashboard fails to start, check the log at `~/.tradex/dashboard.log` (Mac
 
 ## 6. Optional: scheduled background scanner
 
-The watcher runs the screener on an interval and writes results to `~/.tradex/signals.db`. This is what powers the **Coil Detector** and **Signal Journal** tabs over time. It evaluates automatic alerts for coil, confluence, and pre-market gap setups, using a separate `~/.tradex/alerts.db` state database for cooldown and deduplication. Pattern matching is research-only and is quarantined from automatic watcher alerts.
+The watcher runs the screener on an interval and writes results to `~/.tradex/signals.db`. This is what powers the **Research Lab → Coil Context** and **Signal Journal** tabs over time. It evaluates automatic alerts for coil, confluence, and pre-market gap setups, using a separate `~/.tradex/alerts.db` state database for cooldown and deduplication. Pattern matching is research-only and is quarantined from automatic watcher alerts.
 
 ```bash
 # macOS / Linux
@@ -471,18 +471,15 @@ The candidate policies are `off` (baseline), `market_rs`, and `market_sector_rs`
 
 Once the dashboard is running at `http://localhost:8501`:
 
-| Tab | First time? Start here |
-|---|---|
-| **Scanner** | Pick a watchlist in the sidebar, pick a timeframe (intraday / short / long), set `min_score` (try 40), click Scan. |
-| **Coil Detector** | Needs scan history across several NYSE trading sessions to detect coiling stocks; appears count distinct sessions, not scan rows. |
-| **Confluence** | Stocks scoring well across all three timeframes simultaneously. Missing timeframes contribute zero and are shown as `0/3`–`3/3` coverage. `all timeframes aligned` requires 3/3 coverage and all active. |
-| **Pattern Similarity — Experimental Research** | Compares current 10-day windows against historical run-up / decline fingerprints. Research-only; not used in production scoring or automatic alerts. |
-| **Pre-Market** | Gap-up / gap-down detection vs. previous close with optional liquidity, spread, catalyst, and freshness filters. All new filters are off by default. |
-| **Options Activity** | Two separate sections: true options-flow events (Unusual Whales) and options-chain snapshots (Tradier/Yahoo). Chain volume/OI is non-directional. The true-flow scanner is disabled if no Unusual Whales key is configured. |
-| **Alerts** | Configure Discord / email thresholds, view effective cooldown durations, and inspect recent persistent alert state. Requires `.env` credentials for notifications. |
-| **Signal Journal** | Win rate and expectancy by score bucket, plus signal/outcome provider columns — only meaningful after weeks of watcher runs. |
-| **Weights** | Tune per-signal point values. Persists to `~/.tradex/weights.json`. |
-| **Help** | In-app docs for every feature. |
+| Surface / Area | Child Tabs / Tools | First time? Start here |
+|---|---|---|
+| **Scanner** | — | Pick a watchlist in the sidebar, pick a timeframe (intraday / short / long), set `min_score` (try 40), click Scan. |
+| **Confluence** | — | Stocks scoring well across all three timeframes simultaneously. Missing timeframes contribute zero and are shown as `0/3`–`3/3` coverage. `all timeframes aligned` requires 3/3 coverage and all active. |
+| **Pre-Market** | — | Gap-up / gap-down detection vs. previous close with optional liquidity, spread, catalyst, and freshness filters. All new filters are off by default. |
+| **Signal Journal** | — | Win rate and expectancy by score bucket, plus signal/outcome provider columns — only meaningful after weeks of watcher runs. |
+| **Research Lab** | **Coil Context**<br>**Pattern Similarity — Rejected**<br>**Options Activity — Exploratory** | Exploratory and quarantined research tools:<br>• **Coil Context:** Needs scan history across several NYSE sessions to detect persistent coiling stocks.<br>• **Pattern Similarity — Rejected:** Experimental 10-day shape matching; rejected on holdout under PATTERN-001.<br>• **Options Activity — Exploratory:** True options-flow events (Unusual Whales) and chain snapshots (Tradier/Yahoo). |
+| **Settings** | **Alert Delivery**<br>**Legacy Weights** | Operational controls and configuration:<br>• **Alert Delivery:** Configure Discord / email thresholds and inspect persistent cooldown state.<br>• **Legacy Weights:** Tune per-signal point values for legacy heuristic scores. |
+| **Help** | — | In-app docs and canonical evidence disclosures for every feature. |
 
 ---
 

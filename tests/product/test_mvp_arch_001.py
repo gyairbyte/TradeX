@@ -283,8 +283,8 @@ def test_governance_invariants_present(inv: dict) -> None:
     assert any("MVP-ARCH-001-R1" in g for g in invariants)
 
 
-def test_governance_invariants_distinguish_r1_and_r2_from_later_steps(inv: dict) -> None:
-    """Invariants prove R1/R2 are Gary-approved while Steps 3-8 remain pending and broad booleans are false."""
+def test_governance_invariants_distinguish_r1_r2_r3_from_later_steps(inv: dict) -> None:
+    """Invariants prove R1/R2/R3 are Gary-approved while Steps 4-8 remain pending and broad booleans are false."""
     invariants = inv["governance_invariants"]
     # 1. No invariant claims EVERY rollout step remains pending.
     assert not any(
@@ -294,15 +294,19 @@ def test_governance_invariants_distinguish_r1_and_r2_from_later_steps(inv: dict)
         "every rollout implementation step remains pending" in g.lower() for g in invariants
     )
 
-    # 2. Invariant accurately distinguishes R1 and R2 from Steps 3-8.
+    # 2. Invariant accurately distinguishes R1, R2, and R3 from Steps 4-8.
     r_invariant = next(
-        (g for g in invariants if "MVP-ARCH-001-R1" in g and "MVP-ARCH-001-R2" in g),
+        (
+            g
+            for g in invariants
+            if "MVP-ARCH-001-R1" in g and "MVP-ARCH-001-R2" in g and "MVP-ARCH-001-R3" in g
+        ),
         None,
     )
-    assert r_invariant is not None, "Missing R1/R2 governance invariant"
+    assert r_invariant is not None, "Missing R1/R2/R3 governance invariant"
     assert "design-only" in r_invariant.lower()
     assert "separately gary-approved" in r_invariant.lower()
-    assert re.search(r"steps 3[\u2013-]8 remain pending", r_invariant, re.IGNORECASE)
+    assert re.search(r"steps 4[\u2013-]8 remain pending", r_invariant, re.IGNORECASE)
     assert "does not authorize production trading changes" in r_invariant.lower()
 
     # 3. Markdown matches the JSON invariant.
@@ -312,11 +316,50 @@ def test_governance_invariants_distinguish_r1_and_r2_from_later_steps(inv: dict)
     )
     assert "MVP-ARCH-001-R1" in md_text
     assert "MVP-ARCH-001-R2" in md_text
+    assert "MVP-ARCH-001-R3" in md_text
 
     # 4. Broad authorization booleans remain false.
     auth = inv["authorization"]
     for key, value in auth.items():
         assert value is False, f"authorization.{key}={value}"
+
+
+def test_governance_invariants_do_not_contain_blanket_dashboard_prohibition(inv: dict) -> None:
+    """Governance invariants must qualify dashboard prohibitions to avoid contradicting R3."""
+    invariants = inv["governance_invariants"]
+    # 1. No invariant contains an unqualified blanket prohibition on dashboard changes.
+    for g in invariants:
+        if "dashboard changes" in g:
+            assert "beyond the separately approved r3 navigation scope" in g.lower(), g
+
+    # 2. Markdown matches JSON qualification.
+    md_text = MD_PATH.read_text(encoding="utf-8")
+    for match in re.finditer(r"dashboard changes?(.*?)(?:\.|\n)", md_text, re.IGNORECASE):
+        line = match.group(0).lower()
+        if "does not authorize" in line or "does not implement" in line:
+            assert "beyond the separately approved r3 navigation scope" in line, line
+
+    # 3. R3 is explicitly navigation-authorized while Steps 4-8 and trading remain unauthorized.
+    r3 = next(a for a in inv["rollout_approvals"] if a["task_id"] == "MVP-ARCH-001-R3")
+    assert r3["implementation_authorized"] is True
+    assert r3["navigation_changes_authorized"] is True
+    assert r3["research_lab_navigation_authorized"] is True
+    assert r3["settings_navigation_authorized"] is True
+    assert r3["production_trading_changes_authorized"] is False
+    assert r3["signal_logic_changes_authorized"] is False
+    assert r3["score_changes_authorized"] is False
+    assert r3["weight_changes_authorized"] is False
+    assert r3["threshold_changes_authorized"] is False
+    assert r3["alert_behavior_changes_authorized"] is False
+    assert r3["provider_changes_authorized"] is False
+    assert r3["provider_calls_authorized"] is False
+    assert r3["live_provider_calls_authorized"] is False
+    assert r3["database_migration_authorized"] is False
+    assert r3["candidate_persistence_authorized"] is False
+    assert r3["journal_replacement_authorized"] is False
+    assert r3["pit_capture_authorized"] is False
+    assert r3["strategy_promotion_authorized"] is False
+    assert r3["long_002c_work_authorized"] is False
 
 
 def test_target_navigation_has_five_areas(inv: dict) -> None:
@@ -439,11 +482,14 @@ def test_tracker_summary_and_remaining_work_are_consistent(tracker_text: str) ->
     assert "LONG-002A" not in remaining
     assert "LONG-002B" not in remaining
 
-    # The recommended work order says no implementation is authorized.
-    assert "no mvp-arch-001 implementation" in work_order.lower()
+    # The recommended work order states only bounded R3 navigation implementation is authorized.
+    assert "only the bounded mvp-arch-001-r3 navigation implementation" in work_order.lower()
     assert "LONG-002C" in work_order
     assert "DAYTRADE-001" in work_order
-    assert "no product or research implementation pr is currently authorized" in pr_order.lower()
+    assert (
+        "only the bounded mvp-arch-001-r3 navigation implementation pr is currently authorized"
+        in pr_order.lower()
+    )
     assert "long-002a-locked-research-contract" not in tracker_text.lower()
 
 
@@ -572,6 +618,33 @@ def test_claude_agrees_with_approved_json() -> None:
     )
 
 
+def test_setup_agrees_with_r3_navigation() -> None:
+    """SETUP.md must accurately reference R3 navigation locations."""
+    setup_path = REPO_ROOT / "SETUP.md"
+    assert setup_path.exists()
+    text = setup_path.read_text(encoding="utf-8")
+
+    # Watcher / Coil reference
+    assert "Research Lab → Coil Context" in text
+    assert "Signal Journal" in text
+
+    # Navigation cheat-sheet
+    assert "Research Lab" in text
+    assert "Settings" in text
+    assert "Alert Delivery" in text
+    assert "Legacy Weights" in text
+    assert "Pattern Similarity — Rejected" in text
+    assert "Options Activity — Exploratory" in text
+
+    # Ensure Coil Detector is not listed as an independent top-level tab in table
+    cheat_sheet_match = re.search(r"## 14\. Navigation cheat-sheet.*?(?=## 15|\Z)", text, re.DOTALL)
+    assert cheat_sheet_match is not None
+    table_text = cheat_sheet_match.group(0)
+    assert "| **Coil Detector** |" not in table_text
+    assert "| **Weights** |" not in table_text
+    assert "| **Alerts** |" not in table_text
+
+
 def test_tracker_mvp_arch_001_marked_completed(tracker_text: str) -> None:
     mvp = _section(tracker_text, "### MVP-ARCH-001:")
     assert "gary_approved" in mvp.lower()
@@ -589,9 +662,9 @@ def test_tracker_long_002c_authorized_but_paused(tracker_text: str) -> None:
 
 
 def test_rollout_approvals_record(inv: dict) -> None:
-    """The JSON records Gary's scoped approvals for MVP-ARCH-001-R1 and R2 without broad booleans."""
+    """The JSON records Gary's scoped approvals for MVP-ARCH-001-R1, R2, and R3 without broad booleans."""
     approvals = inv.get("rollout_approvals", [])
-    assert len(approvals) >= 2
+    assert len(approvals) >= 3
     r1 = next((a for a in approvals if a.get("task_id") == "MVP-ARCH-001-R1"), None)
     assert r1 is not None
     assert r1["rollout_order"] == 1
@@ -631,3 +704,30 @@ def test_rollout_approvals_record(inv: dict) -> None:
     assert r2["database_migration_authorized"] is False
     assert r2["strategy_promotion_authorized"] is False
     assert r2["long_002c_work_authorized"] is False
+
+    r3 = next((a for a in approvals if a.get("task_id") == "MVP-ARCH-001-R3"), None)
+    assert r3 is not None
+    assert r3["rollout_order"] == 3
+    assert r3["approval_status"] == "gary_approved"
+    assert r3["approved_by"] == "Gary Yang"
+    assert r3["approved_on"] == "2026-08-22"
+    assert r3["scope"] == "navigation consolidation only"
+    assert r3["implementation_authorized"] is True
+    assert r3["navigation_changes_authorized"] is True
+    assert r3["research_lab_navigation_authorized"] is True
+    assert r3["settings_navigation_authorized"] is True
+    assert r3["production_trading_changes_authorized"] is False
+    assert r3["signal_logic_changes_authorized"] is False
+    assert r3["score_changes_authorized"] is False
+    assert r3["weight_changes_authorized"] is False
+    assert r3["threshold_changes_authorized"] is False
+    assert r3["alert_behavior_changes_authorized"] is False
+    assert r3["provider_changes_authorized"] is False
+    assert r3["provider_calls_authorized"] is False
+    assert r3["live_provider_calls_authorized"] is False
+    assert r3["database_migration_authorized"] is False
+    assert r3["candidate_persistence_authorized"] is False
+    assert r3["journal_replacement_authorized"] is False
+    assert r3["pit_capture_authorized"] is False
+    assert r3["strategy_promotion_authorized"] is False
+    assert r3["long_002c_work_authorized"] is False

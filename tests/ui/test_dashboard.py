@@ -124,7 +124,7 @@ def test_dashboard_scan_passes_normalized_watchlist_to_record_scan(
     st.text_area.return_value = ""
     st.checkbox.return_value = False
     st.multiselect.return_value = []
-    st.tabs.return_value = [MagicMock() for _ in range(10)]
+    st.tabs.side_effect = lambda tabs: [MagicMock() for _ in tabs]
     st.progress.return_value = MagicMock()
 
     monkeypatch.setitem(sys.modules, "streamlit", st)
@@ -223,7 +223,7 @@ def dashboard_module(fresh_signal_db, tmp_path, monkeypatch):
     st.text_area.return_value = ""
     st.checkbox.return_value = False
     st.multiselect.return_value = []
-    st.tabs.return_value = [MagicMock() for _ in range(10)]
+    st.tabs.side_effect = lambda tabs: [MagicMock() for _ in tabs]
     st.progress.return_value = MagicMock()
 
     def _selectbox(label, options, *args, **kwargs):
@@ -292,7 +292,7 @@ def test_dashboard_provider_options_and_labels(monkeypatch, tmp_path):
     st.text_area.return_value = ""
     st.checkbox.return_value = False
     st.multiselect.return_value = []
-    st.tabs.return_value = [MagicMock() for _ in range(10)]
+    st.tabs.side_effect = lambda tabs: [MagicMock() for _ in tabs]
     st.progress.return_value = MagicMock()
     st.sidebar.selectbox.side_effect = fake_selectbox
     st.selectbox.side_effect = fake_selectbox
@@ -320,12 +320,9 @@ def test_dashboard_provider_options_and_labels(monkeypatch, tmp_path):
         patch("tradex.ui.tabs.scanner.render_scanner_tab"),
         patch("tradex.ui.tabs.premarket.render_premarket_tab") as mock_premarket,
         patch("tradex.ui.tabs.confluence.render_confluence_tab"),
-        patch("tradex.ui.tabs.coil_detector.render_coil_detector_tab"),
-        patch("tradex.ui.tabs.pattern_similarity.render_pattern_similarity_tab"),
-        patch("tradex.ui.tabs.options_activity.render_options_activity_tab"),
-        patch("tradex.ui.tabs.alerts.render_alerts_tab"),
         patch("tradex.ui.tabs.signal_journal.render_signal_journal_tab"),
-        patch("tradex.ui.tabs.weights.render_weights_tab"),
+        patch("tradex.ui.tabs.research_lab.render_research_lab_tab"),
+        patch("tradex.ui.tabs.settings.render_settings_tab"),
         patch("tradex.ui.tabs.help.render_help_tab"),
     ):
         sys.modules.pop("tradex.ui.dashboard", None)

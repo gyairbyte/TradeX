@@ -247,16 +247,44 @@ Gary Yang separately approved rollout step 2 on 2026-08-21 with narrow scope:
   - `strategy_promotion_authorized`: `False`
   - `long_002c_work_authorized`: `False`
 - **Subsequent steps (Steps 3–8):** Remain pending separate Gary approval.
+- **Status:** Implemented and merged in PR #58.
+
+### MVP-ARCH-001-R3 (Approved 2026-08-22)
+
+Gary Yang separately approved rollout step 3 on 2026-08-22 with narrow scope:
+- **Task ID:** `MVP-ARCH-001-R3`
+- **Scope:** Navigation consolidation only (Research Lab and Settings transitional grouping).
+- **Boundaries:**
+  - `implementation_authorized`: `True` (strictly bounded to navigation consolidation)
+  - `navigation_changes_authorized`: `True`
+  - `research_lab_navigation_authorized`: `True`
+  - `settings_navigation_authorized`: `True`
+  - `production_trading_changes_authorized`: `False`
+  - `signal_logic_changes_authorized`: `False`
+  - `score_changes_authorized`: `False`
+  - `weight_changes_authorized`: `False`
+  - `threshold_changes_authorized`: `False`
+  - `alert_behavior_changes_authorized`: `False`
+  - `provider_changes_authorized`: `False`
+  - `provider_calls_authorized`: `False`
+  - `live_provider_calls_authorized`: `False`
+  - `database_migration_authorized`: `False`
+  - `candidate_persistence_authorized`: `False`
+  - `journal_replacement_authorized`: `False`
+  - `pit_capture_authorized`: `False`
+  - `strategy_promotion_authorized`: `False`
+  - `long_002c_work_authorized`: `False`
+- **Subsequent steps (Steps 4–8):** Remain pending separate Gary approval.
 
 ## Governance invariants
 
 - Production promotion remains unauthorized.
-- MVP-ARCH-001 original architecture approval remains design-only; MVP-ARCH-001-R1 was separately Gary-approved and implemented for truthful UI/help labeling and evidence-state notices only; MVP-ARCH-001-R2 is separately Gary-approved on 2026-08-21 for provider lifecycle and configuration simplification only; rollout Steps 3–8 remain pending separate Gary approval; R2 does not authorize production trading changes, signal logic changes, score/weight/threshold changes, navigation changes, alert behavior changes, live provider calls, database migrations, strategy promotion, or LONG-002C work.
+- MVP-ARCH-001 original architecture approval remains design-only; MVP-ARCH-001-R1 was separately Gary-approved and implemented for truthful UI/help labeling and evidence-state notices only; MVP-ARCH-001-R2 was separately Gary-approved and implemented for provider lifecycle and configuration simplification only; MVP-ARCH-001-R3 is separately Gary-approved on 2026-08-22 for navigation consolidation only; rollout Steps 4–8 remain pending separate Gary approval; R3 does not authorize production trading changes, signal logic changes, score/weight/threshold changes, alert behavior changes, provider changes/calls, database migrations, candidate persistence, journal replacement, PIT capture, strategy promotion, or LONG-002C work.
 - Existing research artifacts and locked specifications are referenced, not modified.
 - LONG-002B-AMEND-002 is completed and merged; LONG-002C design is authorized by PR #52 but explicitly paused by Gary; MVP-ARCH-001 is a separate product-architecture workstream.
-- This packet does not authorize LONG-002C dataset construction, provider calls, dashboard changes, alert changes, database migrations, strategy promotion, or production behavior changes.
+- This packet does not authorize LONG-002C dataset construction, provider calls, dashboard changes beyond the separately approved R3 navigation scope, alert changes, database migrations, strategy promotion, or production behavior changes.
 - No existing strategy is relabeled production_approved.
 
 ---
 
-*This packet is a versioned product-architecture decision document. It does not implement any consolidation, provider change, dashboard change, alert change, database migration, or production behavior change.*
+*This packet is a versioned product-architecture decision document. It does not implement any consolidation, provider change, dashboard change beyond the separately approved R3 navigation scope, alert change, database migration, or production behavior change.*

@@ -18,6 +18,20 @@ def render_help_tab() -> None:
     # ── Quick start ───────────────────────────────────────────────────────────
     st.markdown("## Getting Started")
     st.markdown("""
+**Current navigation overview (transitional 7-surface structure):**
+- **Scanner** — evaluate additive technical indicators across your active watchlist.
+- **Confluence** — inspect multi-timeframe score alignment.
+- **Pre-Market** — pre-market gap scanner.
+- **Signal Journal** — view historical signal outcome telemetry.
+- **Research Lab** — exploratory, rejected, contextual, and archived tools:
+  - **Research Lab → Coil Context** (historical scan persistence)
+  - **Research Lab → Pattern Similarity — Rejected** (experimental shape matching)
+  - **Research Lab → Options Activity — Exploratory** (flow & chain snapshots)
+- **Settings** — operational controls & configuration:
+  - **Settings → Alert Delivery** (channel & cooldown configuration)
+  - **Settings → Legacy Weights** (unvalidated heuristic point controls)
+- **Help** — in-app documentation and evidence disclosures.
+
 **Recommended initial workflow:**
 
 1. **Scanner tab** → Run Scan to evaluate additive technical indicators across your watchlist.
@@ -27,7 +41,7 @@ def render_help_tab() -> None:
    cd /Users/gary.yang/tradex
    .venv/bin/python -m tradex.tracker.watcher --timeframe intraday --interval 5
    ```
-4. After several scan sessions → **Coil Detector** becomes useful as historical persistence data builds.
+4. After several scan sessions → **Research Lab → Coil Context** can summarize historical scan persistence.
 5. After signals resolve → **Signal Journal** displays descriptive outcome telemetry across historical signals.
     """)
 
@@ -38,7 +52,7 @@ def render_help_tab() -> None:
 
     with st.expander("Timeframe", expanded=False):
         st.markdown("""
-Controls which time window the Scanner and Coil Detector operate on.
+Controls which time window the Scanner and Coil Context operate on.
 
 | Option | Bars | Window | Focus |
 |---|---|---|---|
@@ -123,6 +137,8 @@ technical score (0–100) based on how many conditions are met simultaneously.
 
     with st.expander("What a coil is and how to use it", expanded=False):
         st.markdown("""
+**Location:** Navigated under **Research Lab → Coil Context**.
+
 The Coil Detector identifies stocks that have appeared across multiple scan sessions over several days
 while maintaining score stability without a large price breakout (≥3%).
 
@@ -182,6 +198,8 @@ and combines them into a weighted score with a fixed denominator.
 
     with st.expander("Fingerprinting and similarity scoring explained", expanded=False):
         st.markdown("""
+**Location:** Navigated under **Research Lab → Pattern Similarity — Rejected**.
+
 Pattern Match compares a stock's current 10-day price, volume, and indicator shape against an averaged
 historical profile leading up to large historical moves (run-ups or declines).
 
@@ -192,7 +210,7 @@ historical profile leading up to large historical moves (run-ups or declines).
 
 **Research status — Rejected on Holdout:**
 Under PATTERN-001, pattern similarity was evaluated across split datasets and formally rejected on holdout data.
-It has not demonstrated predictive value and is retained for experimental research only.
+It has not demonstrated predictive value and is retained for experimental research only in Research Lab.
 It is strictly excluded from production scoring, ranking, candidate eligibility, and automatic alerts.
         """)
 
@@ -230,6 +248,8 @@ reflecting overnight price adjustments before the regular market opens.
 
     with st.expander("Options basics and how to read flow", expanded=False):
         st.markdown("""
+**Location:** Navigated under **Research Lab → Options Activity — Exploratory**.
+
 Options activity surfaces derivatives turnover and positioning context.
 
 **Data sources:**
@@ -254,6 +274,8 @@ Aggregate call and put volume is a non-directional summary of activity. A high c
 
     with st.expander("Setting up Discord and email alerts", expanded=False):
         st.markdown("""
+**Location:** Navigated under **Settings → Alert Delivery**.
+
 Alerts provide delivery infrastructure when the background watcher is running and configured thresholds are met.
 
 **Discord setup:**
@@ -305,6 +327,20 @@ The Signal Journal tracks price outcomes at generic horizons following recorded 
 - **Legacy Expectancy Metric** — arithmetic calculation: `(win rate × avg win) + (loss rate × avg loss)`. This metric describes average fixed-horizon price change across legacy signals. It does not reflect executable trading performance because it does not model trade entry execution, stops, profit targets, expirations, invalidations, slippage, or transaction fees.
 
 **Evidence classification:** Legacy signal telemetry. Descriptive telemetry over generic horizons cannot establish mathematical edge or executable strategy performance.
+        """)
+
+    st.markdown("---")
+
+    # ── Legacy Weights ────────────────────────────────────────────────────────
+    st.markdown("## Legacy Weights")
+
+    with st.expander("Legacy scoring weights configuration", expanded=False):
+        st.markdown("""
+**Location:** Navigated under **Settings → Legacy Weights**.
+
+**Evidence classification:** Legacy heuristic controls — unvalidated.
+Weight adjustments alter the point contributions of individual technical conditions in legacy heuristic scores.
+User-tuned weights have not been validated through controlled research and risk post-hoc overfitting to past observations.
         """)
 
     st.markdown("---")

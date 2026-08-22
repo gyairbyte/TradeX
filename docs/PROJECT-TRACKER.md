@@ -425,7 +425,8 @@ This is the master backlog for TradeX engineering and research tasks, originatin
 - **Affects trading behavior:** No
 - **Authorization status:** `gary_approved` (design-only); `production_promotion_eligible`: `false`
 - **Rollout Step 1 (MVP-ARCH-001-R1):** Gary Yang approved rollout step 1 on 2026-08-21 for truthful UI/help labeling and evidence-state notices only (implemented in PR #57).
-- **Rollout Step 2 (MVP-ARCH-001-R2):** Gary Yang approved rollout step 2 on 2026-08-21 for provider lifecycle and configuration simplification only (Schwab primary/default, Alpaca/Yahoo explicit fallback, IBKR archived/manual, pre-market specialized Yahoo decoupling, fail-closed unknown earnings handling). Steps 3–8 remain pending separate Gary approval.
+- **Rollout Step 2 (MVP-ARCH-001-R2):** Gary Yang approved rollout step 2 on 2026-08-21 for provider lifecycle and configuration simplification only (implemented and merged in PR #58).
+- **Rollout Step 3 (MVP-ARCH-001-R3):** Gary Yang separately approved rollout step 3 on 2026-08-22 for navigation consolidation only (7-surface transitional structure: Scanner, Confluence, Pre-Market, Signal Journal, Research Lab [Coil Context, Pattern Similarity — Rejected, Options Activity — Exploratory], Settings [Alert Delivery, Legacy Weights], Help; global runtime/sidebar controls stay in sidebar; R4 alert gating is NOT authorized; Steps 4–8 remain pending separate Gary approval; production trading changes remain unauthorized).
 - `long_002b_amend_002_completed`: `true`
 - `long_002c_design_authorized_by_pr52`: `true`
 - `long_002c_currently_paused_by_gary`: `true`
@@ -848,19 +849,18 @@ This is the master backlog for TradeX engineering and research tasks, originatin
 | In progress | 1 |
 | Blocked | 0 |
 
-The original engineering-foundation and UI-refactor backlog is substantially complete. `SHORT-001` is closed as Completed — Not supported. `INTRA-001B` through `INTRA-001D` are complete and `INTRA-001` returned `inconclusive` without parsing the holdout; no further work on the `INTRA-001` hypothesis is authorized without a new Gary-approved plan. `LONG-002A` and `LONG-002B` are completed. `LONG-002B-AMEND-002` is completed and merged through PR #52. `LONG-002C` design/specification PR is authorized by PR #52 but its execution is explicitly paused by Gary. `MVP-ARCH-001` is now completed and Gary-approved as the design-only product-architecture direction; this approval does not authorize implementation, `LONG-002C` dataset construction, provider calls, dashboard changes, alert changes, database migrations, strategy promotion, or production behavior changes. Each consolidation rollout step and any resumption of `LONG-002C` work require separate Gary approval. `DAYTRADE-001` remains a future, deferred real-time day-trading program until Gary reprioritizes.
+The original engineering-foundation and UI-refactor backlog is substantially complete. `SHORT-001` is closed as Completed — Not supported. `INTRA-001B` through `INTRA-001D` are complete and `INTRA-001` returned `inconclusive` without parsing the holdout; no further work on the `INTRA-001` hypothesis is authorized without a new Gary-approved plan. `LONG-002A` and `LONG-002B` are completed. `LONG-002B-AMEND-002` is completed and merged through PR #52. `LONG-002C` design/specification PR is authorized by PR #52 but its execution is explicitly paused by Gary. `MVP-ARCH-001` is completed and Gary-approved as the design-only product-architecture direction; R1 and R2 are completed and merged; R3 is separately Gary-approved on 2026-08-22 for bounded navigation consolidation only; Steps 4–8 remain pending separate Gary approval; `LONG-002C` dataset construction, provider calls, alert changes, database migrations, strategy promotion, or production behavior changes remain unauthorized. `DAYTRADE-001` remains a future, deferred real-time day-trading program until Gary reprioritizes.
 
 **Remaining non-completed items:**
 1. **LONG-002C** — Design/specification PR authorized by PR #52 but paused by Gary; dataset construction and production promotion unauthorized.
 2. **DAYTRADE-001** — Future real-time day-trading decision-support program (deferred until after `LONG-002`).
 
 **Recommended next work order:**
-1. **No MVP-ARCH-001 implementation** is authorized by the design-only approval; each consolidation rollout step requires separate Gary approval.
+1. **Only the bounded MVP-ARCH-001-R3 navigation implementation** is currently authorized; Steps 4–8 and production trading changes remain unauthorized.
 2. **LONG-002C design work** — May resume only after a separate Gary/ChatGPT decision; no implementation, dataset construction, or production behavior change is authorized.
 3. **DAYTRADE-001** — Deferred until `LONG-002` is complete or Gary reprioritizes.
 
 **Recommended next pull request order:**
-1. **No product or research implementation PR is currently authorized.**
-2. The next substantive implementation or research PR requires a separate Gary/ChatGPT decision.
-3. Possible future decisions include a separately approved bounded `MVP-ARCH-001` rollout step or resumption of `LONG-002C` design; this `DOC-003` governance transition does not authorize either one.
-
+1. **Only the bounded MVP-ARCH-001-R3 navigation implementation PR is currently authorized.**
+2. No R4–R8 implementation or LONG-002C implementation is authorized without a separate Gary decision.
+3. R4 alert gating is NOT authorized.

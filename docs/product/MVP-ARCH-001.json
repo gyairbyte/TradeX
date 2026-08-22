@@ -230,14 +230,41 @@
       "database_migration_authorized": false,
       "strategy_promotion_authorized": false,
       "long_002c_work_authorized": false
+    },
+    {
+      "task_id": "MVP-ARCH-001-R3",
+      "rollout_order": 3,
+      "approval_status": "gary_approved",
+      "approved_by": "Gary Yang",
+      "approved_on": "2026-08-22",
+      "scope": "navigation consolidation only",
+      "implementation_authorized": true,
+      "navigation_changes_authorized": true,
+      "research_lab_navigation_authorized": true,
+      "settings_navigation_authorized": true,
+      "production_trading_changes_authorized": false,
+      "signal_logic_changes_authorized": false,
+      "score_changes_authorized": false,
+      "weight_changes_authorized": false,
+      "threshold_changes_authorized": false,
+      "alert_behavior_changes_authorized": false,
+      "provider_changes_authorized": false,
+      "provider_calls_authorized": false,
+      "live_provider_calls_authorized": false,
+      "database_migration_authorized": false,
+      "candidate_persistence_authorized": false,
+      "journal_replacement_authorized": false,
+      "pit_capture_authorized": false,
+      "strategy_promotion_authorized": false,
+      "long_002c_work_authorized": false
     }
   ],
   "governance_invariants": [
     "Production promotion remains unauthorized.",
-    "MVP-ARCH-001 original architecture approval remains design-only; MVP-ARCH-001-R1 was separately Gary-approved and implemented for truthful UI/help labeling and evidence-state notices only; MVP-ARCH-001-R2 is separately Gary-approved on 2026-08-21 for provider lifecycle and configuration simplification only; rollout Steps 3–8 remain pending separate Gary approval; R2 does not authorize production trading changes, signal logic changes, score/weight/threshold changes, navigation changes, alert behavior changes, live provider calls, database migrations, strategy promotion, or LONG-002C work.",
+    "MVP-ARCH-001 original architecture approval remains design-only; MVP-ARCH-001-R1 was separately Gary-approved and implemented for truthful UI/help labeling and evidence-state notices only; MVP-ARCH-001-R2 was separately Gary-approved and implemented for provider lifecycle and configuration simplification only; MVP-ARCH-001-R3 is separately Gary-approved on 2026-08-22 for navigation consolidation only; rollout Steps 4–8 remain pending separate Gary approval; R3 does not authorize production trading changes, signal logic changes, score/weight/threshold changes, alert behavior changes, provider changes/calls, database migrations, candidate persistence, journal replacement, PIT capture, strategy promotion, or LONG-002C work.",
     "Existing research artifacts and locked specifications are referenced, not modified.",
     "LONG-002B-AMEND-002 is completed and merged; LONG-002C design is authorized by PR #52 but explicitly paused by Gary; MVP-ARCH-001 is a separate product-architecture workstream.",
-    "This packet does not authorize LONG-002C dataset construction, provider calls, dashboard changes, alert changes, database migrations, strategy promotion, or production behavior changes.",
+    "This packet does not authorize LONG-002C dataset construction, provider calls, dashboard changes beyond the separately approved R3 navigation scope, alert changes, database migrations, strategy promotion, or production behavior changes.",
     "No existing strategy is relabeled production_approved."
   ],
   "journal_outcome_contract": {
