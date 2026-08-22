@@ -94,17 +94,19 @@ Scanner runs → results DataFrame
 | `docs/research/INTRA-001D-IMPLEMENTATION.md` | Implementation notes and CLI instructions for the locked real-data `INTRA-001D` study. |
 | `tradex/options/models.py` | Typed options source/capability and scan report models (`OptionsDataKind`, `OptionsSourceStatus`, `OptionsActivityReport`). |
 | `tradex/options/flow.py` | Capability-aware options source resolution, true-flow scanning, chain-snapshot scanning, and non-directional put/call balance. |
-| `tradex/ui/dashboard.py` | Streamlit dashboard router: Scanner, Coil Detector, Confluence, Pattern Similarity — Experimental Research, Pre-Market, Options Activity, Alerts, Signal Journal, Weights, Help |
-| `tradex/ui/tabs/alerts.py` | Alerts tab renderer (extracted from `dashboard.py` in UI-001 Phase 2). |
-| `tradex/ui/tabs/coil_detector.py` | Coil Detector tab renderer (extracted from `dashboard.py` in UI-001 Phase 3). |
+| `tradex/ui/dashboard.py` | Streamlit dashboard router (7 transitional surfaces: Scanner, Confluence, Pre-Market, Signal Journal, Research Lab, Settings, Help) |
+| `tradex/ui/tabs/alerts.py` | Alerts tab renderer (under Settings → Alert Delivery; extracted in UI-001 Phase 2). |
+| `tradex/ui/tabs/coil_detector.py` | Coil Detector tab renderer (under Research Lab → Coil Context; extracted in UI-001 Phase 3). |
 | `tradex/ui/tabs/confluence.py` | Confluence tab renderer (extracted from `dashboard.py` in UI-001 Phase 3). |
 | `tradex/ui/tabs/help.py` | Help tab renderer (extracted from `dashboard.py` in UI-001 Phase 2). |
-| `tradex/ui/tabs/options_activity.py` | Options Activity tab renderer (extracted from `dashboard.py` in UI-001 Phase 6). |
-| `tradex/ui/tabs/pattern_similarity.py` | Pattern Similarity — Experimental Research tab renderer (extracted from `dashboard.py` in UI-001 Phase 5). |
+| `tradex/ui/tabs/options_activity.py` | Options Activity tab renderer (under Research Lab → Options Activity; extracted in UI-001 Phase 6). |
+| `tradex/ui/tabs/pattern_similarity.py` | Pattern Similarity tab renderer (under Research Lab → Pattern Similarity; extracted in UI-001 Phase 5). |
 | `tradex/ui/tabs/premarket.py` | Pre-Market Gap Scanner tab renderer (extracted from `dashboard.py` in UI-001 Phase 6). |
+| `tradex/ui/tabs/research_lab.py` | Research Lab container tab renderer (MVP-ARCH-001-R3). |
 | `tradex/ui/tabs/scanner.py` | Signal Scanner tab renderer (extracted from `dashboard.py` in UI-001 Phase 4). |
+| `tradex/ui/tabs/settings.py` | Settings container tab renderer (MVP-ARCH-001-R3). |
 | `tradex/ui/tabs/signal_journal.py` | Signal Journal tab renderer (extracted from `dashboard.py` in UI-001 Phase 1). |
-| `tradex/ui/tabs/weights.py` | Scoring Weights tab renderer (extracted from `dashboard.py` in UI-001 Phase 1). |
+| `tradex/ui/tabs/weights.py` | Scoring Weights tab renderer (under Settings → Legacy Weights; extracted in UI-001 Phase 1). |
 | `docs/product/MVP-ARCH-001.md` | Human-readable TradeX provider/strategy/dashboard consolidation plan (summary of the authoritative JSON). |
 | `docs/product/MVP-ARCH-001.json` | Authoritative machine-readable MVP consolidation inventory and disposition. |
 | `tests/product/test_mvp_arch_001.py` | Deterministic invariants over the committed MVP-ARCH-001 JSON. |

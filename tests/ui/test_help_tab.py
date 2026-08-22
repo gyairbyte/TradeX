@@ -1,4 +1,4 @@
-"""Tests for the extracted Help tab."""
+"""Tests for the extracted Help tab (MVP-ARCH-001-R3)."""
 from __future__ import annotations
 
 import importlib
@@ -48,6 +48,7 @@ def test_render_headings_in_order(help_tab_module, fake_st):
         "## Options Flow",
         "## Alerts",
         "## Signal Journal",
+        "## Legacy Weights",
         "## Indicator Glossary",
         "## Running the Background Watcher",
     ]
@@ -60,6 +61,37 @@ def test_render_headings_in_order(help_tab_module, fake_st):
             rendered_headings.append(text.strip())
 
     assert rendered_headings == expected_headings
+
+
+def test_render_navigation_pointers_and_disclosures(help_tab_module, fake_st):
+    """Help directs users to new container locations and maintains truthful disclosures."""
+    help_tab_module.render_help_tab()
+
+    all_markdown = " ".join(str(call.args[0]) for call in fake_st.markdown.call_args_list if call.args)
+
+    # 1. Coil users pointed to Research Lab → Coil Context
+    assert "Research Lab → Coil Context" in all_markdown
+
+    # 2. Pattern users pointed to Research Lab → Pattern Similarity — Rejected
+    assert "Research Lab → Pattern Similarity — Rejected" in all_markdown
+    assert "rejected on holdout" in all_markdown.lower()
+    assert "pattern-001" in all_markdown.lower()
+
+    # 3. Options users pointed to Research Lab → Options Activity — Exploratory
+    assert "Research Lab → Options Activity — Exploratory" in all_markdown
+    assert "no approved executable tradex strategy" in all_markdown.lower()
+
+    # 4. Alerts pointed to Settings → Alert Delivery
+    assert "Settings → Alert Delivery" in all_markdown
+    assert "legacy heuristic" in all_markdown.lower() or "exploratory" in all_markdown.lower()
+
+    # 5. Legacy Weights pointed to Settings → Legacy Weights
+    assert "Settings → Legacy Weights" in all_markdown
+    assert "unvalidated" in all_markdown.lower()
+
+    # 6. Signal Journal remains legacy telemetry
+    assert "legacy signal telemetry" in all_markdown.lower()
+    assert "generic" in all_markdown.lower()
 
 
 def test_render_expanders_present(help_tab_module, fake_st):
@@ -76,6 +108,7 @@ def test_render_expanders_present(help_tab_module, fake_st):
         "Options basics and how to read flow",
         "Setting up Discord and email alerts",
         "Understanding your signal history and outcomes",
+        "Legacy scoring weights configuration",
         "RSI — Relative Strength Index",
         "MACD — Moving Average Convergence Divergence",
         "EMA — Exponential Moving Average",

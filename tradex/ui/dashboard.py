@@ -1,15 +1,12 @@
 """
-Streamlit dashboard — ten tabs:
-  1. Scanner                                     : run screener, view ranked results, drill-down chart
-  2. Coil Detector                               : stocks building pressure over multiple days (pre-signal)
-  3. Confluence                                  : stocks scoring well across multiple timeframes
-  4. Pattern Similarity — Experimental Research  : experimental shape comparison against historical run-up/decline fingerprints
-  5. Pre-Market                                  : gap scanner — identify gap-up/down candidates before open
-  6. Options Activity                            : true options flow and chain-snapshot activity
-  7. Alerts                                      : configure Discord/email alert thresholds
-  8. Signal Journal                              : historical signal outcomes (did the move happen?)
-  9. Weights                                     : tune signal component point values
-  10. Help                                       : in-app documentation
+Streamlit dashboard — transitional seven-surface navigation (MVP-ARCH-001-R3):
+  1. Scanner         : run screener, view ranked results, drill-down chart
+  2. Confluence      : stocks scoring well across multiple timeframes
+  3. Pre-Market      : gap scanner — identify gap-up/down candidates before open
+  4. Signal Journal  : historical signal outcomes (did the move happen?)
+  5. Research Lab    : exploratory, rejected, contextual, and archived tools (Coil Context, Pattern Similarity — Rejected, Options Activity — Exploratory)
+  6. Settings        : operational configuration and delivery (Alert Delivery, Legacy Weights)
+  7. Help            : in-app documentation
 
 Run with: streamlit run tradex/ui/dashboard.py
 """
@@ -32,17 +29,14 @@ from tradex.ui.source_defaults import (
 from tradex.ui.tabs.alerts import (
     _alert_policy_from_env,  # noqa: F401
     _effective_cooldowns,  # noqa: F401
-    render_alerts_tab,
 )
-from tradex.ui.tabs.coil_detector import render_coil_detector_tab
 from tradex.ui.tabs.confluence import render_confluence_tab
 from tradex.ui.tabs.help import render_help_tab
-from tradex.ui.tabs.options_activity import render_options_activity_tab
-from tradex.ui.tabs.pattern_similarity import render_pattern_similarity_tab
 from tradex.ui.tabs.premarket import render_premarket_tab
+from tradex.ui.tabs.research_lab import render_research_lab_tab
 from tradex.ui.tabs.scanner import render_scanner_tab
+from tradex.ui.tabs.settings import render_settings_tab
 from tradex.ui.tabs.signal_journal import render_signal_journal_tab
-from tradex.ui.tabs.weights import render_weights_tab
 from tradex.watchlists import DEFAULT_NAME as WL_DEFAULT_NAME
 from tradex.watchlists import presets as wl_presets
 from tradex.watchlists import store as wl_store
@@ -402,26 +396,20 @@ if __name__ == "__main__":
 
     (
         tab_scanner,
-        tab_coil,
         tab_confluence,
-        tab_pattern,
         tab_premarket,
-        tab_options,
-        tab_alerts,
         tab_journal,
-        tab_weights,
+        tab_research_lab,
+        tab_settings,
         tab_help,
     ) = st.tabs(
         [
             "Scanner",
-            "Coil Detector",
             "Confluence",
-            "Pattern Similarity — Experimental Research",
             "Pre-Market",
-            "Options Activity",
-            "Alerts",
             "Signal Journal",
-            "Weights",
+            "Research Lab",
+            "Settings",
             "Help",
         ]
     )
@@ -441,16 +429,7 @@ if __name__ == "__main__":
         )
 
     # ══════════════════════════════════════════════════════════════════════════════
-    # TAB 2 — COIL DETECTOR
-    # ══════════════════════════════════════════════════════════════════════════════
-    with tab_coil:
-        render_coil_detector_tab(
-            settings=settings,
-            timeframe=timeframe,
-        )
-
-    # ══════════════════════════════════════════════════════════════════════════════
-    # TAB 3 — CONFLUENCE
+    # TAB 2 — CONFLUENCE
     # ══════════════════════════════════════════════════════════════════════════════
     with tab_confluence:
         render_confluence_tab(
@@ -462,17 +441,7 @@ if __name__ == "__main__":
         )
 
     # ══════════════════════════════════════════════════════════════════════════════
-    # TAB 4 — PATTERN MATCH
-    # ══════════════════════════════════════════════════════════════════════════════
-    with tab_pattern:
-        render_pattern_similarity_tab(
-            settings=settings,
-            watchlist=watchlist,
-            provider=provider,
-        )
-
-    # ══════════════════════════════════════════════════════════════════════════════
-    # TAB 5 — PRE-MARKET GAP SCANNER
+    # TAB 3 — PRE-MARKET GAP SCANNER
     # ══════════════════════════════════════════════════════════════════════════════
     with tab_premarket:
         render_premarket_tab(
@@ -483,21 +452,7 @@ if __name__ == "__main__":
         )
 
     # ══════════════════════════════════════════════════════════════════════════════
-    # TAB 6 — OPTIONS ACTIVITY
-    # ══════════════════════════════════════════════════════════════════════════════
-    with tab_options:
-        render_options_activity_tab(
-            settings=settings,
-            watchlist=watchlist,
-            options_source=options_source,
-        )
-
-    # TAB 7 — ALERTS
-    # ══════════════════════════════════════════════════════════════════════════════
-    with tab_alerts:
-        render_alerts_tab(settings=settings)
-    # ══════════════════════════════════════════════════════════════════════════════
-    # TAB 8 — SIGNAL JOURNAL
+    # TAB 4 — SIGNAL JOURNAL
     # ══════════════════════════════════════════════════════════════════════════════
     with tab_journal:
         render_signal_journal_tab(
@@ -507,13 +462,27 @@ if __name__ == "__main__":
         )
 
     # ══════════════════════════════════════════════════════════════════════════════
-    # TAB 9 — WEIGHTS
+    # TAB 5 — RESEARCH LAB
     # ══════════════════════════════════════════════════════════════════════════════
-    with tab_weights:
-        render_weights_tab(settings=settings)
+    with tab_research_lab:
+        render_research_lab_tab(
+            settings=settings,
+            watchlist=watchlist,
+            timeframe=timeframe,
+            provider=provider,
+            options_source=options_source,
+        )
 
     # ══════════════════════════════════════════════════════════════════════════════
-    # TAB 10 — HELP
+    # TAB 6 — SETTINGS
+    # ══════════════════════════════════════════════════════════════════════════════
+    with tab_settings:
+        render_settings_tab(
+            settings=settings,
+        )
+
+    # ══════════════════════════════════════════════════════════════════════════════
+    # TAB 7 — HELP
     # ══════════════════════════════════════════════════════════════════════════════
     with tab_help:
         render_help_tab()

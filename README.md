@@ -56,17 +56,19 @@ tradex/
 │   │   └── store.py               # Isolated SQLite alert cooldown state
 │   ├── earnings/calendar.py       # Next-earnings lookup + 24h SQLite cache
 │   ├── watchlists/store.py        # Named watchlist persistence
-│   ├── ui/dashboard.py            # Streamlit dashboard router (10 tabs)
-│   ├── ui/tabs/alerts.py          # Alerts tab renderer
-│   ├── ui/tabs/coil_detector.py  # Coil Detector tab renderer
+│   ├── ui/dashboard.py            # Streamlit dashboard router (7 transitional surfaces)
+│   ├── ui/tabs/alerts.py          # Alerts tab renderer (under Settings → Alert Delivery)
+│   ├── ui/tabs/coil_detector.py  # Coil Detector tab renderer (under Research Lab → Coil Context)
 │   ├── ui/tabs/confluence.py      # Confluence tab renderer
 │   ├── ui/tabs/help.py            # Help tab renderer
-│   ├── ui/tabs/options_activity.py # Options Activity tab renderer
-│   ├── ui/tabs/pattern_similarity.py  # Pattern Similarity — Experimental Research tab renderer
+│   ├── ui/tabs/options_activity.py # Options Activity tab renderer (under Research Lab → Options Activity)
+│   ├── ui/tabs/pattern_similarity.py  # Pattern Similarity tab renderer (under Research Lab → Pattern Similarity)
 │   ├── ui/tabs/premarket.py       # Pre-Market Gap Scanner tab renderer
+│   ├── ui/tabs/research_lab.py    # Research Lab container tab renderer (MVP-ARCH-001-R3)
 │   ├── ui/tabs/scanner.py         # Signal Scanner tab renderer
+│   ├── ui/tabs/settings.py        # Settings container tab renderer (MVP-ARCH-001-R3)
 │   ├── ui/tabs/signal_journal.py  # Signal Journal tab renderer
-│   └── ui/tabs/weights.py         # Scoring Weights tab renderer
+│   └── ui/tabs/weights.py         # Scoring Weights tab renderer (under Settings → Legacy Weights)
 ├── docs/
 │   ├── PROJECT-TRACKER.md
 │   ├── AI-DEVELOPMENT-WORKFLOW.md
@@ -105,20 +107,19 @@ These conditions together suggest a stock that has been "coiling" and is ready f
 
 ---
 
-## Dashboard Tabs
+## Dashboard Navigation
 
-| Tab | What it does |
-|---|---|
-| **Scanner** | Score every ticker in the active watchlist, drill into candlestick + volume chart |
-| **Coil Detector** | Stocks that have scored well across multiple scans without breaking out yet |
-| **Confluence** | Stocks scoring well across intraday + short + long simultaneously; coverage (0/3–3/3) is now explicit |
-| **Pattern Similarity — Experimental Research** | Compare current 10-day windows against historical run-up/decline fingerprints. Not used in production scoring or automatic alerts. |
-| **Pre-Market** | Gap-up/down detection vs. previous close using pre-market quotes |
-| **Options Activity** | True options-flow events (Unusual Whales) and options-chain snapshots (Tradier/Yahoo), with non-directional put/call volume balance |
-| **Alerts** | Configure Discord/email push and view persistent cooldown state for coil, confluence, and gap alerts. Pattern matching is quarantined from automatic alerts. |
-| **Signal Journal** | Historical outcomes: did the move happen? Win rate by score bucket |
-| **Weights** | Tune per-signal point values for each timeframe; persisted across restarts |
-| **Help** | In-app documentation for every feature |
+Transitional seven-surface navigation structure (MVP-ARCH-001-R3):
+
+| Surface / Area | Child Tabs / Tools | What it does |
+|---|---|---|
+| **Scanner** | — | Score every ticker in the active watchlist, drill into candlestick + volume chart |
+| **Confluence** | — | Stocks scoring well across intraday + short + long simultaneously; coverage (0/3–3/3) is explicit |
+| **Pre-Market** | — | Gap-up/down detection vs. previous close using pre-market quotes (specialized Yahoo provider) |
+| **Signal Journal** | — | Historical signal telemetry: descriptive outcome tracking and win rate by score bucket |
+| **Research Lab** | **Coil Context**<br>**Pattern Similarity — Rejected**<br>**Options Activity — Exploratory** | Exploratory, rejected, and archived research tools quarantined from production decision support |
+| **Settings** | **Alert Delivery**<br>**Legacy Weights** | Operational controls: alert notification channels/cooldowns and unvalidated legacy heuristic weights |
+| **Help** | — | In-app documentation and evidence disclosures for every feature |
 
 ---
 
