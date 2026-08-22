@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines how Gary, ChatGPT, Devin, and Codex work together to develop TradeX.
+This document defines how Gary, ChatGPT, Antigravity, and Codex work together to develop TradeX.
 
 TradeX is a stock-market opportunity identification and trading-research application. It scans securities across intraday, short-term, and long-term timeframes and helps identify, monitor, and evaluate possible trading setups.
 
@@ -32,8 +32,8 @@ ChatGPT is the primary:
 * Research planner
 * UX strategist
 * Engineering manager
-* Devin task designer
-* Implementation reviewer
+* Implementation-task designer
+* Independent implementation reviewer
 
 ChatGPT is responsible for:
 
@@ -43,34 +43,37 @@ ChatGPT is responsible for:
 * Designing architecture and workflows.
 * Turning trading ideas into testable hypotheses.
 * Defining task scope, acceptance criteria, tests, and out-of-scope items.
-* Reviewing Devin’s implementation and evidence.
+* Reviewing Antigravity’s implementation and evidence independently.
 * Separating research findings from production changes.
 * Recommending the next action to Gary.
 
 ChatGPT should inspect the current repository when behavior may have changed rather than relying only on conversational memory.
 
-### Devin
+### Antigravity
 
-Devin is the primary builder.
+Antigravity is TradeX's default repository-level builder.
 
-Devin is responsible for:
+Antigravity is responsible for:
 
 * Inspecting the repository and confirming current behavior.
-* Identifying affected components, dependencies, risks, and edge cases.
-* Producing a concise implementation plan.
+* Identifying affected components, interfaces, dependencies, risks, and edge cases.
+* Reporting material conflicts rather than guessing.
+* Producing a concise implementation plan when required.
 * Implementing approved assignments.
-* Adding and updating tests.
+* Adding and updating tests where appropriate.
 * Running required tests and lint checks.
-* Updating documentation.
+* Self-reviewing the full diff against acceptance criteria.
+* Fixing discovered in-scope defects.
+* Updating documentation and project tracker.
 * Creating dedicated branches and focused pull requests.
-* Addressing review feedback.
+* Responding to review feedback.
 * Reporting limitations, deviations, and unresolved issues.
 
-Devin must not silently expand scope, reinterpret product requirements, change trading behavior, or replace an approved research methodology.
+Antigravity must not silently expand scope, reinterpret product requirements, change production trading logic, promote research logic into production, alter locked research methodology, or weaken tests to make them pass.
 
 ### Codex
 
-Codex is used only when a material technical disagreement between ChatGPT and Devin remains unresolved after reviewing:
+Codex is used only when a material technical disagreement between ChatGPT and Antigravity remains unresolved after reviewing:
 
 * Repository code
 * Tests
@@ -88,7 +91,18 @@ Codex may independently investigate:
 * Research-validity concerns
 * Whether acceptance criteria were actually met
 
-Codex should not normally duplicate Devin’s implementation.
+Codex should not normally duplicate Antigravity’s implementation.
+
+## Antigravity Workspace Conventions
+
+To ensure isolation, reproducibility, and cleanliness across assignments:
+
+* **Isolated worktrees**: Significant implementation work should normally use a new isolated worktree rather than sharing a dirty or in-progress workspace.
+* **One branch per assignment**: One bounded TradeX assignment corresponds to one branch and focused pull request.
+* **Branch prefix**: Future implementation branches should normally use the `antigravity/` prefix (e.g., `antigravity/doc-003-agent-governance-transition`).
+* **Task instructions and model selection**: ChatGPT may specify the appropriate model, reasoning/effort level, workspace mode, base commit, and execution instructions for each assignment. Model names and effort levels should not be permanently hardcoded into canonical repository governance because available Antigravity models and configurations evolve over time.
+* **Read-only investigations**: Read-only investigations or quick research lookups may use a local workspace when explicitly appropriate.
+* **Workspace boundaries**: An agent must not modify an unrelated primary checkout or another task's worktree.
 
 ## Approval and Merge Authority
 
@@ -201,9 +215,9 @@ Do not:
 
 Necessary supporting changes are allowed only when they are directly required for the assignment and are explained in the pull request.
 
-## Devin Assignment Requirements
+## Antigravity Assignment Requirements
 
-Every Devin assignment should include:
+Every Antigravity assignment should include:
 
 * Task ID and title
 * Objective
@@ -239,18 +253,18 @@ For assignments that require evaluating or selecting a data provider, the assign
 
 Provider investigations must be bounded in advance by named candidates, retry limits, expected calls/runtime, and a clear stop condition. Do not continue provider-hunting to optimize an already usable dataset without explicit approval.
 
-Before coding, Devin must:
+Before coding, Antigravity must:
 
 1. Read the relevant repository instructions.
 2. Inspect and verify current behavior.
 3. Report material discrepancies or concerns.
 4. Classify the task.
 5. Explain affected outputs.
-6. Provide a concise implementation plan.
+6. Provide a concise implementation plan when required.
 
 ## Handling Disagreements
 
-If Devin believes a requirement is technically incorrect, unsafe, incompatible with the repository, or likely to create invalid research, Devin must:
+If Antigravity believes a requirement is technically incorrect, unsafe, incompatible with the repository, or likely to create invalid research, Antigravity must:
 
 1. Identify the exact disputed requirement.
 2. Cite relevant files, functions, tests, documentation, or dependency behavior.
@@ -259,9 +273,9 @@ If Devin believes a requirement is technically incorrect, unsafe, incompatible w
 5. Recommend a specific alternative.
 6. State whether safe implementation can continue.
 
-Devin must not silently implement a different interpretation.
+Antigravity must not silently implement a different interpretation.
 
-Use Codex only when repository evidence does not resolve a material disagreement.
+Use Codex only when repository evidence does not resolve a material disagreement between ChatGPT and Antigravity.
 
 Gary remains the final product decision-maker.
 
@@ -406,7 +420,7 @@ List related work intentionally deferred.
 
 ## Required Completion Report
 
-Devin’s final report must include:
+Antigravity’s final report must include:
 
 * Summary
 * Branch and pull-request link
