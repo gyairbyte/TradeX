@@ -125,14 +125,14 @@ These conditions together suggest a stock that has been "coiling" and is ready f
 ## Quickstart
 
 ```bash
-# Install base dependencies (requires Python 3.11+)
+# Install base dependencies (includes Schwab runtime, requires Python 3.11+)
 pip install uv
 uv pip install -e .
 
 # Install optional provider extras
 uv pip install -e ".[alpaca]"   # Alpaca real-time
 uv pip install -e ".[ibkr]"     # Interactive Brokers
-uv pip install -e ".[schwab]"   # Charles Schwab
+uv pip install -e ".[schwab]"   # Charles Schwab (backward-compatible alias)
 uv pip install -e ".[all]"      # All providers
 
 # For development + all providers (used by CI)
@@ -487,10 +487,10 @@ uv run python -m tradex.research.long_002_data_feasibility.amendment_001 --repo-
 
 | Provider | `DATA_PROVIDER` value | Cost | Real-time | Setup |
 |---|---|---|---|---|
-| Yahoo Finance | `yahoo` (default) | Free | No (15-min delay) | None |
-| Alpaca | `alpaca` | Free tier | Yes (IEX feed) | API key at alpaca.markets |
-| Interactive Brokers | `ibkr` | Free (need IB account) | Yes | TWS/Gateway running locally |
-| Charles Schwab | `schwab` | Free (need Schwab account) | Yes | OAuth app at developer.schwab.com; see `scripts/schwab_oauth.py` |
+| Charles Schwab | `schwab` (primary/default) | Free (need Schwab account) | Yes | OAuth app at developer.schwab.com; see `scripts/schwab_oauth.py` |
+| Alpaca | `alpaca` | Free tier | Degraded intraday (IEX feed) | API key at alpaca.markets |
+| Yahoo Finance | `yahoo` | Free | No (15-min delay) | Research / daily-weekly fallback; specialized pre-market gap scanner source |
+| Interactive Brokers | `ibkr` | Free (need IB account) | Yes (Archived / manual) | TWS/Gateway running locally |
 
 Optional retry/fallback configuration (all disabled by default):
 

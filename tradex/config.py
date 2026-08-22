@@ -7,6 +7,7 @@ at function-call time for backward compatibility.
 
 Importing this module does not read any environment state.
 """
+
 from __future__ import annotations
 
 import os
@@ -14,7 +15,10 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from tradex.alerts.models import AlertCooldownConfig
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -25,6 +29,9 @@ SUPPORTED_OPTIONS_SOURCES = ("auto", "unusual_whales", "tradier", "yahoo")
 SUPPORTED_CHAIN_SOURCES = ("auto", "tradier", "yahoo")
 SUPPORTED_EARNINGS_SOURCES = ("yahoo",)
 SUPPORTED_MARKET_CAP_SOURCES = ("yahoo", "schwab")
+
+DEFAULT_OHLCV_PROVIDER = "schwab"
+DEFAULT_PROVIDER = DEFAULT_OHLCV_PROVIDER
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -196,7 +203,7 @@ def _secret_field(default: Any = None) -> Any:
 # ═══════════════════════════════════════════════════════════════════════════════
 @dataclass(frozen=True)
 class DataProviderSettings:
-    data_provider: str = "yahoo"
+    data_provider: str = DEFAULT_OHLCV_PROVIDER
     ohlcv_max_retries: int = 0
     ohlcv_fallback_order: tuple[str, ...] = ()
     alpaca_api_key: str | None = _secret_field(None)
@@ -216,7 +223,10 @@ class DataProviderSettings:
             self,
             "data_provider",
             _parse_provider(
-                self.data_provider, "yahoo", SUPPORTED_OHLCV_PROVIDERS, "DATA_PROVIDER"
+                self.data_provider,
+                DEFAULT_OHLCV_PROVIDER,
+                SUPPORTED_OHLCV_PROVIDERS,
+                "DATA_PROVIDER",
             ),
         )
         object.__setattr__(
@@ -240,9 +250,19 @@ class DataProviderSettings:
             "ibkr_client_id",
             _parse_int(self.ibkr_client_id, 1, "IBKR_CLIENT_ID", min_value=0),
         )
-        object.__setattr__(self, "schwab_token_path", _parse_path(self.schwab_token_path, Path("~/.tradex_schwab_token.json"), "SCHWAB_TOKEN_PATH"))
-        object.__setattr__(self, "schwab_smoke_symbol", _strip_text(self.schwab_smoke_symbol) or "SPY")
-        object.__setattr__(self, "alpha_vantage_api_key", _strip_text(self.alpha_vantage_api_key) or None)
+        object.__setattr__(
+            self,
+            "schwab_token_path",
+            _parse_path(
+                self.schwab_token_path, Path("~/.tradex_schwab_token.json"), "SCHWAB_TOKEN_PATH"
+            ),
+        )
+        object.__setattr__(
+            self, "schwab_smoke_symbol", _strip_text(self.schwab_smoke_symbol) or "SPY"
+        )
+        object.__setattr__(
+            self, "alpha_vantage_api_key", _strip_text(self.alpha_vantage_api_key) or None
+        )
         object.__setattr__(self, "massive_api_key", _strip_text(self.massive_api_key) or None)
 
 
@@ -277,7 +297,9 @@ class AlertChannelSettings:
     email_pass: str | None = _secret_field(None)
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "email_port", _parse_port(self.email_port, 587, "ALERT_EMAIL_PORT"))
+        object.__setattr__(
+            self, "email_port", _parse_port(self.email_port, 587, "ALERT_EMAIL_PORT")
+        )
 
 
 @dataclass(frozen=True)
@@ -288,17 +310,23 @@ class AlertThresholdSettings:
 
     def __post_init__(self) -> None:
         object.__setattr__(
-            self, "coil", _parse_int(self.coil, 60, "ALERT_COIL_THRESHOLD", min_value=0, max_value=100)
+            self,
+            "coil",
+            _parse_int(self.coil, 60, "ALERT_COIL_THRESHOLD", min_value=0, max_value=100),
         )
         object.__setattr__(
             self,
             "pattern",
-            _parse_float(self.pattern, 75.0, "ALERT_PATTERN_THRESHOLD", min_value=0.0, max_value=100.0),
+            _parse_float(
+                self.pattern, 75.0, "ALERT_PATTERN_THRESHOLD", min_value=0.0, max_value=100.0
+            ),
         )
         object.__setattr__(
             self,
             "confluence",
-            _parse_int(self.confluence, 70, "ALERT_CONFLUENCE_THRESHOLD", min_value=0, max_value=100),
+            _parse_int(
+                self.confluence, 70, "ALERT_CONFLUENCE_THRESHOLD", min_value=0, max_value=100
+            ),
         )
 
 
@@ -311,15 +339,42 @@ class PathSettings:
     weights: Path = field(default_factory=lambda: Path("~/.tradex/weights.json"))
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "signals_db", _parse_path(self.signals_db, Path("~/.tradex/signals.db"), "TRADEX_DB_PATH"))
-        object.__setattr__(self, "fingerprint_db", _parse_path(self.fingerprint_db, Path("~/.tradex/fingerprints.db"), "TRADEX_FP_DB"))
-        object.__setattr__(self, "watchlists_db", _parse_path(self.watchlists_db, Path("~/.tradex/watchlists.db"), "TRADEX_WATCHLISTS_DB_PATH"))
-        object.__setattr__(self, "earnings_cache_db", _parse_path(self.earnings_cache_db, Path("~/.tradex/earnings_cache.db"), "TRADEX_EARNINGS_CACHE_PATH"))
-        object.__setattr__(self, "weights", _parse_path(self.weights, Path("~/.tradex/weights.json"), "TRADEX_WEIGHTS_PATH"))
+        object.__setattr__(
+            self,
+            "signals_db",
+            _parse_path(self.signals_db, Path("~/.tradex/signals.db"), "TRADEX_DB_PATH"),
+        )
+        object.__setattr__(
+            self,
+            "fingerprint_db",
+            _parse_path(self.fingerprint_db, Path("~/.tradex/fingerprints.db"), "TRADEX_FP_DB"),
+        )
+        object.__setattr__(
+            self,
+            "watchlists_db",
+            _parse_path(
+                self.watchlists_db, Path("~/.tradex/watchlists.db"), "TRADEX_WATCHLISTS_DB_PATH"
+            ),
+        )
+        object.__setattr__(
+            self,
+            "earnings_cache_db",
+            _parse_path(
+                self.earnings_cache_db,
+                Path("~/.tradex/earnings_cache.db"),
+                "TRADEX_EARNINGS_CACHE_PATH",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "weights",
+            _parse_path(self.weights, Path("~/.tradex/weights.json"), "TRADEX_WEIGHTS_PATH"),
+        )
 
 
 def _default_cooldown():
     from tradex.alerts.models import AlertCooldownConfig
+
     return AlertCooldownConfig.from_mapping({})
 
 
@@ -339,7 +394,10 @@ class TradeXSettings:
             self,
             "earnings_data_source",
             _parse_provider(
-                self.earnings_data_source, "yahoo", SUPPORTED_EARNINGS_SOURCES, "EARNINGS_DATA_SOURCE"
+                self.earnings_data_source,
+                "yahoo",
+                SUPPORTED_EARNINGS_SOURCES,
+                "EARNINGS_DATA_SOURCE",
             ),
         )
         object.__setattr__(
@@ -394,7 +452,7 @@ def settings_from_mapping(values: Mapping[str, str]) -> TradeXSettings:
     v: dict[str, Any] = dict(values)
 
     data = DataProviderSettings(
-        data_provider=v.get("DATA_PROVIDER", "yahoo"),
+        data_provider=v.get("DATA_PROVIDER", DEFAULT_OHLCV_PROVIDER),
         ohlcv_max_retries=v.get("OHLCV_MAX_RETRIES", "0"),
         ohlcv_fallback_order=v.get("OHLCV_FALLBACK_ORDER", ""),
         alpaca_api_key=v.get("ALPACA_API_KEY") or None,
@@ -434,6 +492,7 @@ def settings_from_mapping(values: Mapping[str, str]) -> TradeXSettings:
     )
 
     from tradex.alerts.models import AlertCooldownConfig
+
     cooldown = AlertCooldownConfig.from_mapping(v)
 
     paths = PathSettings(

@@ -51,7 +51,7 @@ python -m venv .venv
 ```
 
 ### Optional provider extras
-Default `yahoo` provider needs nothing extra. For the full test suite and every provider used in CI, install the `all` extra together with `dev`:
+The base installation includes `schwab-py>=1.4.0` for Schwab market data. For the full test suite and every provider used in CI, install the `all` extra together with `dev`:
 ```bash
 uv sync --extra dev --extra all
 ```
@@ -60,7 +60,7 @@ To add only specific providers after a base `uv sync`:
 ```bash
 uv pip install -e ".[alpaca]"   # Alpaca real-time (free tier)
 uv pip install -e ".[ibkr]"     # Interactive Brokers (requires local TWS/Gateway)
-uv pip install -e ".[schwab]"   # Charles Schwab (requires OAuth app)
+uv pip install -e ".[schwab]"   # Charles Schwab (backward-compatible alias)
 uv pip install -e ".[all]"      # Everything
 ```
 
@@ -73,7 +73,7 @@ cp .env.example .env      # macOS / Linux
 copy .env.example .env    # Windows
 ```
 
-`.env` is gitignored — credentials never leave the machine. Open `.env` and fill in only what the user needs. **Do not invent values.** If the user hasn't said which provider they want, default to `DATA_PROVIDER=yahoo` (no credentials required) and ask about the others.
+`.env` is gitignored — credentials never leave the machine. Open `.env` and fill in only what the user needs. **Do not invent values.** If the user hasn't said which provider they want, default to `DATA_PROVIDER=schwab` (or `DATA_PROVIDER=yahoo` if they prefer a zero-setup fallback).
 
 `DATA_PROVIDER` controls **OHLCV data** only. Options activity, earnings, and market-cap ranking have their own source overrides (see `.env.example`).
 
@@ -86,7 +86,7 @@ Signal history records the OHLCV provider that produced each signal (`signal_his
 Key variables:
 | Variable | Required? | Notes |
 |---|---|---|
-| `DATA_PROVIDER` | Yes | OHLCV provider: `yahoo`, `alpaca`, `ibkr`, `schwab`. Default `yahoo`. |
+| `DATA_PROVIDER` | Yes | OHLCV provider: `schwab` (primary/default), `alpaca` (degraded intraday), `yahoo` (research/fallback/premarket), `ibkr` (archived/manual). Default `schwab`. |
 | `OHLCV_MAX_RETRIES` | No | Extra retry attempts per ticker for transient failures only. Default `0`, max `3`. |
 | `OHLCV_FALLBACK_ORDER` | No | Comma-separated whole-scan fallback provider chain (e.g. `schwab,yahoo`). Empty/missing = disabled. |
 | `OPTIONS_DATA_SOURCE` | No | `auto` (default), `unusual_whales`, `tradier`, `yahoo`. `unusual_whales` gives true flow; `tradier`/`yahoo` give chain snapshots. |
@@ -458,7 +458,7 @@ The candidate policies are `off` (baseline), `market_rs`, and `market_sector_rs`
 2. **The launcher needs `~/.tradex/config`** (or `$TRADEX_HOME`) when run from outside the repo (e.g. from `/Applications`). If you see "Could not locate the TradeX project directory," go back to step 3.
 3. **The `.venv` must live at `<repo>/.venv`** — the launchers won't find it anywhere else. If you already have a venv at a different path, recreate it at `.venv`.
 4. **Port 8501 must be free** for the dashboard. The launchers reuse an existing server if 8501 is already listening, so double-clicking twice is safe — but if a *different* process holds 8501, change Streamlit's port: `streamlit run ... --server.port=8502`.
-5. **yfinance rate-limits** — large watchlists (100+ tickers) on the default Yahoo provider may hit transient failures. The screener logs the failure category and continues. You can set `OHLCV_MAX_RETRIES` (max 3) for automatic retry of transient network errors, and `OHLCV_FALLBACK_ORDER` to enable a whole-scan fallback chain.
+5. **yfinance rate-limits** — large watchlists (100+ tickers) on the Yahoo fallback provider may hit transient failures. The screener logs the failure category and continues. You can set `OHLCV_MAX_RETRIES` (max 3) for automatic retry of transient network errors, and `OHLCV_FALLBACK_ORDER` to enable a whole-scan fallback chain.
 6. **TD Ameritrade is dead** — its API shut down September 2024. Use `DATA_PROVIDER=schwab` (their replacement) instead. Do not reference the old `tda-api` library.
 7. **Schwab token path** — keep `SCHWAB_TOKEN_PATH` outside the repo; `scripts/schwab_oauth.py` enforces this and sets restrictive file permissions. Validate with `scripts/schwab_smoke_test.py` after OAuth.
 8. **Earnings filter caches for 24h** in `~/.tradex/earnings_cache.db`. If a user just announced earnings and the date isn't showing, delete that file to force a refresh.
@@ -490,7 +490,7 @@ Once the dashboard is running at `http://localhost:8501`:
 
 Before reporting success to the user, the agent should verify:
 - [ ] `.venv/` exists and contains `streamlit`
-- [ ] `.env` exists (even if mostly empty — at minimum `DATA_PROVIDER=yahoo`)
+- [ ] `.env` exists (even if mostly empty — at minimum `DATA_PROVIDER=schwab` or `DATA_PROVIDER=yahoo`)
 - [ ] `~/.tradex/config` exists and `TRADEX_HOME` resolves to a directory containing `pyproject.toml`
 - [ ] `streamlit run tradex/ui/dashboard.py` (via the venv) starts a server on port 8501 without crashing in the first 10 seconds
 - [ ] On macOS: `launchers/macos/TradeX.app/Contents/MacOS/tradex-launcher` is executable (`-rwxr-xr-x`)

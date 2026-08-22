@@ -1,4 +1,5 @@
 """Help Streamlit tab renderer."""
+
 from __future__ import annotations
 
 import streamlit as st
@@ -374,7 +375,8 @@ Used internally to normalize volatility across instruments.
 
     st.markdown("---")
     st.markdown("## Running the Background Watcher")
-    st.code("""# Run in a terminal during market hours (9:30am–4pm ET)
+    st.code(
+        """# Run in a terminal during market hours (9:30am–4pm ET)
 cd /Users/gary.yang/tradex
 .venv/bin/python -m tradex.tracker.watcher --timeframe intraday --interval 5
 
@@ -382,7 +384,9 @@ cd /Users/gary.yang/tradex
 # --timeframe   intraday | short | long
 # --interval    poll interval in minutes (0 = run once and exit)
 # --min-score   minimum score to record (default: 35)
-# --provider    yahoo | alpaca | ibkr | schwab (default: yahoo)""", language="bash")
+# --provider    schwab | alpaca | yahoo | ibkr (default: schwab)""",
+        language="bash",
+    )
 
     st.markdown("""
 The background watcher:

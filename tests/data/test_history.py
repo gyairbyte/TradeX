@@ -1,4 +1,5 @@
 """Tests for the date-ranged daily-history abstraction."""
+
 from datetime import date
 from unittest.mock import Mock, patch
 
@@ -12,13 +13,16 @@ from tradex.data.fetcher import ProviderCapabilityError
 def _make_yahoo_ohlcv(values, start: str = "2024-01-02", ticker: str = "AAPL") -> pd.DataFrame:
     """Return a yfinance-style DataFrame with full OHLCV columns."""
     dates = pd.date_range(start, periods=len(values), freq="B")
-    return pd.DataFrame({
-        "Open": values,
-        "High": [v + 1.0 for v in values],
-        "Low": [v - 1.0 for v in values],
-        "Close": values,
-        "Volume": [1000] * len(values),
-    }, index=dates)
+    return pd.DataFrame(
+        {
+            "Open": values,
+            "High": [v + 1.0 for v in values],
+            "Low": [v - 1.0 for v in values],
+            "Close": values,
+            "Volume": [1000] * len(values),
+        },
+        index=dates,
+    )
 
 
 def _make_multiindex_yahoo(values, ticker: str = "AAPL") -> pd.DataFrame:
@@ -55,7 +59,9 @@ def test_fetch_daily_history_yahoo_normalization():
     df_in = _make_yahoo_ohlcv(values)
 
     with patch.object(history.yf, "download", return_value=df_in) as mock_download:
-        df = history.fetch_daily_history("AAPL", date(2024, 1, 2), date(2024, 1, 4))
+        df = history.fetch_daily_history(
+            "AAPL", date(2024, 1, 2), date(2024, 1, 4), provider="yahoo"
+        )
 
     assert list(df.columns) == ["open", "high", "low", "close", "volume"]
     assert list(df.index) == list(df_in.index)
@@ -73,7 +79,9 @@ def test_fetch_daily_history_multiindex_columns():
     df_in = _make_multiindex_yahoo([100.0, 101.0, 102.0])
 
     with patch.object(history.yf, "download", return_value=df_in):
-        df = history.fetch_daily_history("AAPL", date(2024, 1, 2), date(2024, 1, 4))
+        df = history.fetch_daily_history(
+            "AAPL", date(2024, 1, 2), date(2024, 1, 4), provider="yahoo"
+        )
 
     assert list(df.columns) == ["open", "high", "low", "close", "volume"]
     assert df["close"].tolist() == [100.0, 101.0, 102.0]
@@ -81,7 +89,9 @@ def test_fetch_daily_history_multiindex_columns():
 
 def test_fetch_daily_history_empty_data():
     with patch.object(history.yf, "download", return_value=pd.DataFrame()):
-        df = history.fetch_daily_history("AAPL", date(2024, 1, 2), date(2024, 1, 4))
+        df = history.fetch_daily_history(
+            "AAPL", date(2024, 1, 2), date(2024, 1, 4), provider="yahoo"
+        )
 
     assert df.empty
     assert list(df.columns) == ["open", "high", "low", "close", "volume"]
@@ -90,22 +100,34 @@ def test_fetch_daily_history_empty_data():
 
 def test_fetch_daily_history_missing_fields():
     # Only close provided; the abstraction fills missing columns and preserves the row.
-    df_in = pd.DataFrame({"Close": [100.0, 101.0]}, index=pd.date_range("2024-01-02", periods=2, freq="B"))
+    df_in = pd.DataFrame(
+        {"Close": [100.0, 101.0]}, index=pd.date_range("2024-01-02", periods=2, freq="B")
+    )
     with patch.object(history.yf, "download", return_value=df_in):
-        df = history.fetch_daily_history("AAPL", date(2024, 1, 2), date(2024, 1, 3))
+        df = history.fetch_daily_history(
+            "AAPL", date(2024, 1, 2), date(2024, 1, 3), provider="yahoo"
+        )
     assert df["close"].tolist() == [100.0, 101.0]
 
 
 def test_fetch_daily_history_sorts_and_deduplicates():
     dates = ["2024-01-04", "2024-01-02", "2024-01-03", "2024-01-03"]
     values = [103.0, 101.0, 102.0, 999.0]
-    df_in = pd.DataFrame({
-        "Open": values, "High": [v + 1 for v in values], "Low": [v - 1 for v in values],
-        "Close": values, "Volume": [1000] * 4,
-    }, index=pd.to_datetime(dates))
+    df_in = pd.DataFrame(
+        {
+            "Open": values,
+            "High": [v + 1 for v in values],
+            "Low": [v - 1 for v in values],
+            "Close": values,
+            "Volume": [1000] * 4,
+        },
+        index=pd.to_datetime(dates),
+    )
 
     with patch.object(history.yf, "download", return_value=df_in):
-        df = history.fetch_daily_history("AAPL", date(2024, 1, 2), date(2024, 1, 4))
+        df = history.fetch_daily_history(
+            "AAPL", date(2024, 1, 2), date(2024, 1, 4), provider="yahoo"
+        )
 
     # Duplicates keep the last occurrence, then rows are sorted oldest-to-newest.
     assert df["close"].tolist() == [101.0, 999.0, 103.0]
@@ -115,7 +137,9 @@ def test_fetch_daily_history_sorts_and_deduplicates():
 def test_fetch_daily_history_unsupported_providers_raise():
     for provider in ("alpaca", "ibkr"):
         with pytest.raises(ProviderCapabilityError):
-            history.fetch_daily_history("AAPL", date(2024, 1, 1), date(2024, 1, 5), provider=provider)
+            history.fetch_daily_history(
+                "AAPL", date(2024, 1, 1), date(2024, 1, 5), provider=provider
+            )
 
 
 def test_fetch_daily_history_schwab_path():
@@ -124,16 +148,34 @@ def test_fetch_daily_history_schwab_path():
     fake_client.get_price_history_every_day.return_value = Mock(
         status_code=200,
         raise_for_status=Mock(),
-        json=Mock(return_value={
-            "candles": [
-                {"datetime": 1704153600000, "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5, "volume": 1000},
-                {"datetime": 1704240000000, "open": 101.0, "high": 102.0, "low": 100.0, "close": 101.5, "volume": 1100},
-            ]
-        }),
+        json=Mock(
+            return_value={
+                "candles": [
+                    {
+                        "datetime": 1704153600000,
+                        "open": 100.0,
+                        "high": 101.0,
+                        "low": 99.0,
+                        "close": 100.5,
+                        "volume": 1000,
+                    },
+                    {
+                        "datetime": 1704240000000,
+                        "open": 101.0,
+                        "high": 102.0,
+                        "low": 100.0,
+                        "close": 101.5,
+                        "volume": 1100,
+                    },
+                ]
+            }
+        ),
     )
 
     with patch("tradex.data.history._get_schwab_client", return_value=fake_client):
-        df = history.fetch_daily_history("AAPL", date(2024, 1, 2), date(2024, 1, 3), provider="schwab")
+        df = history.fetch_daily_history(
+            "AAPL", date(2024, 1, 2), date(2024, 1, 3), provider="schwab"
+        )
 
     assert len(df) == 2
     assert df["close"].tolist() == [100.5, 101.5]
@@ -149,16 +191,34 @@ def test_fetch_daily_history_schwab_retains_session_with_missing_close():
     fake_client.get_price_history_every_day.return_value = Mock(
         status_code=200,
         raise_for_status=Mock(),
-        json=Mock(return_value={
-            "candles": [
-                {"datetime": 1704153600000, "open": 100.0, "high": 101.0, "low": 99.0, "close": None, "volume": 1000},
-                {"datetime": 1704240000000, "open": 101.0, "high": 102.0, "low": 100.0, "close": 102.0, "volume": 1100},
-            ]
-        }),
+        json=Mock(
+            return_value={
+                "candles": [
+                    {
+                        "datetime": 1704153600000,
+                        "open": 100.0,
+                        "high": 101.0,
+                        "low": 99.0,
+                        "close": None,
+                        "volume": 1000,
+                    },
+                    {
+                        "datetime": 1704240000000,
+                        "open": 101.0,
+                        "high": 102.0,
+                        "low": 100.0,
+                        "close": 102.0,
+                        "volume": 1100,
+                    },
+                ]
+            }
+        ),
     )
 
     with patch("tradex.data.history._get_schwab_client", return_value=fake_client):
-        df = history.fetch_daily_history("AAPL", date(2024, 1, 2), date(2024, 1, 3), provider="schwab")
+        df = history.fetch_daily_history(
+            "AAPL", date(2024, 1, 2), date(2024, 1, 3), provider="schwab"
+        )
 
     assert len(df) == 2
     assert pd.isna(df["close"].iloc[0])

@@ -1,4 +1,5 @@
 """Signal Scanner Streamlit tab renderer."""
+
 from __future__ import annotations
 
 import plotly.graph_objects as go
@@ -54,15 +55,21 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
 - 80–100: Most conditions aligned simultaneously (legacy heuristic discovery only)
         """)
 
-    run_scan = st.button("Run Scan", type="primary", key="btn_scan",
-                         help="Fetch live data for all watchlist tickers and score each one.")
+    run_scan = st.button(
+        "Run Scan",
+        type="primary",
+        key="btn_scan",
+        help="Fetch live data for all watchlist tickers and score each one.",
+    )
 
     if run_scan:
         progress_bar = st.progress(0.0, text=f"Scanning {len(watchlist)} tickers on {timeframe}…")
-        scan_provider = resolve_provider(provider)
-        scan_policy = FetchPolicy.build()
+        scan_provider = resolve_provider(provider, settings=settings)
+        scan_policy = FetchPolicy.build(settings=settings)
 
-        retry_label = f"{scan_policy.max_retries} retry" + ("" if scan_policy.max_retries == 1 else "ies")
+        retry_label = f"{scan_policy.max_retries} retry" + (
+            "" if scan_policy.max_retries == 1 else "ies"
+        )
         if scan_policy.fallback_order:
             fb_label = "Fallback: " + " → ".join(scan_policy.fallback_order)
         else:
@@ -70,7 +77,9 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
         st.caption(f"Retries: {retry_label} | {fb_label}")
 
         def _update_progress(done: int, total: int) -> None:
-            progress_bar.progress(done / total, text=f"Scanning {done}/{total} tickers on {timeframe}…")
+            progress_bar.progress(
+                done / total, text=f"Scanning {done}/{total} tickers on {timeframe}…"
+            )
 
         report = run_with_report(
             watchlist,
@@ -92,9 +101,7 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
         has_earnings_failures = bool(report.earnings_failures)
         all_earnings_excluded = report.total_earnings_excluded == len(watchlist)
         all_fetch_eligible_failed = (
-            report.total_fetch_eligible > 0
-            and report.total_fetched == 0
-            and has_fetch_failures
+            report.total_fetch_eligible > 0 and report.total_fetched == 0 and has_fetch_failures
         )
 
         if report.fallback_used:
@@ -138,25 +145,35 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
                 )
             else:
                 if earnings_buffer > 0:
-                    st.success(f"Found {len(results)} matching results (excluded tickers with earnings within {earnings_buffer}d)")
+                    st.success(
+                        f"Found {len(results)} matching results (excluded tickers with earnings within {earnings_buffer}d)"
+                    )
                 else:
                     st.success(f"Found {len(results)} matching results")
             st.dataframe(
                 results,
                 use_container_width=True,
                 column_config={
-                    "ticker":              st.column_config.TextColumn("Ticker"),
-                    "score":               st.column_config.ProgressColumn("Score", min_value=0, max_value=100),
-                    "last_close":          st.column_config.NumberColumn("Last Close", format="$%.2f"),
-                    "volume_ratio":        st.column_config.NumberColumn("Vol Ratio", help="Current volume ÷ 20-bar average. >2 = unusually high volume."),
-                    "rsi":                 st.column_config.NumberColumn("RSI", help="Relative Strength Index. 30=oversold, 70=overbought. Sweet spot: 50–70."),
+                    "ticker": st.column_config.TextColumn("Ticker"),
+                    "score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100),
+                    "last_close": st.column_config.NumberColumn("Last Close", format="$%.2f"),
+                    "volume_ratio": st.column_config.NumberColumn(
+                        "Vol Ratio",
+                        help="Current volume ÷ 20-bar average. >2 = unusually high volume.",
+                    ),
+                    "rsi": st.column_config.NumberColumn(
+                        "RSI",
+                        help="Relative Strength Index. 30=oversold, 70=overbought. Sweet spot: 50–70.",
+                    ),
                     "days_until_earnings": st.column_config.NumberColumn(
                         "Earnings In",
                         format="%d d",
-                        help="Calendar days until the next scheduled earnings report. Blank = none scheduled or unknown (e.g. ETFs).",
+                        help="Calendar days until the next scheduled earnings report. Blank/unavailable means TradeX could not establish a reliable upcoming earnings date; it does not prove there is no scheduled earnings event.",
                     ),
-                    "reasons":             st.column_config.TextColumn("Reasons", width="large"),
-                    "provider":            st.column_config.TextColumn("OHLCV Provider", help="Market-data provider used to score this ticker."),
+                    "reasons": st.column_config.TextColumn("Reasons", width="large"),
+                    "provider": st.column_config.TextColumn(
+                        "OHLCV Provider", help="Market-data provider used to score this ticker."
+                    ),
                 },
             )
             st.session_state["scan_results"] = results
@@ -215,10 +232,16 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
     if "scan_results" in st.session_state and not st.session_state["scan_results"].empty:
         st.divider()
         st.subheader("Drill-down Chart")
-        st.caption("Candlestick chart with EMA20 (orange), EMA50 (blue), and Bollinger Bands (gray shaded). Volume bars below. Uses the provider from the saved scan.")
+        st.caption(
+            "Candlestick chart with EMA20 (orange), EMA50 (blue), and Bollinger Bands (gray shaded). Volume bars below. Uses the provider from the saved scan."
+        )
         tickers_with_signals = st.session_state["scan_results"]["ticker"].tolist()
-        selected = st.selectbox("Select ticker", tickers_with_signals, key="sel_scanner",
-                                help="Pick any stock from the scan results to view its chart.")
+        selected = st.selectbox(
+            "Select ticker",
+            tickers_with_signals,
+            key="sel_scanner",
+            help="Pick any stock from the scan results to view its chart.",
+        )
         tf = st.session_state["scan_timeframe"]
         scan_provider = st.session_state.get("scan_provider", provider)
 
@@ -226,27 +249,56 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
         df = add_indicators(df)
 
         fig = go.Figure()
-        fig.add_trace(go.Candlestick(
-            x=df.index, open=df["open"], high=df["high"],
-            low=df["low"], close=df["close"], name="Price",
-        ))
-        fig.add_trace(go.Scatter(x=df.index, y=df["ema_20"], name="EMA20",
-                                 line={"color": "orange", "width": 1}))
-        fig.add_trace(go.Scatter(x=df.index, y=df["ema_50"], name="EMA50",
-                                 line={"color": "blue", "width": 1}))
-        fig.add_trace(go.Scatter(x=df.index, y=df["bb_upper"], name="BB Upper",
-                                 line={"color": "gray", "dash": "dot", "width": 1}))
-        fig.add_trace(go.Scatter(x=df.index, y=df["bb_lower"], name="BB Lower",
-                                 line={"color": "gray", "dash": "dot", "width": 1},
-                                 fill="tonexty", fillcolor="rgba(200,200,200,0.1)"))
+        fig.add_trace(
+            go.Candlestick(
+                x=df.index,
+                open=df["open"],
+                high=df["high"],
+                low=df["low"],
+                close=df["close"],
+                name="Price",
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df.index, y=df["ema_20"], name="EMA20", line={"color": "orange", "width": 1}
+            )
+        )
+        fig.add_trace(
+            go.Scatter(x=df.index, y=df["ema_50"], name="EMA50", line={"color": "blue", "width": 1})
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df.index,
+                y=df["bb_upper"],
+                name="BB Upper",
+                line={"color": "gray", "dash": "dot", "width": 1},
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df.index,
+                y=df["bb_lower"],
+                name="BB Lower",
+                line={"color": "gray", "dash": "dot", "width": 1},
+                fill="tonexty",
+                fillcolor="rgba(200,200,200,0.1)",
+            )
+        )
         fig.update_layout(xaxis_rangeslider_visible=False, height=500)
         st.plotly_chart(fig, use_container_width=True)
 
         vol_fig = go.Figure()
         colors = ["green" if c >= o else "red" for c, o in zip(df["close"], df["open"])]
         vol_fig.add_trace(go.Bar(x=df.index, y=df["volume"], marker_color=colors, name="Volume"))
-        vol_fig.add_trace(go.Scatter(x=df.index, y=df["volume_sma20"], name="Vol SMA20",
-                                     line={"color": "white", "width": 1.5}))
+        vol_fig.add_trace(
+            go.Scatter(
+                x=df.index,
+                y=df["volume_sma20"],
+                name="Vol SMA20",
+                line={"color": "white", "width": 1.5},
+            )
+        )
         vol_fig.update_layout(height=200)
         st.plotly_chart(vol_fig, use_container_width=True)
 

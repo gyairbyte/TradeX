@@ -1,4 +1,5 @@
 """Tests for outcome-tracker timing and price resolution."""
+
 from datetime import UTC, datetime
 from unittest.mock import patch
 
@@ -50,17 +51,26 @@ def _make_history_df(closes, start: str = "2024-01-02") -> pd.DataFrame:
     ``fetch_daily_history``."""
     dates = pd.date_range(start, periods=len(closes), freq="B")
     base = [100.0 if pd.isna(c) else float(c) for c in closes]
-    return pd.DataFrame({
-        "open": base,
-        "high": [b + 1.0 for b in base],
-        "low": [b - 1.0 for b in base],
-        "close": closes,
-        "volume": [1000] * len(closes),
-    }, index=pd.DatetimeIndex(dates, name="datetime", tz="UTC"))
+    return pd.DataFrame(
+        {
+            "open": base,
+            "high": [b + 1.0 for b in base],
+            "low": [b - 1.0 for b in base],
+            "close": closes,
+            "volume": [1000] * len(closes),
+        },
+        index=pd.DatetimeIndex(dates, name="datetime", tz="UTC"),
+    )
 
 
-def _fetch(close_value, *, after_date=datetime(2024, 1, 1, tzinfo=UTC), days_forward=3,
-           current=datetime(2026, 8, 1, tzinfo=UTC), provider=None):
+def _fetch(
+    close_value,
+    *,
+    after_date=datetime(2024, 1, 1, tzinfo=UTC),
+    days_forward=3,
+    current=datetime(2026, 8, 1, tzinfo=UTC),
+    provider="yahoo",
+):
     """Call _fetch_close_after with a mocked daily-history abstraction and current time."""
     if close_value is None:
         df = pd.DataFrame()
@@ -96,12 +106,14 @@ def test_fetch_close_with_multiindex_columns():
     assert _fetch(None) is None
 
     # Missing close column
-    missing_close = pd.DataFrame({
-        "Open": [1.0, 2.0],
-        "High": [2.0, 3.0],
-        "Low": [0.5, 1.5],
-        "Volume": [100, 200],
-    })
+    missing_close = pd.DataFrame(
+        {
+            "Open": [1.0, 2.0],
+            "High": [2.0, 3.0],
+            "Low": [0.5, 1.5],
+            "Volume": [100, 200],
+        }
+    )
     assert _fetch(missing_close) is None
 
     # NaN at target day with a later valid close
@@ -126,8 +138,7 @@ def test_nan_before_target_session_counts_as_trading_session():
 
     # Three trading sessions: NaN on session 1, valid closes on sessions 2/3.
     # The 3-session outcome should be session 3 (103.0), not session 2 (102.0).
-    close = _fetch([np.nan, 101.0, 102.0],
-                   after_date=signal_time, days_forward=3, current=current)
+    close = _fetch([np.nan, 101.0, 102.0], after_date=signal_time, days_forward=3, current=current)
     assert close == 102.0
 
 
@@ -137,8 +148,7 @@ def test_nan_target_session_falls_back_to_later_valid_close():
     current = datetime(2024, 1, 4, tzinfo=UTC)
 
     # Two sessions: session 2 (target) is NaN, session 3 is valid.
-    close = _fetch([101.0, np.nan, 103.0],
-                   after_date=signal_time, days_forward=2, current=current)
+    close = _fetch([101.0, np.nan, 103.0], after_date=signal_time, days_forward=2, current=current)
     assert isinstance(close, float)
     assert close == 103.0
 
@@ -177,12 +187,14 @@ def test_five_day_outcome_requires_five_sessions():
     signal_time = datetime(2024, 1, 1, tzinfo=UTC)
     current = datetime(2024, 1, 8, tzinfo=UTC)
 
-    close = _fetch([101.0, 102.0, 103.0, 104.0, 105.0],
-                    after_date=signal_time, days_forward=5, current=current)
+    close = _fetch(
+        [101.0, 102.0, 103.0, 104.0, 105.0], after_date=signal_time, days_forward=5, current=current
+    )
     assert close == 105.0
 
-    close = _fetch([101.0, 102.0, 103.0, 104.0],
-                    after_date=signal_time, days_forward=5, current=current)
+    close = _fetch(
+        [101.0, 102.0, 103.0, 104.0], after_date=signal_time, days_forward=5, current=current
+    )
     assert close is None
 
 
@@ -203,8 +215,13 @@ def test_holiday_or_missing_session_gaps_do_not_count():
     values = [101.0, 102.0, 103.0]
     dates = pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-05"])
     df = pd.DataFrame(
-        {"Open": values, "High": [v + 1 for v in values], "Low": [v - 1 for v in values],
-         "Close": values, "Volume": [1000, 1000, 1000]},
+        {
+            "Open": values,
+            "High": [v + 1 for v in values],
+            "Low": [v - 1 for v in values],
+            "Close": values,
+            "Volume": [1000, 1000, 1000],
+        },
         index=dates,
     )
     close = _fetch(df, after_date=signal_time, days_forward=3, current=current)
@@ -220,9 +237,7 @@ def test_future_signal_returns_none_without_fetch():
         patch("tradex.data.history.yf.download") as mock_download,
         patch.object(outcome_tracker, "_utc_now", return_value=current),
     ):
-        close = outcome_tracker._fetch_close_after(
-            "AAPL", signal_time, days_forward=1
-        )
+        close = outcome_tracker._fetch_close_after("AAPL", signal_time, days_forward=1)
 
     assert close is None
     mock_download.assert_not_called()
@@ -237,9 +252,7 @@ def test_signal_today_returns_none():
         patch("tradex.data.history.yf.download") as mock_download,
         patch.object(outcome_tracker, "_utc_now", return_value=current),
     ):
-        close = outcome_tracker._fetch_close_after(
-            "AAPL", signal_time, days_forward=1
-        )
+        close = outcome_tracker._fetch_close_after("AAPL", signal_time, days_forward=1)
 
     assert close is None
     mock_download.assert_not_called()
@@ -264,7 +277,7 @@ def test_request_boundaries_respect_available_data():
         patch("tradex.data.history.yf.download", return_value=df) as mock_download,
         patch.object(outcome_tracker, "_utc_now", return_value=current),
     ):
-        outcome_tracker._fetch_close_after("AAPL", signal_time, days_forward=1)
+        outcome_tracker._fetch_close_after("AAPL", signal_time, days_forward=1, provider="yahoo")
 
     assert mock_download.call_count == 1
     _, kwargs = mock_download.call_args
@@ -284,7 +297,7 @@ def test_request_boundaries_use_buffered_end_when_within_range():
         patch("tradex.data.history.yf.download", return_value=df) as mock_download,
         patch.object(outcome_tracker, "_utc_now", return_value=current),
     ):
-        outcome_tracker._fetch_close_after("AAPL", signal_time, days_forward=3)
+        outcome_tracker._fetch_close_after("AAPL", signal_time, days_forward=3, provider="yahoo")
 
     _, kwargs = mock_download.call_args
     assert kwargs["start"] == "2024-01-02"
@@ -318,9 +331,7 @@ def test_provider_reaches_daily_history_abstraction():
         patch("tradex.tracker.outcome_tracker.fetch_daily_history", return_value=df) as mock_fetch,
         patch.object(outcome_tracker, "_utc_now", return_value=current),
     ):
-        outcome_tracker._fetch_close_after(
-            "AAPL", signal_time, days_forward=1, provider="schwab"
-        )
+        outcome_tracker._fetch_close_after("AAPL", signal_time, days_forward=1, provider="schwab")
 
     mock_fetch.assert_called_once()
     args, kwargs = mock_fetch.call_args
@@ -379,8 +390,16 @@ def test_provider_failure_increments_errors(fresh_signal_db):
         con.execute(
             "INSERT INTO signal_history (ticker, timeframe, scan_time, score, last_close, volume_ratio, rsi, reasons) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            ("AAPL", "intraday", datetime(2024, 1, 1, tzinfo=UTC).isoformat(),
-             50, 100.0, 1.0, 50.0, "test"),
+            (
+                "AAPL",
+                "intraday",
+                datetime(2024, 1, 1, tzinfo=UTC).isoformat(),
+                50,
+                100.0,
+                1.0,
+                50.0,
+                "test",
+            ),
         )
 
     with (
@@ -448,7 +467,9 @@ def test_run_outcome_pass_does_not_write_outcome_provider_when_pending(fresh_sig
     assert summary["pending"] == 1
     assert summary["resolved"] == 0
     with store._conn() as con:
-        row = con.execute("SELECT outcome_provider FROM signal_history WHERE ticker = ?", ("AAPL",)).fetchone()
+        row = con.execute(
+            "SELECT outcome_provider FROM signal_history WHERE ticker = ?", ("AAPL",)
+        ).fetchone()
     assert row["outcome_provider"] is None
 
 
@@ -457,14 +478,19 @@ def test_run_outcome_pass_does_not_write_outcome_provider_on_failure(fresh_signa
     _insert_signal(provider="yahoo")
 
     with (
-        patch("tradex.tracker.outcome_tracker.fetch_daily_history", side_effect=RuntimeError("network")),
+        patch(
+            "tradex.tracker.outcome_tracker.fetch_daily_history",
+            side_effect=RuntimeError("network"),
+        ),
         patch.object(outcome_tracker, "_utc_now", return_value=datetime(2024, 1, 3, tzinfo=UTC)),
     ):
         summary = outcome_tracker.run_outcome_pass(verbose=False, provider="schwab")
 
     assert summary["errors"] == 1
     with store._conn() as con:
-        row = con.execute("SELECT outcome_provider FROM signal_history WHERE ticker = ?", ("AAPL",)).fetchone()
+        row = con.execute(
+            "SELECT outcome_provider FROM signal_history WHERE ticker = ?", ("AAPL",)
+        ).fetchone()
     assert row["outcome_provider"] is None
 
 
@@ -483,7 +509,10 @@ def test_run_outcome_pass_resolves_duplicate_rows_independently(fresh_signal_db)
 
     assert summary["resolved"] == 2
     with store._conn() as con:
-        rows = con.execute("SELECT provider, outcome_provider, outcome_close FROM signal_history WHERE ticker = ?", ("AAPL",)).fetchall()
+        rows = con.execute(
+            "SELECT provider, outcome_provider, outcome_close FROM signal_history WHERE ticker = ?",
+            ("AAPL",),
+        ).fetchall()
     assert len(rows) == 2
     for row in rows:
         assert row["provider"] == "yahoo"

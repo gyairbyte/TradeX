@@ -10,17 +10,18 @@ Missing timeframes contribute zero and are recorded explicitly in the result
 metadata. Tiers reflect both the corrected score and how many timeframes
 actually contributed.
 """
+
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import Any
 
 import pandas as pd
 
 from tradex.config import TradeXSettings, load_runtime_settings
-from tradex.data.fetcher import fetch
+from tradex.data.fetcher import ProviderDataUnavailableError, ProviderError, fetch
 from tradex.earnings import days_until_earnings
 from tradex.signals import intraday, long_term, short_term
-
 
 # Weight by timeframe — the denominator is always the sum of all three weights
 # so missing timeframes penalize the confluence score.
@@ -31,6 +32,33 @@ _WEIGHTS = {
 }
 
 _TIME_FRAME_ORDER = ["intraday", "short", "long"]
+
+CONFLUENCE_COLUMNS = [
+    "ticker",
+    "confluence_score",
+    "tier",
+    "active_timeframes",
+    "timeframe_coverage",
+    "available_timeframes",
+    "missing_timeframes",
+    "score_intraday",
+    "score_short",
+    "score_long",
+    "days_until_earnings",
+    "last_close",
+]
+
+
+@dataclass
+class ConfluenceReport:
+    """Structured result of a confluence screen, including failure and exclusion metadata."""
+
+    results: pd.DataFrame
+    earnings_failures: dict[str, ProviderError] = field(default_factory=dict)
+    earnings_excluded: list[str] = field(default_factory=list)
+    total_requested: int = 0
+    total_scored: int = 0
+    total_earnings_excluded: int = 0
 
 
 def _coverage_fields(available: dict[str, Any], errors: dict[str, str]) -> dict[str, Any]:
@@ -95,8 +123,8 @@ def score_confluence(
 
     fetchers: dict[str, tuple[Any, str]] = {
         "intraday": (intraday.score, "intraday"),
-        "short":    (short_term.score, "short"),
-        "long":     (long_term.score, "long"),
+        "short": (short_term.score, "short"),
+        "long": (long_term.score, "long"),
     }
 
     if settings is None:
@@ -145,6 +173,95 @@ def score_confluence(
     }
 
 
+def run_confluence_screen_with_report(
+    tickers: list[str],
+    min_confluence: int = 50,
+    provider: str | None = None,
+    exclude_earnings_within: int | None = None,
+    earnings_source: str | None = None,
+    *,
+    settings: TradeXSettings | None = None,
+) -> ConfluenceReport:
+    """
+    Run confluence scoring across a watchlist and return a structured report.
+
+    `exclude_earnings_within`: if set (> 0), drop tickers with earnings within N days or unknown earnings.
+    `earnings_source`: passed to `days_until_earnings` and defaults to Yahoo.
+    """
+    if settings is None:
+        settings = load_runtime_settings()
+    filter_enabled = exclude_earnings_within is not None and exclude_earnings_within > 0
+    rows = []
+    earnings_failures: dict[str, ProviderError] = {}
+    earnings_excluded: list[str] = []
+    total_scored = 0
+
+    for ticker in tickers:
+        days_to_er: int | None = None
+        earnings_err: ProviderError | None = None
+        try:
+            days_to_er = days_until_earnings(ticker, source=earnings_source, settings=settings)
+        except ProviderError as exc:
+            earnings_err = exc
+        except Exception as exc:  # noqa: BLE001
+            earnings_err = ProviderDataUnavailableError(f"Earnings lookup failed for {ticker}")
+
+        if earnings_err is not None:
+            earnings_failures[ticker] = earnings_err
+
+        if filter_enabled:
+            if earnings_err is not None or days_to_er is None:
+                if ticker not in earnings_failures:
+                    earnings_failures[ticker] = ProviderDataUnavailableError(
+                        f"Earnings date unknown for {ticker}; cannot evaluate exclusion window"
+                    )
+                continue
+            if 0 <= days_to_er <= exclude_earnings_within:
+                earnings_excluded.append(ticker)
+                continue
+
+        try:
+            result = score_confluence(ticker, provider=provider, settings=settings)
+            total_scored += 1
+            if result["confluence_score"] >= min_confluence:
+                rows.append(
+                    {
+                        "ticker": result["ticker"],
+                        "confluence_score": result["confluence_score"],
+                        "tier": result["tier"],
+                        "active_timeframes": ", ".join(result["active_timeframes"]),
+                        "timeframe_coverage": result["timeframe_coverage"],
+                        "available_timeframes": ", ".join(result["available_timeframes"]),
+                        "missing_timeframes": ", ".join(result["missing_timeframes"]),
+                        "score_intraday": result["scores"].get("intraday", "-"),
+                        "score_short": result["scores"].get("short", "-"),
+                        "score_long": result["scores"].get("long", "-"),
+                        "days_until_earnings": days_to_er,
+                        "last_close": result.get("last_close"),
+                    }
+                )
+        except Exception:  # noqa: BLE001
+            pass
+
+    if not rows:
+        results_df = pd.DataFrame(columns=CONFLUENCE_COLUMNS)
+    else:
+        results_df = (
+            pd.DataFrame(rows, columns=CONFLUENCE_COLUMNS)
+            .sort_values("confluence_score", ascending=False)
+            .reset_index(drop=True)
+        )
+
+    return ConfluenceReport(
+        results=results_df,
+        earnings_failures=earnings_failures,
+        earnings_excluded=earnings_excluded,
+        total_requested=len(tickers),
+        total_scored=total_scored,
+        total_earnings_excluded=len(earnings_excluded),
+    )
+
+
 def run_confluence_screen(
     tickers: list[str],
     min_confluence: int = 50,
@@ -162,57 +279,12 @@ def run_confluence_screen(
     Result rows always include `days_until_earnings` (None if unknown).
     `earnings_source` is passed to `days_until_earnings` and defaults to Yahoo.
     """
-    if settings is None:
-        settings = load_runtime_settings()
-    rows = []
-    for ticker in tickers:
-        try:
-            days_to_er = days_until_earnings(
-                ticker, source=earnings_source, settings=settings
-            )
-            if (
-                exclude_earnings_within is not None
-                and days_to_er is not None
-                and 0 <= days_to_er <= exclude_earnings_within
-            ):
-                print(f"[skip] {ticker}: earnings in {days_to_er}d")
-                continue
-
-            result = score_confluence(ticker, provider=provider, settings=settings)
-            if result["confluence_score"] >= min_confluence:
-                rows.append({
-                    "ticker":                    result["ticker"],
-                    "confluence_score":          result["confluence_score"],
-                    "tier":                      result["tier"],
-                    "active_timeframes":         ", ".join(result["active_timeframes"]),
-                    "timeframe_coverage":        result["timeframe_coverage"],
-                    "available_timeframes":      ", ".join(result["available_timeframes"]),
-                    "missing_timeframes":        ", ".join(result["missing_timeframes"]),
-                    "score_intraday":            result["scores"].get("intraday", "-"),
-                    "score_short":               result["scores"].get("short", "-"),
-                    "score_long":                result["scores"].get("long", "-"),
-                    "days_until_earnings":       days_to_er,
-                    "last_close":                result.get("last_close"),
-                })
-        except Exception as e:
-            print(f"[skip] {ticker}: {e}")
-
-    columns = [
-        "ticker",
-        "confluence_score",
-        "tier",
-        "active_timeframes",
-        "timeframe_coverage",
-        "available_timeframes",
-        "missing_timeframes",
-        "score_intraday",
-        "score_short",
-        "score_long",
-        "days_until_earnings",
-        "last_close",
-    ]
-    return (
-        pd.DataFrame(rows, columns=columns)
-        .sort_values("confluence_score", ascending=False)
-        .reset_index(drop=True)
+    report = run_confluence_screen_with_report(
+        tickers=tickers,
+        min_confluence=min_confluence,
+        provider=provider,
+        exclude_earnings_within=exclude_earnings_within,
+        earnings_source=earnings_source,
+        settings=settings,
     )
+    return report.results

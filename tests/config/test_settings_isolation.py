@@ -1,4 +1,5 @@
 """Settings-isolation matrix tests for the centralized configuration boundary."""
+
 from __future__ import annotations
 
 import sys
@@ -33,14 +34,18 @@ def test_two_settings_objects_with_different_providers_do_not_leak():
 def test_options_source_isolation():
     """Options flow/chain resolution returns different capability for different settings."""
     empty = TradeXSettings()
-    whales = settings_from_mapping({
-        "OPTIONS_DATA_SOURCE": "auto",
-        "UNUSUAL_WHALES_API_KEY": "secret",
-    })
-    tradier = settings_from_mapping({
-        "OPTIONS_DATA_SOURCE": "auto",
-        "TRADIER_API_KEY": "secret",
-    })
+    whales = settings_from_mapping(
+        {
+            "OPTIONS_DATA_SOURCE": "auto",
+            "UNUSUAL_WHALES_API_KEY": "secret",
+        }
+    )
+    tradier = settings_from_mapping(
+        {
+            "OPTIONS_DATA_SOURCE": "auto",
+            "TRADIER_API_KEY": "secret",
+        }
+    )
     explicit_yahoo = settings_from_mapping({"OPTIONS_DATA_SOURCE": "yahoo"})
 
     assert not resolve_flow_source("auto", settings=empty).available
@@ -60,10 +65,12 @@ def test_options_source_isolation():
 def test_alert_channel_isolation():
     """``is_alert_configured`` reflects only the settings object it is passed."""
     empty = TradeXSettings()
-    discord = settings_from_mapping({
-        "ALERT_DISCORD_TOKEN": "token",
-        "ALERT_DISCORD_CHANNEL_ID": "123",
-    })
+    discord = settings_from_mapping(
+        {
+            "ALERT_DISCORD_TOKEN": "token",
+            "ALERT_DISCORD_CHANNEL_ID": "123",
+        }
+    )
 
     assert not is_alert_configured(settings=empty)
     assert is_alert_configured(settings=discord)
@@ -93,6 +100,7 @@ def test_settings_are_frozen():
 def test_load_runtime_settings_reads_process_env_but_does_not_mutate_os_environ():
     """``load_runtime_settings`` uses ``os.environ`` overrides but never mutates it."""
     import os
+
     original = os.environ.get("DATA_PROVIDER")
     try:
         os.environ["DATA_PROVIDER"] = "schwab"
@@ -111,16 +119,20 @@ def test_schwab_client_cache_keyed_by_safe_identity():
     """The Schwab client cache key is derived from a safe SHA-256 hash, not raw secrets."""
     from tradex.data.fetcher import _schwab_client_key
 
-    settings_a = settings_from_mapping({
-        "SCHWAB_TOKEN_PATH": "~/.tokens/schwab.json",
-        "SCHWAB_APP_KEY": "key-a",
-        "SCHWAB_APP_SECRET": "secret-a",
-    })
-    settings_b = settings_from_mapping({
-        "SCHWAB_TOKEN_PATH": "~/.tokens/schwab.json",
-        "SCHWAB_APP_KEY": "key-b",
-        "SCHWAB_APP_SECRET": "secret-b",
-    })
+    settings_a = settings_from_mapping(
+        {
+            "SCHWAB_TOKEN_PATH": "~/.tokens/schwab.json",
+            "SCHWAB_APP_KEY": "key-a",
+            "SCHWAB_APP_SECRET": "secret-a",
+        }
+    )
+    settings_b = settings_from_mapping(
+        {
+            "SCHWAB_TOKEN_PATH": "~/.tokens/schwab.json",
+            "SCHWAB_APP_KEY": "key-b",
+            "SCHWAB_APP_SECRET": "secret-b",
+        }
+    )
 
     key_a = _schwab_client_key(settings_a)
     key_b = _schwab_client_key(settings_b)
@@ -132,32 +144,37 @@ def test_schwab_client_cache_keyed_by_safe_identity():
 
 def test_path_settings_are_immutable_and_expandable():
     """``PathSettings`` stores literal paths and expands ``~`` on demand."""
-    settings = settings_from_mapping({
-        "TRADEX_DB_PATH": "~/custom/signals.db",
-        "TRADEX_FP_DB": "~/custom/fingerprints.db",
-        "TRADEX_WATCHLISTS_DB_PATH": "~/custom/watchlists.db",
-    })
+    settings = settings_from_mapping(
+        {
+            "TRADEX_DB_PATH": "~/custom/signals.db",
+            "TRADEX_FP_DB": "~/custom/fingerprints.db",
+            "TRADEX_WATCHLISTS_DB_PATH": "~/custom/watchlists.db",
+        }
+    )
 
     assert settings.paths.signals_db == Path("~/custom/signals.db")
     assert settings.paths.fingerprint_db == Path("~/custom/fingerprints.db")
     assert settings.paths.watchlists_db == Path("~/custom/watchlists.db")
 
     import dataclasses
+
     with pytest.raises(dataclasses.FrozenInstanceError):
         settings.paths.signals_db = Path("/tmp/other.db")
 
 
 def test_settings_summary_does_not_expose_secrets():
     """The redacted settings summary and repr hide tokens, passwords, and API keys."""
-    settings = settings_from_mapping({
-        "ALERT_DISCORD_TOKEN": "super-secret-discord-token",
-        "ALERT_DISCORD_CHANNEL_ID": "123456",
-        "UNUSUAL_WHALES_API_KEY": "whales-api-key-123",
-        "TRADIER_API_KEY": "tradier-api-key-456",
-        "SCHWAB_APP_KEY": "schwab-app-key",
-        "SCHWAB_APP_SECRET": "schwab-app-secret",
-        "ALERT_EMAIL_PASS": "email-password",
-    })
+    settings = settings_from_mapping(
+        {
+            "ALERT_DISCORD_TOKEN": "super-secret-discord-token",
+            "ALERT_DISCORD_CHANNEL_ID": "123456",
+            "UNUSUAL_WHALES_API_KEY": "whales-api-key-123",
+            "TRADIER_API_KEY": "tradier-api-key-456",
+            "SCHWAB_APP_KEY": "schwab-app-key",
+            "SCHWAB_APP_SECRET": "schwab-app-secret",
+            "ALERT_EMAIL_PASS": "email-password",
+        }
+    )
     summary = settings.safe_summary()
     text = str(summary) + repr(settings)
     assert "super-secret-discord-token" not in text
@@ -168,16 +185,20 @@ def test_settings_summary_does_not_expose_secrets():
 
 
 def _signal_results(ticker: str, score: int) -> pd.DataFrame:
-    return pd.DataFrame([{
-        "ticker": ticker,
-        "score": score,
-        "last_close": 100.0,
-        "volume_ratio": 1.5,
-        "rsi": 55.0,
-        "days_until_earnings": None,
-        "reasons": ["test"],
-        "provider": "yahoo",
-    }])
+    return pd.DataFrame(
+        [
+            {
+                "ticker": ticker,
+                "score": score,
+                "last_close": 100.0,
+                "volume_ratio": 1.5,
+                "rsi": 55.0,
+                "days_until_earnings": None,
+                "reasons": ["test"],
+                "provider": "yahoo",
+            }
+        ]
+    )
 
 
 def test_signal_store_A_to_B_to_A_isolation(tmp_path):
@@ -196,9 +217,15 @@ def test_signal_store_A_to_B_to_A_isolation(tmp_path):
     results_a = _signal_results("AAPL", 70)
     results_b = _signal_results("MSFT", 65)
 
-    store.record_signals(results_a, "intraday", tickers_scanned=["AAPL"], scan_time=now, settings=settings_a)
-    store.record_signals(results_b, "intraday", tickers_scanned=["MSFT"], scan_time=now, settings=settings_b)
-    store.record_signals(results_a, "intraday", tickers_scanned=["AAPL"], scan_time=now, settings=settings_a)
+    store.record_signals(
+        results_a, "intraday", tickers_scanned=["AAPL"], scan_time=now, settings=settings_a
+    )
+    store.record_signals(
+        results_b, "intraday", tickers_scanned=["MSFT"], scan_time=now, settings=settings_b
+    )
+    store.record_signals(
+        results_a, "intraday", tickers_scanned=["AAPL"], scan_time=now, settings=settings_a
+    )
 
     history_a = store.get_history("AAPL", "intraday", settings=settings_a)
     history_b = store.get_history("MSFT", "intraday", settings=settings_b)
@@ -246,13 +273,19 @@ def test_fingerprint_store_A_to_B_to_A_isolation(tmp_path):
 
     cfg = PatternConfig(min_events=1, lookback_days=3)
     series = [0.0, 0.0, 0.0]
-    events = pd.DataFrame([
-        {"event_type": "runup", "event_date": "2024-01-01", "price_pct": series},
-        {"event_type": "runup", "event_date": "2024-01-02", "price_pct": series},
-    ])
+    events = pd.DataFrame(
+        [
+            {"event_type": "runup", "event_date": "2024-01-01", "price_pct": series},
+            {"event_type": "runup", "event_date": "2024-01-02", "price_pct": series},
+        ]
+    )
 
-    fp_a = fingerprint.build_fingerprint(events, "runup", cfg=cfg, source="yahoo", settings=settings_a)
-    fp_b = fingerprint.build_fingerprint(events, "runup", cfg=cfg, source="yahoo", settings=settings_b)
+    fp_a = fingerprint.build_fingerprint(
+        events, "runup", cfg=cfg, source="yahoo", settings=settings_a
+    )
+    fp_b = fingerprint.build_fingerprint(
+        events, "runup", cfg=cfg, source="yahoo", settings=settings_b
+    )
 
     assert fp_a is not None
     assert fp_b is not None
@@ -318,22 +351,28 @@ def test_schwab_client_cache_isolation_with_mocked_auth(tmp_path, monkeypatch):
 
     # Ensure token paths are treated as existing without actually validating them.
     real_exists = os.path.exists
+
     def _exists(path):
         if str(path) in (str(token_a), str(token_b)):
             return True
         return real_exists(path)
+
     monkeypatch.setattr(os.path, "exists", _exists)
 
-    settings_a = settings_from_mapping({
-        "SCHWAB_TOKEN_PATH": str(token_a),
-        "SCHWAB_APP_KEY": "key-a",
-        "SCHWAB_APP_SECRET": "secret-a",
-    })
-    settings_b = settings_from_mapping({
-        "SCHWAB_TOKEN_PATH": str(token_b),
-        "SCHWAB_APP_KEY": "key-b",
-        "SCHWAB_APP_SECRET": "secret-b",
-    })
+    settings_a = settings_from_mapping(
+        {
+            "SCHWAB_TOKEN_PATH": str(token_a),
+            "SCHWAB_APP_KEY": "key-a",
+            "SCHWAB_APP_SECRET": "secret-a",
+        }
+    )
+    settings_b = settings_from_mapping(
+        {
+            "SCHWAB_TOKEN_PATH": str(token_b),
+            "SCHWAB_APP_KEY": "key-b",
+            "SCHWAB_APP_SECRET": "secret-b",
+        }
+    )
 
     client_a = fetcher._get_schwab_client(settings=settings_a)
     client_a_again = fetcher._get_schwab_client(settings=settings_a)
@@ -352,20 +391,24 @@ def test_reference_provider_keys_stay_none_when_missing():
     assert empty.data.alpha_vantage_api_key is None
     assert empty.data.massive_api_key is None
     # Whitespace-only values should also become None.
-    blank = settings_from_mapping({
-        "ALPHA_VANTAGE_API_KEY": "   ",
-        "MASSIVE_API_KEY": "  \t  ",
-    })
+    blank = settings_from_mapping(
+        {
+            "ALPHA_VANTAGE_API_KEY": "   ",
+            "MASSIVE_API_KEY": "  \t  ",
+        }
+    )
     assert blank.data.alpha_vantage_api_key is None
     assert blank.data.massive_api_key is None
 
 
 def test_massive_api_key_takes_precedence_over_polygon_alias():
     """MASSIVE_API_KEY wins over legacy POLYGON_API_KEY when both are present."""
-    settings = settings_from_mapping({
-        "MASSIVE_API_KEY": "massive-key",
-        "POLYGON_API_KEY": "polygon-key",
-    })
+    settings = settings_from_mapping(
+        {
+            "MASSIVE_API_KEY": "massive-key",
+            "POLYGON_API_KEY": "polygon-key",
+        }
+    )
     assert settings.data.massive_api_key == "massive-key"
 
     # Legacy alias is used when MASSIVE_API_KEY is absent.
@@ -375,10 +418,12 @@ def test_massive_api_key_takes_precedence_over_polygon_alias():
 
 def test_reference_provider_keys_are_secret_safe():
     """API keys do not appear in repr or safe_summary."""
-    settings = settings_from_mapping({
-        "ALPHA_VANTAGE_API_KEY": "alpha-secret",
-        "MASSIVE_API_KEY": "massive-secret",
-    })
+    settings = settings_from_mapping(
+        {
+            "ALPHA_VANTAGE_API_KEY": "alpha-secret",
+            "MASSIVE_API_KEY": "massive-secret",
+        }
+    )
     text = repr(settings) + str(settings.safe_summary())
     assert "alpha-secret" not in text
     assert "massive-secret" not in text
@@ -418,6 +463,7 @@ def test_store_env_path_no_arg_controls_db_and_avoids_home(tmp_path, monkeypatch
     home_dir = tmp_path / "home"
     home_dir.mkdir()
     monkeypatch.setenv("HOME", str(home_dir))
+    monkeypatch.setenv("USERPROFILE", str(home_dir))
 
     a_db = tmp_path / "a" / "signals.db"
     b_db = tmp_path / "b" / "signals.db"
@@ -498,10 +544,12 @@ def test_fingerprint_env_path_no_arg_controls_db_and_avoids_home(tmp_path, monke
 
     cfg = PatternConfig(min_events=1, lookback_days=3)
     series = [0.0, 0.0, 0.0]
-    events = pd.DataFrame([
-        {"event_type": "runup", "event_date": "2024-01-01", "price_pct": series},
-        {"event_type": "runup", "event_date": "2024-01-02", "price_pct": series},
-    ])
+    events = pd.DataFrame(
+        [
+            {"event_type": "runup", "event_date": "2024-01-01", "price_pct": series},
+            {"event_type": "runup", "event_date": "2024-01-02", "price_pct": series},
+        ]
+    )
 
     monkeypatch.setenv("TRADEX_FP_DB", str(a_db))
     fingerprint.build_fingerprint(events, "runup", cfg=cfg)

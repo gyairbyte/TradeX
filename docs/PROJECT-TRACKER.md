@@ -424,7 +424,8 @@ This is the master backlog for TradeX engineering and research tasks, originatin
 - **Intended pull request:** `devin/mvp-arch-001-consolidation-decision`
 - **Affects trading behavior:** No
 - **Authorization status:** `gary_approved` (design-only); `production_promotion_eligible`: `false`
-- **Rollout Step 1 (MVP-ARCH-001-R1):** Gary Yang approved rollout step 1 on 2026-08-21 for truthful UI/help labeling and evidence-state notices only; all subsequent rollout steps (Steps 2–8) remain pending separate Gary approval.
+- **Rollout Step 1 (MVP-ARCH-001-R1):** Gary Yang approved rollout step 1 on 2026-08-21 for truthful UI/help labeling and evidence-state notices only (implemented in PR #57).
+- **Rollout Step 2 (MVP-ARCH-001-R2):** Gary Yang approved rollout step 2 on 2026-08-21 for provider lifecycle and configuration simplification only (Schwab primary/default, Alpaca/Yahoo explicit fallback, IBKR archived/manual, pre-market specialized Yahoo decoupling, fail-closed unknown earnings handling). Steps 3–8 remain pending separate Gary approval.
 - `long_002b_amend_002_completed`: `true`
 - `long_002c_design_authorized_by_pr52`: `true`
 - `long_002c_currently_paused_by_gary`: `true`

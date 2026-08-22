@@ -1,4 +1,5 @@
 """Tests for the extracted Scanner tab."""
+
 from __future__ import annotations
 
 import importlib
@@ -216,8 +217,8 @@ def test_run_scan_backend_call_contract(scanner_module, fake_st):
         earnings_source="yahoo",
     )
 
-    scanner_module.resolve_provider.assert_called_once_with("yahoo")
-    scanner_module.FetchPolicy.build.assert_called_once_with()
+    scanner_module.resolve_provider.assert_called_once_with("yahoo", settings=settings)
+    scanner_module.FetchPolicy.build.assert_called_once_with(settings=settings)
     scanner_module.run_with_report.assert_called_once()
     args, kwargs = scanner_module.run_with_report.call_args
     assert args[0] is watchlist
@@ -688,7 +689,9 @@ def test_drill_down_without_new_scan(scanner_module, fake_st):
     selectbox_keys = {call.kwargs.get("key") for call in fake_st.selectbox.call_args_list}
     assert "sel_scanner" in selectbox_keys
 
-    scanner_module.fetch.assert_called_once_with("AAPL", "long", provider="alpaca", settings=settings)
+    scanner_module.fetch.assert_called_once_with(
+        "AAPL", "long", provider="alpaca", settings=settings
+    )
     scanner_module.add_indicators.assert_called_once_with(scanner_module.fetch.return_value)
 
     assert fake_st.plotly_chart.call_count == 2

@@ -1,4 +1,5 @@
 """Tests for the screener engine."""
+
 from unittest.mock import patch
 
 import pandas as pd
@@ -33,7 +34,9 @@ def _make_fetch_report(
     failures = failures or {}
     actual = actual_provider or provider
     providers = providers_attempted or (actual,)
-    total_fetch_attempted = total_fetch_attempted if total_fetch_attempted is not None else len(tickers)
+    total_fetch_attempted = (
+        total_fetch_attempted if total_fetch_attempted is not None else len(tickers)
+    )
     return FetchReport(
         data=data,
         requested_provider=provider,
@@ -96,9 +99,7 @@ def test_engine_propagates_schwab_provider_to_fetch():
         patch.object(engine, "days_until_earnings", return_value=None),
         patch.object(engine, "SIGNAL_MAP", {"intraday": (fake_score, "intraday")}),
     ):
-        result = engine.run(
-            ["AAPL", "MSFT"], timeframe="intraday", provider="schwab"
-        )
+        result = engine.run(["AAPL", "MSFT"], timeframe="intraday", provider="schwab")
 
     assert captured["provider"] == "schwab"
     assert captured["tickers"] == ["AAPL", "MSFT"]
@@ -466,26 +467,41 @@ def test_run_with_report_preserves_days_until_earnings():
 
 
 def test_run_with_report_earnings_source_failure_not_provider_outage():
-    """Earnings lookup failures are tracked separately, not as OHLCV provider failures."""
+    """When filter is disabled, earnings lookup failures allow scoring while preserving earnings uncertainty."""
 
     def fake_score(df):
         return _make_result(70)
 
-    def fake_fetch_multi_report(*args, **kwargs):
-        return _make_fetch_report(["AAPL"], provider="yahoo")
+    def fake_fetch_multi_report(tickers, tf, provider=None, **kwargs):
+        return _make_fetch_report(
+            tickers,
+            data={t: pd.DataFrame([0] * 31) for t in tickers},
+            provider=provider or "yahoo",
+            actual_provider=provider or "yahoo",
+        )
 
     with (
         patch.object(engine, "fetch_multi_report", side_effect=fake_fetch_multi_report),
-        patch.object(engine, "days_until_earnings", side_effect=RuntimeError("earnings lookup failed")),
+        patch.object(
+            engine, "days_until_earnings", side_effect=RuntimeError("earnings lookup failed")
+        ),
         patch.object(engine, "SIGNAL_MAP", {"intraday": (fake_score, "intraday")}),
     ):
         report = engine.run_with_report(["AAPL"], timeframe="intraday")
 
-    assert report.results.empty
-    assert report.total_fetched == 0
+    report.validate(expected_tickers=["AAPL"])
+    assert report.total_signals == 1
+    assert len(report.results) == 1
+    assert report.results.iloc[0]["ticker"] == "AAPL"
+    assert report.results.iloc[0]["days_until_earnings"] is None
+    assert report.total_fetched == 1
     assert report.failures == {}
     assert "AAPL" in report.earnings_failures
     assert "Earnings lookup failed" in str(report.earnings_failures["AAPL"])
+    obs = report.observations.iloc[0]
+    assert obs["status"] == "signal"
+    assert obs["error_category"] == "ProviderDataUnavailableError"
+    assert "Earnings lookup failed for AAPL" in obs["error_message"]
 
 
 def test_run_with_report_all_earnings_excluded_is_normal_zero_result():
@@ -543,7 +559,7 @@ def test_run_with_report_partial_failure_zero_signals():
 
 
 def test_run_with_report_mixed_earnings_failure_and_valid_zero_signals():
-    """An earnings lookup failure is surfaced independently of a valid zero-signal ticker."""
+    """When filter is enabled, earnings lookup failure fails closed while valid zero-signal ticker fetches."""
 
     def fake_score(df):
         return _make_result(30)
@@ -559,14 +575,18 @@ def test_run_with_report_mixed_earnings_failure_and_valid_zero_signals():
     def earnings_days(ticker, **kwargs):
         if ticker == "AAPL":
             raise RuntimeError("lookup failed")
+        return 10
 
     with (
         patch.object(engine, "fetch_multi_report", side_effect=fake_fetch_multi_report),
         patch.object(engine, "days_until_earnings", side_effect=earnings_days),
         patch.object(engine, "SIGNAL_MAP", {"intraday": (fake_score, "intraday")}),
     ):
-        report = engine.run_with_report(["AAPL", "MSFT"], timeframe="intraday")
+        report = engine.run_with_report(
+            ["AAPL", "MSFT"], timeframe="intraday", exclude_earnings_within=5
+        )
 
+    report.validate(expected_tickers=["AAPL", "MSFT"])
     assert report.results.empty
     assert report.total_fetched == 1
     assert "AAPL" in report.earnings_failures
@@ -575,8 +595,46 @@ def test_run_with_report_mixed_earnings_failure_and_valid_zero_signals():
     assert report.total_fetch_eligible == 1
 
 
+def test_run_with_report_mixed_earnings_failure_and_valid_zero_signals_filter_disabled():
+    """When filter is disabled, earnings lookup failure does not block OHLCV fetching for either ticker."""
+
+    def fake_score(df):
+        return _make_result(30)
+
+    def fake_fetch_multi_report(tickers, tf, provider=None, **kwargs):
+        return _make_fetch_report(
+            tickers,
+            data={t: pd.DataFrame([0] * 31) for t in tickers},
+            provider=provider,
+            actual_provider=provider,
+        )
+
+    def earnings_days(ticker, **kwargs):
+        if ticker == "AAPL":
+            raise RuntimeError("lookup failed")
+        return 10
+
+    with (
+        patch.object(engine, "fetch_multi_report", side_effect=fake_fetch_multi_report),
+        patch.object(engine, "days_until_earnings", side_effect=earnings_days),
+        patch.object(engine, "SIGNAL_MAP", {"intraday": (fake_score, "intraday")}),
+    ):
+        report = engine.run_with_report(
+            ["AAPL", "MSFT"], timeframe="intraday", exclude_earnings_within=None
+        )
+
+    report.validate(expected_tickers=["AAPL", "MSFT"])
+    assert report.results.empty
+    assert report.total_fetched == 2
+    assert report.total_fetch_eligible == 2
+    assert report.total_below_threshold == 2
+    assert "AAPL" in report.earnings_failures
+    assert "MSFT" not in report.earnings_failures
+    assert report.failures == {}
+
+
 def test_run_with_report_mixed_earnings_failure_and_signal():
-    """An earnings lookup failure is surfaced alongside a successful signal."""
+    """When filter is enabled, an earnings lookup failure fails closed while eligible ticker scores."""
 
     def fake_score(df):
         return _make_result(70)
@@ -592,14 +650,18 @@ def test_run_with_report_mixed_earnings_failure_and_signal():
     def earnings_days(ticker, **kwargs):
         if ticker == "AAPL":
             raise RuntimeError("lookup failed")
+        return 10
 
     with (
         patch.object(engine, "fetch_multi_report", side_effect=fake_fetch_multi_report),
         patch.object(engine, "days_until_earnings", side_effect=earnings_days),
         patch.object(engine, "SIGNAL_MAP", {"intraday": (fake_score, "intraday")}),
     ):
-        report = engine.run_with_report(["AAPL", "MSFT"], timeframe="intraday")
+        report = engine.run_with_report(
+            ["AAPL", "MSFT"], timeframe="intraday", exclude_earnings_within=5
+        )
 
+    report.validate(expected_tickers=["AAPL", "MSFT"])
     assert report.total_signals == 1
     assert report.results["ticker"].tolist() == ["MSFT"]
     assert "AAPL" in report.earnings_failures
@@ -626,10 +688,14 @@ def test_run_with_report_earnings_exclusion_plus_fetch_failure():
 
     with (
         patch.object(engine, "fetch_multi_report", side_effect=fake_fetch_multi_report),
-        patch.object(engine, "days_until_earnings", side_effect=lambda t, **_: 2 if t == "AAPL" else None),
+        patch.object(
+            engine, "days_until_earnings", side_effect=lambda t, **_: 2 if t == "AAPL" else 10
+        ),
         patch.object(engine, "SIGNAL_MAP", {"intraday": (fake_score, "intraday")}),
     ):
-        report = engine.run_with_report(["AAPL", "MSFT"], timeframe="intraday", exclude_earnings_within=5)
+        report = engine.run_with_report(
+            ["AAPL", "MSFT"], timeframe="intraday", exclude_earnings_within=5
+        )
 
     assert report.results.empty
     assert report.total_earnings_excluded == 1
@@ -714,3 +780,178 @@ def test_run_with_report_canonicalizes_non_round_scored_metrics():
     assert obs["last_close"] == res["last_close"]
     assert obs["volume_ratio"] == res["volume_ratio"]
     assert obs["rsi"] == res["rsi"]
+
+
+def test_earnings_filter_fails_closed_when_enabled_and_date_unknown():
+    """When exclude_earnings_within > 0 and earnings date is unknown (None), engine fails closed."""
+    fetch_called = []
+
+    def fake_fetch_multi_report(tickers, tf, **kwargs):
+        fetch_called.extend(tickers)
+        return _make_fetch_report(tickers, data={})
+
+    with (
+        patch.object(engine, "fetch_multi_report", side_effect=fake_fetch_multi_report),
+        patch.object(engine, "days_until_earnings", return_value=None),
+    ):
+        report = engine.run_with_report(
+            ["AAPL"],
+            timeframe="intraday",
+            exclude_earnings_within=5,
+        )
+
+    assert report.total_requested == 1
+    assert report.total_fetch_eligible == 0
+    assert "AAPL" in report.earnings_failures
+    assert fetch_called == []
+    obs = report.observations.iloc[0]
+    assert obs["status"] == "earnings_failure"
+    assert obs["ticker"] == "AAPL"
+
+
+def test_earnings_filter_passes_through_when_disabled_and_date_unknown():
+    """When exclude_earnings_within is 0 or None and earnings date is unknown, engine allows scoring."""
+
+    def fake_score(df):
+        return _make_result(80)
+
+    def fake_fetch_multi_report(tickers, tf, provider=None, **kwargs):
+        return _make_fetch_report(
+            tickers,
+            data={t: pd.DataFrame([0] * 31) for t in tickers},
+            provider=provider,
+            actual_provider=provider,
+        )
+
+    with (
+        patch.object(engine, "fetch_multi_report", side_effect=fake_fetch_multi_report),
+        patch.object(engine, "days_until_earnings", return_value=None),
+        patch.object(engine, "SIGNAL_MAP", {"intraday": (fake_score, "intraday")}),
+    ):
+        report = engine.run_with_report(
+            ["AAPL"],
+            timeframe="intraday",
+            exclude_earnings_within=0,
+        )
+
+    assert report.total_requested == 1
+    assert report.total_fetch_eligible == 1
+    assert report.total_signals == 1
+    report.validate(expected_tickers=["AAPL"])
+    res = report.results.iloc[0]
+    assert res["ticker"] == "AAPL"
+    assert res["days_until_earnings"] is None
+
+
+def test_earnings_filter_disabled_below_threshold_preserves_earnings_uncertainty_in_audit():
+    """When filter is disabled and score is below threshold, observation preserves earnings error."""
+
+    def fake_score(df):
+        return _make_result(30)  # below 40 default min_score
+
+    def fake_fetch_multi_report(tickers, tf, provider=None, **kwargs):
+        return _make_fetch_report(
+            tickers,
+            data={t: pd.DataFrame([0] * 31) for t in tickers},
+            provider=provider,
+            actual_provider=provider,
+        )
+
+    with (
+        patch.object(engine, "fetch_multi_report", side_effect=fake_fetch_multi_report),
+        patch.object(
+            engine,
+            "days_until_earnings",
+            side_effect=RuntimeError("Yahoo earnings rate limited"),
+        ),
+        patch.object(engine, "SIGNAL_MAP", {"intraday": (fake_score, "intraday")}),
+    ):
+        report = engine.run_with_report(
+            ["AAPL"],
+            timeframe="intraday",
+            min_score=40,
+            exclude_earnings_within=None,
+        )
+
+    report.validate(expected_tickers=["AAPL"])
+    assert report.total_signals == 0
+    assert report.total_below_threshold == 1
+    assert report.results.empty
+    obs = report.observations.iloc[0]
+    assert obs["status"] == "below_threshold"
+    assert obs["error_category"] == "ProviderDataUnavailableError"
+    assert "Earnings lookup failed for AAPL" in obs["error_message"]
+    assert "AAPL" in report.earnings_failures
+
+
+def test_earnings_filter_enabled_with_typed_unavailable_exception_fails_closed():
+    """When filter is enabled and days_until_earnings raises an exception, engine fails closed."""
+    fetch_called = []
+
+    def fake_fetch_multi_report(tickers, tf, **kwargs):
+        fetch_called.extend(tickers)
+        return _make_fetch_report(tickers, data={})
+
+    with (
+        patch.object(engine, "fetch_multi_report", side_effect=fake_fetch_multi_report),
+        patch.object(
+            engine,
+            "days_until_earnings",
+            side_effect=RuntimeError("Earnings provider unreachable"),
+        ),
+    ):
+        report = engine.run_with_report(
+            ["AAPL"],
+            timeframe="intraday",
+            exclude_earnings_within=5,
+        )
+
+    report.validate(expected_tickers=["AAPL"])
+    assert report.total_requested == 1
+    assert report.total_fetch_eligible == 0
+    assert "AAPL" in report.earnings_failures
+    assert fetch_called == []
+    obs = report.observations.iloc[0]
+    assert obs["status"] == "earnings_failure"
+    assert obs["ticker"] == "AAPL"
+
+
+def test_earnings_filter_enabled_with_known_dates_in_and_out_of_window():
+    """Known dates inside window are excluded; outside window are fetched and scored."""
+
+    def fake_score(df):
+        return _make_result(85)
+
+    def fake_fetch_multi_report(tickers, tf, provider=None, **kwargs):
+        return _make_fetch_report(
+            tickers,
+            data={t: pd.DataFrame([0] * 31) for t in tickers},
+            provider=provider,
+            actual_provider=provider,
+        )
+
+    def fake_days(ticker, **kwargs):
+        if ticker == "IN_WINDOW":
+            return 3
+        if ticker == "OUT_WINDOW":
+            return 15
+        return None
+
+    with (
+        patch.object(engine, "fetch_multi_report", side_effect=fake_fetch_multi_report),
+        patch.object(engine, "days_until_earnings", side_effect=fake_days),
+        patch.object(engine, "SIGNAL_MAP", {"intraday": (fake_score, "intraday")}),
+    ):
+        report = engine.run_with_report(
+            ["IN_WINDOW", "OUT_WINDOW"],
+            timeframe="intraday",
+            exclude_earnings_within=5,
+        )
+
+    report.validate(expected_tickers=["IN_WINDOW", "OUT_WINDOW"])
+    assert report.total_requested == 2
+    assert report.total_earnings_excluded == 1
+    assert report.total_fetch_eligible == 1
+    assert report.total_signals == 1
+    assert report.results["ticker"].tolist() == ["OUT_WINDOW"]
+    assert report.results.iloc[0]["days_until_earnings"] == 15

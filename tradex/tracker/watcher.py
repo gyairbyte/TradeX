@@ -15,6 +15,7 @@ Usage:
     # Or import and call from your own script
     from tradex.tracker.watcher import run_once, start_loop
 """
+
 import argparse
 import dataclasses
 import time
@@ -38,9 +39,26 @@ from tradex.tracker.confluence import run_confluence_screen
 from tradex.tracker.outcome_tracker import run_outcome_pass
 
 DEFAULT_WATCHLIST = [
-    "AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "META", "GOOGL",
-    "AMD", "PLTR", "MSTR", "SPY", "QQQ", "SOXL", "TQQQ",
-    "SMCI", "ARM",  "AVGO", "MU",   "CRWD", "NET",
+    "AAPL",
+    "MSFT",
+    "NVDA",
+    "TSLA",
+    "AMZN",
+    "META",
+    "GOOGL",
+    "AMD",
+    "PLTR",
+    "MSTR",
+    "SPY",
+    "QQQ",
+    "SOXL",
+    "TQQQ",
+    "SMCI",
+    "ARM",
+    "AVGO",
+    "MU",
+    "CRWD",
+    "NET",
 ]
 
 
@@ -72,7 +90,8 @@ def _check_alerts(
         settings = load_runtime_settings()
     if alert_policy is None:
         alert_policy = AlertPolicy(
-            settings.alert_cooldown, settings=settings,
+            settings.alert_cooldown,
+            settings=settings,
         )
 
     results: list[AlertDispatchResult] = []
@@ -95,14 +114,18 @@ def _check_alerts(
 
     # Confluence alerts
     conf = run_confluence_screen(
-        tickers, provider=provider, settings=settings,
+        tickers,
+        provider=provider,
+        settings=settings,
     )
     for _, row in conf.iterrows():
         results.append(
             alert_confluence(
                 ticker=row["ticker"],
                 confluence_score=int(row["confluence_score"]),
-                active_timeframes=row["active_timeframes"].split(", ") if row["active_timeframes"] else [],
+                active_timeframes=row["active_timeframes"].split(", ")
+                if row["active_timeframes"]
+                else [],
                 last_close=float(row.get("last_close") or 0),
                 policy=alert_policy,
                 observed_at=observed_at,
@@ -117,21 +140,17 @@ def _print_alert_summary(results: list[AlertDispatchResult]) -> None:
     """Print a concise count of alert outcomes plus per-suppression details."""
     evaluated = len(results)
     sent = sum(
-        1
-        for r in results
-        if r.decision in (AlertDecision.SENT, AlertDecision.COOLDOWN_DISABLED)
+        1 for r in results if r.decision in (AlertDecision.SENT, AlertDecision.COOLDOWN_DISABLED)
     )
     suppressed = sum(
         1
         for r in results
-        if r.decision
-        in (AlertDecision.SUPPRESSED_COOLDOWN, AlertDecision.SUPPRESSED_IN_FLIGHT)
+        if r.decision in (AlertDecision.SUPPRESSED_COOLDOWN, AlertDecision.SUPPRESSED_IN_FLIGHT)
     )
     failed = sum(
         1
         for r in results
-        if r.decision
-        in (AlertDecision.DELIVERY_FAILED, AlertDecision.NO_CHANNELS_CONFIGURED)
+        if r.decision in (AlertDecision.DELIVERY_FAILED, AlertDecision.NO_CHANNELS_CONFIGURED)
     )
     policy_errors = sum(1 for r in results if r.decision == AlertDecision.POLICY_ERROR)
     print(
@@ -141,17 +160,13 @@ def _print_alert_summary(results: list[AlertDispatchResult]) -> None:
 
     for r in results:
         if r.decision == AlertDecision.SUPPRESSED_COOLDOWN:
-            next_eligible = (
-                r.next_eligible_at.isoformat() if r.next_eligible_at else "unknown"
-            )
+            next_eligible = r.next_eligible_at.isoformat() if r.next_eligible_at else "unknown"
             print(
                 f"[alerts] suppressed (cooldown): {r.key.ticker} | {r.key.alert_type} | "
                 f"{r.key.timeframe}; next eligible at {next_eligible}"
             )
         elif r.decision == AlertDecision.SUPPRESSED_IN_FLIGHT:
-            claim_expires = (
-                r.next_eligible_at.isoformat() if r.next_eligible_at else "unknown"
-            )
+            claim_expires = r.next_eligible_at.isoformat() if r.next_eligible_at else "unknown"
             print(
                 f"[alerts] suppressed (in-flight): {r.key.ticker} | {r.key.alert_type} | "
                 f"{r.key.timeframe}; claim expires at {claim_expires}"
@@ -186,7 +201,9 @@ def run_once(
         status = market_status(now)
         print(f"[{timestamp}] Market closed — skipping scan. Reason: {status.reason}.")
         if status.next_open:
-            next_open_str = status.next_open.astimezone(MARKET_TIMEZONE).strftime("%Y-%m-%d %H:%M %Z")
+            next_open_str = status.next_open.astimezone(MARKET_TIMEZONE).strftime(
+                "%Y-%m-%d %H:%M %Z"
+            )
             print(f"[{timestamp}] Next regular session opens at {next_open_str}.")
         return
 
@@ -194,7 +211,8 @@ def run_once(
         settings = load_runtime_settings()
     if alert_policy is None:
         alert_policy = AlertPolicy(
-            settings.alert_cooldown, settings=settings,
+            settings.alert_cooldown,
+            settings=settings,
         )
 
     store.init(db_path=str(settings.paths.signals_db))
@@ -203,8 +221,10 @@ def run_once(
         max_retries=max_retries, fallback_order=fallback_order, settings=settings
     )
     requested_tickers = list(dict.fromkeys(str(t).upper() for t in tickers))
-    print(f"[{timestamp}] Scanning {len(requested_tickers)} tickers on {timeframe} (provider={requested_provider}, "
-          f"max_retries={fetch_policy.max_retries}, fallback={fetch_policy.fallback_order or 'disabled'})…")
+    print(
+        f"[{timestamp}] Scanning {len(requested_tickers)} tickers on {timeframe} (provider={requested_provider}, "
+        f"max_retries={fetch_policy.max_retries}, fallback={fetch_policy.fallback_order or 'disabled'})…"
+    )
 
     report = screener_run_with_report(
         requested_tickers,
@@ -221,27 +241,33 @@ def run_once(
     has_scoring_failures = bool(report.scoring_failures)
 
     all_fetch_eligible_failed = (
-        report.total_fetch_eligible > 0
-        and report.total_fetched == 0
-        and has_fetch_failures
+        report.total_fetch_eligible > 0 and report.total_fetched == 0 and has_fetch_failures
     )
 
     if all_fetch_eligible_failed:
         categories = sorted({type(e).__name__ for e in report.fetch_failures.values()})
-        print(f"[{timestamp}] ERROR: all providers failed for {report.total_fetch_eligible} "
-              f"symbol(s) that reached OHLCV fetching. "
-              f"Providers attempted: {report.providers_attempted}. "
-              f"Failure categories: {categories or ['unknown']}.")
+        print(
+            f"[{timestamp}] ERROR: all providers failed for {report.total_fetch_eligible} "
+            f"symbol(s) that reached OHLCV fetching. "
+            f"Providers attempted: {report.providers_attempted}. "
+            f"Failure categories: {categories or ['unknown']}."
+        )
     elif report.results.empty:
         if report.total_earnings_excluded == len(requested_tickers):
-            print(f"[{timestamp}] No signals above {min_score}; all {report.total_earnings_excluded} tickers excluded due to earnings.")
+            print(
+                f"[{timestamp}] No signals above {min_score}; all {report.total_earnings_excluded} tickers excluded due to earnings."
+            )
         else:
             print(f"[{timestamp}] No signals above {min_score}.")
     else:
         results = report.results
-        print(f"[{timestamp}] {len(results)} signals found (actual provider={actual_provider}, "
-              f"retries={report.total_retries}, fallback={report.fallback_used}):")
-        print(results[["ticker", "score", "volume_ratio", "rsi", "provider"]].to_string(index=False))
+        print(
+            f"[{timestamp}] {len(results)} signals found (actual provider={actual_provider}, "
+            f"retries={report.total_retries}, fallback={report.fallback_used}):"
+        )
+        print(
+            results[["ticker", "score", "volume_ratio", "rsi", "provider"]].to_string(index=False)
+        )
 
     # Persist the full scan report (observations, session, and signals).
     store.record_scan(
@@ -256,32 +282,46 @@ def run_once(
     # Surface each non-empty stage map independently.
     if has_earnings_failures:
         categories = sorted({type(e).__name__ for e in report.earnings_failures.values()})
-        print(f"[{timestamp}] Earnings lookup failures: {len(report.earnings_failures)} symbol(s). "
-              f"Categories: {categories or ['unknown']}.")
+        print(
+            f"[{timestamp}] Earnings lookup failures: {len(report.earnings_failures)} symbol(s). "
+            f"Categories: {categories or ['unknown']}."
+        )
     if has_fetch_failures and not all_fetch_eligible_failed:
         categories = sorted({type(e).__name__ for e in report.fetch_failures.values()})
-        print(f"[{timestamp}] OHLCV fetch failures: {len(report.fetch_failures)} symbol(s). "
-              f"Categories: {categories or ['unknown']}.")
+        print(
+            f"[{timestamp}] OHLCV fetch failures: {len(report.fetch_failures)} symbol(s). "
+            f"Categories: {categories or ['unknown']}."
+        )
     if has_scoring_failures:
         categories = sorted({type(e).__name__ for e in report.scoring_failures.values()})
-        print(f"[{timestamp}] Scoring failures: {len(report.scoring_failures)} symbol(s). "
-              f"Categories: {categories or ['unknown']}.")
+        print(
+            f"[{timestamp}] Scoring failures: {len(report.scoring_failures)} symbol(s). "
+            f"Categories: {categories or ['unknown']}."
+        )
 
     if report.attempt_log:
-        print(f"[{timestamp}] Attempt summary (providers attempted: {report.providers_attempted}, "
-              f"total attempts: {report.total_fetch_attempted}, retries: {report.total_retries}).")
+        print(
+            f"[{timestamp}] Attempt summary (providers attempted: {report.providers_attempted}, "
+            f"total attempts: {report.total_fetch_attempted}, retries: {report.total_retries})."
+        )
         for prov in report.providers_attempted:
             entries = [a for a in report.attempt_log if a.provider == prov]
             attempted = len(entries)
             succeeded = sum(1 for e in entries if e.success)
             failed = attempted - succeeded
             retries = sum(e.retries for e in entries)
-            print(f"  - {prov}: {attempted} attempted, {succeeded} succeeded, {failed} failed, {retries} retries")
+            print(
+                f"  - {prov}: {attempted} attempted, {succeeded} succeeded, {failed} failed, {retries} retries"
+            )
 
     if report.total_fetched > 0:
         alert_results = _check_alerts(
-            tickers, timeframe, provider=actual_provider,
-            alert_policy=alert_policy, observed_at=now, settings=settings,
+            tickers,
+            timeframe,
+            provider=actual_provider,
+            alert_policy=alert_policy,
+            observed_at=now,
+            settings=settings,
         )
         _print_alert_summary(alert_results)
 
@@ -317,20 +357,27 @@ def _run_scheduled_premarket(
     status = market_status(now)
     if not status.is_trading_day:
         ny_now = now.astimezone(MARKET_TIMEZONE)
-        print(f"[{ny_now.strftime('%Y-%m-%d %H:%M %Z')}] Skipping pre-market gap scan — {status.reason}.")
+        print(
+            f"[{ny_now.strftime('%Y-%m-%d %H:%M %Z')}] Skipping pre-market gap scan — {status.reason}."
+        )
         return
 
     if settings is None:
         settings = load_runtime_settings()
     if alert_policy is None:
         alert_policy = AlertPolicy(
-            settings.alert_cooldown, settings=settings,
+            settings.alert_cooldown,
+            settings=settings,
         )
 
     config = GapScanConfig(min_abs_gap_pct=4.0)
     try:
         report = scan_gaps_with_report(
-            tickers, config=config, provider=provider, as_of=now, settings=settings,
+            tickers,
+            config=config,
+            provider=provider,
+            as_of=now,
+            settings=settings,
         )
     except Exception as exc:  # noqa: BLE001
         print(f"[pre-market gap] {exc}")
@@ -352,7 +399,9 @@ def _run_scheduled_premarket(
     if provider_failures == counts["requested"] and counts["requested"] > 0:
         print("[pre-market gap] All tickers failed — possible provider or data outage.")
     elif missing_data == counts["requested"] and counts["requested"] > 0:
-        print("[pre-market gap] All tickers lack required market data (previous close or pre-market bars).")
+        print(
+            "[pre-market gap] All tickers lack required market data (previous close or pre-market bars)."
+        )
     elif counts["qualified"] == 0:
         print("[pre-market gap] No qualifying gaps at 4% threshold.")
 
@@ -395,20 +444,28 @@ def start_loop(
         settings = load_runtime_settings()
     if alert_policy is None:
         alert_policy = AlertPolicy(
-            settings.alert_cooldown, settings=settings,
+            settings.alert_cooldown,
+            settings=settings,
         )
 
     requested_provider = resolve_provider(provider, settings=settings)
     fetch_policy = policy or FetchPolicy.build(
         max_retries=max_retries, fallback_order=fallback_order, settings=settings
     )
-    print(f"Starting watcher: {timeframe} every {interval_minutes}m "
-          f"(provider={requested_provider}, retries={fetch_policy.max_retries}, "
-          f"fallback={fetch_policy.fallback_order or 'disabled'}, "
-          f"market_hours_only={market_hours_only}) — Ctrl+C to stop")
+    print(
+        f"Starting watcher: {timeframe} every {interval_minutes}m "
+        f"(provider={requested_provider}, retries={fetch_policy.max_retries}, "
+        f"fallback={fetch_policy.fallback_order or 'disabled'}, "
+        f"market_hours_only={market_hours_only}) — Ctrl+C to stop"
+    )
     run_once(
-        tickers, timeframe, min_score, provider,
-        max_retries=max_retries, fallback_order=fallback_order, policy=policy,
+        tickers,
+        timeframe,
+        min_score,
+        provider,
+        max_retries=max_retries,
+        fallback_order=fallback_order,
+        policy=policy,
         market_hours_only=market_hours_only,
         alert_policy=alert_policy,
         settings=settings,
@@ -416,8 +473,13 @@ def start_loop(
 
     def _scheduled_run() -> None:
         run_once(
-            tickers, timeframe, min_score, requested_provider,
-            max_retries=max_retries, fallback_order=fallback_order, policy=policy,
+            tickers,
+            timeframe,
+            min_score,
+            requested_provider,
+            max_retries=max_retries,
+            fallback_order=fallback_order,
+            policy=policy,
             market_hours_only=market_hours_only,
             alert_policy=alert_policy,
             now=datetime.now(UTC),
@@ -431,7 +493,11 @@ def start_loop(
     )
     # Daily pre-market: gap scan at 8:00 AM New York time.
     schedule.every().day.at("08:00", "America/New_York").do(
-        _run_scheduled_premarket, tickers=tickers, provider=requested_provider, alert_policy=alert_policy, settings=settings
+        _run_scheduled_premarket,
+        tickers=tickers,
+        provider="yahoo",
+        alert_policy=alert_policy,
+        settings=settings,
     )
 
     try:
@@ -445,14 +511,15 @@ def start_loop(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="TradeX signal watcher")
     parser.add_argument("--timeframe", default="intraday", choices=["intraday", "short", "long"])
-    parser.add_argument("--interval",  type=int, default=0,
-                        help="Poll interval in minutes. 0 = run once and exit.")
+    parser.add_argument(
+        "--interval", type=int, default=0, help="Poll interval in minutes. 0 = run once and exit."
+    )
     parser.add_argument("--min-score", type=int, default=35)
     parser.add_argument(
         "--provider",
         default=None,
-        choices=["yahoo", "schwab", "alpaca", "ibkr"],
-        help="Market data provider to use for supported OHLCV workflows. Defaults to DATA_PROVIDER env var or yahoo.",
+        choices=["schwab", "alpaca", "yahoo", "ibkr"],
+        help="Market data provider to use for supported OHLCV workflows. Defaults to DATA_PROVIDER env var or schwab.",
     )
     parser.add_argument(
         "--max-retries",
@@ -507,16 +574,25 @@ if __name__ == "__main__":
 
     if args.interval > 0:
         start_loop(
-            DEFAULT_WATCHLIST, args.timeframe, args.interval, args.min_score,
-            args.provider, max_retries=args.max_retries, fallback_order=args.fallback_order,
+            DEFAULT_WATCHLIST,
+            args.timeframe,
+            args.interval,
+            args.min_score,
+            args.provider,
+            max_retries=args.max_retries,
+            fallback_order=args.fallback_order,
             market_hours_only=args.market_hours_only,
             alert_policy=alert_policy,
             settings=settings,
         )
     else:
         run_once(
-            DEFAULT_WATCHLIST, args.timeframe, args.min_score, args.provider,
-            max_retries=args.max_retries, fallback_order=args.fallback_order,
+            DEFAULT_WATCHLIST,
+            args.timeframe,
+            args.min_score,
+            args.provider,
+            max_retries=args.max_retries,
+            fallback_order=args.fallback_order,
             market_hours_only=args.market_hours_only,
             alert_policy=alert_policy,
             settings=settings,

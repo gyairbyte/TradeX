@@ -14,7 +14,6 @@ import yfinance as yf
 
 from tradex.config import TradeXSettings, load_runtime_settings
 from tradex.data.fetcher import (
-    DEFAULT_PROVIDER,
     ProviderCapabilityError,
     ProviderDataUnavailableError,
 )
@@ -36,18 +35,23 @@ PREMARKET_OPEN_TIME = time(4, 0)
 
 
 def resolve_premarket_provider(
-    provider: str | None, *, settings: TradeXSettings | None = None
+    provider: str | None = None, *, settings: TradeXSettings | None = None
 ) -> str:
-    """Return the canonical pre-market provider name or raise ProviderCapabilityError."""
-    from tradex.data.fetcher import resolve_provider
+    """Return the canonical pre-market provider name or raise ProviderCapabilityError.
 
-    p = resolve_provider(provider, settings=settings)
+    The pre-market gap scanner is specialized to Yahoo in this release and decoupled
+    from the central OHLCV default (Schwab). When ``provider`` is omitted (None),
+    it defaults to ``"yahoo"``. An explicit unsupported provider raises
+    ``ProviderCapabilityError``.
+    """
+    _ = settings
+    if provider is None:
+        p = "yahoo"
+    else:
+        p = str(provider).strip().lower()
+
     if p == "yahoo":
         return p
-    if p == "schwab":
-        raise ProviderCapabilityError(
-            f"Provider '{p}' does not yet support pre-market/extended-hours quotes"
-        )
     raise ProviderCapabilityError(
         f"Provider '{p}' does not yet support pre-market/extended-hours quotes"
     )
@@ -619,7 +623,10 @@ def get_premarket_price(
     """
     as_of = as_of or datetime.now(UTC)
     result = fetch_premarket_bars(
-        ticker, provider=provider, as_of=as_of, allow_after_open=False,
+        ticker,
+        provider=provider,
+        as_of=as_of,
+        allow_after_open=False,
         settings=settings,
     )
     if result.error is not None or result.bars.empty:
@@ -639,7 +646,7 @@ def fetch_spread_snapshot(
     optional injection for tests; live sources are only enabled when their safe
     contracts already exist in the repository.
     """
-    requested_source = (provider or DEFAULT_PROVIDER).lower()
+    requested_source = (provider or "yahoo").lower()
     if quote is not None:
         try:
             bid = float(quote["bid"])

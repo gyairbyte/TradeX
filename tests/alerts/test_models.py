@@ -74,7 +74,7 @@ class TestAlertCooldownConfig:
         assert cfg.confluence_minutes is None
         assert cfg.pattern_minutes is None
         assert cfg.gap_minutes is None
-        assert str(cfg.state_path) == "~/.tradex/alerts.db"
+        assert Path(cfg.state_path) == Path("~/.tradex/alerts.db")
 
     def test_per_type_override(self):
         cfg = AlertCooldownConfig(coil_minutes=120, gap_minutes=15)
@@ -119,7 +119,7 @@ class TestAlertCooldownConfig:
         assert cfg.enabled is False
         assert cfg.default_minutes == 90
         assert cfg.coil_minutes == 30
-        assert str(cfg.state_path) == "~/.tradex/test_alerts.db"
+        assert Path(cfg.state_path) == Path("~/.tradex/test_alerts.db")
 
     def test_env_rejects_empty_override(self, monkeypatch):
         monkeypatch.setenv("ALERT_COIL_COOLDOWN_MINUTES", "")

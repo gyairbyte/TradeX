@@ -1,4 +1,5 @@
 """Tests for the central OHLCV provider fetcher."""
+
 import pytest
 
 from tradex.data.fetcher import fetch, resolve_provider
@@ -18,13 +19,13 @@ def test_resolve_provider_normalizes_case_and_whitespace():
 
 
 def test_resolve_provider_defaults_to_env(monkeypatch):
-    monkeypatch.setenv("DATA_PROVIDER", "schwab")
-    assert resolve_provider() == "schwab"
-
-
-def test_resolve_provider_defaults_to_yahoo_when_unset(monkeypatch):
-    monkeypatch.delenv("DATA_PROVIDER", raising=False)
+    monkeypatch.setenv("DATA_PROVIDER", "yahoo")
     assert resolve_provider() == "yahoo"
+
+
+def test_resolve_provider_defaults_to_schwab_when_unset(monkeypatch):
+    monkeypatch.delenv("DATA_PROVIDER", raising=False)
+    assert resolve_provider() == "schwab"
 
 
 def test_resolve_provider_rejects_invalid_value():
@@ -47,7 +48,9 @@ def test_fetch_uses_resolved_provider(monkeypatch):
         return "placeholder"
 
     monkeypatch.setattr("tradex.data.fetcher._PROVIDERS", {"schwab": fake_fetch})
-    monkeypatch.setattr("tradex.data.fetcher.TIMEFRAMES", {"short": {"period": "60d", "interval": "1d"}})
+    monkeypatch.setattr(
+        "tradex.data.fetcher.TIMEFRAMES", {"short": {"period": "60d", "interval": "1d"}}
+    )
 
     result = fetch("AAPL", "short", provider="schwab")
 

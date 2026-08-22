@@ -20,7 +20,7 @@ Gary is particularly interested in:
 - **Keep it simple and readable** — this is a tool for understanding the market, not just black-box outputs. Every signal should have a human-readable reason.
 - **Score-based ranking** — all signals produce a 0–100 score so results are comparable across tickers and timeframes
 - **Modular signal logic** — each timeframe has its own scorer in `tradex/signals/`. Adding a new signal means editing one file.
-- **Pluggable data providers** — `fetcher.py` supports Yahoo (default), Alpaca, IBKR, and Schwab. Switching is one env var (`DATA_PROVIDER`) or an explicit `TradeXSettings` object. All providers return the same normalized DataFrame so signal code never knows which provider is active.
+- **Pluggable data providers** — `fetcher.py` supports Schwab (primary/default), Alpaca (degraded intraday), Yahoo (research/fallback/premarket), and IBKR (archived/manual). Switching is one env var (`DATA_PROVIDER`) or an explicit `TradeXSettings` object. All providers return the same normalized DataFrame so signal code never knows which provider is active.
 
 ---
 
@@ -144,7 +144,7 @@ See [`docs/PROJECT-TRACKER.md`](docs/PROJECT-TRACKER.md) for the authoritative c
 
 ## Key Decisions Made
 
-- **yfinance as default, four providers supported** — Yahoo requires no setup and works for short/long. For real intraday scanning, Alpaca (free) or Schwab (if you have an account) are the right upgrades. IBKR is most powerful but requires running TWS locally.
+- **Schwab as primary default, four providers supported** — Schwab is the primary TradeX data foundation. Alpaca serves as a degraded intraday alternative (IEX feed), Yahoo serves as research/daily-weekly fallback and the specialized pre-market gap scanner source, and IBKR is archived/manual (requires local TWS/Gateway). Fallback is explicit and not automatic.
 - **TD Ameritrade is dead** — shut down Sept 2024. `schwab-py` is the direct replacement using the Schwab Developer API. Do not reference `tda-api`.
 - **Schwab provider is validated and hardened** — `tradex/data/fetcher.py` normalizes Schwab candles to the canonical OHLCV contract (sorted, de-duplicated, UTC-indexed DataFrame with columns `open`, `high`, `low`, `close`, `volume`). The contract is enforced by deterministic, credential-free tests in `tests/data/test_schwab_provider.py`.
 - **Provider abstraction in fetcher.py only** — signal code receives a plain DataFrame and never knows which provider supplied it. Keep it that way.
