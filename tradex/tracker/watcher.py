@@ -145,7 +145,12 @@ def _print_alert_summary(results: list[AlertDispatchResult]) -> None:
     suppressed = sum(
         1
         for r in results
-        if r.decision in (AlertDecision.SUPPRESSED_COOLDOWN, AlertDecision.SUPPRESSED_IN_FLIGHT)
+        if r.decision
+        in (
+            AlertDecision.SUPPRESSED_COOLDOWN,
+            AlertDecision.SUPPRESSED_IN_FLIGHT,
+            AlertDecision.SUPPRESSED_EVIDENCE_GATE,
+        )
     )
     failed = sum(
         1
@@ -159,7 +164,12 @@ def _print_alert_summary(results: list[AlertDispatchResult]) -> None:
     )
 
     for r in results:
-        if r.decision == AlertDecision.SUPPRESSED_COOLDOWN:
+        if r.decision == AlertDecision.SUPPRESSED_EVIDENCE_GATE:
+            print(
+                f"[alerts] suppressed (evidence gate): {r.key.ticker} | {r.key.alert_type} | "
+                f"{r.key.timeframe}; {r.reason}"
+            )
+        elif r.decision == AlertDecision.SUPPRESSED_COOLDOWN:
             next_eligible = r.next_eligible_at.isoformat() if r.next_eligible_at else "unknown"
             print(
                 f"[alerts] suppressed (cooldown): {r.key.ticker} | {r.key.alert_type} | "

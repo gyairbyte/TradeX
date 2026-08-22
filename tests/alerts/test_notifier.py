@@ -1,10 +1,13 @@
-"""Tests for the typed alert helpers and raw send_alert transport."""
+"""Tests for the typed alert helpers, fail-closed gating, and raw send_alert transport."""
 from __future__ import annotations
 
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
-from tradex.alerts.models import AlertDecision
+import pytest
+
+from tradex.alerts.eligibility import ApprovedActionableStrategy
+from tradex.alerts.models import AlertDecision, AlertKey
 from tradex.alerts.notifier import (
     COIL_ALERT_THRESHOLD,
     CONFLUENCE_ALERT_THRESHOLD,
@@ -36,8 +39,24 @@ def _discord_settings() -> TradeXSettings:
     )
 
 
+@pytest.fixture
+def authorized_strategy(monkeypatch):
+    """Register an approved strategy for testing authorized alert pathways."""
+    strat = ApprovedActionableStrategy(
+        strategy_id="TEST-001",
+        strategy_version="1.0.0",
+        description="Authorized test strategy",
+    )
+    monkeypatch.setattr(
+        "tradex.alerts.eligibility.APPROVED_ACTIONABLE_STRATEGIES",
+        (strat,),
+    )
+    return strat
+
+
 class TestSendAlert:
     def test_returns_channel_map(self):
+        """Manual test alert helper calls underlying transports directly."""
         with (
             patch("tradex.alerts.notifier._send_discord", return_value=False),
             patch("tradex.alerts.notifier._send_email", return_value=False),
@@ -65,19 +84,21 @@ class TestAlertCoil:
         result = alert_coil("AAPL", COIL_ALERT_THRESHOLD - 1, 50, "up", "intraday")
         assert result.decision == AlertDecision.BELOW_THRESHOLD
 
-    def test_exact_threshold_sends(self):
+    def test_exact_threshold_dispatches(self):
         mock_policy = MagicMock(spec=AlertPolicy)
-        mock_policy.dispatch.return_value = MagicMock(decision=AlertDecision.SENT)
-        alert_coil("AAPL", COIL_ALERT_THRESHOLD, 50, "up", "intraday", policy=mock_policy)
+        mock_policy.dispatch.return_value = MagicMock(decision=AlertDecision.SUPPRESSED_EVIDENCE_GATE)
+        result = alert_coil("AAPL", COIL_ALERT_THRESHOLD, 50, "up", "intraday", policy=mock_policy)
         mock_policy.dispatch.assert_called_once()
+        assert result.decision == AlertDecision.SUPPRESSED_EVIDENCE_GATE
 
-    def test_above_threshold_sends(self):
+    def test_above_threshold_dispatches(self):
         mock_policy = MagicMock(spec=AlertPolicy)
-        mock_policy.dispatch.return_value = MagicMock(decision=AlertDecision.SENT)
-        alert_coil("AAPL", COIL_ALERT_THRESHOLD + 5, 50, "up", "intraday", policy=mock_policy)
+        mock_policy.dispatch.return_value = MagicMock(decision=AlertDecision.SUPPRESSED_EVIDENCE_GATE)
+        result = alert_coil("AAPL", COIL_ALERT_THRESHOLD + 5, 50, "up", "intraday", policy=mock_policy)
         mock_policy.dispatch.assert_called_once()
+        assert result.decision == AlertDecision.SUPPRESSED_EVIDENCE_GATE
 
-    def test_same_ticker_timeframe_suppresses(self, tmp_path):
+    def test_unapproved_strategy_gated_when_policy_provided(self, tmp_path):
         now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
         store = AlertStore(tmp_path / "alerts.db")
         policy = AlertPolicy(
@@ -87,11 +108,9 @@ class TestAlertCoil:
             is_configured=lambda: True,
         )
         r1 = alert_coil("AAPL", 70, 50, "up", "intraday", policy=policy, observed_at=now)
-        r2 = alert_coil("AAPL", 70, 50, "up", "intraday", policy=policy, observed_at=now)
-        assert r1.decision == AlertDecision.SENT
-        assert r2.decision == AlertDecision.SUPPRESSED_COOLDOWN
+        assert r1.decision == AlertDecision.SUPPRESSED_EVIDENCE_GATE
 
-    def test_different_timeframe_does_not_collide(self, tmp_path):
+    def test_authorized_strategy_dispatches(self, tmp_path, authorized_strategy):
         now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
         store = AlertStore(tmp_path / "alerts.db")
         policy = AlertPolicy(
@@ -100,10 +119,17 @@ class TestAlertCoil:
             transport=lambda s, b, c: {"discord": True},
             is_configured=lambda: True,
         )
-        r1 = alert_coil("AAPL", 70, 50, "up", "intraday", policy=policy, observed_at=now)
-        r2 = alert_coil("AAPL", 70, 50, "up", "short", policy=policy, observed_at=now)
+        key = AlertKey("AAPL", "coil", "intraday")
+        r1 = policy.dispatch(
+            key,
+            "subject",
+            "body",
+            observed_at=now,
+            strategy_id="TEST-001",
+            strategy_version="1.0.0",
+            evidence_state="production_approved",
+        )
         assert r1.decision == AlertDecision.SENT
-        assert r2.decision == AlertDecision.SENT
 
     def test_subject_body_compatible(self):
         mock_policy = MagicMock(spec=AlertPolicy)
@@ -118,15 +144,15 @@ class TestAlertConfluence:
         result = alert_confluence("AAPL", CONFLUENCE_ALERT_THRESHOLD - 1, ["intraday"], 100.0)
         assert result.decision == AlertDecision.BELOW_THRESHOLD
 
-    def test_exact_threshold_sends(self):
+    def test_exact_threshold_dispatches(self):
         mock_policy = MagicMock(spec=AlertPolicy)
-        mock_policy.dispatch.return_value = MagicMock(decision=AlertDecision.SENT)
+        mock_policy.dispatch.return_value = MagicMock(decision=AlertDecision.SUPPRESSED_EVIDENCE_GATE)
         alert_confluence(
             "AAPL", CONFLUENCE_ALERT_THRESHOLD, ["intraday", "short"], 100.0, policy=mock_policy
         )
         mock_policy.dispatch.assert_called_once()
 
-    def test_uses_multi_timeframe_identity(self, tmp_path):
+    def test_unapproved_strategy_gated(self, tmp_path):
         now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
         store = AlertStore(tmp_path / "alerts.db")
         policy = AlertPolicy(
@@ -136,10 +162,7 @@ class TestAlertConfluence:
             is_configured=lambda: True,
         )
         r1 = alert_confluence("AAPL", 75, ["intraday"], 100.0, policy=policy, observed_at=now)
-        r2 = alert_confluence("AAPL", 75, ["intraday", "short"], 100.0, policy=policy, observed_at=now)
-        # Same confluence key; second should be suppressed.
-        assert r1.decision == AlertDecision.SENT
-        assert r2.decision == AlertDecision.SUPPRESSED_COOLDOWN
+        assert r1.decision == AlertDecision.SUPPRESSED_EVIDENCE_GATE
 
 
 class TestAlertPattern:
@@ -147,15 +170,15 @@ class TestAlertPattern:
         result = alert_pattern_match("NVDA", PATTERN_ALERT_THRESHOLD - 1, "runup", "standard", 5, "")
         assert result.decision == AlertDecision.BELOW_THRESHOLD
 
-    def test_exact_threshold_sends(self):
+    def test_exact_threshold_dispatches(self):
         mock_policy = MagicMock(spec=AlertPolicy)
-        mock_policy.dispatch.return_value = MagicMock(decision=AlertDecision.SENT)
+        mock_policy.dispatch.return_value = MagicMock(decision=AlertDecision.SUPPRESSED_EVIDENCE_GATE)
         alert_pattern_match(
             "NVDA", PATTERN_ALERT_THRESHOLD, "runup", "standard", 5, "", policy=mock_policy
         )
         mock_policy.dispatch.assert_called_once()
 
-    def test_runup_decline_do_not_collide(self, tmp_path):
+    def test_unapproved_pattern_gated(self, tmp_path):
         now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
         store = AlertStore(tmp_path / "alerts.db")
         policy = AlertPolicy(
@@ -165,27 +188,11 @@ class TestAlertPattern:
             is_configured=lambda: True,
         )
         r1 = alert_pattern_match("NVDA", 80, "runup", "standard", 5, "", policy=policy, observed_at=now)
-        r2 = alert_pattern_match("NVDA", 80, "decline", "standard", 5, "", policy=policy, observed_at=now)
-        assert r1.decision == AlertDecision.SENT
-        assert r2.decision == AlertDecision.SENT
-
-    def test_different_profiles_do_not_collide(self, tmp_path):
-        now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
-        store = AlertStore(tmp_path / "alerts.db")
-        policy = AlertPolicy(
-            clock=lambda: now,
-            store=store,
-            transport=lambda s, b, c: {"discord": True},
-            is_configured=lambda: True,
-        )
-        r1 = alert_pattern_match("NVDA", 80, "runup", "standard", 5, "", policy=policy, observed_at=now)
-        r2 = alert_pattern_match("NVDA", 80, "runup", "volatile", 5, "", policy=policy, observed_at=now)
-        assert r1.decision == AlertDecision.SENT
-        assert r2.decision == AlertDecision.SENT
+        assert r1.decision == AlertDecision.SUPPRESSED_EVIDENCE_GATE
 
 
 class TestAlertGap:
-    def test_gap_up_down_do_not_collide(self, tmp_path):
+    def test_unapproved_gap_gated(self, tmp_path):
         now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
         store = AlertStore(tmp_path / "alerts.db")
         policy = AlertPolicy(
@@ -195,9 +202,7 @@ class TestAlertGap:
             is_configured=lambda: True,
         )
         r1 = alert_gap("TSLA", 5.0, "up", 100.0, 105.0, policy=policy, observed_at=now)
-        r2 = alert_gap("TSLA", -5.0, "down", 100.0, 95.0, policy=policy, observed_at=now)
-        assert r1.decision == AlertDecision.SENT
-        assert r2.decision == AlertDecision.SENT
+        assert r1.decision == AlertDecision.SUPPRESSED_EVIDENCE_GATE
 
     def test_payload_contains_direction(self):
         mock_policy = MagicMock(spec=AlertPolicy)
@@ -207,75 +212,41 @@ class TestAlertGap:
         assert "Direction:   up" in args.args[2]
 
 
-class TestRawSendBypass:
-    def test_no_policy_uses_raw_send(self, tmp_path, monkeypatch):
+class TestNoPolicyAutomaticGating:
+    """When policy is omitted, helpers must lazily instantiate AlertPolicy and gate fail-closed."""
+
+    def test_alert_coil_no_policy_gates_fail_closed(self, tmp_path, monkeypatch):
+        db_path = tmp_path / "alerts.db"
+        settings = settings_from_mapping({"ALERT_STATE_PATH": str(db_path)})
         now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
-        store = AlertStore(tmp_path / "alerts.db")
-        policy = AlertPolicy(
-            clock=lambda: now,
-            store=store,
-            transport=lambda s, b, c: {"discord": True},
-            is_configured=lambda: True,
+        result = alert_coil(
+            "AAPL", 70, 50, "up", "intraday", settings=settings, observed_at=now
         )
-        r1 = alert_coil("AAPL", 70, 50, "up", "intraday", policy=policy, observed_at=now)
+        assert result.decision == AlertDecision.SUPPRESSED_EVIDENCE_GATE
 
-        monkeypatch.setattr(
-            "tradex.alerts.notifier._send_discord",
-            lambda s, b, color_key="test", channels=None: True,
-        )
-        monkeypatch.setattr(
-            "tradex.alerts.notifier._send_email",
-            lambda s, b, channels=None: True,
-        )
-        monkeypatch.setattr(
-            "tradex.alerts.notifier.is_alert_configured",
-            lambda settings=None: True,
-        )
-
-        r2 = alert_coil("AAPL", 70, 50, "up", "intraday", observed_at=now)
-        assert r1.decision == AlertDecision.SENT
-        assert r2.decision == AlertDecision.COOLDOWN_DISABLED
-
-    def test_no_policy_no_channels_configured(self, tmp_path, monkeypatch):
+    def test_alert_confluence_no_policy_gates_fail_closed(self, tmp_path):
+        db_path = tmp_path / "alerts.db"
+        settings = settings_from_mapping({"ALERT_STATE_PATH": str(db_path)})
         now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
-        monkeypatch.setattr(
-            "tradex.alerts.notifier.is_alert_configured",
-            lambda settings=None: False,
+        result = alert_confluence(
+            "AAPL", 75, ["intraday"], 100.0, settings=settings, observed_at=now
         )
-        result = alert_coil("AAPL", 70, 50, "up", "intraday", observed_at=now)
-        assert result.decision == AlertDecision.NO_CHANNELS_CONFIGURED
+        assert result.decision == AlertDecision.SUPPRESSED_EVIDENCE_GATE
 
-    def test_no_policy_all_channels_fail(self, tmp_path, monkeypatch):
+    def test_alert_gap_no_policy_gates_fail_closed(self, tmp_path):
+        db_path = tmp_path / "alerts.db"
+        settings = settings_from_mapping({"ALERT_STATE_PATH": str(db_path)})
         now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
-        monkeypatch.setattr(
-            "tradex.alerts.notifier._send_discord",
-            lambda s, b, color_key="test", channels=None: False,
+        result = alert_gap(
+            "TSLA", 5.0, "up", 100.0, 105.0, settings=settings, observed_at=now
         )
-        monkeypatch.setattr(
-            "tradex.alerts.notifier._send_email",
-            lambda s, b, channels=None: False,
-        )
-        monkeypatch.setattr(
-            "tradex.alerts.notifier.is_alert_configured",
-            lambda settings=None: True,
-        )
-        result = alert_coil("AAPL", 70, 50, "up", "intraday", observed_at=now)
-        assert result.decision == AlertDecision.DELIVERY_FAILED
+        assert result.decision == AlertDecision.SUPPRESSED_EVIDENCE_GATE
 
-    def test_no_policy_malformed_result_is_delivery_failed(self, tmp_path, monkeypatch):
+    def test_alert_pattern_match_no_policy_gates_fail_closed(self, tmp_path):
+        db_path = tmp_path / "alerts.db"
+        settings = settings_from_mapping({"ALERT_STATE_PATH": str(db_path)})
         now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
-        monkeypatch.setattr(
-            "tradex.alerts.notifier._send_discord",
-            lambda s, b, color_key="test", channels=None: "true",
+        result = alert_pattern_match(
+            "NVDA", 80, "runup", "standard", 5, "", settings=settings, observed_at=now
         )
-        monkeypatch.setattr(
-            "tradex.alerts.notifier._send_email",
-            lambda s, b, channels=None: False,
-        )
-        monkeypatch.setattr(
-            "tradex.alerts.notifier.is_alert_configured",
-            lambda settings=None: True,
-        )
-        result = alert_coil("AAPL", 70, 50, "up", "intraday", observed_at=now)
-        assert result.decision == AlertDecision.DELIVERY_FAILED
-        assert result.channel_results == {}
+        assert result.decision == AlertDecision.SUPPRESSED_EVIDENCE_GATE

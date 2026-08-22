@@ -1,4 +1,4 @@
-"""Tests for alert cooldown integration in the watcher."""
+"""Tests for alert cooldown and fail-closed evidence gating integration in the watcher."""
 from __future__ import annotations
 
 import subprocess
@@ -61,11 +61,12 @@ class TestWatcherAlertIntegration:
             results = watcher._check_alerts(["AAPL"], "intraday", observed_at=datetime.now(UTC))
         assert isinstance(results, list)
         assert len(results) == 2  # coil + confluence; pattern matching is quarantined from automatic alerts
+        assert all(r.decision == AlertDecision.SUPPRESSED_EVIDENCE_GATE for r in results)
 
-    def test_check_alerts_builds_default_policy_and_suppresses(
+    def test_check_alerts_builds_default_policy_and_gates_fail_closed(
         self, fake_coils, empty_matches, tmp_path, monkeypatch
     ):
-        """Direct _check_alerts(..., alert_policy=None) lazily builds the default policy."""
+        """Direct _check_alerts(..., alert_policy=None) lazily builds policy and gates fail-closed."""
         now = datetime.now(UTC)
         alert_state_path = tmp_path / "alerts.db"
         monkeypatch.setenv("ALERT_STATE_PATH", str(alert_state_path))
@@ -82,11 +83,13 @@ class TestWatcherAlertIntegration:
             results1 = watcher._check_alerts(["AAPL"], "intraday", alert_policy=None, observed_at=now)
             results2 = watcher._check_alerts(["AAPL"], "intraday", alert_policy=None, observed_at=now)
 
-        assert any(r.decision == AlertDecision.SENT for r in results1)
-        assert any(r.decision == AlertDecision.SUPPRESSED_COOLDOWN for r in results2)
+        assert all(r.decision == AlertDecision.SUPPRESSED_EVIDENCE_GATE for r in results1)
+        assert all(r.decision == AlertDecision.SUPPRESSED_EVIDENCE_GATE for r in results2)
         state = AlertStore(alert_state_path).get_state(AlertKey("AAPL", "coil", "intraday"))
-        assert state.sent_count == 1
-        assert state.suppressed_count == 1
+        assert state is not None
+        assert state.sent_count == 0
+        assert state.suppressed_count == 2
+        assert state.last_decision == AlertDecision.SUPPRESSED_EVIDENCE_GATE.value
 
     def test_run_once_passes_injected_timestamp_to_alerts(
         self, fake_coils, fake_confluence, empty_matches, tmp_path, capsys, fresh_signal_db
@@ -139,8 +142,9 @@ class TestWatcherAlertIntegration:
 
         captured = capsys.readouterr()
         assert "[alerts]" in captured.out
+        assert "evidence gate" in captured.out
 
-    def test_repeated_interval_scan_suppresses_duplicate_alerts(
+    def test_repeated_interval_scan_records_gated_suppression(
         self, fake_coils, fake_confluence, empty_matches, tmp_path, capsys, fresh_signal_db
     ):
         now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
@@ -193,7 +197,8 @@ class TestWatcherAlertIntegration:
         out1 = capsys.readouterr().out
         _run()
         out2 = capsys.readouterr().out
-        assert "sent=" in out1
+        assert "sent=0" in out1
+        assert "suppressed=" in out1
         assert "suppressed=" in out2
 
     def test_alert_summary_counts_are_accurate(self):
@@ -239,6 +244,16 @@ class TestWatcherAlertIntegration:
                 reason="",
                 channel_results={},
             ),
+            AlertDispatchResult(
+                key=AlertKey("E", "coil", "i"),
+                decision=AlertDecision.SUPPRESSED_EVIDENCE_GATE,
+                observed_at=datetime.now(UTC),
+                cooldown_minutes=None,
+                last_success_at=None,
+                next_eligible_at=None,
+                reason="fail-closed",
+                channel_results={},
+            ),
         ]
         watcher._print_alert_summary(results)
 
@@ -268,6 +283,16 @@ class TestWatcherAlertIntegration:
                 reason="Another delivery claim is in flight",
                 channel_results={},
             ),
+            AlertDispatchResult(
+                key=AlertKey("NVDA", "confluence", "multi"),
+                decision=AlertDecision.SUPPRESSED_EVIDENCE_GATE,
+                observed_at=now,
+                cooldown_minutes=None,
+                last_success_at=None,
+                next_eligible_at=None,
+                reason="No approved actionable strategy",
+                channel_results={},
+            ),
         ]
         watcher._print_alert_summary(results)
         out = capsys.readouterr().out
@@ -275,11 +300,13 @@ class TestWatcherAlertIntegration:
         assert "next eligible at 2024-01-01T13:00:00+00:00" in out
         assert "suppressed (in-flight): TSLA | gap:up | premarket" in out
         assert "claim expires at" in out
+        assert "suppressed (evidence gate): NVDA | confluence | multi" in out
+        assert "No approved actionable strategy" in out
 
     def test_run_once_builds_default_alert_policy(
         self, fake_coils, empty_matches, tmp_path, monkeypatch, fresh_signal_db
     ):
-        """run_once(..., alert_policy=None) lazily builds and reuses the default policy."""
+        """run_once(..., alert_policy=None) lazily builds and reuses policy with evidence gating."""
         now = datetime.now(UTC)
         alert_state_path = tmp_path / "alerts.db"
         monkeypatch.setenv("ALERT_STATE_PATH", str(alert_state_path))
@@ -332,8 +359,66 @@ class TestWatcherAlertIntegration:
 
         store = AlertStore(alert_state_path)
         state = store.get_state(AlertKey("AAPL", "coil", "intraday"))
-        assert state.sent_count == 1
+        assert state is not None
+        assert state.sent_count == 0
+        assert state.suppressed_count == 2
+        assert state.last_decision == AlertDecision.SUPPRESSED_EVIDENCE_GATE.value
+
+    def test_scheduled_premarket_gap_scan_gated_fail_closed(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """Watcher premarket scan calculates gaps and gates delivery fail-closed."""
+        transport_calls = []
+
+        def mock_transport(s, b, c):
+            transport_calls.append(1)
+            return {"discord": True}
+
+        # Tuesday 2024-01-02 08:00 NY
+        now = datetime(2024, 1, 2, 13, 0, tzinfo=UTC)
+        store = AlertStore(tmp_path / "alerts.db")
+        policy = AlertPolicy(
+            clock=lambda: now,
+            store=store,
+            transport=mock_transport,
+            is_configured=lambda: True,
+        )
+
+        mock_gap_report = MagicMock()
+        mock_gap_report.counts.return_value = {
+            "requested": 1,
+            "qualified": 1,
+            "filtered": 0,
+            "failed": 0,
+            "outside_window": 0,
+        }
+        mock_gap_report.provider_errors = {}
+        mock_gap_report.results = pd.DataFrame([{
+            "ticker": "TSLA",
+            "gap_pct": 5.5,
+            "direction": "up",
+            "prev_close": 100.0,
+            "pre_market": 105.5,
+            "tier": "large",
+        }])
+
+        with (
+            patch("tradex.tracker.watcher.scan_gaps_with_report", return_value=mock_gap_report),
+        ):
+            watcher._run_scheduled_premarket(
+                ["TSLA"],
+                alert_policy=policy,
+                now=now,
+            )
+
+        assert len(transport_calls) == 0
+        state = store.get_state(AlertKey("TSLA", "gap:up", "premarket"))
+        assert state is not None
         assert state.suppressed_count == 1
+        assert state.sent_count == 0
+        assert state.last_decision == AlertDecision.SUPPRESSED_EVIDENCE_GATE.value
+        captured = capsys.readouterr()
+        assert "evidence gate" in captured.out
 
 
 class TestWatcherCLI:

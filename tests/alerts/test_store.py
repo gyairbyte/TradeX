@@ -326,3 +326,83 @@ def test_no_secrets_stored(tmp_alert_store):
     assert "password" not in raw
     assert "secret" not in raw.lower()
     conn.close()
+
+
+def test_record_suppression_first_event(tmp_alert_store):
+    """record_suppression creates a state row with suppressed_count=1 and no cooldown/claim."""
+    key = AlertKey("AAPL", "coil", "intraday")
+    now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
+    tmp_alert_store.record_suppression(
+        key,
+        now,
+        AlertDecision.SUPPRESSED_EVIDENCE_GATE,
+        "gated fail-closed",
+        subject="AAPL coil",
+    )
+
+    state = tmp_alert_store.get_state(key)
+    assert state is not None
+    assert state.key.ticker == "AAPL"
+    assert state.key.alert_type == "coil"
+    assert state.key.timeframe == "intraday"
+    assert state.suppressed_count == 1
+    assert state.sent_count == 0
+    assert state.failed_count == 0
+    assert state.cooldown_until is None
+    assert state.claim_token is None
+    assert state.last_decision == AlertDecision.SUPPRESSED_EVIDENCE_GATE.value
+    assert state.last_reason == "gated fail-closed"
+    assert state.last_attempt_at == now
+
+
+def test_record_suppression_increments_and_preserves(tmp_alert_store):
+    """record_suppression increments suppressed_count and preserves existing sent_count/cooldown."""
+    key = AlertKey("AAPL", "coil", "intraday")
+    now = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
+
+    # First simulate a sent alert
+    token = tmp_alert_store.claim(key, now)["token"]
+    tmp_alert_store.finalize(
+        key,
+        token,
+        now,
+        AlertDecision.SENT,
+        60,
+        "subj",
+        "hash",
+        {"discord": True},
+        "sent",
+    )
+    initial_state = tmp_alert_store.get_state(key)
+    assert initial_state.sent_count == 1
+    assert initial_state.cooldown_until == now + timedelta(minutes=60)
+
+    # Record suppression
+    later = now + timedelta(minutes=10)
+    tmp_alert_store.record_suppression(
+        key,
+        later,
+        AlertDecision.SUPPRESSED_EVIDENCE_GATE,
+        "evidence gate active",
+    )
+
+    updated_state = tmp_alert_store.get_state(key)
+    assert updated_state.suppressed_count == 1
+    assert updated_state.sent_count == 1
+    assert updated_state.failed_count == 0
+    assert updated_state.cooldown_until == now + timedelta(minutes=60)
+    assert updated_state.last_decision == AlertDecision.SUPPRESSED_EVIDENCE_GATE.value
+    assert updated_state.last_reason == "evidence gate active"
+    assert updated_state.last_attempt_at == later
+
+
+def test_record_suppression_naive_datetime_rejected(tmp_alert_store):
+    key = AlertKey("AAPL", "coil", "intraday")
+    naive = datetime(2024, 1, 1, 12, 0)  # noqa: DTZ001
+    with pytest.raises(ValueError, match="naive"):
+        tmp_alert_store.record_suppression(
+            key,
+            naive,
+            AlertDecision.SUPPRESSED_EVIDENCE_GATE,
+            "reason",
+        )

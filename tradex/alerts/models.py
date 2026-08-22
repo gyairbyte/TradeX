@@ -18,6 +18,7 @@ class AlertDecision(str, Enum):
     SENT = "sent"
     SUPPRESSED_COOLDOWN = "suppressed_cooldown"
     SUPPRESSED_IN_FLIGHT = "suppressed_in_flight"
+    SUPPRESSED_EVIDENCE_GATE = "suppressed_evidence_gate"
     DELIVERY_FAILED = "delivery_failed"
     NO_CHANNELS_CONFIGURED = "no_channels_configured"
     POLICY_ERROR = "policy_error"

@@ -159,6 +159,19 @@ def test_thresholds_display_from_explicit_settings(alerts_tab_module, fake_st, m
     assert ("Confluence threshold", "75") in metric_labels
 
 
+def test_automatic_alerts_gated_banner_rendered(alerts_tab_module, fake_st, monkeypatch):
+    """The tab prominently renders the fail-closed automatic alerts gated info banner."""
+    settings = _default_settings()
+    policy = _make_policy(settings, tmp_path=settings.alert_cooldown.resolved_state_path)
+    alerts_tab_module.load_runtime_settings.return_value = settings
+    monkeypatch.setattr(alerts_tab_module, "_alert_policy_from_env", lambda: policy)
+
+    alerts_tab_module.render_alerts_tab(settings=settings)
+
+    info_texts = [str(c[0][0]) for c in fake_st.info.call_args_list]
+    assert any("Automatic Market Alerts: Gated" in t for t in info_texts)
+
+
 def test_effective_cooldowns_helper(alerts_tab_module):
     """_effective_cooldowns exposes per-alert-type cooldown durations."""
     cfg = AlertCooldownConfig(enabled=True, default_minutes=60, coil_minutes=30)

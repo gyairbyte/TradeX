@@ -50,6 +50,7 @@ tradex/
 │   │   ├── models.py              # Typed options source, capability, and scan report models
 │   │   └── flow.py                # True-flow scanning, chain-snapshot scanning, put/call balance
 │   ├── alerts/
+│   │   ├── eligibility.py         # Fail-closed automatic-alert eligibility boundary
 │   │   ├── models.py              # AlertKey, AlertCooldownConfig, AlertDispatchResult
 │   │   ├── notifier.py            # Discord bot + email alerting helpers
 │   │   ├── policy.py              # Persistent cooldown, atomic claim, deduplication
@@ -553,7 +554,7 @@ Tiers use both the corrected score and the number of contributing/active timefra
 - `moderate confluence` requires at least two active timeframes and a score ≥ 50.
 - `weak / single timeframe`, `weak / incomplete timeframes`, `weak confluence`, or `no data` describe everything else.
 
-This is a heuristic confluence model, not proof of higher returns. Confluence scores feed the existing Scanner, dashboard, and alert thresholds unchanged.
+This is a heuristic confluence model, not proof of higher returns. Confluence scores feed the existing Scanner, dashboard, and internal observation evaluation (automatic external delivery is gated).
 
 ### Running the watcher
 ```bash
@@ -573,7 +574,7 @@ python -m tradex.tracker.watcher --timeframe intraday --interval 5 --disable-ale
 python -m tradex.tracker.watcher --timeframe intraday --interval 5 --alert-state-path /path/to/alerts.db
 ```
 
-The watcher uses a persistent SQLite alert state database (default `~/.tradex/alerts.db`). Each alert is identified by `(ticker, alert_type, timeframe)` and suppressed during the configured cooldown. The first eligible alert is sent; repeats are blocked. Manual test alerts from the dashboard bypass cooldown. State is only mutated when at least one channel successfully receives the alert.
+The watcher uses a persistent SQLite alert state database (default `~/.tradex/alerts.db`). Each alert is identified by `(ticker, alert_type, timeframe)`. Automatic external market alerts are gated fail-closed pending approved actionable strategies; when qualifying events are evaluated, suppression is recorded without triggering external delivery transport or cooldown. Manual test alerts from the dashboard bypass cooldown and test transport connectivity.
 
 **Market-hours behavior**
 - TradeX models the NYSE regular session in the `America/New_York` timezone using the `exchange-calendars` XNYS calendar.
@@ -620,7 +621,7 @@ print(report.results)
 python -m tradex.premarket scan --tickers AAPL,TSLA --min-gap 4.0 --min-premarket-volume 10000
 ```
 
-The scheduled watcher uses `scan_gaps_with_report` so it logs requested, qualified, filtered, failed, and outside-window counts and only fires alerts on `large`/`massive` qualified gaps.
+The scheduled watcher uses `scan_gaps_with_report` so it logs requested, qualified, filtered, failed, and outside-window counts and evaluates `large`/`massive` qualified gaps (automatic external delivery is gated fail-closed).
 
 ---
 
@@ -686,7 +687,7 @@ Save and switch between named ticker lists (e.g. "Semis", "Crypto-adjacent", "Ea
 - [x] Automated outcome tracking (1d/3d/5d price fetch, win rate, expectancy by score bucket)
 - [x] Signal journal with quality breakdown by score range and timeframe
 - [x] Historical pattern fingerprinting (mine run-ups/declines, average pre-event windows, match live stocks; research-only)
-- [x] Alert system (Discord bot + email when coil / confluence / gap thresholds crossed; pattern matching is quarantined from automatic alerts)
+- [x] Alert system (delivery infrastructure with fail-closed automatic market alert gating; Discord bot + email transport; pattern matching quarantined)
 - [x] Long-term scorer evaluation (LONG-001) — locked 40-week MA comparison; concluded `inconclusive` with `production_promotion_eligible=false`
 - [x] Persistent alert cooldown, deduplication, and audit state
 - [x] Pre-market gap scanner
