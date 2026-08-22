@@ -525,12 +525,20 @@ def test_tracker_summary_and_remaining_work_are_consistent(tracker_text: str) ->
     assert "LONG-002A" not in remaining
     assert "LONG-002B" not in remaining
 
-    # The recommended work order states only bounded R4 alert gating implementation is authorized.
-    assert "only the bounded mvp-arch-001-r4 alert gating implementation" in work_order.lower()
+    # The tracker narrative documents the completed/merged R1-R3 steps, separately approved R4 implemented by PR #60,
+    # and unauthorized status of subsequent steps.
+    assert "r4 was separately gary-approved on 2026-08-22 for fail-closed automatic market alert gating and implemented by pr #60" in tracker_text.lower()
+    assert "no production strategy was promoted" in tracker_text.lower()
+    assert "steps 5–8 remain pending separate gary approval" in tracker_text.lower() or "steps 5-8 remain pending separate gary approval" in tracker_text.lower()
+    assert "candidate persistence, journal replacement, pit capture, strategy promotion, database migrations, provider calls, and production trading changes remain unauthorized" in tracker_text.lower()
+
+    # The recommended work order states a separate Gary/ChatGPT decision is required and no next PR is already authorized.
+    assert "separate gary/chatgpt sequencing and approval decision" in work_order.lower()
+    assert "no next rollout implementation pr is currently authorized" in work_order.lower()
     assert "LONG-002C" in work_order
     assert "DAYTRADE-001" in work_order
     assert (
-        "only the bounded mvp-arch-001-r4 alert gating implementation pr is currently authorized"
+        "no next implementation pr is currently authorized"
         in pr_order.lower()
     )
     assert "long-002a-locked-research-contract" not in tracker_text.lower()

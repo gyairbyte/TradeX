@@ -304,7 +304,7 @@ Gary Yang separately approved rollout step 4 on 2026-08-22 with narrow scope:
   - `strategy_promotion_authorized`: `False`
   - `long_002c_work_authorized`: `False`
 - **Subsequent steps (Steps 5–8):** Remain pending separate Gary approval.
-- **Status:** Implementation in progress / pending merge in PR.
+- **Status:** Implemented by PR #60.
 
 ## Governance invariants
 
