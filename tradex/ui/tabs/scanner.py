@@ -13,6 +13,7 @@ from tradex.data.fetcher import (
 from tradex.screener.engine import run_with_report
 from tradex.signals.indicators import add_indicators
 from tradex.tracker import store
+from tradex.ui.evidence import render_evidence_notice
 
 
 def render_scanner_tab(
@@ -27,9 +28,10 @@ def render_scanner_tab(
 ) -> None:
     """Render the Signal Scanner tab."""
     st.subheader("Signal Scanner")
+    render_evidence_notice("scanner", st_module=st)
     st.caption(
-        "Scores every stock in your watchlist 0–100 using technical indicators. "
-        "Higher score = more conditions aligned. Each result shows exactly why it was flagged."
+        "Scores every stock in your watchlist 0–100 using additive technical indicators. "
+        "Higher score = more conditions met simultaneously. Each result shows the conditions that fired."
     )
 
     with st.expander("How scoring works", expanded=False):
@@ -38,18 +40,18 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
 
 | Signal | What it checks | Points |
 |---|---|---|
-| **Volume surge** | Current volume vs. 20-bar average. >2x = strong institutional interest | Up to 30 |
+| **Volume surge** | Current volume vs. 20-bar average. >2x = strong volume turnover | Up to 30 |
 | **RSI momentum** | Relative Strength Index in the 55–75 zone = trending without being overbought | Up to 20 |
 | **MACD crossover** | MACD line crossing above signal line = trend shift | Up to 30 |
-| **EMA structure** | Price above EMA20 which is above EMA50 = healthy uptrend structure | Up to 25 |
-| **Bollinger Band expansion** | Bands tightening then widening = volatility breakout | Up to 20 |
-| **Pullback to EMA** | Price dipping back to EMA20 in an uptrend = entry opportunity | Up to 15 |
+| **EMA structure** | Price above EMA20 which is above EMA50 = uptrend structure | Up to 25 |
+| **Bollinger Band expansion** | Bands tightening then widening = volatility expansion | Up to 20 |
+| **Pullback to EMA** | Price dipping back to EMA20 in an uptrend = moving average test | Up to 15 |
 
 **Score guide:**
-- 0–39: Weak / no clear setup
-- 40–59: Worth watching
-- 60–79: Strong signal
-- 80–100: Multiple conditions aligned — highest conviction
+- 0–39: Few conditions met
+- 40–59: Moderate condition alignment
+- 60–79: Multiple conditions aligned
+- 80–100: Most conditions aligned simultaneously (legacy heuristic discovery only)
         """)
 
     run_scan = st.button("Run Scan", type="primary", key="btn_scan",
@@ -123,22 +125,22 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
         elif results.empty:
             if all_earnings_excluded:
                 st.warning(
-                    f"No opportunities found. All {report.total_earnings_excluded} tickers "
+                    f"No matching results found. All {report.total_earnings_excluded} tickers "
                     f"were excluded due to upcoming earnings."
                 )
             else:
-                st.warning("No opportunities found. Lower the min score or add more tickers.")
+                st.warning("No matching results found. Lower the min score or add more tickers.")
         else:
             failed_count = len(report.failures)
             if failed_count:
                 st.warning(
-                    f"Found {len(results)} opportunities; {failed_count} symbol(s) had stage failures."
+                    f"Found {len(results)} matching results; {failed_count} symbol(s) had stage failures."
                 )
             else:
                 if earnings_buffer > 0:
-                    st.success(f"Found {len(results)} opportunities (excluded tickers with earnings within {earnings_buffer}d)")
+                    st.success(f"Found {len(results)} matching results (excluded tickers with earnings within {earnings_buffer}d)")
                 else:
-                    st.success(f"Found {len(results)} opportunities")
+                    st.success(f"Found {len(results)} matching results")
             st.dataframe(
                 results,
                 use_container_width=True,

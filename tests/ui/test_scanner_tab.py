@@ -163,7 +163,7 @@ def test_import_has_no_side_effects(fake_st, monkeypatch):
 
 
 def test_initial_render_shows_subheader_caption_and_button(scanner_module, fake_st):
-    """The initial render shows the expected heading, caption, expander, and Run Scan button."""
+    """The initial render shows the expected heading, caption, expander, evidence notice, and Run Scan button."""
     settings = _default_settings()
     scanner_module.render_scanner_tab(
         settings=settings,
@@ -177,6 +177,9 @@ def test_initial_render_shows_subheader_caption_and_button(scanner_module, fake_
 
     assert fake_st.subheader.call_count == 1
     assert "Signal Scanner" in str(fake_st.subheader.call_args[0][0])
+
+    info_texts = [str(c[0][0]) for c in fake_st.info.call_args_list]
+    assert any("Legacy Heuristic" in t for t in info_texts)
 
     caption_texts = [str(c[0][0]) for c in fake_st.caption.call_args_list]
     assert any("0–100" in t for t in caption_texts)
@@ -359,7 +362,7 @@ def test_run_scan_valid_empty_no_session_state(scanner_module, fake_st):
     )
 
     warning_texts = [str(c[0][0]) for c in fake_st.warning.call_args_list]
-    assert any("No opportunities found" in t and "add more tickers" in t for t in warning_texts)
+    assert any("No matching results found" in t and "add more tickers" in t for t in warning_texts)
     assert "scan_results" not in fake_st.session_state
 
 
@@ -473,7 +476,7 @@ def test_run_scan_populated_result_session_state_and_dataframe(scanner_module, f
     )
 
     success_texts = [str(c[0][0]) for c in fake_st.success.call_args_list]
-    assert any("Found 2 opportunities" in t for t in success_texts)
+    assert any("Found 2 matching results" in t for t in success_texts)
     assert not any("excluded tickers" in t.lower() for t in success_texts)
 
     assert fake_st.dataframe.call_count == 1
@@ -548,7 +551,7 @@ def test_run_scan_partial_failure_warning(scanner_module, fake_st):
     )
 
     warning_texts = [str(c[0][0]) for c in fake_st.warning.call_args_list]
-    assert any("2 opportunities; 1 symbol(s) had stage failures" in t for t in warning_texts)
+    assert any("2 matching results; 1 symbol(s) had stage failures" in t for t in warning_texts)
 
 
 def test_run_scan_failure_summaries(scanner_module, fake_st):
@@ -689,8 +692,10 @@ def test_drill_down_without_new_scan(scanner_module, fake_st):
     scanner_module.add_indicators.assert_called_once_with(scanner_module.fetch.return_value)
 
     assert fake_st.plotly_chart.call_count == 2
-    assert fake_st.info.call_count == 1
-    assert "Score: 75" in str(fake_st.info.call_args[0][0])
+    assert fake_st.info.call_count == 2
+    info_calls = [str(call[0][0]) for call in fake_st.info.call_args_list]
+    assert any("Legacy Heuristic" in text for text in info_calls)
+    assert any("Score: 75" in text for text in info_calls)
 
 
 def test_drill_down_uses_current_provider_when_not_saved(scanner_module, fake_st):

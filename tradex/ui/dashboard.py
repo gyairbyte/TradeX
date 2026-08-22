@@ -83,7 +83,7 @@ def _ensure_stores(settings: TradeXSettings) -> None:
 if __name__ == "__main__":
     st.set_page_config(page_title="TradeX", layout="wide")
     st.title("TradeX — Market Opportunity Scanner")
-    st.caption("Scan, track, and get alerted on stock setups across intraday, short-term, and long-term timeframes.")
+    st.caption("Scan, track, and get alerted on technical indicators and market context across intraday, short-term, and long-term timeframes.")
 
     settings = load_runtime_settings()
     _ensure_stores(settings)
@@ -98,9 +98,9 @@ if __name__ == "__main__":
             ["intraday", "short", "long"],
             help=(
                 "Controls which time window the scanner and coil detector operate on.\n\n"
-                "• **Intraday** — 5-minute bars over 5 days. For same-day swing setups.\n"
-                "• **Short** — Daily bars over 60 days. For moves over days to weeks.\n"
-                "• **Long** — Weekly bars over 2 years. For multi-week to multi-month trends."
+                "• **Intraday** — 5-minute bars over 5 days. For intraday momentum and swing conditions.\n"
+                "• **Short** — Daily bars over 60 days. For short-term technical conditions.\n"
+                "• **Long** — Weekly bars over 2 years. For multi-week to multi-month trend context."
             ),
         )
     
@@ -110,10 +110,10 @@ if __name__ == "__main__":
             help=(
                 "Filters out stocks below this signal score. Each stock is scored 0–100 "
                 "based on how many technical conditions are met.\n\n"
-                "• **Lower (20–40)** — casts a wider net, more results, more noise.\n"
-                "• **Middle (40–65)** — balanced. Good starting point.\n"
-                "• **Higher (65–100)** — only the strongest setups. Fewer results but higher conviction.\n\n"
-                "Tip: start at 40 and raise it once you have signal history to know what works."
+                "• **Lower (20–40)** — casts a wider net across discovery heuristics; more results.\n"
+                "• **Middle (40–65)** — balanced filtering across technical conditions.\n"
+                "• **Higher (65–100)** — filters to stocks meeting multiple simultaneous conditions; fewer results.\n\n"
+                "Note: Technical scores are unvalidated discovery heuristics, not a measure of trade conviction or probability."
             ),
         )
     

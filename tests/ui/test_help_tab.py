@@ -25,12 +25,14 @@ def test_import_does_not_render_or_touch_backend(help_tab_module, fake_st):
 
 
 def test_render_shows_subheader_and_caption(help_tab_module, fake_st):
-    """The Help tab renders its subheader and caption."""
+    """The Help tab renders its subheader, evidence notice, and caption."""
     help_tab_module.render_help_tab()
 
     fake_st.subheader.assert_called_once_with("TradeX — Help & Documentation")
+    info_texts = [str(c[0][0]) for c in fake_st.info.call_args_list]
+    assert any("TradeX Governance & Evidence Reference" in t for t in info_texts)
     caption_texts = [str(c[0][0]) for c in fake_st.caption.call_args_list]
-    assert "Everything you need to understand what each feature does" in " ".join(caption_texts)
+    assert any("Canonical guidance and evidence disclosures" in t for t in caption_texts)
 
 
 def test_render_headings_in_order(help_tab_module, fake_st):

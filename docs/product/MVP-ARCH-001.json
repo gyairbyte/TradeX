@@ -189,6 +189,25 @@
     "long_002c_dataset_construction_authorized": false,
     "decision_quote": "I approve MVP-ARCH-001 as the design-only product architecture direction. This does not authorize implementation, production trading changes, or LONG-002C dataset construction."
   },
+  "rollout_approvals": [
+    {
+      "task_id": "MVP-ARCH-001-R1",
+      "rollout_order": 1,
+      "approval_status": "gary_approved",
+      "approved_by": "Gary Yang",
+      "approved_on": "2026-08-21",
+      "scope": "truthful UI/help labeling and evidence-state notices only",
+      "implementation_authorized": true,
+      "production_trading_changes_authorized": false,
+      "navigation_changes_authorized": false,
+      "alert_behavior_changes_authorized": false,
+      "provider_changes_authorized": false,
+      "provider_calls_authorized": false,
+      "database_migration_authorized": false,
+      "strategy_promotion_authorized": false,
+      "long_002c_work_authorized": false
+    }
+  ],
   "governance_invariants": [
     "Production promotion remains unauthorized.",
     "The design-only direction is approved; each rollout implementation step remains pending separate Gary approval.",

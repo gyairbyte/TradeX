@@ -8,6 +8,7 @@ from tradex.config import TradeXSettings
 from tradex.data.fetcher import resolve_provider
 from tradex.tracker import store
 from tradex.tracker.outcome_tracker import get_outcome_stats, run_outcome_pass
+from tradex.ui.evidence import render_evidence_notice
 
 
 def render_signal_journal_tab(
@@ -18,28 +19,21 @@ def render_signal_journal_tab(
 ) -> None:
     """Render the Signal Journal — historical signal outcomes."""
     st.subheader("Signal Journal — Historical Outcomes")
+    render_evidence_notice("signal_journal", st_module=st)
     st.caption(
-        "Every signal the app has fired, with automated outcome tracking. "
-        "Outcomes are measured at 1d (intraday), 3d (short), and 5d (long) after the signal fires."
+        "Records historical scan signals and measures generic price changes at 1d (intraday), 3d (short), and 5d (long) after the signal. "
+        "Descriptive telemetry only."
     )
 
     with st.expander("How to use the Signal Journal", expanded=False):
         st.markdown("""
-    The Signal Journal is your feedback loop. It answers the only question that actually matters:
-    **do the signals work?**
+    The Signal Journal logs historical scan signals meeting the min score threshold and tracks price changes at fixed time intervals (1, 3, or 5 trading days).
 
-    Every time you run a scan and a stock scores above your min score threshold, that signal is recorded.
-    After the outcome window closes (1, 3, or 5 days later depending on timeframe), TradeX automatically
-    fetches the price and records what happened.
-
-    **Key metrics:**
-    - **Win Rate** — % of signals where the stock moved in the expected direction. Above 50% is positive edge.
-    - **Avg Win / Avg Loss** — how big the wins and losses are on average.
-    - **Expectancy** — the most important number. Calculated as: `(win rate × avg win) + (loss rate × avg loss)`. Positive expectancy means the strategy has mathematical edge over time.
-
-    **Signal Quality by Score Bucket:**
-    This chart is how you calibrate. If 80+ signals have a 68% win rate but 40–59 signals have a 43% win rate,
-    you should raise your min score to 80. Use the data to tune your thresholds — don't guess.
+    **Telemetry metrics (descriptive only):**
+    - **Win Rate** — % of signals where the stock price was higher at the fixed outcome horizon.
+    - **Avg Win / Avg Loss** — mean % change for positive and negative outcomes across recorded signals.
+    - **Legacy Expectancy Metric** — arithmetic calculation: `(win rate × avg win) + (loss rate × avg loss)`. This metric describes average fixed-horizon price change across legacy signals. It does not reflect executable trading performance because it does not model trade entry execution, stops, profit targets, expirations, invalidations, slippage, or transaction fees.
+    - **Signal Quality by Score Bucket** — descriptive grouping of historical outcome returns by score tier.
 
     **Outcome windows:**
     | Timeframe | Outcome measured at |
@@ -97,9 +91,9 @@ def render_signal_journal_tab(
                   help="Average % gain on winning signals.")
         m4.metric("Avg Loss",      f"{avg_loss:.1f}%",
                   help="Average % loss on losing signals.")
-        m5.metric("Expectancy",    f"{expectancy:+.2f}%",
+        m5.metric("Legacy Expectancy", f"{expectancy:+.2f}%",
                   delta_color="normal" if expectancy >= 0 else "inverse",
-                  help="(Win rate × Avg win) + (Loss rate × Avg loss). Positive = mathematical edge.")
+                  help="(Win rate × Avg win) + (Loss rate × Avg loss). Descriptive arithmetic over legacy signal telemetry — does not model trade execution, stops, targets, or costs.")
 
         st.dataframe(
             journal,
@@ -119,7 +113,7 @@ def render_signal_journal_tab(
 
         st.divider()
         st.subheader("Signal Quality by Score Bucket")
-        st.caption("Use this to calibrate your min score threshold — find the score range that actually produces moves.")
+        st.caption("Descriptive grouping of historical outcome returns by signal score range and timeframe.")
         stats = get_outcome_stats(settings=settings)
         if not stats.empty:
             st.dataframe(stats, use_container_width=True)

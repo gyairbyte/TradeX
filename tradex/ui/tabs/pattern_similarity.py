@@ -9,6 +9,7 @@ from tradex.data.fetcher import ProviderCapabilityError
 from tradex.patterns.config import PROFILES
 from tradex.patterns.fingerprint import list_fingerprints, load_fingerprint, run_full_build
 from tradex.patterns.matcher import match_ticker, run_match_screen
+from tradex.ui.evidence import render_evidence_notice
 
 
 def render_pattern_similarity_tab(
@@ -19,10 +20,7 @@ def render_pattern_similarity_tab(
 ) -> None:
     """Render the experimental Pattern Similarity tab."""
     st.subheader("Pattern Similarity — Experimental Research")
-    st.warning(
-        "Pattern similarity is experimental and has not been shown to predict future returns. "
-        "It is not used in production scoring, ranking, eligibility, or automatic alerts."
-    )
+    render_evidence_notice("pattern_similarity", st_module=st)
     st.caption(
         "Compares a stock's current 10-day price/volume/indicator shape against an averaged "
         "shape from historical run-ups or declines. Pearson correlation measures resemblance, "
@@ -56,14 +54,13 @@ using Pearson correlation across the same 5 series. Each series is weighted:
 
 **Similarity score guide:**
 - 90–100%: Very high shape similarity
-- 75–89%: High shape similarity — this is the existing display cutoff used in the validation study
+- 75–89%: High shape similarity
 - 60–74%: Moderate shape similarity
 - <60%: Low shape similarity / noise
 
-**Important:** Pearson correlation measures *shape resemblance*, not causality or expected
-return. The validation study in `tradex.research.pattern_validation` is the only place this
-idea is evaluated for predictive value. Manual inspection here is experimental and does not
-justify a trade on its own.
+**Research status:** Pearson correlation measures *shape resemblance*, not causality or expected
+return. Under PATTERN-001, pattern similarity was evaluated across split datasets and rejected on
+holdout data. It is not used in production scoring, ranking, candidate eligibility, or automatic alerts.
 
 **Profiles:**
 - **Conservative** — +20% move threshold. For large stable stocks (AAPL, MSFT).

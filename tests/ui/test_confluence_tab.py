@@ -65,7 +65,7 @@ def test_import_has_no_side_effects(fake_st, monkeypatch):
 
 
 def test_initial_render_shows_subheader_caption_and_slider(confluence_module, fake_st):
-    """The initial render shows the expected heading, caption, expander, and slider."""
+    """The initial render shows the expected heading, caption, expander, evidence notice, and slider."""
     settings = _default_settings()
 
     confluence_module.render_confluence_tab(
@@ -79,6 +79,9 @@ def test_initial_render_shows_subheader_caption_and_slider(confluence_module, fa
     assert fake_st.subheader.call_count == 1
     subheader = str(fake_st.subheader.call_args[0][0])
     assert "Confluence Scanner" in subheader
+
+    info_texts = [str(c[0][0]) for c in fake_st.info.call_args_list]
+    assert any("Exploratory Context — Multi-Timeframe Alignment" in t for t in info_texts)
 
     caption_texts = [str(c[0][0]) for c in fake_st.caption.call_args_list]
     assert any("timeframe" in t.lower() for t in caption_texts)

@@ -205,7 +205,24 @@ TradeX has a strong modular technical and research foundation, but the current p
 - Coil Detector help text uses 'before the crowd sees them' and 'bigger potential release' language that implies a validated edge.
 - Confluence tab caption calls the weighted score 'much higher conviction' though it is an aggregation of unvalidated heuristics.
 - Options Activity tab label implies actionability, but no options source is configured by default and no strategy uses the output.
-- Weights tab allows user tuning of component points persisted to ~/.tradex/weights.json without research versioning or validation.
+## Scoped Rollout Authorizations
+
+### MVP-ARCH-001-R1 (Approved 2026-08-21)
+
+Gary Yang separately approved rollout step 1 on 2026-08-21 with narrow scope:
+- **Task ID:** `MVP-ARCH-001-R1`
+- **Scope:** Truthful UI/help labeling and evidence-state notices only across all 10 existing tabs.
+- **Boundaries:**
+  - `implementation_authorized`: `True` (strictly bounded to UI/help labeling and evidence notice rendering)
+  - `production_trading_changes_authorized`: `False`
+  - `navigation_changes_authorized`: `False`
+  - `alert_behavior_changes_authorized`: `False`
+  - `provider_changes_authorized`: `False`
+  - `provider_calls_authorized`: `False`
+  - `database_migration_authorized`: `False`
+  - `strategy_promotion_authorized`: `False`
+  - `long_002c_work_authorized`: `False`
+- **Subsequent steps (Steps 2–8):** Remain pending separate Gary approval.
 
 ## Governance invariants
 

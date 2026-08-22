@@ -94,6 +94,9 @@ def test_unconfigured_channels_show_setup_examples(alerts_tab_module, fake_st, m
 
     alerts_tab_module.render_alerts_tab(settings=settings)
 
+    info_texts = [str(c[0][0]) for c in fake_st.info.call_args_list]
+    assert any("Delivery Infrastructure" in t for t in info_texts)
+
     error_texts = [str(c[0][0]) for c in fake_st.error.call_args_list]
     assert any("Discord: **Not configured**" in t for t in error_texts)
     assert any("Email: **Not configured**" in t for t in error_texts)

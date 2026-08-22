@@ -7,6 +7,7 @@ from tradex.alerts.models import AlertCooldownConfig, AlertKey
 from tradex.alerts.notifier import send_alert
 from tradex.alerts.policy import AlertPolicy
 from tradex.config import TradeXSettings, load_runtime_settings
+from tradex.ui.evidence import render_evidence_notice
 
 
 def _alert_policy_from_env() -> AlertPolicy:
@@ -36,8 +37,10 @@ def render_alerts_tab(
 ) -> None:
         """Render the Alert Configuration tab."""
         st.subheader("Alert Configuration")
+        render_evidence_notice("alerts", st_module=st)
         st.caption(
             "Alerts fire automatically when the watcher is running and thresholds are crossed. "
+            "Automatic triggers deliver notifications based on legacy heuristic and exploratory criteria. "
             "Configure channels and thresholds in your .env file."
         )
     
@@ -138,7 +141,7 @@ def render_alerts_tab(
     | **Confluence** | Cross-timeframe score ≥ threshold | 🟢 Green |
     | **Gap up** | Pre-market gap ≥ 4% upward (8am ET) | 🟢 Green |
     | **Gap down** | Pre-market gap ≥ 4% downward (8am ET) | 🔴 Red |
-    | **Pattern similarity** | Not an automatic alert — use the *Pattern Similarity* tab for manual experimental inspection only | ⚪ Not applicable |
+    | **Pattern similarity** | Not an automatic alert — experimental research only (evaluated under PATTERN-001 and rejected on holdout) | ⚪ Not applicable |
     
     Run the watcher to activate automatic alerts:
     ```bash
