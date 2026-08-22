@@ -282,9 +282,9 @@ Gary Yang separately approved rollout step 3 on 2026-08-22 with narrow scope:
 - MVP-ARCH-001 original architecture approval remains design-only; MVP-ARCH-001-R1 was separately Gary-approved and implemented for truthful UI/help labeling and evidence-state notices only; MVP-ARCH-001-R2 was separately Gary-approved and implemented for provider lifecycle and configuration simplification only; MVP-ARCH-001-R3 is separately Gary-approved on 2026-08-22 for navigation consolidation only; rollout Steps 4–8 remain pending separate Gary approval; R3 does not authorize production trading changes, signal logic changes, score/weight/threshold changes, alert behavior changes, provider changes/calls, database migrations, candidate persistence, journal replacement, PIT capture, strategy promotion, or LONG-002C work.
 - Existing research artifacts and locked specifications are referenced, not modified.
 - LONG-002B-AMEND-002 is completed and merged; LONG-002C design is authorized by PR #52 but explicitly paused by Gary; MVP-ARCH-001 is a separate product-architecture workstream.
-- This packet does not authorize LONG-002C dataset construction, provider calls, dashboard changes, alert changes, database migrations, strategy promotion, or production behavior changes.
+- This packet does not authorize LONG-002C dataset construction, provider calls, dashboard changes beyond the separately approved R3 navigation scope, alert changes, database migrations, strategy promotion, or production behavior changes.
 - No existing strategy is relabeled production_approved.
 
 ---
 
-*This packet is a versioned product-architecture decision document. It does not implement any consolidation, provider change, dashboard change, alert change, database migration, or production behavior change.*
+*This packet is a versioned product-architecture decision document. It does not implement any consolidation, provider change, dashboard change beyond the separately approved R3 navigation scope, alert change, database migration, or production behavior change.*
