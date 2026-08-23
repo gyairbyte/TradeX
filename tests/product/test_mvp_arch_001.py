@@ -283,8 +283,8 @@ def test_governance_invariants_present(inv: dict) -> None:
     assert any("MVP-ARCH-001-R1" in g for g in invariants)
 
 
-def test_governance_invariants_distinguish_r1_r2_r3_r4_from_later_steps(inv: dict) -> None:
-    """Invariants prove R1/R2/R3/R4 are Gary-approved while Steps 5-8 remain pending and broad booleans are false."""
+def test_governance_invariants_distinguish_r1_r2_r3_r4_r5a_from_later_steps(inv: dict) -> None:
+    """Invariants prove R1/R2/R3/R4/R5A are Gary-approved while R5B/R5C/Steps 6-8 remain pending and broad booleans are false."""
     invariants = inv["governance_invariants"]
     # 1. No invariant claims EVERY rollout step remains pending.
     assert not any(
@@ -294,7 +294,7 @@ def test_governance_invariants_distinguish_r1_r2_r3_r4_from_later_steps(inv: dic
         "every rollout implementation step remains pending" in g.lower() for g in invariants
     )
 
-    # 2. Invariant accurately distinguishes R1, R2, R3, and R4 from Steps 5-8.
+    # 2. Invariant accurately distinguishes R1, R2, R3, R4, and R5A from later steps.
     r_invariant = next(
         (
             g
@@ -303,13 +303,14 @@ def test_governance_invariants_distinguish_r1_r2_r3_r4_from_later_steps(inv: dic
             and "MVP-ARCH-001-R2" in g
             and "MVP-ARCH-001-R3" in g
             and "MVP-ARCH-001-R4" in g
+            and "MVP-ARCH-001-R5A" in g
         ),
         None,
     )
-    assert r_invariant is not None, "Missing R1/R2/R3/R4 governance invariant"
+    assert r_invariant is not None, "Missing R1/R2/R3/R4/R5A governance invariant"
     assert "design-only" in r_invariant.lower()
     assert "separately gary-approved" in r_invariant.lower()
-    assert re.search(r"steps 5[\u2013-]8 remain pending", r_invariant, re.IGNORECASE)
+    assert re.search(r"r5b and r5c and steps 6[\u2013-]8 remain pending", r_invariant, re.IGNORECASE)
     assert "does not authorize production trading changes" in r_invariant.lower()
 
     # 3. Markdown matches the JSON invariant.
@@ -321,6 +322,7 @@ def test_governance_invariants_distinguish_r1_r2_r3_r4_from_later_steps(inv: dic
     assert "MVP-ARCH-001-R2" in md_text
     assert "MVP-ARCH-001-R3" in md_text
     assert "MVP-ARCH-001-R4" in md_text
+    assert "MVP-ARCH-001-R5A" in md_text
 
     # 4. Broad authorization booleans remain false.
     auth = inv["authorization"]
@@ -525,12 +527,13 @@ def test_tracker_summary_and_remaining_work_are_consistent(tracker_text: str) ->
     assert "LONG-002A" not in remaining
     assert "LONG-002B" not in remaining
 
-    # The tracker narrative documents the completed/merged R1-R3 steps, separately approved R4 implemented by PR #60,
+    # The tracker narrative documents the completed/merged R1-R4 steps, separately approved R5A implemented by PR #61,
     # and unauthorized status of subsequent steps.
-    assert "r4 was separately gary-approved on 2026-08-22 for fail-closed automatic market alert gating and implemented by pr #60" in tracker_text.lower()
+    assert "r4 was separately gary-approved" in tracker_text.lower()
+    assert "r5a was separately gary-approved on 2026-08-23 for candidate snapshot domain contract and schema v4 persistence primitives only and implemented by pr #61" in tracker_text.lower()
     assert "no production strategy was promoted" in tracker_text.lower()
-    assert "steps 5–8 remain pending separate gary approval" in tracker_text.lower() or "steps 5-8 remain pending separate gary approval" in tracker_text.lower()
-    assert "candidate persistence, journal replacement, pit capture, strategy promotion, database migrations, provider calls, and production trading changes remain unauthorized" in tracker_text.lower()
+    assert "r5b, r5c, and steps 6–8 remain pending separate gary approval" in tracker_text.lower() or "r5b, r5c, and steps 6-8 remain pending separate gary approval" in tracker_text.lower()
+    assert "no candidate generation, evaluation, ranking, actionable state, ui, or automatic runtime write was authorized" in tracker_text.lower()
 
     # The recommended work order states a separate Gary/ChatGPT decision is required and no next PR is already authorized.
     assert "separate gary/chatgpt sequencing and approval decision" in work_order.lower()
@@ -810,3 +813,39 @@ def test_rollout_approvals_record(inv: dict) -> None:
     assert r4["pit_capture_authorized"] is False
     assert r4["strategy_promotion_authorized"] is False
     assert r4["long_002c_work_authorized"] is False
+
+    r5a = next((a for a in approvals if a.get("task_id") == "MVP-ARCH-001-R5A"), None)
+    assert r5a is not None
+    assert r5a["rollout_order"] == 5
+    assert r5a["approval_status"] == "gary_approved"
+    assert r5a["approved_by"] == "Gary Yang"
+    assert r5a["approved_on"] == "2026-08-23"
+    assert r5a["scope"] == "candidate snapshot domain contract and additive schema v4 persistence primitives only"
+    assert r5a["implementation_authorized"] is True
+    assert r5a["database_migration_authorized"] is True
+    assert r5a["candidate_persistence_primitives_authorized"] is True
+    assert r5a["candidate_schema_v4_authorized"] is True
+    assert r5a["production_trading_changes_authorized"] is False
+    assert r5a["signal_logic_changes_authorized"] is False
+    assert r5a["score_changes_authorized"] is False
+    assert r5a["weight_changes_authorized"] is False
+    assert r5a["threshold_changes_authorized"] is False
+    assert r5a["ranking_changes_authorized"] is False
+    assert r5a["candidate_eligibility_changes_authorized"] is False
+    assert r5a["candidate_runtime_writes_authorized"] is False
+    assert r5a["candidate_aggregation_authorized"] is False
+    assert r5a["candidate_evaluator_logic_authorized"] is False
+    assert r5a["actionable_candidate_states_authorized"] is False
+    assert r5a["candidate_ui_authorized"] is False
+    assert r5a["navigation_changes_authorized"] is False
+    assert r5a["alert_behavior_changes_authorized"] is False
+    assert r5a["provider_changes_authorized"] is False
+    assert r5a["provider_calls_authorized"] is False
+    assert r5a["live_provider_calls_authorized"] is False
+    assert r5a["journal_replacement_authorized"] is False
+    assert r5a["outcome_tracking_authorized"] is False
+    assert r5a["pit_capture_job_authorized"] is False
+    assert r5a["strategy_promotion_authorized"] is False
+    assert r5a["long_002c_work_authorized"] is False
+    assert r5a["r5b_implementation_authorized"] is False
+    assert r5a["r5c_implementation_authorized"] is False
