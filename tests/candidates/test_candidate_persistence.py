@@ -333,3 +333,119 @@ def test_existing_legacy_tables_unaffected_by_candidate_writes(candidate_db) -> 
         sh_rows = con.execute("SELECT * FROM signal_history WHERE ticker = 'SPY'").fetchall()
         assert len(sh_rows) == 1
         assert sh_rows[0][4] == 70  # score
+
+
+def test_reconstructed_retry_with_different_created_at_is_idempotent(candidate_db) -> None:
+    t0 = datetime(2026, 8, 21, 14, 30, tzinfo=UTC)
+    t_created_1 = datetime(2026, 8, 21, 14, 30, 1, tzinfo=UTC)
+    t_created_2 = datetime(2026, 8, 21, 14, 30, 5, tzinfo=UTC)
+
+    snap1 = CandidateSnapshot(
+        candidate_id="cand-retry-1",
+        symbol="AAPL",
+        decision_timestamp=t0,
+        created_at=t_created_1,
+    )
+    eval1 = CandidateEvaluation(
+        evaluation_id="eval-retry-1",
+        candidate_id="cand-retry-1",
+        evaluator_id="scorer",
+        evaluator_version="1.0",
+        evidence_state="exploratory",
+        created_at=t_created_1,
+    )
+    dossier1 = CandidateDossier(snapshot=snap1, evaluations=(eval1,))
+    saved1 = record_candidate_dossier(dossier1, candidate_db)
+
+    # Reconstructed retry with different created_at
+    snap2 = CandidateSnapshot(
+        candidate_id="cand-retry-1",
+        symbol="AAPL",
+        decision_timestamp=t0,
+        created_at=t_created_2,
+    )
+    eval2 = CandidateEvaluation(
+        evaluation_id="eval-retry-1",
+        candidate_id="cand-retry-1",
+        evaluator_id="scorer",
+        evaluator_version="1.0",
+        evidence_state="exploratory",
+        created_at=t_created_2,
+    )
+    dossier2 = CandidateDossier(snapshot=snap2, evaluations=(eval2,))
+    saved2 = record_candidate_dossier(dossier2, candidate_db)
+
+    assert saved1 == saved2
+    assert saved2.snapshot.created_at == t_created_1
+    assert saved2.evaluations[0].created_at == t_created_1
+
+
+def test_replay_with_noncanonical_tuple_order_succeeds_idempotently(candidate_db) -> None:
+    t0 = datetime(2026, 8, 21, 14, 30, tzinfo=UTC)
+    snap = CandidateSnapshot(candidate_id="cand-order-1", symbol="AAPL", decision_timestamp=t0)
+
+    e1 = CandidateEvaluation(evaluation_id="eval-1", candidate_id="cand-order-1", evaluator_id="ev1", evaluator_version="1", evidence_state="e")
+    e2 = CandidateEvaluation(evaluation_id="eval-2", candidate_id="cand-order-1", evaluator_id="ev2", evaluator_version="1", evidence_state="e")
+
+    # First write with (e1, e2)
+    dossier1 = CandidateDossier(snapshot=snap, evaluations=(e1, e2))
+    saved1 = record_candidate_dossier(dossier1, candidate_db)
+
+    # Replay with reversed order (e2, e1)
+    dossier2 = CandidateDossier(snapshot=snap, evaluations=(e2, e1))
+    saved2 = record_candidate_dossier(dossier2, candidate_db)
+
+    assert saved1 == saved2
+    assert [e.evaluation_id for e in saved2.evaluations] == ["eval-1", "eval-2"]
+
+
+def test_material_divergence_raises_store_error_conflict(candidate_db) -> None:
+    t0 = datetime(2026, 8, 21, 14, 30, tzinfo=UTC)
+    snap = CandidateSnapshot(candidate_id="cand-div-1", symbol="AAPL", decision_timestamp=t0)
+    e1 = CandidateEvaluation(evaluation_id="eval-1", candidate_id="cand-div-1", evaluator_id="ev1", evaluator_version="1", evidence_state="e", dimensions={"score": 50})
+    ev1 = CandidateEvidence(evidence_id="evid-1", candidate_id="cand-div-1", evidence_type="ohlcv", provider="schwab")
+    r1 = CandidateReason(reason_id="reas-1", candidate_id="cand-div-1", reason_code="R1", human_text="Text 1")
+    m1 = CandidateMissingData(record_id="miss-1", candidate_id="cand-div-1", input_name="i1", data_family="f1", status=MissingDataStatus.UNKNOWN, detail="det1")
+
+    dossier = CandidateDossier(snapshot=snap, evaluations=(e1,), evidence=(ev1,), reasons=(r1,), missing_data=(m1,))
+    record_candidate_dossier(dossier, candidate_db)
+
+    # Divergent evaluation dimension
+    e_div = CandidateEvaluation(evaluation_id="eval-1", candidate_id="cand-div-1", evaluator_id="ev1", evaluator_version="1", evidence_state="e", dimensions={"score": 90})
+    with pytest.raises(store.StoreError, match="already exists with divergent immutable content"):
+        record_candidate_dossier(CandidateDossier(snapshot=snap, evaluations=(e_div,), evidence=(ev1,), reasons=(r1,), missing_data=(m1,)), candidate_db)
+
+    # Divergent evidence provider
+    ev_div = CandidateEvidence(evidence_id="evid-1", candidate_id="cand-div-1", evidence_type="ohlcv", provider="alpaca")
+    with pytest.raises(store.StoreError, match="already exists with divergent immutable content"):
+        record_candidate_dossier(CandidateDossier(snapshot=snap, evaluations=(e1,), evidence=(ev_div,), reasons=(r1,), missing_data=(m1,)), candidate_db)
+
+    # Divergent reason human text
+    r_div = CandidateReason(reason_id="reas-1", candidate_id="cand-div-1", reason_code="R1", human_text="Different text")
+    with pytest.raises(store.StoreError, match="already exists with divergent immutable content"):
+        record_candidate_dossier(CandidateDossier(snapshot=snap, evaluations=(e1,), evidence=(ev1,), reasons=(r_div,), missing_data=(m1,)), candidate_db)
+
+    # Divergent missing data status
+    m_div = CandidateMissingData(record_id="miss-1", candidate_id="cand-div-1", input_name="i1", data_family="f1", status=MissingDataStatus.PROVIDER_FAILED, detail="det1")
+    with pytest.raises(store.StoreError, match="already exists with divergent immutable content"):
+        record_candidate_dossier(CandidateDossier(snapshot=snap, evaluations=(e1,), evidence=(ev1,), reasons=(r1,), missing_data=(m_div,)), candidate_db)
+
+
+def test_sqlite_source_evidence_fk_enforcement(candidate_db) -> None:
+    t0 = datetime(2026, 8, 21, 14, 30, tzinfo=UTC).isoformat()
+    with sqlite3.connect(candidate_db) as con:
+        con.execute("PRAGMA foreign_keys = ON")
+        con.execute(
+            "INSERT INTO candidates (candidate_id, contract_version, symbol, decision_timestamp, created_at) "
+            "VALUES ('cand-fk-1', 1, 'AAPL', ?, ?)",
+            (t0, t0),
+        )
+        con.commit()
+
+        # Insert reason with non-existent source_evidence_id under PRAGMA foreign_keys = ON
+        with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY"):
+            con.execute(
+                "INSERT INTO candidate_reasons (reason_id, candidate_id, reason_code, human_text, source_evidence_id, created_at) "
+                "VALUES ('reas-fk-1', 'cand-fk-1', 'R1', 'test text', 'evid-nonexistent', ?)",
+                (t0,),
+            )

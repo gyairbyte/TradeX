@@ -94,6 +94,17 @@ def _validate_non_blank_str(value: str, field_name: str) -> str:
     return value.strip()
 
 
+def _validate_trading_date_str(td: str) -> str:
+    if not isinstance(td, str):
+        raise TypeError(f"trading_date must be a string, got {type(td).__name__}")
+    s = td.strip()
+    try:
+        datetime.strptime(s, "%Y-%m-%d").replace(tzinfo=UTC)
+    except ValueError as e:
+        raise ValueError(f"Invalid trading_date format: '{td}'. Expected YYYY-MM-DD") from e
+    return s
+
+
 def derive_trading_date(decision_dt: datetime) -> str | None:
     """Derive XNYS trading date from an aware decision timestamp."""
     try:
@@ -122,21 +133,41 @@ class CandidateSnapshot:
     def __post_init__(self) -> None:
         object.__setattr__(self, "candidate_id", _validate_non_blank_str(self.candidate_id, "candidate_id"))
         object.__setattr__(self, "symbol", _normalize_symbol(self.symbol))
+
+        if not isinstance(self.contract_version, int) or isinstance(self.contract_version, bool):
+            raise TypeError(f"contract_version must be an int, got {type(self.contract_version).__name__}")
+        if self.contract_version <= 0:
+            raise ValueError(f"contract_version must be a positive integer, got {self.contract_version}")
+        if self.contract_version != 1:
+            raise ValueError(f"Unsupported candidate contract_version: {self.contract_version}. Supported: 1")
+
         norm_ts = _normalize_aware_dt(self.decision_timestamp, "decision_timestamp")
         object.__setattr__(self, "decision_timestamp", norm_ts)
         norm_created = _normalize_aware_dt(self.created_at, "created_at")
         object.__setattr__(self, "created_at", norm_created)
 
+        # Validate supplied trading_date format if provided
+        if self.trading_date is not None:
+            td_clean = _validate_trading_date_str(self.trading_date)
+            object.__setattr__(self, "trading_date", td_clean)
+
         # Derive or validate trading date using New York market calendar
         derived_td = derive_trading_date(norm_ts)
-        if self.trading_date is None:
-            object.__setattr__(self, "trading_date", derived_td)
-        else:
-            if derived_td is not None and self.trading_date != derived_td:
+        if derived_td is not None:
+            if self.trading_date is None:
+                object.__setattr__(self, "trading_date", derived_td)
+            elif self.trading_date != derived_td:
                 raise ValueError(
                     f"Supplied trading_date '{self.trading_date}' does not match "
                     f"derived market trading date '{derived_td}'"
                 )
+        else:
+            if self.trading_date is not None:
+                raise ValueError(
+                    f"decision_timestamp '{norm_ts.isoformat()}' falls on a non-trading day and "
+                    f"cannot be assigned trading_date '{self.trading_date}'"
+                )
+            object.__setattr__(self, "trading_date", None)
 
         if isinstance(self.security_identity_status, str):
             object.__setattr__(self, "security_identity_status", SecurityIdentityStatus(self.security_identity_status))
@@ -235,9 +266,23 @@ class CandidateReason:
         object.__setattr__(self, "human_text", _validate_non_blank_str(self.human_text, "human_text"))
         if self.evaluation_id is not None:
             object.__setattr__(self, "evaluation_id", self.evaluation_id.strip() or None)
+
         if self.dimension is not None:
-            dim_val = self.dimension.value if isinstance(self.dimension, CandidateDimension) else str(self.dimension).strip()
-            object.__setattr__(self, "dimension", dim_val or None)
+            if isinstance(self.dimension, CandidateDimension):
+                dim_obj: CandidateDimension | None = self.dimension
+            elif isinstance(self.dimension, str):
+                dim_str = self.dimension.strip()
+                if not dim_str:
+                    dim_obj = None
+                else:
+                    try:
+                        dim_obj = CandidateDimension(dim_str.lower())
+                    except ValueError as e:
+                        raise ValueError(f"Unknown CandidateDimension: '{self.dimension}'") from e
+            else:
+                raise TypeError(f"dimension must be CandidateDimension or str, got {type(self.dimension).__name__}")
+            object.__setattr__(self, "dimension", dim_obj)
+
         if isinstance(self.polarity, str):
             object.__setattr__(self, "polarity", ReasonPolarity(self.polarity))
         if isinstance(self.severity, str):
@@ -297,48 +342,81 @@ class CandidateDossier:
         if not isinstance(self.snapshot, CandidateSnapshot):
             raise TypeError(f"snapshot must be CandidateSnapshot, got {type(self.snapshot).__name__}")
 
-        evals = tuple(self.evaluations) if not isinstance(self.evaluations, tuple) else self.evaluations
-        evid = tuple(self.evidence) if not isinstance(self.evidence, tuple) else self.evidence
-        reas = tuple(self.reasons) if not isinstance(self.reasons, tuple) else self.reasons
-        miss = tuple(self.missing_data) if not isinstance(self.missing_data, tuple) else self.missing_data
-
-        object.__setattr__(self, "evaluations", evals)
-        object.__setattr__(self, "evidence", evid)
-        object.__setattr__(self, "reasons", reas)
-        object.__setattr__(self, "missing_data", miss)
+        raw_evals = tuple(self.evaluations) if not isinstance(self.evaluations, tuple) else self.evaluations
+        raw_evid = tuple(self.evidence) if not isinstance(self.evidence, tuple) else self.evidence
+        raw_reas = tuple(self.reasons) if not isinstance(self.reasons, tuple) else self.reasons
+        raw_miss = tuple(self.missing_data) if not isinstance(self.missing_data, tuple) else self.missing_data
 
         cand_id = self.snapshot.candidate_id
-        eval_ids = {e.evaluation_id for e in evals}
-        evid_ids = {ev.evidence_id for ev in evid}
 
-        for e in evals:
+        # Type checks, candidate_id match, and duplicate primary ID rejection
+        seen_evals: set[str] = set()
+        for e in raw_evals:
             if not isinstance(e, CandidateEvaluation):
                 raise TypeError(f"evaluations item must be CandidateEvaluation, got {type(e).__name__}")
             if e.candidate_id != cand_id:
                 raise ValueError(f"Evaluation candidate_id '{e.candidate_id}' does not match snapshot '{cand_id}'")
+            if e.evaluation_id in seen_evals:
+                raise ValueError(f"Duplicate evaluation_id '{e.evaluation_id}' in dossier")
+            seen_evals.add(e.evaluation_id)
 
-        for ev in evid:
+        seen_evid: set[str] = set()
+        for ev in raw_evid:
             if not isinstance(ev, CandidateEvidence):
                 raise TypeError(f"evidence item must be CandidateEvidence, got {type(ev).__name__}")
             if ev.candidate_id != cand_id:
                 raise ValueError(f"Evidence candidate_id '{ev.candidate_id}' does not match snapshot '{cand_id}'")
+            if ev.evidence_id in seen_evid:
+                raise ValueError(f"Duplicate evidence_id '{ev.evidence_id}' in dossier")
+            seen_evid.add(ev.evidence_id)
 
-        for r in reas:
+        seen_reas: set[str] = set()
+        for r in raw_reas:
             if not isinstance(r, CandidateReason):
                 raise TypeError(f"reasons item must be CandidateReason, got {type(r).__name__}")
             if r.candidate_id != cand_id:
                 raise ValueError(f"Reason candidate_id '{r.candidate_id}' does not match snapshot '{cand_id}'")
-            if r.evaluation_id is not None and r.evaluation_id not in eval_ids and evals:
-                raise ValueError(f"Reason evaluation_id '{r.evaluation_id}' does not match any evaluation in dossier")
-            if r.source_evidence_id is not None and r.source_evidence_id not in evid_ids and evid:
-                raise ValueError(
-                    f"Reason source_evidence_id '{r.source_evidence_id}' does not match any evidence in dossier"
-                )
+            if r.reason_id in seen_reas:
+                raise ValueError(f"Duplicate reason_id '{r.reason_id}' in dossier")
+            seen_reas.add(r.reason_id)
 
-        for m in miss:
+        seen_miss: set[str] = set()
+        for m in raw_miss:
             if not isinstance(m, CandidateMissingData):
                 raise TypeError(f"missing_data item must be CandidateMissingData, got {type(m).__name__}")
             if m.candidate_id != cand_id:
                 raise ValueError(f"MissingData candidate_id '{m.candidate_id}' does not match snapshot '{cand_id}'")
-            if m.evaluation_id is not None and m.evaluation_id not in eval_ids and evals:
-                raise ValueError(f"MissingData evaluation_id '{m.evaluation_id}' does not match any evaluation in dossier")
+            if m.record_id in seen_miss:
+                raise ValueError(f"Duplicate record_id '{m.record_id}' in dossier")
+            seen_miss.add(m.record_id)
+
+        # Canonical deterministic child ordering by primary identifier
+        canonical_evals = tuple(sorted(raw_evals, key=lambda x: x.evaluation_id))
+        canonical_evid = tuple(sorted(raw_evid, key=lambda x: x.evidence_id))
+        canonical_reas = tuple(sorted(raw_reas, key=lambda x: x.reason_id))
+        canonical_miss = tuple(sorted(raw_miss, key=lambda x: x.record_id))
+
+        object.__setattr__(self, "evaluations", canonical_evals)
+        object.__setattr__(self, "evidence", canonical_evid)
+        object.__setattr__(self, "reasons", canonical_reas)
+        object.__setattr__(self, "missing_data", canonical_miss)
+
+        eval_ids = {e.evaluation_id for e in canonical_evals}
+        evid_ids = {ev.evidence_id for ev in canonical_evid}
+
+        # Unconditional referential integrity checks
+        for r in canonical_reas:
+            if r.evaluation_id is not None and r.evaluation_id not in eval_ids:
+                raise ValueError(
+                    f"Reason evaluation_id '{r.evaluation_id}' does not match any evaluation in dossier"
+                )
+            if r.source_evidence_id is not None and r.source_evidence_id not in evid_ids:
+                raise ValueError(
+                    f"Reason source_evidence_id '{r.source_evidence_id}' does not match any evidence in dossier"
+                )
+
+        for m in canonical_miss:
+            if m.evaluation_id is not None and m.evaluation_id not in eval_ids:
+                raise ValueError(
+                    f"MissingData evaluation_id '{m.evaluation_id}' does not match any evaluation in dossier"
+                )

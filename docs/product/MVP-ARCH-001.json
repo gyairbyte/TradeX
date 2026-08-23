@@ -18,32 +18,83 @@
     "strategy_promotion_authorized": false
   },
   "candidate_contract": {
-    "fields": [
+    "future_layer_fields_not_in_r5a_snapshot": [
+      "candidate_state",
+      "actionable_state",
+      "enter_now",
+      "armed",
+      "waitlist",
       "strategy_id",
       "strategy_version",
-      "symbol",
-      "security_identity_version",
-      "decision_timestamp",
-      "candidate_state",
-      "setup_quality_score",
-      "move_potential",
-      "entry_readiness",
-      "downside_risk",
-      "data_confidence",
-      "evidence_state",
-      "human_readable_reasons",
-      "missing_or_unknown_inputs",
-      "provider_provenance",
       "entry_plan",
       "invalidation_stop",
       "target_or_expiration",
-      "outcome_status"
+      "planned_entry",
+      "realized_fill",
+      "exit_fill",
+      "outcome_status",
+      "return_or_expectancy"
     ],
-    "purpose": "Keep distinct concepts separate before any candidate can be shown as Enter Now / Armed / Waitlist.",
+    "purpose": "Define the immutable point-in-time candidate snapshot domain, evaluator envelopes, structured evidence provenance, explainability reasons, and typed missing-data records without candidate-selection behavior, runtime generation, or strategy promotion.",
+    "r5a_evaluation_envelope_fields": [
+      "evaluation_id",
+      "candidate_id",
+      "evaluator_id",
+      "evaluator_version",
+      "evidence_state",
+      "dimensions",
+      "created_at"
+    ],
+    "r5a_evidence_fields": [
+      "evidence_id",
+      "candidate_id",
+      "evidence_type",
+      "source_ref_type",
+      "source_ref_id",
+      "provider",
+      "observed_at",
+      "metadata",
+      "created_at"
+    ],
+    "r5a_missing_data_fields": [
+      "record_id",
+      "candidate_id",
+      "evaluation_id",
+      "input_name",
+      "data_family",
+      "status",
+      "detail",
+      "provider",
+      "observed_at",
+      "created_at"
+    ],
+    "r5a_reason_fields": [
+      "reason_id",
+      "candidate_id",
+      "evaluation_id",
+      "dimension",
+      "reason_code",
+      "polarity",
+      "severity",
+      "human_text",
+      "source_evidence_id",
+      "created_at"
+    ],
+    "r5a_snapshot_fields": [
+      "candidate_id",
+      "contract_version",
+      "symbol",
+      "decision_timestamp",
+      "trading_date",
+      "security_identity_version",
+      "security_identity_status",
+      "created_at"
+    ],
     "rules": [
       "A single 0-100 score is not probability, cross-strategy comparability, evidence strength, or actionability.",
-      "setup_quality, move_potential, entry_readiness, downside/risk, and data_confidence are separate fields.",
-      "missing_or_unknown_inputs are explicit and cannot be backfilled with current or later data."
+      "setup_quality, move_potential, entry_readiness, downside/risk, and data_confidence are separate dimensional evaluations, not snapshot properties.",
+      "missing_or_unknown_inputs are explicit and cannot be backfilled with current or later data.",
+      "Candidate snapshot does not carry strategy identity, action state (Enter Now / Armed / Waitlist), trade plan, or outcome status; those belong to future separately approved evaluator/strategy/Journal layers."
     ]
   },
   "classification": "product-architecture-and-governance-design-only",
@@ -328,7 +379,7 @@
     "MVP-ARCH-001 original architecture approval remains design-only; MVP-ARCH-001-R1 was separately Gary-approved and implemented for truthful UI/help labeling and evidence-state notices only; MVP-ARCH-001-R2 was separately Gary-approved and implemented for provider lifecycle and configuration simplification only; MVP-ARCH-001-R3 was separately Gary-approved and implemented for navigation consolidation only; MVP-ARCH-001-R4 was separately Gary-approved and implemented for fail-closed automatic market alert gating only; MVP-ARCH-001-R5A is separately Gary-approved on 2026-08-23 for candidate snapshot domain contract and additive schema v4 persistence primitives only; R5B and R5C and Steps 6–8 remain pending separate Gary approval; R5A does not authorize production trading changes, signal logic changes, score/weight/threshold changes, ranking changes, candidate eligibility changes, candidate runtime writes, candidate aggregation/evaluations, actionable candidate states, UI changes, navigation changes beyond R3, alert changes beyond the separately approved R4 gating scope, provider changes/calls, journal replacement, PIT capture, strategy promotion, or LONG-002C work.",
     "Existing research artifacts and locked specifications are referenced, not modified.",
     "LONG-002B-AMEND-002 is completed and merged; LONG-002C design is authorized by PR #52 but explicitly paused by Gary; MVP-ARCH-001 is a separate product-architecture workstream.",
-    "This packet does not authorize LONG-002C dataset construction, provider calls, dashboard changes beyond the separately approved R3 navigation scope, alert changes beyond the separately approved R4 gating scope, database migrations, strategy promotion, or production behavior changes.",
+    "This packet does not authorize LONG-002C dataset construction, provider calls, dashboard changes beyond the separately approved R3 navigation scope, alert changes beyond the separately approved R4 gating scope, database migrations beyond the separately approved additive MVP-ARCH-001-R5A schema-v4 persistence scope, strategy promotion, or production behavior changes.",
     "No existing strategy is relabeled production_approved."
   ],
   "journal_outcome_contract": {
@@ -409,7 +460,7 @@
       "question": "Which features should be archived?"
     },
     {
-      "answer": "None of the existing numeric scores or heuristics are validated as executable strategies; they may be used only as discovery/context. A candidate must carry an approved strategy ID, entry plan, stop, target, and invalidation before it can be actioned.",
+      "answer": "None of the existing numeric scores or heuristics are validated as executable strategies; they may be used only as discovery/context. A candidate snapshot in R5A records point-in-time state without strategy identity, trade plan, or actionability; an actionable candidate in future layers requires a separately approved executable strategy defining strategy ID, version, entry plan, stop, target, and invalidation before it can be actioned.",
       "question": "Which outputs can currently support actionability, and which cannot?"
     },
     {
@@ -421,7 +472,7 @@
       "question": "How should TradeX measure whether a complete strategy worked?"
     },
     {
-      "answer": "1. Truthful labels and evidence badges; 2. Provider lifecycle/config simplification; 3. Navigation consolidation; 4. Alert gating; 5. Candidate persistence contract; 6. Journal/outcome replacement; 7. Prospective PIT data capture; 8. Later LONG-002C resumption.",
+      "answer": "1. Truthful labels and evidence badges; 2. Provider lifecycle/config simplification; 3. Navigation consolidation; 4. Alert gating; 5A. Candidate snapshot domain contract & schema v4 persistence primitives; 5B. Multi-source observation aggregator & shadow candidate evaluation; 5C. Truthful read-only Today / Candidate Detail workflow; 6. Journal/outcome replacement; 7. Prospective PIT data capture; 8. Later LONG-002C resumption.",
       "question": "What is the smallest sequence of changes that turns the existing foundation into a cohesive MVP?"
     }
   ],
@@ -684,10 +735,10 @@
       "dependencies": [
         "Step 2"
       ],
-      "objective": "Introduce candidate table/schema that stores the candidate contract fields.",
+      "objective": "Introduce candidate snapshot domain contract and additive schema v4 persistence primitives (amended into 5A persistence primitives, 5B aggregator/shadow evaluation, 5C read-only Today/detail workflow).",
       "order": 5,
-      "pr": "Candidate persistence contract",
-      "production_trading_impact": "Adds schema; no changes to existing signal_history.",
+      "pr": "Candidate snapshot domain and schema v4 persistence (MVP-ARCH-001-R5A)",
+      "production_trading_impact": "Adds schema; no changes to existing signal_history; zero runtime writes.",
       "requires_gary_approval": true,
       "rollback": "Stop writing new candidates, hide the new surface, and revert to the previous code path; the new candidate table remains empty and existing tables are untouched."
     },

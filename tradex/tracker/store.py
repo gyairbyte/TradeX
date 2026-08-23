@@ -617,11 +617,13 @@ _CANDIDATE_SCHEMA_SCRIPT = """
         source_evidence_id TEXT,
         created_at         TEXT NOT NULL,
         FOREIGN KEY (candidate_id) REFERENCES candidates(candidate_id) ON DELETE CASCADE,
-        FOREIGN KEY (evaluation_id) REFERENCES candidate_evaluations(evaluation_id) ON DELETE SET NULL
+        FOREIGN KEY (evaluation_id) REFERENCES candidate_evaluations(evaluation_id) ON DELETE SET NULL,
+        FOREIGN KEY (source_evidence_id) REFERENCES candidate_evidence(evidence_id) ON DELETE SET NULL
     );
 
     CREATE INDEX IF NOT EXISTS idx_creasons_candidate_id ON candidate_reasons(candidate_id);
     CREATE INDEX IF NOT EXISTS idx_creasons_eval_id      ON candidate_reasons(evaluation_id);
+    CREATE INDEX IF NOT EXISTS idx_creasons_source_evid  ON candidate_reasons(source_evidence_id);
 
     CREATE TABLE IF NOT EXISTS candidate_missing_data (
         record_id          TEXT PRIMARY KEY,

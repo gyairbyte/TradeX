@@ -225,19 +225,48 @@ def test_signal_journal_is_legacy_telemetry(inv: dict) -> None:
     assert inv["journal_outcome_contract"]["current_state"] == "legacy_signal_telemetry"
 
 
-def test_candidate_contract_includes_outcome_status(inv: dict) -> None:
-    fields = inv["candidate_contract"]["fields"]
-    assert "outcome_status" in fields
+def test_candidate_contract_separates_layers_and_concepts(inv: dict) -> None:
+    contract = inv["candidate_contract"]
+    snap_fields = contract["r5a_snapshot_fields"]
+    eval_fields = contract["r5a_evaluation_envelope_fields"]
+    evid_fields = contract["r5a_evidence_fields"]
+    reas_fields = contract["r5a_reason_fields"]
+    miss_fields = contract["r5a_missing_data_fields"]
+    future_fields = contract["future_layer_fields_not_in_r5a_snapshot"]
 
+    # Snapshot fields are neutral point-in-time facts
+    assert "candidate_id" in snap_fields
+    assert "contract_version" in snap_fields
+    assert "symbol" in snap_fields
+    assert "decision_timestamp" in snap_fields
+    assert "trading_date" in snap_fields
+    assert "security_identity_status" in snap_fields
+    assert "created_at" in snap_fields
 
-def test_candidate_contract_separates_concepts(inv: dict) -> None:
-    fields = inv["candidate_contract"]["fields"]
-    assert "setup_quality_score" in fields
-    assert "move_potential" in fields
-    assert "entry_readiness" in fields
-    assert "downside_risk" in fields
-    assert "data_confidence" in fields
-    assert "evidence_state" in fields
+    # No strategy, trade plan, or actionability on candidate snapshot
+    assert "strategy_id" not in snap_fields
+    assert "candidate_state" not in snap_fields
+    assert "entry_plan" not in snap_fields
+    assert "invalidation_stop" not in snap_fields
+    assert "outcome_status" not in snap_fields
+
+    # Future layer fields explicitly documented
+    assert "outcome_status" in future_fields
+    assert "enter_now" in future_fields
+    assert "armed" in future_fields
+    assert "waitlist" in future_fields
+    assert "entry_plan" in future_fields
+    assert "strategy_id" in future_fields
+
+    # Evaluation envelope
+    assert "evaluation_id" in eval_fields
+    assert "evaluator_id" in eval_fields
+    assert "dimensions" in eval_fields
+
+    # Evidence & Reasons & MissingData
+    assert "evidence_type" in evid_fields
+    assert "source_evidence_id" in reas_fields
+    assert "status" in miss_fields
 
 
 def test_score_not_actionability_or_probability(inv: dict) -> None:
@@ -266,7 +295,7 @@ def test_rollout_plan_is_ordered_and_rollback_is_safe(inv: dict) -> None:
     assert orders == sorted(orders)
     assert len(orders) == 8
     candidate_step = next(
-        s for s in inv["rollout_plan"] if s["pr"] == "Candidate persistence contract"
+        s for s in inv["rollout_plan"] if s["order"] == 5
     )
     assert "drop" not in candidate_step["rollback"].lower()
     journal_step = next(s for s in inv["rollout_plan"] if s["pr"] == "Journal/outcome replacement")
@@ -849,3 +878,23 @@ def test_rollout_approvals_record(inv: dict) -> None:
     assert r5a["long_002c_work_authorized"] is False
     assert r5a["r5b_implementation_authorized"] is False
     assert r5a["r5c_implementation_authorized"] is False
+
+
+def test_governance_invariants_database_migration_authorized_consistency(inv: dict) -> None:
+    """Verify that R5A additive schema-v4 migration is authorized without blanket invariant contradictions."""
+    approvals = inv.get("rollout_approvals", [])
+    r5a = next((a for a in approvals if a.get("task_id") == "MVP-ARCH-001-R5A"), None)
+    assert r5a is not None
+    assert r5a["database_migration_authorized"] is True
+    assert r5a["candidate_schema_v4_authorized"] is True
+
+    invariants = inv["governance_invariants"]
+    # Blanket "no database migrations" without qualification must not exist
+    for inv_str in invariants:
+        if "database migrations" in inv_str:
+            assert "beyond the separately approved additive MVP-ARCH-001-R5A schema-v4 persistence scope" in inv_str
+
+    # Markdown and JSON invariants must match exactly
+    doc_text = MD_PATH.read_text(encoding="utf-8")
+    for inv_str in invariants:
+        assert inv_str in doc_text
