@@ -13,6 +13,7 @@ from tradex.ui.evidence import (
 )
 
 EXPECTED_FEATURE_SURFACES = {
+    "today",
     "scanner",
     "coil_detector",
     "confluence",

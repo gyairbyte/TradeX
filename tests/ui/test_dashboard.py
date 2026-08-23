@@ -143,10 +143,9 @@ def test_dashboard_scan_passes_normalized_watchlist_to_record_scan(
     report.requested_provider = "yahoo"
     report.actual_provider = "yahoo"
     report.providers_attempted = ()
-    report.attempt_log = []
-
     run_mock = MagicMock(return_value=report)
     record_mock = MagicMock(return_value="session-123")
+    monkeypatch.setattr("tradex.ui.tabs.today.render_today_tab", MagicMock())
     monkeypatch.setattr("tradex.screener.engine.run_with_report", run_mock)
     monkeypatch.setattr("tradex.tracker.store.record_scan", record_mock)
 
@@ -317,6 +316,7 @@ def test_dashboard_provider_options_and_labels(monkeypatch, tmp_path):
     monkeypatch.setitem(sys.modules, "streamlit", st)
 
     with (
+        patch("tradex.ui.tabs.today.render_today_tab"),
         patch("tradex.ui.tabs.scanner.render_scanner_tab"),
         patch("tradex.ui.tabs.premarket.render_premarket_tab") as mock_premarket,
         patch("tradex.ui.tabs.confluence.render_confluence_tab"),

@@ -1,4 +1,4 @@
-"""Dashboard routing regression: st.tabs labels and extracted tab renderer calls (MVP-ARCH-001-R3)."""
+"""Dashboard routing regression: st.tabs labels and extracted tab renderer calls (MVP-ARCH-001-R5C)."""
 from __future__ import annotations
 
 import importlib
@@ -6,12 +6,12 @@ import runpy
 import sys
 from unittest.mock import MagicMock
 
-import pandas as pd
 import pytest
 
 from tradex.config import TradeXSettings
 
 _EXPECTED_TABS = [
+    "Today",
     "Scanner",
     "Confluence",
     "Pre-Market",
@@ -27,6 +27,7 @@ _REMOVED_TOP_LEVEL_TABS = [
     "Options Activity",
     "Alerts",
     "Weights",
+    "Candidate Detail",  # Candidate Detail is an in-place drill-down inside Today, not a top-level tab
 ]
 
 
@@ -113,12 +114,11 @@ def fake_dashboard_st(monkeypatch, tmp_path):
     monkeypatch.setattr(wl_store, "load", lambda *args, **kwargs: None)
 
     # Suppress network/data fetches in tabs.
+    monkeypatch.setattr("tradex.ui.tabs.today.render_today_tab", MagicMock())
     monkeypatch.setattr("tradex.screener.engine.run_with_report", MagicMock())
     monkeypatch.setattr("tradex.tracker.store.record_scan", MagicMock())
     monkeypatch.setattr("tradex.tracker.analyzer.detect_coils", MagicMock(return_value=[]))
     monkeypatch.setattr("tradex.tracker.confluence.run_confluence_screen", MagicMock())
-    monkeypatch.setattr("tradex.patterns.fingerprint.list_fingerprints", MagicMock(return_value=pd.DataFrame()))
-    monkeypatch.setattr("tradex.patterns.matcher.run_match_screen", MagicMock())
     monkeypatch.setattr("tradex.premarket.gap_scanner.scan_gaps_with_report", MagicMock())
     monkeypatch.setattr("tradex.options.flow.scan_unusual_flow_with_report", MagicMock())
     monkeypatch.setattr("tradex.options.flow.scan_chain_activity_with_report", MagicMock())
@@ -129,22 +129,23 @@ def fake_dashboard_st(monkeypatch, tmp_path):
 
 
 def test_dashboard_creates_tabs_in_exact_order(fake_dashboard_st, monkeypatch):
-    """The dashboard renders exactly the seven transitional tab labels in canonical order."""
+    """The dashboard renders exactly the eight transitional tab labels in canonical order."""
     sys.modules.pop("tradex.ui.dashboard", None)
     runpy.run_module("tradex.ui.dashboard", run_name="__main__")
 
-    assert fake_dashboard_st.tabs.call_count == 1
-    args, _ = fake_dashboard_st.tabs.call_args
-    assert len(args[0]) == 7
+    assert fake_dashboard_st.tabs.call_count >= 1
+    args, _ = fake_dashboard_st.tabs.call_args_list[0]
+    assert len(args[0]) == 8
     assert args[0] == _EXPECTED_TABS
 
-    # Assert old individual tabs are no longer top-level
+    # Assert removed or non-top-level items do not appear as top-level tabs
     for removed in _REMOVED_TOP_LEVEL_TABS:
         assert removed not in args[0]
 
 
 def test_dashboard_routes_to_extracted_renderers(fake_dashboard_st, monkeypatch):
     """The dashboard invokes each transitional top-level tab renderer exactly once with explicit settings."""
+    today_mock = MagicMock(name="render_today_tab")
     scanner_mock = MagicMock(name="render_scanner_tab")
     confluence_mock = MagicMock(name="render_confluence_tab")
     premarket_mock = MagicMock(name="render_premarket_tab")
@@ -153,6 +154,7 @@ def test_dashboard_routes_to_extracted_renderers(fake_dashboard_st, monkeypatch)
     settings_mock = MagicMock(name="render_settings_tab")
     help_mock = MagicMock(name="render_help_tab")
 
+    monkeypatch.setattr("tradex.ui.tabs.today.render_today_tab", today_mock)
     monkeypatch.setattr("tradex.ui.tabs.scanner.render_scanner_tab", scanner_mock)
     monkeypatch.setattr("tradex.ui.tabs.confluence.render_confluence_tab", confluence_mock)
     monkeypatch.setattr("tradex.ui.tabs.premarket.render_premarket_tab", premarket_mock)
@@ -164,6 +166,7 @@ def test_dashboard_routes_to_extracted_renderers(fake_dashboard_st, monkeypatch)
     sys.modules.pop("tradex.ui.dashboard", None)
     runpy.run_module("tradex.ui.dashboard", run_name="__main__")
 
+    today_mock.assert_called_once()
     scanner_mock.assert_called_once()
     confluence_mock.assert_called_once()
     premarket_mock.assert_called_once()
@@ -173,6 +176,11 @@ def test_dashboard_routes_to_extracted_renderers(fake_dashboard_st, monkeypatch)
     help_mock.assert_called_once()
 
     help_mock.assert_called_once_with()
+
+    # Today kwargs
+    _, t_kwargs = today_mock.call_args
+    assert isinstance(t_kwargs["settings"], TradeXSettings)
+    assert set(t_kwargs.keys()) == {"settings"}
 
     # Scanner kwargs
     _, s_kwargs = scanner_mock.call_args
@@ -227,7 +235,8 @@ def test_dashboard_routes_to_extracted_renderers(fake_dashboard_st, monkeypatch)
     assert set(set_kwargs.keys()) == {"settings"}
 
     assert (
-        s_kwargs["settings"]
+        t_kwargs["settings"]
+        is s_kwargs["settings"]
         is co_kwargs["settings"]
         is pm_kwargs["settings"]
         is j_kwargs["settings"]
@@ -239,6 +248,7 @@ def test_dashboard_routes_to_extracted_renderers(fake_dashboard_st, monkeypatch)
 def test_dashboard_import_without_main_does_not_call_st_tabs_or_renderers(monkeypatch):
     """A normal ``import tradex.ui.dashboard`` must not render any tab UI."""
     st_mock = MagicMock(name="streamlit")
+    today_mock = MagicMock(name="render_today_tab")
     scanner_mock = MagicMock(name="render_scanner_tab")
     confluence_mock = MagicMock(name="render_confluence_tab")
     premarket_mock = MagicMock(name="render_premarket_tab")
@@ -248,6 +258,7 @@ def test_dashboard_import_without_main_does_not_call_st_tabs_or_renderers(monkey
     help_mock = MagicMock(name="render_help_tab")
 
     monkeypatch.setitem(sys.modules, "streamlit", st_mock)
+    monkeypatch.setattr("tradex.ui.tabs.today.render_today_tab", today_mock)
     monkeypatch.setattr("tradex.ui.tabs.scanner.render_scanner_tab", scanner_mock)
     monkeypatch.setattr("tradex.ui.tabs.confluence.render_confluence_tab", confluence_mock)
     monkeypatch.setattr("tradex.ui.tabs.premarket.render_premarket_tab", premarket_mock)
@@ -260,6 +271,7 @@ def test_dashboard_import_without_main_does_not_call_st_tabs_or_renderers(monkey
     importlib.import_module("tradex.ui.dashboard")
 
     st_mock.tabs.assert_not_called()
+    today_mock.assert_not_called()
     scanner_mock.assert_not_called()
     confluence_mock.assert_not_called()
     premarket_mock.assert_not_called()

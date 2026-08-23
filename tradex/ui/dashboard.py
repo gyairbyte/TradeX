@@ -1,12 +1,13 @@
 """
-Streamlit dashboard — transitional seven-surface navigation (MVP-ARCH-001-R3):
-  1. Scanner         : run screener, view ranked results, drill-down chart
-  2. Confluence      : stocks scoring well across multiple timeframes
-  3. Pre-Market      : gap scanner — identify gap-up/down candidates before open
-  4. Signal Journal  : historical signal outcomes (did the move happen?)
-  5. Research Lab    : exploratory, rejected, contextual, and archived tools (Coil Context, Pattern Similarity — Rejected, Options Activity — Exploratory)
-  6. Settings        : operational configuration and delivery (Alert Delivery, Legacy Weights)
-  7. Help            : in-app documentation
+Streamlit dashboard — transitional eight-surface navigation (MVP-ARCH-001-R5C):
+  1. Today           : read-only point-in-time market observations and candidate detail drill-down
+  2. Scanner         : run screener, view ranked results, drill-down chart
+  3. Confluence      : stocks scoring well across multiple timeframes
+  4. Pre-Market      : gap scanner — identify gap-up/down candidates before open
+  5. Signal Journal  : historical signal outcomes (did the move happen?)
+  6. Research Lab    : exploratory, rejected, contextual, and archived tools (Coil Context, Pattern Similarity — Rejected, Options Activity — Exploratory)
+  7. Settings        : operational configuration and delivery (Alert Delivery, Legacy Weights)
+  8. Help            : in-app documentation
 
 Run with: streamlit run tradex/ui/dashboard.py
 """
@@ -37,6 +38,7 @@ from tradex.ui.tabs.research_lab import render_research_lab_tab
 from tradex.ui.tabs.scanner import render_scanner_tab
 from tradex.ui.tabs.settings import render_settings_tab
 from tradex.ui.tabs.signal_journal import render_signal_journal_tab
+from tradex.ui.tabs.today import render_today_tab
 from tradex.watchlists import DEFAULT_NAME as WL_DEFAULT_NAME
 from tradex.watchlists import presets as wl_presets
 from tradex.watchlists import store as wl_store
@@ -395,6 +397,7 @@ if __name__ == "__main__":
         )
 
     (
+        tab_today,
         tab_scanner,
         tab_confluence,
         tab_premarket,
@@ -404,6 +407,7 @@ if __name__ == "__main__":
         tab_help,
     ) = st.tabs(
         [
+            "Today",
             "Scanner",
             "Confluence",
             "Pre-Market",
@@ -415,7 +419,13 @@ if __name__ == "__main__":
     )
 
     # ══════════════════════════════════════════════════════════════════════════════
-    # TAB 1 — SCANNER
+    # TAB 1 — TODAY (MARKET OBSERVATIONS)
+    # ══════════════════════════════════════════════════════════════════════════════
+    with tab_today:
+        render_today_tab(settings=settings)
+
+    # ══════════════════════════════════════════════════════════════════════════════
+    # TAB 2 — SCANNER
     # ══════════════════════════════════════════════════════════════════════════════
     with tab_scanner:
         render_scanner_tab(
@@ -429,7 +439,7 @@ if __name__ == "__main__":
         )
 
     # ══════════════════════════════════════════════════════════════════════════════
-    # TAB 2 — CONFLUENCE
+    # TAB 3 — CONFLUENCE
     # ══════════════════════════════════════════════════════════════════════════════
     with tab_confluence:
         render_confluence_tab(
@@ -441,7 +451,7 @@ if __name__ == "__main__":
         )
 
     # ══════════════════════════════════════════════════════════════════════════════
-    # TAB 3 — PRE-MARKET GAP SCANNER
+    # TAB 4 — PRE-MARKET GAP SCANNER
     # ══════════════════════════════════════════════════════════════════════════════
     with tab_premarket:
         render_premarket_tab(
@@ -452,7 +462,7 @@ if __name__ == "__main__":
         )
 
     # ══════════════════════════════════════════════════════════════════════════════
-    # TAB 4 — SIGNAL JOURNAL
+    # TAB 5 — SIGNAL JOURNAL
     # ══════════════════════════════════════════════════════════════════════════════
     with tab_journal:
         render_signal_journal_tab(
@@ -462,7 +472,7 @@ if __name__ == "__main__":
         )
 
     # ══════════════════════════════════════════════════════════════════════════════
-    # TAB 5 — RESEARCH LAB
+    # TAB 6 — RESEARCH LAB
     # ══════════════════════════════════════════════════════════════════════════════
     with tab_research_lab:
         render_research_lab_tab(
@@ -474,7 +484,7 @@ if __name__ == "__main__":
         )
 
     # ══════════════════════════════════════════════════════════════════════════════
-    # TAB 6 — SETTINGS
+    # TAB 7 — SETTINGS
     # ══════════════════════════════════════════════════════════════════════════════
     with tab_settings:
         render_settings_tab(
@@ -482,7 +492,7 @@ if __name__ == "__main__":
         )
 
     # ══════════════════════════════════════════════════════════════════════════════
-    # TAB 7 — HELP
+    # TAB 8 — HELP
     # ══════════════════════════════════════════════════════════════════════════════
     with tab_help:
         render_help_tab()

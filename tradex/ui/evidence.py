@@ -21,6 +21,17 @@ class EvidenceNotice:
 
 
 EVIDENCE_NOTICES: dict[str, EvidenceNotice] = {
+    "today": EvidenceNotice(
+        tab_id="today",
+        evidence_state="exploratory",
+        badge_label="Exploratory Research — Market Observations",
+        summary=(
+            "Today displays read-only point-in-time observations captured by TradeX. "
+            "Legacy scanner classifications are heuristic research inputs, not validated trade recommendations. "
+            "TradeX currently has no production-approved actionable strategy."
+        ),
+        level="info",
+    ),
     "scanner": EvidenceNotice(
         tab_id="scanner",
         evidence_state="legacy_heuristic",
