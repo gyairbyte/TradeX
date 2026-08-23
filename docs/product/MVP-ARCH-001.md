@@ -339,7 +339,7 @@ Gary Yang separately approved rollout step 5A on 2026-08-23 with narrow scope:
   - `r5b_implementation_authorized`: `False`
   - `r5c_implementation_authorized`: `False`
 - **Subsequent steps (R5B, R5C, Steps 6–8):** Remain pending separate Gary approval.
-- **Status:** Implemented in PR.
+- **Status:** Implemented by PR #61.
 
 ## Governance invariants
 
