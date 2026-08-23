@@ -94,10 +94,10 @@ def _scan_report(observations: list[dict], *, requested_provider="yahoo", actual
 # ── Fresh schema ─────────────────────────────────────────────────────────────
 
 
-def test_schema_version_is_three(fresh_signal_db):
+def test_schema_version_is_four(fresh_signal_db):
     with store._conn() as con:
         version = con.execute("PRAGMA user_version").fetchone()[0]
-    assert version == 3
+    assert version == 4
 
 
 def test_scan_runs_has_audit_columns(fresh_signal_db):
@@ -132,7 +132,7 @@ def test_repeated_init_succeeds(fresh_signal_db):
     store.init()
     with store._conn() as con:
         version = con.execute("PRAGMA user_version").fetchone()[0]
-    assert version == 3
+    assert version == 4
 
 
 # ── Native persistence ─────────────────────────────────────────────────────────
@@ -643,7 +643,7 @@ def test_migration_backfills_and_preserves_legacy_rows(tmp_path, monkeypatch):
 
     with store._conn() as con:
         version = con.execute("PRAGMA user_version").fetchone()[0]
-        assert version == 3
+        assert version == 4
 
         # Signal session linked and corrected: tickers_n becomes 5, hits_n stays 2.
         sig = con.execute("SELECT * FROM scan_runs WHERE session_id = 'sig-session'").fetchone()

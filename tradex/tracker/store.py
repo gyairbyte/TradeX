@@ -27,7 +27,7 @@ DB_PATH: Path = Path("~/.tradex/signals.db")
 _DEFAULT_DB_PATH = DB_PATH  # sentinel for legacy DB_PATH monkeypatch detection
 
 # DB schema version managed by PRAGMA user_version.
-_SCHEMA_VERSION = 3
+_SCHEMA_VERSION = 4
 
 
 class StoreError(Exception):
@@ -554,25 +554,128 @@ def _migrate_v2_to_v3(con: sqlite3.Connection) -> None:
         )
 
 
+def _migrate_v3_to_v4(con: sqlite3.Connection) -> None:
+    """Add candidate snapshot domain tables and indexes for schema v4."""
+    _execute_schema_statements(con, _CANDIDATE_SCHEMA_SCRIPT)
+
+
+_CANDIDATE_SCHEMA_SCRIPT = """
+    CREATE TABLE IF NOT EXISTS candidates (
+        candidate_id               TEXT PRIMARY KEY,
+        contract_version           INTEGER NOT NULL DEFAULT 1,
+        symbol                     TEXT    NOT NULL,
+        decision_timestamp         TEXT    NOT NULL,   -- ISO8601 UTC
+        trading_date               TEXT,               -- YYYY-MM-DD New York market date or NULL
+        security_identity_version  TEXT,
+        security_identity_status   TEXT    NOT NULL DEFAULT 'unknown',
+        created_at                 TEXT    NOT NULL    -- ISO8601 UTC
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_candidates_symbol       ON candidates(symbol);
+    CREATE INDEX IF NOT EXISTS idx_candidates_decision_ts  ON candidates(decision_timestamp);
+    CREATE INDEX IF NOT EXISTS idx_candidates_trading_date ON candidates(trading_date);
+
+    CREATE TABLE IF NOT EXISTS candidate_evaluations (
+        evaluation_id      TEXT PRIMARY KEY,
+        candidate_id       TEXT NOT NULL,
+        evaluator_id       TEXT NOT NULL,
+        evaluator_version  TEXT NOT NULL,
+        evidence_state     TEXT NOT NULL,
+        dimensions_json    TEXT NOT NULL DEFAULT '{}',
+        created_at         TEXT NOT NULL,
+        FOREIGN KEY (candidate_id) REFERENCES candidates(candidate_id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ceval_candidate_id ON candidate_evaluations(candidate_id);
+    CREATE INDEX IF NOT EXISTS idx_ceval_evaluator    ON candidate_evaluations(evaluator_id, evaluator_version);
+
+    CREATE TABLE IF NOT EXISTS candidate_evidence (
+        evidence_id        TEXT PRIMARY KEY,
+        candidate_id       TEXT NOT NULL,
+        evidence_type      TEXT NOT NULL,
+        source_ref_type    TEXT,
+        source_ref_id      TEXT,
+        provider           TEXT,
+        observed_at        TEXT,
+        metadata_json      TEXT NOT NULL DEFAULT '{}',
+        created_at         TEXT NOT NULL,
+        FOREIGN KEY (candidate_id) REFERENCES candidates(candidate_id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_cevid_candidate_id ON candidate_evidence(candidate_id);
+    CREATE INDEX IF NOT EXISTS idx_cevid_data_family  ON candidate_evidence(evidence_type);
+
+    CREATE TABLE IF NOT EXISTS candidate_reasons (
+        reason_id          TEXT PRIMARY KEY,
+        candidate_id       TEXT NOT NULL,
+        evaluation_id      TEXT NOT NULL,
+        dimension          TEXT NOT NULL,
+        reason_code        TEXT NOT NULL,
+        polarity           TEXT NOT NULL DEFAULT 'neutral',
+        severity           TEXT NOT NULL DEFAULT 'info',
+        human_text         TEXT NOT NULL,
+        source_evidence_id TEXT,
+        created_at         TEXT NOT NULL,
+        FOREIGN KEY (candidate_id) REFERENCES candidates(candidate_id) ON DELETE CASCADE,
+        FOREIGN KEY (evaluation_id) REFERENCES candidate_evaluations(evaluation_id) ON DELETE CASCADE,
+        FOREIGN KEY (source_evidence_id) REFERENCES candidate_evidence(evidence_id) ON DELETE SET NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_creasons_candidate_id ON candidate_reasons(candidate_id);
+    CREATE INDEX IF NOT EXISTS idx_creasons_eval_id      ON candidate_reasons(evaluation_id);
+    CREATE INDEX IF NOT EXISTS idx_creasons_source_evid  ON candidate_reasons(source_evidence_id);
+
+    CREATE TABLE IF NOT EXISTS candidate_missing_data (
+        record_id          TEXT PRIMARY KEY,
+        candidate_id       TEXT NOT NULL,
+        evaluation_id      TEXT,
+        input_name         TEXT NOT NULL,
+        data_family        TEXT NOT NULL,
+        status             TEXT NOT NULL,
+        detail             TEXT,
+        provider           TEXT,
+        observed_at        TEXT,
+        created_at         TEXT NOT NULL,
+        FOREIGN KEY (candidate_id) REFERENCES candidates(candidate_id) ON DELETE CASCADE,
+        FOREIGN KEY (evaluation_id) REFERENCES candidate_evaluations(evaluation_id) ON DELETE SET NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_cmissing_candidate_id ON candidate_missing_data(candidate_id);
+    CREATE INDEX IF NOT EXISTS idx_cmissing_eval_id      ON candidate_missing_data(evaluation_id);
+"""
+
+
 def init(db_path: str | Path | None = None, *, settings: TradeXSettings | None = None):
     """Create tables if they don't exist and migrate older schemas atomically."""
     path = _resolve_db_path(settings) if db_path is None else Path(db_path)
     with _transaction(db_path=path) as con:
         version = con.execute("PRAGMA user_version").fetchone()[0]
+        if version > _SCHEMA_VERSION:
+            raise StoreError(
+                f"Database schema version {version} is newer than supported schema version {_SCHEMA_VERSION}. "
+                "Downgrades and unknown future versions are rejected."
+            )
         if version < _SCHEMA_VERSION:
             if version == 0 and _table_exists(con, "signal_history"):
                 _migrate_v0(con)
                 _migrate_v1_to_v2(con)
                 _migrate_v2_to_v3(con)
+                _migrate_v3_to_v4(con)
             elif version == 1 and _table_exists(con, "signal_history"):
                 _migrate_v1_to_v2(con)
                 _migrate_v2_to_v3(con)
+                _migrate_v3_to_v4(con)
             elif version == 2 and _table_exists(con, "signal_history"):
                 _migrate_v2_to_v3(con)
+                _migrate_v3_to_v4(con)
+            elif version == 3 and _table_exists(con, "signal_history"):
+                _migrate_v3_to_v4(con)
             else:
                 _create_schema_v1(con)
+                _migrate_v3_to_v4(con)
         else:
             _create_schema_v1(con)
+            _migrate_v3_to_v4(con)
         _set_schema_version(con)
 
 
@@ -878,8 +981,6 @@ def record_scan(
     The operation is atomic: either the session, observations, signal rows, and
     audit row are all written, or nothing is written.
     """
-    from tradex.screener.engine import ObservationStatus
-
     if scan_time is None:
         scan_time = datetime.now(UTC)
     if scan_time.tzinfo is None:
@@ -1408,3 +1509,28 @@ def get_all_daily_scores(timeframe: str, days: int = 14, *, settings: TradeXSett
             (timeframe, since),
         ).fetchall()
     return pd.DataFrame([dict(r) for r in rows])
+
+
+# ── Candidate persistence primitives (MVP-ARCH-001-R5A) ──────────────────────
+def record_candidate_dossier(*args, **kwargs):
+    """Record a complete CandidateDossier atomically."""
+    from tradex.candidates.store import record_candidate_dossier as _fn
+    return _fn(*args, **kwargs)
+
+
+def get_candidate(*args, **kwargs):
+    """Retrieve the immutable candidate snapshot header for candidate_id."""
+    from tradex.candidates.store import get_candidate as _fn
+    return _fn(*args, **kwargs)
+
+
+def get_candidate_dossier(*args, **kwargs):
+    """Retrieve the complete CandidateDossier for candidate_id."""
+    from tradex.candidates.store import get_candidate_dossier as _fn
+    return _fn(*args, **kwargs)
+
+
+def list_candidates(*args, **kwargs):
+    """Neutral query API returning candidate snapshot headers."""
+    from tradex.candidates.store import list_candidates as _fn
+    return _fn(*args, **kwargs)
