@@ -608,8 +608,8 @@ _CANDIDATE_SCHEMA_SCRIPT = """
     CREATE TABLE IF NOT EXISTS candidate_reasons (
         reason_id          TEXT PRIMARY KEY,
         candidate_id       TEXT NOT NULL,
-        evaluation_id      TEXT,
-        dimension          TEXT,
+        evaluation_id      TEXT NOT NULL,
+        dimension          TEXT NOT NULL,
         reason_code        TEXT NOT NULL,
         polarity           TEXT NOT NULL DEFAULT 'neutral',
         severity           TEXT NOT NULL DEFAULT 'info',
@@ -617,7 +617,7 @@ _CANDIDATE_SCHEMA_SCRIPT = """
         source_evidence_id TEXT,
         created_at         TEXT NOT NULL,
         FOREIGN KEY (candidate_id) REFERENCES candidates(candidate_id) ON DELETE CASCADE,
-        FOREIGN KEY (evaluation_id) REFERENCES candidate_evaluations(evaluation_id) ON DELETE SET NULL,
+        FOREIGN KEY (evaluation_id) REFERENCES candidate_evaluations(evaluation_id) ON DELETE CASCADE,
         FOREIGN KEY (source_evidence_id) REFERENCES candidate_evidence(evidence_id) ON DELETE SET NULL
     );
 
@@ -981,8 +981,6 @@ def record_scan(
     The operation is atomic: either the session, observations, signal rows, and
     audit row are all written, or nothing is written.
     """
-    from tradex.screener.engine import ObservationStatus
-
     if scan_time is None:
         scan_time = datetime.now(UTC)
     if scan_time.tzinfo is None:

@@ -1,5 +1,5 @@
 import math
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -155,9 +155,10 @@ def test_candidate_evaluation_valid_and_rejects_non_finite_json() -> None:
         dimensions={CandidateDimension.SETUP_QUALITY: {"raw": 75, "normalized": 0.75}},
     )
     assert eval_rec.evaluator_id == "research_evaluator"
+    assert eval_rec.dimensions == {"setup_quality": {"raw": 75, "normalized": 0.75}}
 
     # Reject NaN
-    with pytest.raises(ValueError, match="non-finite"):
+    with pytest.raises(ValueError, match="without NaN/Infinity"):
         CandidateEvaluation(
             evaluation_id="eval-002",
             candidate_id="cand-001",
@@ -168,7 +169,7 @@ def test_candidate_evaluation_valid_and_rejects_non_finite_json() -> None:
         )
 
     # Reject Infinity
-    with pytest.raises(ValueError, match="non-finite"):
+    with pytest.raises(ValueError, match="without NaN/Infinity"):
         CandidateEvaluation(
             evaluation_id="eval-003",
             candidate_id="cand-001",
@@ -212,9 +213,9 @@ def test_candidate_reason_valid() -> None:
         evaluation_id="eval-001",
         dimension=CandidateDimension.CONTEXT,
         reason_code="SECTOR_ALIGNMENT",
+        human_text="Sector ETF showed relative strength (+1.8%).",
         polarity=ReasonPolarity.SUPPORTING,
         severity=ReasonSeverity.INFO,
-        human_text="Sector ETF showed relative strength (+1.8%).",
     )
     assert reason.polarity == ReasonPolarity.SUPPORTING
     assert reason.severity == ReasonSeverity.INFO
@@ -228,9 +229,10 @@ def test_candidate_reason_dimension_normalization_and_rejection() -> None:
         r = CandidateReason(
             reason_id=f"reas-{dim.value}",
             candidate_id="cand-001",
+            evaluation_id="eval-001",
+            dimension=dim,
             reason_code="R1",
             human_text="text",
-            dimension=dim,
         )
         assert r.dimension == dim
 
@@ -238,49 +240,88 @@ def test_candidate_reason_dimension_normalization_and_rejection() -> None:
     r_str = CandidateReason(
         reason_id="reas-str",
         candidate_id="cand-001",
+        evaluation_id="eval-001",
+        dimension=" SETUP_QUALITY ",
         reason_code="R1",
         human_text="text",
-        dimension=" SETUP_QUALITY ",
     )
     assert r_str.dimension == CandidateDimension.SETUP_QUALITY
 
-    # None and empty string
-    r_none = CandidateReason(
-        reason_id="reas-none",
-        candidate_id="cand-001",
-        reason_code="R1",
-        human_text="text",
-        dimension=None,
-    )
-    assert r_none.dimension is None
+    # None and empty string rejected
+    with pytest.raises(TypeError, match="dimension must be a CandidateDimension instance or str"):
+        CandidateReason(
+            reason_id="reas-none",
+            candidate_id="cand-001",
+            evaluation_id="eval-001",
+            dimension=None,  # type: ignore[arg-type]
+            reason_code="R1",
+            human_text="text",
+        )
 
-    r_empty = CandidateReason(
-        reason_id="reas-empty",
-        candidate_id="cand-001",
-        reason_code="R1",
-        human_text="text",
-        dimension="   ",
-    )
-    assert r_empty.dimension is None
+    with pytest.raises(ValueError, match="dimension cannot be empty"):
+        CandidateReason(
+            reason_id="reas-empty",
+            candidate_id="cand-001",
+            evaluation_id="eval-001",
+            dimension="   ",
+            reason_code="R1",
+            human_text="text",
+        )
 
     # Unknown string rejected
     with pytest.raises(ValueError, match="Unknown CandidateDimension"):
         CandidateReason(
             reason_id="reas-bad",
             candidate_id="cand-001",
+            evaluation_id="eval-001",
+            dimension="unsupported_dimension",
             reason_code="R1",
             human_text="text",
-            dimension="unsupported_dimension",
         )
 
     # Invalid type rejected
-    with pytest.raises(TypeError, match="dimension must be CandidateDimension or str"):
+    with pytest.raises(TypeError, match="dimension must be a CandidateDimension instance or str"):
         CandidateReason(
             reason_id="reas-bad-type",
             candidate_id="cand-001",
+            evaluation_id="eval-001",
+            dimension=123,  # type: ignore[arg-type]
             reason_code="R1",
             human_text="text",
-            dimension=123,  # type: ignore[arg-type]
+        )
+
+
+def test_candidate_reason_requires_evaluation_id_and_dimension() -> None:
+    # Missing evaluation_id / blank evaluation_id rejected
+    with pytest.raises(ValueError, match="evaluation_id must be a non-empty string"):
+        CandidateReason(
+            reason_id="reas-bad-eval",
+            candidate_id="cand-001",
+            evaluation_id="",
+            dimension=CandidateDimension.CONTEXT,
+            reason_code="R1",
+            human_text="text",
+        )
+
+    with pytest.raises(ValueError, match="evaluation_id must be a non-empty string"):
+        CandidateReason(
+            reason_id="reas-bad-eval",
+            candidate_id="cand-001",
+            evaluation_id="   ",
+            dimension=CandidateDimension.CONTEXT,
+            reason_code="R1",
+            human_text="text",
+        )
+
+    # evaluation_id as None rejected
+    with pytest.raises(ValueError, match="evaluation_id must be a non-empty string"):
+        CandidateReason(
+            reason_id="reas-bad-eval",
+            candidate_id="cand-001",
+            evaluation_id=None,  # type: ignore[arg-type]
+            dimension=CandidateDimension.CONTEXT,
+            reason_code="R1",
+            human_text="text",
         )
 
 
@@ -379,6 +420,7 @@ def test_candidate_dossier_validation() -> None:
         reason_id="reas-001",
         candidate_id="cand-001",
         evaluation_id="eval-001",
+        dimension=CandidateDimension.CONTEXT,
         reason_code="R1",
         human_text="Sample explanation",
         source_evidence_id="evid-001",
@@ -420,6 +462,7 @@ def test_candidate_dossier_validation() -> None:
         reason_id="reas-002",
         candidate_id="cand-001",
         evaluation_id="eval-nonexistent",
+        dimension=CandidateDimension.CONTEXT,
         reason_code="R2",
         human_text="Bad eval link",
     )
@@ -430,23 +473,33 @@ def test_candidate_dossier_validation() -> None:
     reas_bad_ev = CandidateReason(
         reason_id="reas-003",
         candidate_id="cand-001",
+        evaluation_id="eval-001",
+        dimension=CandidateDimension.CONTEXT,
         reason_code="R3",
         human_text="Bad evid link",
         source_evidence_id="evid-nonexistent",
     )
     with pytest.raises(ValueError, match="does not match any evidence in dossier"):
-        CandidateDossier(snapshot=snap, evidence=(evid1,), reasons=(reas_bad_ev,))
+        CandidateDossier(snapshot=snap, evaluations=(eval1,), evidence=(evid1,), reasons=(reas_bad_ev,))
 
 
 def test_candidate_dossier_unconditional_referential_integrity_empty_collections() -> None:
     dt = datetime(2026, 8, 21, 14, 30, tzinfo=UTC)
     snap = CandidateSnapshot(candidate_id="cand-001", symbol="AAPL", decision_timestamp=dt)
+    eval1 = CandidateEvaluation(
+        evaluation_id="eval-001",
+        candidate_id="cand-001",
+        evaluator_id="ev1",
+        evaluator_version="1",
+        evidence_state="e",
+    )
 
     # Reason with evaluation_id when evaluations is EMPTY must fail unconditionally
     reas_dangling_eval = CandidateReason(
         reason_id="reas-001",
         candidate_id="cand-001",
         evaluation_id="eval-missing",
+        dimension=CandidateDimension.CONTEXT,
         reason_code="R1",
         human_text="Dangling eval reference",
     )
@@ -469,17 +522,26 @@ def test_candidate_dossier_unconditional_referential_integrity_empty_collections
     reas_dangling_evid = CandidateReason(
         reason_id="reas-002",
         candidate_id="cand-001",
+        evaluation_id="eval-001",
+        dimension=CandidateDimension.CONTEXT,
         reason_code="R2",
         human_text="Dangling evid reference",
         source_evidence_id="evid-missing",
     )
     with pytest.raises(ValueError, match="Reason source_evidence_id 'evid-missing' does not match any evidence in dossier"):
-        CandidateDossier(snapshot=snap, evidence=(), reasons=(reas_dangling_evid,))
+        CandidateDossier(snapshot=snap, evaluations=(eval1,), evidence=(), reasons=(reas_dangling_evid,))
 
 
 def test_candidate_dossier_duplicate_child_ids_rejected() -> None:
     dt = datetime(2026, 8, 21, 14, 30, tzinfo=UTC)
     snap = CandidateSnapshot(candidate_id="cand-001", symbol="AAPL", decision_timestamp=dt)
+    eval1 = CandidateEvaluation(
+        evaluation_id="eval-1",
+        candidate_id="cand-001",
+        evaluator_id="ev1",
+        evaluator_version="1",
+        evidence_state="e",
+    )
 
     # Duplicate evaluation_id
     e1 = CandidateEvaluation(evaluation_id="eval-1", candidate_id="cand-001", evaluator_id="ev1", evaluator_version="1", evidence_state="e")
@@ -494,10 +556,10 @@ def test_candidate_dossier_duplicate_child_ids_rejected() -> None:
         CandidateDossier(snapshot=snap, evidence=(ev1, ev2))
 
     # Duplicate reason_id
-    r1 = CandidateReason(reason_id="reas-1", candidate_id="cand-001", reason_code="R1", human_text="text1")
-    r2 = CandidateReason(reason_id="reas-1", candidate_id="cand-001", reason_code="R2", human_text="text2")
+    r1 = CandidateReason(reason_id="reas-1", candidate_id="cand-001", evaluation_id="eval-1", dimension=CandidateDimension.CONTEXT, reason_code="R1", human_text="text1")
+    r2 = CandidateReason(reason_id="reas-1", candidate_id="cand-001", evaluation_id="eval-1", dimension=CandidateDimension.CONTEXT, reason_code="R2", human_text="text2")
     with pytest.raises(ValueError, match="Duplicate reason_id 'reas-1' in dossier"):
-        CandidateDossier(snapshot=snap, reasons=(r1, r2))
+        CandidateDossier(snapshot=snap, evaluations=(eval1,), reasons=(r1, r2))
 
     # Duplicate record_id
     m1 = CandidateMissingData(record_id="miss-1", candidate_id="cand-001", input_name="i1", data_family="f1", status=MissingDataStatus.UNKNOWN)
@@ -516,8 +578,8 @@ def test_candidate_dossier_canonical_child_ordering() -> None:
     ev_z = CandidateEvidence(evidence_id="evid-z", candidate_id="cand-001", evidence_type="t")
     ev_a = CandidateEvidence(evidence_id="evid-a", candidate_id="cand-001", evidence_type="t")
 
-    r_2 = CandidateReason(reason_id="reas-2", candidate_id="cand-001", reason_code="R2", human_text="t")
-    r_1 = CandidateReason(reason_id="reas-1", candidate_id="cand-001", reason_code="R1", human_text="t")
+    r_2 = CandidateReason(reason_id="reas-2", candidate_id="cand-001", evaluation_id="eval-a", dimension=CandidateDimension.CONTEXT, reason_code="R2", human_text="t")
+    r_1 = CandidateReason(reason_id="reas-1", candidate_id="cand-001", evaluation_id="eval-a", dimension=CandidateDimension.CONTEXT, reason_code="R1", human_text="t")
 
     m_y = CandidateMissingData(record_id="miss-y", candidate_id="cand-001", input_name="n", data_family="d", status=MissingDataStatus.UNKNOWN)
     m_x = CandidateMissingData(record_id="miss-x", candidate_id="cand-001", input_name="n", data_family="d", status=MissingDataStatus.UNKNOWN)
@@ -557,3 +619,381 @@ def test_no_actionable_candidate_state_in_models() -> None:
                     "invalidated",
                     "expired",
                 }
+
+
+# ============================================================================
+# BLOCKER 1: Point-In-Time (PIT) Temporal Integrity Tests
+# ============================================================================
+
+
+def test_pit_temporal_integrity_evidence_and_missing_data() -> None:
+    decision_ts = datetime(2026, 8, 21, 14, 30, 0, tzinfo=UTC)
+    snap = CandidateSnapshot(candidate_id="cand-pit-1", symbol="AAPL", decision_timestamp=decision_ts)
+
+    # 1. Evidence observed strictly before decision -> accepted
+    ev_before = CandidateEvidence(
+        evidence_id="evid-before",
+        candidate_id="cand-pit-1",
+        evidence_type="ohlcv",
+        observed_at=decision_ts - timedelta(minutes=5),
+    )
+    d1 = CandidateDossier(snapshot=snap, evidence=(ev_before,))
+    assert len(d1.evidence) == 1
+
+    # 2. Evidence observed exactly at decision timestamp -> accepted (<=)
+    ev_exact = CandidateEvidence(
+        evidence_id="evid-exact",
+        candidate_id="cand-pit-1",
+        evidence_type="ohlcv",
+        observed_at=decision_ts,
+    )
+    d2 = CandidateDossier(snapshot=snap, evidence=(ev_exact,))
+    assert len(d2.evidence) == 1
+
+    # 3. Evidence observed after decision timestamp -> rejected with ValueError
+    ev_future = CandidateEvidence(
+        evidence_id="evid-future",
+        candidate_id="cand-pit-1",
+        evidence_type="ohlcv",
+        observed_at=decision_ts + timedelta(seconds=1),
+    )
+    with pytest.raises(ValueError, match="is after candidate decision_timestamp.*future observations are rejected"):
+        CandidateDossier(snapshot=snap, evidence=(ev_future,))
+
+    # 4. MissingData observed strictly before decision -> accepted
+    miss_before = CandidateMissingData(
+        record_id="miss-before",
+        candidate_id="cand-pit-1",
+        input_name="options",
+        data_family="options",
+        status=MissingDataStatus.UNKNOWN,
+        observed_at=decision_ts - timedelta(minutes=1),
+    )
+    d3 = CandidateDossier(snapshot=snap, missing_data=(miss_before,))
+    assert len(d3.missing_data) == 1
+
+    # 5. MissingData observed exactly at decision timestamp -> accepted (<=)
+    miss_exact = CandidateMissingData(
+        record_id="miss-exact",
+        candidate_id="cand-pit-1",
+        input_name="options",
+        data_family="options",
+        status=MissingDataStatus.UNKNOWN,
+        observed_at=decision_ts,
+    )
+    d4 = CandidateDossier(snapshot=snap, missing_data=(miss_exact,))
+    assert len(d4.missing_data) == 1
+
+    # 6. MissingData observed after decision timestamp -> rejected with ValueError
+    miss_future = CandidateMissingData(
+        record_id="miss-future",
+        candidate_id="cand-pit-1",
+        input_name="options",
+        data_family="options",
+        status=MissingDataStatus.UNKNOWN,
+        observed_at=decision_ts + timedelta(seconds=5),
+    )
+    with pytest.raises(ValueError, match="is after candidate decision_timestamp.*future observations are rejected"):
+        CandidateDossier(snapshot=snap, missing_data=(miss_future,))
+
+    # 7. observed_at = None is accepted (unspecified observation time)
+    ev_none = CandidateEvidence(
+        evidence_id="evid-none",
+        candidate_id="cand-pit-1",
+        evidence_type="filings",
+        observed_at=None,
+    )
+    miss_none = CandidateMissingData(
+        record_id="miss-none",
+        candidate_id="cand-pit-1",
+        input_name="shares",
+        data_family="fundamentals",
+        status=MissingDataStatus.NOT_REQUESTED,
+        observed_at=None,
+    )
+    d5 = CandidateDossier(snapshot=snap, evidence=(ev_none,), missing_data=(miss_none,))
+    assert len(d5.evidence) == 1
+    assert len(d5.missing_data) == 1
+
+
+def test_pit_temporal_integrity_timezone_normalization() -> None:
+    eastern = ZoneInfo("America/New_York")
+    tokyo = ZoneInfo("Asia/Tokyo")
+
+    # Decision at 9:30 AM EDT on 2026-08-21 (which is 13:30:00 UTC)
+    decision_dt = datetime(2026, 8, 21, 9, 30, 0, tzinfo=eastern)
+    snap = CandidateSnapshot(candidate_id="cand-tz-1", symbol="AAPL", decision_timestamp=decision_dt)
+
+    # Observation in Tokyo timezone at 22:29:00 (13:29:00 UTC) -> accepted (before)
+    obs_tokyo_before = datetime(2026, 8, 21, 22, 29, 0, tzinfo=tokyo)
+    ev_tokyo = CandidateEvidence(
+        evidence_id="evid-tokyo",
+        candidate_id="cand-tz-1",
+        evidence_type="ohlcv",
+        observed_at=obs_tokyo_before,
+    )
+    d = CandidateDossier(snapshot=snap, evidence=(ev_tokyo,))
+    assert len(d.evidence) == 1
+
+    # Observation in Tokyo timezone at 22:31:00 (13:31:00 UTC) -> rejected (after)
+    obs_tokyo_future = datetime(2026, 8, 21, 22, 31, 0, tzinfo=tokyo)
+    ev_future = CandidateEvidence(
+        evidence_id="evid-tokyo-fut",
+        candidate_id="cand-tz-1",
+        evidence_type="ohlcv",
+        observed_at=obs_tokyo_future,
+    )
+    with pytest.raises(ValueError, match="is after candidate decision_timestamp"):
+        CandidateDossier(snapshot=snap, evidence=(ev_future,))
+
+
+def test_pit_created_at_later_allowed() -> None:
+    decision_ts = datetime(2026, 8, 21, 14, 30, 0, tzinfo=UTC)
+    # created_at is persistence audit timestamp and may be created after decision_timestamp
+    created_ts = decision_ts + timedelta(hours=2)
+
+    snap = CandidateSnapshot(
+        candidate_id="cand-audit-1",
+        symbol="AAPL",
+        decision_timestamp=decision_ts,
+        created_at=created_ts,
+    )
+    ev = CandidateEvidence(
+        evidence_id="evid-audit-1",
+        candidate_id="cand-audit-1",
+        evidence_type="ohlcv",
+        observed_at=decision_ts,
+        created_at=created_ts,
+    )
+    dossier = CandidateDossier(snapshot=snap, evidence=(ev,))
+    assert dossier.snapshot.created_at == created_ts
+    assert dossier.evidence[0].created_at == created_ts
+
+
+# ============================================================================
+# BLOCKER 2: Model Round-Trip & Deterministic Normalization Tests
+# ============================================================================
+
+
+def test_enum_normalization_exhaustive() -> None:
+    # 1. SecurityIdentityStatus on CandidateSnapshot
+    snap1 = CandidateSnapshot(
+        candidate_id="c1",
+        symbol="AAPL",
+        decision_timestamp=datetime(2026, 8, 21, 14, 30, tzinfo=UTC),
+        security_identity_status="unknown",
+    )
+    assert snap1.security_identity_status == SecurityIdentityStatus.UNKNOWN
+    assert isinstance(snap1.security_identity_status, SecurityIdentityStatus)
+
+    snap2 = CandidateSnapshot(
+        candidate_id="c2",
+        symbol="AAPL",
+        decision_timestamp=datetime(2026, 8, 21, 14, 30, tzinfo=UTC),
+        security_identity_version="v1",
+        security_identity_status=" KNOWN ",
+    )
+    assert snap2.security_identity_status == SecurityIdentityStatus.KNOWN
+    assert isinstance(snap2.security_identity_status, SecurityIdentityStatus)
+
+    with pytest.raises(TypeError, match="security_identity_status must be a SecurityIdentityStatus instance or str"):
+        CandidateSnapshot(
+            candidate_id="c3",
+            symbol="AAPL",
+            decision_timestamp=datetime(2026, 8, 21, 14, 30, tzinfo=UTC),
+            security_identity_status=True,  # type: ignore[arg-type]
+        )
+
+    with pytest.raises(TypeError, match="security_identity_status must be a SecurityIdentityStatus instance or str"):
+        CandidateSnapshot(
+            candidate_id="c4",
+            symbol="AAPL",
+            decision_timestamp=datetime(2026, 8, 21, 14, 30, tzinfo=UTC),
+            security_identity_status=1,  # type: ignore[arg-type]
+        )
+
+    with pytest.raises(ValueError, match="Unknown SecurityIdentityStatus"):
+        CandidateSnapshot(
+            candidate_id="c5",
+            symbol="AAPL",
+            decision_timestamp=datetime(2026, 8, 21, 14, 30, tzinfo=UTC),
+            security_identity_status="not_a_status",
+        )
+
+    # 2. ReasonPolarity on CandidateReason
+    r_pol = CandidateReason(
+        reason_id="r1",
+        candidate_id="c1",
+        evaluation_id="e1",
+        dimension=CandidateDimension.SETUP_QUALITY,
+        reason_code="R1",
+        human_text="t",
+        polarity=" SUPPORTING ",
+    )
+    assert r_pol.polarity == ReasonPolarity.SUPPORTING
+    assert isinstance(r_pol.polarity, ReasonPolarity)
+
+    with pytest.raises(TypeError, match="polarity must be a ReasonPolarity instance or str"):
+        CandidateReason(
+            reason_id="r2",
+            candidate_id="c1",
+            evaluation_id="e1",
+            dimension=CandidateDimension.SETUP_QUALITY,
+            reason_code="R1",
+            human_text="t",
+            polarity=123,  # type: ignore[arg-type]
+        )
+
+    with pytest.raises(ValueError, match="Unknown ReasonPolarity"):
+        CandidateReason(
+            reason_id="r3",
+            candidate_id="c1",
+            evaluation_id="e1",
+            dimension=CandidateDimension.SETUP_QUALITY,
+            reason_code="R1",
+            human_text="t",
+            polarity="invalid_polarity",
+        )
+
+    # 3. ReasonSeverity on CandidateReason
+    r_sev = CandidateReason(
+        reason_id="r4",
+        candidate_id="c1",
+        evaluation_id="e1",
+        dimension=CandidateDimension.SETUP_QUALITY,
+        reason_code="R1",
+        human_text="t",
+        severity=" CRITICAL ",
+    )
+    assert r_sev.severity == ReasonSeverity.CRITICAL
+    assert isinstance(r_sev.severity, ReasonSeverity)
+
+    with pytest.raises(TypeError, match="severity must be a ReasonSeverity instance or str"):
+        CandidateReason(
+            reason_id="r5",
+            candidate_id="c1",
+            evaluation_id="e1",
+            dimension=CandidateDimension.SETUP_QUALITY,
+            reason_code="R1",
+            human_text="t",
+            severity=False,  # type: ignore[arg-type]
+        )
+
+    # 4. MissingDataStatus on CandidateMissingData
+    for status in MissingDataStatus:
+        m = CandidateMissingData(
+            record_id=f"m-{status.value}",
+            candidate_id="c1",
+            input_name="inp",
+            data_family="fam",
+            status=status.value.upper(),
+        )
+        assert m.status == status
+        assert isinstance(m.status, MissingDataStatus)
+
+    with pytest.raises(TypeError, match="status must be a MissingDataStatus instance or str"):
+        CandidateMissingData(
+            record_id="m-bad-type",
+            candidate_id="c1",
+            input_name="inp",
+            data_family="fam",
+            status=3.14,  # type: ignore[arg-type]
+        )
+
+    with pytest.raises(ValueError, match="Unknown MissingDataStatus"):
+        CandidateMissingData(
+            record_id="m-bad-val",
+            candidate_id="c1",
+            input_name="inp",
+            data_family="fam",
+            status="not_a_valid_missing_status",
+        )
+
+
+def test_json_canonicalization_and_type_rejection() -> None:
+    # 1. CandidateDimension keys converted to canonical string keys
+    e1 = CandidateEvaluation(
+        evaluation_id="e1",
+        candidate_id="c1",
+        evaluator_id="ev",
+        evaluator_version="1",
+        evidence_state="e",
+        dimensions={
+            CandidateDimension.SETUP_QUALITY: {"score": 85},
+            CandidateDimension.DATA_CONFIDENCE: {"conf": 0.9},
+        },
+    )
+    assert e1.dimensions == {
+        "setup_quality": {"score": 85},
+        "data_confidence": {"conf": 0.9},
+    }
+
+    # 2. Nested tuples normalized to lists
+    ev1 = CandidateEvidence(
+        evidence_id="ev1",
+        candidate_id="c1",
+        evidence_type="ohlcv",
+        metadata={"bars": (10, 20, 30), "nested": {"coords": (1.1, 2.2)}},
+    )
+    assert ev1.metadata == {"bars": [10, 20, 30], "nested": {"coords": [1.1, 2.2]}}
+
+    # 3. Non-string / non-CandidateDimension keys rejected with TypeError
+    with pytest.raises(TypeError, match="dictionary keys must be str or CandidateDimension"):
+        CandidateEvaluation(
+            evaluation_id="e2",
+            candidate_id="c1",
+            evaluator_id="ev",
+            evaluator_version="1",
+            evidence_state="e",
+            dimensions={123: "bad key"},  # type: ignore[dict-item]
+        )
+
+    with pytest.raises(TypeError, match="dictionary keys must be str or CandidateDimension"):
+        CandidateEvidence(
+            evidence_id="ev2",
+            candidate_id="c1",
+            evidence_type="ohlcv",
+            metadata={"nested": {(1, 2): "tuple key"}},  # type: ignore[dict-item]
+        )
+
+    with pytest.raises(TypeError, match="dictionary keys must be str or CandidateDimension"):
+        CandidateEvaluation(
+            evaluation_id="e3",
+            candidate_id="c1",
+            evaluator_id="ev",
+            evaluator_version="1",
+            evidence_state="e",
+            dimensions={True: "bool key"},  # type: ignore[dict-item]
+        )
+
+    # 4. Non-serializable objects rejected
+    class CustomObject:
+        pass
+
+    with pytest.raises(ValueError, match="without NaN/Infinity"):
+        CandidateEvidence(
+            evidence_id="ev3",
+            candidate_id="c1",
+            evidence_type="ohlcv",
+            metadata={"obj": CustomObject()},
+        )
+
+
+def test_dimensions_and_metadata_must_be_dict() -> None:
+    with pytest.raises(TypeError, match="dimensions must be a dict"):
+        CandidateEvaluation(
+            evaluation_id="e1",
+            candidate_id="c1",
+            evaluator_id="ev",
+            evaluator_version="1",
+            evidence_state="e",
+            dimensions=["not", "a", "dict"],  # type: ignore[arg-type]
+        )
+
+    with pytest.raises(TypeError, match="metadata must be a dict"):
+        CandidateEvidence(
+            evidence_id="ev1",
+            candidate_id="c1",
+            evidence_type="ohlcv",
+            metadata="not a dict",  # type: ignore[arg-type]
+        )

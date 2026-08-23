@@ -10,7 +10,7 @@ import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, TypeVar
 
 from tradex.market.hours import is_trading_day, normalize_market_datetime
 
@@ -61,6 +61,56 @@ class SecurityIdentityStatus(StrEnum):
 
     KNOWN = "known"
     UNKNOWN = "unknown"
+
+
+T = TypeVar("T", bound=StrEnum)
+
+
+def _normalize_enum(value: object, enum_cls: type[T], field_name: str) -> T:
+    """Normalize a value to an enum instance, rejecting invalid types and values."""
+    if isinstance(value, enum_cls):
+        return value
+    if isinstance(value, bool) or not isinstance(value, str):
+        raise TypeError(
+            f"{field_name} must be a {enum_cls.__name__} instance or str, got {type(value).__name__}"
+        )
+    clean_val = value.strip().lower()
+    if not clean_val:
+        raise ValueError(f"{field_name} cannot be empty")
+    for member in enum_cls:
+        if member.value.lower() == clean_val or member.name.lower() == clean_val:
+            return member
+    valid = [m.value for m in enum_cls]
+    raise ValueError(f"Unknown {enum_cls.__name__} '{value}'. Valid values are: {valid}")
+
+
+def _validate_and_canonicalize_json_dict(data: object, field_name: str) -> dict[str, Any]:
+    """Enforce canonical JSON-object representation for dictionary fields."""
+    if isinstance(data, bool) or not isinstance(data, dict):
+        raise TypeError(f"{field_name} must be a dict, got {type(data).__name__}")
+
+    def _check_keys_and_values(obj: object) -> None:
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                if isinstance(k, bool) or not isinstance(k, (str, CandidateDimension)):
+                    raise TypeError(
+                        f"{field_name} dictionary keys must be str or CandidateDimension, got key {k!r} of type {type(k).__name__}"
+                    )
+                _check_keys_and_values(v)
+        elif isinstance(obj, (list, tuple)):
+            for item in obj:
+                _check_keys_and_values(item)
+
+    _check_keys_and_values(data)
+
+    try:
+        serialized = json.dumps(data, sort_keys=True, allow_nan=False)
+    except (ValueError, TypeError) as e:
+        raise ValueError(
+            f"{field_name} must be JSON serializable without NaN/Infinity: {e}"
+        ) from e
+
+    return json.loads(serialized)
 
 
 def _validate_json_serializable(data: Any) -> str:
@@ -127,7 +177,7 @@ class CandidateSnapshot:
     contract_version: int = 1
     trading_date: str | None = None
     security_identity_version: str | None = None
-    security_identity_status: SecurityIdentityStatus = SecurityIdentityStatus.UNKNOWN
+    security_identity_status: SecurityIdentityStatus | str = SecurityIdentityStatus.UNKNOWN
     created_at: datetime = field(default_factory=lambda: datetime.now(tz=UTC))
 
     def __post_init__(self) -> None:
@@ -169,8 +219,7 @@ class CandidateSnapshot:
                 )
             object.__setattr__(self, "trading_date", None)
 
-        if isinstance(self.security_identity_status, str):
-            object.__setattr__(self, "security_identity_status", SecurityIdentityStatus(self.security_identity_status))
+        norm_status = _normalize_enum(self.security_identity_status, SecurityIdentityStatus, "security_identity_status")
 
         # Security identity consistency validation
         if self.security_identity_version is not None:
@@ -178,11 +227,12 @@ class CandidateSnapshot:
             if not ver:
                 raise ValueError("security_identity_version cannot be empty when provided")
             object.__setattr__(self, "security_identity_version", ver)
-            if self.security_identity_status == SecurityIdentityStatus.UNKNOWN:
-                object.__setattr__(self, "security_identity_status", SecurityIdentityStatus.KNOWN)
+            norm_status = SecurityIdentityStatus.KNOWN
         else:
-            if self.security_identity_status == SecurityIdentityStatus.KNOWN:
+            if norm_status == SecurityIdentityStatus.KNOWN:
                 raise ValueError("security_identity_status cannot be 'known' when security_identity_version is None")
+
+        object.__setattr__(self, "security_identity_status", norm_status)
 
 
 @dataclass(frozen=True)
@@ -203,7 +253,8 @@ class CandidateEvaluation:
         object.__setattr__(self, "evaluator_id", _validate_non_blank_str(self.evaluator_id, "evaluator_id"))
         object.__setattr__(self, "evaluator_version", _validate_non_blank_str(self.evaluator_version, "evaluator_version"))
         object.__setattr__(self, "evidence_state", _validate_non_blank_str(self.evidence_state, "evidence_state"))
-        _validate_json_serializable(self.dimensions)
+        canonical_dims = _validate_and_canonicalize_json_dict(self.dimensions, "dimensions")
+        object.__setattr__(self, "dimensions", canonical_dims)
         norm_created = _normalize_aware_dt(self.created_at, "created_at")
         object.__setattr__(self, "created_at", norm_created)
 
@@ -235,7 +286,8 @@ class CandidateEvidence:
         if self.observed_at is not None:
             norm_obs = _normalize_aware_dt(self.observed_at, "observed_at")
             object.__setattr__(self, "observed_at", norm_obs)
-        _validate_json_serializable(self.metadata)
+        canonical_meta = _validate_and_canonicalize_json_dict(self.metadata, "metadata")
+        object.__setattr__(self, "metadata", canonical_meta)
         norm_created = _normalize_aware_dt(self.created_at, "created_at")
         object.__setattr__(self, "created_at", norm_created)
 
@@ -250,43 +302,24 @@ class CandidateReason:
 
     reason_id: str
     candidate_id: str
+    evaluation_id: str
+    dimension: CandidateDimension | str
     reason_code: str
     human_text: str
-    evaluation_id: str | None = None
-    dimension: CandidateDimension | str | None = None
-    polarity: ReasonPolarity = ReasonPolarity.NEUTRAL
-    severity: ReasonSeverity = ReasonSeverity.INFO
+    polarity: ReasonPolarity | str = ReasonPolarity.NEUTRAL
+    severity: ReasonSeverity | str = ReasonSeverity.INFO
     source_evidence_id: str | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(tz=UTC))
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "reason_id", _validate_non_blank_str(self.reason_id, "reason_id"))
         object.__setattr__(self, "candidate_id", _validate_non_blank_str(self.candidate_id, "candidate_id"))
+        object.__setattr__(self, "evaluation_id", _validate_non_blank_str(self.evaluation_id, "evaluation_id"))
+        object.__setattr__(self, "dimension", _normalize_enum(self.dimension, CandidateDimension, "dimension"))
         object.__setattr__(self, "reason_code", _validate_non_blank_str(self.reason_code, "reason_code"))
         object.__setattr__(self, "human_text", _validate_non_blank_str(self.human_text, "human_text"))
-        if self.evaluation_id is not None:
-            object.__setattr__(self, "evaluation_id", self.evaluation_id.strip() or None)
-
-        if self.dimension is not None:
-            if isinstance(self.dimension, CandidateDimension):
-                dim_obj: CandidateDimension | None = self.dimension
-            elif isinstance(self.dimension, str):
-                dim_str = self.dimension.strip()
-                if not dim_str:
-                    dim_obj = None
-                else:
-                    try:
-                        dim_obj = CandidateDimension(dim_str.lower())
-                    except ValueError as e:
-                        raise ValueError(f"Unknown CandidateDimension: '{self.dimension}'") from e
-            else:
-                raise TypeError(f"dimension must be CandidateDimension or str, got {type(self.dimension).__name__}")
-            object.__setattr__(self, "dimension", dim_obj)
-
-        if isinstance(self.polarity, str):
-            object.__setattr__(self, "polarity", ReasonPolarity(self.polarity))
-        if isinstance(self.severity, str):
-            object.__setattr__(self, "severity", ReasonSeverity(self.severity))
+        object.__setattr__(self, "polarity", _normalize_enum(self.polarity, ReasonPolarity, "polarity"))
+        object.__setattr__(self, "severity", _normalize_enum(self.severity, ReasonSeverity, "severity"))
         if self.source_evidence_id is not None:
             object.__setattr__(self, "source_evidence_id", self.source_evidence_id.strip() or None)
         norm_created = _normalize_aware_dt(self.created_at, "created_at")
@@ -301,7 +334,7 @@ class CandidateMissingData:
     candidate_id: str
     input_name: str
     data_family: str
-    status: MissingDataStatus
+    status: MissingDataStatus | str
     evaluation_id: str | None = None
     detail: str | None = None
     provider: str | None = None
@@ -313,8 +346,7 @@ class CandidateMissingData:
         object.__setattr__(self, "candidate_id", _validate_non_blank_str(self.candidate_id, "candidate_id"))
         object.__setattr__(self, "input_name", _validate_non_blank_str(self.input_name, "input_name"))
         object.__setattr__(self, "data_family", _validate_non_blank_str(self.data_family, "data_family"))
-        if isinstance(self.status, str):
-            object.__setattr__(self, "status", MissingDataStatus(self.status))
+        object.__setattr__(self, "status", _normalize_enum(self.status, MissingDataStatus, "status"))
         if self.evaluation_id is not None:
             object.__setattr__(self, "evaluation_id", self.evaluation_id.strip() or None)
         if self.detail is not None:
@@ -401,12 +433,29 @@ class CandidateDossier:
         object.__setattr__(self, "reasons", canonical_reas)
         object.__setattr__(self, "missing_data", canonical_miss)
 
+        # Point-in-time temporal integrity checks (Blocker 1)
+        for ev in canonical_evid:
+            if ev.observed_at is not None and ev.observed_at > self.snapshot.decision_timestamp:
+                raise ValueError(
+                    f"Evidence '{ev.evidence_id}' observed_at '{ev.observed_at.isoformat()}' "
+                    f"is after candidate decision_timestamp '{self.snapshot.decision_timestamp.isoformat()}'; "
+                    "future observations are rejected"
+                )
+
+        for m in canonical_miss:
+            if m.observed_at is not None and m.observed_at > self.snapshot.decision_timestamp:
+                raise ValueError(
+                    f"MissingData '{m.record_id}' observed_at '{m.observed_at.isoformat()}' "
+                    f"is after candidate decision_timestamp '{self.snapshot.decision_timestamp.isoformat()}'; "
+                    "future observations are rejected"
+                )
+
         eval_ids = {e.evaluation_id for e in canonical_evals}
         evid_ids = {ev.evidence_id for ev in canonical_evid}
 
-        # Unconditional referential integrity checks
+        # Unconditional referential integrity checks (Blocker 3)
         for r in canonical_reas:
-            if r.evaluation_id is not None and r.evaluation_id not in eval_ids:
+            if r.evaluation_id not in eval_ids:
                 raise ValueError(
                     f"Reason evaluation_id '{r.evaluation_id}' does not match any evaluation in dossier"
                 )

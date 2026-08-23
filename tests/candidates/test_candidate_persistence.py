@@ -147,6 +147,7 @@ def test_multiple_evaluators_and_unicode_reasons(candidate_db) -> None:
         reason_id="reas-300-1",
         candidate_id=cand_id,
         evaluation_id="eval-300-a",
+        dimension=CandidateDimension.CONTEXT,
         reason_code="UNICODE_TEST",
         human_text="Greek symbols α, β, γ and emojis 🚀 📈 with accents é, à, ü.",
     )
@@ -404,7 +405,7 @@ def test_material_divergence_raises_store_error_conflict(candidate_db) -> None:
     snap = CandidateSnapshot(candidate_id="cand-div-1", symbol="AAPL", decision_timestamp=t0)
     e1 = CandidateEvaluation(evaluation_id="eval-1", candidate_id="cand-div-1", evaluator_id="ev1", evaluator_version="1", evidence_state="e", dimensions={"score": 50})
     ev1 = CandidateEvidence(evidence_id="evid-1", candidate_id="cand-div-1", evidence_type="ohlcv", provider="schwab")
-    r1 = CandidateReason(reason_id="reas-1", candidate_id="cand-div-1", reason_code="R1", human_text="Text 1")
+    r1 = CandidateReason(reason_id="reas-1", candidate_id="cand-div-1", evaluation_id="eval-1", dimension=CandidateDimension.SETUP_QUALITY, reason_code="R1", human_text="Text 1")
     m1 = CandidateMissingData(record_id="miss-1", candidate_id="cand-div-1", input_name="i1", data_family="f1", status=MissingDataStatus.UNKNOWN, detail="det1")
 
     dossier = CandidateDossier(snapshot=snap, evaluations=(e1,), evidence=(ev1,), reasons=(r1,), missing_data=(m1,))
@@ -421,7 +422,7 @@ def test_material_divergence_raises_store_error_conflict(candidate_db) -> None:
         record_candidate_dossier(CandidateDossier(snapshot=snap, evaluations=(e1,), evidence=(ev_div,), reasons=(r1,), missing_data=(m1,)), candidate_db)
 
     # Divergent reason human text
-    r_div = CandidateReason(reason_id="reas-1", candidate_id="cand-div-1", reason_code="R1", human_text="Different text")
+    r_div = CandidateReason(reason_id="reas-1", candidate_id="cand-div-1", evaluation_id="eval-1", dimension=CandidateDimension.SETUP_QUALITY, reason_code="R1", human_text="Different text")
     with pytest.raises(store.StoreError, match="already exists with divergent immutable content"):
         record_candidate_dossier(CandidateDossier(snapshot=snap, evaluations=(e1,), evidence=(ev1,), reasons=(r_div,), missing_data=(m1,)), candidate_db)
 
@@ -440,12 +441,81 @@ def test_sqlite_source_evidence_fk_enforcement(candidate_db) -> None:
             "VALUES ('cand-fk-1', 1, 'AAPL', ?, ?)",
             (t0, t0),
         )
+        con.execute(
+            "INSERT INTO candidate_evaluations (evaluation_id, candidate_id, evaluator_id, evaluator_version, evidence_state, created_at) "
+            "VALUES ('eval-fk-1', 'cand-fk-1', 'ev1', '1.0', 'exploratory', ?)",
+            (t0,),
+        )
         con.commit()
 
         # Insert reason with non-existent source_evidence_id under PRAGMA foreign_keys = ON
         with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY"):
             con.execute(
-                "INSERT INTO candidate_reasons (reason_id, candidate_id, reason_code, human_text, source_evidence_id, created_at) "
-                "VALUES ('reas-fk-1', 'cand-fk-1', 'R1', 'test text', 'evid-nonexistent', ?)",
+                "INSERT INTO candidate_reasons (reason_id, candidate_id, evaluation_id, dimension, reason_code, human_text, source_evidence_id, created_at) "
+                "VALUES ('reas-fk-1', 'cand-fk-1', 'eval-fk-1', 'context', 'R1', 'test text', 'evid-nonexistent', ?)",
                 (t0,),
             )
+
+
+def test_sqlite_evaluation_fk_not_null_and_cascade(candidate_db) -> None:
+    t0 = datetime(2026, 8, 21, 14, 30, tzinfo=UTC).isoformat()
+    with sqlite3.connect(candidate_db) as con:
+        con.execute("PRAGMA foreign_keys = ON")
+        con.execute(
+            "INSERT INTO candidates (candidate_id, contract_version, symbol, decision_timestamp, created_at) "
+            "VALUES ('cand-cas-1', 1, 'AAPL', ?, ?)",
+            (t0, t0),
+        )
+        con.execute(
+            "INSERT INTO candidate_evaluations (evaluation_id, candidate_id, evaluator_id, evaluator_version, evidence_state, created_at) "
+            "VALUES ('eval-cas-1', 'cand-cas-1', 'ev1', '1.0', 'exploratory', ?)",
+            (t0,),
+        )
+        con.execute(
+            "INSERT INTO candidate_evidence (evidence_id, candidate_id, evidence_type, created_at) "
+            "VALUES ('evid-cas-1', 'cand-cas-1', 'ohlcv', ?)",
+            (t0,),
+        )
+        con.execute(
+            "INSERT INTO candidate_reasons (reason_id, candidate_id, evaluation_id, dimension, reason_code, human_text, source_evidence_id, created_at) "
+            "VALUES ('reas-cas-1', 'cand-cas-1', 'eval-cas-1', 'setup_quality', 'R1', 'test text', 'evid-cas-1', ?)",
+            (t0,),
+        )
+        con.commit()
+
+        # 1. Non-existent evaluation_id fails FK constraint
+        with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY"):
+            con.execute(
+                "INSERT INTO candidate_reasons (reason_id, candidate_id, evaluation_id, dimension, reason_code, human_text, created_at) "
+                "VALUES ('reas-bad-eval', 'cand-cas-1', 'eval-nonexistent', 'setup_quality', 'R2', 'text', ?)",
+                (t0,),
+            )
+
+        # 2. NULL evaluation_id fails NOT NULL constraint
+        with pytest.raises(sqlite3.IntegrityError, match="NOT NULL"):
+            con.execute(
+                "INSERT INTO candidate_reasons (reason_id, candidate_id, evaluation_id, dimension, reason_code, human_text, created_at) "
+                "VALUES ('reas-null-eval', 'cand-cas-1', NULL, 'setup_quality', 'R3', 'text', ?)",
+                (t0,),
+            )
+
+        # 3. NULL dimension fails NOT NULL constraint
+        with pytest.raises(sqlite3.IntegrityError, match="NOT NULL"):
+            con.execute(
+                "INSERT INTO candidate_reasons (reason_id, candidate_id, evaluation_id, dimension, reason_code, human_text, created_at) "
+                "VALUES ('reas-null-dim', 'cand-cas-1', 'eval-cas-1', NULL, 'R4', 'text', ?)",
+                (t0,),
+            )
+
+        # 4. Deleting evidence sets source_evidence_id to NULL (ON DELETE SET NULL) without deleting the reason
+        con.execute("DELETE FROM candidate_evidence WHERE evidence_id = 'evid-cas-1'")
+        con.commit()
+        reason_row = con.execute("SELECT source_evidence_id FROM candidate_reasons WHERE reason_id = 'reas-cas-1'").fetchone()
+        assert reason_row is not None
+        assert reason_row[0] is None
+
+        # 5. Deleting evaluation cascades to delete the reason (ON DELETE CASCADE)
+        con.execute("DELETE FROM candidate_evaluations WHERE evaluation_id = 'eval-cas-1'")
+        con.commit()
+        reason_count = con.execute("SELECT COUNT(*) FROM candidate_reasons WHERE reason_id = 'reas-cas-1'").fetchone()[0]
+        assert reason_count == 0

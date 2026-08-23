@@ -84,12 +84,11 @@ def _row_to_evidence(row: sqlite3.Row) -> CandidateEvidence:
 
 
 def _row_to_reason(row: sqlite3.Row) -> CandidateReason:
-    dim = CandidateDimension(row["dimension"]) if row["dimension"] else None
     return CandidateReason(
         reason_id=row["reason_id"],
         candidate_id=row["candidate_id"],
         evaluation_id=row["evaluation_id"],
-        dimension=dim,
+        dimension=CandidateDimension(row["dimension"]),
         reason_code=row["reason_code"],
         polarity=ReasonPolarity(row["polarity"]),
         severity=ReasonSeverity(row["severity"]),
@@ -330,7 +329,7 @@ def record_candidate_dossier(
                     r.reason_id,
                     r.candidate_id,
                     r.evaluation_id,
-                    r.dimension.value if r.dimension is not None else None,
+                    r.dimension.value,
                     r.reason_code,
                     r.polarity.value,
                     r.severity.value,
