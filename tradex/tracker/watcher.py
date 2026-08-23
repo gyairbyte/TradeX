@@ -280,7 +280,7 @@ def run_once(
         )
 
     # Persist the full scan report (observations, session, and signals).
-    store.record_scan(
+    session_id = store.record_scan(
         report,
         timeframe=timeframe,
         min_score=min_score,
@@ -288,6 +288,25 @@ def run_once(
         scan_time=now,
         settings=settings,
     )
+
+    # R5B: Prospective observation aggregation & shadow candidate evaluation (fail-isolated)
+    try:
+        from tradex.candidates.service import record_session_candidates
+
+        candidate_result = record_session_candidates(
+            report,
+            session_id=session_id,
+            timeframe=timeframe,
+            scan_time=now,
+            settings=settings,
+        )
+        if candidate_result.failures:
+            print(
+                f"[{timestamp}] Candidate persistence failures: "
+                f"{len(candidate_result.failures)} symbol(s). Details: {candidate_result.failures}"
+            )
+    except Exception as exc:  # noqa: BLE001
+        print(f"[{timestamp}] Candidate shadow aggregation failed: {exc}")
 
     # Surface each non-empty stage map independently.
     if has_earnings_failures:

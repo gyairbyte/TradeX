@@ -427,8 +427,8 @@ This is the master backlog for TradeX engineering and research tasks, originatin
 - **Rollout Step 1 (MVP-ARCH-001-R1):** Gary Yang approved rollout step 1 on 2026-08-21 for truthful UI/help labeling and evidence-state notices only (implemented in PR #57).
 - **Rollout Step 2 (MVP-ARCH-001-R2):** Gary Yang approved rollout step 2 on 2026-08-21 for provider lifecycle and configuration simplification only (implemented and merged in PR #58).
 - **Rollout Step 3 (MVP-ARCH-001-R3):** Gary Yang separately approved rollout step 3 on 2026-08-22 for navigation consolidation only (implemented and merged in PR #59).
-- **Rollout Step 4 (MVP-ARCH-001-R4):** Gary Yang separately approved rollout step 4 on 2026-08-22 for fail-closed automatic market alert gating (implemented and merged in PR #60).
-- **Rollout Step 5A (MVP-ARCH-001-R5A):** MVP-ARCH-001-R5A was separately Gary-approved on 2026-08-23 for candidate snapshot domain contract and schema v4 persistence primitives only and implemented by PR #61 (R5B, R5C, and Steps 6–8 remain pending separate Gary approval; no production strategy was promoted; no candidate generation, evaluation, ranking, actionable state, UI, or automatic runtime write was authorized; LONG-002C remains paused).
+- **Rollout Step 5A (MVP-ARCH-001-R5A):** MVP-ARCH-001-R5A was separately Gary-approved on 2026-08-23 for candidate snapshot domain contract and schema v4 persistence primitives only and implemented by PR #61.
+- **Rollout Step 5B (MVP-ARCH-001-R5B):** MVP-ARCH-001-R5B was separately Gary-approved on 2026-08-23 and implemented by PR #62 for prospective scorable-observation aggregation and descriptive exploratory CandidateDossier persistence only (R5C and Steps 6–8 remain pending separate Gary approval; no production strategy was promoted; no actionable candidate states were created; no provider calls were added; no UI or alert behavior changed; LONG-002C remains paused; completion of R5B does not automatically authorize the next implementation PR).
 - `long_002b_amend_002_completed`: `true`
 - `long_002c_design_authorized_by_pr52`: `true`
 - `long_002c_currently_paused_by_gary`: `true`

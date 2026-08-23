@@ -323,7 +323,7 @@ def test_governance_invariants_distinguish_r1_r2_r3_r4_r5a_from_later_steps(inv:
         "every rollout implementation step remains pending" in g.lower() for g in invariants
     )
 
-    # 2. Invariant accurately distinguishes R1, R2, R3, R4, and R5A from later steps.
+    # 2. Invariant accurately distinguishes R1, R2, R3, R4, R5A, and R5B from later steps.
     r_invariant = next(
         (
             g
@@ -333,13 +333,14 @@ def test_governance_invariants_distinguish_r1_r2_r3_r4_r5a_from_later_steps(inv:
             and "MVP-ARCH-001-R3" in g
             and "MVP-ARCH-001-R4" in g
             and "MVP-ARCH-001-R5A" in g
+            and "MVP-ARCH-001-R5B" in g
         ),
         None,
     )
-    assert r_invariant is not None, "Missing R1/R2/R3/R4/R5A governance invariant"
+    assert r_invariant is not None, "Missing R1/R2/R3/R4/R5A/R5B governance invariant"
     assert "design-only" in r_invariant.lower()
     assert "separately gary-approved" in r_invariant.lower()
-    assert re.search(r"r5b and r5c and steps 6[\u2013-]8 remain pending", r_invariant, re.IGNORECASE)
+    assert re.search(r"r5c and steps 6[\u2013-]8 remain pending", r_invariant, re.IGNORECASE)
     assert "does not authorize production trading changes" in r_invariant.lower()
 
     # 3. Markdown matches the JSON invariant.
@@ -352,6 +353,7 @@ def test_governance_invariants_distinguish_r1_r2_r3_r4_r5a_from_later_steps(inv:
     assert "MVP-ARCH-001-R3" in md_text
     assert "MVP-ARCH-001-R4" in md_text
     assert "MVP-ARCH-001-R5A" in md_text
+    assert "MVP-ARCH-001-R5B" in md_text
 
     # 4. Broad authorization booleans remain false.
     auth = inv["authorization"]
@@ -876,8 +878,42 @@ def test_rollout_approvals_record(inv: dict) -> None:
     assert r5a["pit_capture_job_authorized"] is False
     assert r5a["strategy_promotion_authorized"] is False
     assert r5a["long_002c_work_authorized"] is False
-    assert r5a["r5b_implementation_authorized"] is False
+    assert r5a["r5b_implementation_authorized"] is True
     assert r5a["r5c_implementation_authorized"] is False
+
+    r5b = next((a for a in approvals if a.get("task_id") == "MVP-ARCH-001-R5B"), None)
+    assert r5b is not None
+    assert r5b["rollout_order"] == 6
+    assert r5b["approval_status"] == "gary_approved"
+    assert r5b["approved_by"] == "Gary Yang"
+    assert r5b["approved_on"] == "2026-08-23"
+    assert r5b["scope"] == "prospective observation aggregation and descriptive exploratory shadow candidate evaluation only"
+    assert r5b["implementation_authorized"] is True
+    assert r5b["candidate_runtime_writes_authorized"] is True
+    assert r5b["candidate_aggregation_authorized"] is True
+    assert r5b["shadow_descriptive_evaluator_authorized"] is True
+    assert r5b["database_migration_authorized_for_r5b"] is False
+    assert r5b["schema_changes_authorized"] is False
+    assert r5b["new_provider_calls_authorized"] is False
+    assert r5b["provider_behavior_changes_authorized"] is False
+    assert r5b["candidate_trading_eligibility_changes_authorized"] is False
+    assert r5b["actionable_candidate_states_authorized"] is False
+    assert r5b["ranking_changes_authorized"] is False
+    assert r5b["score_changes_authorized"] is False
+    assert r5b["weight_changes_authorized"] is False
+    assert r5b["threshold_changes_authorized"] is False
+    assert r5b["signal_logic_changes_authorized"] is False
+    assert r5b["alert_behavior_changes_authorized"] is False
+    assert r5b["candidate_ui_authorized"] is False
+    assert r5b["navigation_changes_authorized"] is False
+    assert r5b["strategy_promotion_authorized"] is False
+    assert r5b["production_trading_changes_authorized"] is False
+    assert r5b["r5c_implementation_authorized"] is False
+    assert r5b["journal_replacement_authorized"] is False
+    assert r5b["r6_implementation_authorized"] is False
+    assert r5b["r7_implementation_authorized"] is False
+    assert r5b["r8_implementation_authorized"] is False
+    assert r5b["long_002c_work_authorized"] is False
 
 
 def test_governance_invariants_database_migration_authorized_consistency(inv: dict) -> None:
