@@ -208,7 +208,7 @@ These belong to future separately approved evaluator, executable strategy, and J
 Gary Yang approved the amended Option C rollout architecture:
 - **5A. Candidate Snapshot Domain Contract & Schema v4 Persistence Primitives** (Approved 2026-08-23; implemented by PR #61)
 - **5B. Multi-Source Observation Aggregator & Shadow Candidate Evaluation** (Approved 2026-08-23; implemented by PR #62)
-- **5C. Truthful Read-Only Today / Candidate Detail Workflow** (Pending separate Gary approval)
+- **5C. Truthful Read-Only Today / Candidate Detail Workflow** (Approved 2026-08-23; implemented by PR #63)
 - **Impact:** Adds additive schema v4 and persistence primitives; runtime prospective candidate dossier aggregation and descriptive shadow evaluation; no changes to existing signal history; no new provider calls.
 - **Gary approval required:** True
 - **Dependencies:** Step 2
@@ -442,7 +442,7 @@ Gary Yang separately approved rollout step 5C on 2026-08-23 with narrow scope:
   - `r8_implementation_authorized`: `False`
   - `long_002c_work_authorized`: `False`
 - **Subsequent steps (Steps 6–8):** Remain pending separate Gary approval.
-- **Status:** Implemented in this PR.
+- **Status:** Implemented in PR #63.
 
 ## Governance invariants
 

@@ -413,6 +413,7 @@
       "approval_status": "gary_approved",
       "approved_by": "Gary Yang",
       "approved_on": "2026-08-23",
+      "pr_reference": "63",
       "scope": "truthful read-only Today and Candidate Detail workflow only",
       "implementation_authorized": true,
       "candidate_ui_authorized": true,
