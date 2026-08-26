@@ -208,7 +208,7 @@ These belong to future separately approved evaluator, executable strategy, and J
 Gary Yang approved the amended Option C rollout architecture:
 - **5A. Candidate Snapshot Domain Contract & Schema v4 Persistence Primitives** (Approved 2026-08-23; implemented by PR #61)
 - **5B. Multi-Source Observation Aggregator & Shadow Candidate Evaluation** (Approved 2026-08-23; implemented by PR #62)
-- **5C. Truthful Read-Only Today / Candidate Detail Workflow** (Pending separate Gary approval)
+- **5C. Truthful Read-Only Today / Candidate Detail Workflow** (Approved 2026-08-23; implemented by PR #63)
 - **Impact:** Adds additive schema v4 and persistence primitives; runtime prospective candidate dossier aggregation and descriptive shadow evaluation; no changes to existing signal history; no new provider calls.
 - **Gary approval required:** True
 - **Dependencies:** Step 2
@@ -407,18 +407,52 @@ Gary Yang separately approved rollout step 5B on 2026-08-23 with narrow scope:
   - `r7_implementation_authorized`: `False`
   - `r8_implementation_authorized`: `False`
   - `long_002c_work_authorized`: `False`
-- **Subsequent steps (R5C, Steps 6–8):** Remain pending separate Gary approval.
+- **Subsequent steps (R5C, Steps 6–8):** R5C is approved below; Steps 6–8 remain pending separate Gary approval.
 - **Status:** Implemented by PR #62.
+
+### MVP-ARCH-001-R5C (Approved 2026-08-23)
+
+Gary Yang separately approved rollout step 5C on 2026-08-23 with narrow scope:
+- **Task ID:** `MVP-ARCH-001-R5C`
+- **Scope:** Truthful read-only Today and Candidate Detail workflow only.
+- **Boundaries:**
+  - `implementation_authorized`: `True` (strictly bounded to read-only Today landing surface, Candidate Detail drill-down, and snapshot history query layer)
+  - `candidate_ui_authorized`: `True`
+  - `today_tab_authorized`: `True`
+  - `candidate_detail_authorized`: `True`
+  - `read_only_candidate_queries_authorized`: `True`
+  - `database_migration_authorized`: `False`
+  - `schema_changes_authorized`: `False`
+  - `candidate_persistence_writes_authorized`: `False`
+  - `provider_calls_authorized`: `False`
+  - `provider_changes_authorized`: `False`
+  - `candidate_trading_eligibility_changes_authorized`: `False`
+  - `actionable_candidate_states_authorized`: `False`
+  - `ranking_changes_authorized`: `False`
+  - `score_changes_authorized`: `False`
+  - `weight_changes_authorized`: `False`
+  - `threshold_changes_authorized`: `False`
+  - `signal_logic_changes_authorized`: `False`
+  - `alert_behavior_changes_authorized`: `False`
+  - `strategy_promotion_authorized`: `False`
+  - `production_trading_changes_authorized`: `False`
+  - `journal_replacement_authorized`: `False`
+  - `r6_implementation_authorized`: `False`
+  - `r7_implementation_authorized`: `False`
+  - `r8_implementation_authorized`: `False`
+  - `long_002c_work_authorized`: `False`
+- **Subsequent steps (Steps 6–8):** Remain pending separate Gary approval.
+- **Status:** Implemented in PR #63.
 
 ## Governance invariants
 
 - Production promotion remains unauthorized.
-- MVP-ARCH-001 original architecture approval remains design-only; MVP-ARCH-001-R1 was separately Gary-approved and implemented for truthful UI/help labeling and evidence-state notices only; MVP-ARCH-001-R2 was separately Gary-approved and implemented for provider lifecycle and configuration simplification only; MVP-ARCH-001-R3 was separately Gary-approved and implemented for navigation consolidation only; MVP-ARCH-001-R4 was separately Gary-approved and implemented for fail-closed automatic market alert gating only; MVP-ARCH-001-R5A was separately Gary-approved on 2026-08-23 for candidate snapshot domain contract and additive schema v4 persistence primitives only; MVP-ARCH-001-R5B is separately Gary-approved on 2026-08-23 for prospective observation aggregation and descriptive exploratory shadow candidate evaluation only; R5C and Steps 6–8 remain pending separate Gary approval; R5B does not authorize production trading changes, signal logic changes, score/weight/threshold changes, ranking changes, candidate trading eligibility changes, actionable candidate states, UI changes, navigation changes beyond R3, alert changes beyond the separately approved R4 gating scope, provider changes/new calls, schema changes beyond the separately approved additive MVP-ARCH-001-R5A schema-v4 persistence scope, journal replacement, PIT capture, strategy promotion, or LONG-002C work.
+- MVP-ARCH-001 original architecture approval remains design-only; MVP-ARCH-001-R1 was separately Gary-approved and implemented for truthful UI/help labeling and evidence-state notices only; MVP-ARCH-001-R2 was separately Gary-approved and implemented for provider lifecycle and configuration simplification only; MVP-ARCH-001-R3 was separately Gary-approved and implemented for navigation consolidation only; MVP-ARCH-001-R4 was separately Gary-approved and implemented for fail-closed automatic market alert gating only; MVP-ARCH-001-R5A was separately Gary-approved on 2026-08-23 for candidate snapshot domain contract and additive schema v4 persistence primitives only; MVP-ARCH-001-R5B was separately Gary-approved on 2026-08-23 and implemented for prospective scorable-observation aggregation and descriptive exploratory shadow candidate evaluation only; MVP-ARCH-001-R5C is separately Gary-approved on 2026-08-23 for truthful read-only Today and Candidate Detail workflow only; Steps 6–8 remain pending separate Gary approval; R5C does not authorize production trading changes, signal logic changes, score/weight/threshold changes, ranking changes, candidate trading eligibility changes, actionable candidate states, candidate persistence writes, alert changes beyond the separately approved R4 gating scope, provider changes/new calls, schema changes beyond the separately approved additive MVP-ARCH-001-R5A schema-v4 persistence scope, journal replacement, PIT capture, strategy promotion, or LONG-002C work.
 - Existing research artifacts and locked specifications are referenced, not modified.
 - LONG-002B-AMEND-002 is completed and merged; LONG-002C design is authorized by PR #52 but explicitly paused by Gary; MVP-ARCH-001 is a separate product-architecture workstream.
-- This packet does not authorize LONG-002C dataset construction, provider calls, dashboard changes beyond the separately approved R3 navigation scope, alert changes beyond the separately approved R4 gating scope, database migrations beyond the separately approved additive MVP-ARCH-001-R5A schema-v4 persistence scope, strategy promotion, or production behavior changes.
+- This packet does not authorize LONG-002C dataset construction, provider calls, dashboard changes beyond the separately approved R3/R5C navigation scope, alert changes beyond the separately approved R4 gating scope, database migrations beyond the separately approved additive MVP-ARCH-001-R5A schema-v4 persistence scope, strategy promotion, or production behavior changes.
 - No existing strategy is relabeled production_approved.
 
 ---
 
-*This packet is a versioned product-architecture decision document. It does not implement any consolidation, provider change, dashboard change beyond the separately approved R3 navigation scope, alert change beyond the separately approved R4 gating scope, database migration beyond the separately approved additive MVP-ARCH-001-R5A schema-v4 persistence scope, or production behavior change.*
+*This packet is a versioned product-architecture decision document. It does not implement any consolidation, provider change, dashboard change beyond the separately approved R3/R5C navigation scope, alert change beyond the separately approved R4 gating scope, database migration beyond the separately approved additive MVP-ARCH-001-R5A schema-v4 persistence scope, or production behavior change.*

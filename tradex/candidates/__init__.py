@@ -1,4 +1,4 @@
-"""Candidate snapshot domain contract and schema v4 persistence primitives (MVP-ARCH-001-R5A/R5B)."""
+"""Candidate snapshot domain contract, persistence, and read queries (MVP-ARCH-001-R5A/R5B/R5C)."""
 from __future__ import annotations
 
 from tradex.candidates.aggregator import (
@@ -28,6 +28,15 @@ from tradex.candidates.models import (
     SecurityIdentityStatus,
     derive_trading_date,
 )
+from tradex.candidates.queries import (
+    CandidateHistoryRow,
+    TodayCandidateRow,
+    TodaySummaryFacts,
+    get_available_trading_dates,
+    get_candidate_history_for_symbol,
+    get_latest_candidates_for_date,
+    get_today_summary_facts,
+)
 from tradex.candidates.service import (
     CandidateBatchResult,
     CandidateService,
@@ -50,6 +59,7 @@ __all__ = [
     "CandidateDossier",
     "CandidateEvaluation",
     "CandidateEvidence",
+    "CandidateHistoryRow",
     "CandidateMissingData",
     "CandidateReason",
     "CandidateService",
@@ -59,12 +69,18 @@ __all__ = [
     "ReasonSeverity",
     "SecurityIdentityStatus",
     "ShadowObservationEvaluator",
+    "TodayCandidateRow",
+    "TodaySummaryFacts",
     "build_candidate_snapshot",
     "derive_trading_date",
     "extract_screener_evidence",
     "generate_candidate_id",
+    "get_available_trading_dates",
     "get_candidate",
     "get_candidate_dossier",
+    "get_candidate_history_for_symbol",
+    "get_latest_candidates_for_date",
+    "get_today_summary_facts",
     "is_scorable_observation",
     "list_candidates",
     "record_candidate_dossier",
