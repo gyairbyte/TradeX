@@ -199,9 +199,17 @@ implementation decision.
 > **No executable Journal record may be created while there is no
 > production-approved actionable strategy.**
 
-Because `APPROVED_ACTIONABLE_STRATEGIES == ()` [FACT], every create call fails closed
-today. The Journal tables (if later created under an approved migration) remain empty
-until a separately Gary-approved strategy promotion PR adds a registry entry.
+- **Current repository fact [FACT]:** `APPROVED_ACTIONABLE_STRATEGIES == ()` in
+  `tradex/alerts/eligibility.py`, meaning there is currently no production-approved
+  actionable strategy in the repository, and there is currently no executable
+  Journal implementation.
+- **Proposed future R6 contract [PROPOSED]:** Journal creation gates directly against
+  `APPROVED_PRODUCTION_STRATEGIES` in `tradex/strategies/registry.py` (§B.2), requiring
+  an exact `(strategy_id, strategy_version)` match with the `"journal_execution"`
+  capability explicitly granted. Because `APPROVED_PRODUCTION_STRATEGIES` initializes
+  empty, the future Journal remains strictly fail-closed upon introduction: every create
+  call is rejected until a separately Gary-approved strategy promotion PR adds a
+  registry entry with the `"journal_execution"` capability.
 
 ---
 
@@ -365,8 +373,16 @@ from persisted fields — never from data unavailable at the time of the events 
 | `costs` | Explicit per-trade costs (commission/fees), caller-supplied observation | USD, ≥ 0 | Stored input (not inferred) | NULL = unknown; **never** defaulted to 0 silently — a NULL cost makes `net_return` NULL |
 | `gross_return_pct` | `((exit_price - fill_price) / fill_price) * 100` | percent; positive = gain (long) | Derived + stored | NULL unless closed |
 | `net_return_pct` | `((exit_price - fill_price - costs / quantity) / fill_price) * 100`. `quantity` is mandatory at fill (§F), so `costs / quantity` is always well-defined whenever `costs` is known | percent, sign as above | Derived + stored | NULL **only** when `costs` is unknown (NULL); never silently treated as 0 |
-| `strategy_drawdown` | **Fail-closed: NULL/unknown in this contract version.** Per-trade percent returns cannot be truthfully aggregated into a strategy drawdown without an explicit capital, position-sizing, and compounding model — including treatment of overlapping open trades — and no such model is approved. No drawdown value is stored or displayed until a separately Gary-approved strategy-specific aggregation model defines the equity-curve convention | n/a (always NULL/unknown in v1) | Not stored; not derived in v1 | Always NULL/unknown until an aggregation model is approved |
+| `strategy_drawdown` | **Fail-closed: NULL/unknown in R6 v1.** Per-trade percent returns cannot be truthfully aggregated into a strategy drawdown without an explicit capital, position-sizing, and compounding model — including treatment of overlapping open trades — and no such model is approved. In R6 v1, the `JournalOutcome` domain/read model exposes `strategy_drawdown: float | None = None`; no calculation is performed; UI renders unknown / not available rather than zero; and no synthetic drawdown is inferred. The field is deliberately **not** persisted as a column in the proposed v5 `journal_outcomes` table; a future separately approved aggregation contract may define an additive migration or derived aggregate surface | n/a (always None/unknown in v1) | Not persisted in v5; domain/read model supplies `None` | Always NULL/unknown until an aggregation model is approved |
 | `outcome_confidence` | Categorical enum `confirmed` / `provisional` / `unknown`, computed by the deterministic mapping below | enum | Derived + stored with the outcome row | see mapping |
+
+`strategy_drawdown` implementation representation in R6 v1:
+- `JournalOutcome` domain/read model exposes: `strategy_drawdown: float | None`.
+- Runtime value: always `None` in R6 v1.
+- Calculation: no calculation is performed; no synthetic drawdown is inferred.
+- Presentation: UI must render unknown / not available rather than zero.
+- Persistence: deliberately **not** persisted in the proposed v5 `journal_outcomes` table (no DDL column).
+- Future evolution: a future separately Gary-approved aggregation contract may require a later additive migration or a derived aggregate surface. The implementation agent must not invent a drawdown column merely for symmetry.
 
 `outcome_confidence` deterministic mapping — evaluate these rules in order against the
 fill and exit provenance records; the first match wins:
@@ -535,6 +551,13 @@ values (`fill_price`, `quantity`, `exit_price`, `costs`, provenance fields). A s
 outcome can therefore be recomputed and byte-compared against the precise event range
 it consumed, without needing a mutation row-version column on `journal_trades`.
 
+`strategy_drawdown` persistence representation: `strategy_drawdown` is deliberately
+**not** stored as a column in `journal_outcomes` in proposed schema v5. In R6 v1, the
+domain/read model (`JournalOutcome`) exposes `strategy_drawdown: float | None = None`
+and UI renders unknown/not available. A future separately Gary-approved aggregation
+contract may introduce a later additive migration or derived aggregate view; no column
+is created in v5.
+
 ### J.2 Migration behavior
 
 - **v4 → v5:** additive only — `CREATE TABLE IF NOT EXISTS` for the three tables plus
@@ -663,21 +686,28 @@ All reads: no side effects.
 
 ## M. Fail-closed zero-strategy state
 
-Current fact [FACT]:
+Current evidence [FACT]:
 
 ```text
 APPROVED_ACTIONABLE_STRATEGIES == ()
 ```
 
-Therefore, under this contract:
+`APPROVED_ACTIONABLE_STRATEGIES == ()` in `tradex/alerts/eligibility.py` confirms that
+no production-approved actionable strategy exists anywhere in the repository today.
 
-- No executable Journal trade may be automatically (or manually) created today —
-  every create call fails closed at §B.5.
+Proposed executable Journal contract [PROPOSED]:
+
+- The future Journal gates against `APPROVED_PRODUCTION_STRATEGIES` (§B.2), which
+  initializes empty (`APPROVED_PRODUCTION_STRATEGIES = ()`) and contains no strategy
+  holding the `"journal_execution"` capability.
+- Therefore, no executable Journal trade may be automatically (or manually) created
+  upon introduction — every create call fails closed at §B.5.
 - Scanner rows are not trades.
 - CandidateSnapshot rows are not trades.
 - R5B shadow candidates and shadow evaluator outputs are not trades.
 - Heuristic scores (intraday/short/long scorers, coil, confluence) are not trades.
-- Research evaluator output is not a production strategy.
+- Research evaluator output is not a production strategy, and research outputs cannot
+  create production Journal records.
 - Legacy `signal_history` rows may not be backfilled as trades.
 - Legacy forward returns (`outcome_pct`) may not be represented as realized strategy
   returns.
@@ -706,12 +736,27 @@ Therefore, under this contract:
 
 | Concern | Likely future location |
 |---|---|
+| Neutral production strategy registry & capability models (§B.2) | `tradex/strategies/__init__.py`, `tradex/strategies/registry.py` |
+| Alert eligibility adapter / migration consuming `"automatic_alerts"` capability | `tradex/alerts/eligibility.py` |
 | Migration `_migrate_v4_to_v5` + fresh-DB schema | `tradex/tracker/store.py` (existing migration chain) |
 | Domain models (`JournalTrade`, `TradePlan`, `JournalEvent`, `JournalOutcome`, enums) | `tradex/journal/models.py` |
 | Persistence primitives | `tradex/journal/store.py` |
 | Service layer (§K operations) | `tradex/journal/service.py` |
 | Outcome calculations (§G) | `tradex/journal/outcomes.py` |
-| Tests | `tests/journal/test_journal_models.py`, `test_journal_service.py`, `test_journal_lifecycle.py`, `test_journal_outcomes.py`; `tests/tracker/test_schema_v5_migration.py` |
+| Tests | `tests/strategies/test_registry.py`, `tests/alerts/test_eligibility.py`, `tests/journal/test_journal_models.py`, `test_journal_service.py`, `test_journal_lifecycle.py`, `test_journal_outcomes.py`; `tests/tracker/test_schema_v5_migration.py` |
+
+Important boundaries for neutral-registry implementation:
+- Moving alert eligibility to consume the neutral registry must be strictly
+  behavior-preserving while the registry is empty.
+- It must NOT:
+  - grant any strategy capability;
+  - enable any automatic alert;
+  - alter alert thresholds;
+  - change alert cadence;
+  - change trading eligibility.
+- The broader R6 readiness review may later decide whether the neutral-registry
+  extraction is implemented inside one R6 PR or as a bounded prerequisite sub-slice.
+  This DATA-CONTRACT PR does not implement either option or make that rollout choice.
 
 Proposed acceptance criteria for the future R6 implementation (verification plan, not
 implemented here):
@@ -746,7 +791,10 @@ future contract amendments are:
 2. **Plan amendments:** unsupported in v1 (§E); a future amendment must fully specify
    the operation, transition/idempotency contract, and audit/version rules.
 3. **Strategy drawdown aggregation model:** requires a separately Gary-approved
-   capital/position-sizing/compounding convention before any value is computed.
+   capital/position-sizing/compounding convention before any value is computed or
+   persisted. In R6 v1, the `JournalOutcome` domain/read model exposes
+   `strategy_drawdown: float | None = None` (deliberately not stored as a column in
+   `journal_outcomes`), and UI renders unknown/not available.
 
 ---
 
