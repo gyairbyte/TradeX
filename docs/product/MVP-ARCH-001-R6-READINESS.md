@@ -24,7 +24,7 @@ This document defines the implementation-ready executable Journal contract for *
 2. **Single-Fill Execution Model:** R6 strictly models single-lot execution:
    $$\text{1 CandidateSnapshot} + \text{1 Strategy/Version} = \text{1 Immutable Plan} \le \text{1 Entry Fill} \le \text{1 Exit Fill}$$
    Partial fills, multi-leg scaling, scale-in, scale-out, pyramiding, and position re-entries are **explicitly out of scope** for R6.
-3. **Fail-Closed Strategy Authorization:** No Journal plan may be created, and no planned record may be filled, without verifying that the strategy is currently registered in `APPROVED_ACTIONABLE_STRATEGIES` with `evidence_state == "production_approved"`.
+3. **Fail-Closed Strategy Authorization:** No Journal plan may be created, and no planned record may be filled, without verifying that the strategy is currently registered in `APPROVED_ACTIONABLE_STRATEGIES`.
 4. **No Automated Brokerage Execution:** TradeX is not an automated brokerage execution system. R6 defines execution recording and provenance tracking (`manual_reported_actual`, `simulated`, `broker_confirmed`); `broker_confirmed` fails closed until real brokerage integration is authorized.
 5. **Readiness Only:** This specification does not authorize code implementation, schema migration, or strategy promotion.
 
@@ -117,6 +117,12 @@ The proposed `journal_entries` table links directly to `candidates.candidate_id`
 **Source:** `tradex/alerts/eligibility.py`
 
 ```python
+@dataclass(frozen=True)
+class ApprovedActionableStrategy:
+    strategy_id: str
+    strategy_version: str
+    description: str
+
 APPROVED_ACTIONABLE_STRATEGIES: tuple[ApprovedActionableStrategy, ...] = ()
 ```
 
@@ -157,12 +163,15 @@ When the primary Journal tab renders with zero approved strategies:
 
 ## C. Strategy Authorization & Deauthorization Boundary
 
-### C.1 Strategy Identity
+### C.1 Authoritative Strategy Authorization Source of Truth
 
-A strategy is identified by the composite tuple:
-$$(\text{strategy\_id}, \text{strategy\_version})$$
-- `strategy_id`: Non-empty alphanumeric/underscore string (e.g., `"swing_breakout_long"`).
-- `strategy_version`: Non-empty semantic version string (e.g., `"1.0.0"`).
+The single source of truth for strategy authorization in TradeX is **membership in `APPROVED_ACTIONABLE_STRATEGIES`**:
+
+$$\text{is\_authorized}(s\_id, s\_ver) \iff \exists \text{ entry } \in \text{APPROVED\_ACTIONABLE\_STRATEGIES where } \text{entry.strategy\_id} = s\_id \land \text{entry.strategy\_version} = s\_ver$$
+
+- `ApprovedActionableStrategy` dataclass contains: `strategy_id: str`, `strategy_version: str`, `description: str`.
+- When `create_journal_entry` is called, it verifies that `(strategy_id, strategy_version)` exists in `APPROVED_ACTIONABLE_STRATEGIES`.
+- The referenced `CandidateSnapshot` captures point-in-time market evidence. Any `CandidateEvaluation` records associated with the candidate (e.g. from exploratory evaluators) remain linked via `candidate_id` for audit, but `APPROVED_ACTIONABLE_STRATEGIES` is the sole gate for actionable strategy authorization.
 
 ### C.2 Two-Gate Exposure Authorization Model
 
@@ -170,21 +179,21 @@ To prevent unauthorized risk while preserving risk-reducing management of existi
 
 ```mermaid
 flowchart TD
-    A[Create Journal Plan Request] --> B{Gate 1: Strategy Approved?}
+    A[Create Journal Plan Request] --> B{Gate 1: Strategy in APPROVED_ACTIONABLE_STRATEGIES?}
     B -- Yes --> C[State: PLANNED]
     B -- No --> D[Reject: JournalAuthorizationError]
 
     C --> E[Record Fill Request]
-    E --> F{Gate 2: Strategy Still Approved?}
+    E --> F{Gate 2: Strategy STILL in APPROVED_ACTIONABLE_STRATEGIES?}
     F -- Yes --> G[State: OPEN]
-    F -- No --> H[Reject: JournalAuthorizationError<br/>Plan remains PLANNED or CANCELLED]
+    F -- No --> H[Reject: JournalAuthorizationError<br/>Plan remains PLANNED or can be CANCELLED]
 
     G --> I[Record Exit Request]
     I --> J[State: CLOSED<br/>Risk-reducing exit ALWAYS permitted]
 ```
 
-1. **Gate 1 (Plan Creation):** `create_journal_entry` checks that `(strategy_id, strategy_version)` is in `APPROVED_ACTIONABLE_STRATEGIES` with `evidence_state == "production_approved"`. If not, raises `JournalAuthorizationError`.
-2. **Gate 2 (Exposure Creation / Fill):** `record_fill` **rechecks** that `(strategy_id, strategy_version)` is in `APPROVED_ACTIONABLE_STRATEGIES`. If the strategy was deprecated or removed between plan creation and fill attempt:
+1. **Gate 1 (Plan Creation):** `create_journal_entry` checks that `(strategy_id, strategy_version)` is in `APPROVED_ACTIONABLE_STRATEGIES`. If not, raises `JournalAuthorizationError`.
+2. **Gate 2 (Exposure Creation / Fill):** `record_fill` **rechecks** that `(strategy_id, strategy_version)` is currently in `APPROVED_ACTIONABLE_STRATEGIES`. If the strategy was deprecated or removed between plan creation and fill attempt:
    - `record_fill` is **rejected** with `JournalAuthorizationError`.
    - The record remains in `planned` state and may subsequently transition to `cancelled` or `expired`.
 3. **Risk-Reducing Exit Gate (Open $\rightarrow$ Closed):** Deauthorization or deprecation of a strategy **never blocks** closing an already open position. `record_exit` transitions `open -> closed` regardless of whether the strategy is currently approved. The exit record captures `exit_reason = "strategy_deprecated"` if closed due to deauthorization.
@@ -207,32 +216,35 @@ journal_id TEXT PRIMARY KEY  -- Format: jrnl_<uuid4_hex> (e.g., jrnl_3f7b2c9a1d4
 
 UUID-derived identifiers ensure global uniqueness across distributed processes and prevent implicit ordering assumptions.
 
-### D.2 CandidateSnapshot Foreign Key
+### D.2 CandidateSnapshot Foreign Key and Derived Fields
 
 ```sql
 candidate_id TEXT NOT NULL REFERENCES candidates(candidate_id) ON DELETE RESTRICT
 ```
 
-Every Journal record must reference an existing, immutable `CandidateSnapshot`. This anchors the trade plan to the exact point-in-time evidence, evaluator envelope, and missing-data records that existed when the candidate was observed.
+1. **Candidate Linkage:** Every Journal record must reference an existing, immutable `CandidateSnapshot`. This anchors the trade plan to the exact point-in-time evidence, evaluator envelope, and missing-data records that existed when the candidate was observed.
+2. **Derived Symbol:** `symbol` is **not passed by the caller** to `create_journal_entry`. The service retrieves the referenced `CandidateSnapshot` and stores `journal_entries.symbol = candidate.symbol`. Caller-supplied symbol overrides are forbidden.
+3. **Derived Trading Date:** `trading_date` is derived from `plan_created_at` using the XNYS exchange calendar (`derive_trading_date(plan_created_at)`). If a plan is created on a weekend or market holiday, `trading_date` is `NULL`.
+4. **Timestamp Monotonicity:**
+   $$\text{candidates.decision\_timestamp} \le \text{plan\_created\_at} \le \text{fill\_timestamp} \le \text{exit\_timestamp}$$
 
-### D.3 Timestamp Semantics: Plan vs. Decision
-
-- `candidates.decision_timestamp`: UTC timestamp when the market observation was captured.
-- `journal_entries.plan_created_at`: UTC timestamp when the executable trade plan was generated.
-- Invariant: `plan_created_at >= candidates.decision_timestamp`.
-
-### D.4 Uniqueness and Single-Fill Invariant
+### D.3 Uniqueness, Replanning, and Single-Fill Invariant
 
 ```sql
 UNIQUE(candidate_id, strategy_id, strategy_version)
 ```
 
-**Single-Fill Rule:** For a given candidate observation and strategy version, exactly one plan and at most one execution lifecycle may exist.
+**Single-Fill Rule:** For a given candidate observation and strategy version, exactly one plan and at most one execution lifecycle may exist:
+$$\text{1 CandidateSnapshot} + \text{1 Strategy/Version} \implies \text{At most 1 Plan} \le \text{1 Fill} \le \text{1 Exit}$$
 
-**Idempotency & Conflict Handling:**
-- **Exact Replay:** Calling `create_journal_entry` with matching `candidate_id`, `strategy_id`, `strategy_version`, and matching material planned fields returns the existing `JournalEntry` without error.
-- **Material Divergence:** Calling `create_journal_entry` with matching `(candidate_id, strategy_id, strategy_version)` but conflicting planned prices or parameters raises `JournalConflictError`.
-- **Unsupported Multiple Fills:** Attempting to record a second fill on the same candidate/strategy raises `JournalUnsupportedError`.
+**Replanning Policy:**
+- If a plan is cancelled or expired, and subsequent market conditions warrant a new trade plan, the replacement plan **must reference a new `CandidateSnapshot`** (a new `candidate_id` capturing the new point-in-time observation).
+- The old `candidate_id` cannot be reused for a new plan under the same strategy/version. Attempting to recreate on the same tuple raises `JournalConflictError` or `JournalStateError`.
+
+**Idempotent Retries:**
+- Calling `create_journal_entry` with an existing `(candidate_id, strategy_id, strategy_version)` compares caller-supplied planned fields (`planned_entry`, `stop_price`, `target_price`, `expiration`, `invalidation_rule`).
+- If planned fields match, returns the existing `JournalEntry` without modifying timestamps or raising errors.
+- If planned fields conflict, raises `JournalConflictError`.
 
 ---
 
@@ -243,19 +255,19 @@ UNIQUE(candidate_id, strategy_id, strategy_version)
 | State | Type | Description |
 |---|---|---|
 | `planned` | Initial | Trade plan created with defined entry, stop, target, and expiration. No fill has occurred. |
-| `open` | Active | Entry fill recorded. Position is active in the market. |
-| `closed` | Terminal | Position has been completely exited. Realized return and costs are locked. |
-| `cancelled` | Terminal | Plan was cancelled **before any fill occurred**. |
-| `expired` | Terminal | Plan reached its expiration time **without receiving a fill**. |
+| `open` | Active | Entry fill recorded with explicit provenance. Position is active in the market. |
+| `closed` | Terminal | Position has been completely exited with explicit provenance. Realized return and costs are locked. |
+| `cancelled` | Terminal | Plan was cancelled **before any fill occurred**. Requires non-empty `cancel_reason`. |
+| `expired` | Terminal | Plan reached its expiration time **without receiving a fill**. Requires `expired_at >= expiration`. |
 
 ### E.2 State Transition Matrix
 
 ```mermaid
 stateDiagram-v2
-    [*] --> planned : create_journal_entry()
-    planned --> open : record_fill() [Rechecks Auth]
+    [*] --> planned : create_journal_entry() [Gate 1 Auth]
+    planned --> open : record_fill() [Gate 2 Auth Recheck]
     planned --> cancelled : record_cancellation() [Requires cancel_reason]
-    planned --> expired : record_expiration() [Requires expired_at]
+    planned --> expired : record_expiration() [Requires expired_at >= expiration]
     open --> closed : record_exit() [Requires exit_reason & exit_provenance]
 
     closed --> [*]
@@ -265,15 +277,15 @@ stateDiagram-v2
 
 | Source State | Target State | Triggering API | Required Input Fields | Forbidden Regressions / Notes |
 |---|---|---|---|---|
-| `[*]` | `planned` | `create_journal_entry` | `candidate_id`, `strategy_id`, `strategy_version`, `symbol`, `planned_entry`, `plan_created_at` | Strategy must be production-approved. Fill/exit fields must be NULL. |
-| `planned` | `open` | `record_fill` | `fill_price`, `fill_timestamp`, `fill_provenance` | Strategy must STILL be production-approved. Planned parameters become permanently locked. |
-| `planned` | `cancelled` | `record_cancellation` | `cancel_reason`, `cancelled_at` | Fill fields must remain NULL. Terminal state. |
-| `planned` | `expired` | `record_expiration` | `expired_at` | Fill fields must remain NULL. Terminal state. |
+| `[*]` | `planned` | `create_journal_entry` | `candidate_id`, `strategy_id`, `strategy_version`, `planned_entry` | Strategy must be in `APPROVED_ACTIONABLE_STRATEGIES`. Fill/exit/cancel/outcome fields must be NULL. |
+| `planned` | `open` | `record_fill` | `fill_price`, `fill_timestamp`, `fill_provenance` (and model ID/ver if simulated) | Strategy must STILL be approved. Planned parameters become permanently locked. |
+| `planned` | `cancelled` | `record_cancellation` | `cancel_reason`, `cancelled_at` | Fill/exit fields must remain NULL. Terminal state. |
+| `planned` | `expired` | `record_expiration` | `expired_at` (must be $\ge \text{plan.expiration}$) | Fill/exit fields must remain NULL. Terminal state. |
 | `open` | `closed` | `record_exit` | `exit_price`, `exit_timestamp`, `exit_reason`, `exit_provenance` | Risk-reducing; allowed even if strategy is deprecated. Terminal state. |
 
 ### E.3 Strictly Forbidden Transitions
 
-1. **`open -> cancelled` (FORBIDDEN):** Once an entry fill exists, an actual or simulated market position existed. Terminating an open position (whether due to manual intervention, invalidation rule, or strategy deprecation) must always transition `open -> closed` with the appropriate `exit_reason`.
+1. **`open -> cancelled` (FORBIDDEN):** Once an entry fill exists, a market position existed. Terminating an open position (whether due to manual intervention, invalidation rule, or strategy deprecation) must always transition `open -> closed` with the appropriate `exit_reason`.
 2. **`planned -> closed` (FORBIDDEN):** A trade cannot close without an entry fill.
 3. **`closed -> *`, `cancelled -> *`, `expired -> *` (FORBIDDEN):** Terminal states cannot transition to any other state.
 4. **`open -> planned`, `open -> expired` (FORBIDDEN):** Fills cannot be reversed; open positions close, they do not expire.
@@ -294,34 +306,37 @@ stateDiagram-v2
 
 ### F.2 No Plan Amendments in R6
 
-Planned parameters cannot be overwritten or amended after creation. If a strategy's thesis is invalidated prior to fill, the plan must be cancelled (`planned -> cancelled`) and a new plan created if warranted.
+Planned parameters cannot be overwritten or amended after creation. If a thesis changes before fill, the plan must be cancelled (`planned -> cancelled`).
 
 ---
 
 ## G. Actual Execution Contract & Provenance
 
-### G.1 Execution Fields
+### G.1 Execution Fields & Strict Provenance
 
 | Field | Type | Populated State | Validation Rules |
 |---|---|---|---|
 | `fill_price` | `REAL` | `open`, `closed` | Positive float (`> 0.0`). NULL when `planned`, `cancelled`, `expired`. |
 | `fill_timestamp` | `TEXT` | `open`, `closed` | ISO8601 UTC timestamp. Must satisfy `fill_timestamp >= plan_created_at`. |
-| `fill_provenance` | `TEXT` | `open`, `closed` | Must be non-NULL when fill exists. Value from provenance enum. |
+| `fill_provenance` | `TEXT` | `open`, `closed` | Required when fill exists (NO DEFAULT). Value from provenance enum. |
 | `exit_price` | `REAL` | `closed` | Positive float (`> 0.0`). NULL when `planned`, `open`, `cancelled`, `expired`. |
 | `exit_timestamp` | `TEXT` | `closed` | ISO8601 UTC timestamp. Must satisfy `exit_timestamp >= fill_timestamp`. |
-| `exit_reason` | `TEXT` | `closed` | Value from exit reason enum. NULL when not `closed`. |
-| `exit_provenance` | `TEXT` | `closed` | Must be non-NULL when exit exists. Value from provenance enum. |
+| `exit_reason` | `TEXT` | `closed` | Required when `closed`. Value from exit reason enum. NULL otherwise. |
+| `exit_provenance` | `TEXT` | `closed` | Required when exit exists (NO DEFAULT). Value from provenance enum. |
+| `execution_model_id` | `TEXT` | When `simulated` | Required if `fill_provenance == 'simulated'` or `exit_provenance == 'simulated'`. NULL otherwise. |
+| `execution_model_version` | `TEXT` | When `simulated` | Required if `fill_provenance == 'simulated'` or `exit_provenance == 'simulated'`. NULL otherwise. |
 
 ### G.2 Execution Provenance Taxonomy
 
 ```
 ExecutionProvenance:
   ├── manual_reported_actual  (User-entered actual trade execution)
-  ├── simulated               (Derived from market data via versioned simulation model)
+  ├── simulated               (Derived from market data via versioned execution model)
   └── broker_confirmed        (Confirmed via live brokerage API — FAILS CLOSED in R6)
 ```
 
-- **Truthful Default:** `fill_provenance` and `exit_provenance` are **NULL** when no fill/exit exists. When populated, they must reflect explicit provenance. They must **never** default silently to `"manual"`.
+- **No Silent Defaults:** Callers of `record_fill` and `record_exit` must explicitly provide `fill_provenance` and `exit_provenance`. Provenance never defaults to `"manual_reported_actual"`.
+- **Versioned Simulation Provenance:** If provenance is `"simulated"`, caller must explicitly supply `execution_model_id` and `execution_model_version`. Omission fails closed with `JournalValidationError`.
 - **Brokerage Boundary:** `broker_confirmed` is reserved for future brokerage integrations. Attempting to record `broker_confirmed` in R6 raises `JournalUnsupportedError`.
 
 ### G.3 Exit Reason Taxonomy
@@ -338,34 +353,31 @@ ExitReason:
 
 ### G.4 Simulated vs. Actual Execution Separation
 
-To prevent research-integrity contamination:
-1. **Explicit Tagging:** Every filled record carries explicit `fill_provenance` and `exit_provenance`.
+1. **Explicit Provenance:** Every filled record carries explicit `fill_provenance` and `exit_provenance`.
 2. **Visual Separation:** The UI displays clear visual badges distinguishing simulated executions from actual reported executions.
-3. **No Metric Contamination:** Summary metrics, expectancy calculations, and win-rate statistics **must never combine** simulated and actual reported executions into a single aggregate.
+3. **No Metric Mixing:** Summary metrics, expectancy calculations, and win-rate statistics **must never combine** simulated and actual reported executions into a single aggregate.
 
 ---
 
 ## H. Costs, Return, and Outcome Semantics
 
-### H.1 Long-Only Return Mathematics
+### H.1 Long-Only Return Mathematics (No Slippage Double-Counting)
 
-Realized entry and exit fill prices already incorporate execution-price slippage. Therefore, gross return is calculated directly from fill prices, and explicit fees/commissions are deducted to arrive at net return. **Slippage must never be subtracted again.**
+Realized entry and exit fill prices already incorporate execution-price slippage. Therefore, gross return is calculated directly from fill prices, and non-price explicit transaction costs (commissions, fees) are deducted to arrive at net return:
 
 $$\text{gross\_return\_pct} = \left(\frac{\text{exit\_price} - \text{fill\_price}}{\text{fill\_price}}\right) \times 100$$
 
-$$\text{explicit\_cost\_impact\_pct} = \left(\frac{\text{slippage\_and\_costs}}{\text{fill\_price}}\right) \times 100$$
+$$\text{explicit\_cost\_impact\_pct} = \left(\frac{\text{slippage\_and\_costs}}{\text{fill\_price}}\right) \times 100 \quad (\text{when } \text{slippage\_and\_costs is known})$$
 
 $$\text{net\_return} = \text{gross\_return\_pct} - \text{explicit\_cost\_impact\_pct}$$
 
-Where:
-- `slippage_and_costs`: Represents total explicit transaction fees and commissions in USD per share (positive value reduces net return). If a strategy model defines zero commissions, this value is `0.0`.
+- `slippage_and_costs`: Retained for architecture consistency, explicitly defined as **non-price explicit transaction costs per share in USD** (commissions, exchange/regulatory fees). If unknown, it is `NULL`, and `net_return` remains `NULL` (gross return remains computable from fill prices).
 - `net_return`: Stored percentage net return (e.g., `8.8557` represents $+8.8557\%$).
 
-### H.2 Slippage Derivation (Informational Audit)
+### H.2 Entry Slippage Derivation (Informational Audit Only)
 
-Execution slippage is tracked for execution quality audit but is not subtracted from fill-to-exit returns:
 $$\text{entry\_slippage} = \text{fill\_price} - \text{planned\_entry} \quad (\text{USD/share; } > 0 \text{ is unfavorable for long})$$
-$$\text{exit\_slippage} = \text{reference\_exit} - \text{exit\_price} \quad (\text{USD/share; } > 0 \text{ is unfavorable for long})$$
+Entry slippage is tracked for execution audit but is not subtracted from fill-to-exit returns.
 
 ### H.3 Concrete Numerical Proof: No Slippage Double-Counting
 
@@ -391,17 +403,18 @@ $$\text{strategy\_drawdown} = \left(\frac{\text{fill\_price} - \text{lowest\_low
 
 `outcome_confidence` strictly encodes **data quality and completeness**, completely decoupled from execution method:
 - `complete`: Entry fill, exit fill, explicit costs, and all intra-hold OHLCV bars for drawdown calculation were available.
-- `partial`: Entry and exit fills are recorded, but intra-hold price history was incomplete (e.g., `strategy_drawdown` is NULL).
-- `unknown`: Outcome calculation could not be fully verified against authoritative historical data.
+- `partial`: Entry and exit fills are recorded, but some outcome context is missing (e.g., `strategy_drawdown` or `slippage_and_costs` is `NULL`).
+- `unknown`: Default state for non-closed records, or when outcome calculation cannot be verified against historical data.
 
 ---
 
 ## I. Provider and Data Provenance
 
-1. **Candidate-Level Provenance:** Inherited through `candidate_id` foreign key referencing `candidate_evidence` (capturing provider, source reference, observation timestamp) and `candidate_missing_data`.
+1. **Candidate-Level Provenance:** Inherited through `candidate_id` foreign key referencing `candidate_evidence` and `candidate_missing_data`.
 2. **Execution-Level Provenance:**
    - `fill_provenance`: Source of entry fill (`manual_reported_actual`, `simulated`).
    - `exit_provenance`: Source of exit fill (`manual_reported_actual`, `simulated`).
+   - `execution_model_id` / `execution_model_version`: Persisted versioned simulation model when simulated.
    - `outcome_provider`: Provider string of historical market data used for exit resolution and drawdown computation (e.g., `"schwab"`, `"yahoo"`).
 3. **Preservation of Raw Provider Names:** Provider names are stored as raw strings without presentation formatting.
 
@@ -415,9 +428,12 @@ $$\text{strategy\_drawdown} = \left(\frac{\text{fill\_price} - \text{lowest\_low
 3. **Trading Date Derivation:** `trading_date` is derived from `plan_created_at` using the XNYS exchange calendar (`derive_trading_date()`). If a plan is created on a weekend or market holiday, `trading_date` is `NULL`.
 4. **Strict Monotonic Timestamp Invariant:**
    $$\text{candidates.decision\_timestamp} \le \text{plan\_created\_at} \le \text{fill\_timestamp} \le \text{exit\_timestamp}$$
-5. **Same-Bar / Same-OHLC Ambiguity Policy:**
-   - In simulated execution, if a single daily OHLC bar touches both the stop price and the target price, or if entry and stop are touched on the same bar without intraday sequence data, TradeX **must never assume the favorable/optimistic outcome**.
-   - If tick/minute sequence data is unavailable to establish exact intra-bar ordering, the simulation must mark the outcome as ambiguous (`outcome_confidence = "partial"`, `exit_reason = "stop_hit"` if conservative stop-first policy applies, or reject fill).
+5. **Fail-Closed Same-Bar Ambiguity Policy:**
+   - When simulating executions on daily or coarse OHLC data, if a single bar touches both stop and target price, or entry and stop on the same bar, and intraday sequence data is unavailable:
+   - TradeX **must not choose target-first**.
+   - TradeX **must not choose stop-first merely as an unstated heuristic**.
+   - TradeX **must not persist a definitive fill/exit** unless the versioned execution model (`execution_model_id:execution_model_version`) prospectively specifies that deterministic assumption.
+   - Otherwise, the simulation attempt **must fail closed / be marked unresolved** (`JournalUnsupportedError` or rejected simulation), without fabricating definitive Journal history.
 
 ---
 
@@ -427,68 +443,85 @@ $$\text{strategy\_drawdown} = \left(\frac{\text{fill\_price} - \text{lowest\_low
 
 ```sql
 CREATE TABLE IF NOT EXISTS journal_entries (
-    journal_id          TEXT    PRIMARY KEY,
-    candidate_id        TEXT    NOT NULL REFERENCES candidates(candidate_id) ON DELETE RESTRICT,
-    strategy_id         TEXT    NOT NULL,
-    strategy_version    TEXT    NOT NULL,
-    symbol              TEXT    NOT NULL,
-    trading_date        TEXT,
+    journal_id                  TEXT    PRIMARY KEY,
+    candidate_id                TEXT    NOT NULL REFERENCES candidates(candidate_id) ON DELETE RESTRICT,
+    strategy_id                 TEXT    NOT NULL,
+    strategy_version            TEXT    NOT NULL,
+    symbol                      TEXT    NOT NULL,
+    trading_date                TEXT,
 
     -- Lifecycle State
-    state               TEXT    NOT NULL DEFAULT 'planned'
-                        CHECK (state IN ('planned', 'open', 'closed', 'cancelled', 'expired')),
+    state                       TEXT    NOT NULL DEFAULT 'planned'
+                                CHECK (state IN ('planned', 'open', 'closed', 'cancelled', 'expired')),
 
     -- Planned Parameters (Long-Only)
-    planned_entry       REAL    NOT NULL CHECK (planned_entry > 0.0),
-    stop_price          REAL    CHECK (stop_price IS NULL OR (stop_price > 0.0 AND stop_price < planned_entry)),
-    target_price        REAL    CHECK (target_price IS NULL OR (target_price > 0.0 AND target_price > planned_entry)),
-    expiration          TEXT,
-    invalidation_rule   TEXT,
+    planned_entry               REAL    NOT NULL CHECK (planned_entry > 0.0),
+    stop_price                  REAL    CHECK (stop_price IS NULL OR (stop_price > 0.0 AND stop_price < planned_entry)),
+    target_price                REAL    CHECK (target_price IS NULL OR (target_price > 0.0 AND target_price > planned_entry)),
+    expiration                  TEXT,
+    invalidation_rule           TEXT,
 
     -- Execution Fields
-    fill_price          REAL    CHECK (fill_price IS NULL OR fill_price > 0.0),
-    fill_timestamp      TEXT,
-    fill_provenance     TEXT    CHECK (fill_provenance IS NULL OR fill_provenance IN ('manual_reported_actual', 'simulated', 'broker_confirmed')),
-    exit_price          REAL    CHECK (exit_price IS NULL OR exit_price > 0.0),
-    exit_timestamp      TEXT,
-    exit_reason         TEXT    CHECK (exit_reason IS NULL OR exit_reason IN ('stop_hit', 'target_hit', 'expiration', 'invalidation', 'manual', 'strategy_deprecated')),
-    exit_provenance     TEXT    CHECK (exit_provenance IS NULL OR exit_provenance IN ('manual_reported_actual', 'simulated', 'broker_confirmed')),
+    fill_price                  REAL    CHECK (fill_price IS NULL OR fill_price > 0.0),
+    fill_timestamp              TEXT,
+    fill_provenance             TEXT    CHECK (fill_provenance IS NULL OR fill_provenance IN ('manual_reported_actual', 'simulated', 'broker_confirmed')),
+    exit_price                  REAL    CHECK (exit_price IS NULL OR exit_price > 0.0),
+    exit_timestamp              TEXT,
+    exit_reason                 TEXT    CHECK (exit_reason IS NULL OR exit_reason IN ('stop_hit', 'target_hit', 'expiration', 'invalidation', 'manual', 'strategy_deprecated')),
+    exit_provenance             TEXT    CHECK (exit_provenance IS NULL OR exit_provenance IN ('manual_reported_actual', 'simulated', 'broker_confirmed')),
+    execution_model_id          TEXT,
+    execution_model_version      TEXT,
 
     -- Outcome Metrics
-    slippage_and_costs  REAL    CHECK (slippage_and_costs IS NULL OR slippage_and_costs >= 0.0),
-    net_return          REAL,
-    strategy_drawdown   REAL    CHECK (strategy_drawdown IS NULL OR strategy_drawdown >= 0.0),
-    outcome_confidence  TEXT    NOT NULL DEFAULT 'unknown'
-                        CHECK (outcome_confidence IN ('complete', 'partial', 'unknown')),
-    outcome_provider    TEXT,
+    slippage_and_costs          REAL    CHECK (slippage_and_costs IS NULL OR slippage_and_costs >= 0.0),
+    net_return                  REAL,
+    strategy_drawdown           REAL    CHECK (strategy_drawdown IS NULL OR strategy_drawdown >= 0.0),
+    outcome_confidence          TEXT    NOT NULL DEFAULT 'unknown'
+                                CHECK (outcome_confidence IN ('complete', 'partial', 'unknown')),
+    outcome_provider            TEXT,
 
-    -- Audit Timestamps
-    plan_created_at     TEXT    NOT NULL,
-    cancelled_at        TEXT,
-    expired_at          TEXT,
-    updated_at          TEXT    NOT NULL,
+    -- Cancellation & Timestamps
+    cancel_reason               TEXT,
+    plan_created_at             TEXT    NOT NULL,
+    cancelled_at                TEXT,
+    expired_at                  TEXT,
+    updated_at                  TEXT    NOT NULL,
 
     -- State & Field Consistency CHECK Constraints
     CHECK (
         (state = 'planned' AND fill_price IS NULL AND fill_timestamp IS NULL AND fill_provenance IS NULL
                            AND exit_price IS NULL AND exit_timestamp IS NULL AND exit_reason IS NULL AND exit_provenance IS NULL
-                           AND cancelled_at IS NULL AND expired_at IS NULL)
+                           AND execution_model_id IS NULL AND execution_model_version IS NULL
+                           AND slippage_and_costs IS NULL AND net_return IS NULL AND strategy_drawdown IS NULL AND outcome_provider IS NULL AND outcome_confidence = 'unknown'
+                           AND cancel_reason IS NULL AND cancelled_at IS NULL AND expired_at IS NULL)
         OR
         (state = 'open' AND fill_price IS NOT NULL AND fill_timestamp IS NOT NULL AND fill_provenance IS NOT NULL
                         AND exit_price IS NULL AND exit_timestamp IS NULL AND exit_reason IS NULL AND exit_provenance IS NULL
-                        AND cancelled_at IS NULL AND expired_at IS NULL)
+                        AND slippage_and_costs IS NULL AND net_return IS NULL AND strategy_drawdown IS NULL AND outcome_provider IS NULL AND outcome_confidence = 'unknown'
+                        AND cancel_reason IS NULL AND cancelled_at IS NULL AND expired_at IS NULL)
         OR
         (state = 'closed' AND fill_price IS NOT NULL AND fill_timestamp IS NOT NULL AND fill_provenance IS NOT NULL
                           AND exit_price IS NOT NULL AND exit_timestamp IS NOT NULL AND exit_reason IS NOT NULL AND exit_provenance IS NOT NULL
-                          AND cancelled_at IS NULL AND expired_at IS NULL)
+                          AND cancel_reason IS NULL AND cancelled_at IS NULL AND expired_at IS NULL)
         OR
         (state = 'cancelled' AND fill_price IS NULL AND fill_timestamp IS NULL AND fill_provenance IS NULL
                              AND exit_price IS NULL AND exit_timestamp IS NULL AND exit_reason IS NULL AND exit_provenance IS NULL
-                             AND cancelled_at IS NOT NULL AND expired_at IS NULL)
+                             AND execution_model_id IS NULL AND execution_model_version IS NULL
+                             AND slippage_and_costs IS NULL AND net_return IS NULL AND strategy_drawdown IS NULL AND outcome_provider IS NULL AND outcome_confidence = 'unknown'
+                             AND cancel_reason IS NOT NULL AND length(trim(cancel_reason)) > 0 AND cancelled_at IS NOT NULL AND expired_at IS NULL)
         OR
         (state = 'expired' AND fill_price IS NULL AND fill_timestamp IS NULL AND fill_provenance IS NULL
                            AND exit_price IS NULL AND exit_timestamp IS NULL AND exit_reason IS NULL AND exit_provenance IS NULL
-                           AND cancelled_at IS NULL AND expired_at IS NOT NULL)
+                           AND execution_model_id IS NULL AND execution_model_version IS NULL
+                           AND slippage_and_costs IS NULL AND net_return IS NULL AND strategy_drawdown IS NULL AND outcome_provider IS NULL AND outcome_confidence = 'unknown'
+                           AND cancel_reason IS NULL AND cancelled_at IS NULL AND expired_at IS NOT NULL)
+    ),
+
+    -- Simulation Provenance Consistency Constraint
+    CHECK (
+        ((fill_provenance = 'simulated' OR exit_provenance = 'simulated') AND execution_model_id IS NOT NULL AND execution_model_version IS NOT NULL)
+        OR
+        ((fill_provenance IS NULL OR fill_provenance != 'simulated') AND (exit_provenance IS NULL OR exit_provenance != 'simulated') AND execution_model_id IS NULL AND execution_model_version IS NULL)
     ),
 
     UNIQUE (candidate_id, strategy_id, strategy_version)
@@ -516,7 +549,6 @@ def _migrate_v4_to_v5(conn: sqlite3.Connection) -> None:
 
 ### K.3 Forward-Compatibility Rollback Architecture
 
-- **The Problem:** Naive code reversion fails because pre-R6 Schema v4 code strictly rejects `user_version > 4`.
 - **The Rollback Contract:** An authorized rollback of R6 is a **forward-compatible deployment**:
   1. Rollback code accepts `PRAGMA user_version == 5`.
   2. The `journal_entries` table remains dormant and untouched in SQLite (no records deleted, no DDL dropped).
@@ -548,7 +580,8 @@ def create_journal_entry(
     """Creates a new trade plan in 'planned' state.
 
     Authorization: Gate 1 - Validates (strategy_id, strategy_version) against APPROVED_ACTIONABLE_STRATEGIES.
-    Idempotency: Replaying identical parameters returns existing JournalEntry.
+    Derived Fields: Derives symbol from referenced CandidateSnapshot.symbol. Derives trading_date from plan_created_at.
+    Idempotency: Replaying identical parameters returns existing JournalEntry without timestamp conflict.
     Conflict: Conflicting parameters raise JournalConflictError.
     """
 
@@ -557,7 +590,9 @@ def record_fill(
     journal_id: str,
     fill_price: float,
     fill_timestamp: datetime,
-    fill_provenance: str = "manual_reported_actual",
+    fill_provenance: str,  # REQUIRED: No silent default
+    execution_model_id: str | None = None,  # Required if simulated
+    execution_model_version: str | None = None,  # Required if simulated
     db_path: str | Path | None = None,
     settings: TradeXSettings | None = None,
 ) -> JournalEntry:
@@ -570,7 +605,7 @@ def record_fill(
 def record_cancellation(
     *,
     journal_id: str,
-    cancel_reason: str,
+    cancel_reason: str,  # REQUIRED: Non-empty string
     cancelled_at: datetime | None = None,
     db_path: str | Path | None = None,
     settings: TradeXSettings | None = None,
@@ -589,7 +624,8 @@ def record_expiration(
 ) -> JournalEntry:
     """Expires an unfilled trade plan, transitioning 'planned' -> 'expired'.
 
-    Preconditions: State must be 'planned'.
+    Preconditions: State must be 'planned'. plan.expiration must be non-NULL.
+    Validation: expired_at (or current UTC time if omitted) must be >= plan.expiration.
     """
 
 def record_exit(
@@ -597,11 +633,13 @@ def record_exit(
     journal_id: str,
     exit_price: float,
     exit_timestamp: datetime,
-    exit_reason: str,
-    exit_provenance: str = "manual_reported_actual",
-    slippage_and_costs: float | None = 0.0,
+    exit_reason: str,  # REQUIRED
+    exit_provenance: str,  # REQUIRED: No silent default
+    execution_model_id: str | None = None,  # Required if simulated
+    execution_model_version: str | None = None,  # Required if simulated
+    slippage_and_costs: float | None = None,  # Defaults to None (unknown)
     strategy_drawdown: float | None = None,
-    outcome_confidence: str = "complete",
+    outcome_confidence: str = "unknown",  # Defaults to unknown
     outcome_provider: str | None = None,
     db_path: str | Path | None = None,
     settings: TradeXSettings | None = None,
@@ -664,6 +702,8 @@ class JournalEntry:
     exit_timestamp: datetime | None
     exit_reason: str | None
     exit_provenance: str | None
+    execution_model_id: str | None
+    execution_model_version: str | None
 
     # Outcome metrics
     slippage_and_costs: float | None
@@ -672,7 +712,8 @@ class JournalEntry:
     outcome_confidence: str
     outcome_provider: str | None
 
-    # Timestamps
+    # Cancellation & Timestamps
+    cancel_reason: str | None
     plan_created_at: datetime
     cancelled_at: datetime | None
     expired_at: datetime | None
@@ -698,7 +739,7 @@ class JournalValidationError(JournalError):
     """Raised when field validation fails."""
 
 class JournalUnsupportedError(JournalError):
-    """Raised when an unsupported operation (e.g. partial fill, short trade) is attempted."""
+    """Raised when an unsupported operation (e.g. partial fill, short trade, ambiguous simulation) is attempted."""
 ```
 
 ---
@@ -712,7 +753,7 @@ class JournalUnsupportedError(JournalError):
    - `manual_reported_actual`: Neutral/Slate badge (`Reported Actual`).
    - `simulated`: Purple badge (`Simulated`).
 4. **Historical & Deprecated Strategy Handling:** Entries for deprecated strategies remain visible in the table with a secondary tag (`Deprecated Strategy`).
-5. **Detail View Drill-Down:** Clicking a row expands the full execution card, including links to the upstream `CandidateSnapshot`, missing data audit, and fill-to-exit metrics.
+5. **Detail View Drill-Down:** Clicking a row expands the full execution card, including links to the upstream `CandidateSnapshot`, cancellation reasons (if cancelled), execution model version (if simulated), missing data audit, and fill-to-exit metrics.
 6. **Strict Exclusion of Legacy Scores:** The Journal table never renders 0–100 heuristic scanner scores or unvalidated rank numbers.
 
 ---
@@ -734,13 +775,15 @@ class JournalUnsupportedError(JournalError):
 3. **Strategy Deauthorized After Fill:** `record_exit` succeeds; risk-reducing close is never blocked.
 4. **Historical Queries for Deauthorized Strategies:** `get_journal_entries()` returns full historical records without error.
 5. **Open $\rightarrow$ Cancelled Attempt:** Rejected with `JournalStateError`; open positions must close via `record_exit`.
-6. **Partial Fills / Scaling Attempt:** Rejected with `JournalUnsupportedError`.
-7. **Short-Side Trade Attempt:** Rejected with `JournalUnsupportedError`.
-8. **Same-Bar Ambiguous Simulation:** Marked with `outcome_confidence = "partial"`; never assumes optimistic outcome.
-9. **Missing Candidate Foreign Key:** Insertion fails foreign key constraint; raises `JournalValidationError`.
-10. **Timestamp Sequence Inversion:** `fill_timestamp < plan_created_at` or `exit_timestamp < fill_timestamp` raises `JournalValidationError`.
-11. **Migration Failure:** `store.init()` transaction rolls back atomically; application halts startup with `StoreError`.
-12. **Rollback Compatibility:** Rollback build accepts Schema v5 and ignores dormant `journal_entries` table.
+6. **Early Expiration Attempt:** Rejected with `JournalValidationError` if `expired_at < plan.expiration`.
+7. **Missing Cancel Reason:** `record_cancellation` with empty reason is rejected with `JournalValidationError`.
+8. **Partial Fills / Scaling Attempt:** Rejected with `JournalUnsupportedError`.
+9. **Short-Side Trade Attempt:** Rejected with `JournalUnsupportedError`.
+10. **Same-Bar Ambiguous Simulation:** Fails closed / marked unsupported; never assumes optimistic target hit.
+11. **Missing Candidate Foreign Key:** Insertion fails foreign key constraint; raises `JournalValidationError`.
+12. **Timestamp Sequence Inversion:** `fill_timestamp < plan_created_at` or `exit_timestamp < fill_timestamp` raises `JournalValidationError`.
+13. **Migration Failure:** `store.init()` transaction rolls back atomically; application halts startup with `StoreError`.
+14. **Rollback Compatibility:** Rollback build accepts Schema v5 and ignores dormant `journal_entries` table.
 
 ---
 
@@ -799,11 +842,11 @@ flowchart LR
 - `tradex/ui/tabs/research_lab.py`: Legacy Scanner Telemetry section added.
 - `tradex/ui/evidence.py`: Evidence notice key `"journal"` added.
 
-### Future Implementation Acceptance Criteria (23 Invariants)
+### Future Implementation Acceptance Criteria (25 Invariants)
 
 1. `_SCHEMA_VERSION` advances to 5 with additive, idempotent migration.
 2. All legacy tables (`signal_history`, `scan_runs`, `scan_sessions`, `scan_observations`, `candidates`) remain 100% preserved.
-3. `journal_entries` table created with complete CHECK constraints and 6 indexes.
+3. `journal_entries` table created with complete CHECK constraints, simulation provenance constraints, and 6 indexes.
 4. `create_journal_entry` enforces Gate 1 strategy authorization against `APPROVED_ACTIONABLE_STRATEGIES`.
 5. With empty `APPROVED_ACTIONABLE_STRATEGIES`, all Journal plan creations are rejected.
 6. `record_fill` enforces Gate 2 strategy authorization recheck; fails closed if strategy deauthorized.
@@ -812,18 +855,20 @@ flowchart LR
 9. Lifecycle state transitions strictly enforced (`planned -> open -> closed`, `planned -> cancelled`, `planned -> expired`).
 10. `open -> cancelled` is strictly rejected with `JournalStateError`.
 11. `cancelled` and `expired` records cannot contain fill data or fill provenance.
-12. `fill_provenance` and `exit_provenance` are NULL until fill/exit exists.
-13. `broker_confirmed` provenance is rejected with `JournalUnsupportedError` in R6.
-14. Net return calculation follows exact formula without double-counting slippage.
-15. `outcome_confidence` encodes data completeness only (`complete`, `partial`, `unknown`).
-16. Uniqueness `UNIQUE(candidate_id, strategy_id, strategy_version)` enforced with exact-replay idempotency.
-17. Second distinct execution attempt on same tuple raises `JournalUnsupportedError`.
-18. Partial fill and scaling attempts raise `JournalUnsupportedError`.
-19. Short-side execution attempts raise `JournalUnsupportedError`.
-20. Same-bar simulation ambiguity marks outcome as `partial` and never assumes optimistic target hit.
-21. Migration failure rolls back atomically and halts startup with `StoreError`.
-22. Rollback build accepts Schema v5 and keeps `journal_entries` dormant.
-23. `APPROVED_ACTIONABLE_STRATEGIES` remains empty; production trading behavior unchanged.
+12. `fill_provenance` and `exit_provenance` are required without silent defaults, and remain NULL until fill/exit exists.
+13. `simulated` provenance requires non-NULL `execution_model_id` and `execution_model_version`.
+14. `broker_confirmed` provenance is rejected with `JournalUnsupportedError` in R6.
+15. `cancel_reason` is required and persisted for `cancelled` state; must be NULL for all other states.
+16. `record_expiration` validates that `expired_at >= plan.expiration`; early expiration is rejected.
+17. Outcome fields (`net_return`, `slippage_and_costs`, `strategy_drawdown`, `outcome_provider`) are NULL and `outcome_confidence = 'unknown'` for non-closed states.
+18. Net return calculation follows exact formula without double-counting slippage; returns NULL if explicit costs are unknown.
+19. `outcome_confidence` encodes data completeness only (`complete`, `partial`, `unknown`).
+20. Uniqueness `UNIQUE(candidate_id, strategy_id, strategy_version)` enforced with exact-replay idempotency.
+21. Second distinct execution attempt on same tuple raises `JournalUnsupportedError`; replanning requires a new `CandidateSnapshot`.
+22. Partial fill, scaling, and short-side execution attempts raise `JournalUnsupportedError`.
+23. Same-bar simulation ambiguity fails closed and never assumes optimistic target hit without an explicit versioned model rule.
+24. Migration failure rolls back atomically and halts startup with `StoreError`.
+25. Rollback build accepts Schema v5 and keeps `journal_entries` dormant; `APPROVED_ACTIONABLE_STRATEGIES` remains empty.
 
 ---
 
