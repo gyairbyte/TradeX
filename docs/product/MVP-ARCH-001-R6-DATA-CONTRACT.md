@@ -134,14 +134,45 @@ Everything below this line is **[PROPOSED]** R6 design unless explicitly marked 
   recognizes. Free-text names, evaluator ids, heuristic scorer names, and saved weight
   profiles are **not** strategy identities.
 
-### B.2 Registry lookup
+### B.2 Registry: one neutral production-strategy authorization contract
 
-- Authorization is resolved against the same fail-closed registry pattern already used
-  by alerts: an exact `(strategy_id, strategy_version)` membership check against
-  `APPROVED_ACTIONABLE_STRATEGIES` (or an R6-scoped registry of identical shape and
-  governance, if a separate journal registry is later approved — a material design
-  decision recorded in §R). The registry remains code-reviewed, versioned, and
-  Gary-approved; it is never database-editable or UI-editable.
+`APPROVED_ACTIONABLE_STRATEGIES` in `tradex/alerts/eligibility.py` is, by its own
+definition, the registry of strategies authorized for **automatic external alert
+delivery** [FACT]. The Journal must not silently inherit alert-delivery authorization
+as its system of record. This contract therefore recommends **one** central, neutral
+production-strategy registry as the future system of record for all production
+authorization decisions:
+
+- **Location:** a new domain module, `tradex/strategies/registry.py` (no dependency on
+  alerts or UI).
+- **Shape (capability model):**
+
+  ```python
+  @dataclass(frozen=True, slots=True)
+  class ApprovedProductionStrategy:
+      strategy_id: str
+      strategy_version: str
+      description: str
+      capabilities: frozenset[str]  # subset of {"journal_execution", "automatic_alerts"}
+
+  APPROVED_PRODUCTION_STRATEGIES: tuple[ApprovedProductionStrategy, ...] = ()
+  ```
+
+- **Lookup:** exact `(strategy_id, strategy_version)` membership **and** the required
+  capability for the consuming surface: the Journal requires `"journal_execution"`;
+  automatic alerts require `"automatic_alerts"`. A strategy may hold either or both
+  capabilities; each grant is an explicit Gary-approved registry entry.
+- **Alert consumption:** `check_automatic_alert_eligibility()` migrates to consume the
+  central registry's `"automatic_alerts"` capability. With the registry empty this is
+  behavior-preserving (everything remains fail-closed); the migration is part of the
+  future R6 implementation, not this PR, and `APPROVED_ACTIONABLE_STRATEGIES == ()`
+  is unchanged here.
+- **Governance:** the registry is code-reviewed, versioned, and Gary-approved; it is
+  never database-editable or UI-editable. It starts — and stays — empty until a
+  separately Gary-approved strategy promotion PR.
+
+This is the single recommended contract; registry choice is **not** left as an
+implementation decision.
 
 ### B.3 Authorization outcomes
 
@@ -239,8 +270,12 @@ until a separately Gary-approved strategy promotion PR adds a registry entry.
   `invalidated`).
 - A second, divergent fill on an `open` record (conflicting fills unsupported).
 - Rewriting plan fields (`planned_entry`, `stop_price`, `target_price`, `expiration`,
-  `invalidation_rule`) after `open` — plan history is immutable once execution begins.
-  Pre-fill amendments are recorded as append-only events (§J.3), never in-place edits.
+  `invalidation_rule`) at **any** point after creation — plan fields are immutable
+  from creation (§E). There is no plan-amendment operation in this contract version:
+  a changed plan means the old `planned` record is cancelled
+  (`cancel_reason='superseded_by_new_plan'`) and a new executable decision is created
+  against a new point-in-time CandidateSnapshot reflecting the evidence behind the
+  new plan.
 - Any lifecycle event whose timestamp precedes the prior event's timestamp
   (out-of-order events rejected; §I.5 covers same-timestamp ties).
 
@@ -257,12 +292,21 @@ created under it, and that check runs at creation.
 
 | Field | Type / units | DB-nullable | Validation | Point-in-time timestamp | Mutability |
 |---|---|---|---|---|---|
-| `planned_entry` | REAL, USD/share | NOT NULL | finite, > 0 | `plan_created_at` | Immutable after fill; pre-fill amendment = append-only event |
-| `stop_price` | REAL, USD/share | NULL | finite, > 0; for long-only plans `< planned_entry` when both present | `plan_created_at` (or amendment event time) | Same as above |
-| `target_price` | REAL, USD/share | NULL | finite, > 0; for long-only plans `> planned_entry` when both present | `plan_created_at` (or amendment event time) | Same as above |
-| `expiration` | TEXT, UTC ISO-8601 | NULL | timezone-aware; > `plan_created_at` | `plan_created_at` | Same as above |
-| `invalidation_rule` | TEXT (structured JSON: `{"rule_id": str, "rule_version": str, "params": {...}}`) | NULL | non-empty `rule_id`/`rule_version` when present; params JSON-serializable | `plan_created_at` | Same as above |
+| `planned_entry` | REAL, USD/share | NOT NULL | finite, > 0 | `plan_created_at` | Immutable from creation |
+| `stop_price` | REAL, USD/share | NULL | finite, > 0; for long-only plans `< planned_entry` when both present | `plan_created_at` | Immutable from creation |
+| `target_price` | REAL, USD/share | NULL | finite, > 0; for long-only plans `> planned_entry` when both present | `plan_created_at` | Immutable from creation |
+| `expiration` | TEXT, UTC ISO-8601 | NULL | timezone-aware; > `plan_created_at` | `plan_created_at` | Immutable from creation |
+| `invalidation_rule` | TEXT (structured JSON: `{"rule_id": str, "rule_version": str, "params": {...}}`) | NULL | non-empty `rule_id`/`rule_version` when present; params JSON-serializable | `plan_created_at` | Immutable from creation |
 | `plan_created_at` | TEXT, UTC ISO-8601 | NOT NULL | timezone-aware; ≥ `decision_timestamp` | self | Immutable |
+
+Plan amendment: **not supported** in this contract version. All plan fields are
+immutable from record creation, not merely from fill. To change a plan, cancel the
+`planned` record (`cancel_reason='superseded_by_new_plan'`) and create a new Journal
+decision against a new PIT CandidateSnapshot. This keeps every plan a point-in-time
+artifact with a single audit trail and removes any amendment/versioning semantics
+from v1. A future contract amendment may introduce plan amendments, but must then
+fully specify the amendment operation, its transition/idempotency contract, and its
+audit/version rules.
 
 Long/short direction: this contract covers the approved long-only product scope; a
 `side TEXT NOT NULL CHECK (side IN ('long'))` column keeps the constraint explicit and
@@ -289,6 +333,7 @@ Every execution observation carries an explicit `execution_provenance`:
 | Field | Type / units | Required when | Validation |
 |---|---|---|---|
 | `fill_price` | REAL, USD/share | state ≥ `open` | finite, > 0 |
+| `quantity` | REAL, shares | state ≥ `open` (**mandatory at fill**) | finite, > 0 |
 | `fill_timestamp` | TEXT UTC ISO-8601 | state ≥ `open` | aware; ≥ `plan_created_at`; ≤ `expiration` when set |
 | `fill_provenance` | TEXT enum above + provider + observer | with fill | provider preserved verbatim or `'unknown'` |
 | `exit_price` | REAL, USD/share | state = `closed` | finite, > 0 |
@@ -319,14 +364,25 @@ from persisted fields — never from data unavailable at the time of the events 
 | `entry_slippage` | `fill_price - planned_entry` | USD/share; positive = worse (paid more) for long entries | Derived, then stored on outcome row with computation audit | NULL if `planned_entry` or fill absent |
 | `costs` | Explicit per-trade costs (commission/fees), caller-supplied observation | USD, ≥ 0 | Stored input (not inferred) | NULL = unknown; **never** defaulted to 0 silently — a NULL cost makes `net_return` NULL |
 | `gross_return_pct` | `((exit_price - fill_price) / fill_price) * 100` | percent; positive = gain (long) | Derived + stored | NULL unless closed |
-| `net_return_pct` | `((exit_price - fill_price - costs_per_share) / fill_price) * 100` where `costs_per_share = costs / quantity` if quantity is recorded, else NULL | percent, sign as above | Derived + stored | NULL if `costs` or `quantity` unknown |
-| `strategy_drawdown` | Reserved: per-strategy running drawdown of cumulative `net_return_pct` across that strategy's closed Journal records, computed at read time over closed records ordered by `exit_timestamp` | percent, ≤ 0 by convention | Derived at read time (not stored) | Undefined until ≥ 1 closed record with non-NULL net return |
-| `outcome_confidence` | Categorical enum `confirmed` / `provisional` / `unknown` describing the evidential quality of the outcome (e.g. manual observation vs simulated), derived from fill/exit provenance | enum | Derived + stored with the outcome row | `unknown` when any input provenance is `'unknown'` |
+| `net_return_pct` | `((exit_price - fill_price - costs / quantity) / fill_price) * 100`. `quantity` is mandatory at fill (§F), so `costs / quantity` is always well-defined whenever `costs` is known | percent, sign as above | Derived + stored | NULL **only** when `costs` is unknown (NULL); never silently treated as 0 |
+| `strategy_drawdown` | **Fail-closed: NULL/unknown in this contract version.** Per-trade percent returns cannot be truthfully aggregated into a strategy drawdown without an explicit capital, position-sizing, and compounding model — including treatment of overlapping open trades — and no such model is approved. No drawdown value is stored or displayed until a separately Gary-approved strategy-specific aggregation model defines the equity-curve convention | n/a (always NULL/unknown in v1) | Not stored; not derived in v1 | Always NULL/unknown until an aggregation model is approved |
+| `outcome_confidence` | Categorical enum `confirmed` / `provisional` / `unknown`, computed by the deterministic mapping below | enum | Derived + stored with the outcome row | see mapping |
+
+`outcome_confidence` deterministic mapping — evaluate these rules in order against the
+fill and exit provenance records; the first match wins:
+
+1. If either provenance record is missing, has a missing/empty `execution_provenance`,
+   or has `provider == 'unknown'` → `unknown`.
+2. If both fill and exit have `execution_provenance == 'broker_confirmed'` (only
+   possible under a future separately approved brokerage integration, §F) →
+   `confirmed`.
+3. Otherwise (any complete combination of `manual` / `simulated`, including mixed with
+   `broker_confirmed`) → `provisional`.
 
 Recomputation: stored derived values are recomputed only via the explicit
 `recompute_outcomes` operation (§K), which writes a new outcome row version with a
-`computed_at` audit timestamp and the inputs' row version — never an in-place silent
-update. Legacy `signal_history.outcome_pct` values are **never** represented as
+`computed_at` audit timestamp, the `source_event_seq` it consumed, and a
+deterministic `inputs_hash` (§J.1) — never an in-place silent update. Legacy `signal_history.outcome_pct` values are **never** represented as
 realized strategy returns.
 
 ---
@@ -342,7 +398,7 @@ Minimum persisted provenance, per artifact:
 | Planned prices | `plan_created_at`, plan source (`manual` / rule id), data provider for any price references used, verbatim or `'unknown'` |
 | Fill observation | `execution_provenance` enum, `provider` (verbatim or `'unknown'`), `observed_at`, observer identity |
 | Exit observation | same as fill observation |
-| Outcome calculation | formula/version identifier, `computed_at`, input row versions, provider fields carried through from fill/exit |
+| Outcome calculation | `computation_version` (formula identifier), `computed_at`, `source_event_seq` (highest lifecycle event consumed), deterministic `inputs_hash`, provider fields carried through from fill/exit |
 
 Rules (mirroring current store behavior [FACT]):
 
@@ -406,7 +462,7 @@ CREATE TABLE IF NOT EXISTS journal_trades (
     target_price        REAL    CHECK (target_price IS NULL OR target_price > 0),
     expiration          TEXT,
     invalidation_rule   TEXT,                 -- structured JSON or NULL
-    quantity            REAL    CHECK (quantity IS NULL OR quantity > 0),
+    quantity            REAL    CHECK (quantity IS NULL OR quantity > 0),  -- mandatory at fill (see CHECKs)
     fill_price          REAL    CHECK (fill_price IS NULL OR fill_price > 0),
     fill_timestamp      TEXT,
     fill_provenance     TEXT,                 -- JSON: {execution_provenance, provider, observed_at, observer}
@@ -419,8 +475,10 @@ CREATE TABLE IF NOT EXISTS journal_trades (
     created_at          TEXT    NOT NULL,
     updated_at          TEXT    NOT NULL,
     UNIQUE (candidate_id, strategy_id, strategy_version),
-    CHECK (state != 'open'   OR (fill_price IS NOT NULL AND fill_timestamp IS NOT NULL)),
-    CHECK (state != 'closed' OR (fill_price IS NOT NULL AND exit_price IS NOT NULL
+    CHECK (state != 'open'   OR (fill_price IS NOT NULL AND fill_timestamp IS NOT NULL
+                                 AND quantity IS NOT NULL)),
+    CHECK (state != 'closed' OR (fill_price IS NOT NULL AND quantity IS NOT NULL
+                                 AND exit_price IS NOT NULL
                                  AND exit_timestamp IS NOT NULL AND exit_reason IS NOT NULL)),
     CHECK (state NOT IN ('planned','cancelled','expired','invalidated')
            OR (fill_price IS NULL AND exit_price IS NULL))
@@ -438,7 +496,7 @@ CREATE TABLE IF NOT EXISTS journal_events (
     journal_id     TEXT    NOT NULL REFERENCES journal_trades(journal_id),
     seq            INTEGER NOT NULL,
     event_type     TEXT    NOT NULL CHECK (event_type IN
-                     ('created','plan_amended','filled','cancelled',
+                     ('created','filled','cancelled',
                       'expired','invalidated','exited')),
     event_timestamp TEXT   NOT NULL,          -- domain time of the event (UTC)
     recorded_at    TEXT    NOT NULL,          -- audit time the row was written (UTC)
@@ -451,6 +509,8 @@ CREATE TABLE IF NOT EXISTS journal_outcomes (
     journal_id        TEXT    NOT NULL REFERENCES journal_trades(journal_id),
     computation_version TEXT  NOT NULL,
     computed_at       TEXT    NOT NULL,
+    source_event_seq  INTEGER NOT NULL,      -- highest journal_events.seq consumed
+    inputs_hash       TEXT    NOT NULL,      -- SHA-256 of canonical inputs_json
     entry_slippage    REAL,
     costs             REAL    CHECK (costs IS NULL OR costs >= 0),
     gross_return_pct  REAL,
@@ -464,9 +524,16 @@ CREATE TABLE IF NOT EXISTS journal_outcomes (
 
 `journal_events` is append-only: no UPDATE or DELETE ever. `journal_trades` mutable
 columns are limited to execution/terminal fields, `state`, and `updated_at`; plan
-columns are frozen once state leaves `planned` (enforced at the service layer, with
-the event log as the audit trail; pre-fill plan amendments write `plan_amended`
-events and update the plan columns).
+columns are immutable from creation (§E; enforced at the service layer, with the
+append-only event log as the audit trail).
+
+Outcome reproducibility: each `journal_outcomes` row records the exact lifecycle
+state it consumed — `source_event_seq` is the highest `journal_events.seq` included
+in the computation, and `inputs_hash` is the SHA-256 hash of the canonical (sorted
+keys, compact separators) `inputs_json`, which itself contains the exact input field
+values (`fill_price`, `quantity`, `exit_price`, `costs`, provenance fields). A stored
+outcome can therefore be recomputed and byte-compared against the precise event range
+it consumed, without needing a mutation row-version column on `journal_trades`.
 
 ### J.2 Migration behavior
 
@@ -494,8 +561,12 @@ explicit transaction per operation (the `_transaction` pattern in
 
 ```python
 def validate_strategy_authorization(strategy_id: str, strategy_version: str) -> None:
-    """Raise StrategyNotAuthorizedError unless (id, version) is in the approved
-    registry. Pure check; no I/O beyond the in-code registry."""
+    """Raise StrategyNotAuthorizedError unless (id, version) is in
+    APPROVED_PRODUCTION_STRATEGIES with the "journal_execution" capability (§B.2).
+    Pure check; no I/O beyond the in-code registry."""
+
+# There is deliberately NO amend_plan operation (§E): plan fields are immutable
+# from creation; a changed plan = cancel + new decision on a new snapshot.
 
 def create_planned_trade(
     *, candidate_id: str, strategy_id: str, strategy_version: str,
@@ -510,7 +581,7 @@ def create_planned_trade(
 
 def record_fill(
     *, journal_id: str, fill_price: float, fill_timestamp: datetime,
-    fill_provenance: ExecutionProvenance, quantity: float | None = None,
+    fill_provenance: ExecutionProvenance, quantity: float,  # mandatory (§F, §G)
     settings: TradeXSettings | None = None,
 ) -> JournalTrade:
     """planned -> open. Errors: JournalNotFoundError, InvalidTransitionError,
@@ -652,25 +723,30 @@ implemented here):
    (§D.3) and idempotent repeats.
 4. Timestamp ordering, naive-rejection, non-trading-day, and DST cases covered.
 5. Provenance persisted verbatim with `'unknown'` for missing values; no fallback.
-6. Outcome formulas (§G) tested including NULL-cost → NULL net return.
+6. Outcome formulas (§G) tested including NULL-cost → NULL net return, the
+   deterministic `outcome_confidence` mapping, mandatory quantity at fill, and
+   outcome reproducibility from `source_event_seq` + `inputs_hash`.
 7. No import path from `tradex/journal/` mutates candidate or legacy tables.
 8. All tests deterministic, credential-free, and network-free.
 
 ---
 
-## R. Material unresolved design decisions (for Gary / R6 approval)
+## R. Deferred scope boundaries (resolved for v1; future amendments only)
 
-1. **Registry reuse vs. journal-specific registry:** reuse
-   `APPROVED_ACTIONABLE_STRATEGIES` directly, or introduce a structurally identical
-   `APPROVED_EXECUTABLE_STRATEGIES` so alert authorization and journal authorization
-   can diverge later. Recommendation: reuse the single registry until a real
-   divergence need exists.
-2. **`quantity` capture:** this contract makes `quantity` optional (needed only for
-   per-share cost allocation). Decide whether R6 requires quantity on every fill.
-3. **Partial/multiple fills:** explicitly unsupported here; supporting them later
-   requires a contract amendment (fill child table + weighted-average semantics).
-4. **`strategy_drawdown` surface:** defined as read-time derived (§G); decide whether
-   any stored snapshotting is wanted for the future Journal UI.
+All core semantics are resolved in this contract: authorization uses the single
+neutral capability registry (§B.2); `quantity` is mandatory at fill (§F/§G);
+`strategy_drawdown` fails closed to NULL/unknown until an approved aggregation model
+(§G); `outcome_confidence` has a deterministic mapping (§G); plan fields are immutable
+from creation with no amendment operation (§D.3/§E); outcomes are reproducible via
+`source_event_seq` + `inputs_hash` (§J.1). The only concepts explicitly deferred to
+future contract amendments are:
+
+1. **Partial/multiple fills:** unsupported in v1; a future amendment must add a fill
+   child table and weighted-average semantics before they can exist.
+2. **Plan amendments:** unsupported in v1 (§E); a future amendment must fully specify
+   the operation, transition/idempotency contract, and audit/version rules.
+3. **Strategy drawdown aggregation model:** requires a separately Gary-approved
+   capital/position-sizing/compounding convention before any value is computed.
 
 ---
 
