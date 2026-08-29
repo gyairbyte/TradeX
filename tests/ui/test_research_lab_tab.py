@@ -11,6 +11,7 @@ import pytest
 from tradex.config import settings_from_mapping
 
 _EXPECTED_NESTED_TABS = [
+    "Legacy Scanner Telemetry",
     "Coil Context",
     "Pattern Similarity — Rejected",
     "Options Activity — Exploratory",
@@ -23,7 +24,7 @@ def fake_rl_st():
     st = MagicMock(name="streamlit")
     st.__version__ = "0.0.0"
     st.session_state = {}
-    st.tabs.return_value = [MagicMock(), MagicMock(), MagicMock()]
+    st.tabs.return_value = [MagicMock(), MagicMock(), MagicMock(), MagicMock()]
     return st
 
 
@@ -45,6 +46,7 @@ def test_import_does_not_render_or_touch_backend(research_lab_module, fake_rl_st
 
 def test_render_shows_subheader_and_disclosure(research_lab_module, fake_rl_st, monkeypatch):
     """Research Lab renders subheader and visible non-actionable disclosure."""
+    monkeypatch.setattr("tradex.ui.tabs.research_lab.render_signal_journal_tab", MagicMock())
     monkeypatch.setattr("tradex.ui.tabs.research_lab.render_coil_detector_tab", MagicMock())
     monkeypatch.setattr("tradex.ui.tabs.research_lab.render_pattern_similarity_tab", MagicMock())
     monkeypatch.setattr("tradex.ui.tabs.research_lab.render_options_activity_tab", MagicMock())
@@ -66,7 +68,8 @@ def test_render_shows_subheader_and_disclosure(research_lab_module, fake_rl_st, 
 
 
 def test_render_creates_exact_nested_tabs(research_lab_module, fake_rl_st, monkeypatch):
-    """Research Lab creates exactly the three canonical nested tab labels in order."""
+    """Research Lab creates exactly the four canonical nested tab labels in order."""
+    monkeypatch.setattr("tradex.ui.tabs.research_lab.render_signal_journal_tab", MagicMock())
     monkeypatch.setattr("tradex.ui.tabs.research_lab.render_coil_detector_tab", MagicMock())
     monkeypatch.setattr("tradex.ui.tabs.research_lab.render_pattern_similarity_tab", MagicMock())
     monkeypatch.setattr("tradex.ui.tabs.research_lab.render_options_activity_tab", MagicMock())
@@ -87,10 +90,12 @@ def test_render_routes_to_child_renderers_with_preserved_arguments(
     research_lab_module, fake_rl_st, monkeypatch
 ):
     """Research Lab forwards exact arguments to child renderers without modifications."""
+    telemetry_mock = MagicMock(name="render_signal_journal_tab")
     coil_mock = MagicMock(name="render_coil_detector_tab")
     pattern_mock = MagicMock(name="render_pattern_similarity_tab")
     options_mock = MagicMock(name="render_options_activity_tab")
 
+    monkeypatch.setattr("tradex.ui.tabs.research_lab.render_signal_journal_tab", telemetry_mock)
     monkeypatch.setattr("tradex.ui.tabs.research_lab.render_coil_detector_tab", coil_mock)
     monkeypatch.setattr("tradex.ui.tabs.research_lab.render_pattern_similarity_tab", pattern_mock)
     monkeypatch.setattr("tradex.ui.tabs.research_lab.render_options_activity_tab", options_mock)
@@ -105,20 +110,27 @@ def test_render_routes_to_child_renderers_with_preserved_arguments(
         options_source="unusual_whales",
     )
 
-    # 1. Coil Detector receives settings and timeframe
+    # 1. Legacy Scanner Telemetry receives settings, timeframe, and provider
+    telemetry_mock.assert_called_once_with(
+        settings=settings,
+        timeframe="long",
+        provider="schwab",
+    )
+
+    # 2. Coil Detector receives settings and timeframe
     coil_mock.assert_called_once_with(
         settings=settings,
         timeframe="long",
     )
 
-    # 2. Pattern Similarity receives settings, watchlist, and provider
+    # 3. Pattern Similarity receives settings, watchlist, and provider
     pattern_mock.assert_called_once_with(
         settings=settings,
         watchlist=watchlist,
         provider="schwab",
     )
 
-    # 3. Options Activity receives settings, watchlist, and options_source
+    # 4. Options Activity receives settings, watchlist, and options_source
     options_mock.assert_called_once_with(
         settings=settings,
         watchlist=watchlist,

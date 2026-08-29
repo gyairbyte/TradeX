@@ -111,6 +111,18 @@ EVIDENCE_NOTICES: dict[str, EvidenceNotice] = {
         ),
         level="info",
     ),
+    "journal": EvidenceNotice(
+        tab_id="journal",
+        evidence_state="production_gated",
+        badge_label="Executable Strategy Journal — Production Gated",
+        summary=(
+            "The Journal records production-governed trade plans and execution history for approved strategies. "
+            "Only strategies explicitly authorized with the journal_execution capability in "
+            "APPROVED_PRODUCTION_STRATEGIES may create new trade plans. Currently no strategy is production-authorized. "
+            "Historical records, if any, remain permanent and auditable. Journal outcomes are not equivalent to legacy scanner telemetry."
+        ),
+        level="info",
+    ),
     "signal_journal": EvidenceNotice(
         tab_id="signal_journal",
         evidence_state="legacy_signal_telemetry",

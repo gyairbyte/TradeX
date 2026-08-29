@@ -8,6 +8,7 @@ from tradex.config import TradeXSettings
 from tradex.ui.tabs.coil_detector import render_coil_detector_tab
 from tradex.ui.tabs.options_activity import render_options_activity_tab
 from tradex.ui.tabs.pattern_similarity import render_pattern_similarity_tab
+from tradex.ui.tabs.signal_journal import render_signal_journal_tab
 
 
 def render_research_lab_tab(
@@ -25,13 +26,21 @@ def render_research_lab_tab(
         "Nothing in this area is a production-approved actionable strategy."
     )
 
-    tab_coil, tab_pattern, tab_options = st.tabs(
+    tab_telemetry, tab_coil, tab_pattern, tab_options = st.tabs(
         [
+            "Legacy Scanner Telemetry",
             "Coil Context",
             "Pattern Similarity — Rejected",
             "Options Activity — Exploratory",
         ]
     )
+
+    with tab_telemetry:
+        render_signal_journal_tab(
+            settings=settings,
+            timeframe=timeframe,
+            provider=provider,
+        )
 
     with tab_coil:
         render_coil_detector_tab(

@@ -15,13 +15,14 @@ _EXPECTED_TABS = [
     "Scanner",
     "Confluence",
     "Pre-Market",
-    "Signal Journal",
+    "Journal",
     "Research Lab",
     "Settings",
     "Help",
 ]
 
 _REMOVED_TOP_LEVEL_TABS = [
+    "Signal Journal",  # Relocated under Research Lab -> Legacy Scanner Telemetry
     "Coil Detector",
     "Pattern Similarity — Experimental Research",
     "Options Activity",
@@ -115,6 +116,7 @@ def fake_dashboard_st(monkeypatch, tmp_path):
 
     # Suppress network/data fetches in tabs.
     monkeypatch.setattr("tradex.ui.tabs.today.render_today_tab", MagicMock())
+    monkeypatch.setattr("tradex.ui.tabs.journal.render_journal_tab", MagicMock())
     monkeypatch.setattr("tradex.screener.engine.run_with_report", MagicMock())
     monkeypatch.setattr("tradex.tracker.store.record_scan", MagicMock())
     monkeypatch.setattr("tradex.tracker.analyzer.detect_coils", MagicMock(return_value=[]))
@@ -149,7 +151,7 @@ def test_dashboard_routes_to_extracted_renderers(fake_dashboard_st, monkeypatch)
     scanner_mock = MagicMock(name="render_scanner_tab")
     confluence_mock = MagicMock(name="render_confluence_tab")
     premarket_mock = MagicMock(name="render_premarket_tab")
-    journal_mock = MagicMock(name="render_signal_journal_tab")
+    journal_mock = MagicMock(name="render_journal_tab")
     research_lab_mock = MagicMock(name="render_research_lab_tab")
     settings_mock = MagicMock(name="render_settings_tab")
     help_mock = MagicMock(name="render_help_tab")
@@ -158,7 +160,7 @@ def test_dashboard_routes_to_extracted_renderers(fake_dashboard_st, monkeypatch)
     monkeypatch.setattr("tradex.ui.tabs.scanner.render_scanner_tab", scanner_mock)
     monkeypatch.setattr("tradex.ui.tabs.confluence.render_confluence_tab", confluence_mock)
     monkeypatch.setattr("tradex.ui.tabs.premarket.render_premarket_tab", premarket_mock)
-    monkeypatch.setattr("tradex.ui.tabs.signal_journal.render_signal_journal_tab", journal_mock)
+    monkeypatch.setattr("tradex.ui.tabs.journal.render_journal_tab", journal_mock)
     monkeypatch.setattr("tradex.ui.tabs.research_lab.render_research_lab_tab", research_lab_mock)
     monkeypatch.setattr("tradex.ui.tabs.settings.render_settings_tab", settings_mock)
     monkeypatch.setattr("tradex.ui.tabs.help.render_help_tab", help_mock)
@@ -214,11 +216,10 @@ def test_dashboard_routes_to_extracted_renderers(fake_dashboard_st, monkeypatch)
     assert pm_kwargs["provider"] == "yahoo"
     assert pm_kwargs["earnings_source"] == "yahoo"
 
-    # Signal Journal kwargs
+    # Journal kwargs
     _, j_kwargs = journal_mock.call_args
     assert isinstance(j_kwargs["settings"], TradeXSettings)
-    assert j_kwargs["timeframe"] == "short"
-    assert j_kwargs["provider"] == "yahoo"
+    assert set(j_kwargs.keys()) == {"settings"}
 
     # Research Lab kwargs
     _, rl_kwargs = research_lab_mock.call_args
@@ -252,7 +253,7 @@ def test_dashboard_import_without_main_does_not_call_st_tabs_or_renderers(monkey
     scanner_mock = MagicMock(name="render_scanner_tab")
     confluence_mock = MagicMock(name="render_confluence_tab")
     premarket_mock = MagicMock(name="render_premarket_tab")
-    journal_mock = MagicMock(name="render_signal_journal_tab")
+    journal_mock = MagicMock(name="render_journal_tab")
     research_lab_mock = MagicMock(name="render_research_lab_tab")
     settings_mock = MagicMock(name="render_settings_tab")
     help_mock = MagicMock(name="render_help_tab")
@@ -262,7 +263,7 @@ def test_dashboard_import_without_main_does_not_call_st_tabs_or_renderers(monkey
     monkeypatch.setattr("tradex.ui.tabs.scanner.render_scanner_tab", scanner_mock)
     monkeypatch.setattr("tradex.ui.tabs.confluence.render_confluence_tab", confluence_mock)
     monkeypatch.setattr("tradex.ui.tabs.premarket.render_premarket_tab", premarket_mock)
-    monkeypatch.setattr("tradex.ui.tabs.signal_journal.render_signal_journal_tab", journal_mock)
+    monkeypatch.setattr("tradex.ui.tabs.journal.render_journal_tab", journal_mock)
     monkeypatch.setattr("tradex.ui.tabs.research_lab.render_research_lab_tab", research_lab_mock)
     monkeypatch.setattr("tradex.ui.tabs.settings.render_settings_tab", settings_mock)
     monkeypatch.setattr("tradex.ui.tabs.help.render_help_tab", help_mock)

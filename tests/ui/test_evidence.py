@@ -22,13 +22,14 @@ EXPECTED_FEATURE_SURFACES = {
     "options_activity",
     "alerts",
     "signal_journal",
+    "journal",
     "weights",
     "help",
 }
 
 
 def test_all_ten_feature_surfaces_have_evidence_notices() -> None:
-    """All ten underlying feature surfaces retain their required evidence notices under 7-surface navigation."""
+    """All underlying feature surfaces retain their required evidence notices under dashboard navigation."""
     assert set(EVIDENCE_NOTICES.keys()) == EXPECTED_FEATURE_SURFACES
 
 
@@ -66,6 +67,15 @@ def test_signal_journal_is_legacy_telemetry() -> None:
     notice = get_evidence_notice("signal_journal")
     assert notice.evidence_state == "legacy_signal_telemetry"
     assert "generic" in notice.summary.lower()
+
+
+def test_journal_is_production_gated() -> None:
+    """Journal notice states production gating and requires approved strategy."""
+    notice = get_evidence_notice("journal")
+    assert notice.evidence_state == "production_gated"
+    assert "production gated" in notice.badge_label.lower()
+    assert "approved_production_strategies" in notice.summary.lower()
+    assert "telemetry" in notice.summary.lower()
 
 
 def test_get_evidence_notice_unknown_key_raises() -> None:

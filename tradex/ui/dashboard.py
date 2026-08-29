@@ -4,8 +4,8 @@ Streamlit dashboard — transitional eight-surface navigation (MVP-ARCH-001-R5C)
   2. Scanner         : run screener, view ranked results, drill-down chart
   3. Confluence      : stocks scoring well across multiple timeframes
   4. Pre-Market      : gap scanner — identify gap-up/down candidates before open
-  5. Signal Journal  : historical signal outcomes (did the move happen?)
-  6. Research Lab    : exploratory, rejected, contextual, and archived tools (Coil Context, Pattern Similarity — Rejected, Options Activity — Exploratory)
+  5. Journal         : executable strategy trade plans and execution history
+  6. Research Lab    : exploratory, rejected, contextual, telemetry, and archived tools (Legacy Scanner Telemetry, Coil Context, Pattern Similarity — Rejected, Options Activity — Exploratory)
   7. Settings        : operational configuration and delivery (Alert Delivery, Legacy Weights)
   8. Help            : in-app documentation
 
@@ -33,11 +33,11 @@ from tradex.ui.tabs.alerts import (
 )
 from tradex.ui.tabs.confluence import render_confluence_tab
 from tradex.ui.tabs.help import render_help_tab
+from tradex.ui.tabs.journal import render_journal_tab
 from tradex.ui.tabs.premarket import render_premarket_tab
 from tradex.ui.tabs.research_lab import render_research_lab_tab
 from tradex.ui.tabs.scanner import render_scanner_tab
 from tradex.ui.tabs.settings import render_settings_tab
-from tradex.ui.tabs.signal_journal import render_signal_journal_tab
 from tradex.ui.tabs.today import render_today_tab
 from tradex.watchlists import DEFAULT_NAME as WL_DEFAULT_NAME
 from tradex.watchlists import presets as wl_presets
@@ -411,7 +411,7 @@ if __name__ == "__main__":
             "Scanner",
             "Confluence",
             "Pre-Market",
-            "Signal Journal",
+            "Journal",
             "Research Lab",
             "Settings",
             "Help",
@@ -462,14 +462,10 @@ if __name__ == "__main__":
         )
 
     # ══════════════════════════════════════════════════════════════════════════════
-    # TAB 5 — SIGNAL JOURNAL
+    # TAB 5 — JOURNAL (EXECUTABLE STRATEGY JOURNAL)
     # ══════════════════════════════════════════════════════════════════════════════
     with tab_journal:
-        render_signal_journal_tab(
-            settings=settings,
-            timeframe=timeframe,
-            provider=provider,
-        )
+        render_journal_tab(settings=settings)
 
     # ══════════════════════════════════════════════════════════════════════════════
     # TAB 6 — RESEARCH LAB
