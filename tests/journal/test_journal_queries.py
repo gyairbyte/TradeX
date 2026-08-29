@@ -32,8 +32,11 @@ from tradex.journal.models import (
     JournalTrade,
 )
 from tradex.journal.queries import (
+    format_confidence_badge,
     format_confidence_label,
+    format_lifecycle_state_badge,
     format_lifecycle_state_label,
+    format_provenance_badge,
     format_provenance_label,
     get_journal_detail,
     get_journal_events_timeline,
@@ -734,12 +737,75 @@ def test_formatting_helpers():
     assert format_lifecycle_state_label("invalidated") == "Invalidated"
     assert format_lifecycle_state_label(None) == "Unknown"
 
+    assert format_lifecycle_state_badge("planned") == "⚪ Planned"
+    assert format_lifecycle_state_badge("open") == "🔵 Open"
+    assert format_lifecycle_state_badge("closed") == "⚫ Closed"
+    assert format_lifecycle_state_badge("cancelled") == "✖ Cancelled"
+    assert format_lifecycle_state_badge("expired") == "⏳ Expired"
+    assert format_lifecycle_state_badge("invalidated") == "🚫 Invalidated"
+    assert format_lifecycle_state_badge(None) == "⚪ Unknown"
+
     assert format_provenance_label("manual") == "Manual Reported"
     assert format_provenance_label("simulated") == "Simulated"
     assert format_provenance_label("broker_confirmed") == "Broker Confirmed"
     assert format_provenance_label(None) == "—"
 
+    assert format_provenance_badge("manual") == "👤 Manual Reported"
+    assert format_provenance_badge("simulated") == "🧪 Simulated"
+    assert format_provenance_badge("broker_confirmed") == "🏦 Broker Confirmed"
+    assert format_provenance_badge(None) == "—"
+
     assert format_confidence_label("confirmed") == "Confirmed"
     assert format_confidence_label("provisional") == "Provisional"
     assert format_confidence_label("unknown") == "Unknown"
     assert format_confidence_label(None) == "—"
+
+    assert format_confidence_badge("confirmed") == "🟢 Confirmed"
+    assert format_confidence_badge("provisional") == "🟡 Provisional"
+    assert format_confidence_badge("unknown") == "⚪ Unknown"
+    assert format_confidence_badge(None) == "—"
+
+
+# ── 13. CandidateSnapshot Security Identity Preservation ──────────────────────
+
+
+def test_candidate_snapshot_unknown_identity_preservation(journal_query_db: str):
+    """Preserves CandidateSnapshot unknown security identity exactly without manufacturing version."""
+    base_t = datetime(2026, 8, 20, 14, 30, tzinfo=UTC)
+
+    # Persist candidate snapshot with NULL version and unknown status
+    snap = CandidateSnapshot(
+        candidate_id="cand-unk",
+        symbol="UNK",
+        decision_timestamp=base_t,
+        contract_version=1,
+        trading_date=base_t.strftime("%Y-%m-%d"),
+        security_identity_version=None,
+        security_identity_status=SecurityIdentityStatus.UNKNOWN,
+    )
+    dossier = CandidateDossier(
+        snapshot=snap,
+        evaluations=(),
+        evidence=(),
+        reasons=(),
+        missing_data=(),
+    )
+    record_candidate_dossier(dossier, db_path=journal_query_db)
+
+    _insert_trade(
+        journal_query_db,
+        journal_id="j-unk-trade",
+        candidate_id="cand-unk",
+        strategy_id="strat_a",
+        strategy_version="1.0",
+        decision_timestamp=base_t,
+        plan_created_at=base_t,
+    )
+
+    detail = get_journal_detail("j-unk-trade", db_path=journal_query_db)
+    assert detail is not None
+    assert detail.candidate_snapshot is not None
+    assert detail.candidate_snapshot.symbol == "UNK"
+    assert detail.candidate_snapshot.security_identity_version is None
+    assert detail.candidate_snapshot.security_identity_status == SecurityIdentityStatus.UNKNOWN
+

@@ -66,10 +66,26 @@ def format_lifecycle_state_label(state: JournalState | str | None) -> str:
     return mapping.get(clean, clean.title() if clean else "Unknown")
 
 
+def format_lifecycle_state_badge(state: JournalState | str | None) -> str:
+    """Map raw lifecycle state to visually distinct neutral/state badge."""
+    if state is None:
+        return "⚪ Unknown"
+    clean = state.value if isinstance(state, JournalState) else str(state).strip().lower()
+    mapping = {
+        "planned": "⚪ Planned",
+        "open": "🔵 Open",
+        "closed": "⚫ Closed",
+        "cancelled": "✖ Cancelled",
+        "expired": "⏳ Expired",
+        "invalidated": "🚫 Invalidated",
+    }
+    return mapping.get(clean, f"⚪ {clean.title()}" if clean else "⚪ Unknown")
+
+
 def format_provenance_label(
     prov: ExecutionProvenance | ExecutionProvenanceType | str | None,
 ) -> str:
-    """Map ExecutionProvenance, enum, or string to user-facing badge label."""
+    """Map ExecutionProvenance, enum, or string to user-facing text label."""
     if prov is None:
         return "—"
     if isinstance(prov, ExecutionProvenance):
@@ -92,8 +108,24 @@ def format_provenance_label(
     return ptype.replace("_", " ").title() if ptype else "—"
 
 
+def format_provenance_badge(
+    prov: ExecutionProvenance | ExecutionProvenanceType | str | None,
+) -> str:
+    """Map ExecutionProvenance, enum, or string to visually distinct badge."""
+    if prov is None:
+        return "—"
+    label = format_provenance_label(prov)
+    if label == "Manual Reported":
+        return "👤 Manual Reported"
+    if label == "Simulated":
+        return "🧪 Simulated"
+    if label == "Broker Confirmed":
+        return "🏦 Broker Confirmed"
+    return f"🏷️ {label}" if label != "—" else "—"
+
+
 def format_confidence_label(conf: OutcomeConfidence | str | None) -> str:
-    """Map OutcomeConfidence or string to user-facing badge label."""
+    """Map OutcomeConfidence or string to user-facing text label."""
     if conf is None:
         return "—"
     clean = conf.value if isinstance(conf, OutcomeConfidence) else str(conf).strip().lower()
@@ -104,6 +136,20 @@ def format_confidence_label(conf: OutcomeConfidence | str | None) -> str:
     if clean == "unknown":
         return "Unknown"
     return clean.title() if clean else "—"
+
+
+def format_confidence_badge(conf: OutcomeConfidence | str | None) -> str:
+    """Map OutcomeConfidence or string to visually distinct badge."""
+    if conf is None:
+        return "—"
+    clean = conf.value if isinstance(conf, OutcomeConfidence) else str(conf).strip().lower()
+    if clean == "confirmed":
+        return "🟢 Confirmed"
+    if clean == "provisional":
+        return "🟡 Provisional"
+    if clean == "unknown":
+        return "⚪ Unknown"
+    return f"⚪ {clean.title()}" if clean else "—"
 
 
 # ── Read Models ──────────────────────────────────────────────────────────────
@@ -147,6 +193,10 @@ class JournalTradeReadModel:
     @property
     def formatted_state(self) -> str:
         return format_lifecycle_state_label(self.state)
+
+    @property
+    def formatted_state_badge(self) -> str:
+        return format_lifecycle_state_badge(self.state)
 
     @property
     def formatted_planned_entry(self) -> str:
@@ -209,12 +259,24 @@ class JournalTradeReadModel:
         return format_confidence_label(self.outcome_confidence)
 
     @property
+    def formatted_confidence_badge(self) -> str:
+        return format_confidence_badge(self.outcome_confidence)
+
+    @property
     def formatted_fill_provenance(self) -> str:
         return format_provenance_label(self.fill_provenance)
 
     @property
+    def formatted_fill_provenance_badge(self) -> str:
+        return format_provenance_badge(self.fill_provenance)
+
+    @property
     def formatted_exit_provenance(self) -> str:
         return format_provenance_label(self.exit_provenance)
+
+    @property
+    def formatted_exit_provenance_badge(self) -> str:
+        return format_provenance_badge(self.exit_provenance)
 
     @property
     def formatted_decision_time(self) -> str:
@@ -275,6 +337,10 @@ class JournalOutcomeAuditReadModel:
     @property
     def formatted_confidence(self) -> str:
         return format_confidence_label(self.outcome_confidence)
+
+    @property
+    def formatted_confidence_badge(self) -> str:
+        return format_confidence_badge(self.outcome_confidence)
 
     @property
     def formatted_gross_return(self) -> str:
@@ -724,12 +790,25 @@ def get_journal_detail(
                 assert c_dec_ts is not None
                 assert c_created is not None
 
-                sec_status = SecurityIdentityStatus.KNOWN
-                if row["candidate_sec_status"]:
-                    try:
-                        sec_status = SecurityIdentityStatus(str(row["candidate_sec_status"]).lower())
-                    except ValueError:
-                        sec_status = SecurityIdentityStatus.UNKNOWN
+                raw_sec_version = row["candidate_sec_version"]
+                raw_sec_status = row["candidate_sec_status"]
+
+                sec_version = (
+                    str(raw_sec_version).strip()
+                    if raw_sec_version is not None and str(raw_sec_version).strip()
+                    else None
+                )
+
+                if sec_version is not None:
+                    if raw_sec_status:
+                        try:
+                            sec_status = SecurityIdentityStatus(str(raw_sec_status).lower())
+                        except ValueError:
+                            sec_status = SecurityIdentityStatus.KNOWN
+                    else:
+                        sec_status = SecurityIdentityStatus.KNOWN
+                else:
+                    sec_status = SecurityIdentityStatus.UNKNOWN
 
                 candidate_snap = CandidateSnapshot(
                     candidate_id=row["candidate_id"],
@@ -737,7 +816,7 @@ def get_journal_detail(
                     decision_timestamp=c_dec_ts,
                     contract_version=int(row["candidate_contract_version"] or 1),
                     trading_date=row["candidate_trading_date"],
-                    security_identity_version=row["candidate_sec_version"] or "sec-v1",
+                    security_identity_version=sec_version,
                     security_identity_status=sec_status,
                     created_at=c_created,
                 )

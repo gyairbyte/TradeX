@@ -107,11 +107,11 @@ def test_import_has_no_side_effects(fake_journal_st, monkeypatch):
     assert fake_journal_st.dataframe.call_count == 0
 
 
-# ── 2. True Empty State UX ───────────────────────────────────────────────────
+# ── 2. True Empty State UX (Case A & Case B) ──────────────────────────────────
 
 
-def test_true_empty_state_rendering(fake_journal_st, isolated_db, monkeypatch):
-    """Zero records and empty strategy registry renders truthful explanation with no create controls."""
+def test_true_empty_state_case_a_no_strategy(fake_journal_st, isolated_db, monkeypatch):
+    """Case A: Zero records and empty strategy registry renders truthful explanation with no create controls."""
     monkeypatch.setattr(journal_tab_module, "st", fake_journal_st)
     settings = settings_from_mapping({"TRADEX_DB_PATH": isolated_db})
 
@@ -121,7 +121,7 @@ def test_true_empty_state_rendering(fake_journal_st, isolated_db, monkeypatch):
     fake_journal_st.caption.assert_called_once_with("Executable Strategy Journal")
 
     info_texts = [str(call[0][0]) for call in fake_journal_st.info.call_args_list]
-    assert any("No production-approved executable strategy" in t for t in info_texts)
+    assert any("No production-approved executable strategy is currently active" in t for t in info_texts)
     assert any("Legacy scanner outcomes remain available as descriptive telemetry" in t for t in info_texts)
 
     # No tables or drill-down buttons in empty state
@@ -129,11 +129,60 @@ def test_true_empty_state_rendering(fake_journal_st, isolated_db, monkeypatch):
     assert "btn_view_journal_detail" not in fake_journal_st._active_buttons
 
 
-# ── 3. Historical Read-Only Mode Overview ────────────────────────────────────
+def test_true_empty_state_case_b_authorized_strategy_exists(fake_journal_st, isolated_db, monkeypatch):
+    """Case B: Zero records with authorized strategy renders truthful authorized-empty state with zero create controls."""
+    import tradex.strategies.registry as reg
+
+    mock_strat = reg.ApprovedProductionStrategy(
+        strategy_id="strat_approved",
+        strategy_version="1.0",
+        description="Approved test strategy",
+        capabilities=frozenset({"journal_execution"}),
+    )
+    monkeypatch.setattr(reg, "APPROVED_PRODUCTION_STRATEGIES", (mock_strat,))
+    monkeypatch.setattr(journal_tab_module, "st", fake_journal_st)
+    settings = settings_from_mapping({"TRADEX_DB_PATH": isolated_db})
+
+    journal_tab_module.render_journal_tab(settings=settings)
+
+    info_texts = [str(call[0][0]) for call in fake_journal_st.info.call_args_list]
+    assert any("An executable production strategy is currently authorized, but no Journal records have been recorded yet" in t for t in info_texts)
+
+    # Still strictly read-only, zero action controls
+    assert fake_journal_st.dataframe.call_count == 0
+    assert "btn_view_journal_detail" not in fake_journal_st._active_buttons
+
+
+def test_registry_changes_observed_at_render_time(fake_journal_st, isolated_db, monkeypatch):
+    """Registry authorization changes are dynamically observed at render time."""
+    import tradex.strategies.registry as reg
+
+    monkeypatch.setattr(journal_tab_module, "st", fake_journal_st)
+    settings = settings_from_mapping({"TRADEX_DB_PATH": isolated_db})
+
+    # Initially empty registry -> Case A
+    monkeypatch.setattr(reg, "APPROVED_PRODUCTION_STRATEGIES", ())
+    journal_tab_module.render_journal_tab(settings=settings)
+    assert any("No production-approved executable strategy is currently active" in str(c[0][0]) for c in fake_journal_st.info.call_args_list)
+
+    # Dynamically authorize strategy -> Case B
+    fake_journal_st.info.reset_mock()
+    mock_strat = reg.ApprovedProductionStrategy(
+        strategy_id="strat_approved",
+        strategy_version="1.0",
+        description="Approved test strategy",
+        capabilities=frozenset({"journal_execution"}),
+    )
+    monkeypatch.setattr(reg, "APPROVED_PRODUCTION_STRATEGIES", (mock_strat,))
+    journal_tab_module.render_journal_tab(settings=settings)
+    assert any("An executable production strategy is currently authorized" in str(c[0][0]) for c in fake_journal_st.info.call_args_list)
+
+
+# ── 3. Historical Read-Only Mode Overview & Badges ───────────────────────────
 
 
 def test_historical_overview_rendering(fake_journal_st, isolated_db, monkeypatch):
-    """Persisted records with empty strategy registry show historical banner, table, and unauthorized tags."""
+    """Persisted records show historical banner, table with badges, and unauthorized tags."""
     monkeypatch.setattr(journal_tab_module, "st", fake_journal_st)
     settings = settings_from_mapping({"TRADEX_DB_PATH": isolated_db})
 
@@ -203,7 +252,7 @@ def test_historical_overview_rendering(fake_journal_st, isolated_db, monkeypatch
                 gross_return_pct=10.0,
                 net_return_pct=9.87,
                 outcome_confidence=OutcomeConfidence.CONFIRMED,
-                inputs={},
+                inputs={"entry": 150.0, "exit": 165.0},
                 strategy_drawdown=None,
             ),
         )
@@ -221,7 +270,7 @@ def test_historical_overview_rendering(fake_journal_st, isolated_db, monkeypatch
     assert len(df_arg) == 1
     row = df_arg.iloc[0]
     assert row["Symbol"] == "AAPL"
-    assert row["State"] == "Closed"
+    assert row["State"] == "⚫ Closed"
     assert "[Not Currently Authorized]" in row["Strategy"]
     assert row["Planned Entry"] == "$150.00"
     assert row["Qty"] == "10"
@@ -230,15 +279,15 @@ def test_historical_overview_rendering(fake_journal_st, isolated_db, monkeypatch
     assert row["Exit Reason"] == "Target"
     assert row["Gross Return"] == "+10.00%"
     assert row["Net Return"] == "+9.87%"
-    assert row["Confidence"] == "Confirmed"
-    assert row["Provenance"] == "Manual Reported"
+    assert row["Confidence"] == "🟢 Confirmed"
+    assert row["Provenance"] == "👤 Manual Reported"
 
 
-# ── 4. In-Place Detail Drill-Down UX ─────────────────────────────────────────
+# ── 4. In-Place Detail Drill-Down & Outcome Inputs Inspection ────────────────
 
 
-def test_detail_drilldown_view(fake_journal_st, isolated_db, monkeypatch):
-    """Inspecting a trade renders complete plan, upstream candidate context, events, outcomes, and drawdown unknown."""
+def test_detail_drilldown_view_and_outcome_inputs(fake_journal_st, isolated_db, monkeypatch):
+    """Inspecting a trade renders complete plan, upstream candidate context, inspectable inputs JSON, and drawdown unknown."""
     monkeypatch.setattr(journal_tab_module, "st", fake_journal_st)
     settings = settings_from_mapping({"TRADEX_DB_PATH": isolated_db})
 
@@ -316,13 +365,31 @@ def test_detail_drilldown_view(fake_journal_st, isolated_db, monkeypatch):
                 computation_version="1.0",
                 computed_at=base_t + timedelta(minutes=1),
                 source_event_seq=2,
-                inputs_hash="hash-nvda",
+                inputs_hash="hash-nvda-v1",
                 entry_slippage=0.5,
                 costs=None,
                 gross_return_pct=None,
                 net_return_pct=None,
                 outcome_confidence=OutcomeConfidence.PROVISIONAL,
-                inputs={},
+                inputs={"fill_price": 500.5, "step": "v1"},
+                strategy_drawdown=None,
+            ),
+        )
+        insert_journal_outcome(
+            con,
+            JournalOutcome(
+                outcome_id="out-nvda-2",
+                journal_id="j-nvda-99",
+                computation_version="2.0",
+                computed_at=base_t + timedelta(minutes=10),
+                source_event_seq=2,
+                inputs_hash="hash-nvda-v2",
+                entry_slippage=0.5,
+                costs=1.5,
+                gross_return_pct=2.5,
+                net_return_pct=2.2,
+                outcome_confidence=OutcomeConfidence.CONFIRMED,
+                inputs={"fill_price": 500.5, "step": "v2", "costs": 1.5},
                 strategy_drawdown=None,
             ),
         )
@@ -335,15 +402,21 @@ def test_detail_drilldown_view(fake_journal_st, isolated_db, monkeypatch):
 
     # Subheader for trade detail
     subheaders = [str(call[0][0]) for call in fake_journal_st.subheader.call_args_list]
-    assert any("Journal Trade — NVDA (Open)" in s for s in subheaders)
+    assert any("Journal Trade — NVDA (🔵 Open)" in s for s in subheaders)
 
-    # Markdown checks for sections
+    # Markdown checks for sections and drawdown
     markdown_texts = [str(call[0][0]) for call in fake_journal_st.markdown.call_args_list]
     assert any("Immutable Trade Plan" in m for m in markdown_texts)
     assert any("Upstream Candidate Context" in m for m in markdown_texts)
     assert any("Execution Details" in m for m in markdown_texts)
     assert any("Append-Only Event Audit Timeline" in m for m in markdown_texts)
     assert any("Strategy Drawdown" in m and "Unknown" in m for m in markdown_texts)
+    assert any("Inputs Hash:" in m and "hash-nvda-v2" in m for m in markdown_texts)
+
+    # Inspectable JSON calls for inputs
+    json_payloads = [call[0][0] for call in fake_journal_st.json.call_args_list]
+    assert {"fill_price": 500.5, "step": "v2", "costs": 1.5} in json_payloads
+    assert {"fill_price": 500.5, "step": "v1"} in json_payloads
 
     # Back button resets selection
     fake_journal_st._active_buttons.add("btn_back_to_journal")
@@ -351,7 +424,170 @@ def test_detail_drilldown_view(fake_journal_st, isolated_db, monkeypatch):
     assert fake_journal_st.session_state["journal_selected_id"] is None
 
 
-# ── 5. Strict Zero-Mutation Invariant ─────────────────────────────────────────
+# ── 5. Semantic Badges & Return Independence Tests ───────────────────────────
+
+
+def test_visual_badges_and_return_independence(fake_journal_st, isolated_db, monkeypatch):
+    """Lifecycle badges remain neutral (⚫ Closed) regardless of positive/negative returns or missing costs."""
+    monkeypatch.setattr(journal_tab_module, "st", fake_journal_st)
+    settings = settings_from_mapping({"TRADEX_DB_PATH": isolated_db})
+    base_t = datetime(2026, 8, 20, 14, 30, tzinfo=UTC)
+
+    # Insert 3 candidates for 3 trades
+    with sqlite3.connect(isolated_db) as con:
+        for cid, sym in [("cand-1", "TSLA"), ("cand-2", "AAPL"), ("cand-3", "NVDA")]:
+            con.execute(
+                """
+                INSERT INTO candidates (candidate_id, contract_version, symbol, decision_timestamp, trading_date, security_identity_version, security_identity_status, created_at)
+                VALUES (?, 1, ?, ?, '2026-08-20', 'sec-v1', 'known', ?)
+                """,
+                (cid, sym, base_t.isoformat(), base_t.isoformat()),
+            )
+
+        # Win trade
+        insert_journal_trade(
+            con,
+            JournalTrade(
+                journal_id="j-win",
+                contract_version=1,
+                idempotency_key="idem-win",
+                candidate_id="cand-1",
+                strategy_id="strat_a",
+                strategy_version="1.0",
+                side="long",
+                state=JournalState.CLOSED,
+                decision_timestamp=base_t,
+                plan_created_at=base_t,
+                planned_entry=200.0,
+                quantity=10.0,
+                fill_price=200.0,
+                fill_timestamp=base_t,
+                exit_price=211.0,
+                exit_timestamp=base_t + timedelta(hours=1),
+                exit_reason=ExitReason.TARGET,
+            ),
+        )
+        insert_journal_outcome(
+            con,
+            JournalOutcome(
+                outcome_id="out-win",
+                journal_id="j-win",
+                computation_version="1.0",
+                computed_at=base_t,
+                source_event_seq=1,
+                inputs_hash="h1",
+                entry_slippage=0.0,
+                gross_return_pct=5.50,
+                net_return_pct=5.25,
+                costs=1.0,
+                outcome_confidence=OutcomeConfidence.CONFIRMED,
+            ),
+        )
+
+        # Loss trade
+        insert_journal_trade(
+            con,
+            JournalTrade(
+                journal_id="j-loss",
+                contract_version=1,
+                idempotency_key="idem-loss",
+                candidate_id="cand-2",
+                strategy_id="strat_a",
+                strategy_version="1.0",
+                side="long",
+                state=JournalState.CLOSED,
+                decision_timestamp=base_t,
+                plan_created_at=base_t,
+                planned_entry=200.0,
+                quantity=10.0,
+                fill_price=200.0,
+                fill_timestamp=base_t,
+                exit_price=193.6,
+                exit_timestamp=base_t + timedelta(hours=1),
+                exit_reason=ExitReason.STOP,
+            ),
+        )
+        insert_journal_outcome(
+            con,
+            JournalOutcome(
+                outcome_id="out-loss",
+                journal_id="j-loss",
+                computation_version="1.0",
+                computed_at=base_t,
+                source_event_seq=1,
+                inputs_hash="h2",
+                entry_slippage=0.0,
+                gross_return_pct=-3.20,
+                net_return_pct=-3.50,
+                costs=1.0,
+                outcome_confidence=OutcomeConfidence.CONFIRMED,
+            ),
+        )
+
+        # Trade with unknown net return (costs NULL)
+        insert_journal_trade(
+            con,
+            JournalTrade(
+                journal_id="j-null-costs",
+                contract_version=1,
+                idempotency_key="idem-null",
+                candidate_id="cand-3",
+                strategy_id="strat_a",
+                strategy_version="1.0",
+                side="long",
+                state=JournalState.CLOSED,
+                decision_timestamp=base_t,
+                plan_created_at=base_t,
+                planned_entry=200.0,
+                quantity=10.0,
+                fill_price=200.0,
+                fill_timestamp=base_t,
+                exit_price=208.0,
+                exit_timestamp=base_t + timedelta(hours=1),
+                exit_reason=ExitReason.DISCRETIONARY,
+            ),
+        )
+        insert_journal_outcome(
+            con,
+            JournalOutcome(
+                outcome_id="out-null",
+                journal_id="j-null-costs",
+                computation_version="1.0",
+                computed_at=base_t,
+                source_event_seq=1,
+                inputs_hash="h3",
+                entry_slippage=0.0,
+                gross_return_pct=4.0,
+                net_return_pct=None,
+                costs=None,
+                outcome_confidence=OutcomeConfidence.PROVISIONAL,
+            ),
+        )
+        con.commit()
+
+    journal_tab_module.render_journal_tab(settings=settings)
+
+    df_arg = fake_journal_st.dataframe.call_args[0][0]
+    assert len(df_arg) == 3
+
+    # All three closed trades have neutral ⚫ Closed badge regardless of return
+    assert all(row["State"] == "⚫ Closed" for _, row in df_arg.iterrows())
+
+    # Returns are formatted independently
+    win_row = df_arg[df_arg["Gross Return"] == "+5.50%"].iloc[0]
+    assert win_row["Net Return"] == "+5.25%"
+    assert win_row["Confidence"] == "🟢 Confirmed"
+
+    loss_row = df_arg[df_arg["Gross Return"] == "-3.20%"].iloc[0]
+    assert loss_row["Net Return"] == "-3.50%"
+    assert loss_row["Confidence"] == "🟢 Confirmed"
+
+    null_row = df_arg[df_arg["Gross Return"] == "+4.00%"].iloc[0]
+    assert null_row["Net Return"] == "Unknown (Costs unavailable)"
+    assert null_row["Confidence"] == "🟡 Provisional"
+
+
+# ── 6. Strict Zero-Mutation Invariant ─────────────────────────────────────────
 
 
 def test_ui_makes_zero_backend_mutations(fake_journal_st, isolated_db, monkeypatch):
@@ -376,3 +612,4 @@ def test_ui_makes_zero_backend_mutations(fake_journal_st, isolated_db, monkeypat
     journal_tab_module.render_journal_tab(settings=settings)
 
     assert mutation_mock.call_count == 0
+

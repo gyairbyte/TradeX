@@ -100,7 +100,7 @@ Scanner runs → results DataFrame
 | `docs/research/INTRA-001D-IMPLEMENTATION.md` | Implementation notes and CLI instructions for the locked real-data `INTRA-001D` study. |
 | `tradex/options/models.py` | Typed options source/capability and scan report models (`OptionsDataKind`, `OptionsSourceStatus`, `OptionsActivityReport`). |
 | `tradex/options/flow.py` | Capability-aware options source resolution, true-flow scanning, chain-snapshot scanning, and non-directional put/call balance. |
-| `tradex/ui/dashboard.py` | Streamlit dashboard router (8 transitional surfaces: Today, Scanner, Pre-Market, Confluence, Journal, Research Lab, Settings, Help). |
+| `tradex/ui/dashboard.py` | Streamlit dashboard router (8 transitional surfaces: Today, Scanner, Confluence, Pre-Market, Journal, Research Lab, Settings, Help). |
 | `tradex/ui/tabs/today.py` | Today landing surface and Candidate Detail drill-down (MVP-ARCH-001-R5C). |
 | `tradex/ui/tabs/journal.py` | Executable Strategy Journal tab renderer (MVP-ARCH-001-R6-IMPL-B). |
 | `tradex/ui/tabs/alerts.py` | Alerts tab renderer (under Settings → Alert Delivery; extracted in UI-001 Phase 2). |

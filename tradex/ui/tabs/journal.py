@@ -19,7 +19,6 @@ from tradex.journal.queries import (
     get_journal_strategy_ids,
     list_journal_read_models,
 )
-from tradex.strategies.registry import APPROVED_PRODUCTION_STRATEGIES
 from tradex.tracker.store import StoreError
 from tradex.ui.evidence import render_evidence_notice
 
@@ -50,24 +49,37 @@ def _render_journal_overview(*, settings: TradeXSettings) -> None:
         st.error(f"Failed to load Journal records from database: {err}")
         return
 
-    # Check active strategies in registry with journal_execution capability
+    # Check active strategies in registry dynamically at call time
+    import tradex.strategies.registry as registry_module
+
     active_authorized_strategies = [
-        s for s in APPROVED_PRODUCTION_STRATEGIES if "journal_execution" in s.capabilities
+        s
+        for s in registry_module.APPROVED_PRODUCTION_STRATEGIES
+        if "journal_execution" in s.capabilities
     ]
     has_active_strategy = len(active_authorized_strategies) > 0
 
-    # ── Scenario A: True Empty State (Zero records & No authorized strategy) ───
+    # ── Zero-record states (Case A & Case B) ──────────────────────────────────
     if not all_records:
-        st.info(
-            "**Executable Strategy Journal**\n\n"
-            "No production-approved executable strategy with Journal execution capability is currently active. "
-            "TradeX has no executable strategy Journal records.\n\n"
-            "Legacy scanner outcomes remain available as descriptive telemetry under **Research Lab → Legacy Scanner Telemetry** "
-            "and are not actual trade results."
-        )
+        if not has_active_strategy:
+            # Case A: zero records + no authorized strategy
+            st.info(
+                "**Executable Strategy Journal**\n\n"
+                "No production-approved executable strategy is currently active. "
+                "No Journal records exist.\n\n"
+                "Legacy scanner outcomes remain available as descriptive telemetry under **Research Lab → Legacy Scanner Telemetry** "
+                "and are not actual trade results."
+            )
+        else:
+            # Case B: zero records + an authorized strategy exists
+            st.info(
+                "**Executable Strategy Journal**\n\n"
+                "An executable production strategy is currently authorized, but no Journal records have been recorded yet.\n\n"
+                "Persisted trade records will appear here as strategy executions occur."
+            )
         return
 
-    # ── Scenario B: Historical Read-Only Mode ──────────────────────────────────
+    # ── Historical Read-Only Mode banner ──────────────────────────────────────
     if not has_active_strategy:
         st.info(
             "ℹ️ **Historical Read-Only Mode:** No production strategy is currently authorized for new Journal execution. "
@@ -145,7 +157,7 @@ def _render_journal_overview(*, settings: TradeXSettings) -> None:
         table_rows.append(
             {
                 "Symbol": t.symbol,
-                "State": t.formatted_state,
+                "State": t.formatted_state_badge,
                 "Strategy": strat_display,
                 "Side": t.side.upper(),
                 "Planned Entry": t.formatted_planned_entry,
@@ -157,8 +169,8 @@ def _render_journal_overview(*, settings: TradeXSettings) -> None:
                 "Exit Reason": t.formatted_exit_reason,
                 "Gross Return": t.formatted_gross_return,
                 "Net Return": t.formatted_net_return,
-                "Confidence": t.formatted_confidence,
-                "Provenance": t.formatted_fill_provenance if t.fill_provenance else (t.formatted_exit_provenance if t.exit_provenance else "—"),
+                "Confidence": t.formatted_confidence_badge,
+                "Provenance": t.formatted_fill_provenance_badge if t.fill_provenance else (t.formatted_exit_provenance_badge if t.exit_provenance else "—"),
                 "Decision Time": t.formatted_decision_time,
             }
         )
@@ -171,7 +183,7 @@ def _render_journal_overview(*, settings: TradeXSettings) -> None:
         hide_index=True,
         column_config={
             "Symbol": st.column_config.TextColumn("Symbol", help="Ticker symbol of the trade plan."),
-            "State": st.column_config.TextColumn("State", help="Lifecycle state: Planned, Open, Closed, Cancelled, Expired, Invalidated."),
+            "State": st.column_config.TextColumn("State", help="Lifecycle badge: Planned (⚪), Open (🔵), Closed (⚫ neutral), Cancelled (✖), Expired (⏳), Invalidated (🚫)."),
             "Strategy": st.column_config.TextColumn("Strategy", help="Strategy identity and version. Indicates if not currently authorized."),
             "Side": st.column_config.TextColumn("Side", help="Trade direction (LONG)."),
             "Planned Entry": st.column_config.TextColumn("Planned Entry", help="Planned entry trigger price."),
@@ -181,10 +193,10 @@ def _render_journal_overview(*, settings: TradeXSettings) -> None:
             "Target": st.column_config.TextColumn("Target", help="Configured target price."),
             "Exit Price": st.column_config.TextColumn("Exit Price", help="Realized exit fill price."),
             "Exit Reason": st.column_config.TextColumn("Exit Reason", help="Reason for trade exit."),
-            "Gross Return": st.column_config.TextColumn("Gross Return", help="Gross realized return percentage."),
-            "Net Return": st.column_config.TextColumn("Net Return", help="Net realized return percentage after documented costs. Unknown if costs unavailable."),
-            "Confidence": st.column_config.TextColumn("Confidence", help="Outcome confidence derived from execution provenance: Confirmed, Provisional, Unknown."),
-            "Provenance": st.column_config.TextColumn("Provenance", help="Execution source: Manual Reported, Simulated, Broker Confirmed."),
+            "Gross Return": st.column_config.TextColumn("Gross Return", help="Gross realized return percentage (+X.XX% / -X.XX%)."),
+            "Net Return": st.column_config.TextColumn("Net Return", help="Net realized return percentage after documented costs (+X.XX% / -X.XX%). Unknown if costs unavailable."),
+            "Confidence": st.column_config.TextColumn("Confidence", help="Outcome confidence badge: Confirmed (🟢), Provisional (🟡), Unknown (⚪)."),
+            "Provenance": st.column_config.TextColumn("Provenance", help="Execution source badge: Manual Reported (👤), Simulated (🧪), Broker Confirmed (🏦)."),
             "Decision Time": st.column_config.TextColumn("Decision Time", help="Point-in-time timestamp of the decision in America/New_York (ET)."),
         },
     )
@@ -195,7 +207,7 @@ def _render_journal_overview(*, settings: TradeXSettings) -> None:
     col_sel, col_btn = st.columns([3, 1])
     with col_sel:
         trade_map = {
-            f"{t.symbol} ({t.formatted_state}) · {t.strategy_id}:{t.strategy_version} · {t.formatted_decision_time}": t.journal_id
+            f"{t.symbol} ({t.formatted_state_badge}) · {t.strategy_id}:{t.strategy_version} · {t.formatted_decision_time}": t.journal_id
             for t in trades
         }
         chosen_label = st.selectbox(
@@ -232,7 +244,7 @@ def _render_journal_detail(journal_id: str, *, settings: TradeXSettings) -> None
     trade = detail.trade
 
     # ── A. Trade Identity & Header ─────────────────────────────────────────────
-    st.subheader(f"Journal Trade — {detail.symbol} ({trade.formatted_state})")
+    st.subheader(f"Journal Trade — {detail.symbol} ({trade.formatted_state_badge})")
 
     auth_tag = "Active (Authorized)" if detail.is_strategy_authorized else "Not Currently Authorized / Deprecated"
     st.markdown(
@@ -264,11 +276,15 @@ def _render_journal_detail(journal_id: str, *, settings: TradeXSettings) -> None
     st.markdown("### Upstream Candidate Context")
     if detail.candidate_snapshot:
         snap = detail.candidate_snapshot
+        status_val = snap.security_identity_status.value if hasattr(snap.security_identity_status, "value") else str(snap.security_identity_status)
+        ver_val = snap.security_identity_version if snap.security_identity_version is not None else "NULL (None)"
         st.markdown(
             f"**Candidate ID:** `{snap.candidate_id}`  ·  "
+            f"**Contract Version:** `v{snap.contract_version}`  ·  "
             f"**Decision Time:** `{_format_market_time(snap.decision_timestamp, include_date=True)}`  ·  "
             f"**Trading Date:** `{snap.trading_date or 'NULL'}`  ·  "
-            f"**Security Status:** `{snap.security_identity_status.value if hasattr(snap.security_identity_status, 'value') else snap.security_identity_status}`"
+            f"**Security Identity Version:** `{ver_val}`  ·  "
+            f"**Security Status:** `{status_val}`"
         )
     else:
         st.caption(f"Referenced CandidateSnapshot `{trade.candidate_id}` identity details unavailable.")
@@ -286,7 +302,7 @@ def _render_journal_detail(journal_id: str, *, settings: TradeXSettings) -> None
     e1.metric("Quantity", trade.formatted_quantity)
     e2.metric("Fill Price", trade.formatted_fill_price)
     e3.metric("Fill Time", _format_market_time(trade.fill_timestamp, include_date=True))
-    e4.metric("Fill Provenance", trade.formatted_fill_provenance)
+    e4.metric("Fill Provenance", trade.formatted_fill_provenance_badge)
 
     if trade.fill_provenance and trade.fill_provenance.simulation_rule:
         st.caption(
@@ -298,7 +314,7 @@ def _render_journal_detail(journal_id: str, *, settings: TradeXSettings) -> None
         x1.metric("Exit Price", trade.formatted_exit_price)
         x2.metric("Exit Time", _format_market_time(trade.exit_timestamp, include_date=True))
         x3.metric("Exit Reason", trade.formatted_exit_reason)
-        x4.metric("Exit Provenance", trade.formatted_exit_provenance)
+        x4.metric("Exit Provenance", trade.formatted_exit_provenance_badge)
 
         if trade.exit_provenance and trade.exit_provenance.simulation_rule:
             st.caption(
@@ -313,11 +329,11 @@ def _render_journal_detail(journal_id: str, *, settings: TradeXSettings) -> None
     if detail.current_outcome:
         out = detail.current_outcome
         o1, o2, o3, o4, o5 = st.columns(5)
-        o1.metric("Gross Return", out.formatted_gross_return)
-        o2.metric("Net Return", out.formatted_net_return)
+        o1.metric("Gross Return", out.formatted_gross_return, delta=f"{out.gross_return_pct:+.2f}%" if out.gross_return_pct is not None else None)
+        o2.metric("Net Return", out.formatted_net_return, delta=f"{out.net_return_pct:+.2f}%" if out.net_return_pct is not None else None)
         o3.metric("Costs / Fees", f"${out.costs:.2f}" if out.costs is not None else "Unknown (NULL)")
         o4.metric("Entry Slippage", f"${out.entry_slippage:+.2f}" if out.entry_slippage is not None else "—")
-        o5.metric("Confidence", out.formatted_confidence)
+        o5.metric("Confidence", out.formatted_confidence_badge)
 
         st.markdown(
             f"**Outcome ID:** `{out.outcome_id}`  ·  "
@@ -327,6 +343,13 @@ def _render_journal_detail(journal_id: str, *, settings: TradeXSettings) -> None
             f"**Inputs Hash:** `{out.inputs_hash}`"
         )
         st.markdown("**Strategy Drawdown:** `Unknown` *(Portfolio drawdown aggregation unsupported in R6 v1)*")
+
+        # Expose persisted outcome computation inputs in inspectable read-only JSON surface
+        with st.expander("🔍 Persisted Computation Inputs (Current Outcome)", expanded=False):
+            if out.inputs:
+                st.json(out.inputs)
+            else:
+                st.caption("No computation inputs recorded.")
     else:
         st.info("No realized outcome calculated yet for this trade setup.")
 
@@ -358,11 +381,23 @@ def _render_journal_detail(journal_id: str, *, settings: TradeXSettings) -> None
                 "Source Seq": oc.source_event_seq,
                 "Gross Return": oc.formatted_gross_return,
                 "Net Return": oc.formatted_net_return,
-                "Confidence": oc.formatted_confidence,
+                "Confidence": oc.formatted_confidence_badge,
                 "Inputs Hash": oc.inputs_hash,
             }
             for oc in detail.outcomes
         ]
         st.dataframe(pd.DataFrame(outcome_rows), use_container_width=True, hide_index=True)
+
+        # Make inputs for each outcome version inspectable
+        with st.expander("🔍 Inspect Historical Outcome Computation Inputs", expanded=False):
+            for oc in detail.outcomes:
+                st.markdown(
+                    f"**Outcome `{oc.outcome_id}`** (v`{oc.computation_version}` · `{oc.formatted_computed_at}` · Hash: `{oc.inputs_hash}`)"
+                )
+                if oc.inputs:
+                    st.json(oc.inputs)
+                else:
+                    st.caption("Empty or unrecorded inputs.")
     else:
         st.caption("No outcome computations recorded.")
+
