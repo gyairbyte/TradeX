@@ -25,6 +25,39 @@ _STRATEGY_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 _STRATEGY_VERSION_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$")
 
 
+def validate_strategy_identity(strategy_id: str, strategy_version: str) -> None:
+    """Validate strategy_id and strategy_version syntax according to R6 contract.
+
+    Raises:
+        TypeError: If strategy_id or strategy_version is not a str.
+        ValueError: If strategy_id or strategy_version is empty, has leading/trailing
+            whitespace, or does not match the canonical regex pattern.
+    """
+    if not isinstance(strategy_id, str):
+        raise TypeError("strategy_id must be a str")
+    if not strategy_id or strategy_id.strip() != strategy_id:
+        raise ValueError(
+            "strategy_id must be non-empty without leading or trailing whitespace"
+        )
+    if not _STRATEGY_ID_PATTERN.match(strategy_id):
+        raise ValueError(
+            f"strategy_id '{strategy_id}' does not match required pattern "
+            "'^[a-z0-9][a-z0-9_-]{0,63}$'"
+        )
+
+    if not isinstance(strategy_version, str):
+        raise TypeError("strategy_version must be a str")
+    if not strategy_version or strategy_version.strip() != strategy_version:
+        raise ValueError(
+            "strategy_version must be non-empty without leading or trailing whitespace"
+        )
+    if not _STRATEGY_VERSION_PATTERN.match(strategy_version):
+        raise ValueError(
+            f"strategy_version '{strategy_version}' does not match required pattern "
+            "'^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$'"
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class ApprovedProductionStrategy:
     """Immutable record for a production-approved strategy with explicit capabilities."""
@@ -35,29 +68,7 @@ class ApprovedProductionStrategy:
     capabilities: frozenset[str]
 
     def __post_init__(self) -> None:
-        if not isinstance(self.strategy_id, str):
-            raise TypeError("strategy_id must be a str")
-        if not self.strategy_id or self.strategy_id.strip() != self.strategy_id:
-            raise ValueError(
-                "strategy_id must be non-empty without leading or trailing whitespace"
-            )
-        if not _STRATEGY_ID_PATTERN.match(self.strategy_id):
-            raise ValueError(
-                f"strategy_id '{self.strategy_id}' does not match required pattern "
-                "'^[a-z0-9][a-z0-9_-]{0,63}$'"
-            )
-
-        if not isinstance(self.strategy_version, str):
-            raise TypeError("strategy_version must be a str")
-        if not self.strategy_version or self.strategy_version.strip() != self.strategy_version:
-            raise ValueError(
-                "strategy_version must be non-empty without leading or trailing whitespace"
-            )
-        if not _STRATEGY_VERSION_PATTERN.match(self.strategy_version):
-            raise ValueError(
-                f"strategy_version '{self.strategy_version}' does not match required pattern "
-                "'^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$'"
-            )
+        validate_strategy_identity(self.strategy_id, self.strategy_version)
 
         if not isinstance(self.description, str):
             raise TypeError("description must be a str")

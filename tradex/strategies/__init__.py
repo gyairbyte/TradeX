@@ -4,6 +4,7 @@ from tradex.strategies.registry import (
     SUPPORTED_CAPABILITIES,
     ApprovedProductionStrategy,
     has_production_strategy_capability,
+    validate_strategy_identity,
 )
 
 __all__ = [
@@ -11,4 +12,5 @@ __all__ = [
     "SUPPORTED_CAPABILITIES",
     "ApprovedProductionStrategy",
     "has_production_strategy_capability",
+    "validate_strategy_identity",
 ]

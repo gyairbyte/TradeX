@@ -551,7 +551,7 @@ def test_init_migration_is_atomic_and_idempotent(tmp_path, monkeypatch):
 
     with store._conn() as con:
         version = con.execute("PRAGMA user_version").fetchone()[0]
-        assert version == 4
+        assert version == 5
         sessions = con.execute("SELECT COUNT(*) FROM scan_sessions").fetchone()[0]
         observations = con.execute("SELECT COUNT(*) FROM scan_observations").fetchone()[0]
         assert sessions == 1
