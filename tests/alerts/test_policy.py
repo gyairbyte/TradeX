@@ -5,10 +5,10 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from tradex.alerts.eligibility import ApprovedActionableStrategy
 from tradex.alerts.models import AlertCooldownConfig, AlertDecision, AlertKey
 from tradex.alerts.policy import AlertPolicy
 from tradex.alerts.store import AlertStore
+from tradex.strategies.registry import ApprovedProductionStrategy
 
 
 @pytest.fixture
@@ -19,13 +19,14 @@ def fixed_clock():
 @pytest.fixture
 def authorized_strategy(monkeypatch):
     """Register an approved strategy for testing authorized alert pathways."""
-    strat = ApprovedActionableStrategy(
-        strategy_id="TEST-001",
+    strat = ApprovedProductionStrategy(
+        strategy_id="test_001",
         strategy_version="1.0.0",
         description="Authorized test strategy",
+        capabilities=frozenset({"automatic_alerts"}),
     )
     monkeypatch.setattr(
-        "tradex.alerts.eligibility.APPROVED_ACTIONABLE_STRATEGIES",
+        "tradex.strategies.registry.APPROVED_PRODUCTION_STRATEGIES",
         (strat,),
     )
     return strat
@@ -216,7 +217,7 @@ class TestAlertPolicyAuthorizedDispatch:
             "subject",
             "body",
             observed_at=fixed_clock,
-            strategy_id="TEST-001",
+            strategy_id="test_001",
             strategy_version="1.0.0",
             evidence_state="production_approved",
         )
@@ -238,7 +239,7 @@ class TestAlertPolicyAuthorizedDispatch:
             "subject",
             "body",
             observed_at=fixed_clock,
-            strategy_id="TEST-001",
+            strategy_id="test_001",
             strategy_version="1.0.0",
             evidence_state="production_approved",
         )
@@ -247,7 +248,7 @@ class TestAlertPolicyAuthorizedDispatch:
             "subject",
             "body",
             observed_at=fixed_clock,
-            strategy_id="TEST-001",
+            strategy_id="test_001",
             strategy_version="1.0.0",
             evidence_state="production_approved",
         )
@@ -267,7 +268,7 @@ class TestAlertPolicyAuthorizedDispatch:
             "subject",
             "body",
             observed_at=fixed_clock,
-            strategy_id="TEST-001",
+            strategy_id="test_001",
             strategy_version="1.0.0",
             evidence_state="production_approved",
         )
@@ -277,7 +278,7 @@ class TestAlertPolicyAuthorizedDispatch:
             "subject",
             "body",
             observed_at=exact,
-            strategy_id="TEST-001",
+            strategy_id="test_001",
             strategy_version="1.0.0",
             evidence_state="production_approved",
         )
@@ -304,7 +305,7 @@ class TestAlertPolicyAuthorizedDispatch:
             "s",
             "b",
             observed_at=fixed_clock,
-            strategy_id="TEST-001",
+            strategy_id="test_001",
             strategy_version="1.0.0",
             evidence_state="production_approved",
         )
@@ -313,7 +314,7 @@ class TestAlertPolicyAuthorizedDispatch:
             "s",
             "b",
             observed_at=fixed_clock,
-            strategy_id="TEST-001",
+            strategy_id="test_001",
             strategy_version="1.0.0",
             evidence_state="production_approved",
         )
@@ -334,7 +335,7 @@ class TestAlertPolicyAuthorizedDispatch:
             "s",
             "b",
             observed_at=fixed_clock,
-            strategy_id="TEST-001",
+            strategy_id="test_001",
             strategy_version="1.0.0",
             evidence_state="production_approved",
         )
@@ -357,7 +358,7 @@ class TestAlertPolicyAuthorizedDispatch:
             "s",
             "b",
             observed_at=fixed_clock,
-            strategy_id="TEST-001",
+            strategy_id="test_001",
             strategy_version="1.0.0",
             evidence_state="production_approved",
         )
@@ -379,7 +380,7 @@ class TestAlertPolicyAuthorizedDispatch:
             "s",
             "b",
             observed_at=fixed_clock,
-            strategy_id="TEST-001",
+            strategy_id="test_001",
             strategy_version="1.0.0",
             evidence_state="production_approved",
         )
@@ -404,7 +405,7 @@ class TestAlertPolicyAuthorizedDispatch:
             "s",
             "b",
             observed_at=fixed_clock,
-            strategy_id="TEST-001",
+            strategy_id="test_001",
             strategy_version="1.0.0",
             evidence_state="production_approved",
         )
@@ -413,7 +414,7 @@ class TestAlertPolicyAuthorizedDispatch:
             "s",
             "b",
             observed_at=fixed_clock,
-            strategy_id="TEST-001",
+            strategy_id="test_001",
             strategy_version="1.0.0",
             evidence_state="production_approved",
         )
@@ -437,7 +438,7 @@ class TestAlertPolicyAuthorizedDispatch:
             "s",
             "b",
             observed_at=fixed_clock,
-            strategy_id="TEST-001",
+            strategy_id="test_001",
             strategy_version="1.0.0",
             evidence_state="production_approved",
         )
@@ -456,7 +457,7 @@ class TestAlertPolicyAuthorizedDispatch:
             "s",
             "b",
             observed_at=fixed_clock,
-            strategy_id="TEST-001",
+            strategy_id="test_001",
             strategy_version="1.0.0",
             evidence_state="production_approved",
         )
@@ -477,7 +478,7 @@ class TestAlertPolicyAuthorizedDispatch:
             "s",
             "b",
             observed_at=fixed_clock,
-            strategy_id="TEST-001",
+            strategy_id="test_001",
             strategy_version="1.0.0",
             evidence_state="production_approved",
         )
@@ -486,7 +487,7 @@ class TestAlertPolicyAuthorizedDispatch:
             "s",
             "b",
             observed_at=fixed_clock,
-            strategy_id="TEST-001",
+            strategy_id="test_001",
             strategy_version="1.0.0",
             evidence_state="production_approved",
         )
@@ -507,7 +508,7 @@ class TestAlertPolicyAuthorizedDispatch:
             "s",
             "b",
             observed_at=fixed_clock,
-            strategy_id="TEST-001",
+            strategy_id="test_001",
             strategy_version="1.0.0",
             evidence_state="production_approved",
         )
@@ -516,7 +517,7 @@ class TestAlertPolicyAuthorizedDispatch:
             "s",
             "b",
             observed_at=fixed_clock,
-            strategy_id="TEST-001",
+            strategy_id="test_001",
             strategy_version="1.0.0",
             evidence_state="production_approved",
         )
@@ -537,7 +538,7 @@ class TestAlertPolicyAuthorizedDispatch:
             "s",
             "b",
             observed_at=fixed_clock,
-            strategy_id="TEST-001",
+            strategy_id="test_001",
             strategy_version="1.0.0",
             evidence_state="production_approved",
         )
@@ -546,7 +547,7 @@ class TestAlertPolicyAuthorizedDispatch:
             "s",
             "b",
             observed_at=fixed_clock,
-            strategy_id="TEST-001",
+            strategy_id="test_001",
             strategy_version="1.0.0",
             evidence_state="production_approved",
         )
@@ -580,7 +581,7 @@ class TestAlertPolicyAuthorizedDispatch:
             "s",
             "b",
             observed_at=fixed_clock,
-            strategy_id="TEST-001",
+            strategy_id="test_001",
             strategy_version="1.0.0",
             evidence_state="production_approved",
         )
@@ -605,7 +606,7 @@ class TestAlertPolicyAuthorizedDispatch:
             "s",
             "b",
             observed_at=fixed_clock,
-            strategy_id="TEST-001",
+            strategy_id="test_001",
             strategy_version="1.0.0",
             evidence_state="production_approved",
         )
@@ -630,7 +631,7 @@ class TestAlertPolicyAuthorizedDispatch:
             "s",
             "b",
             observed_at=later,
-            strategy_id="TEST-001",
+            strategy_id="test_001",
             strategy_version="1.0.0",
             evidence_state="production_approved",
         )
@@ -663,7 +664,7 @@ class TestAlertPolicyPerTypeOverrides:
             "s",
             "b",
             observed_at=fixed_clock,
-            strategy_id="TEST-001",
+            strategy_id="test_001",
             strategy_version="1.0.0",
             evidence_state="production_approved",
         )
@@ -672,7 +673,7 @@ class TestAlertPolicyPerTypeOverrides:
             "s",
             "b",
             observed_at=fixed_clock + timedelta(minutes=5),
-            strategy_id="TEST-001",
+            strategy_id="test_001",
             strategy_version="1.0.0",
             evidence_state="production_approved",
         )
@@ -693,7 +694,7 @@ class TestAlertPolicyPerTypeOverrides:
             "s",
             "b",
             observed_at=fixed_clock,
-            strategy_id="TEST-001",
+            strategy_id="test_001",
             strategy_version="1.0.0",
             evidence_state="production_approved",
         )
@@ -702,7 +703,7 @@ class TestAlertPolicyPerTypeOverrides:
             "s",
             "b",
             observed_at=fixed_clock + timedelta(minutes=5),
-            strategy_id="TEST-001",
+            strategy_id="test_001",
             strategy_version="1.0.0",
             evidence_state="production_approved",
         )
@@ -723,7 +724,7 @@ class TestAlertPolicyPerTypeOverrides:
             "s",
             "b",
             observed_at=fixed_clock,
-            strategy_id="TEST-001",
+            strategy_id="test_001",
             strategy_version="1.0.0",
             evidence_state="production_approved",
         )
@@ -732,7 +733,7 @@ class TestAlertPolicyPerTypeOverrides:
             "s",
             "b",
             observed_at=fixed_clock + timedelta(minutes=5),
-            strategy_id="TEST-001",
+            strategy_id="test_001",
             strategy_version="1.0.0",
             evidence_state="production_approved",
         )
@@ -756,7 +757,7 @@ class TestAlertPolicyFinalizeHandling:
             "s",
             "b",
             observed_at=fixed_clock,
-            strategy_id="TEST-001",
+            strategy_id="test_001",
             strategy_version="1.0.0",
             evidence_state="production_approved",
         )
@@ -840,7 +841,7 @@ class TestAlertPolicyFinalizeHandling:
             "s",
             "b",
             observed_at=fixed_clock,
-            strategy_id="TEST-001",
+            strategy_id="test_001",
             strategy_version="1.0.0",
             evidence_state="production_approved",
         )
@@ -862,7 +863,7 @@ class TestAlertPolicyFinalizeHandling:
             "s",
             "b",
             observed_at=fixed_clock,
-            strategy_id="TEST-001",
+            strategy_id="test_001",
             strategy_version="1.0.0",
             evidence_state="production_approved",
         )

@@ -52,6 +52,7 @@ Scanner runs → results DataFrame
 | `tradex/signals/short_term.py` | Short-term scorer — EMA structure, volume confirmation, MACD, pullback-to-EMA setups |
 | `tradex/signals/long_term.py` | Long-term scorer — secular trend, volume accumulation, weekly MACD, BB coiling |
 | `tradex/screener/engine.py` | Runs a scorer over a watchlist, filters by min_score, returns sorted DataFrame |
+| `tradex/strategies/registry.py` | Central neutral production strategy authorization registry and pure capability lookup API (`ApprovedProductionStrategy`, `APPROVED_PRODUCTION_STRATEGIES`, `has_production_strategy_capability`). |
 | `tradex/tracker/store.py` | SQLite persistence for signal history and canonical scan sessions/observations. Tables: `signal_history`, `scan_sessions`, `scan_observations`, `scan_runs`. DB at `~/.tradex/signals.db`. |
 | `tradex/tracker/analyzer.py` | Coil detector — reads history, finds stocks building pressure without breaking out. Returns coil strength score. |
 | `tradex/tracker/confluence.py` | Scores a ticker across all 3 timeframes simultaneously. Coverage-aware weighted score (intraday 30%, short 40%, long 30%). |

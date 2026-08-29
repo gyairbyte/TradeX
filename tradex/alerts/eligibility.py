@@ -1,4 +1,4 @@
-"""Central, domain-level automatic-alert eligibility boundary (MVP-ARCH-001-R4).
+"""Central, domain-level automatic-alert eligibility boundary (MVP-ARCH-001-R4/R6).
 
 Enforces fail-closed gating between market observations/threshold events and
 automatic external market alert delivery (Discord / email).
@@ -8,9 +8,9 @@ Requirements:
   inconclusive, or otherwise non-approved inputs are ineligible for automatic
   external delivery.
 - Exact production strategy authorization must be explicit via strategy_id and
-  strategy_version in APPROVED_ACTIONABLE_STRATEGIES.
-- The approved actionable strategy set is EMPTY in R4. No strategy is promoted
-  or authorized as production-approved in this PR.
+  strategy_version holding the "automatic_alerts" capability in the central
+  strategy registry (tradex.strategies.registry.APPROVED_PRODUCTION_STRATEGIES).
+- The approved production strategy registry is strictly EMPTY in this release.
 - Independent of UI, Streamlit, or presentation layers.
 """
 from __future__ import annotations
@@ -18,22 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from tradex.alerts.models import AlertKey
-
-
-@dataclass(frozen=True, slots=True)
-class ApprovedActionableStrategy:
-    """Immutable record for an approved actionable strategy authorized for alerts."""
-
-    strategy_id: str
-    strategy_version: str
-    description: str
-
-
-# Authoritative domain registry of approved actionable strategies authorized to
-# generate automatic external market notifications.
-# In R4, this registry is strictly EMPTY. No strategy is authorized for automatic
-# external market alerts. Future promotion requires an explicit Gary-approved PR.
-APPROVED_ACTIONABLE_STRATEGIES: tuple[ApprovedActionableStrategy, ...] = ()
+from tradex.strategies.registry import has_production_strategy_capability
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,11 +42,12 @@ def check_automatic_alert_eligibility(
     """Check if an automatic market alert event is eligible for external dispatch.
 
     Fail-closed rules:
-    1. If strategy_id or strategy_version is missing / None -> ineligible.
-    2. If evidence_state is not "production_approved" -> ineligible.
-    3. Even if evidence_state == "production_approved", (strategy_id, strategy_version)
-       MUST exist in APPROVED_ACTIONABLE_STRATEGIES.
-    4. All current legacy heuristic, exploratory, rejected, research-only,
+    1. If key is not an AlertKey instance -> ineligible.
+    2. If strategy_id or strategy_version is missing / None -> ineligible.
+    3. If evidence_state is not "production_approved" -> ineligible.
+    4. Even if evidence_state == "production_approved", (strategy_id, strategy_version)
+       MUST have the "automatic_alerts" capability in the central production strategy registry.
+    5. All current legacy heuristic, exploratory, rejected, research-only,
        archived, and inconclusive outputs (coil, confluence, gap, pattern, etc.)
        lack an approved strategy identity and fail closed.
     """
@@ -95,17 +81,12 @@ def check_automatic_alert_eligibility(
             evidence_state=evidence_state,
         )
 
-    is_approved = any(
-        s.strategy_id == strategy_id and s.strategy_version == strategy_version
-        for s in APPROVED_ACTIONABLE_STRATEGIES
-    )
-
-    if not is_approved:
+    if not has_production_strategy_capability(strategy_id, strategy_version, "automatic_alerts"):
         return AlertEligibilityResult(
             eligible=False,
             reason=(
                 f"Automatic market alerts gated for {key.ticker} | {key.alert_type}: "
-                f"strategy '{strategy_id}:{strategy_version}' is not in approved actionable strategy registry (fail-closed)"
+                f"strategy '{strategy_id}:{strategy_version}' lacks 'automatic_alerts' capability in central production strategy registry (fail-closed)"
             ),
             strategy_id=strategy_id,
             strategy_version=strategy_version,
@@ -115,7 +96,7 @@ def check_automatic_alert_eligibility(
     return AlertEligibilityResult(
         eligible=True,
         reason=(
-            f"Approved actionable strategy '{strategy_id}:{strategy_version}' authorized "
+            f"Approved production strategy '{strategy_id}:{strategy_version}' authorized "
             f"for automatic market alert delivery"
         ),
         strategy_id=strategy_id,
