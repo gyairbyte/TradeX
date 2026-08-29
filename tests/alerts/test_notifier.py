@@ -6,7 +6,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tradex.alerts.eligibility import ApprovedActionableStrategy
 from tradex.alerts.models import AlertDecision, AlertKey
 from tradex.alerts.notifier import (
     COIL_ALERT_THRESHOLD,
@@ -22,6 +21,7 @@ from tradex.alerts.notifier import (
 from tradex.alerts.policy import AlertPolicy
 from tradex.alerts.store import AlertStore
 from tradex.config import TradeXSettings, settings_from_mapping
+from tradex.strategies.registry import ApprovedProductionStrategy
 
 
 def _empty_settings() -> TradeXSettings:
@@ -42,13 +42,14 @@ def _discord_settings() -> TradeXSettings:
 @pytest.fixture
 def authorized_strategy(monkeypatch):
     """Register an approved strategy for testing authorized alert pathways."""
-    strat = ApprovedActionableStrategy(
-        strategy_id="TEST-001",
+    strat = ApprovedProductionStrategy(
+        strategy_id="test_001",
         strategy_version="1.0.0",
         description="Authorized test strategy",
+        capabilities=frozenset({"automatic_alerts"}),
     )
     monkeypatch.setattr(
-        "tradex.alerts.eligibility.APPROVED_ACTIONABLE_STRATEGIES",
+        "tradex.strategies.registry.APPROVED_PRODUCTION_STRATEGIES",
         (strat,),
     )
     return strat
@@ -125,7 +126,7 @@ class TestAlertCoil:
             "subject",
             "body",
             observed_at=now,
-            strategy_id="TEST-001",
+            strategy_id="test_001",
             strategy_version="1.0.0",
             evidence_state="production_approved",
         )

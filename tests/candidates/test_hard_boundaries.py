@@ -3,7 +3,7 @@
 Validates:
 - Database schema version remains exactly 4.
 - No schema migrations added or changed.
-- APPROVED_ACTIONABLE_STRATEGIES remains empty tuple ().
+- APPROVED_PRODUCTION_STRATEGIES remains empty tuple ().
 - Alert policies and notifier remain unchanged and fail-closed.
 - Candidate aggregator, evaluator, and service logic unchanged from R5B.
 - Scanner execution and diagnostics unchanged.
@@ -22,10 +22,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from tradex.alerts.eligibility import (
-    APPROVED_ACTIONABLE_STRATEGIES,
-    check_automatic_alert_eligibility,
-)
+from tradex.alerts.eligibility import check_automatic_alert_eligibility
 from tradex.alerts.models import AlertKey
 from tradex.candidates import (
     CandidateDimension,
@@ -36,6 +33,7 @@ from tradex.candidates import (
 )
 from tradex.config import settings_from_mapping
 from tradex.data.fetcher import resolve_provider
+from tradex.strategies.registry import APPROVED_PRODUCTION_STRATEGIES
 from tradex.tracker import store
 from tradex.ui.tabs.today import render_today_tab
 
@@ -52,13 +50,13 @@ def test_schema_version_remains_four(tmp_path: Path) -> None:
     assert store._SCHEMA_VERSION == 4
 
 
-def test_approved_actionable_strategies_remains_empty() -> None:
-    """Automatic alert gating must remain fail-closed with zero approved actionable strategies."""
-    assert APPROVED_ACTIONABLE_STRATEGIES == ()
+def test_approved_production_strategies_remains_empty() -> None:
+    """Automatic alert gating must remain fail-closed with zero approved production strategies."""
+    assert APPROVED_PRODUCTION_STRATEGIES == ()
     key = AlertKey(ticker="AAPL", alert_type="price", timeframe="intraday")
     res = check_automatic_alert_eligibility(
         key,
-        strategy_id="LONG-002C",
+        strategy_id="long-002c",
         strategy_version="1.0.0",
         evidence_state="production_approved",
     )
