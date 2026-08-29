@@ -17,6 +17,7 @@ from tradex.journal.models import (
     JournalOutcome,
     JournalTrade,
 )
+from tradex.journal.outcomes import serialize_canonical_inputs_json
 
 
 def _serialize_invalidation_rule(rule: InvalidationRule | None) -> str | None:
@@ -318,6 +319,7 @@ def insert_journal_event(con: sqlite3.Connection, event: JournalEvent) -> None:
 
 def insert_journal_outcome(con: sqlite3.Connection, outcome: JournalOutcome) -> None:
     """Insert a versioned outcome row into journal_outcomes."""
+    canonical_inputs_json = serialize_canonical_inputs_json(outcome.inputs)
     con.execute(
         """
         INSERT INTO journal_outcomes (
@@ -342,7 +344,7 @@ def insert_journal_outcome(con: sqlite3.Connection, outcome: JournalOutcome) -> 
                 if hasattr(outcome.outcome_confidence, "value")
                 else str(outcome.outcome_confidence)
             ),
-            json.dumps(outcome.inputs, sort_keys=True),
+            canonical_inputs_json,
         ),
     )
 

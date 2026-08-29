@@ -24,6 +24,7 @@ from tradex.journal.outcomes import (
     JOURNAL_OUTCOME_COMPUTATION_VERSION,
     compute_journal_outcome,
     map_outcome_confidence,
+    serialize_canonical_inputs_json,
 )
 from tradex.journal.service import (
     cancel_trade,
@@ -82,5 +83,6 @@ __all__ = [
     "recompute_outcomes",
     "record_exit",
     "record_fill",
+    "serialize_canonical_inputs_json",
     "validate_strategy_authorization",
 ]

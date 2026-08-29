@@ -83,6 +83,11 @@ def canonicalize_provenance_payload(prov: ExecutionProvenance | None) -> dict[st
     return res
 
 
+def serialize_canonical_inputs_json(inputs: dict[str, Any]) -> str:
+    """Serialize computation inputs to the single canonical JSON string used for persistence and hashing."""
+    return json.dumps(inputs, sort_keys=True, separators=(",", ":"), allow_nan=False)
+
+
 def compute_journal_outcome(
     *,
     journal_id: str,
@@ -128,7 +133,7 @@ def compute_journal_outcome(
         "quantity": quantity,
     }
 
-    canonical_json = json.dumps(inputs_dict, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    canonical_json = serialize_canonical_inputs_json(inputs_dict)
     inputs_hash = hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
 
     return JournalOutcome(

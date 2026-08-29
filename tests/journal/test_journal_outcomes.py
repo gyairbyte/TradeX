@@ -15,6 +15,7 @@ from tradex.journal.outcomes import (
     JOURNAL_OUTCOME_COMPUTATION_VERSION,
     compute_journal_outcome,
     map_outcome_confidence,
+    serialize_canonical_inputs_json,
 )
 
 
@@ -214,7 +215,10 @@ def test_canonical_inputs_json_and_sha256_reproducibility() -> None:
 
     # Verify canonical inputs JSON formatting and hash
     inputs = out.inputs
-    canonical_json = json.dumps(inputs, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    canonical_json = serialize_canonical_inputs_json(inputs)
+    raw_dumps = json.dumps(inputs, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    assert canonical_json == raw_dumps
+
     expected_hash = hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
 
     assert out.inputs_hash == expected_hash

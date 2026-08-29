@@ -108,14 +108,56 @@ def test_execution_provenance_validation() -> None:
     assert p_manual.observer == "gary"
     assert p_manual.simulation_rule is None
 
-    # Missing provider normalized to "unknown"
-    p_unknown_prov = ExecutionProvenance(
+    # Verbatim provider preservation (case and whitespace preserved exactly)
+    p_verbatim = ExecutionProvenance(
+        execution_provenance=ExecutionProvenanceType.MANUAL,
+        provider=" Schwab Raw-ID ",
+        observed_at=now,
+        observer="gary",
+    )
+    assert p_verbatim.provider == " Schwab Raw-ID "
+
+    # Missing / None / blank / whitespace-only provider normalized to "unknown"
+    p_none_prov = ExecutionProvenance(
+        execution_provenance=ExecutionProvenanceType.MANUAL,
+        provider=None,  # type: ignore[arg-type]
+        observed_at=now,
+        observer="gary",
+    )
+    assert p_none_prov.provider == "unknown"
+
+    p_empty_prov = ExecutionProvenance(
         execution_provenance=ExecutionProvenanceType.MANUAL,
         provider="",
         observed_at=now,
         observer="gary",
     )
-    assert p_unknown_prov.provider == "unknown"
+    assert p_empty_prov.provider == "unknown"
+
+    p_whitespace_prov = ExecutionProvenance(
+        execution_provenance=ExecutionProvenanceType.MANUAL,
+        provider="   \t  ",
+        observed_at=now,
+        observer="gary",
+    )
+    assert p_whitespace_prov.provider == "unknown"
+
+    # Non-string provider rejected with TypeError
+    with pytest.raises(TypeError, match="provider must be a string or None"):
+        ExecutionProvenance(
+            execution_provenance=ExecutionProvenanceType.MANUAL,
+            provider=12345,  # type: ignore[arg-type]
+            observed_at=now,
+            observer="gary",
+        )
+
+    with pytest.raises(TypeError, match="provider must be a string or None"):
+        ExecutionProvenance(
+            execution_provenance=ExecutionProvenanceType.MANUAL,
+            provider=True,  # type: ignore[arg-type]
+            observed_at=now,
+            observer="gary",
+        )
 
     # Simulated requires simulation_rule
     with pytest.raises(ValueError, match="simulation_rule"):

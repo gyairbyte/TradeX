@@ -328,3 +328,9 @@ def test_events_and_outcomes_persistence_and_ordering(journal_db) -> None:
     latest = get_latest_journal_outcome(journal_db, "j-300")
     assert latest is not None
     assert latest.outcome_id == "out-2"
+
+    # Verify raw SQLite inputs_json column
+    raw_json = journal_db.execute(
+        "SELECT inputs_json FROM journal_outcomes WHERE outcome_id = 'out-1'"
+    ).fetchone()[0]
+    assert raw_json == "{}"

@@ -645,3 +645,315 @@ def test_persisted_cost_recomputation(test_env, monkeypatch: pytest.MonkeyPatch)
     # gross = 10.0%, net = (110 - 100 - 15/100)/100 * 100 = (10 - 0.15) = 9.85%
     assert math.isclose(recomputed.net_return_pct, 9.85)
     assert recomputed.computation_version == "journal-outcome-recomputed-v1"
+
+
+# ── Raw Persisted inputs_json & Hash Regression Tests (Finding 1) ─────────────
+
+
+def test_raw_persisted_inputs_json_matches_hash_on_exit_and_recompute(
+    test_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Prove that raw persisted journal_outcomes.inputs_json exactly matches inputs_hash SHA-256."""
+    import hashlib
+    import json
+
+    auth_strat = ApprovedProductionStrategy(
+        strategy_id="long-momentum",
+        strategy_version="1.0.0",
+        description="Approved",
+        capabilities=frozenset({"journal_execution"}),
+    )
+    monkeypatch.setattr(
+        "tradex.strategies.registry.APPROVED_PRODUCTION_STRATEGIES",
+        (auth_strat,),
+    )
+
+    t0 = test_env["cand_ts"]
+    trade = create_planned_trade(
+        candidate_id="cand-101",
+        strategy_id="long-momentum",
+        strategy_version="1.0.0",
+        decision_timestamp=t0,
+        plan_created_at=t0,
+        plan=TradePlan(planned_entry=100.0),
+        decided_by="gary",
+        plan_source="manual",
+        idempotency_key="idem-raw-json-test",
+        settings=test_env["settings"],
+    )
+    prov = ExecutionProvenance(
+        execution_provenance=ExecutionProvenanceType.MANUAL,
+        provider="schwab",
+        observed_at=t0 + timedelta(minutes=5),
+        observer="gary",
+    )
+    record_fill(
+        journal_id=trade.journal_id,
+        fill_price=100.0,
+        fill_timestamp=t0 + timedelta(minutes=5),
+        fill_provenance=prov,
+        quantity=100.0,
+        settings=test_env["settings"],
+    )
+    record_exit(
+        journal_id=trade.journal_id,
+        exit_price=110.0,
+        exit_timestamp=t0 + timedelta(hours=1),
+        exit_reason=ExitReason.TARGET,
+        exit_provenance=prov,
+        costs=10.0,
+        settings=test_env["settings"],
+    )
+
+    # A. Query raw journal_outcomes row directly from SQLite
+    with store._conn(db_path=Path(test_env["db_path"])) as con:
+        row = con.execute(
+            "SELECT outcome_id, inputs_hash, inputs_json FROM journal_outcomes WHERE journal_id = ?",
+            (trade.journal_id,),
+        ).fetchone()
+
+    assert row is not None
+    original_outcome_id = row[0]
+    persisted_hash = row[1]
+    raw_inputs_json = row[2]
+
+    # Calculate SHA-256 of the literal persisted TEXT from SQLite
+    calculated_hash = hashlib.sha256(raw_inputs_json.encode("utf-8")).hexdigest()
+    assert calculated_hash == persisted_hash
+
+    # Assert raw_inputs_json equals the exact compact canonical serialization
+    parsed_inputs = json.loads(raw_inputs_json)
+    expected_compact_json = json.dumps(
+        parsed_inputs, sort_keys=True, separators=(",", ":"), allow_nan=False
+    )
+    assert raw_inputs_json == expected_compact_json
+
+    # B. Test recompute_outcomes: raw database verification on newly versioned outcome
+    recomputed = recompute_outcomes(
+        journal_id=trade.journal_id,
+        computation_version="journal-outcome-v2",
+        settings=test_env["settings"],
+    )
+
+    # Query all outcome rows directly from SQLite
+    with store._conn(db_path=Path(test_env["db_path"])) as con:
+        rows = con.execute(
+            """
+            SELECT outcome_id, computation_version, inputs_hash, inputs_json
+            FROM journal_outcomes
+            WHERE journal_id = ?
+            ORDER BY computed_at ASC
+            """,
+            (trade.journal_id,),
+        ).fetchall()
+
+    assert len(rows) == 2
+
+    # Prove original outcome remains completely unchanged
+    assert rows[0][0] == original_outcome_id
+    assert rows[0][1] == "journal-outcome-v1"
+    assert rows[0][2] == persisted_hash
+    assert rows[0][3] == raw_inputs_json
+
+    # Prove newly versioned outcome has exact matching hash and compact canonical JSON
+    assert rows[1][0] == recomputed.outcome_id
+    assert rows[1][1] == "journal-outcome-v2"
+    recomputed_hash = rows[1][2]
+    raw_recomputed_inputs_json = rows[1][3]
+
+    calculated_recomputed_hash = hashlib.sha256(
+        raw_recomputed_inputs_json.encode("utf-8")
+    ).hexdigest()
+    assert calculated_recomputed_hash == recomputed_hash
+    assert raw_recomputed_inputs_json == expected_compact_json
+
+
+# ── Verbatim Provider Provenance Regression Tests (Finding 2) ────────────────
+
+
+def test_verbatim_provider_provenance_lifecycle_preservation(
+    test_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Prove that raw provider identity is preserved exactly as supplied across the full lifecycle."""
+    import json
+
+    auth_strat = ApprovedProductionStrategy(
+        strategy_id="long-momentum",
+        strategy_version="1.0.0",
+        description="Approved",
+        capabilities=frozenset({"journal_execution"}),
+    )
+    monkeypatch.setattr(
+        "tradex.strategies.registry.APPROVED_PRODUCTION_STRATEGIES",
+        (auth_strat,),
+    )
+
+    t0 = test_env["cand_ts"]
+    raw_provider_str = " Schwab Raw-ID "
+
+    # A. plan_provider with raw whitespace & casing survives created-event persistence byte-for-byte
+    trade = create_planned_trade(
+        candidate_id="cand-101",
+        strategy_id="long-momentum",
+        strategy_version="1.0.0",
+        decision_timestamp=t0,
+        plan_created_at=t0,
+        plan=TradePlan(planned_entry=100.0),
+        decided_by="gary",
+        plan_source="manual",
+        plan_provider=raw_provider_str,
+        idempotency_key="idem-verbatim-provider",
+        settings=test_env["settings"],
+    )
+
+    # Check created event payload in memory and in raw SQLite
+    events = get_journal_history(trade.journal_id, settings=test_env["settings"])
+    assert events[0].payload["plan_provider"] == raw_provider_str
+
+    with store._conn(db_path=Path(test_env["db_path"])) as con:
+        raw_event_payload_json = con.execute(
+            "SELECT payload_json FROM journal_events WHERE journal_id = ? AND seq = 1",
+            (trade.journal_id,),
+        ).fetchone()[0]
+    parsed_created_payload = json.loads(raw_event_payload_json)
+    assert parsed_created_payload["plan_provider"] == raw_provider_str
+
+    # B. fill provider survives DB round trip byte-for-byte
+    prov_fill = ExecutionProvenance(
+        execution_provenance=ExecutionProvenanceType.MANUAL,
+        provider=raw_provider_str,
+        observed_at=t0 + timedelta(minutes=5),
+        observer="gary",
+    )
+    assert prov_fill.provider == raw_provider_str
+
+    trade_open = record_fill(
+        journal_id=trade.journal_id,
+        fill_price=100.0,
+        fill_timestamp=t0 + timedelta(minutes=5),
+        fill_provenance=prov_fill,
+        quantity=100.0,
+        settings=test_env["settings"],
+    )
+    assert trade_open.fill_provenance is not None
+    assert trade_open.fill_provenance.provider == raw_provider_str
+
+    # Round trip from DB
+    trade_fetched = get_journal_trade(trade.journal_id, settings=test_env["settings"])
+    assert trade_fetched is not None
+    assert trade_fetched.fill_provenance is not None
+    assert trade_fetched.fill_provenance.provider == raw_provider_str
+
+    # C. exit provider survives byte-for-byte and appears unchanged in outcome inputs_json
+    prov_exit = ExecutionProvenance(
+        execution_provenance=ExecutionProvenanceType.MANUAL,
+        provider=raw_provider_str,
+        observed_at=t0 + timedelta(hours=1),
+        observer="gary",
+    )
+    trade_closed = record_exit(
+        journal_id=trade.journal_id,
+        exit_price=110.0,
+        exit_timestamp=t0 + timedelta(hours=1),
+        exit_reason=ExitReason.TARGET,
+        exit_provenance=prov_exit,
+        costs=10.0,
+        settings=test_env["settings"],
+    )
+    assert trade_closed.exit_provenance is not None
+    assert trade_closed.exit_provenance.provider == raw_provider_str
+
+    # Verify raw database journal_outcomes row inputs_json contains exact provider
+    with store._conn(db_path=Path(test_env["db_path"])) as con:
+        raw_out_inputs_json = con.execute(
+            "SELECT inputs_json FROM journal_outcomes WHERE journal_id = ?",
+            (trade.journal_id,),
+        ).fetchone()[0]
+
+    parsed_outcome_inputs = json.loads(raw_out_inputs_json)
+    assert parsed_outcome_inputs["fill_provenance"]["provider"] == raw_provider_str
+    assert parsed_outcome_inputs["exit_provenance"]["provider"] == raw_provider_str
+
+
+def test_provider_normalization_blank_and_invalid_types(
+    test_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Prove that None/blank/whitespace becomes 'unknown' and invalid non-string types raise TypeError."""
+    auth_strat = ApprovedProductionStrategy(
+        strategy_id="long-momentum",
+        strategy_version="1.0.0",
+        description="Approved",
+        capabilities=frozenset({"journal_execution"}),
+    )
+    monkeypatch.setattr(
+        "tradex.strategies.registry.APPROVED_PRODUCTION_STRATEGIES",
+        (auth_strat,),
+    )
+
+    t0 = test_env["cand_ts"]
+
+    # D. None, "", and whitespace-only plan_provider become exactly "unknown"
+    for blank_prov in (None, "", "   \t  \n"):
+        cand_id = f"cand-blank-{abs(hash(str(blank_prov)))}"
+        with store._conn(db_path=Path(test_env["db_path"])) as con:
+            con.execute(
+                "INSERT OR REPLACE INTO candidates (candidate_id, symbol, decision_timestamp, created_at) "
+                "VALUES (?, 'AAPL', ?, ?)",
+                (cand_id, t0.isoformat(), t0.isoformat()),
+            )
+
+        t = create_planned_trade(
+            candidate_id=cand_id,
+            strategy_id="long-momentum",
+            strategy_version="1.0.0",
+            decision_timestamp=t0,
+            plan_created_at=t0,
+            plan=TradePlan(planned_entry=100.0),
+            decided_by="gary",
+            plan_source="manual",
+            plan_provider=blank_prov,
+            idempotency_key=f"idem-blank-{abs(hash(str(blank_prov)))}",
+            settings=test_env["settings"],
+        )
+        events = get_journal_history(t.journal_id, settings=test_env["settings"])
+        assert events[0].payload["plan_provider"] == "unknown"
+
+    # Non-string plan_provider rejected with TypeError
+    with pytest.raises(TypeError, match="plan_provider must be a string or None"):
+        create_planned_trade(
+            candidate_id="cand-101",
+            strategy_id="long-momentum",
+            strategy_version="1.0.0",
+            decision_timestamp=t0,
+            plan_created_at=t0,
+            plan=TradePlan(planned_entry=100.0),
+            decided_by="gary",
+            plan_source="manual",
+            plan_provider=12345,  # type: ignore[arg-type]
+            idempotency_key="idem-bad-provider-type",
+            settings=test_env["settings"],
+        )
+
+    # E. Normal provider "schwab" continues working
+    cand_schwab = "cand-schwab"
+    with store._conn(db_path=Path(test_env["db_path"])) as con:
+        con.execute(
+            "INSERT OR REPLACE INTO candidates (candidate_id, symbol, decision_timestamp, created_at) "
+            "VALUES (?, 'AAPL', ?, ?)",
+            (cand_schwab, t0.isoformat(), t0.isoformat()),
+        )
+    t_schwab = create_planned_trade(
+        candidate_id=cand_schwab,
+        strategy_id="long-momentum",
+        strategy_version="1.0.0",
+        decision_timestamp=t0,
+        plan_created_at=t0,
+        plan=TradePlan(planned_entry=100.0),
+        decided_by="gary",
+        plan_source="manual",
+        plan_provider="schwab",
+        idempotency_key="idem-normal-schwab",
+        settings=test_env["settings"],
+    )
+    events_schwab = get_journal_history(t_schwab.journal_id, settings=test_env["settings"])
+    assert events_schwab[0].payload["plan_provider"] == "schwab"

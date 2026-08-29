@@ -148,6 +148,17 @@ def _validate_non_negative_finite_float(val: object, field_name: str) -> float:
     return f_val
 
 
+def _normalize_provider(value: object, field_name: str = "provider") -> str:
+    """Normalize provider identity: None/blank becomes 'unknown', nonblank preserved verbatim."""
+    if value is None:
+        return "unknown"
+    if isinstance(value, bool) or not isinstance(value, str):
+        raise TypeError(f"{field_name} must be a string or None, got {type(value).__name__}")
+    if not value.strip():
+        return "unknown"
+    return value
+
+
 def _validate_non_blank_str(value: object, field_name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field_name} must be a non-empty string")
@@ -258,11 +269,8 @@ class ExecutionProvenance:
         )
         object.__setattr__(self, "execution_provenance", prov_type)
 
-        # Provider: non-empty string; missing/blank normalized to "unknown"
-        if self.provider is None or not str(self.provider).strip():
-            norm_provider = "unknown"
-        else:
-            norm_provider = str(self.provider).strip()
+        # Provider: nonblank string preserved verbatim; None/blank normalized to "unknown"; non-string rejected
+        norm_provider = _normalize_provider(self.provider, "provider")
         object.__setattr__(self, "provider", norm_provider)
 
         obs_at = _normalize_aware_dt(self.observed_at, "observed_at")

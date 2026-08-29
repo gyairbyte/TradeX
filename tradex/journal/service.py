@@ -31,6 +31,7 @@ from tradex.journal.models import (
     TradePlan,
     _normalize_aware_dt,
     _normalize_enum,
+    _normalize_provider,
     _validate_non_blank_str,
     _validate_non_negative_finite_float,
     _validate_positive_finite_float,
@@ -112,11 +113,7 @@ def create_planned_trade(
     strat_ver = _validate_non_blank_str(strategy_version, "strategy_version")
     dec_by = _validate_non_blank_str(decided_by, "decided_by")
     p_source = _validate_non_blank_str(plan_source, "plan_source")
-    p_provider = (
-        str(plan_provider).strip()
-        if (plan_provider is not None and str(plan_provider).strip())
-        else "unknown"
-    )
+    p_provider = _normalize_provider(plan_provider, "plan_provider")
     idem_key = _validate_non_blank_str(idempotency_key, "idempotency_key")
 
     # Validate timestamps
