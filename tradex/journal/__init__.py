@@ -1,0 +1,88 @@
+"""Executable Strategy Journal domain, persistence, and lifecycle service."""
+from tradex.journal.models import (
+    CandidateNotFoundError,
+    ConflictingExitError,
+    ConflictingFillError,
+    ExecutionProvenance,
+    ExecutionProvenanceType,
+    ExitReason,
+    IdempotencyConflictError,
+    InvalidationRule,
+    InvalidTransitionError,
+    JournalError,
+    JournalEvent,
+    JournalEventType,
+    JournalNotFoundError,
+    JournalOutcome,
+    JournalState,
+    JournalTrade,
+    OutcomeConfidence,
+    StrategyNotAuthorizedError,
+    TradePlan,
+)
+from tradex.journal.outcomes import (
+    JOURNAL_OUTCOME_COMPUTATION_VERSION,
+    compute_journal_outcome,
+    map_outcome_confidence,
+    serialize_canonical_inputs_json,
+)
+from tradex.journal.service import (
+    cancel_trade,
+    create_planned_trade,
+    expire_trade,
+    get_journal_history,
+    get_journal_trade,
+    invalidate_trade,
+    recompute_outcomes,
+    record_exit,
+    record_fill,
+    validate_strategy_authorization,
+)
+from tradex.journal.service import (
+    get_latest_journal_outcome_query as get_latest_journal_outcome,
+)
+from tradex.journal.service import (
+    list_journal_outcomes_query as list_journal_outcomes,
+)
+from tradex.journal.service import (
+    list_journal_trades_query as list_journal_trades,
+)
+
+__all__ = [
+    "JOURNAL_OUTCOME_COMPUTATION_VERSION",
+    "CandidateNotFoundError",
+    "ConflictingExitError",
+    "ConflictingFillError",
+    "ExecutionProvenance",
+    "ExecutionProvenanceType",
+    "ExitReason",
+    "IdempotencyConflictError",
+    "InvalidTransitionError",
+    "InvalidationRule",
+    "JournalError",
+    "JournalEvent",
+    "JournalEventType",
+    "JournalNotFoundError",
+    "JournalOutcome",
+    "JournalState",
+    "JournalTrade",
+    "OutcomeConfidence",
+    "StrategyNotAuthorizedError",
+    "TradePlan",
+    "cancel_trade",
+    "compute_journal_outcome",
+    "create_planned_trade",
+    "expire_trade",
+    "get_journal_history",
+    "get_journal_trade",
+    "get_latest_journal_outcome",
+    "invalidate_trade",
+    "list_journal_outcomes",
+    "list_journal_trades",
+    "map_outcome_confidence",
+    "recompute_outcomes",
+    "record_exit",
+    "record_fill",
+    "serialize_canonical_inputs_json",
+    "validate_strategy_authorization",
+]

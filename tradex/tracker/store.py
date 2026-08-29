@@ -27,7 +27,7 @@ DB_PATH: Path = Path("~/.tradex/signals.db")
 _DEFAULT_DB_PATH = DB_PATH  # sentinel for legacy DB_PATH monkeypatch detection
 
 # DB schema version managed by PRAGMA user_version.
-_SCHEMA_VERSION = 4
+_SCHEMA_VERSION = 5
 
 
 class StoreError(Exception):
@@ -645,6 +645,90 @@ _CANDIDATE_SCHEMA_SCRIPT = """
 """
 
 
+def _migrate_v4_to_v5(con: sqlite3.Connection) -> None:
+    """Add executable journal domain tables and indexes for schema v5."""
+    _execute_schema_statements(con, _JOURNAL_SCHEMA_SCRIPT)
+
+
+_JOURNAL_SCHEMA_SCRIPT = """
+    CREATE TABLE IF NOT EXISTS journal_trades (
+        journal_id          TEXT PRIMARY KEY,
+        contract_version    INTEGER NOT NULL DEFAULT 1,
+        idempotency_key     TEXT    NOT NULL UNIQUE,
+        candidate_id        TEXT    NOT NULL REFERENCES candidates(candidate_id),
+        strategy_id         TEXT    NOT NULL,
+        strategy_version    TEXT    NOT NULL,
+        side                TEXT    NOT NULL CHECK (side IN ('long')),
+        state               TEXT    NOT NULL CHECK (state IN
+                              ('planned','open','closed','cancelled','expired','invalidated')),
+        decision_timestamp  TEXT    NOT NULL,
+        plan_created_at     TEXT    NOT NULL,
+        planned_entry       REAL    NOT NULL CHECK (planned_entry > 0),
+        stop_price          REAL    CHECK (stop_price IS NULL OR stop_price > 0),
+        target_price        REAL    CHECK (target_price IS NULL OR target_price > 0),
+        expiration          TEXT,
+        invalidation_rule   TEXT,
+        quantity            REAL    CHECK (quantity IS NULL OR quantity > 0),
+        fill_price          REAL    CHECK (fill_price IS NULL OR fill_price > 0),
+        fill_timestamp      TEXT,
+        fill_provenance     TEXT,
+        exit_price          REAL    CHECK (exit_price IS NULL OR exit_price > 0),
+        exit_timestamp      TEXT,
+        exit_reason         TEXT    CHECK (exit_reason IS NULL OR exit_reason IN
+                              ('stop','target','expiration','invalidation','discretionary')),
+        exit_provenance     TEXT,
+        terminal_reason     TEXT,
+        created_at          TEXT    NOT NULL,
+        updated_at          TEXT    NOT NULL,
+        UNIQUE (candidate_id, strategy_id, strategy_version),
+        CHECK (state != 'open'   OR (fill_price IS NOT NULL AND fill_timestamp IS NOT NULL
+                                     AND quantity IS NOT NULL)),
+        CHECK (state != 'closed' OR (fill_price IS NOT NULL AND quantity IS NOT NULL
+                                     AND exit_price IS NOT NULL
+                                     AND exit_timestamp IS NOT NULL AND exit_reason IS NOT NULL)),
+        CHECK (state NOT IN ('planned','cancelled','expired','invalidated')
+               OR (fill_price IS NULL AND exit_price IS NULL))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_journal_trades_state
+        ON journal_trades(state);
+    CREATE INDEX IF NOT EXISTS idx_journal_trades_strategy
+        ON journal_trades(strategy_id, strategy_version);
+    CREATE INDEX IF NOT EXISTS idx_journal_trades_candidate
+        ON journal_trades(candidate_id);
+
+    CREATE TABLE IF NOT EXISTS journal_events (
+        event_id        TEXT    PRIMARY KEY,
+        journal_id      TEXT    NOT NULL REFERENCES journal_trades(journal_id),
+        seq             INTEGER NOT NULL,
+        event_type      TEXT    NOT NULL CHECK (event_type IN
+                          ('created','filled','cancelled',
+                           'expired','invalidated','exited')),
+        event_timestamp TEXT    NOT NULL,
+        recorded_at     TEXT    NOT NULL,
+        payload_json    TEXT    NOT NULL DEFAULT '{}',
+        UNIQUE (journal_id, seq)
+    );
+
+    CREATE TABLE IF NOT EXISTS journal_outcomes (
+        outcome_id          TEXT    PRIMARY KEY,
+        journal_id          TEXT    NOT NULL REFERENCES journal_trades(journal_id),
+        computation_version TEXT    NOT NULL,
+        computed_at         TEXT    NOT NULL,
+        source_event_seq    INTEGER NOT NULL,
+        inputs_hash         TEXT    NOT NULL,
+        entry_slippage      REAL,
+        costs               REAL    CHECK (costs IS NULL OR costs >= 0),
+        gross_return_pct    REAL,
+        net_return_pct      REAL,
+        outcome_confidence  TEXT    NOT NULL CHECK (outcome_confidence IN
+                              ('confirmed','provisional','unknown')),
+        inputs_json         TEXT    NOT NULL DEFAULT '{}',
+        UNIQUE (journal_id, computation_version, computed_at)
+    );
+"""
+
+
 def init(db_path: str | Path | None = None, *, settings: TradeXSettings | None = None):
     """Create tables if they don't exist and migrate older schemas atomically."""
     path = _resolve_db_path(settings) if db_path is None else Path(db_path)
@@ -661,21 +745,29 @@ def init(db_path: str | Path | None = None, *, settings: TradeXSettings | None =
                 _migrate_v1_to_v2(con)
                 _migrate_v2_to_v3(con)
                 _migrate_v3_to_v4(con)
+                _migrate_v4_to_v5(con)
             elif version == 1 and _table_exists(con, "signal_history"):
                 _migrate_v1_to_v2(con)
                 _migrate_v2_to_v3(con)
                 _migrate_v3_to_v4(con)
+                _migrate_v4_to_v5(con)
             elif version == 2 and _table_exists(con, "signal_history"):
                 _migrate_v2_to_v3(con)
                 _migrate_v3_to_v4(con)
+                _migrate_v4_to_v5(con)
             elif version == 3 and _table_exists(con, "signal_history"):
                 _migrate_v3_to_v4(con)
+                _migrate_v4_to_v5(con)
+            elif version == 4 and _table_exists(con, "signal_history"):
+                _migrate_v4_to_v5(con)
             else:
                 _create_schema_v1(con)
                 _migrate_v3_to_v4(con)
+                _migrate_v4_to_v5(con)
         else:
             _create_schema_v1(con)
             _migrate_v3_to_v4(con)
+            _migrate_v4_to_v5(con)
         _set_schema_version(con)
 
 
