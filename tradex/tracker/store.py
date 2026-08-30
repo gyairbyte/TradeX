@@ -27,7 +27,7 @@ DB_PATH: Path = Path("~/.tradex/signals.db")
 _DEFAULT_DB_PATH = DB_PATH  # sentinel for legacy DB_PATH monkeypatch detection
 
 # DB schema version managed by PRAGMA user_version.
-_SCHEMA_VERSION = 5
+_SCHEMA_VERSION = 6
 
 
 class StoreError(Exception):
@@ -722,10 +722,72 @@ _JOURNAL_SCHEMA_SCRIPT = """
         gross_return_pct    REAL,
         net_return_pct      REAL,
         outcome_confidence  TEXT    NOT NULL CHECK (outcome_confidence IN
-                              ('confirmed','provisional','unknown')),
+                               ('confirmed','provisional','unknown')),
         inputs_json         TEXT    NOT NULL DEFAULT '{}',
         UNIQUE (journal_id, computation_version, computed_at)
     );
+"""
+
+
+def _migrate_v5_to_v6(con: sqlite3.Connection) -> None:
+    """Add point-in-time capture runs and earnings snapshots tables for schema v6."""
+    _execute_schema_statements(con, _PIT_SCHEMA_SCRIPT)
+
+
+_PIT_SCHEMA_SCRIPT = """
+    CREATE TABLE IF NOT EXISTS pit_capture_runs (
+        capture_run_id      TEXT PRIMARY KEY,
+        contract_version    INTEGER NOT NULL DEFAULT 1 CHECK (contract_version = 1),
+        idempotency_key     TEXT NOT NULL UNIQUE,
+        request_fingerprint TEXT NOT NULL,
+        capture_kind        TEXT NOT NULL CHECK (capture_kind IN ('earnings')),
+        capture_slot        TEXT NOT NULL CHECK (capture_slot IN ('evening', 'morning')),
+        capture_date        TEXT NOT NULL,
+        scheduled_for       TEXT NOT NULL,
+        requested_at        TEXT NOT NULL,
+        completed_at        TEXT,
+        requested_provider  TEXT NOT NULL,
+        universe_hash       TEXT NOT NULL,
+        requested_n         INTEGER NOT NULL CHECK (requested_n >= 1),
+        known_n             INTEGER NOT NULL DEFAULT 0 CHECK (known_n >= 0),
+        unavailable_n       INTEGER NOT NULL DEFAULT 0 CHECK (unavailable_n >= 0),
+        error_n             INTEGER NOT NULL DEFAULT 0 CHECK (error_n >= 0),
+        status              TEXT NOT NULL CHECK (status IN ('started', 'succeeded', 'partial', 'failed')),
+        created_at          TEXT NOT NULL,
+        updated_at          TEXT NOT NULL,
+        CHECK (status = 'started' OR completed_at IS NOT NULL),
+        CHECK (status = 'started' OR requested_n = (known_n + unavailable_n + error_n))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_pit_runs_date_slot ON pit_capture_runs(capture_date, capture_slot);
+    CREATE INDEX IF NOT EXISTS idx_pit_runs_status    ON pit_capture_runs(status);
+    CREATE INDEX IF NOT EXISTS idx_pit_runs_requested ON pit_capture_runs(requested_at);
+
+    CREATE TABLE IF NOT EXISTS pit_earnings_snapshots (
+        snapshot_id          TEXT PRIMARY KEY,
+        contract_version     INTEGER NOT NULL DEFAULT 1 CHECK (contract_version = 1),
+        capture_run_id       TEXT NOT NULL REFERENCES pit_capture_runs(capture_run_id) ON DELETE CASCADE,
+        symbol               TEXT NOT NULL,
+        observation_status   TEXT NOT NULL CHECK (observation_status IN ('known', 'unavailable', 'error')),
+        next_earnings_date   TEXT,
+        provider             TEXT NOT NULL,
+        provider_observed_at TEXT,
+        request_started_at   TEXT NOT NULL,
+        response_received_at TEXT NOT NULL,
+        fact_hash            TEXT NOT NULL,
+        fact_json            TEXT NOT NULL,
+        error_category       TEXT,
+        error_message        TEXT,
+        created_at           TEXT NOT NULL,
+        UNIQUE (capture_run_id, symbol),
+        CHECK ((observation_status = 'known' AND next_earnings_date IS NOT NULL) OR (observation_status != 'known' AND next_earnings_date IS NULL)),
+        CHECK (request_started_at <= response_received_at)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_pit_snaps_run_id    ON pit_earnings_snapshots(capture_run_id);
+    CREATE INDEX IF NOT EXISTS idx_pit_snaps_symbol    ON pit_earnings_snapshots(symbol);
+    CREATE INDEX IF NOT EXISTS idx_pit_snaps_next_date ON pit_earnings_snapshots(next_earnings_date);
+    CREATE INDEX IF NOT EXISTS idx_pit_snaps_status    ON pit_earnings_snapshots(observation_status);
 """
 
 
@@ -746,28 +808,37 @@ def init(db_path: str | Path | None = None, *, settings: TradeXSettings | None =
                 _migrate_v2_to_v3(con)
                 _migrate_v3_to_v4(con)
                 _migrate_v4_to_v5(con)
+                _migrate_v5_to_v6(con)
             elif version == 1 and _table_exists(con, "signal_history"):
                 _migrate_v1_to_v2(con)
                 _migrate_v2_to_v3(con)
                 _migrate_v3_to_v4(con)
                 _migrate_v4_to_v5(con)
+                _migrate_v5_to_v6(con)
             elif version == 2 and _table_exists(con, "signal_history"):
                 _migrate_v2_to_v3(con)
                 _migrate_v3_to_v4(con)
                 _migrate_v4_to_v5(con)
+                _migrate_v5_to_v6(con)
             elif version == 3 and _table_exists(con, "signal_history"):
                 _migrate_v3_to_v4(con)
                 _migrate_v4_to_v5(con)
+                _migrate_v5_to_v6(con)
             elif version == 4 and _table_exists(con, "signal_history"):
                 _migrate_v4_to_v5(con)
+                _migrate_v5_to_v6(con)
+            elif version == 5 and (_table_exists(con, "signal_history") or _table_exists(con, "journal_trades")):
+                _migrate_v5_to_v6(con)
             else:
                 _create_schema_v1(con)
                 _migrate_v3_to_v4(con)
                 _migrate_v4_to_v5(con)
+                _migrate_v5_to_v6(con)
         else:
             _create_schema_v1(con)
             _migrate_v3_to_v4(con)
             _migrate_v4_to_v5(con)
+            _migrate_v5_to_v6(con)
         _set_schema_version(con)
 
 
