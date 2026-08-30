@@ -124,3 +124,39 @@ def test_cli_main_validation_error_exit_code_1(capsys, tmp_path) -> None:
     assert exit_code == 1
     captured = capsys.readouterr()
     assert "Error:" in captured.err
+
+
+def test_cli_sanitizes_unexpected_exception(capsys, tmp_path) -> None:
+    db_path = tmp_path / "signals.db"
+    leaked_secret = "SECRET_TOKEN=abc123 C:\\Users\\Gary\\private.db internal crash details"
+
+    with patch("tradex.pit.capture.capture_earnings_snapshot", side_effect=RuntimeError(leaked_secret)):
+        exit_code = main([
+            "earnings",
+            "--slot", "morning",
+            "--symbols", "AAPL",
+            "--db-path", str(db_path),
+        ])
+
+    assert exit_code == 1
+    captured = capsys.readouterr()
+    assert "Capture failed due to an unexpected internal error." in captured.err
+    assert "SECRET_TOKEN" not in captured.err
+    assert "abc123" not in captured.err
+    assert "private.db" not in captured.err
+    assert "C:\\Users\\Gary" not in captured.err
+    assert "internal crash details" not in captured.err
+
+
+def test_cli_renders_controlled_validation_error(capsys, tmp_path) -> None:
+    db_path = tmp_path / "signals.db"
+    exit_code = main([
+        "earnings",
+        "--slot", "morning",
+        "--symbols", "AAPL",
+        "--capture-date", "2020-01-01",
+        "--db-path", str(db_path),
+    ])
+    assert exit_code == 1
+    captured = capsys.readouterr()
+    assert "Capture error: Historical capture date 2020-01-01 is rejected" in captured.err

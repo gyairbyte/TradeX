@@ -170,3 +170,150 @@ def test_database_write_boundary_audit(tmp_path) -> None:
         for tbl in non_pit_tables:
             count = con.execute(f"SELECT COUNT(*) FROM {tbl}").fetchone()[0]
             assert count == 0, f"Table {tbl} was written to during PIT capture: count={count}"
+
+
+def test_orchestration_interruption_persists_completed_observations_and_leaves_run_started(tmp_path) -> None:
+    from unittest.mock import MagicMock
+
+    import pytest
+
+    class FatalOrchestrationInterrupt(BaseException):
+        """Injected fatal interruption escaping per-symbol Exception handlers."""
+
+    db_path = tmp_path / "crash_test.db"
+    clock = datetime(2026, 8, 30, 9, 30, 0, tzinfo=MARKET_TIMEZONE).astimezone(UTC)
+
+    def fake_lookup(symbol: str, **kwargs) -> date:
+        if symbol == "AAPL":
+            return date(2026, 9, 15)
+        if symbol == "MSFT":
+            raise FatalOrchestrationInterrupt("Fatal interruption before MSFT completes")
+        raise AssertionError(f"Unexpected symbol: {symbol}")
+
+    with pytest.raises(FatalOrchestrationInterrupt, match="Fatal interruption before MSFT completes"):
+        capture_earnings_snapshot(
+            symbols=["AAPL", "MSFT"],
+            slot=CaptureSlot.MORNING,
+            db_path=db_path,
+            now_fn=lambda: clock,
+            earnings_lookup=fake_lookup,
+        )
+
+    # Prove database state after interruption
+    with sqlite3.connect(db_path) as con:
+        con.row_factory = sqlite3.Row
+        run_row = con.execute("SELECT * FROM pit_capture_runs").fetchone()
+        assert run_row is not None
+        assert run_row["status"] == "started"
+        assert run_row["completed_at"] is None
+
+        snap_rows = con.execute("SELECT * FROM pit_earnings_snapshots").fetchall()
+        assert len(snap_rows) == 1
+        assert snap_rows[0]["symbol"] == "AAPL"
+        assert snap_rows[0]["observation_status"] == "known"
+        assert snap_rows[0]["next_earnings_date"] == "2026-09-15"
+        assert snap_rows[0]["fact_json"] == '{"next_earnings_date":"2026-09-15"}'
+
+    # Perform exact replay: must return started run, 0 provider calls, 0 mutations
+    spy_lookup = MagicMock()
+    replay_res = capture_earnings_snapshot(
+        symbols=["MSFT", "AAPL"],
+        slot=CaptureSlot.MORNING,
+        db_path=db_path,
+        now_fn=lambda: clock,
+        earnings_lookup=spy_lookup,
+    )
+    spy_lookup.assert_not_called()
+    assert replay_res.run.status == CaptureRunStatus.STARTED
+    assert len(replay_res.snapshots) == 1
+    assert replay_res.snapshots[0].symbol == "AAPL"
+
+
+def test_clock_backward_and_naive_now_fn_fail_visibly(tmp_path) -> None:
+    import pytest
+
+    db_path = tmp_path / "clock_test.db"
+    t0 = datetime(2026, 8, 30, 9, 30, 0, tzinfo=MARKET_TIMEZONE).astimezone(UTC)
+    t_back = datetime(2026, 8, 30, 9, 29, 0, tzinfo=MARKET_TIMEZONE).astimezone(UTC)
+
+    # 1. Clock moves backward during lookup
+    clock_seq = iter([t0, t0, t_back])
+
+    def lookup_step(sym: str, **kwargs) -> date:
+        return date(2026, 9, 15)
+
+    with pytest.raises(ValueError, match="Clock moved backward during lookup for AAPL"):
+        capture_earnings_snapshot(
+            symbols=["AAPL"],
+            slot=CaptureSlot.MORNING,
+            db_path=db_path,
+            now_fn=lambda: next(clock_seq),
+            earnings_lookup=lookup_step,
+        )
+
+    # 2. Later naive now_fn during lookup
+    db_naive = tmp_path / "clock_naive.db"
+    naive_dt = datetime(2026, 8, 30, 9, 30, 0)  # noqa: DTZ001
+    clock_seq_naive = iter([t0, naive_dt])
+    with pytest.raises(ValueError, match="naive datetime; timezone-aware UTC is required"):
+        capture_earnings_snapshot(
+            symbols=["AAPL"],
+            slot=CaptureSlot.MORNING,
+            db_path=db_naive,
+            now_fn=lambda: next(clock_seq_naive),
+            earnings_lookup=lookup_step,
+        )
+
+
+def test_rejected_validation_paths_do_not_create_database(tmp_path) -> None:
+    import pytest
+
+    clock = datetime(2026, 8, 30, 9, 30, 0, tzinfo=MARKET_TIMEZONE).astimezone(UTC)
+
+    # 1. Blank symbol
+    db_blank = tmp_path / "blank.db"
+    with pytest.raises(ValueError, match="Blank or whitespace-only"):
+        capture_earnings_snapshot(
+            symbols=["AAPL", "  "],
+            slot=CaptureSlot.MORNING,
+            db_path=db_blank,
+            now_fn=lambda: clock,
+        )
+    assert not db_blank.exists()
+
+    # 2. Historical date
+    db_hist = tmp_path / "hist.db"
+    with pytest.raises(ValueError, match="Historical capture date"):
+        capture_earnings_snapshot(
+            symbols=["AAPL"],
+            slot=CaptureSlot.MORNING,
+            capture_date=date(2026, 8, 29),
+            db_path=db_hist,
+            now_fn=lambda: clock,
+        )
+    assert not db_hist.exists()
+
+    # 3. Future date
+    db_future = tmp_path / "future.db"
+    with pytest.raises(ValueError, match="Future capture date"):
+        capture_earnings_snapshot(
+            symbols=["AAPL"],
+            slot=CaptureSlot.MORNING,
+            capture_date=date(2026, 8, 31),
+            db_path=db_future,
+            now_fn=lambda: clock,
+        )
+    assert not db_future.exists()
+
+    # 4. Before-slot execution
+    db_before = tmp_path / "before.db"
+    clock_before = datetime(2026, 8, 30, 8, 59, 0, tzinfo=MARKET_TIMEZONE).astimezone(UTC)
+    with pytest.raises(ValueError, match="is before scheduled slot time"):
+        capture_earnings_snapshot(
+            symbols=["AAPL"],
+            slot=CaptureSlot.MORNING,
+            capture_date=date(2026, 8, 30),
+            db_path=db_before,
+            now_fn=lambda: clock_before,
+        )
+    assert not db_before.exists()

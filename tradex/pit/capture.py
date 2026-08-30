@@ -12,6 +12,7 @@ from pathlib import Path
 
 from tradex.pit.earnings import capture_earnings_snapshot
 from tradex.pit.models import CaptureRunStatus, CaptureSlot
+from tradex.pit.store import PITIdempotencyConflictError
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -95,8 +96,11 @@ def main(argv: list[str] | None = None) -> int:
                 idempotency_key=args.idempotency_key,
                 db_path=args.db_path,
             )
-        except Exception as exc:  # noqa: BLE001
+        except (ValueError, TypeError, PITIdempotencyConflictError) as exc:
             sys.stderr.write(f"Capture error: {exc}\n")
+            return 1
+        except Exception:  # noqa: BLE001
+            sys.stderr.write("Capture failed due to an unexpected internal error.\n")
             return 1
 
         run = result.run

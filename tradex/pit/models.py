@@ -200,10 +200,15 @@ class PITEarningsSnapshot:
         if started > received:
             raise ValueError("request_started_at must be <= response_received_at")
 
-        _normalize_aware_utc(self.created_at, "created_at")
+        created = _normalize_aware_utc(self.created_at, "created_at")
+
+        object.__setattr__(self, "request_started_at", started)
+        object.__setattr__(self, "response_received_at", received)
+        object.__setattr__(self, "created_at", created)
 
         if self.provider_observed_at is not None:
-            _normalize_aware_utc(self.provider_observed_at, "provider_observed_at")
+            prov_obs = _normalize_aware_utc(self.provider_observed_at, "provider_observed_at")
+            object.__setattr__(self, "provider_observed_at", prov_obs)
 
         if not self.fact_json or not isinstance(self.fact_json, str):
             raise ValueError("fact_json must be a non-empty string")
@@ -260,10 +265,15 @@ class PITCaptureRun:
         if not isinstance(self.status, CaptureRunStatus):
             raise TypeError(f"Invalid status: {self.status!r}")
 
-        _normalize_aware_utc(self.scheduled_for, "scheduled_for")
-        _normalize_aware_utc(self.requested_at, "requested_at")
-        _normalize_aware_utc(self.created_at, "created_at")
-        _normalize_aware_utc(self.updated_at, "updated_at")
+        sched = _normalize_aware_utc(self.scheduled_for, "scheduled_for")
+        req_at = _normalize_aware_utc(self.requested_at, "requested_at")
+        created = _normalize_aware_utc(self.created_at, "created_at")
+        updated = _normalize_aware_utc(self.updated_at, "updated_at")
+
+        object.__setattr__(self, "scheduled_for", sched)
+        object.__setattr__(self, "requested_at", req_at)
+        object.__setattr__(self, "created_at", created)
+        object.__setattr__(self, "updated_at", updated)
 
         if not self.requested_provider or not isinstance(self.requested_provider, str):
             raise ValueError("requested_provider must be a non-empty string")
@@ -278,13 +288,17 @@ class PITCaptureRun:
         if self.status != CaptureRunStatus.STARTED:
             if self.completed_at is None:
                 raise ValueError("completed_at is required for terminal capture run statuses")
-            _normalize_aware_utc(self.completed_at, "completed_at")
+            comp = _normalize_aware_utc(self.completed_at, "completed_at")
+            object.__setattr__(self, "completed_at", comp)
             total_resolved = self.known_n + self.unavailable_n + self.error_n
             if total_resolved != self.requested_n:
                 raise ValueError(
                     f"Count mismatch: requested_n ({self.requested_n}) != known_n ({self.known_n}) + "
                     f"unavailable_n ({self.unavailable_n}) + error_n ({self.error_n}) = {total_resolved}"
                 )
+        elif self.completed_at is not None:
+            comp = _normalize_aware_utc(self.completed_at, "completed_at")
+            object.__setattr__(self, "completed_at", comp)
 
 
 @dataclass(frozen=True, slots=True)

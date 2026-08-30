@@ -64,6 +64,19 @@ def compute_scheduled_slot_time(
     return local_dt.astimezone(UTC)
 
 
+_BuiltinDatetime = datetime
+
+
+def _get_aware_utc_now(now_fn: Callable[[], datetime]) -> datetime:
+    """Invoke clock function, reject naive datetimes, and return canonical UTC."""
+    dt = now_fn()
+    if not isinstance(dt, _BuiltinDatetime):
+        raise TypeError(f"Clock function must return a datetime instance, got {type(dt)}")
+    if dt.tzinfo is None:
+        raise ValueError("now_fn returned naive datetime; timezone-aware UTC is required")
+    return dt.astimezone(UTC)
+
+
 def _default_earnings_lookup(
     symbol: str,
     *,
@@ -96,12 +109,17 @@ def capture_earnings_snapshot(
 
     Steps:
     1. Resolve settings and provider identity.
-    2. Normalize and deduplicate symbol universe.
-    3. Determine and validate prospective calendar date and scheduled slot time.
-    4. Compute request fingerprint and check idempotency contracts.
-    5. Atomically initialize started capture run in SQLite.
-    6. Perform fresh provider lookups symbol-by-symbol without cache.
-    7. Atomically persist immutable observation snapshots.
+    2. Normalize and deduplicate symbol universe (pure validation).
+    3. Resolve current UTC/ET time and validate prospective calendar date & scheduled slot time.
+    4. Compute request fingerprint and derive canonical idempotency key.
+    5. Perform side-effect-free preflight idempotency check against existing DB.
+    6. For new capture requests, initialize Schema v6 and persist started capture run.
+    7. For each symbol:
+       a. Record request start time.
+       b. Perform provider lookup with NO DB lock open.
+       c. Record response received time and validate clock monotonicity.
+       d. Build immutable observation snapshot.
+       e. Immediately persist completed snapshot in SQLite.
     8. Atomically finalize capture run with terminal status and counts.
     9. Return immutable read-model result.
     """
@@ -113,18 +131,16 @@ def capture_earnings_snapshot(
     if earnings_lookup is None:
         earnings_lookup = _default_earnings_lookup
 
-    from tradex.tracker import store
-    store.init(db_path=db_path, settings=settings)
+    from tradex.tracker.store import _resolve_db_path
 
+    target_path = _resolve_db_path(settings) if db_path is None else Path(db_path)
+
+    # 1. Pure input validation and normalization
     resolved_provider = _resolve_earnings_source(source, settings=settings)
     normalized_symbols = normalize_symbols(symbols)
     universe_hash = compute_universe_hash(normalized_symbols)
 
-    current_dt = now_fn()
-    if current_dt.tzinfo is None:
-        raise ValueError("now_fn returned naive datetime; timezone-aware UTC is required")
-    current_dt = current_dt.astimezone(UTC)
-
+    current_dt = _get_aware_utc_now(now_fn)
     current_ny_dt = current_dt.astimezone(MARKET_TIMEZONE)
     current_ny_date = current_ny_dt.date()
 
@@ -174,26 +190,31 @@ def capture_earnings_snapshot(
             raise ValueError("idempotency_key must be a non-empty string when provided")
         resolved_idempotency_key = idempotency_key.strip()
 
-    # Check for existing run with this idempotency key.
-    existing_run = get_capture_run_by_idempotency_key(
-        resolved_idempotency_key,
-        db_path=db_path,
-        settings=settings,
-    )
-    if existing_run is not None:
-        if existing_run.request_fingerprint == fingerprint:
-            # Exact replay: return existing run and snapshots without calling provider.
-            existing_snapshots = list_earnings_snapshots(
-                existing_run.capture_run_id,
-                db_path=db_path,
-                settings=settings,
-            )
-            return PITCaptureResult(run=existing_run, snapshots=existing_snapshots)
-        # Divergent replay: raise domain conflict without provider calls or DB writes.
-        raise PITIdempotencyConflictError(
-            f"Idempotency key {resolved_idempotency_key!r} already exists with divergent "
-            f"request fingerprint {existing_run.request_fingerprint!r} != {fingerprint!r}"
+    # Preflight check for existing run with this idempotency key (zero writes/mutations).
+    if target_path.exists():
+        existing_run = get_capture_run_by_idempotency_key(
+            resolved_idempotency_key,
+            db_path=target_path,
+            settings=settings,
         )
+        if existing_run is not None:
+            if existing_run.request_fingerprint == fingerprint:
+                # Exact replay: return existing run and persisted snapshots without calling provider.
+                existing_snapshots = list_earnings_snapshots(
+                    existing_run.capture_run_id,
+                    db_path=target_path,
+                    settings=settings,
+                )
+                return PITCaptureResult(run=existing_run, snapshots=existing_snapshots)
+            # Divergent replay: raise domain conflict without provider calls or DB writes.
+            raise PITIdempotencyConflictError(
+                f"Idempotency key {resolved_idempotency_key!r} already exists with divergent "
+                f"request fingerprint {existing_run.request_fingerprint!r} != {fingerprint!r}"
+            )
+
+    # Valid new capture execution: ensure schema is initialized.
+    from tradex.tracker import store
+    store.init(db_path=target_path, settings=settings)
 
     run_id = uuid.uuid4().hex
     started_run = PITCaptureRun(
@@ -218,11 +239,11 @@ def capture_earnings_snapshot(
         contract_version=PIT_CAPTURE_CONTRACT_VERSION,
     )
 
-    create_capture_run(started_run, db_path=db_path, settings=settings)
+    create_capture_run(started_run, db_path=target_path, settings=settings)
 
     snapshots: list[PITEarningsSnapshot] = []
     for sym in normalized_symbols:
-        req_start = now_fn().astimezone(UTC)
+        req_start = _get_aware_utc_now(now_fn)
         obs_status: ObservationStatus
         next_earnings_date: date | None = None
         error_cat: str | None = None
@@ -230,7 +251,6 @@ def capture_earnings_snapshot(
 
         try:
             nxt = earnings_lookup(sym, source=resolved_provider, settings=settings)
-            req_end = now_fn().astimezone(UTC)
             if nxt is not None and isinstance(nxt, date):
                 obs_status = ObservationStatus.KNOWN
                 next_earnings_date = nxt
@@ -245,19 +265,21 @@ def capture_earnings_snapshot(
             ProviderCapabilityError,
             EarningsDataUnavailableError,
         ) as exc:
-            req_end = now_fn().astimezone(UTC)
             obs_status = ObservationStatus.UNAVAILABLE
             error_cat = type(exc).__name__
             error_msg = f"Upcoming earnings date unavailable for {sym}"
             fact_payload = build_unavailable_fact_payload(error_cat, error_msg)
         except Exception as exc:  # noqa: BLE001
-            req_end = now_fn().astimezone(UTC)
             obs_status = ObservationStatus.ERROR
             error_cat = type(exc).__name__
             error_msg = f"Earnings lookup failed for {sym}"
             fact_payload = build_unavailable_fact_payload(error_cat, error_msg)
 
-        req_end = max(req_end, req_start)
+        req_end = _get_aware_utc_now(now_fn)
+        if req_end < req_start:
+            raise ValueError(
+                f"Clock moved backward during lookup for {sym}: {req_end.isoformat()} < {req_start.isoformat()}"
+            )
 
         fact_json = serialize_canonical_fact_json(fact_payload)
         fact_hash = compute_fact_hash(fact_json)
@@ -280,9 +302,9 @@ def capture_earnings_snapshot(
             created_at=req_end,
             contract_version=PIT_CAPTURE_CONTRACT_VERSION,
         )
+        # Persist observation immediately upon completion of provider lookup.
+        insert_earnings_snapshots([snapshot], db_path=target_path, settings=settings)
         snapshots.append(snapshot)
-
-    insert_earnings_snapshots(snapshots, db_path=db_path, settings=settings)
 
     known_n = sum(1 for s in snapshots if s.observation_status == ObservationStatus.KNOWN)
     unavailable_n = sum(
@@ -298,7 +320,7 @@ def capture_earnings_snapshot(
     else:
         terminal_status = CaptureRunStatus.FAILED
 
-    completed_at = now_fn().astimezone(UTC)
+    completed_at = _get_aware_utc_now(now_fn)
     finalized_run = finalize_capture_run(
         run_id,
         status=terminal_status,
@@ -307,7 +329,7 @@ def capture_earnings_snapshot(
         error_n=error_n,
         completed_at=completed_at,
         updated_at=completed_at,
-        db_path=db_path,
+        db_path=target_path,
         settings=settings,
     )
 

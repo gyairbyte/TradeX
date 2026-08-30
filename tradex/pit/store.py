@@ -34,22 +34,29 @@ class PITIdempotencyConflictError(PITStoreError):
     """Raised when an existing idempotency key is reused with divergent request parameters."""
 
 
-def _parse_dt(iso_str: str | None) -> datetime | None:
+def _parse_dt(iso_str: str | None, field_name: str = "timestamp") -> datetime | None:
     if not iso_str:
         return None
-    dt = datetime.fromisoformat(iso_str)
+    try:
+        dt = datetime.fromisoformat(iso_str)
+    except Exception as exc:
+        raise PITStoreError(f"Malformed persisted timestamp for {field_name}: {iso_str!r}") from exc
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=UTC)
+        raise PITStoreError(f"Persisted timestamp for {field_name} is naive; canonical UTC required: {iso_str!r}")
     return dt.astimezone(UTC)
 
 
 def _row_to_run(row: sqlite3.Row) -> PITCaptureRun:
-    cap_date = date.fromisoformat(row["capture_date"])
-    sched_for = _parse_dt(row["scheduled_for"])
-    req_at = _parse_dt(row["requested_at"])
-    comp_at = _parse_dt(row["completed_at"])
-    created_at = _parse_dt(row["created_at"])
-    updated_at = _parse_dt(row["updated_at"])
+    try:
+        cap_date = date.fromisoformat(row["capture_date"])
+    except Exception as exc:
+        raise PITStoreError(f"Malformed persisted date for capture_date: {row['capture_date']!r}") from exc
+
+    sched_for = _parse_dt(row["scheduled_for"], "scheduled_for")
+    req_at = _parse_dt(row["requested_at"], "requested_at")
+    comp_at = _parse_dt(row["completed_at"], "completed_at")
+    created_at = _parse_dt(row["created_at"], "created_at")
+    updated_at = _parse_dt(row["updated_at"], "updated_at")
 
     return PITCaptureRun(
         capture_run_id=row["capture_run_id"],
@@ -75,11 +82,18 @@ def _row_to_run(row: sqlite3.Row) -> PITCaptureRun:
 
 
 def _row_to_snapshot(row: sqlite3.Row) -> PITEarningsSnapshot:
-    nxt_date = date.fromisoformat(row["next_earnings_date"]) if row["next_earnings_date"] else None
-    prov_obs_at = _parse_dt(row["provider_observed_at"])
-    req_started = _parse_dt(row["request_started_at"])
-    resp_rcvd = _parse_dt(row["response_received_at"])
-    created_at = _parse_dt(row["created_at"])
+    if row["next_earnings_date"]:
+        try:
+            nxt_date = date.fromisoformat(row["next_earnings_date"])
+        except Exception as exc:
+            raise PITStoreError(f"Malformed persisted date for next_earnings_date: {row['next_earnings_date']!r}") from exc
+    else:
+        nxt_date = None
+
+    prov_obs_at = _parse_dt(row["provider_observed_at"], "provider_observed_at")
+    req_started = _parse_dt(row["request_started_at"], "request_started_at")
+    resp_rcvd = _parse_dt(row["response_received_at"], "response_received_at")
+    created_at = _parse_dt(row["created_at"], "created_at")
 
     return PITEarningsSnapshot(
         snapshot_id=row["snapshot_id"],
@@ -126,9 +140,9 @@ def create_capture_run(
                 run.capture_kind.value,
                 run.capture_slot.value,
                 run.capture_date.isoformat(),
-                run.scheduled_for.isoformat(),
-                run.requested_at.isoformat(),
-                run.completed_at.isoformat() if run.completed_at else None,
+                run.scheduled_for.astimezone(UTC).isoformat(),
+                run.requested_at.astimezone(UTC).isoformat(),
+                run.completed_at.astimezone(UTC).isoformat() if run.completed_at else None,
                 run.requested_provider,
                 run.universe_hash,
                 run.requested_n,
@@ -136,8 +150,8 @@ def create_capture_run(
                 run.unavailable_n,
                 run.error_n,
                 run.status.value,
-                run.created_at.isoformat(),
-                run.updated_at.isoformat(),
+                run.created_at.astimezone(UTC).isoformat(),
+                run.updated_at.astimezone(UTC).isoformat(),
             ),
         )
     return run
@@ -172,14 +186,14 @@ def insert_earnings_snapshots(
                     snap.observation_status.value,
                     snap.next_earnings_date.isoformat() if snap.next_earnings_date else None,
                     snap.provider,
-                    snap.provider_observed_at.isoformat() if snap.provider_observed_at else None,
-                    snap.request_started_at.isoformat(),
-                    snap.response_received_at.isoformat(),
+                    snap.provider_observed_at.astimezone(UTC).isoformat() if snap.provider_observed_at else None,
+                    snap.request_started_at.astimezone(UTC).isoformat(),
+                    snap.response_received_at.astimezone(UTC).isoformat(),
                     snap.fact_hash,
                     snap.fact_json,
                     snap.error_category,
                     snap.error_message,
-                    snap.created_at.isoformat(),
+                    snap.created_at.astimezone(UTC).isoformat(),
                 ),
             )
 
@@ -197,9 +211,11 @@ def finalize_capture_run(
     settings: TradeXSettings | None = None,
 ) -> PITCaptureRun:
     """Atomically transition a capture run from started to terminal status with resolved counts."""
+    if status == CaptureRunStatus.STARTED:
+        raise ValueError("Cannot finalize capture run to status 'started'")
     target_path = _resolve_db_path(settings) if db_path is None else Path(db_path)
     with _transaction(db_path=target_path) as con:
-        con.execute(
+        cursor = con.execute(
             """
             UPDATE pit_capture_runs
             SET status = ?,
@@ -208,24 +224,35 @@ def finalize_capture_run(
                 error_n = ?,
                 completed_at = ?,
                 updated_at = ?
-            WHERE capture_run_id = ?
+            WHERE capture_run_id = ? AND status = ?
             """,
             (
                 status.value,
                 known_n,
                 unavailable_n,
                 error_n,
-                completed_at.isoformat(),
-                updated_at.isoformat(),
+                completed_at.astimezone(UTC).isoformat(),
+                updated_at.astimezone(UTC).isoformat(),
                 capture_run_id,
+                CaptureRunStatus.STARTED.value,
             ),
         )
+        if cursor.rowcount == 0:
+            existing = con.execute(
+                "SELECT status FROM pit_capture_runs WHERE capture_run_id = ?",
+                (capture_run_id,),
+            ).fetchone()
+            if not existing:
+                raise PITStoreError(f"Capture run {capture_run_id} not found during finalization")
+            raise PITStoreError(
+                f"Cannot finalize capture run {capture_run_id}: run is already in terminal state '{existing['status']}'"
+            )
         row = con.execute(
             "SELECT * FROM pit_capture_runs WHERE capture_run_id = ?",
             (capture_run_id,),
         ).fetchone()
         if not row:
-            raise PITStoreError(f"Capture run {capture_run_id} not found during finalization")
+            raise PITStoreError(f"Capture run {capture_run_id} not found after finalization")
         return _row_to_run(row)
 
 
@@ -237,7 +264,11 @@ def get_capture_run(
 ) -> PITCaptureRun | None:
     """Fetch capture run by ID or return None if not found."""
     target_path = _resolve_db_path(settings) if db_path is None else Path(db_path)
+    if not target_path.exists():
+        return None
     with _conn(db_path=target_path) as con:
+        if not con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='pit_capture_runs'").fetchone():
+            return None
         row = con.execute(
             "SELECT * FROM pit_capture_runs WHERE capture_run_id = ?",
             (capture_run_id,),
@@ -253,7 +284,11 @@ def get_capture_run_by_idempotency_key(
 ) -> PITCaptureRun | None:
     """Fetch capture run by idempotency key or return None if not found."""
     target_path = _resolve_db_path(settings) if db_path is None else Path(db_path)
+    if not target_path.exists():
+        return None
     with _conn(db_path=target_path) as con:
+        if not con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='pit_capture_runs'").fetchone():
+            return None
         row = con.execute(
             "SELECT * FROM pit_capture_runs WHERE idempotency_key = ?",
             (idempotency_key,),
@@ -269,7 +304,11 @@ def list_earnings_snapshots(
 ) -> tuple[PITEarningsSnapshot, ...]:
     """Return all snapshots for a capture run in deterministic order (symbol ASC, snapshot_id ASC)."""
     target_path = _resolve_db_path(settings) if db_path is None else Path(db_path)
+    if not target_path.exists():
+        return ()
     with _conn(db_path=target_path) as con:
+        if not con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='pit_earnings_snapshots'").fetchone():
+            return ()
         rows = con.execute(
             """
             SELECT * FROM pit_earnings_snapshots

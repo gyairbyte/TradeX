@@ -262,3 +262,93 @@ def test_pit_capture_run_invariants() -> None:
             created_at=now,
             updated_at=now,
         )
+
+
+def test_models_reject_naive_timestamps_and_normalize_aware_to_utc() -> None:
+    from zoneinfo import ZoneInfo
+    ny_tz = ZoneInfo("America/New_York")
+    aware_ny = datetime(2026, 8, 30, 9, 30, 0, tzinfo=ny_tz)
+    naive_dt = datetime(2026, 8, 30, 9, 30, 0)  # noqa: DTZ001
+
+    # 1. Run model with aware NY timestamp normalizes to UTC
+    run = PITCaptureRun(
+        capture_run_id="run-utc-1",
+        idempotency_key="key-utc-1",
+        request_fingerprint="fp-utc-1",
+        capture_kind=CaptureKind.EARNINGS,
+        capture_slot=CaptureSlot.MORNING,
+        capture_date=date(2026, 8, 30),
+        scheduled_for=aware_ny,
+        requested_at=aware_ny,
+        completed_at=None,
+        requested_provider="yahoo",
+        universe_hash="uhash",
+        requested_n=1,
+        created_at=aware_ny,
+        updated_at=aware_ny,
+    )
+    assert run.scheduled_for.tzinfo == UTC
+    assert run.scheduled_for.hour == 13  # 9:30 AM EDT is 13:30 UTC
+    assert run.requested_at.tzinfo == UTC
+    assert run.created_at.tzinfo == UTC
+    assert run.updated_at.tzinfo == UTC
+
+    # 2. Run model rejects naive timestamp
+    with pytest.raises(ValueError, match="naive datetimes are rejected"):
+        PITCaptureRun(
+            capture_run_id="run-naive",
+            idempotency_key="key-naive",
+            request_fingerprint="fp-naive",
+            capture_kind=CaptureKind.EARNINGS,
+            capture_slot=CaptureSlot.MORNING,
+            capture_date=date(2026, 8, 30),
+            scheduled_for=naive_dt,
+            requested_at=naive_dt,
+            completed_at=None,
+            requested_provider="yahoo",
+            universe_hash="uhash",
+            requested_n=1,
+        )
+
+    # 3. Snapshot model with aware NY timestamp normalizes to UTC
+    fact_json = serialize_canonical_fact_json({"next_earnings_date": "2026-09-15"})
+    fact_hash = compute_fact_hash(fact_json)
+    snap = PITEarningsSnapshot(
+        snapshot_id="snap-utc-1",
+        capture_run_id="run-utc-1",
+        symbol="AAPL",
+        observation_status=ObservationStatus.KNOWN,
+        next_earnings_date=date(2026, 9, 15),
+        provider="yahoo",
+        provider_observed_at=aware_ny,
+        request_started_at=aware_ny,
+        response_received_at=aware_ny,
+        fact_hash=fact_hash,
+        fact_json=fact_json,
+        error_category=None,
+        error_message=None,
+        created_at=aware_ny,
+    )
+    assert snap.request_started_at.tzinfo == UTC
+    assert snap.response_received_at.tzinfo == UTC
+    assert snap.created_at.tzinfo == UTC
+    assert snap.provider_observed_at is not None and snap.provider_observed_at.tzinfo == UTC
+
+    # 4. Snapshot model rejects naive timestamp
+    with pytest.raises(ValueError, match="naive datetimes are rejected"):
+        PITEarningsSnapshot(
+            snapshot_id="snap-naive",
+            capture_run_id="run-utc-1",
+            symbol="AAPL",
+            observation_status=ObservationStatus.KNOWN,
+            next_earnings_date=date(2026, 9, 15),
+            provider="yahoo",
+            provider_observed_at=None,
+            request_started_at=naive_dt,
+            response_received_at=naive_dt,
+            fact_hash=fact_hash,
+            fact_json=fact_json,
+            error_category=None,
+            error_message=None,
+            created_at=naive_dt,
+        )

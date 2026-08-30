@@ -70,6 +70,12 @@ def test_idempotency_divergent_replay_conflicts(tmp_path) -> None:
     )
     assert lookup_mock.call_count == 2
 
+    # Capture raw DB state before divergent replay attempt
+    import sqlite3
+    with sqlite3.connect(db_path) as con:
+        runs_before = con.execute("SELECT * FROM pit_capture_runs").fetchall()
+        snaps_before = con.execute("SELECT * FROM pit_earnings_snapshots").fetchall()
+
     # Divergent replay: same idempotency key but different symbol list
     with pytest.raises(PITIdempotencyConflictError, match="divergent request fingerprint"):
         capture_earnings_snapshot(
@@ -83,6 +89,13 @@ def test_idempotency_divergent_replay_conflicts(tmp_path) -> None:
 
     # Provider call count must NOT have increased
     assert lookup_mock.call_count == 2
+
+    # Database rows must be byte/content identical (zero mutations)
+    with sqlite3.connect(db_path) as con:
+        runs_after = con.execute("SELECT * FROM pit_capture_runs").fetchall()
+        snaps_after = con.execute("SELECT * FROM pit_earnings_snapshots").fetchall()
+        assert runs_after == runs_before
+        assert snaps_after == snaps_before
 
 
 def test_incomplete_started_run_not_reported_as_succeeded(tmp_path) -> None:
