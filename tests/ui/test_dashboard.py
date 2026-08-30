@@ -146,6 +146,7 @@ def test_dashboard_scan_passes_normalized_watchlist_to_record_scan(
     run_mock = MagicMock(return_value=report)
     record_mock = MagicMock(return_value="session-123")
     monkeypatch.setattr("tradex.ui.tabs.today.render_today_tab", MagicMock())
+    monkeypatch.setattr("tradex.ui.tabs.journal.render_journal_tab", MagicMock())
     monkeypatch.setattr("tradex.screener.engine.run_with_report", run_mock)
     monkeypatch.setattr("tradex.tracker.store.record_scan", record_mock)
 
@@ -320,7 +321,7 @@ def test_dashboard_provider_options_and_labels(monkeypatch, tmp_path):
         patch("tradex.ui.tabs.scanner.render_scanner_tab"),
         patch("tradex.ui.tabs.premarket.render_premarket_tab") as mock_premarket,
         patch("tradex.ui.tabs.confluence.render_confluence_tab"),
-        patch("tradex.ui.tabs.signal_journal.render_signal_journal_tab"),
+        patch("tradex.ui.tabs.journal.render_journal_tab"),
         patch("tradex.ui.tabs.research_lab.render_research_lab_tab"),
         patch("tradex.ui.tabs.settings.render_settings_tab"),
         patch("tradex.ui.tabs.help.render_help_tab"),

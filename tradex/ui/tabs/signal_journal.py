@@ -18,11 +18,11 @@ def render_signal_journal_tab(
     provider: str,
 ) -> None:
     """Render the Signal Journal — historical signal outcomes."""
-    st.subheader("Signal Journal — Historical Outcomes")
+    st.subheader("Legacy Scanner Telemetry — Historical Outcomes")
     render_evidence_notice("signal_journal", st_module=st)
     st.caption(
         "Records historical scan signals and measures generic price changes at 1d (intraday), 3d (short), and 5d (long) after the signal. "
-        "Descriptive telemetry only."
+        "Descriptive telemetry only — not executable strategy performance."
     )
 
     with st.expander("How to use the Signal Journal", expanded=False):
