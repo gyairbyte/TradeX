@@ -1,0 +1,128 @@
+"""One-shot command-line interface for point-in-time capture (MVP-ARCH-001-R7-PIT-001A).
+
+Provides deterministic one-shot execution for capturing prospective point-in-time
+earnings observations at canonical observation slots.
+"""
+from __future__ import annotations
+
+import argparse
+import sys
+from datetime import date
+from pathlib import Path
+
+from tradex.pit.earnings import capture_earnings_snapshot
+from tradex.pit.models import CaptureRunStatus, CaptureSlot
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="tradex.pit.capture",
+        description="One-shot CLI for point-in-time prospective data capture.",
+    )
+    subparsers = parser.add_subparsers(dest="subcommand", required=True)
+
+    earnings_parser = subparsers.add_parser(
+        "earnings",
+        help="Capture prospective point-in-time earnings observations.",
+    )
+    earnings_parser.add_argument(
+        "--slot",
+        type=str,
+        required=True,
+        choices=["evening", "morning"],
+        help="Observation slot ('evening' for 20:30 ET, 'morning' for 09:00 ET).",
+    )
+    earnings_parser.add_argument(
+        "--symbols",
+        type=str,
+        required=True,
+        help="Comma-separated list of symbols (e.g. AAPL,MSFT,NVDA).",
+    )
+    earnings_parser.add_argument(
+        "--source",
+        type=str,
+        default=None,
+        help="Earnings provider source (defaults to configured source, e.g. 'yahoo').",
+    )
+    earnings_parser.add_argument(
+        "--idempotency-key",
+        type=str,
+        default=None,
+        help="Explicit idempotency key for this capture execution.",
+    )
+    earnings_parser.add_argument(
+        "--capture-date",
+        type=str,
+        default=None,
+        help="Optional ISO calendar date (YYYY-MM-DD); must match current ET date.",
+    )
+    earnings_parser.add_argument(
+        "--db-path",
+        type=Path,
+        default=None,
+        help="Optional path to signals.db SQLite database.",
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    if args.subcommand == "earnings":
+        slot = CaptureSlot(args.slot)
+        raw_symbols = [s.strip() for s in args.symbols.split(",") if s.strip()]
+        if not raw_symbols:
+            sys.stderr.write("Error: --symbols must contain at least one valid symbol.\n")
+            return 1
+
+        cap_date: date | None = None
+        if args.capture_date:
+            try:
+                cap_date = date.fromisoformat(args.capture_date.strip())
+            except ValueError:
+                sys.stderr.write(
+                    f"Error: Invalid --capture-date format '{args.capture_date}'; use YYYY-MM-DD.\n"
+                )
+                return 1
+
+        try:
+            result = capture_earnings_snapshot(
+                symbols=raw_symbols,
+                slot=slot,
+                capture_date=cap_date,
+                source=args.source,
+                idempotency_key=args.idempotency_key,
+                db_path=args.db_path,
+            )
+        except Exception as exc:  # noqa: BLE001
+            sys.stderr.write(f"Capture error: {exc}\n")
+            return 1
+
+        run = result.run
+        sys.stdout.write(
+            f"Capture Run ID:       {run.capture_run_id}\n"
+            f"Contract Version:     {run.contract_version}\n"
+            f"Slot:                 {run.capture_slot.value}\n"
+            f"Capture Date:         {run.capture_date.isoformat()}\n"
+            f"Scheduled For:        {run.scheduled_for.isoformat()}\n"
+            f"Requested At:         {run.requested_at.isoformat()}\n"
+            f"Provider:             {run.requested_provider}\n"
+            f"Requested Count:      {run.requested_n}\n"
+            f"Known Count:          {run.known_n}\n"
+            f"Unavailable Count:    {run.unavailable_n}\n"
+            f"Error Count:          {run.error_n}\n"
+            f"Status:               {run.status.value}\n"
+        )
+
+        if run.status == CaptureRunStatus.SUCCEEDED:
+            return 0
+        if run.status == CaptureRunStatus.PARTIAL:
+            return 2
+        return 1
+
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
