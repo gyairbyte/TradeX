@@ -525,3 +525,185 @@ def test_secret_scrubbing_regression() -> None:
     res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
     assert "SECRETKEY999" not in (res.error_message or "")
     assert "C:\\Users\\Gary\\private" not in (res.error_message or "")
+
+
+# ── Merge-Gate Corrections: Request ID Preservation on Fallback Failure ────────
+
+
+def test_fallback_failure_preserves_active_and_fallback_request_ids_401() -> None:
+    def mock_request(url: str, headers: dict[str, str]) -> tuple[bytes, int, dict[str, str]]:
+        if "active=true" in url:
+            return json.dumps({"request_id": "req-act-1", "results": []}).encode("utf-8"), 200, {"X-Request-Id": "hdr-act-1"}
+        # Fallback query returns 401
+        return b'{"error":"Unauthorized"}', 401, {"X-Request-Id": "hdr-fallback-401"}
+
+    client = MassiveReferenceClient(api_key="KEY", request_func=mock_request, min_interval_seconds=0.0)
+    res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
+    assert res.observation_status == ReferenceObservationStatus.ERROR
+    assert res.error_category == "MassiveAuthError"
+    assert "hdr-act-1" in res.request_ids or "req-act-1" in res.request_ids
+    assert "hdr-fallback-401" in res.request_ids
+    # Prove ordered union
+    assert res.request_ids == ("hdr-act-1", "req-act-1", "hdr-fallback-401")
+
+
+def test_fallback_failure_preserves_active_and_fallback_request_ids_429() -> None:
+    def mock_request(url: str, headers: dict[str, str]) -> tuple[bytes, int, dict[str, str]]:
+        if "active=true" in url:
+            return json.dumps({"results": []}).encode("utf-8"), 200, {"X-Request-Id": "hdr-act-1"}
+        return b'{"error":"Rate Limited","request_id":"body-fallback-429"}', 429, {"X-Request-Id": "hdr-fallback-429"}
+
+    client = MassiveReferenceClient(api_key="KEY", request_func=mock_request, min_interval_seconds=0.0)
+    res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
+    assert res.observation_status == ReferenceObservationStatus.ERROR
+    assert res.error_category == "MassiveRateLimitError"
+    assert res.request_ids == ("hdr-act-1", "hdr-fallback-429", "body-fallback-429")
+
+
+def test_fallback_failure_preserves_active_and_fallback_request_ids_500() -> None:
+    def mock_request(url: str, headers: dict[str, str]) -> tuple[bytes, int, dict[str, str]]:
+        if "active=true" in url:
+            return json.dumps({"request_id": "req-act-1", "results": []}).encode("utf-8"), 200, {}
+        return b'{"error":"Server Error"}', 500, {"X-Request-Id": "hdr-fallback-500"}
+
+    client = MassiveReferenceClient(api_key="KEY", request_func=mock_request, min_interval_seconds=0.0)
+    res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
+    assert res.observation_status == ReferenceObservationStatus.ERROR
+    assert res.error_category == "MassiveTransientError"
+    assert res.request_ids == ("req-act-1", "hdr-fallback-500")
+
+
+def test_fallback_failure_preserves_active_and_fallback_request_ids_malformed_json() -> None:
+    def mock_request(url: str, headers: dict[str, str]) -> tuple[bytes, int, dict[str, str]]:
+        if "active=true" in url:
+            return json.dumps({"results": []}).encode("utf-8"), 200, {"X-Request-Id": "hdr-act-1"}
+        return b"<html>Server crashed</html>", 200, {"X-Request-Id": "hdr-fallback-malformed"}
+
+    client = MassiveReferenceClient(api_key="KEY", request_func=mock_request, min_interval_seconds=0.0)
+    res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
+    assert res.observation_status == ReferenceObservationStatus.ERROR
+    assert res.error_category == "MassiveResponseError"
+    assert res.request_ids == ("hdr-act-1", "hdr-fallback-malformed")
+
+
+# ── Merge-Gate Corrections: Malformed Ambiguous Candidates Normalized to ERROR ─
+
+
+def test_ambiguous_malformed_active_field_yields_massive_response_error() -> None:
+    fake_body = {
+        "results": [
+            {"ticker": "AAPL", "name": "Apple 1", "active": True},
+            {"ticker": "AAPL", "name": "Apple 2", "active": "false"},  # malformed bool
+        ],
+    }
+    client = MassiveReferenceClient(
+        api_key="KEY",
+        request_func=lambda url, h, body=fake_body: (json.dumps(body).encode("utf-8"), 200, {"X-Request-Id": "req-ambig-bad-bool"}),
+        min_interval_seconds=0.0,
+    )
+    res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
+    assert res.observation_status == ReferenceObservationStatus.ERROR
+    assert res.error_category == "MassiveResponseError"
+    assert res.error_category != "TypeError"
+    assert "req-ambig-bad-bool" in res.request_ids
+
+
+def test_ambiguous_malformed_market_field_yields_massive_response_error() -> None:
+    fake_body = {
+        "results": [
+            {"ticker": "AAPL", "name": "Apple 1", "market": "stocks"},
+            {"ticker": "AAPL", "name": "Apple 2", "market": {"bad": "shape"}},  # malformed dict
+        ],
+    }
+    client = MassiveReferenceClient(
+        api_key="KEY",
+        request_func=lambda url, h, body=fake_body: (json.dumps(body).encode("utf-8"), 200, {"X-Request-Id": "req-ambig-bad-dict"}),
+        min_interval_seconds=0.0,
+    )
+    res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
+    assert res.observation_status == ReferenceObservationStatus.ERROR
+    assert res.error_category == "MassiveResponseError"
+    assert res.error_category != "TypeError"
+    assert "req-ambig-bad-dict" in res.request_ids
+
+
+# ── Merge-Gate Corrections: Fail Closed on HTTP 404 ───────────────────────────
+
+
+def test_http_404_fails_closed_as_error_never_unavailable() -> None:
+    def mock_request(url: str, headers: dict[str, str]) -> tuple[bytes, int, dict[str, str]]:
+        return b'{"error":"Not Found"}', 404, {"X-Request-Id": "hdr-404"}
+
+    client = MassiveReferenceClient(api_key="KEY", request_func=mock_request, min_interval_seconds=0.0)
+    res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
+    assert res.observation_status == ReferenceObservationStatus.ERROR
+    assert res.observation_status != ReferenceObservationStatus.UNAVAILABLE
+    assert res.error_category == "MassiveResponseError"
+    assert "hdr-404" in res.request_ids
+
+
+def test_http_404_on_fallback_fails_closed_as_error() -> None:
+    def mock_request(url: str, headers: dict[str, str]) -> tuple[bytes, int, dict[str, str]]:
+        if "active=true" in url:
+            return json.dumps({"results": []}).encode("utf-8"), 200, {"X-Request-Id": "hdr-act-1"}
+        return b'{"error":"Not Found"}', 404, {"X-Request-Id": "hdr-fallback-404"}
+
+    client = MassiveReferenceClient(api_key="KEY", request_func=mock_request, min_interval_seconds=0.0)
+    res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
+    assert res.observation_status == ReferenceObservationStatus.ERROR
+    assert res.observation_status != ReferenceObservationStatus.UNAVAILABLE
+    assert res.error_category == "MassiveResponseError"
+    assert res.request_ids == ("hdr-act-1", "hdr-fallback-404")
+
+
+# ── Merge-Gate Corrections: Do Not Accept Raw type_code as Alias for type ─────
+
+
+def test_known_record_with_raw_type_code_only_has_none_type_and_missing_type() -> None:
+    fake_body = {
+        "results": [
+            {
+                "ticker": "AAPL",
+                "name": "Apple Inc",
+                "active": True,
+                "type_code": "CS",  # provider sent type_code instead of approved type
+            }
+        ],
+    }
+    client = MassiveReferenceClient(
+        api_key="KEY",
+        request_func=lambda url, h, body=fake_body: (json.dumps(body).encode("utf-8"), 200, {}),
+        min_interval_seconds=0.0,
+    )
+    res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
+    assert res.observation_status == ReferenceObservationStatus.KNOWN
+    assert res.provider_type_code is None
+    assert "type" in res.missing_fields
+    parsed_fact = json.loads(res.fact_json)
+    assert parsed_fact["type_code"] is None
+
+
+def test_ambiguous_record_with_raw_type_code_only_excludes_type_code() -> None:
+    fake_body = {
+        "results": [
+            {"ticker": "AAPL", "name": "Apple 1", "type": "CS"},
+            {"ticker": "AAPL", "name": "Apple 2", "type_code": "CS"},  # provider sent type_code instead of type
+        ],
+    }
+    client = MassiveReferenceClient(
+        api_key="KEY",
+        request_func=lambda url, h, body=fake_body: (json.dumps(body).encode("utf-8"), 200, {}),
+        min_interval_seconds=0.0,
+    )
+    res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
+    assert res.observation_status == ReferenceObservationStatus.AMBIGUOUS
+    parsed_fact = json.loads(res.fact_json)
+    c1, c2 = parsed_fact["candidates"]
+    assert "type_code" not in c2 or c2["type_code"] is None
+    for cand in (c1, c2):
+        assert "type" not in cand  # only normalized keys exist
+        assert set(cand.keys()) <= {
+            "active", "cik", "composite_figi", "delisted_utc", "last_updated_utc",
+            "locale", "market", "name", "primary_exchange", "share_class_figi",
+            "ticker", "type_code",
+        }

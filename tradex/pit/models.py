@@ -174,8 +174,8 @@ def normalize_reference_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
     if active is not None and not isinstance(active, bool):
         raise TypeError(f"Candidate active must be bool or None, got {type(active).__name__}")
 
-    # Validate type / type_code
-    type_val = candidate.get("type") or candidate.get("type_code")
+    # Validate type
+    type_val = candidate.get("type")
     if type_val is not None and not isinstance(type_val, str):
         raise TypeError(f"Candidate type must be str or None, got {type(type_val).__name__}")
 
@@ -270,8 +270,6 @@ def audit_missing_reference_fields(provider_data: dict[str, Any]) -> tuple[str, 
     missing: list[str] = []
     for field_name in sorted(REFERENCE_CONTRACT_FIELDS):
         val = provider_data.get(field_name)
-        if field_name == "type" and val is None:
-            val = provider_data.get("type_code")
         if (
             val is None
             or (isinstance(val, str) and not val.strip())

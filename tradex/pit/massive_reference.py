@@ -232,7 +232,12 @@ class MassiveReferenceClient:
                 f"Massive/Polygon server error (HTTP {status_code}).",
                 request_ids=tuple(request_ids),
             )
-        if status_code not in (200, 404):
+        if status_code == 404:
+            raise MassiveResponseError(
+                "Massive/Polygon reference endpoint returned HTTP 404 Not Found.",
+                request_ids=tuple(request_ids),
+            )
+        if status_code != 200:
             raise MassiveResponseError(
                 f"Unexpected HTTP status {status_code} from Massive/Polygon.",
                 request_ids=tuple(request_ids),
@@ -264,10 +269,7 @@ class MassiveReferenceClient:
         }
         query_str = urllib.parse.urlencode(params)
         url = f"{self.base_url}/v3/reference/tickers?{query_str}&apiKey={self._api_key}"
-        data, status, req_ids = self._http_get(url)
-
-        if status == 404:
-            return [], req_ids
+        data, _status, req_ids = self._http_get(url)
 
         if "results" not in data or not isinstance(data.get("results"), list):
             raise MassiveResponseError(
@@ -344,8 +346,11 @@ class MassiveReferenceClient:
         except MassiveReferenceError as exc:
             error_cat = type(exc).__name__
             clean_msg = sanitize_text(str(exc), self._api_key)
-            req_ids = exc.request_ids if exc.request_ids else tuple(all_request_ids)
-            return self._build_error_result(cleaned_symbol, capture_date, req_ids, error_cat, clean_msg)
+            combined_req_ids = list(all_request_ids)
+            for rid in exc.request_ids:
+                if rid not in combined_req_ids:
+                    combined_req_ids.append(rid)
+            return self._build_error_result(cleaned_symbol, capture_date, tuple(combined_req_ids), error_cat, clean_msg)
         except Exception as exc:  # noqa: BLE001
             error_cat = type(exc).__name__
             clean_msg = sanitize_text(str(exc), self._api_key)
@@ -385,7 +390,7 @@ class MassiveReferenceClient:
                     request_ids=request_ids,
                 )
 
-        type_code = record.get("type") or record.get("type_code")
+        type_code = record.get("type")
         if type_code is not None and not isinstance(type_code, str):
             raise MassiveResponseError(
                 f"Malformed field type for 'type' ({type(type_code).__name__}) in provider record.",
@@ -506,11 +511,22 @@ class MassiveReferenceClient:
     ) -> MassiveObservationResult:
         """Construct an ambiguous observation result when multiple records match."""
         error_cat = "MassiveAmbiguousIdentityError"
-        error_msg = f"Multiple ({len(candidates)}) Massive/Polygon reference records matched exact ticker {symbol} on {query_date.isoformat()}."
-        fact_payload = build_ambiguous_reference_fact_payload(
-            ticker=symbol,
-            candidates=candidates,
+        error_msg = (
+            f"Multiple ({len(candidates)}) Massive/Polygon reference records matched exact ticker "
+            f"{symbol} on {query_date.isoformat()}."
         )
+        try:
+            fact_payload = build_ambiguous_reference_fact_payload(
+                ticker=symbol,
+                candidates=candidates,
+            )
+        except (TypeError, ValueError) as exc:
+            clean_err = sanitize_text(str(exc), self._api_key)
+            raise MassiveResponseError(
+                f"Malformed candidate record in ambiguous reference results for {symbol}: {clean_err}",
+                request_ids=request_ids,
+            ) from exc
+
         fact_json = serialize_canonical_fact_json(fact_payload)
         fact_hash = compute_fact_hash(fact_json)
 
