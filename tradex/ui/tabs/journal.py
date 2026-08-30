@@ -118,8 +118,9 @@ def _render_journal_overview(*, settings: TradeXSettings) -> None:
         with col_f3:
             try:
                 available_strategies = get_journal_strategy_ids(settings=settings)
-            except StoreError:
-                available_strategies = []
+            except StoreError as err:
+                st.error(f"Failed to load Journal strategy filter options from database: {err}")
+                return
             strategy_options = ["All"] + available_strategies
             filter_strategy = st.selectbox(
                 "Strategy",
@@ -400,4 +401,3 @@ def _render_journal_detail(journal_id: str, *, settings: TradeXSettings) -> None
                     st.caption("Empty or unrecorded inputs.")
     else:
         st.caption("No outcome computations recorded.")
-

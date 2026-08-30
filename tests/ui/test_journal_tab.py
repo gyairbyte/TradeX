@@ -613,3 +613,66 @@ def test_ui_makes_zero_backend_mutations(fake_journal_st, isolated_db, monkeypat
 
     assert mutation_mock.call_count == 0
 
+
+# ── 7. Strategy Filter StoreError Failure Surfacing ──────────────────────────
+
+
+def test_strategy_filter_store_error_surfaced_truthfully(fake_journal_st, isolated_db, monkeypatch):
+    """Database failure in get_journal_strategy_ids must visibly surface error and halt overview rendering."""
+    from tradex.tracker.store import StoreError
+
+    monkeypatch.setattr(journal_tab_module, "st", fake_journal_st)
+    settings = settings_from_mapping({"TRADEX_DB_PATH": isolated_db})
+    base_t = datetime(2026, 8, 20, 14, 30, tzinfo=UTC)
+
+    # Insert a candidate and trade so overview proceeds past the initial all_records check
+    with sqlite3.connect(isolated_db) as con:
+        con.execute(
+            """
+            INSERT INTO candidates (candidate_id, contract_version, symbol, decision_timestamp, trading_date, security_identity_version, security_identity_status, created_at)
+            VALUES ('cand-err', 1, 'AAPL', ?, '2026-08-20', 'sec-v1', 'known', ?)
+            """,
+            (base_t.isoformat(), base_t.isoformat()),
+        )
+        insert_journal_trade(
+            con,
+            JournalTrade(
+                journal_id="j-err-1",
+                contract_version=1,
+                idempotency_key="idem-err-1",
+                candidate_id="cand-err",
+                strategy_id="breakout",
+                strategy_version="1.0",
+                side="long",
+                state=JournalState.PLANNED,
+                decision_timestamp=base_t,
+                plan_created_at=base_t,
+                planned_entry=150.0,
+            ),
+        )
+        con.commit()
+
+    def _mock_raise_store_error(*args, **kwargs):
+        raise StoreError("disk read failure during strategy query")
+
+    monkeypatch.setattr(journal_tab_module, "get_journal_strategy_ids", _mock_raise_store_error)
+
+    # Also verify zero mutations
+    mutation_mock = MagicMock(side_effect=RuntimeError("MUTATION CALLED FROM UI"))
+    monkeypatch.setattr("tradex.journal.service.create_planned_trade", mutation_mock)
+    monkeypatch.setattr("tradex.journal.service.record_fill", mutation_mock)
+    monkeypatch.setattr("tradex.journal.service.record_exit", mutation_mock)
+
+    journal_tab_module.render_journal_tab(settings=settings)
+
+    # 1. Error is visibly surfaced to user via st.error
+    assert fake_journal_st.error.call_count >= 1
+    error_texts = [str(call[0][0]) for call in fake_journal_st.error.call_args_list]
+    assert any("Failed to load Journal strategy filter options from database" in t for t in error_texts)
+    assert any("disk read failure during strategy query" in t for t in error_texts)
+
+    # 2. UI does not silently continue to render table/overview as though empty list succeeded
+    assert fake_journal_st.dataframe.call_count == 0
+
+    # 3. Zero mutations occur
+    assert mutation_mock.call_count == 0
