@@ -27,7 +27,7 @@ DB_PATH: Path = Path("~/.tradex/signals.db")
 _DEFAULT_DB_PATH = DB_PATH  # sentinel for legacy DB_PATH monkeypatch detection
 
 # DB schema version managed by PRAGMA user_version.
-_SCHEMA_VERSION = 6
+_SCHEMA_VERSION = 7
 
 
 class StoreError(Exception):
@@ -791,6 +791,79 @@ _PIT_SCHEMA_SCRIPT = """
 """
 
 
+def _migrate_v6_to_v7(con: sqlite3.Connection) -> None:
+    """Add point-in-time reference capture runs and reference snapshots tables for schema v7."""
+    _execute_schema_statements(con, _PIT_REFERENCE_SCHEMA_SCRIPT)
+
+
+_PIT_REFERENCE_SCHEMA_SCRIPT = """
+    CREATE TABLE IF NOT EXISTS pit_reference_capture_runs (
+        capture_run_id      TEXT PRIMARY KEY,
+        contract_version    INTEGER NOT NULL DEFAULT 1 CHECK (contract_version = 1),
+        idempotency_key     TEXT NOT NULL UNIQUE,
+        request_fingerprint TEXT NOT NULL,
+        capture_slot        TEXT NOT NULL CHECK (capture_slot IN ('evening', 'morning')),
+        capture_date        TEXT NOT NULL,
+        scheduled_for       TEXT NOT NULL,
+        requested_at        TEXT NOT NULL,
+        completed_at        TEXT,
+        requested_provider  TEXT NOT NULL,
+        universe_hash       TEXT NOT NULL,
+        requested_n         INTEGER NOT NULL CHECK (requested_n >= 1),
+        known_n             INTEGER NOT NULL DEFAULT 0 CHECK (known_n >= 0),
+        unavailable_n       INTEGER NOT NULL DEFAULT 0 CHECK (unavailable_n >= 0),
+        ambiguous_n         INTEGER NOT NULL DEFAULT 0 CHECK (ambiguous_n >= 0),
+        error_n             INTEGER NOT NULL DEFAULT 0 CHECK (error_n >= 0),
+        status              TEXT NOT NULL CHECK (status IN ('started', 'succeeded', 'partial', 'failed')),
+        created_at          TEXT NOT NULL,
+        updated_at          TEXT NOT NULL,
+        CHECK (status = 'started' OR completed_at IS NOT NULL),
+        CHECK (status = 'started' OR requested_n = (known_n + unavailable_n + ambiguous_n + error_n))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_pit_ref_runs_date_slot ON pit_reference_capture_runs(capture_date, capture_slot);
+    CREATE INDEX IF NOT EXISTS idx_pit_ref_runs_status    ON pit_reference_capture_runs(status);
+    CREATE INDEX IF NOT EXISTS idx_pit_ref_runs_requested ON pit_reference_capture_runs(requested_at);
+
+    CREATE TABLE IF NOT EXISTS pit_reference_snapshots (
+        snapshot_id                TEXT PRIMARY KEY,
+        contract_version           INTEGER NOT NULL DEFAULT 1 CHECK (contract_version = 1),
+        capture_run_id             TEXT NOT NULL REFERENCES pit_reference_capture_runs(capture_run_id) ON DELETE CASCADE,
+        symbol                     TEXT NOT NULL,
+        observation_status         TEXT NOT NULL CHECK (observation_status IN ('known', 'unavailable', 'ambiguous', 'error')),
+        provider                   TEXT NOT NULL,
+        provider_query_date        TEXT NOT NULL,
+        provider_request_ids_json  TEXT NOT NULL DEFAULT '[]',
+        provider_ticker            TEXT,
+        provider_name              TEXT,
+        provider_market            TEXT,
+        provider_locale            TEXT,
+        provider_active            INTEGER,
+        provider_type_code         TEXT,
+        provider_primary_exchange  TEXT,
+        provider_cik               TEXT,
+        provider_composite_figi    TEXT,
+        provider_share_class_figi  TEXT,
+        provider_last_updated_at   TEXT,
+        provider_delisted_at       TEXT,
+        missing_fields_json        TEXT NOT NULL DEFAULT '[]',
+        request_started_at         TEXT NOT NULL,
+        response_received_at       TEXT NOT NULL,
+        fact_hash                  TEXT NOT NULL,
+        fact_json                  TEXT NOT NULL,
+        error_category             TEXT,
+        error_message              TEXT,
+        created_at                 TEXT NOT NULL,
+        UNIQUE (capture_run_id, symbol),
+        CHECK (request_started_at <= response_received_at)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_pit_ref_snaps_run_id ON pit_reference_snapshots(capture_run_id);
+    CREATE INDEX IF NOT EXISTS idx_pit_ref_snaps_symbol ON pit_reference_snapshots(symbol);
+    CREATE INDEX IF NOT EXISTS idx_pit_ref_snaps_status ON pit_reference_snapshots(observation_status);
+"""
+
+
 def init(db_path: str | Path | None = None, *, settings: TradeXSettings | None = None):
     """Create tables if they don't exist and migrate older schemas atomically."""
     path = _resolve_db_path(settings) if db_path is None else Path(db_path)
@@ -809,36 +882,50 @@ def init(db_path: str | Path | None = None, *, settings: TradeXSettings | None =
                 _migrate_v3_to_v4(con)
                 _migrate_v4_to_v5(con)
                 _migrate_v5_to_v6(con)
+                _migrate_v6_to_v7(con)
             elif version == 1 and _table_exists(con, "signal_history"):
                 _migrate_v1_to_v2(con)
                 _migrate_v2_to_v3(con)
                 _migrate_v3_to_v4(con)
                 _migrate_v4_to_v5(con)
                 _migrate_v5_to_v6(con)
+                _migrate_v6_to_v7(con)
             elif version == 2 and _table_exists(con, "signal_history"):
                 _migrate_v2_to_v3(con)
                 _migrate_v3_to_v4(con)
                 _migrate_v4_to_v5(con)
                 _migrate_v5_to_v6(con)
+                _migrate_v6_to_v7(con)
             elif version == 3 and _table_exists(con, "signal_history"):
                 _migrate_v3_to_v4(con)
                 _migrate_v4_to_v5(con)
                 _migrate_v5_to_v6(con)
+                _migrate_v6_to_v7(con)
             elif version == 4 and _table_exists(con, "signal_history"):
                 _migrate_v4_to_v5(con)
                 _migrate_v5_to_v6(con)
+                _migrate_v6_to_v7(con)
             elif version == 5 and (_table_exists(con, "signal_history") or _table_exists(con, "journal_trades")):
                 _migrate_v5_to_v6(con)
+                _migrate_v6_to_v7(con)
+            elif version == 6 and (
+                _table_exists(con, "signal_history")
+                or _table_exists(con, "journal_trades")
+                or _table_exists(con, "pit_capture_runs")
+            ):
+                _migrate_v6_to_v7(con)
             else:
                 _create_schema_v1(con)
                 _migrate_v3_to_v4(con)
                 _migrate_v4_to_v5(con)
                 _migrate_v5_to_v6(con)
+                _migrate_v6_to_v7(con)
         else:
             _create_schema_v1(con)
             _migrate_v3_to_v4(con)
             _migrate_v4_to_v5(con)
             _migrate_v5_to_v6(con)
+            _migrate_v6_to_v7(con)
         _set_schema_version(con)
 
 

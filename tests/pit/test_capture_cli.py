@@ -160,3 +160,144 @@ def test_cli_renders_controlled_validation_error(capsys, tmp_path) -> None:
     assert exit_code == 1
     captured = capsys.readouterr()
     assert "Capture error: Historical capture date 2020-01-01 is rejected" in captured.err
+
+
+def test_cli_reference_parser_options() -> None:
+    parser = build_parser()
+    args = parser.parse_args(["reference", "--slot", "evening", "--symbols", "AAPL,MSFT", "--source", "massive"])
+    assert args.subcommand == "reference"
+    assert args.slot == "evening"
+    assert args.symbols == "AAPL,MSFT"
+    assert args.source == "massive"
+
+
+def test_cli_reference_succeeded_exit_code_0(capsys, tmp_path) -> None:
+    db_path = tmp_path / "signals.db"
+    clock = datetime(2026, 8, 30, 21, 0, 0, tzinfo=MARKET_TIMEZONE).astimezone(UTC)
+
+    from tradex.pit.massive_reference import MassiveObservationResult
+    from tradex.pit.models import ReferenceObservationStatus, compute_fact_hash
+
+    def mock_ref_lookup(symbol: str, pit_date: date, **kwargs) -> MassiveObservationResult:
+        fj = '{"ticker":"' + symbol + '"}'
+        return MassiveObservationResult(
+            observation_status=ReferenceObservationStatus.KNOWN,
+            symbol=symbol,
+            query_date=pit_date,
+            request_ids=(f"req-{symbol}",),
+            provider_ticker=symbol,
+            provider_name=f"{symbol} Corp",
+            provider_market="stocks",
+            provider_locale="us",
+            provider_active=True,
+            provider_type_code="CS",
+            provider_primary_exchange="XNAS",
+            provider_cik="0000123456",
+            provider_composite_figi="FIGI123",
+            provider_share_class_figi="FIGI456",
+            provider_last_updated_at=clock,
+            provider_delisted_at=None,
+            missing_fields=(),
+            fact_hash=compute_fact_hash(fj),
+            fact_json=fj,
+            error_category=None,
+            error_message=None,
+        )
+
+    with patch("tradex.pit.reference.datetime") as mock_dt, \
+         patch("tradex.pit.reference.MassiveReferenceClient.fetch_ticker_reference", side_effect=mock_ref_lookup):
+        mock_dt.now.return_value = clock
+        mock_dt.combine = datetime.combine
+        mock_dt.fromisoformat = datetime.fromisoformat
+
+        exit_code = main([
+            "reference",
+            "--slot", "evening",
+            "--symbols", "AAPL,MSFT",
+            "--db-path", str(db_path),
+        ])
+
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert "Status:               succeeded" in captured.out
+        assert "Requested Count:      2" in captured.out
+        assert "Known Count:          2" in captured.out
+        assert "Ambiguous Count:      0" in captured.out
+
+
+def test_cli_reference_partial_exit_code_2(capsys, tmp_path) -> None:
+    db_path = tmp_path / "signals.db"
+    clock = datetime(2026, 8, 30, 21, 0, 0, tzinfo=MARKET_TIMEZONE).astimezone(UTC)
+
+    from tradex.pit.massive_reference import MassiveObservationResult
+    from tradex.pit.models import ReferenceObservationStatus, compute_fact_hash
+
+    def mock_ref_lookup(symbol: str, pit_date: date, **kwargs) -> MassiveObservationResult:
+        if symbol == "AAPL":
+            status = ReferenceObservationStatus.KNOWN
+        else:
+            status = ReferenceObservationStatus.AMBIGUOUS
+        fj = '{"ticker":"' + symbol + '"}'
+        return MassiveObservationResult(
+            observation_status=status,
+            symbol=symbol,
+            query_date=pit_date,
+            request_ids=(f"req-{symbol}",),
+            provider_ticker=symbol if status == ReferenceObservationStatus.KNOWN else None,
+            provider_name=None,
+            provider_market=None,
+            provider_locale=None,
+            provider_active=None,
+            provider_type_code=None,
+            provider_primary_exchange=None,
+            provider_cik=None,
+            provider_composite_figi=None,
+            provider_share_class_figi=None,
+            provider_last_updated_at=None,
+            provider_delisted_at=None,
+            missing_fields=(),
+            fact_hash=compute_fact_hash(fj),
+            fact_json=fj,
+            error_category=None,
+            error_message=None,
+        )
+
+    with patch("tradex.pit.reference.datetime") as mock_dt, \
+         patch("tradex.pit.reference.MassiveReferenceClient.fetch_ticker_reference", side_effect=mock_ref_lookup):
+        mock_dt.now.return_value = clock
+        mock_dt.combine = datetime.combine
+        mock_dt.fromisoformat = datetime.fromisoformat
+
+        exit_code = main([
+            "reference",
+            "--slot", "evening",
+            "--symbols", "AAPL,AMBIG",
+            "--db-path", str(db_path),
+        ])
+
+        assert exit_code == 2
+        captured = capsys.readouterr()
+        assert "Status:               partial" in captured.out
+        assert "Known Count:          1" in captured.out
+        assert "Ambiguous Count:      1" in captured.out
+
+
+def test_cli_reference_sanitizes_unexpected_exception(capsys, tmp_path) -> None:
+    db_path = tmp_path / "signals.db"
+    leaked_secret = "MASSIVE_API_KEY=leak123 C:\\Users\\Gary\\private.db internal crash details"
+
+    with patch("tradex.pit.capture.capture_reference_snapshot", side_effect=RuntimeError(leaked_secret)):
+        exit_code = main([
+            "reference",
+            "--slot", "evening",
+            "--symbols", "AAPL",
+            "--db-path", str(db_path),
+        ])
+
+    assert exit_code == 1
+    captured = capsys.readouterr()
+    assert "Capture failed due to an unexpected internal error." in captured.err
+    assert "MASSIVE_API_KEY" not in captured.err
+    assert "leak123" not in captured.err
+    assert "private.db" not in captured.err
+    assert "C:\\Users\\Gary" not in captured.err

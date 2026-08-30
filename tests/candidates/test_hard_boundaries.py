@@ -38,16 +38,16 @@ from tradex.tracker import store
 from tradex.ui.tabs.today import render_today_tab
 
 
-def test_schema_version_is_six(tmp_path: Path) -> None:
-    """The database schema version is 6 after R7-PIT-001A PIT capture migration."""
-    db_path = str(tmp_path / "test_schema_v6.db")
+def test_schema_version_is_seven(tmp_path: Path) -> None:
+    """The database schema version is 7 after R7-PIT-001B PIT reference capture migration."""
+    db_path = str(tmp_path / "test_schema_v7.db")
     store.init(db_path)
 
     with sqlite3.connect(db_path) as con:
         ver = con.execute("PRAGMA user_version").fetchone()[0]
-        assert ver == 6
+        assert ver == 7
 
-    assert store._SCHEMA_VERSION == 6
+    assert store._SCHEMA_VERSION == 7
 
 
 def test_approved_production_strategies_remains_empty() -> None:
