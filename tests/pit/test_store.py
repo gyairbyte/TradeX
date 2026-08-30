@@ -256,6 +256,110 @@ def test_finalize_capture_run_immutability(tmp_path) -> None:
         )
 
 
+def test_finalize_capture_run_rejects_naive_timestamps_and_normalizes_aware(tmp_path) -> None:
+    from zoneinfo import ZoneInfo
+
+    db_path = tmp_path / "finalize_naive.db"
+    store.init(db_path)
+
+    t_start = datetime(2026, 8, 30, 13, 0, 0, tzinfo=UTC)
+    run = PITCaptureRun(
+        capture_run_id="run-finalize-test",
+        idempotency_key="key-finalize-test",
+        request_fingerprint="fp-finalize-test",
+        capture_kind=CaptureKind.EARNINGS,
+        capture_slot=CaptureSlot.MORNING,
+        capture_date=date(2026, 8, 30),
+        scheduled_for=t_start,
+        requested_at=t_start,
+        completed_at=None,
+        requested_provider="yahoo",
+        universe_hash="uhash",
+        requested_n=2,
+        status=CaptureRunStatus.STARTED,
+        created_at=t_start,
+        updated_at=t_start,
+    )
+    create_capture_run(run, db_path=db_path)
+
+    naive_ts = datetime(2026, 8, 30, 13, 5, 0)  # noqa: DTZ001
+    aware_utc = datetime(2026, 8, 30, 13, 5, 0, tzinfo=UTC)
+
+    # A. naive completed_at: raises ValueError, run remains started with zero mutation
+    with pytest.raises(ValueError, match="completed_at must be timezone-aware; naive datetimes are rejected"):
+        finalize_capture_run(
+            "run-finalize-test",
+            status=CaptureRunStatus.SUCCEEDED,
+            known_n=2,
+            unavailable_n=0,
+            error_n=0,
+            completed_at=naive_ts,
+            updated_at=aware_utc,
+            db_path=db_path,
+        )
+
+    current_a = get_capture_run("run-finalize-test", db_path=db_path)
+    assert current_a is not None
+    assert current_a.status == CaptureRunStatus.STARTED
+    assert current_a.known_n == 0
+    assert current_a.unavailable_n == 0
+    assert current_a.error_n == 0
+    assert current_a.completed_at is None
+    assert current_a.updated_at == t_start
+
+    # B. naive updated_at: raises ValueError, run remains started with zero mutation
+    with pytest.raises(ValueError, match="updated_at must be timezone-aware; naive datetimes are rejected"):
+        finalize_capture_run(
+            "run-finalize-test",
+            status=CaptureRunStatus.SUCCEEDED,
+            known_n=2,
+            unavailable_n=0,
+            error_n=0,
+            completed_at=aware_utc,
+            updated_at=naive_ts,
+            db_path=db_path,
+        )
+
+    current_b = get_capture_run("run-finalize-test", db_path=db_path)
+    assert current_b is not None
+    assert current_b.status == CaptureRunStatus.STARTED
+    assert current_b.known_n == 0
+    assert current_b.unavailable_n == 0
+    assert current_b.error_n == 0
+    assert current_b.completed_at is None
+    assert current_b.updated_at == t_start
+
+    # C. non-UTC aware finalization timestamp: accepted and persisted as equivalent canonical UTC
+    ny_tz = ZoneInfo("America/New_York")
+    aware_ny = datetime(2026, 8, 30, 9, 5, 0, tzinfo=ny_tz)  # 9:05 AM EDT == 13:05 UTC
+
+    finalized = finalize_capture_run(
+        "run-finalize-test",
+        status=CaptureRunStatus.SUCCEEDED,
+        known_n=2,
+        unavailable_n=0,
+        error_n=0,
+        completed_at=aware_ny,
+        updated_at=aware_ny,
+        db_path=db_path,
+    )
+
+    assert finalized.status == CaptureRunStatus.SUCCEEDED
+    assert finalized.completed_at == aware_utc
+    assert finalized.completed_at.tzinfo == UTC
+    assert finalized.updated_at == aware_utc
+    assert finalized.updated_at.tzinfo == UTC
+
+    # Read back from database
+    persisted = get_capture_run("run-finalize-test", db_path=db_path)
+    assert persisted is not None
+    assert persisted.status == CaptureRunStatus.SUCCEEDED
+    assert persisted.completed_at == aware_utc
+    assert persisted.completed_at.tzinfo == UTC
+    assert persisted.updated_at == aware_utc
+    assert persisted.updated_at.tzinfo == UTC
+
+
 def test_store_rejects_naive_and_malformed_persisted_timestamps(tmp_path) -> None:
     db_path = tmp_path / "naive_test.db"
     store.init(db_path)

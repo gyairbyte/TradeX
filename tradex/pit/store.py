@@ -19,6 +19,7 @@ from tradex.pit.models import (
     PITCaptureResult,
     PITCaptureRun,
     PITEarningsSnapshot,
+    _normalize_aware_utc,
 )
 from tradex.tracker.store import StoreError, _conn, _resolve_db_path, _transaction
 
@@ -213,6 +214,10 @@ def finalize_capture_run(
     """Atomically transition a capture run from started to terminal status with resolved counts."""
     if status == CaptureRunStatus.STARTED:
         raise ValueError("Cannot finalize capture run to status 'started'")
+
+    norm_completed_at = _normalize_aware_utc(completed_at, "completed_at")
+    norm_updated_at = _normalize_aware_utc(updated_at, "updated_at")
+
     target_path = _resolve_db_path(settings) if db_path is None else Path(db_path)
     with _transaction(db_path=target_path) as con:
         cursor = con.execute(
@@ -231,8 +236,8 @@ def finalize_capture_run(
                 known_n,
                 unavailable_n,
                 error_n,
-                completed_at.astimezone(UTC).isoformat(),
-                updated_at.astimezone(UTC).isoformat(),
+                norm_completed_at.isoformat(),
+                norm_updated_at.isoformat(),
                 capture_run_id,
                 CaptureRunStatus.STARTED.value,
             ),
