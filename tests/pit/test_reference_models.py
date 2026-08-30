@@ -248,3 +248,70 @@ def test_audit_missing_reference_fields() -> None:
 def test_reference_default_idempotency_key() -> str:
     key = compute_reference_default_idempotency_key("2026-08-30", CaptureSlot.EVENING, "abcdef0123456789extra")
     assert key == "pit-reference-2026-08-30-evening-abcdef0123456789"
+
+
+def test_snapshot_provider_active_type_validation() -> None:
+    # bool and None accepted
+    _make_valid_snapshot(provider_active=True)
+    _make_valid_snapshot(provider_active=False)
+    _make_valid_snapshot(provider_active=None)
+
+    # int or str rejected
+    with pytest.raises(TypeError, match="provider_active must be bool or None"):
+        _make_valid_snapshot(provider_active=1)  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="provider_active must be bool or None"):
+        _make_valid_snapshot(provider_active="true")  # type: ignore[arg-type]
+
+
+def test_snapshot_text_fields_type_validation() -> None:
+    with pytest.raises(TypeError, match="provider_name must be str or None"):
+        _make_valid_snapshot(provider_name=123)  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="provider_market must be str or None"):
+        _make_valid_snapshot(provider_market={"bad": "dict"})  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="provider_cik must be str or None"):
+        _make_valid_snapshot(provider_cik=1000)  # type: ignore[arg-type]
+
+
+def test_ambiguous_fact_payload_sanitizes_and_sorts_candidates() -> None:
+    from tradex.pit.models import build_ambiguous_reference_fact_payload
+
+    candidates = [
+        {
+            "ticker": "AAPL",
+            "name": "Apple Inc",
+            "primary_exchange": "XNAS",
+            "unexpected_secret": "123",
+            "extra_nested": {"a": 1},
+            "active": True,
+            "type": "CS",
+        },
+        {
+            "ticker": "AAPL",
+            "name": "Apple Alt",
+            "primary_exchange": "BATS",
+            "delisted_utc": "2024-01-01",
+            "another_bad_field": 42,
+        },
+    ]
+
+    payload = build_ambiguous_reference_fact_payload(ticker="AAPL", candidates=candidates)
+    assert payload["ticker"] == "AAPL"
+    assert len(payload["candidates"]) == 2
+
+    # Deterministically sorted: Apple Alt (BATS) before Apple Inc (XNAS)
+    c1, c2 = payload["candidates"]
+    assert c1["name"] == "Apple Alt"
+    assert c1["primary_exchange"] == "BATS"
+    assert "another_bad_field" not in c1
+
+    assert c2["name"] == "Apple Inc"
+    assert c2["primary_exchange"] == "XNAS"
+    assert "unexpected_secret" not in c2
+    assert "extra_nested" not in c2
+
+    # Malformed candidate type rejected
+    with pytest.raises(TypeError, match="Candidate active must be bool or None"):
+        build_ambiguous_reference_fact_payload(
+            ticker="AAPL",
+            candidates=[{"ticker": "AAPL", "active": "invalid-bool"}],
+        )

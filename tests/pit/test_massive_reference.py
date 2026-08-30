@@ -72,6 +72,356 @@ def test_exact_active_known_record() -> None:
     assert "cik" not in res.missing_fields
 
 
+# ── Timezone Provenance Regressions ───────────────────────────────────────────
+
+
+def test_timezone_provenance_z() -> None:
+    fake_body = {
+        "results": [{"ticker": "AAPL", "last_updated_utc": "2026-08-30T14:30:00Z"}],
+    }
+    client = MassiveReferenceClient(
+        api_key="KEY",
+        request_func=lambda url, h: (json.dumps(fake_body).encode("utf-8"), 200, {}),
+        min_interval_seconds=0.0,
+    )
+    res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
+    assert res.observation_status == ReferenceObservationStatus.KNOWN
+    assert res.provider_last_updated_at == datetime(2026, 8, 30, 14, 30, 0, tzinfo=UTC)
+    assert "last_updated_utc" not in res.missing_fields
+
+
+def test_timezone_provenance_explicit_offset() -> None:
+    fake_body = {
+        "results": [{"ticker": "AAPL", "last_updated_utc": "2026-08-30T10:30:00-04:00"}],
+    }
+    client = MassiveReferenceClient(
+        api_key="KEY",
+        request_func=lambda url, h: (json.dumps(fake_body).encode("utf-8"), 200, {}),
+        min_interval_seconds=0.0,
+    )
+    res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
+    assert res.observation_status == ReferenceObservationStatus.KNOWN
+    assert res.provider_last_updated_at == datetime(2026, 8, 30, 14, 30, 0, tzinfo=UTC)
+    assert "last_updated_utc" not in res.missing_fields
+
+
+def test_timezone_provenance_naive_iso_rejected_as_utc() -> None:
+    fake_body = {
+        "results": [{"ticker": "AAPL", "name": "Apple Inc", "last_updated_utc": "2026-08-30T14:30:00"}],
+    }
+    client = MassiveReferenceClient(
+        api_key="KEY",
+        request_func=lambda url, h: (json.dumps(fake_body).encode("utf-8"), 200, {}),
+        min_interval_seconds=0.0,
+    )
+    res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
+    assert res.observation_status == ReferenceObservationStatus.KNOWN
+    # Must NOT fabricate UTC from naive timestamp
+    assert res.provider_last_updated_at is None
+    parsed_fact = json.loads(res.fact_json)
+    assert parsed_fact["last_updated_utc"] is None
+    assert "last_updated_utc" in res.missing_fields
+
+
+def test_timezone_provenance_malformed_string() -> None:
+    fake_body = {
+        "results": [{"ticker": "AAPL", "name": "Apple Inc", "last_updated_utc": "not-a-date"}],
+    }
+    client = MassiveReferenceClient(
+        api_key="KEY",
+        request_func=lambda url, h: (json.dumps(fake_body).encode("utf-8"), 200, {}),
+        min_interval_seconds=0.0,
+    )
+    res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
+    assert res.observation_status == ReferenceObservationStatus.KNOWN
+    assert res.provider_last_updated_at is None
+    assert "last_updated_utc" in res.missing_fields
+
+
+def test_timezone_provenance_absent_field() -> None:
+    fake_body = {
+        "results": [{"ticker": "AAPL", "name": "Apple Inc", "last_updated_utc": None}],
+    }
+    client = MassiveReferenceClient(
+        api_key="KEY",
+        request_func=lambda url, h: (json.dumps(fake_body).encode("utf-8"), 200, {}),
+        min_interval_seconds=0.0,
+    )
+    res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
+    assert res.observation_status == ReferenceObservationStatus.KNOWN
+    assert res.provider_last_updated_at is None
+    assert "last_updated_utc" in res.missing_fields
+
+
+# ── Boolean Coercion Regressions ──────────────────────────────────────────────
+
+
+def test_active_field_string_or_int_fails_closed_as_error() -> None:
+    for bad_active in ("false", "true", 0, 1, "0", "1"):
+        fake_body = {
+            "results": [{"ticker": "AAPL", "name": "Apple Inc", "active": bad_active}],
+        }
+        client = MassiveReferenceClient(
+            api_key="KEY",
+            request_func=lambda url, h, body=fake_body: (json.dumps(body).encode("utf-8"), 200, {}),
+            min_interval_seconds=0.0,
+        )
+        res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
+        assert res.observation_status == ReferenceObservationStatus.ERROR
+        assert res.error_category == "MassiveResponseError"
+        assert "active" in (res.error_message or "")
+
+
+def test_active_field_valid_bool_and_none() -> None:
+    for valid_active, expected in ((True, True), (False, False), (None, None)):
+        fake_body = {
+            "results": [{"ticker": "AAPL", "active": valid_active}],
+        }
+        client = MassiveReferenceClient(
+            api_key="KEY",
+            request_func=lambda url, h, body=fake_body: (json.dumps(body).encode("utf-8"), 200, {}),
+            min_interval_seconds=0.0,
+        )
+        res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
+        assert res.observation_status == ReferenceObservationStatus.KNOWN
+        assert res.provider_active is expected
+
+
+# ── Exact Ticker Matching Regressions ─────────────────────────────────────────
+
+
+def test_exact_ticker_lowercase_matches_normalized() -> None:
+    fake_body = {
+        "results": [{"ticker": "aapl", "name": "Apple Inc", "active": True}],
+    }
+    client = MassiveReferenceClient(
+        api_key="KEY",
+        request_func=lambda url, h: (json.dumps(fake_body).encode("utf-8"), 200, {}),
+        min_interval_seconds=0.0,
+    )
+    res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
+    assert res.observation_status == ReferenceObservationStatus.KNOWN
+    assert res.symbol == "AAPL"
+    assert res.provider_ticker == "aapl"
+
+
+def test_exact_ticker_whitespace_matches_normalized() -> None:
+    fake_body = {
+        "results": [{"ticker": "  AAPL  ", "name": "Apple Inc", "active": True}],
+    }
+    client = MassiveReferenceClient(
+        api_key="KEY",
+        request_func=lambda url, h: (json.dumps(fake_body).encode("utf-8"), 200, {}),
+        min_interval_seconds=0.0,
+    )
+    res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
+    assert res.observation_status == ReferenceObservationStatus.KNOWN
+    assert res.provider_ticker == "AAPL"
+
+
+def test_near_match_ticker_is_not_matched() -> None:
+    calls: list[str] = []
+
+    def mock_request(url: str, headers: dict[str, str]) -> tuple[bytes, int, dict[str, str]]:
+        calls.append(url)
+        # Provider returns AAPLX when AAPL was queried
+        return json.dumps({"results": [{"ticker": "AAPLX", "active": True}]}).encode("utf-8"), 200, {}
+
+    client = MassiveReferenceClient(
+        api_key="KEY",
+        request_func=mock_request,
+        min_interval_seconds=0.0,
+    )
+    res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
+    assert len(calls) == 2  # active and inactive queries tried
+    assert res.observation_status == ReferenceObservationStatus.UNAVAILABLE
+
+
+def test_multiple_exact_matches_yields_ambiguous() -> None:
+    fake_body = {
+        "request_id": "req-ambig-1",
+        "results": [
+            {"ticker": "AAPL", "name": "Apple Inc", "primary_exchange": "XNAS"},
+            {"ticker": "aapl", "name": "Apple Alt", "primary_exchange": "BATS"},
+        ],
+    }
+    client = MassiveReferenceClient(
+        api_key="KEY",
+        request_func=lambda url, h: (json.dumps(fake_body).encode("utf-8"), 200, {}),
+        min_interval_seconds=0.0,
+    )
+    res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
+    assert res.observation_status == ReferenceObservationStatus.AMBIGUOUS
+    parsed_fact = json.loads(res.fact_json)
+    assert len(parsed_fact["candidates"]) == 2
+
+
+# ── Malformed Response Shapes Regressions ─────────────────────────────────────
+
+
+def test_malformed_response_missing_results_yields_error() -> None:
+    # A. Missing results key in HTTP 200 response
+    fake_body = {"status": "OK", "request_id": "req-no-results"}
+    client = MassiveReferenceClient(
+        api_key="KEY",
+        request_func=lambda url, h: (json.dumps(fake_body).encode("utf-8"), 200, {}),
+        min_interval_seconds=0.0,
+    )
+    res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
+    assert res.observation_status == ReferenceObservationStatus.ERROR
+    assert res.error_category == "MassiveResponseError"
+    assert "req-no-results" in res.request_ids
+
+
+def test_malformed_response_results_none_yields_error() -> None:
+    # B. results is None
+    fake_body = {"results": None, "request_id": "req-none-results"}
+    client = MassiveReferenceClient(
+        api_key="KEY",
+        request_func=lambda url, h: (json.dumps(fake_body).encode("utf-8"), 200, {}),
+        min_interval_seconds=0.0,
+    )
+    res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
+    assert res.observation_status == ReferenceObservationStatus.ERROR
+    assert res.error_category == "MassiveResponseError"
+
+
+def test_malformed_response_results_not_a_list_yields_error() -> None:
+    # C. results is string or dict
+    for bad_results in ("not-a-list", {"some": "dict"}):
+        fake_body = {"results": bad_results, "request_id": "req-bad-results"}
+        client = MassiveReferenceClient(
+            api_key="KEY",
+            request_func=lambda url, h, body=fake_body: (json.dumps(body).encode("utf-8"), 200, {}),
+            min_interval_seconds=0.0,
+        )
+        res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
+        assert res.observation_status == ReferenceObservationStatus.ERROR
+        assert res.error_category == "MassiveResponseError"
+
+
+def test_malformed_contract_field_type_in_record_yields_error() -> None:
+    # D. Malformed contract field type inside an exact ticker record
+    for field_name, bad_value in (
+        ("ticker", 12345),
+        ("name", {"nested": "dict"}),
+        ("market", ["list", "of", "markets"]),
+        ("type", 999),
+        ("last_updated_utc", {"year": 2026}),
+    ):
+        record = {"ticker": "AAPL", "name": "Apple Inc", field_name: bad_value}
+        fake_body = {"results": [record], "request_id": "req-bad-field"}
+        client = MassiveReferenceClient(
+            api_key="KEY",
+            request_func=lambda url, h, body=fake_body: (json.dumps(body).encode("utf-8"), 200, {}),
+            min_interval_seconds=0.0,
+        )
+        res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
+        assert res.observation_status == ReferenceObservationStatus.ERROR
+        assert res.error_category == "MassiveResponseError"
+
+
+# ── Error Request IDs Provenance Regressions ──────────────────────────────────
+
+
+def test_http_401_preserves_request_id() -> None:
+    def mock_request(url: str, headers: dict[str, str]) -> tuple[bytes, int, dict[str, str]]:
+        return b'{"error":"Unauthorized","request_id":"body-req-401"}', 401, {"X-Request-Id": "hdr-req-401"}
+
+    client = MassiveReferenceClient(api_key="KEY", request_func=mock_request, min_interval_seconds=0.0)
+    res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
+    assert res.observation_status == ReferenceObservationStatus.ERROR
+    assert "hdr-req-401" in res.request_ids
+    assert "body-req-401" in res.request_ids
+
+
+def test_http_403_preserves_request_id() -> None:
+    def mock_request(url: str, headers: dict[str, str]) -> tuple[bytes, int, dict[str, str]]:
+        return b'{"error":"Forbidden"}', 403, {"X-Request-Id": "hdr-req-403"}
+
+    client = MassiveReferenceClient(api_key="KEY", request_func=mock_request, min_interval_seconds=0.0)
+    res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
+    assert res.observation_status == ReferenceObservationStatus.ERROR
+    assert "hdr-req-403" in res.request_ids
+
+
+def test_http_429_preserves_request_id() -> None:
+    def mock_request(url: str, headers: dict[str, str]) -> tuple[bytes, int, dict[str, str]]:
+        return b'{"error":"Rate Limited","request_id":"body-req-429"}', 429, {"X-Request-Id": "hdr-req-429", "Retry-After": "60"}
+
+    client = MassiveReferenceClient(api_key="KEY", request_func=mock_request, min_interval_seconds=0.0)
+    res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
+    assert res.observation_status == ReferenceObservationStatus.ERROR
+    assert "hdr-req-429" in res.request_ids
+    assert "body-req-429" in res.request_ids
+
+
+def test_http_500_preserves_request_id() -> None:
+    def mock_request(url: str, headers: dict[str, str]) -> tuple[bytes, int, dict[str, str]]:
+        return b'{"error":"Server Error"}', 500, {"X-Request-Id": "hdr-req-500"}
+
+    client = MassiveReferenceClient(api_key="KEY", request_func=mock_request, min_interval_seconds=0.0)
+    res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
+    assert res.observation_status == ReferenceObservationStatus.ERROR
+    assert "hdr-req-500" in res.request_ids
+
+
+def test_malformed_json_preserves_request_id() -> None:
+    def mock_request(url: str, headers: dict[str, str]) -> tuple[bytes, int, dict[str, str]]:
+        return b"<html>Server crash</html>", 200, {"X-Request-Id": "hdr-req-malformed"}
+
+    client = MassiveReferenceClient(api_key="KEY", request_func=mock_request, min_interval_seconds=0.0)
+    res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
+    assert res.observation_status == ReferenceObservationStatus.ERROR
+    assert "hdr-req-malformed" in res.request_ids
+
+
+# ── Ambiguous Fact JSON Field Restriction Regression ──────────────────────────
+
+
+def test_ambiguous_fact_json_excludes_unexpected_fields() -> None:
+    fake_body = {
+        "results": [
+            {
+                "ticker": "AMBIG",
+                "name": "Alpha Corp",
+                "primary_exchange": "XNAS",
+                "unexpected_blob": {"foo": "bar"},
+                "some_future_field": "value",
+            },
+            {
+                "ticker": "AMBIG",
+                "name": "Beta Corp",
+                "primary_exchange": "XNYS",
+                "unexpected_list": [1, 2, 3],
+            },
+        ],
+    }
+    client = MassiveReferenceClient(
+        api_key="KEY",
+        request_func=lambda url, h: (json.dumps(fake_body).encode("utf-8"), 200, {}),
+        min_interval_seconds=0.0,
+    )
+    res = client.fetch_ticker_reference("AMBIG", date(2026, 8, 30))
+    assert res.observation_status == ReferenceObservationStatus.AMBIGUOUS
+
+    parsed_fact = json.loads(res.fact_json)
+    assert len(parsed_fact["candidates"]) == 2
+    for cand in parsed_fact["candidates"]:
+        assert "unexpected_blob" not in cand
+        assert "some_future_field" not in cand
+        assert "unexpected_list" not in cand
+        # Only canonical keys exist
+        assert set(cand.keys()) <= {
+            "active", "cik", "composite_figi", "delisted_utc", "last_updated_utc",
+            "locale", "market", "name", "primary_exchange", "share_class_figi",
+            "ticker", "type_code",
+        }
+
+
+# ── Other General Provider Tests ──────────────────────────────────────────────
+
+
 def test_active_zero_fallback_to_inactive_known() -> None:
     calls: list[str] = []
 
@@ -79,7 +429,6 @@ def test_active_zero_fallback_to_inactive_known() -> None:
         calls.append(url)
         if "active=true" in url:
             return json.dumps({"request_id": "req-1", "results": []}).encode("utf-8"), 200, {}
-        # inactive query
         body = {
             "request_id": "req-2",
             "results": [
@@ -130,45 +479,6 @@ def test_active_and_inactive_zero_results_yields_unavailable() -> None:
     assert "NONEXISTENT" in res.error_message
 
 
-def test_multiple_matching_rows_yields_ambiguous() -> None:
-    fake_body = {
-        "request_id": "req-ambig-1",
-        "results": [
-            {
-                "ticker": "AMBIG",
-                "name": "Ambig Alpha Inc",
-                "primary_exchange": "XNYS",
-                "cik": "0000100001",
-            },
-            {
-                "ticker": "AMBIG",
-                "name": "Ambig Beta Corp",
-                "primary_exchange": "XNAS",
-                "cik": "0000100002",
-            },
-        ],
-    }
-
-    def mock_request(url: str, headers: dict[str, str]) -> tuple[bytes, int, dict[str, str]]:
-        return json.dumps(fake_body).encode("utf-8"), 200, {}
-
-    client = MassiveReferenceClient(
-        api_key="TESTKEY123",
-        request_func=mock_request,
-        min_interval_seconds=0.0,
-    )
-    res = client.fetch_ticker_reference("AMBIG", date(2026, 8, 30))
-
-    assert res.observation_status == ReferenceObservationStatus.AMBIGUOUS
-    assert res.error_category == "MassiveAmbiguousIdentityError"
-    parsed_fact = json.loads(res.fact_json)
-    assert "candidates" in parsed_fact
-    assert len(parsed_fact["candidates"]) == 2
-    # Deterministically sorted candidates preserved
-    assert parsed_fact["candidates"][0]["name"] == "Ambig Alpha Inc"
-    assert parsed_fact["candidates"][1]["name"] == "Ambig Beta Corp"
-
-
 def test_otc_market_record_preserved_truthfully() -> None:
     fake_body = {
         "request_id": "req-otc-1",
@@ -199,57 +509,6 @@ def test_otc_market_record_preserved_truthfully() -> None:
     assert res.provider_market == "otc"
     assert res.provider_primary_exchange == "OTCM"
     assert res.provider_type_code == "CS"
-
-
-def test_http_401_auth_error() -> None:
-    def mock_request(url: str, headers: dict[str, str]) -> tuple[bytes, int, dict[str, str]]:
-        return b'{"error":"Unauthorized"}', 401, {}
-
-    client = MassiveReferenceClient(api_key="BADKEY", request_func=mock_request, min_interval_seconds=0.0)
-    res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
-    assert res.observation_status == ReferenceObservationStatus.ERROR
-    assert res.error_category == "MassiveAuthError"
-
-
-def test_http_403_entitlement_error() -> None:
-    def mock_request(url: str, headers: dict[str, str]) -> tuple[bytes, int, dict[str, str]]:
-        return b'{"error":"Forbidden"}', 403, {}
-
-    client = MassiveReferenceClient(api_key="KEY", request_func=mock_request, min_interval_seconds=0.0)
-    res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
-    assert res.observation_status == ReferenceObservationStatus.ERROR
-    assert res.error_category == "MassiveEntitlementError"
-
-
-def test_http_429_rate_limit_error() -> None:
-    def mock_request(url: str, headers: dict[str, str]) -> tuple[bytes, int, dict[str, str]]:
-        return b'{"error":"Too Many Requests"}', 429, {"Retry-After": "60"}
-
-    client = MassiveReferenceClient(api_key="KEY", request_func=mock_request, min_interval_seconds=0.0)
-    res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
-    assert res.observation_status == ReferenceObservationStatus.ERROR
-    assert res.error_category == "MassiveRateLimitError"
-    assert "Retry-After: 60" in res.error_message
-
-
-def test_http_500_transient_error() -> None:
-    def mock_request(url: str, headers: dict[str, str]) -> tuple[bytes, int, dict[str, str]]:
-        return b'{"error":"Internal Server Error"}', 500, {}
-
-    client = MassiveReferenceClient(api_key="KEY", request_func=mock_request, min_interval_seconds=0.0)
-    res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
-    assert res.observation_status == ReferenceObservationStatus.ERROR
-    assert res.error_category == "MassiveTransientError"
-
-
-def test_malformed_json_response_error() -> None:
-    def mock_request(url: str, headers: dict[str, str]) -> tuple[bytes, int, dict[str, str]]:
-        return b"<html>Not JSON</html>", 200, {}
-
-    client = MassiveReferenceClient(api_key="KEY", request_func=mock_request, min_interval_seconds=0.0)
-    res = client.fetch_ticker_reference("AAPL", date(2026, 8, 30))
-    assert res.observation_status == ReferenceObservationStatus.ERROR
-    assert res.error_category == "MassiveResponseError"
 
 
 def test_secret_scrubbing_regression() -> None:

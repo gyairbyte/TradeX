@@ -838,7 +838,7 @@ _PIT_REFERENCE_SCHEMA_SCRIPT = """
         provider_name              TEXT,
         provider_market            TEXT,
         provider_locale            TEXT,
-        provider_active            INTEGER,
+        provider_active            INTEGER CHECK (provider_active IS NULL OR provider_active IN (0, 1)),
         provider_type_code         TEXT,
         provider_primary_exchange  TEXT,
         provider_cik               TEXT,

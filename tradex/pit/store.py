@@ -166,7 +166,10 @@ def _row_to_reference_snapshot(row: sqlite3.Row) -> PITReferenceSnapshot:
 
     prov_active: bool | None = None
     if row["provider_active"] is not None:
-        prov_active = bool(row["provider_active"])
+        raw_val = row["provider_active"]
+        if raw_val not in (0, 1):
+            raise PITStoreError(f"Persisted provider_active must be 0, 1, or NULL, got {raw_val!r}")
+        prov_active = bool(raw_val)
 
     prov_last_upd = _parse_dt(row["provider_last_updated_at"], "provider_last_updated_at")
     req_started = _parse_dt(row["request_started_at"], "request_started_at")
@@ -506,7 +509,7 @@ def insert_reference_snapshots(
                     snap.observation_status.value,
                     snap.provider,
                     snap.provider_query_date.isoformat(),
-                    json.dumps(list(snap.provider_request_ids)),
+                    json.dumps(list(snap.provider_request_ids), sort_keys=True, separators=(",", ":")),
                     snap.provider_ticker,
                     snap.provider_name,
                     snap.provider_market,
@@ -519,7 +522,7 @@ def insert_reference_snapshots(
                     snap.provider_share_class_figi,
                     snap.provider_last_updated_at.astimezone(UTC).isoformat() if snap.provider_last_updated_at else None,
                     snap.provider_delisted_at,
-                    json.dumps(list(snap.missing_fields)),
+                    json.dumps(list(snap.missing_fields), sort_keys=True, separators=(",", ":")),
                     snap.request_started_at.astimezone(UTC).isoformat(),
                     snap.response_received_at.astimezone(UTC).isoformat(),
                     snap.fact_hash,

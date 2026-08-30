@@ -144,14 +144,98 @@ def build_unavailable_reference_fact_payload(
     }
 
 
+def _parse_iso_utc(ts_str: str | None) -> datetime | None:
+    """Parse ISO8601 provider timestamp and normalize to UTC if timezone-aware.
+
+    Returns None if absent, malformed, or naive (naive timestamps MUST NOT be assumed UTC).
+    """
+    if not ts_str or not isinstance(ts_str, str):
+        return None
+    cleaned = ts_str.strip()
+    if not cleaned:
+        return None
+    try:
+        dt = datetime.fromisoformat(cleaned)
+        if dt.tzinfo is None:
+            # Naive timestamp - MUST NOT be interpreted as UTC
+            return None
+        return dt.astimezone(UTC)
+    except (ValueError, TypeError, OverflowError):
+        return None
+
+
+def normalize_reference_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
+    """Extract and validate only approved reference contract fields for a candidate record."""
+    if not isinstance(candidate, dict):
+        raise TypeError(f"Candidate item must be a dict, got {type(candidate).__name__}")
+
+    # Validate active
+    active = candidate.get("active")
+    if active is not None and not isinstance(active, bool):
+        raise TypeError(f"Candidate active must be bool or None, got {type(active).__name__}")
+
+    # Validate type / type_code
+    type_val = candidate.get("type") or candidate.get("type_code")
+    if type_val is not None and not isinstance(type_val, str):
+        raise TypeError(f"Candidate type must be str or None, got {type(type_val).__name__}")
+
+    # Validate ticker
+    ticker = candidate.get("ticker")
+    if ticker is not None and not isinstance(ticker, str):
+        raise TypeError(f"Candidate ticker must be str or None, got {type(ticker).__name__}")
+
+    # Validate other textual fields
+    str_fields = (
+        "cik",
+        "composite_figi",
+        "delisted_utc",
+        "last_updated_utc",
+        "locale",
+        "market",
+        "name",
+        "primary_exchange",
+        "share_class_figi",
+    )
+    extracted_text: dict[str, str | None] = {}
+    for f in str_fields:
+        val = candidate.get(f)
+        if val is not None and not isinstance(val, str):
+            raise TypeError(f"Candidate field {f} must be str or None, got {type(val).__name__}")
+        extracted_text[f] = val
+
+    # For last_updated_utc, if not valid ISO with timezone, normalize to ISO or None
+    last_upd = extracted_text["last_updated_utc"]
+    if last_upd is not None:
+        parsed_dt = _parse_iso_utc(last_upd)
+        last_upd_iso = parsed_dt.isoformat() if parsed_dt is not None else None
+    else:
+        last_upd_iso = None
+
+    return {
+        "active": active,
+        "cik": extracted_text["cik"],
+        "composite_figi": extracted_text["composite_figi"],
+        "delisted_utc": extracted_text["delisted_utc"],
+        "last_updated_utc": last_upd_iso,
+        "locale": extracted_text["locale"],
+        "market": extracted_text["market"],
+        "name": extracted_text["name"],
+        "primary_exchange": extracted_text["primary_exchange"],
+        "share_class_figi": extracted_text["share_class_figi"],
+        "ticker": ticker or "",
+        "type_code": type_val,
+    }
+
+
 def build_ambiguous_reference_fact_payload(
     *,
     ticker: str,
     candidates: Sequence[dict[str, Any]],
 ) -> dict[str, Any]:
     """Build normalized canonical fact payload for an ambiguous reference observation."""
+    normalized_candidates = [normalize_reference_candidate(c) for c in candidates]
     sorted_candidates = sorted(
-        candidates,
+        normalized_candidates,
         key=lambda c: (
             c.get("ticker") or "",
             c.get("name") or "",
@@ -186,7 +270,13 @@ def audit_missing_reference_fields(provider_data: dict[str, Any]) -> tuple[str, 
     missing: list[str] = []
     for field_name in sorted(REFERENCE_CONTRACT_FIELDS):
         val = provider_data.get(field_name)
-        if val is None or (isinstance(val, str) and not val.strip()):
+        if field_name == "type" and val is None:
+            val = provider_data.get("type_code")
+        if (
+            val is None
+            or (isinstance(val, str) and not val.strip())
+            or (field_name == "last_updated_utc" and _parse_iso_utc(val) is None)
+        ):
             missing.append(field_name)
     return tuple(missing)
 
@@ -503,6 +593,27 @@ class PITReferenceSnapshot:
         for mf in self.missing_fields:
             if not isinstance(mf, str):
                 raise TypeError(f"missing_fields elements must be str, got {type(mf)}")
+
+        if self.provider_active is not None and not isinstance(self.provider_active, bool):
+            raise TypeError(f"provider_active must be bool or None, got {type(self.provider_active).__name__}")
+
+        text_field_checks = {
+            "provider_ticker": self.provider_ticker,
+            "provider_name": self.provider_name,
+            "provider_market": self.provider_market,
+            "provider_locale": self.provider_locale,
+            "provider_type_code": self.provider_type_code,
+            "provider_primary_exchange": self.provider_primary_exchange,
+            "provider_cik": self.provider_cik,
+            "provider_composite_figi": self.provider_composite_figi,
+            "provider_share_class_figi": self.provider_share_class_figi,
+            "provider_delisted_at": self.provider_delisted_at,
+            "error_category": self.error_category,
+            "error_message": self.error_message,
+        }
+        for fname, fval in text_field_checks.items():
+            if fval is not None and not isinstance(fval, str):
+                raise TypeError(f"{fname} must be str or None, got {type(fval).__name__}")
 
         started = _normalize_aware_utc(self.request_started_at, "request_started_at")
         received = _normalize_aware_utc(self.response_received_at, "response_received_at")

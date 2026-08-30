@@ -416,3 +416,108 @@ def test_pit_reference_snapshots_check_constraints(tmp_path) -> None:
                 )
                 """
             )
+
+        # provider_active valid values: NULL, 0, 1
+        for idx, val in enumerate((None, 0, 1)):
+            con.execute(
+                """
+                INSERT INTO pit_reference_snapshots (
+                    snapshot_id, capture_run_id, symbol, observation_status,
+                    provider, provider_query_date, provider_active, request_started_at, response_received_at,
+                    fact_hash, fact_json, created_at
+                ) VALUES (
+                    ?, 'run-ref-1', ?, 'known',
+                    'massive', '2026-08-30', ?, '2026-08-30T13:00:00Z', '2026-08-30T13:00:01Z',
+                    'hash', '{}', '2026-08-30T13:00:01Z'
+                )
+                """,
+                (f"snap-act-{idx}", f"SYM{idx}", val),
+            )
+
+        # provider_active invalid values: 2, -1
+        for idx, bad_val in enumerate((2, -1, 99)):
+            with pytest.raises(sqlite3.IntegrityError):
+                con.execute(
+                    """
+                    INSERT INTO pit_reference_snapshots (
+                        snapshot_id, capture_run_id, symbol, observation_status,
+                        provider, provider_query_date, provider_active, request_started_at, response_received_at,
+                        fact_hash, fact_json, created_at
+                    ) VALUES (
+                        ?, 'run-ref-1', ?, 'known',
+                        'massive', '2026-08-30', ?, '2026-08-30T13:00:00Z', '2026-08-30T13:00:01Z',
+                        'hash', '{}', '2026-08-30T13:00:01Z'
+                    )
+                    """,
+                    (f"snap-bad-{idx}", f"BADSYM{idx}", bad_val),
+                )
+
+
+def test_pit_reference_metadata_canonical_json_persistence(tmp_path) -> None:
+    from datetime import UTC, date, datetime
+
+    from tradex.pit import store as pit_store
+    from tradex.pit.models import (
+        PITReferenceSnapshot,
+        ReferenceObservationStatus,
+        compute_fact_hash,
+        serialize_canonical_fact_json,
+    )
+
+    db_path = tmp_path / "metadata_json.db"
+    store.init(db_path)
+
+    # Seed run
+    with store._conn(db_path=db_path) as con:
+        con.execute(
+            """
+            INSERT INTO pit_reference_capture_runs (
+                capture_run_id, idempotency_key, request_fingerprint,
+                capture_slot, capture_date, scheduled_for, requested_at, requested_provider,
+                universe_hash, requested_n, status, created_at, updated_at
+            ) VALUES (
+                'run-m1', 'idem-m1', 'fp-m1', 'evening', '2026-08-30',
+                '2026-08-31T00:30:00Z', '2026-08-31T00:30:00Z', 'massive', 'uhash',
+                1, 'started', '2026-08-31T00:30:00Z', '2026-08-31T00:30:00Z'
+            )
+            """
+        )
+
+    fact_json = serialize_canonical_fact_json({"active": True, "ticker": "AAPL"})
+    snap = PITReferenceSnapshot(
+        snapshot_id="snap-m1",
+        capture_run_id="run-m1",
+        symbol="AAPL",
+        observation_status=ReferenceObservationStatus.KNOWN,
+        provider="massive",
+        provider_query_date=date(2026, 8, 30),
+        provider_request_ids=("req-b", "req-a"),
+        provider_ticker="AAPL",
+        provider_name="Apple",
+        provider_market="stocks",
+        provider_locale="us",
+        provider_active=True,
+        provider_type_code="CS",
+        provider_primary_exchange="XNAS",
+        provider_cik="0000320193",
+        provider_composite_figi="FIGI1",
+        provider_share_class_figi="FIGI2",
+        provider_last_updated_at=datetime(2026, 8, 30, 14, 0, tzinfo=UTC),
+        provider_delisted_at=None,
+        missing_fields=("delisted_utc", "last_updated_utc"),
+        request_started_at=datetime(2026, 8, 30, 14, 0, tzinfo=UTC),
+        response_received_at=datetime(2026, 8, 30, 14, 0, 1, tzinfo=UTC),
+        fact_hash=compute_fact_hash(fact_json),
+        fact_json=fact_json,
+        error_category=None,
+        error_message=None,
+        created_at=datetime(2026, 8, 30, 14, 0, 1, tzinfo=UTC),
+    )
+
+    pit_store.insert_reference_snapshots([snap], db_path=db_path)
+
+    # Query raw SQLite rows to verify deterministic no-whitespace JSON
+    with store._conn(db_path=db_path) as con:
+        row = con.execute("SELECT provider_request_ids_json, missing_fields_json FROM pit_reference_snapshots WHERE snapshot_id = 'snap-m1'").fetchone()
+        assert row[0] == '["req-b","req-a"]'
+        assert row[1] == '["delisted_utc","last_updated_utc"]'

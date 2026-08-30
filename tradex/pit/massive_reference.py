@@ -14,11 +14,12 @@ import urllib.parse
 import urllib.request
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Any
 
 from tradex.pit.models import (
     ReferenceObservationStatus,
+    _parse_iso_utc,
     audit_missing_reference_fields,
     build_ambiguous_reference_fact_payload,
     build_error_reference_fact_payload,
@@ -34,6 +35,10 @@ if TYPE_CHECKING:
 
 class MassiveReferenceError(Exception):
     """Base exception for Massive reference adapter failures."""
+
+    def __init__(self, message: str, *, request_ids: tuple[str, ...] = ()) -> None:
+        super().__init__(message)
+        self.request_ids = request_ids
 
 
 class MassiveAuthError(MassiveReferenceError):
@@ -72,22 +77,6 @@ def sanitize_text(text: str, secret: str | None = None) -> str:
     return cleaned
 
 
-def _parse_iso_utc(ts_str: str | None) -> datetime | None:
-    """Parse ISO8601 provider timestamp and normalize to UTC, returning None if absent or malformed."""
-    if not ts_str or not isinstance(ts_str, str):
-        return None
-    cleaned = ts_str.strip()
-    if not cleaned:
-        return None
-    try:
-        dt = datetime.fromisoformat(cleaned)
-        if dt.tzinfo is None:
-            return dt.replace(tzinfo=UTC)
-        return dt.astimezone(UTC)
-    except (ValueError, TypeError, OverflowError):
-        return None
-
-
 @dataclass(frozen=True, slots=True)
 class MassiveObservationResult:
     """Typed result of a prospective reference lookup for a single symbol."""
@@ -116,7 +105,10 @@ class MassiveObservationResult:
 
 
 class MassiveReferenceClient:
-    """Production client for Massive/Polygon prospective reference/security lookups."""
+    """Production client for Massive/Polygon prospective reference/security lookups.
+
+    Implements local bounded rate-limiting (pacing) between outgoing requests.
+    """
 
     DEFAULT_BASE_URL: str = "https://api.massive.com"
     DEFAULT_MIN_INTERVAL_SECONDS: float = 12.1  # ~5 requests/minute free-tier pacing
@@ -160,7 +152,7 @@ class MassiveReferenceClient:
         self._last_request_time = time.monotonic()
 
     def _http_get(self, url: str) -> tuple[dict[str, Any], int, list[str]]:
-        """Perform a single sanitized HTTP GET request with retry handling for 429/transient errors."""
+        """Perform a single sanitized HTTP GET request with bounded pacing and request ID extraction."""
         if not self._api_key:
             raise MassiveAuthError("Massive/Polygon API key is required but not configured.")
 
@@ -199,34 +191,61 @@ class MassiveReferenceClient:
         if header_req_id and isinstance(header_req_id, str) and header_req_id.strip():
             request_ids.append(header_req_id.strip())
 
+        # Attempt to decode JSON body to extract body request_id even on error status
+        parsed: Any = None
+        if body_bytes:
+            try:
+                parsed = json.loads(body_bytes.decode("utf-8"))
+                if isinstance(parsed, dict):
+                    body_req_id = parsed.get("request_id")
+                    if (
+                        body_req_id
+                        and isinstance(body_req_id, str)
+                        and body_req_id.strip()
+                        and body_req_id.strip() not in request_ids
+                    ):
+                        request_ids.append(body_req_id.strip())
+            except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
+                pass
+
         # Check status codes
         if status_code == 401:
-            raise MassiveAuthError("Massive/Polygon authentication failed: invalid or unauthorized API key (HTTP 401).")
+            raise MassiveAuthError(
+                "Massive/Polygon authentication failed: invalid or unauthorized API key (HTTP 401).",
+                request_ids=tuple(request_ids),
+            )
         if status_code == 403:
-            raise MassiveEntitlementError("Massive/Polygon entitlement denied for endpoint (HTTP 403).")
+            raise MassiveEntitlementError(
+                "Massive/Polygon entitlement denied for endpoint (HTTP 403).",
+                request_ids=tuple(request_ids),
+            )
         if status_code == 429:
             retry_after = resp_headers.get("Retry-After") or resp_headers.get("retry-after")
-            msg = f"Massive/Polygon rate limit exceeded (HTTP 429). Retry-After: {retry_after}" if retry_after else "Massive/Polygon rate limit exceeded (HTTP 429)."
-            raise MassiveRateLimitError(msg)
+            msg = (
+                f"Massive/Polygon rate limit exceeded (HTTP 429). Retry-After: {retry_after}"
+                if retry_after
+                else "Massive/Polygon rate limit exceeded (HTTP 429)."
+            )
+            raise MassiveRateLimitError(msg, request_ids=tuple(request_ids))
         if status_code >= 500:
-            raise MassiveTransientError(f"Massive/Polygon server error (HTTP {status_code}).")
+            raise MassiveTransientError(
+                f"Massive/Polygon server error (HTTP {status_code}).",
+                request_ids=tuple(request_ids),
+            )
         if status_code not in (200, 404):
-            raise MassiveResponseError(f"Unexpected HTTP status {status_code} from Massive/Polygon.")
-
-        # Decode JSON body
-        try:
-            parsed = json.loads(body_bytes.decode("utf-8")) if body_bytes else {}
-        except Exception as exc:
-            clean_err = sanitize_text(str(exc), self._api_key)
-            raise MassiveResponseError(f"Malformed JSON response from Massive/Polygon: {clean_err}") from exc
+            raise MassiveResponseError(
+                f"Unexpected HTTP status {status_code} from Massive/Polygon.",
+                request_ids=tuple(request_ids),
+            )
 
         if not isinstance(parsed, dict):
-            raise MassiveResponseError("Massive/Polygon response is not a JSON object.")
-
-        # Extract body request_id if present
-        body_req_id = parsed.get("request_id")
-        if body_req_id and isinstance(body_req_id, str) and body_req_id.strip() and body_req_id.strip() not in request_ids:
-            request_ids.append(body_req_id.strip())
+            if body_bytes:
+                clean_err = sanitize_text("Response body is not a JSON object", self._api_key)
+                raise MassiveResponseError(
+                    f"Malformed JSON response from Massive/Polygon: {clean_err}",
+                    request_ids=tuple(request_ids),
+                )
+            parsed = {}
 
         return parsed, status_code, request_ids
 
@@ -250,15 +269,29 @@ class MassiveReferenceClient:
         if status == 404:
             return [], req_ids
 
-        results = data.get("results")
-        if results is None or not isinstance(results, list):
-            return [], req_ids
+        if "results" not in data or not isinstance(data.get("results"), list):
+            raise MassiveResponseError(
+                "Massive/Polygon response is missing valid 'results' list.",
+                request_ids=tuple(req_ids),
+            )
 
-        # Filter strictly for exact ticker match (case-sensitive / exact normalized symbol match)
-        exact_matches = [
-            r for r in results
-            if isinstance(r, dict) and r.get("ticker") == symbol
-        ]
+        results = data["results"]
+        exact_matches: list[dict[str, Any]] = []
+        for r in results:
+            if not isinstance(r, dict):
+                raise MassiveResponseError(
+                    "Massive/Polygon result item is not a JSON object.",
+                    request_ids=tuple(req_ids),
+                )
+            raw_ticker = r.get("ticker")
+            if raw_ticker is not None and not isinstance(raw_ticker, str):
+                raise MassiveResponseError(
+                    f"Malformed 'ticker' field type ({type(raw_ticker).__name__}) in provider result item.",
+                    request_ids=tuple(req_ids),
+                )
+            if isinstance(raw_ticker, str) and raw_ticker.strip().upper() == symbol:
+                exact_matches.append(r)
+
         return exact_matches, req_ids
 
     def fetch_ticker_reference(
@@ -266,19 +299,7 @@ class MassiveReferenceClient:
         symbol: str,
         capture_date: date,
     ) -> MassiveObservationResult:
-        """Perform prospective two-stage reference lookup for symbol as of capture_date.
-
-        Lookup sequence:
-        1. Query /v3/reference/tickers with ticker=SYMBOL, date=capture_date, active=true, limit=10.
-        2. Exact ticker filter.
-        3. If exactly 1 match -> known.
-        4. If > 1 match -> ambiguous.
-        5. If 0 matches -> fallback query with active=false, limit=10.
-        6. In fallback results:
-           - exactly 1 match -> known.
-           - > 1 match -> ambiguous.
-           - 0 matches -> unavailable.
-        """
+        """Perform prospective two-stage reference lookup for symbol as of capture_date."""
         cleaned_symbol = symbol.strip().upper()
         if not cleaned_symbol:
             raise ValueError("Symbol must be a non-empty string.")
@@ -320,10 +341,11 @@ class MassiveReferenceClient:
             # Both returned 0 results -> unavailable
             return self._build_unavailable_result(cleaned_symbol, capture_date, tuple(all_request_ids))
 
-        except (MassiveAuthError, MassiveEntitlementError, MassiveRateLimitError, MassiveTransientError, MassiveResponseError) as exc:
+        except MassiveReferenceError as exc:
             error_cat = type(exc).__name__
             clean_msg = sanitize_text(str(exc), self._api_key)
-            return self._build_error_result(cleaned_symbol, capture_date, tuple(all_request_ids), error_cat, clean_msg)
+            req_ids = exc.request_ids if exc.request_ids else tuple(all_request_ids)
+            return self._build_error_result(cleaned_symbol, capture_date, req_ids, error_cat, clean_msg)
         except Exception as exc:  # noqa: BLE001
             error_cat = type(exc).__name__
             clean_msg = sanitize_text(str(exc), self._api_key)
@@ -337,22 +359,59 @@ class MassiveReferenceClient:
         record: dict[str, Any],
     ) -> MassiveObservationResult:
         """Construct a known observation result from a single provider record."""
-        ticker = record.get("ticker") or symbol
+        # Safe-normalize and validate contract fields
+        active = record.get("active")
+        if active is not None and not isinstance(active, bool):
+            raise MassiveResponseError(
+                f"Malformed 'active' field type ({type(active).__name__}) in provider record.",
+                request_ids=request_ids,
+            )
+
+        for f in (
+            "ticker",
+            "name",
+            "market",
+            "locale",
+            "primary_exchange",
+            "cik",
+            "composite_figi",
+            "share_class_figi",
+            "delisted_utc",
+        ):
+            val = record.get(f)
+            if val is not None and not isinstance(val, str):
+                raise MassiveResponseError(
+                    f"Malformed field type for '{f}' ({type(val).__name__}) in provider record.",
+                    request_ids=request_ids,
+                )
+
+        type_code = record.get("type") or record.get("type_code")
+        if type_code is not None and not isinstance(type_code, str):
+            raise MassiveResponseError(
+                f"Malformed field type for 'type' ({type(type_code).__name__}) in provider record.",
+                request_ids=request_ids,
+            )
+
+        last_updated_raw = record.get("last_updated_utc")
+        if last_updated_raw is not None and not isinstance(last_updated_raw, str):
+            raise MassiveResponseError(
+                f"Malformed field type for 'last_updated_utc' ({type(last_updated_raw).__name__}) in provider record.",
+                request_ids=request_ids,
+            )
+
+        last_updated_dt = _parse_iso_utc(last_updated_raw)
+        last_updated_iso = last_updated_dt.isoformat() if last_updated_dt else None
+
+        raw_ticker = record.get("ticker")
+        ticker = raw_ticker.strip() if isinstance(raw_ticker, str) and raw_ticker.strip() else symbol
         name = record.get("name")
         market = record.get("market")
         locale = record.get("locale")
-        active = record.get("active")
-        if active is not None and not isinstance(active, bool):
-            active = bool(active)
-        type_code = record.get("type")
         primary_exchange = record.get("primary_exchange")
         cik = record.get("cik")
         composite_figi = record.get("composite_figi")
         share_class_figi = record.get("share_class_figi")
         delisted_utc = record.get("delisted_utc")
-        last_updated_raw = record.get("last_updated_utc")
-        last_updated_dt = _parse_iso_utc(last_updated_raw)
-        last_updated_iso = last_updated_dt.isoformat() if last_updated_dt else None
 
         missing_fields = audit_missing_reference_fields(record)
 
