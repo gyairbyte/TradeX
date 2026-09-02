@@ -675,3 +675,61 @@ def get_reference_capture_result(
         return None
     snapshots = list_reference_snapshots(capture_run_id, db_path=db_path, settings=settings)
     return PITReferenceCaptureResult(run=run, snapshots=snapshots)
+
+
+def list_earnings_capture_runs(
+    capture_date: date,
+    slot: CaptureSlot,
+    *,
+    db_path: Path | None = None,
+    settings: TradeXSettings | None = None,
+) -> tuple[PITCaptureRun, ...]:
+    """Return all earnings capture runs for a specific date and slot in deterministic order.
+
+    Read-only: does not create the database if it does not exist.
+    Order: requested_at ASC, capture_run_id ASC.
+    """
+    target_path = _resolve_db_path(settings) if db_path is None else Path(db_path)
+    if not target_path.exists():
+        return ()
+    with _conn(db_path=target_path) as con:
+        if not con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='pit_capture_runs'").fetchone():
+            return ()
+        rows = con.execute(
+            """
+            SELECT * FROM pit_capture_runs
+            WHERE capture_date = ? AND capture_slot = ?
+            ORDER BY requested_at ASC, capture_run_id ASC
+            """,
+            (capture_date.isoformat(), slot.value),
+        ).fetchall()
+        return tuple(_row_to_run(row) for row in rows)
+
+
+def list_reference_capture_runs(
+    capture_date: date,
+    slot: CaptureSlot,
+    *,
+    db_path: Path | None = None,
+    settings: TradeXSettings | None = None,
+) -> tuple[PITReferenceCaptureRun, ...]:
+    """Return all reference capture runs for a specific date and slot in deterministic order.
+
+    Read-only: does not create the database if it does not exist.
+    Order: requested_at ASC, capture_run_id ASC.
+    """
+    target_path = _resolve_db_path(settings) if db_path is None else Path(db_path)
+    if not target_path.exists():
+        return ()
+    with _conn(db_path=target_path) as con:
+        if not con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='pit_reference_capture_runs'").fetchone():
+            return ()
+        rows = con.execute(
+            """
+            SELECT * FROM pit_reference_capture_runs
+            WHERE capture_date = ? AND capture_slot = ?
+            ORDER BY requested_at ASC, capture_run_id ASC
+            """,
+            (capture_date.isoformat(), slot.value),
+        ).fetchall()
+        return tuple(_row_to_reference_run(row) for row in rows)
