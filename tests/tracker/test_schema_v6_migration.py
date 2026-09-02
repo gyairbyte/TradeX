@@ -136,7 +136,7 @@ def test_fresh_db_creates_schema_v6(tmp_path) -> None:
 
     with sqlite3.connect(db_path) as con:
         version = con.execute("PRAGMA user_version").fetchone()[0]
-        assert version == 6
+        assert version == 7
 
         tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         # Legacy tables
@@ -177,7 +177,7 @@ def test_v5_to_v6_migration_preserves_journal_candidate_and_legacy_data(tmp_path
     store.init(db_path)
 
     with sqlite3.connect(db_path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
 
         # Check legacy rows preserved
         sh = con.execute("SELECT ticker, score, provider FROM signal_history WHERE ticker = 'AAPL'").fetchone()
@@ -202,7 +202,7 @@ def test_v0_db_migrates_to_v6(tmp_path) -> None:
     store.init(db_path)
 
     with sqlite3.connect(db_path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
         tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         assert "pit_capture_runs" in tables
         assert "pit_earnings_snapshots" in tables
@@ -220,7 +220,7 @@ def test_v1_to_v6_migration(tmp_path) -> None:
 
     store.init(db_path)
     with sqlite3.connect(db_path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
 
 
 def test_v2_to_v6_migration(tmp_path) -> None:
@@ -236,7 +236,7 @@ def test_v2_to_v6_migration(tmp_path) -> None:
 
     store.init(db_path)
     with sqlite3.connect(db_path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
 
 
 def test_v3_to_v6_migration(tmp_path) -> None:
@@ -253,7 +253,7 @@ def test_v3_to_v6_migration(tmp_path) -> None:
 
     store.init(db_path)
     with sqlite3.connect(db_path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
 
 
 def test_v4_to_v6_migration(tmp_path) -> None:
@@ -262,7 +262,7 @@ def test_v4_to_v6_migration(tmp_path) -> None:
     store.init(db_path)
 
     with sqlite3.connect(db_path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
 
 
 def test_v6_repeat_init_is_idempotent(tmp_path) -> None:
@@ -271,7 +271,7 @@ def test_v6_repeat_init_is_idempotent(tmp_path) -> None:
     store.init(db_path)
 
     with sqlite3.connect(db_path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
 
 
 def test_future_schema_version_rejected(tmp_path) -> None:
@@ -283,7 +283,7 @@ def test_future_schema_version_rejected(tmp_path) -> None:
     finally:
         con.close()
 
-    with pytest.raises(store.StoreError, match="newer than supported schema version 6"):
+    with pytest.raises(store.StoreError, match="newer than supported schema version 7"):
         store.init(db_path)
 
     with sqlite3.connect(db_path) as con:
