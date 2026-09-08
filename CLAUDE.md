@@ -64,6 +64,7 @@ Scanner runs → results DataFrame
 | `tradex/pit/massive_reference.py` | Production-facing Massive/Polygon reference adapter (exact ticker matching, active/inactive fallback, request IDs, rate-limiting, and secret scrubbing). |
 | `tradex/pit/reference.py` | Point-in-time prospective security/reference capture orchestration (evening 20:30 ET / morning 09:00 ET). |
 | `tradex/pit/capture.py` | One-shot point-in-time capture CLI (`python -m tradex.pit.capture {earnings,reference} ...`). |
+| `tradex/pit/ops.py` | Deterministic PIT operations runner: `PITUniverseManifest` (explicit versioned universe), `load_universe_manifest`, `estimate_capacity`, `run_pit_slot` (earnings→reference slot runner with universe drift guard and family isolation), `get_pit_slot_health` (read-only health), CLI subcommands `validate-universe`, `run-slot`, `health`. Schema v7. No OS scheduler installed. |
 | `tradex/tracker/store.py` | SQLite persistence for signal history and canonical scan sessions/observations. Tables: `signal_history`, `scan_sessions`, `scan_observations`, `scan_runs`. DB at `~/.tradex/signals.db`. |
 | `tradex/tracker/analyzer.py` | Coil detector — reads history, finds stocks building pressure without breaking out. Returns coil strength score. |
 | `tradex/tracker/confluence.py` | Scores a ticker across all 3 timeframes simultaneously. Coverage-aware weighted score (intraday 30%, short 40%, long 30%). |

@@ -594,3 +594,8 @@ class MassiveReferenceClient:
             error_category=error_category,
             error_message=error_message,
         )
+
+
+# Module-level alias for the default Massive/Polygon pacing interval.
+# Use this constant in ops.py and tests rather than duplicating the literal 12.1.
+DEFAULT_MASSIVE_MIN_INTERVAL_SECONDS: float = MassiveReferenceClient.DEFAULT_MIN_INTERVAL_SECONDS
