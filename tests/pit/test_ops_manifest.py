@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import date
+from datetime import UTC, date
 from pathlib import Path
 
 import pytest
@@ -64,6 +64,12 @@ class TestPITUniverseManifestValidation:
         with pytest.raises(ValueError, match="contract_version"):
             self._make(contract_version=2)
 
+    def test_invalid_contract_version_bool(self):
+        with pytest.raises(ValueError, match="contract_version"):
+            self._make(contract_version=True)
+        with pytest.raises(ValueError, match="contract_version"):
+            self._make(contract_version=False)
+
     def test_invalid_universe_id_empty(self):
         with pytest.raises(ValueError, match="universe_id"):
             self._make(universe_id="")
@@ -80,13 +86,26 @@ class TestPITUniverseManifestValidation:
         with pytest.raises(ValueError, match="universe_version"):
             self._make(universe_version="")
 
+    def test_universe_version_whitespace_trimmed(self):
+        m1 = self._make(universe_version="  v1  ")
+        m2 = self._make(universe_version="v1")
+        assert m1.universe_version == "v1"
+        assert m1.manifest_hash == m2.manifest_hash
+
     def test_invalid_effective_from_not_date(self):
         with pytest.raises(TypeError, match="date instance"):
             self._make(effective_from="2026-01-01")
 
+    def test_invalid_effective_from_datetime_rejected(self):
+        from datetime import datetime
+        dt = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+        with pytest.raises(TypeError, match="date instance and not a datetime instance"):
+            self._make(effective_from=dt)
+
     def test_empty_symbols(self):
         with pytest.raises(ValueError, match="symbols"):
             self._make(symbols=())
+
 
     def test_description_must_be_str(self):
         with pytest.raises(TypeError, match="description"):
@@ -168,6 +187,30 @@ class TestLoadUniverseManifest:
         _write_manifest(d, p)
         with pytest.raises(ValueError, match="contract_version"):
             load_universe_manifest(p)
+
+    @pytest.mark.parametrize("bad_cv", [True, False, 1.0, "1", None, 0, 2, 99])
+    def test_wrong_or_non_integer_contract_version_rejected(self, tmp_path, bad_cv):
+        d = _minimal_manifest_dict(contract_version=bad_cv)
+        p = tmp_path / "u.json"
+        _write_manifest(d, p)
+        with pytest.raises(ValueError, match="contract_version"):
+            load_universe_manifest(p)
+
+    def test_universe_version_whitespace_normalized(self, tmp_path):
+        d = _minimal_manifest_dict(universe_version="  v1  ")
+        p = tmp_path / "u.json"
+        _write_manifest(d, p)
+        m = load_universe_manifest(p)
+        assert m.universe_version == "v1"
+        direct = PITUniverseManifest(
+            contract_version=1,
+            universe_id="test-u",
+            universe_version="v1",
+            effective_from=date(2026, 1, 1),
+            symbols=("AAPL", "MSFT"),
+            description="Test manifest",
+        )
+        assert m.manifest_hash == direct.manifest_hash
 
     def test_missing_universe_id(self, tmp_path):
         d = _minimal_manifest_dict()
@@ -332,22 +375,53 @@ class TestEstimateCapacity:
         m = self._manifest(4)
         est = estimate_capacity(m, pacing_interval_seconds=5.0)
         assert est.pacing_interval_seconds == 5.0
-        assert est.minimum_pacing_floor_seconds == 4 * 5.0
-        assert est.maximum_pacing_floor_seconds == 8 * 5.0
+        assert est.minimum_pacing_floor_seconds == 3 * 5.0
+        assert est.maximum_pacing_floor_seconds == 7 * 5.0
 
     def test_pacing_floor_math(self):
         m = self._manifest(10)
         interval = 12.1
         est = estimate_capacity(m, pacing_interval_seconds=interval)
-        assert est.minimum_pacing_floor_seconds == pytest.approx(10 * interval)
-        assert est.maximum_pacing_floor_seconds == pytest.approx(20 * interval)
+        assert est.minimum_pacing_floor_seconds == pytest.approx(9 * interval)
+        assert est.maximum_pacing_floor_seconds == pytest.approx(19 * interval)
 
     def test_single_symbol_universe(self):
         m = self._manifest(1)
-        est = estimate_capacity(m)
+        est = estimate_capacity(m, pacing_interval_seconds=12.1)
         assert est.symbol_count == 1
         assert est.minimum_reference_requests == 1
         assert est.maximum_reference_requests == 2
+        assert est.minimum_pacing_floor_seconds == 0.0
+        assert est.maximum_pacing_floor_seconds == 12.1
+
+    def test_two_symbol_universe(self):
+        m = self._manifest(2)
+        est = estimate_capacity(m, pacing_interval_seconds=12.1)
+        assert est.symbol_count == 2
+        assert est.minimum_reference_requests == 2
+        assert est.maximum_reference_requests == 4
+        assert est.minimum_pacing_floor_seconds == pytest.approx(12.1)
+        assert est.maximum_pacing_floor_seconds == pytest.approx(36.3)
+
+    @pytest.mark.parametrize("bad_interval,exc_type", [
+        (True, TypeError),
+        (False, TypeError),
+        ("12.1", TypeError),
+        (-0.1, ValueError),
+        (-10.0, ValueError),
+        (float("nan"), ValueError),
+        (float("inf"), ValueError),
+        (float("-inf"), ValueError),
+    ])
+    def test_invalid_pacing_interval_rejected(self, bad_interval, exc_type):
+        m = self._manifest(3)
+        with pytest.raises(exc_type):
+            estimate_capacity(m, pacing_interval_seconds=bad_interval)
+
+    def test_none_pacing_interval_uses_default(self):
+        m = self._manifest(3)
+        est = estimate_capacity(m, pacing_interval_seconds=None)
+        assert est.pacing_interval_seconds == DEFAULT_MASSIVE_MIN_INTERVAL_SECONDS
 
     def test_universe_id_and_version_preserved(self):
         m = self._manifest(3)

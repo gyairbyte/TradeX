@@ -117,12 +117,15 @@ This ensures a reference capture failure never prevents earnings from completing
 | `symbol_count` | N |
 | `minimum_reference_requests` | N (one active lookup per symbol) |
 | `maximum_reference_requests` | 2N (active + inactive fallback per symbol) |
-| `minimum_pacing_floor_seconds` | N × `DEFAULT_MASSIVE_MIN_INTERVAL_SECONDS` |
-| `maximum_pacing_floor_seconds` | 2N × `DEFAULT_MASSIVE_MIN_INTERVAL_SECONDS` |
+| `minimum_pacing_floor_seconds` | max(N - 1, 0) × `DEFAULT_MASSIVE_MIN_INTERVAL_SECONDS` |
+| `maximum_pacing_floor_seconds` | max(2N - 1, 0) × `DEFAULT_MASSIVE_MIN_INTERVAL_SECONDS` |
 
 **Current `DEFAULT_MASSIVE_MIN_INTERVAL_SECONDS` = 12.1 s** (~5 requests/minute free-tier pacing).
 
-These are floor estimates only. Actual completion time includes provider/network latency and retries.
+Because the rate limiter enforces a minimum delay *between* requests rather than before the first request, the pure pacing floor for $R$ requests is $\max(R - 1, 0) \times \text{interval}$.
+
+These are floor estimates only. Actual completion time excludes provider/network latency, retries, process startup, SQLite overhead, and other delays.
+
 
 ---
 

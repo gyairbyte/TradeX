@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import re
 import sys
 from collections.abc import Callable
@@ -109,22 +110,25 @@ class PITUniverseManifest:
     description: str
 
     def __post_init__(self) -> None:
-        if self.contract_version != _MANIFEST_CONTRACT_VERSION:
+        if isinstance(self.contract_version, bool) or not isinstance(self.contract_version, int) or self.contract_version != _MANIFEST_CONTRACT_VERSION:
             raise ValueError(
                 f"Unsupported manifest contract_version {self.contract_version!r}; "
                 f"only contract_version={_MANIFEST_CONTRACT_VERSION} is supported."
             )
         if not isinstance(self.universe_id, str) or not self.universe_id.strip():
             raise ValueError("universe_id must be a non-empty string")
-        if not _UNIVERSE_ID_PATTERN.match(self.universe_id):
+        normalized_uid = self.universe_id.strip()
+        if not _UNIVERSE_ID_PATTERN.match(normalized_uid):
             raise ValueError(
                 f"universe_id {self.universe_id!r} is syntactically invalid; "
                 "must match ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
             )
+        object.__setattr__(self, "universe_id", normalized_uid)
         if not isinstance(self.universe_version, str) or not self.universe_version.strip():
             raise ValueError("universe_version must be a non-empty string")
-        if not isinstance(self.effective_from, date):
-            raise TypeError("effective_from must be a date instance")
+        object.__setattr__(self, "universe_version", self.universe_version.strip())
+        if not isinstance(self.effective_from, date) or isinstance(self.effective_from, datetime):
+            raise TypeError("effective_from must be a date instance and not a datetime instance")
         if not isinstance(self.symbols, tuple) or len(self.symbols) == 0:
             raise ValueError("symbols must be a non-empty tuple of strings")
         if not isinstance(self.description, str):
@@ -196,10 +200,10 @@ def load_universe_manifest(path: Path | str) -> PITUniverseManifest:
 
     # Validate contract_version
     cv = raw.get("contract_version")
-    if not isinstance(cv, int):
-        raise ValueError(  # noqa: TRY004
-            f"contract_version must be an integer, got "
-            f"{type(cv).__name__ if cv is not None else 'missing'}"
+    if isinstance(cv, bool) or not isinstance(cv, int) or cv != _MANIFEST_CONTRACT_VERSION:
+        raise ValueError(
+            f"contract_version must be integer {_MANIFEST_CONTRACT_VERSION}, got "
+            f"{type(cv).__name__ if cv is not None else 'missing'} ({cv!r})"
         )
 
     # Validate universe_id
@@ -303,22 +307,39 @@ def estimate_capacity(
     Returns:
         PITCapacityEstimate with pacing-floor math for N and 2N requests.
     """
-    interval = (
-        pacing_interval_seconds
-        if pacing_interval_seconds is not None
-        else DEFAULT_MASSIVE_MIN_INTERVAL_SECONDS
-    )
+    if pacing_interval_seconds is None:
+        interval = DEFAULT_MASSIVE_MIN_INTERVAL_SECONDS
+    else:
+        if isinstance(pacing_interval_seconds, bool):
+            raise TypeError("pacing_interval_seconds cannot be a boolean")
+        if not isinstance(pacing_interval_seconds, (int, float)):
+            raise TypeError(
+                f"pacing_interval_seconds must be numeric (int or float), got {type(pacing_interval_seconds).__name__}"
+            )
+        if not math.isfinite(pacing_interval_seconds):
+            raise ValueError(
+                f"pacing_interval_seconds must be finite, got {pacing_interval_seconds!r}"
+            )
+        if pacing_interval_seconds < 0.0:
+            raise ValueError(
+                f"pacing_interval_seconds must be non-negative, got {pacing_interval_seconds!r}"
+            )
+        interval = float(pacing_interval_seconds)
+
     n = len(manifest.symbols)
+    min_requests = n
+    max_requests = 2 * n
     return PITCapacityEstimate(
         universe_id=manifest.universe_id,
         universe_version=manifest.universe_version,
         symbol_count=n,
-        minimum_reference_requests=n,
-        maximum_reference_requests=2 * n,
+        minimum_reference_requests=min_requests,
+        maximum_reference_requests=max_requests,
         pacing_interval_seconds=interval,
-        minimum_pacing_floor_seconds=n * interval,
-        maximum_pacing_floor_seconds=2 * n * interval,
+        minimum_pacing_floor_seconds=max(min_requests - 1, 0) * interval,
+        maximum_pacing_floor_seconds=max(max_requests - 1, 0) * interval,
     )
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -445,8 +466,46 @@ def _family_result_from_capture(
     )
 
 
-def _family_result_from_error(family: str, exc: Exception) -> PITFamilyRunResult:
-    """Build a PITFamilyRunResult from a controlled failure before run creation."""
+def _family_result_on_exception(
+    family: str,
+    *,
+    capture_date: date,
+    slot: CaptureSlot,
+    expected_universe_hash: str,
+    pre_existing_run_ids: set[str],
+    db_path: Path | None,
+    settings: TradeXSettings | None,
+) -> PITFamilyRunResult:
+    """Build PITFamilyRunResult truthfully reflecting any durably created run, with safe generic error."""
+    safe_error_detail = (
+        "Earnings capture failed due to an internal error."
+        if family == "earnings"
+        else "Reference capture failed due to an internal error."
+    )
+    if family == "earnings":
+        post_runs = list_earnings_capture_runs(capture_date, slot, db_path=db_path, settings=settings)
+    else:
+        post_runs = list_reference_capture_runs(capture_date, slot, db_path=db_path, settings=settings)
+
+    new_runs = [
+        r for r in post_runs
+        if r.universe_hash == expected_universe_hash and r.capture_run_id not in pre_existing_run_ids
+    ]
+
+    if len(new_runs) == 1:
+        durable_run = new_runs[0]
+        ambiguous_n = getattr(durable_run, "ambiguous_n", 0)
+        return PITFamilyRunResult(
+            family=family,
+            capture_run_id=durable_run.capture_run_id,
+            status=durable_run.status,
+            known_n=durable_run.known_n,
+            unavailable_n=durable_run.unavailable_n,
+            ambiguous_n=ambiguous_n,
+            error_n=durable_run.error_n,
+            error_detail=safe_error_detail,
+        )
+
     return PITFamilyRunResult(
         family=family,
         capture_run_id=None,
@@ -455,8 +514,9 @@ def _family_result_from_error(family: str, exc: Exception) -> PITFamilyRunResult
         unavailable_n=0,
         ambiguous_n=0,
         error_n=0,
-        error_detail=_sanitize_error(exc),
+        error_detail=safe_error_detail,
     )
+
 
 
 def _not_due_result(
@@ -467,12 +527,6 @@ def _not_due_result(
     manifest: PITUniverseManifest,
 ) -> PITSlotRunResult:
     """Build a not_due result with zero side effects."""
-    _empty = PITFamilyRunResult(
-        family="",
-        capture_run_id=None, status=None,
-        known_n=0, unavailable_n=0, ambiguous_n=0, error_n=0,
-        error_detail=None,
-    )
     return PITSlotRunResult(
         contract_version=1,
         capture_date=capture_date,
@@ -677,6 +731,13 @@ def run_pit_slot(
     symbols = universe_manifest.symbols
 
     # ── Earnings capture (family 1) ────────────────────────────────────────
+    pre_earnings_runs = list_earnings_capture_runs(
+        current_ny_date, slot, db_path=db_path, settings=settings
+    )
+    pre_earnings_ids = {
+        r.capture_run_id for r in pre_earnings_runs if r.universe_hash == universe_manifest.universe_hash
+    }
+
     earnings_result: PITFamilyRunResult
     try:
         e_capture = earnings_capture(
@@ -687,12 +748,27 @@ def run_pit_slot(
             now_fn=now_fn,
         )
         earnings_result = _family_result_from_capture("earnings", e_capture)
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         # Family failure isolation: controlled exception captured, continue to reference.
-        earnings_result = _family_result_from_error("earnings", exc)
+        earnings_result = _family_result_on_exception(
+            "earnings",
+            capture_date=current_ny_date,
+            slot=slot,
+            expected_universe_hash=universe_manifest.universe_hash,
+            pre_existing_run_ids=pre_earnings_ids,
+            db_path=db_path,
+            settings=settings,
+        )
 
     # ── Reference capture (family 2) ──────────────────────────────────────
     # Reference capture is attempted even if earnings failed.
+    pre_ref_runs = list_reference_capture_runs(
+        current_ny_date, slot, db_path=db_path, settings=settings
+    )
+    pre_ref_ids = {
+        r.capture_run_id for r in pre_ref_runs if r.universe_hash == universe_manifest.universe_hash
+    }
+
     ref_result: PITFamilyRunResult
     try:
         r_capture = reference_capture(
@@ -703,8 +779,17 @@ def run_pit_slot(
             now_fn=now_fn,
         )
         ref_result = _family_result_from_capture("reference", r_capture)
-    except Exception as exc:  # noqa: BLE001
-        ref_result = _family_result_from_error("reference", exc)
+    except Exception:  # noqa: BLE001
+        ref_result = _family_result_on_exception(
+            "reference",
+            capture_date=current_ny_date,
+            slot=slot,
+            expected_universe_hash=universe_manifest.universe_hash,
+            pre_existing_run_ids=pre_ref_ids,
+            db_path=db_path,
+            settings=settings,
+        )
+
 
     operational_status = _compute_operational_status(earnings_result, ref_result)
 
@@ -757,15 +842,18 @@ def _build_family_health(
                 snaps = list_reference_snapshots(r.capture_run_id, db_path=db_path, settings=settings)
             snapshot_count += len(snaps)
 
-    # Lag metrics (from first matching run)
+    # Lag metrics (from earliest matching run / earliest completion)
+    matching_runs = [r for r in runs if r.universe_hash == expected_hash]
     first_request_lag_seconds: float | None = None
     completion_lag_seconds: float | None = None
-    for r in runs:
-        if r.universe_hash == expected_hash:
-            first_request_lag_seconds = (r.requested_at - scheduled_for).total_seconds()
-            if r.completed_at is not None:
-                completion_lag_seconds = (r.completed_at - scheduled_for).total_seconds()
-            break
+    if matching_runs:
+        earliest_requested = min(r.requested_at for r in matching_runs)
+        first_request_lag_seconds = (earliest_requested - scheduled_for).total_seconds()
+        completed_times = [r.completed_at for r in matching_runs if r.completed_at is not None]
+        if completed_times:
+            earliest_completed = min(completed_times)
+            completion_lag_seconds = (earliest_completed - scheduled_for).total_seconds()
+
 
     return PITFamilyHealth(
         family=family,
@@ -1048,14 +1136,8 @@ def _cmd_run_slot(args: argparse.Namespace) -> int:
             universe_manifest=manifest,
             db_path=db_path,
         )
-    except PITOperationalUniverseConflictError:
-        err_dict = {
-            "error": "Universe conflict detected; zero new provider calls or writes performed.",
-            "operational_status": "failed",
-        }
-        sys.stdout.write(json.dumps(err_dict, indent=2) + "\n")
-        return 1
     except Exception:  # noqa: BLE001
+
         err_dict = {
             "error": "An unexpected internal error occurred.",
             "operational_status": "failed",
