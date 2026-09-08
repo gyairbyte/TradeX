@@ -286,8 +286,8 @@ class PITCapacityEstimate:
     minimum_reference_requests: int   # N  (one active request per symbol)
     maximum_reference_requests: int   # 2N (active + inactive fallback per symbol)
     pacing_interval_seconds: float
-    minimum_pacing_floor_seconds: float   # N * pacing_interval
-    maximum_pacing_floor_seconds: float   # 2N * pacing_interval
+    minimum_pacing_floor_seconds: float   # max(N - 1, 0) * interval
+    maximum_pacing_floor_seconds: float   # max(2N - 1, 0) * interval
 
 
 def estimate_capacity(
@@ -1192,7 +1192,8 @@ def _cmd_health(args: argparse.Namespace) -> int:
     else:
         slots_to_check = [CaptureSlot.MORNING, CaptureSlot.EVENING]
 
-    overall_exit = 0
+    has_conflict_or_error = False
+    has_degraded_missing_incomplete = False
     results: list[dict[str, Any]] = []
     for slot in slots_to_check:
         try:
@@ -1209,7 +1210,7 @@ def _cmd_health(args: argparse.Namespace) -> int:
                 "error": "An unexpected internal error occurred during health inspection.",
             }
             results.append(err_dict)
-            overall_exit = 1
+            has_conflict_or_error = True
             continue
 
         output = _build_health_output(health)
@@ -1217,20 +1218,24 @@ def _cmd_health(args: argparse.Namespace) -> int:
 
         s = health.overall_status
         if s == PITSlotHealthStatus.UNIVERSE_CONFLICT:
-            overall_exit = max(overall_exit, 1)
+            has_conflict_or_error = True
         elif s in (
             PITSlotHealthStatus.DEGRADED,
             PITSlotHealthStatus.MISSING,
             PITSlotHealthStatus.INCOMPLETE,
         ):
-            overall_exit = max(overall_exit, 2)
+            has_degraded_missing_incomplete = True
 
     if len(results) == 1:
         sys.stdout.write(json.dumps(results[0], indent=2) + "\n")
     else:
         sys.stdout.write(json.dumps(results, indent=2) + "\n")
 
-    return overall_exit
+    if has_conflict_or_error:
+        return 1
+    if has_degraded_missing_incomplete:
+        return 2
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:

@@ -119,7 +119,7 @@ def next_trading_session(at: datetime) -> MarketSession:
             return session
         try:
             next_day = cal.next_session(day)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             raise ValueError(f"No next trading session after {at}") from exc
     else:
         next_day = cal.date_to_session(day, direction="next")

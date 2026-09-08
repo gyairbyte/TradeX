@@ -365,3 +365,78 @@ class TestHealthCLI:
         assert exit_code == 1
         data = json.loads(captured.out)
         assert "error" in data
+
+    def _run_multi_slot(
+        self,
+        manifest_file: Path,
+        morning_status: PITSlotHealthStatus | Exception,
+        evening_status: PITSlotHealthStatus | Exception,
+    ) -> int:
+        def _get_health(**kw):
+            slot = kw["slot"]
+            target = morning_status if slot == CaptureSlot.MORNING else evening_status
+            if isinstance(target, Exception):
+                raise target
+            return self._dummy_health(target)
+
+        with patch("tradex.pit.ops.get_pit_slot_health", side_effect=_get_health):
+            return main([
+                "health",
+                "--universe-file", str(manifest_file),
+            ])
+
+    def test_health_multi_slot_morning_conflict_evening_degraded_exit_1(self, valid_manifest_file: Path):
+        code = self._run_multi_slot(
+            valid_manifest_file,
+            morning_status=PITSlotHealthStatus.UNIVERSE_CONFLICT,
+            evening_status=PITSlotHealthStatus.DEGRADED,
+        )
+        assert code == 1
+
+    def test_health_multi_slot_morning_degraded_evening_conflict_exit_1(self, valid_manifest_file: Path):
+        code = self._run_multi_slot(
+            valid_manifest_file,
+            morning_status=PITSlotHealthStatus.DEGRADED,
+            evening_status=PITSlotHealthStatus.UNIVERSE_CONFLICT,
+        )
+        assert code == 1
+
+    def test_health_multi_slot_conflict_and_healthy_exit_1(self, valid_manifest_file: Path):
+        code = self._run_multi_slot(
+            valid_manifest_file,
+            morning_status=PITSlotHealthStatus.UNIVERSE_CONFLICT,
+            evening_status=PITSlotHealthStatus.HEALTHY,
+        )
+        assert code == 1
+
+    def test_health_multi_slot_conflict_and_not_due_exit_1(self, valid_manifest_file: Path):
+        code = self._run_multi_slot(
+            valid_manifest_file,
+            morning_status=PITSlotHealthStatus.UNIVERSE_CONFLICT,
+            evening_status=PITSlotHealthStatus.NOT_DUE,
+        )
+        assert code == 1
+
+    def test_health_multi_slot_degraded_and_healthy_exit_2(self, valid_manifest_file: Path):
+        code = self._run_multi_slot(
+            valid_manifest_file,
+            morning_status=PITSlotHealthStatus.DEGRADED,
+            evening_status=PITSlotHealthStatus.HEALTHY,
+        )
+        assert code == 2
+
+    def test_health_multi_slot_both_healthy_exit_0(self, valid_manifest_file: Path):
+        code = self._run_multi_slot(
+            valid_manifest_file,
+            morning_status=PITSlotHealthStatus.HEALTHY,
+            evening_status=PITSlotHealthStatus.HEALTHY,
+        )
+        assert code == 0
+
+    def test_health_multi_slot_exception_and_degraded_exit_1(self, valid_manifest_file: Path):
+        code = self._run_multi_slot(
+            valid_manifest_file,
+            morning_status=RuntimeError("internal boom"),
+            evening_status=PITSlotHealthStatus.DEGRADED,
+        )
+        assert code == 1
