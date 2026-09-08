@@ -2,11 +2,17 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import pandas as pd
 import pytest
 
+from tradex.market.hours import (
+    MARKET_TIMEZONE,
+    get_market_session,
+    is_trading_day,
+    previous_trading_session,
+)
 from tradex.screener.engine import ObservationStatus, ScanReport
 from tradex.tracker import analyzer, store
 
@@ -281,24 +287,99 @@ def _ny(year, month, day, hour=0, minute=0):
     return datetime(year, month, day, hour, minute, tzinfo=UTC)
 
 
+LOOKBACK_DAYS = 30
+
+
+def _recent_completed_trading_dates(count: int) -> tuple[date, ...]:
+    """Return `count` completed XNYS trading dates strictly before today in chronological order."""
+    if count <= 0:
+        raise ValueError("count must be positive")
+    today = datetime.now(MARKET_TIMEZONE).date()
+    current_day = today
+    sessions: list[date] = []
+    for _ in range(count):
+        session = previous_trading_session(current_day)
+        sessions.append(session.session_date)
+        current_day = session.session_date
+    sessions.reverse()
+    oldest = sessions[0]
+    cutoff = today - timedelta(days=LOOKBACK_DAYS)
+    assert oldest > cutoff, (
+        f"Oldest generated trading date {oldest} exceeds LOOKBACK_DAYS={LOOKBACK_DAYS} cutoff {cutoff}"
+    )
+    return tuple(sessions)
+
+
+def _session_time(
+    trading_date: date,
+    *,
+    offset: timedelta = timedelta(),
+) -> datetime:
+    """Return a timezone-aware UTC datetime safely inside the specified XNYS session."""
+    session = get_market_session(trading_date)
+    assert session is not None, f"Expected active trading session for {trading_date}"
+    ts = session.opens_at + timedelta(hours=1) + offset
+    assert session.opens_at <= ts <= session.closes_at, (
+        f"Generated timestamp {ts} is outside trading session ({session.opens_at} - {session.closes_at})"
+    )
+    return ts.astimezone(UTC)
+
+
+def _recent_weekend_dates() -> tuple[date, date]:
+    """Return a coherent completed (Saturday, Sunday) pair strictly before today within LOOKBACK_DAYS."""
+    today = datetime.now(MARKET_TIMEZONE).date()
+    cand = today - timedelta(days=1)
+    while cand.weekday() != 6:
+        cand -= timedelta(days=1)
+    sunday = cand
+    saturday = sunday - timedelta(days=1)
+    assert saturday.weekday() == 5, f"Expected Saturday (5), got {saturday.weekday()}"
+    assert sunday.weekday() == 6, f"Expected Sunday (6), got {sunday.weekday()}"
+    assert not is_trading_day(saturday), f"Saturday {saturday} unexpectedly marked as trading day"
+    assert not is_trading_day(sunday), f"Sunday {sunday} unexpectedly marked as trading day"
+    assert (today - saturday).days <= LOOKBACK_DAYS, (
+        f"Saturday {saturday} exceeds LOOKBACK_DAYS={LOOKBACK_DAYS}"
+    )
+    return saturday, sunday
+
+
+def _non_session_time(non_session_date: date, hour: int = 11, minute: int = 0) -> datetime:
+    """Return a deterministic timezone-aware UTC datetime for a weekend/non-session date."""
+    local_dt = datetime(
+        non_session_date.year,
+        non_session_date.month,
+        non_session_date.day,
+        hour,
+        minute,
+        tzinfo=MARKET_TIMEZONE,
+    )
+    return local_dt.astimezone(UTC)
+
+
 def test_coil_counts_distinct_sessions_not_scan_rows_via_record_scan(fresh_signal_db):
     """Three scans on the same trading day count as one session, not three."""
-    base = _ny(2025, 1, 15, 10, 0)
+    (session_date,) = _recent_completed_trading_dates(1)
+    base = _session_time(session_date)
     for i in range(3):
         report = _make_report([_signal_obs_row("COIL", 60)])
         store.record_scan(report, "intraday", 40, ["COIL"], scan_time=base + timedelta(minutes=i))
 
-    coils = analyzer.detect_coils("intraday", days=600, min_appearances=2)
+    daily = store.get_daily_score_history("COIL", "intraday", days=LOOKBACK_DAYS)
+    assert len(daily) == 1
+    assert daily.iloc[0]["score"] == 60
+
+    coils = analyzer.detect_coils("intraday", days=LOOKBACK_DAYS, min_appearances=2)
     assert coils.empty
 
 
 def test_coil_detected_across_distinct_sessions(fresh_signal_db):
     """Two distinct trading sessions above threshold produce a coil."""
-    for dt in (_ny(2025, 1, 13, 10, 0), _ny(2025, 1, 14, 10, 0)):
+    d1, d2 = _recent_completed_trading_dates(2)
+    for dt in (_session_time(d1), _session_time(d2)):
         report = _make_report([_signal_obs_row("COIL", 60)])
         store.record_scan(report, "intraday", 40, ["COIL"], scan_time=dt)
 
-    coils = analyzer.detect_coils("intraday", days=600, min_appearances=2)
+    coils = analyzer.detect_coils("intraday", days=LOOKBACK_DAYS, min_appearances=2)
     assert not coils.empty
     assert coils.iloc[0]["ticker"] == "COIL"
     assert coils.iloc[0]["appearances"] == 2
@@ -306,83 +387,92 @@ def test_coil_detected_across_distinct_sessions(fresh_signal_db):
 
 def test_weekend_observations_do_not_count_as_sessions(fresh_signal_db):
     """Observations recorded on a weekend are not treated as trading sessions."""
-    saturday = _ny(2025, 1, 11, 10, 0)
-    sunday = _ny(2025, 1, 12, 10, 0)
-    for dt in (saturday, sunday):
+    saturday, sunday = _recent_weekend_dates()
+    for dt in (_non_session_time(saturday), _non_session_time(sunday)):
         report = _make_report([_signal_obs_row("COIL", 60)])
         store.record_scan(report, "intraday", 40, ["COIL"], scan_time=dt)
 
-    daily = store.get_daily_score_history("COIL", "intraday", days=600)
+    history = store.get_observation_history("COIL", "intraday", days=LOOKBACK_DAYS)
+    assert len(history) == 2
+    assert history["trading_date"].isna().all()
+
+    daily = store.get_daily_score_history("COIL", "intraday", days=LOOKBACK_DAYS)
     assert daily.empty
-    coils = analyzer.detect_coils("intraday", days=600, min_appearances=2)
+    coils = analyzer.detect_coils("intraday", days=LOOKBACK_DAYS, min_appearances=2)
     assert coils.empty
 
 
 def test_daily_score_history_returns_latest_per_session(fresh_signal_db):
     """Two scans on one trading day collapse to the latest scored observation."""
-    base = _ny(2025, 1, 15, 9, 0)
-    for score, offset in ((55, 0), (70, 2)):
+    (session_date,) = _recent_completed_trading_dates(1)
+    base = _session_time(session_date)
+    for score, offset in ((55, timedelta()), (70, timedelta(hours=1))):
         report = _make_report([_signal_obs_row("COIL", score)])
-        store.record_scan(report, "intraday", 40, ["COIL"], scan_time=base + timedelta(hours=offset))
+        store.record_scan(report, "intraday", 40, ["COIL"], scan_time=base + offset)
 
-    daily = store.get_daily_score_history("COIL", "intraday", days=600)
+    daily = store.get_daily_score_history("COIL", "intraday", days=LOOKBACK_DAYS)
     assert len(daily) == 1
     assert daily.iloc[0]["score"] == 70
 
 
 def test_fading_setup_detected(fresh_signal_db):
     """A score that peaks above threshold then declines below it is flagged as fading."""
+    d1, d2 = _recent_completed_trading_dates(2)
     for dt, score in (
-        (_ny(2025, 1, 13, 10, 0), 70),
-        (_ny(2025, 1, 14, 10, 0), 40),
+        (_session_time(d1), 70),
+        (_session_time(d2), 40),
     ):
         report = _make_report([_signal_obs_row("FADE", score)])
         store.record_scan(report, "intraday", 40, ["FADE"], scan_time=dt)
 
-    fading = analyzer.detect_fading_setups("intraday", days=600, min_appearances=2)
+    fading = analyzer.detect_fading_setups("intraday", days=LOOKBACK_DAYS, min_appearances=2)
     assert not fading.empty
     assert fading.iloc[0]["ticker"] == "FADE"
 
 
 def test_observation_history_returns_all_statuses(fresh_signal_db):
     """get_observation_history returns signal and below-threshold rows."""
+    (session_date,) = _recent_completed_trading_dates(1)
     report = _make_report([
         _signal_obs_row("AAPL", 70),
         {**_signal_obs_row("MSFT", 30), "status": ObservationStatus.BELOW_THRESHOLD.value},
     ])
-    store.record_scan(report, "intraday", 40, ["AAPL", "MSFT"], scan_time=_ny(2025, 1, 15, 10, 0))
+    store.record_scan(report, "intraday", 40, ["AAPL", "MSFT"], scan_time=_session_time(session_date))
 
-    history = store.get_observation_history("MSFT", "intraday", days=600)
+    history = store.get_observation_history("MSFT", "intraday", days=LOOKBACK_DAYS)
     assert len(history) == 1
     assert history.iloc[0]["status"] == ObservationStatus.BELOW_THRESHOLD.value
 
 
 def test_scan_frequency_invariance_for_coil_strength(fresh_signal_db):
     """Two scans in one session vs one scan should not inflate coil strength."""
+    d1, d2 = _recent_completed_trading_dates(2)
     # Distinct day with one scan
     report = _make_report([_signal_obs_row("COIL", 60)])
-    store.record_scan(report, "intraday", 40, ["COIL"], scan_time=_ny(2025, 1, 14, 10, 0))
+    store.record_scan(report, "intraday", 40, ["COIL"], scan_time=_session_time(d1))
 
     # Latest day with two scans
-    base = _ny(2025, 1, 15, 9, 0)
+    base = _session_time(d2)
     for i in range(2):
         report = _make_report([_signal_obs_row("COIL", 60)])
         store.record_scan(report, "intraday", 40, ["COIL"], scan_time=base + timedelta(minutes=i))
 
-    coils = analyzer.detect_coils("intraday", days=600, min_appearances=2)
+    coils = analyzer.detect_coils("intraday", days=LOOKBACK_DAYS, min_appearances=2)
     assert not coils.empty
     assert coils.iloc[0]["appearances"] == 2
 
 
 def test_scan_frequency_invariance_identical_trend_and_strength(fresh_signal_db, tmp_path, monkeypatch):
     """Equivalent market histories at different scan frequencies produce the same coil metrics."""
+    d1, d2 = _recent_completed_trading_dates(2)
+
     # History A: one scan on day 1, one scan on day 2
     report = _make_report([_signal_obs_row("COIL", 60)])
-    store.record_scan(report, "intraday", 40, ["COIL"], scan_time=_ny(2025, 1, 14, 10, 0))
+    store.record_scan(report, "intraday", 40, ["COIL"], scan_time=_session_time(d1))
     report = _make_report([_signal_obs_row("COIL", 65)])
-    store.record_scan(report, "intraday", 40, ["COIL"], scan_time=_ny(2025, 1, 15, 11, 0))
+    store.record_scan(report, "intraday", 40, ["COIL"], scan_time=_session_time(d2, offset=timedelta(hours=1)))
 
-    coils_a = analyzer.detect_coils("intraday", days=600, min_appearances=2)
+    coils_a = analyzer.detect_coils("intraday", days=LOOKBACK_DAYS, min_appearances=2)
     assert not coils_a.empty
     row_a = coils_a.iloc[0]
 
@@ -390,13 +480,13 @@ def test_scan_frequency_invariance_identical_trend_and_strength(fresh_signal_db,
     monkeypatch.setattr(store, "DB_PATH", str(tmp_path / "history_b.db"))
     store.init()
     report = _make_report([_signal_obs_row("COIL", 60)])
-    store.record_scan(report, "intraday", 40, ["COIL"], scan_time=_ny(2025, 1, 14, 10, 0))
+    store.record_scan(report, "intraday", 40, ["COIL"], scan_time=_session_time(d1))
     report = _make_report([_signal_obs_row("COIL", 55)])
-    store.record_scan(report, "intraday", 40, ["COIL"], scan_time=_ny(2025, 1, 15, 10, 0))
+    store.record_scan(report, "intraday", 40, ["COIL"], scan_time=_session_time(d2))
     report = _make_report([_signal_obs_row("COIL", 65)])
-    store.record_scan(report, "intraday", 40, ["COIL"], scan_time=_ny(2025, 1, 15, 11, 0))
+    store.record_scan(report, "intraday", 40, ["COIL"], scan_time=_session_time(d2, offset=timedelta(hours=1)))
 
-    coils_b = analyzer.detect_coils("intraday", days=600, min_appearances=2)
+    coils_b = analyzer.detect_coils("intraday", days=LOOKBACK_DAYS, min_appearances=2)
     assert not coils_b.empty
     row_b = coils_b.iloc[0]
 
@@ -487,14 +577,21 @@ def test_record_scan_persists_scoring_only_failure(fresh_signal_db):
 
 def test_latest_score_not_erased_by_later_same_day_failure(fresh_signal_db):
     """A later same-day failed scan does not overwrite the earlier successful score."""
+    (session_date,) = _recent_completed_trading_dates(1)
     report = _make_report([_signal_obs_row("COIL", 70)])
-    store.record_scan(report, "intraday", 40, ["COIL"], scan_time=_ny(2025, 1, 15, 9, 0))
+    store.record_scan(report, "intraday", 40, ["COIL"], scan_time=_session_time(session_date))
 
     err = ValueError("network")
     report = _make_report([_failure_obs_row("COIL", err)])
-    store.record_scan(report, "intraday", 40, ["COIL"], scan_time=_ny(2025, 1, 15, 10, 0))
+    store.record_scan(
+        report,
+        "intraday",
+        40,
+        ["COIL"],
+        scan_time=_session_time(session_date, offset=timedelta(minutes=30)),
+    )
 
-    daily = store.get_daily_score_history("COIL", "intraday", days=600)
+    daily = store.get_daily_score_history("COIL", "intraday", days=LOOKBACK_DAYS)
     assert len(daily) == 1
     assert daily.iloc[0]["score"] == 70
 
