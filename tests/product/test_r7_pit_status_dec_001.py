@@ -17,16 +17,23 @@ Verifies:
    - capture_contract_version == 1
    - family_success_requires_all_known is True
    - slot_success_requires_both_families_succeeded is True
-3. Decision markdown document exists and contains all 29 required sections.
-4. Decision test does NOT enforce a particular recommendation, leaving Gary free
+3. Three-way family aggregation contract (SUCCEEDED / PARTIAL / FAILED) is upheld
+   and false generalization (known_n < requested_n -> PARTIAL) is rejected.
+4. Candidate B and C status in decision.json is unresolved_pending_policy_and_prerequisites.
+5. NOT_ANNOUNCED is explicitly conceptual / evidence-dependent and not inferred from Yahoo absence.
+6. Empirical study does not claim raw Yahoo/yfinance HTTP status/body visibility as guaranteed.
+7. Dedicated Rollout Step 7 PIT Operations Runner (MVP-ARCH-001-R7-PIT-001C1) entry is preserved in tracker.
+8. Decision markdown document exists and contains all 29 required sections.
+9. Decision test does NOT enforce a particular recommendation, leaving Gary free
    to select among documented options.
-5. APPROVED_PRODUCTION_STRATEGIES == ().
+10. APPROVED_PRODUCTION_STRATEGIES == ().
 """
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
+from tradex.pit.models import CaptureRunStatus
 from tradex.strategies.registry import APPROVED_PRODUCTION_STRATEGIES
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -151,6 +158,70 @@ def test_decision_markdown_exists_and_contains_all_required_sections() -> None:
     # Critical text validations
     assert "selected_status_policy = null" in content or "selected_status_policy` remains `null" in content
     assert "Schema v7 cannot reliably distinguish" in content
+
+
+def test_family_aggregation_three_way_contract() -> None:
+    """Verify three-way family aggregation contract and absence of false generalizations."""
+    content = DECISION_MD.read_text(encoding="utf-8")
+
+    # Three-way aggregation contract must be explicit in document
+    assert r"\text{known\_n} == \text{requested\_n} & \implies \text{family SUCCEEDED}" in content
+    assert r"0 < \text{known\_n} < \text{requested\_n} & \implies \text{family PARTIAL}" in content
+    assert r"\text{known\_n} == 0 & \implies \text{family FAILED}" in content
+
+    # False generalization that any known_n < requested_n implies PARTIAL must NOT appear
+    assert r"any } \text{known\_n} < \text{requested\_n} \implies \text{family PARTIAL}" not in content
+    assert "known_n < requested_n -> family PARTIAL" not in content
+
+    # CaptureRunStatus enum defines distinct SUCCEEDED, PARTIAL, and FAILED states
+    assert CaptureRunStatus.SUCCEEDED.value == "succeeded"
+    assert CaptureRunStatus.PARTIAL.value == "partial"
+    assert CaptureRunStatus.FAILED.value == "failed"
+
+
+def test_candidate_b_and_c_machine_readable_status() -> None:
+    """Verify Candidate B and C status in decision.json is unresolved_pending_policy_and_prerequisites."""
+    with open(DECISION_JSON, "r", encoding="utf-8") as f:
+        packet = json.load(f)
+
+    disposition = packet.get("candidate_compatibility_disposition", {})
+    assert "candidate_b" in disposition, "candidate_b missing from candidate_compatibility_disposition"
+    assert "candidate_c" in disposition, "candidate_c missing from candidate_compatibility_disposition"
+
+    cand_b = disposition["candidate_b"]
+    cand_c = disposition["candidate_c"]
+
+    assert cand_b["status"] == "unresolved_pending_policy_and_prerequisites"
+    assert cand_c["status"] == "unresolved_pending_policy_and_prerequisites"
+    assert cand_b["symbol_count"] == 30
+    assert cand_c["symbol_count"] == 45
+
+
+def test_not_announced_is_explicitly_conceptual() -> None:
+    """Verify NOT_ANNOUNCED is documented as conceptual and not derivable from Yahoo absence."""
+    content = DECISION_MD.read_text(encoding="utf-8")
+
+    assert "NOT_ANNOUNCED" in content
+    assert "Conceptual / requires authoritative source; not derivable from current Schema v7 evidence" in content
+    assert "This is not derivable from current Schema v7 evidence or Yahoo absence" in content
+
+
+def test_empirical_study_yahoo_observability_distinction() -> None:
+    """Verify empirical study specification does not treat Yahoo raw HTTP status as guaranteed."""
+    content = DECISION_MD.read_text(encoding="utf-8")
+
+    assert "For Yahoo (`yfinance`), raw HTTP status codes and response bodies must NOT be assumed to be exposed" in content
+    assert "The study should test TradeX-visible behavior first" in content
+
+
+def test_tracker_preserves_c1_rollout_record() -> None:
+    """Verify docs/PROJECT-TRACKER.md preserves the dedicated C1 runner rollout entry."""
+    tracker_path = REPO_ROOT / "docs" / "PROJECT-TRACKER.md"
+    assert tracker_path.exists(), f"Tracker file missing: {tracker_path}"
+    tracker_content = tracker_path.read_text(encoding="utf-8")
+
+    assert "Rollout Step 7 PIT Operations Runner (MVP-ARCH-001-R7-PIT-001C1)" in tracker_content
+    assert "Rollout Step 7 PIT Observation Completeness & Health Semantics (MVP-ARCH-001-R7-PIT-STATUS-DEC-001)" in tracker_content
 
 
 def test_approved_production_strategies_remains_empty() -> None:

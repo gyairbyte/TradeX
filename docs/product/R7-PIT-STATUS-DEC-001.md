@@ -18,10 +18,15 @@ Under current C1 capture contracts (`tradex.pit.earnings`, `tradex.pit.reference
 1. **Operational execution health:** Did the scheduled capture process run reliably, contact providers, complete within time constraints, avoid crashes or swallowed failures, and faithfully record evidence?
 2. **Research evidence completeness:** Are all requested domain facts known, applicable, and high-fidelity for downstream quantitative research and strategy models?
 
-Current C1 enforces a strict all-known rule:
-$$\text{known\_n} == \text{requested\_n} \implies \text{family SUCCEEDED}$$
-$$\text{both families SUCCEEDED} \implies \text{slot HEALTHY (or SUCCEEDED)}$$
-$$\text{any } \text{known\_n} < \text{requested\_n} \implies \text{family PARTIAL} \implies \text{slot DEGRADED}$$
+Current C1 enforces a strict all-known rule for family success and slot health:
+$$\begin{cases}
+\text{known\_n} == \text{requested\_n} & \implies \text{family SUCCEEDED} \\
+0 < \text{known\_n} < \text{requested\_n} & \implies \text{family PARTIAL} \\
+\text{known\_n} == 0 & \implies \text{family FAILED}
+\end{cases}$$
+$$\text{both families SUCCEEDED} \implies \text{slot HEALTHY (and operational status SUCCEEDED)}$$
+
+Under these semantics, any single non-`KNOWN` observation prevents all-known family `SUCCEEDED`, but does not by itself determine whether the family terminates as `PARTIAL` or `FAILED` (which depends on whether at least one other observation is `KNOWN`). Likewise, exact slot/health status depends on both family run records and runner/health aggregation (where both families must `SUCCEED` for an operational `SUCCEEDED` or health `HEALTHY` slot).
 
 While intentionally fail-closed, this conflates a wide spectrum of fundamentally different real-world conditions:
 * successfully retrieving a known domain fact;
