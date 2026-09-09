@@ -1,0 +1,121 @@
+{
+  "task_id": "MVP-ARCH-001-R7-PIT-STATUS-DEC-001",
+  "status": "pending_gary_decision",
+  "source_commit": "93d2174fed72f325e4ea87199c2aac9045998cbb",
+  "current_contract": {
+    "schema_version": 7,
+    "capture_contract_version": 1,
+    "family_success_requires_all_known": true,
+    "slot_success_requires_both_families_succeeded": true,
+    "earnings_observation_statuses": [
+      "known",
+      "unavailable",
+      "error"
+    ],
+    "reference_observation_statuses": [
+      "known",
+      "unavailable",
+      "ambiguous",
+      "error"
+    ],
+    "run_statuses": [
+      "started",
+      "succeeded",
+      "partial",
+      "failed"
+    ],
+    "slot_operational_statuses": [
+      "not_due",
+      "succeeded",
+      "degraded",
+      "failed"
+    ],
+    "slot_health_statuses": [
+      "not_due",
+      "healthy",
+      "degraded",
+      "missing",
+      "incomplete",
+      "universe_conflict"
+    ]
+  },
+  "provenance_limitation_finding": "Schema v7 cannot reliably distinguish a provider/lookup failure that was swallowed upstream from a genuine no-usable-upcoming-date outcome. Old UNAVAILABLE rows cannot safely be reinterpreted as successful structural absence.",
+  "evaluated_options": {
+    "option_1": {
+      "name": "Retain Strict All-Known Semantics",
+      "summary": "Every requested observation must be KNOWN for family SUCCEEDED; both families must be SUCCEEDED for slot HEALTHY.",
+      "disposition": "evaluated_not_recommended_for_operational_activation",
+      "operational_health_truthfulness": "partially_supported",
+      "research_completeness_fidelity": "supported",
+      "masks_provider_failure": false,
+      "backward_compatibility": "supported"
+    },
+    "option_2": {
+      "name": "Separate Operational Health From Evidence Completeness",
+      "summary": "Maintain two explicit, orthogonal dimensions: capture_execution_health (healthy/degraded/failed) vs evidence_completeness (complete/partial/sparse).",
+      "disposition": "recommended_direction_with_prerequisite_hardening",
+      "operational_health_truthfulness": "supported",
+      "research_completeness_fidelity": "supported",
+      "masks_provider_failure": false,
+      "backward_compatibility": "supported_prospectively"
+    },
+    "option_3": {
+      "name": "Applicability-Aware Semantics",
+      "summary": "Distinguish known, not_applicable, unavailable, and error through principled point-in-time applicability mechanisms without hardcoded ticker lists.",
+      "disposition": "evaluated_viable_component_of_future_model",
+      "operational_health_truthfulness": "supported",
+      "research_completeness_fidelity": "supported",
+      "masks_provider_failure": false,
+      "backward_compatibility": "supported_prospectively"
+    },
+    "option_4": {
+      "name": "Threshold-Based Family Success",
+      "summary": "Allow a fixed percentage (e.g. >= X%) of usable observations to qualify as family SUCCEEDED.",
+      "disposition": "rejected",
+      "operational_health_truthfulness": "not_supported",
+      "research_completeness_fidelity": "not_supported",
+      "masks_provider_failure": true,
+      "backward_compatibility": "partially_supported"
+    },
+    "option_5": {
+      "name": "Empirical Provider Study First",
+      "summary": "Require live provider observation evidence before finalizing status taxonomy, reason mapping, and operational activation.",
+      "disposition": "recommended_prior_to_implementation_not_required_for_architectural_decision",
+      "operational_health_truthfulness": "supported",
+      "research_completeness_fidelity": "supported",
+      "masks_provider_failure": false,
+      "backward_compatibility": "supported"
+    }
+  },
+  "recommended_direction": {
+    "primary_concept": "separate_capture_execution_health_from_evidence_completeness",
+    "recommendation_summary": "Define healthy PIT capture as reliable capture execution and truthful evidence recording, while maintaining an independent evidence completeness dimension for downstream research. Recognize that current Schema v7 provenance is too coarse to safely implement this separation immediately due to swallowed Yahoo exceptions. Proceed via a phased roadmap: Phase 1 (Gary architectural decision); Phase 2 (provider exception hardening & explicit provenance taxonomy); Phase 3 (separately Gary-authorized bounded live-provider compatibility study); Phase 4 (implementation & universe activation).",
+    "operational_health_meaning": "Whether the scheduled capture pipeline executed reliably, contacted providers without unhandled transport/auth/rate-limit/parse errors, and faithfully recorded resulting facts within scheduled time and universe drift bounds.",
+    "evidence_completeness_meaning": "Whether downstream research or modeling workflows have sufficient, high-fidelity domain facts for the requested universe.",
+    "schema_v8_assessment": "likely_required",
+    "live_provider_evidence_required_before_design_approval": false,
+    "live_provider_evidence_required_before_implementation": true,
+    "universe_selection_status": "blocked_pending_status_policy_resolution"
+  },
+  "candidate_compatibility_disposition": {
+    "candidate_b": {
+      "universe_id": "candidate-dow30",
+      "symbol_count": 30,
+      "status": "unresolved_pending_policy_and_prerequisites",
+      "notes": "Avoids ETF structural earnings risk, but remains vulnerable under current all-known C1 semantics to degrading whenever Yahoo yields no usable upcoming earnings date for any requested equity or reference fact. Conditionally resolvable under the recommended architecture, but remains unresolved until the selected status policy, provenance requirements, and applicability/domain-absence rules are approved and implemented."
+    },
+    "candidate_c": {
+      "universe_id": "candidate-dow30-sector-etfs",
+      "symbol_count": 45,
+      "status": "unresolved_pending_policy_and_prerequisites",
+      "notes": "Faces elevated structural compatibility risk for ETF earnings under current C1 semantics. Conditionally resolvable under the recommended architecture, but remains unresolved until the selected status policy, provenance requirements, and applicability/domain-absence rules are approved and implemented."
+    }
+  },
+  "selected_status_policy": null,
+  "production_status_semantics_change_authorized": false,
+  "schema_migration_authorized": false,
+  "provider_study_authorized": false,
+  "active_universe_authorized": false,
+  "c2_implementation_authorized": false,
+  "scheduler_authorized": false
+}
