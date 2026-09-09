@@ -1,0 +1,395 @@
+{
+  "task_id": "MVP-ARCH-001-R7-PIT-001C2-READINESS-A",
+  "status": "pending_gary_decision",
+  "capacity_analysis_status": "complete",
+  "operational_readiness_status": "blocked_pending_capture_status_compatibility_decision",
+  "source_commit": "e111c04107b929b0b2ae8896755d57ec9b114f95",
+  "source_snapshot_date": "2026-05",
+  "security_type_classification_method": "Deterministic source provenance: symbols from SECTOR_ETFS classified as ETF; symbols from DOW30/SP100 classified as equity. Overlap checked and confirmed disjoint (empty intersection).",
+  "massive_interval_seconds": 12.1,
+  "hypothetical_reference_pacing_floor_budgets_minutes": [
+    10,
+    15,
+    20,
+    30,
+    45,
+    60
+  ],
+  "candidates": [
+    {
+      "manifest_file": "candidate-sector-etfs.json",
+      "label": "Candidate A: Sector ETFs",
+      "universe_id": "candidate-sector-etfs",
+      "universe_version": "2026-09-08-v1",
+      "effective_from": "2099-01-01",
+      "source_rule": "normalize_symbols(SECTOR_ETFS)",
+      "source_presets": [
+        "SECTOR_ETFS"
+      ],
+      "symbol_count": 15,
+      "equity_count": 0,
+      "etf_count": 15,
+      "universe_hash": "315dc68c54c9a5cd3d5634babd4f81629647b978114907ce84d73c4cc9f50df6",
+      "manifest_hash": "fe66cbde81a97147efd2bbd12f98c93b72231b8735c0ddec946088beb47c2752",
+      "minimum_reference_requests": 15,
+      "maximum_reference_requests": 30,
+      "minimum_pacing_floor_seconds": 169.4,
+      "maximum_pacing_floor_seconds": 350.9,
+      "minimum_pacing_floor_minutes": 2.8233333333333333,
+      "maximum_pacing_floor_minutes": 5.848333333333333,
+      "hypothetical_latency_budget_evaluations": {
+        "10_min": {
+          "budget_minutes": 10,
+          "budget_seconds": 600.0,
+          "min_reference_floor_within_budget": true,
+          "max_reference_floor_within_budget": true
+        },
+        "15_min": {
+          "budget_minutes": 15,
+          "budget_seconds": 900.0,
+          "min_reference_floor_within_budget": true,
+          "max_reference_floor_within_budget": true
+        },
+        "20_min": {
+          "budget_minutes": 20,
+          "budget_seconds": 1200.0,
+          "min_reference_floor_within_budget": true,
+          "max_reference_floor_within_budget": true
+        },
+        "30_min": {
+          "budget_minutes": 30,
+          "budget_seconds": 1800.0,
+          "min_reference_floor_within_budget": true,
+          "max_reference_floor_within_budget": true
+        },
+        "45_min": {
+          "budget_minutes": 45,
+          "budget_seconds": 2700.0,
+          "min_reference_floor_within_budget": true,
+          "max_reference_floor_within_budget": true
+        },
+        "60_min": {
+          "budget_minutes": 60,
+          "budget_seconds": 3600.0,
+          "min_reference_floor_within_budget": true,
+          "max_reference_floor_within_budget": true
+        }
+      },
+      "current_c1_status_compatibility": "unresolved",
+      "status_compatibility_reason": "Contains 15 ETF symbols and 0 corporate equities, creating a structural compatibility risk because these instruments generally do not have operating-company earnings dates. READINESS-A performed no live Yahoo calls and actual Yahoo behavior for the frozen ETF symbols was not measured. Under the current C1 contract, if Yahoo produces no usable upcoming earnings date for one or more ETFs, C1 records those observations as UNAVAILABLE, preventing an all-known earnings SUCCEEDED result and causing the overall slot to be DEGRADED."
+    },
+    {
+      "manifest_file": "candidate-dow30.json",
+      "label": "Candidate B: Dow 30",
+      "universe_id": "candidate-dow30",
+      "universe_version": "2026-09-08-v1",
+      "effective_from": "2099-01-01",
+      "source_rule": "normalize_symbols(DOW30)",
+      "source_presets": [
+        "DOW30"
+      ],
+      "symbol_count": 30,
+      "equity_count": 30,
+      "etf_count": 0,
+      "universe_hash": "173411d5854450294821e4dedbe5147278ccf248d8a21fc1973d81a41b9465b4",
+      "manifest_hash": "323f753d3a50c44d985d1c1f214c64bab62388712573927ad70e7d1475cadc43",
+      "minimum_reference_requests": 30,
+      "maximum_reference_requests": 60,
+      "minimum_pacing_floor_seconds": 350.9,
+      "maximum_pacing_floor_seconds": 713.9,
+      "minimum_pacing_floor_minutes": 5.848333333333333,
+      "maximum_pacing_floor_minutes": 11.898333333333333,
+      "hypothetical_latency_budget_evaluations": {
+        "10_min": {
+          "budget_minutes": 10,
+          "budget_seconds": 600.0,
+          "min_reference_floor_within_budget": true,
+          "max_reference_floor_within_budget": false
+        },
+        "15_min": {
+          "budget_minutes": 15,
+          "budget_seconds": 900.0,
+          "min_reference_floor_within_budget": true,
+          "max_reference_floor_within_budget": true
+        },
+        "20_min": {
+          "budget_minutes": 20,
+          "budget_seconds": 1200.0,
+          "min_reference_floor_within_budget": true,
+          "max_reference_floor_within_budget": true
+        },
+        "30_min": {
+          "budget_minutes": 30,
+          "budget_seconds": 1800.0,
+          "min_reference_floor_within_budget": true,
+          "max_reference_floor_within_budget": true
+        },
+        "45_min": {
+          "budget_minutes": 45,
+          "budget_seconds": 2700.0,
+          "min_reference_floor_within_budget": true,
+          "max_reference_floor_within_budget": true
+        },
+        "60_min": {
+          "budget_minutes": 60,
+          "budget_seconds": 3600.0,
+          "min_reference_floor_within_budget": true,
+          "max_reference_floor_within_budget": true
+        }
+      },
+      "current_c1_status_compatibility": "unresolved",
+      "status_compatibility_reason": "Contains 30 corporate equities. Under current C1 capture contracts, any single unavailable or error observation degrades the family to PARTIAL and causes the overall slot to be DEGRADED. Actual provider completeness has not been measured in this study."
+    },
+    {
+      "manifest_file": "candidate-dow30-sector-etfs.json",
+      "label": "Candidate C: Dow 30 + Sector ETFs",
+      "universe_id": "candidate-dow30-sector-etfs",
+      "universe_version": "2026-09-08-v1",
+      "effective_from": "2099-01-01",
+      "source_rule": "normalize_symbols(DOW30 + SECTOR_ETFS)",
+      "source_presets": [
+        "DOW30",
+        "SECTOR_ETFS"
+      ],
+      "symbol_count": 45,
+      "equity_count": 30,
+      "etf_count": 15,
+      "universe_hash": "83d6e6e66991743b3a6301a674adbdf4425e2dc524ed027c7ee4d6097c371f29",
+      "manifest_hash": "211fc10c82d71889db16364ce2df33cd73aae5952f25efe9a2cd7e59c81fa1d9",
+      "minimum_reference_requests": 45,
+      "maximum_reference_requests": 90,
+      "minimum_pacing_floor_seconds": 532.4,
+      "maximum_pacing_floor_seconds": 1076.8999999999999,
+      "minimum_pacing_floor_minutes": 8.873333333333333,
+      "maximum_pacing_floor_minutes": 17.94833333333333,
+      "hypothetical_latency_budget_evaluations": {
+        "10_min": {
+          "budget_minutes": 10,
+          "budget_seconds": 600.0,
+          "min_reference_floor_within_budget": true,
+          "max_reference_floor_within_budget": false
+        },
+        "15_min": {
+          "budget_minutes": 15,
+          "budget_seconds": 900.0,
+          "min_reference_floor_within_budget": true,
+          "max_reference_floor_within_budget": false
+        },
+        "20_min": {
+          "budget_minutes": 20,
+          "budget_seconds": 1200.0,
+          "min_reference_floor_within_budget": true,
+          "max_reference_floor_within_budget": true
+        },
+        "30_min": {
+          "budget_minutes": 30,
+          "budget_seconds": 1800.0,
+          "min_reference_floor_within_budget": true,
+          "max_reference_floor_within_budget": true
+        },
+        "45_min": {
+          "budget_minutes": 45,
+          "budget_seconds": 2700.0,
+          "min_reference_floor_within_budget": true,
+          "max_reference_floor_within_budget": true
+        },
+        "60_min": {
+          "budget_minutes": 60,
+          "budget_seconds": 3600.0,
+          "min_reference_floor_within_budget": true,
+          "max_reference_floor_within_budget": true
+        }
+      },
+      "current_c1_status_compatibility": "unresolved",
+      "status_compatibility_reason": "Contains 15 ETF symbols alongside 30 corporate equities, creating an unresolved structural compatibility risk because ETFs generally do not have operating-company earnings dates. Actual Yahoo behavior for the frozen ETF symbols was not measured. If Yahoo produces no usable upcoming earnings date for one or more ETFs, C1 records those observations as UNAVAILABLE, preventing an all-known earnings SUCCEEDED result. For equities, any single unavailable or error observation also degrades the family; actual provider completeness is unmeasured."
+    },
+    {
+      "manifest_file": "candidate-sp100.json",
+      "label": "Candidate D: S&P 100",
+      "universe_id": "candidate-sp100",
+      "universe_version": "2026-09-08-v1",
+      "effective_from": "2099-01-01",
+      "source_rule": "normalize_symbols(SP100)",
+      "source_presets": [
+        "SP100"
+      ],
+      "symbol_count": 100,
+      "equity_count": 100,
+      "etf_count": 0,
+      "universe_hash": "ee9f48232b60ecd4c9f905b9eee1d5a3a2dcc9be705e18f85b3edd68d6d4b67f",
+      "manifest_hash": "21c05c6289c639133afa3b966da92eb7de1549e43227a7defe61f56314318711",
+      "minimum_reference_requests": 100,
+      "maximum_reference_requests": 200,
+      "minimum_pacing_floor_seconds": 1197.8999999999999,
+      "maximum_pacing_floor_seconds": 2407.9,
+      "minimum_pacing_floor_minutes": 19.964999999999996,
+      "maximum_pacing_floor_minutes": 40.13166666666667,
+      "hypothetical_latency_budget_evaluations": {
+        "10_min": {
+          "budget_minutes": 10,
+          "budget_seconds": 600.0,
+          "min_reference_floor_within_budget": false,
+          "max_reference_floor_within_budget": false
+        },
+        "15_min": {
+          "budget_minutes": 15,
+          "budget_seconds": 900.0,
+          "min_reference_floor_within_budget": false,
+          "max_reference_floor_within_budget": false
+        },
+        "20_min": {
+          "budget_minutes": 20,
+          "budget_seconds": 1200.0,
+          "min_reference_floor_within_budget": true,
+          "max_reference_floor_within_budget": false
+        },
+        "30_min": {
+          "budget_minutes": 30,
+          "budget_seconds": 1800.0,
+          "min_reference_floor_within_budget": true,
+          "max_reference_floor_within_budget": false
+        },
+        "45_min": {
+          "budget_minutes": 45,
+          "budget_seconds": 2700.0,
+          "min_reference_floor_within_budget": true,
+          "max_reference_floor_within_budget": true
+        },
+        "60_min": {
+          "budget_minutes": 60,
+          "budget_seconds": 3600.0,
+          "min_reference_floor_within_budget": true,
+          "max_reference_floor_within_budget": true
+        }
+      },
+      "current_c1_status_compatibility": "unresolved",
+      "status_compatibility_reason": "Contains 100 corporate equities. A larger basket creates more opportunities for at least one requested observation to be UNAVAILABLE, AMBIGUOUS, or ERROR under the current all-known success contract. Any single unavailable or error observation degrades the family to PARTIAL and causes the overall slot to be DEGRADED. The actual provider incidence rate has not been measured in this study."
+    },
+    {
+      "manifest_file": "candidate-sp100-sector-etfs.json",
+      "label": "Candidate E: S&P 100 + Sector ETFs",
+      "universe_id": "candidate-sp100-sector-etfs",
+      "universe_version": "2026-09-08-v1",
+      "effective_from": "2099-01-01",
+      "source_rule": "normalize_symbols(SP100 + SECTOR_ETFS)",
+      "source_presets": [
+        "SP100",
+        "SECTOR_ETFS"
+      ],
+      "symbol_count": 115,
+      "equity_count": 100,
+      "etf_count": 15,
+      "universe_hash": "e44345b7fdb2845cc3b3b75b86fdabc35428266c03697e9048dba77626090d55",
+      "manifest_hash": "612483ef7fc7d6ce80d3e67268c0d8db3d7198649a018292080a98f2b294ea38",
+      "minimum_reference_requests": 115,
+      "maximum_reference_requests": 230,
+      "minimum_pacing_floor_seconds": 1379.3999999999999,
+      "maximum_pacing_floor_seconds": 2770.9,
+      "minimum_pacing_floor_minutes": 22.99,
+      "maximum_pacing_floor_minutes": 46.181666666666665,
+      "hypothetical_latency_budget_evaluations": {
+        "10_min": {
+          "budget_minutes": 10,
+          "budget_seconds": 600.0,
+          "min_reference_floor_within_budget": false,
+          "max_reference_floor_within_budget": false
+        },
+        "15_min": {
+          "budget_minutes": 15,
+          "budget_seconds": 900.0,
+          "min_reference_floor_within_budget": false,
+          "max_reference_floor_within_budget": false
+        },
+        "20_min": {
+          "budget_minutes": 20,
+          "budget_seconds": 1200.0,
+          "min_reference_floor_within_budget": false,
+          "max_reference_floor_within_budget": false
+        },
+        "30_min": {
+          "budget_minutes": 30,
+          "budget_seconds": 1800.0,
+          "min_reference_floor_within_budget": true,
+          "max_reference_floor_within_budget": false
+        },
+        "45_min": {
+          "budget_minutes": 45,
+          "budget_seconds": 2700.0,
+          "min_reference_floor_within_budget": true,
+          "max_reference_floor_within_budget": false
+        },
+        "60_min": {
+          "budget_minutes": 60,
+          "budget_seconds": 3600.0,
+          "min_reference_floor_within_budget": true,
+          "max_reference_floor_within_budget": true
+        }
+      },
+      "current_c1_status_compatibility": "unresolved",
+      "status_compatibility_reason": "Contains 15 ETF symbols alongside 100 corporate equities. Creates a structural compatibility risk for ETFs because these instruments generally lack operating-company earnings dates (actual Yahoo behavior was not measured). If Yahoo produces no usable upcoming earnings date for one or more ETFs, C1 records UNAVAILABLE, preventing an all-known earnings SUCCEEDED result. Furthermore, a 100-equity basket creates more opportunities for provider omissions; actual provider completeness has not been measured in this study."
+    }
+  ],
+  "sp500_reference": {
+    "raw_count": 503,
+    "normalized_count": 503,
+    "equity_count": 503,
+    "etf_count": 0,
+    "universe_hash": "743955ad4d36808f88af3695f773ecd70115cf18b221d837619202ceb5617c94",
+    "minimum_reference_requests": 503,
+    "maximum_reference_requests": 1006,
+    "minimum_pacing_floor_seconds": 6074.2,
+    "maximum_pacing_floor_seconds": 12160.5,
+    "minimum_pacing_floor_minutes": 101.23666666666666,
+    "maximum_pacing_floor_minutes": 202.675,
+    "hypothetical_latency_budget_evaluations": {
+      "10_min": {
+        "budget_minutes": 10,
+        "budget_seconds": 600.0,
+        "min_reference_floor_within_budget": false,
+        "max_reference_floor_within_budget": false
+      },
+      "15_min": {
+        "budget_minutes": 15,
+        "budget_seconds": 900.0,
+        "min_reference_floor_within_budget": false,
+        "max_reference_floor_within_budget": false
+      },
+      "20_min": {
+        "budget_minutes": 20,
+        "budget_seconds": 1200.0,
+        "min_reference_floor_within_budget": false,
+        "max_reference_floor_within_budget": false
+      },
+      "30_min": {
+        "budget_minutes": 30,
+        "budget_seconds": 1800.0,
+        "min_reference_floor_within_budget": false,
+        "max_reference_floor_within_budget": false
+      },
+      "45_min": {
+        "budget_minutes": 45,
+        "budget_seconds": 2700.0,
+        "min_reference_floor_within_budget": false,
+        "max_reference_floor_within_budget": false
+      },
+      "60_min": {
+        "budget_minutes": 60,
+        "budget_seconds": 3600.0,
+        "min_reference_floor_within_budget": false,
+        "max_reference_floor_within_budget": false
+      }
+    }
+  },
+  "coverage_first_pacing_candidate": "candidate-dow30-sector-etfs",
+  "latency_first_pacing_candidate": "candidate-dow30",
+  "operational_activation_recommendation": null,
+  "deferred_candidates": [
+    "candidate-sp100",
+    "candidate-sp100-sector-etfs"
+  ],
+  "deferral_basis": "Deferred from initial free-tier recommendation because their current reference-provider pacing floors (40.13 min and 46.18 min worst-case) create materially larger intra-slot observation spread, subject to Gary's decision and future observed runtime evidence.",
+  "selected_universe": null,
+  "active_universe_authorized": false,
+  "c2_implementation_authorized": false,
+  "scheduler_authorized": false
+}
