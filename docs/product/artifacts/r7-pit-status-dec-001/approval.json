@@ -1,0 +1,41 @@
+{
+  "task_id": "MVP-ARCH-001-R7-PIT-STATUS-DEC-001-APPROVAL",
+  "approved_decision_artifact": "docs/product/artifacts/r7-pit-status-dec-001/decision.json",
+  "approved_decision_document": "docs/product/R7-PIT-STATUS-DEC-001.md",
+  "prerequisite_decision_packet_commit": "4680a13c140b8d93ff099b43cb818540f57a19c0",
+  "starting_main_sha": "4680a13c140b8d93ff099b43cb818540f57a19c0",
+  "status": "gary_approved",
+  "selected_status_policy": "option_2_plus_3",
+  "selected_status_policy_components": [
+    "option_2",
+    "option_3"
+  ],
+  "approval_record": {
+    "approved_by": "Gary Yang",
+    "approved_on": "2026-09-09",
+    "approval_scope": "architecture_direction_only",
+    "approval_source": "Gary approved continuing with the recommended Option 2 + Option 3 architecture direction in the TradeX ChatGPT workflow on 2026-09-09 following review and merge of PR #74, responding: 'continue, buld the prompt' (normalized to 'continue, build the prompt'). Architecture-direction approval only; does not authorize production implementation.",
+    "production_implementation_authorized": false
+  },
+  "non_authorizations": {
+    "production_status_semantics_change_authorized": false,
+    "schema_migration_authorized": false,
+    "provider_study_authorized": false,
+    "active_universe_authorized": false,
+    "c2_implementation_authorized": false,
+    "scheduler_authorized": false
+  },
+  "invariants": {
+    "current_schema_version": 7,
+    "current_capture_contract_version": 1,
+    "current_production_family_success_strict_all_known": true,
+    "selected_universe": null,
+    "approved_production_strategies": [],
+    "r7_status": "incomplete",
+    "long_002c_status": "paused",
+    "r8_status": "unauthorized",
+    "daytrade_001_status": "deferred",
+    "candidate_b_status": "unresolved_pending_policy_and_prerequisites",
+    "candidate_c_status": "unresolved_pending_policy_and_prerequisites"
+  }
+}
