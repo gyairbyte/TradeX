@@ -128,11 +128,11 @@ Operational readiness was forced to stop at:
 
 ### The Root Conflict
 1. **The ETF Earnings Compatibility Risk:**
-   Candidate C contains 15 Sector SPDR ETFs (`SPY`, `XLK`, `XLF`, etc.) alongside 30 corporate equities. ETFs are pooled investment vehicles and generally do not report corporate quarterly earnings comparable to operating companies. Under current C1 contracts, when Yahoo yields no usable upcoming earnings date for an ETF, `capture_earnings_snapshot` records `ObservationStatus.UNAVAILABLE`. Because C1 requires all requested facts to be `KNOWN` for family success, any `UNAVAILABLE` observation drops `known_n < requested_n`, forcing the earnings family into `PARTIAL` and degrading the entire slot to `DEGRADED`.
+   Candidate C contains 15 Sector SPDR ETFs (`SPY`, `XLK`, `XLF`, etc.) alongside 30 corporate equities. ETFs are pooled investment vehicles and generally do not report corporate quarterly earnings comparable to operating companies. Under current C1 contracts, when Yahoo yields no usable upcoming earnings date for an ETF, `capture_earnings_snapshot` records `ObservationStatus.UNAVAILABLE`. Because C1 requires all requested facts to be `KNOWN` for family success, any `UNAVAILABLE` observation prevents an all-known `SUCCEEDED` result (yielding `PARTIAL` if $\ge 1$ other observation is `KNOWN`, otherwise `FAILED`) and prevents an all-`SUCCEEDED` slot.
 2. **The Equity All-Known Fragility:**
-   Even for Candidate B (pure corporate equities), if a single stock has not yet announced its next earnings date, or if Massive produces an ambiguous ticker match, `known_n < requested_n`, degrading the slot to `DEGRADED`.
+   Even for Candidate B (pure corporate equities), if Yahoo yields no usable upcoming earnings date for a requested equity, or if Massive produces an ambiguous ticker match, `known_n < requested_n`, preventing an all-known `SUCCEEDED` result.
 3. **The Alerting Consequence:**
-   If scheduled automation degraded on every single run containing ETFs or unannounced dates, operational health monitoring would generate perpetual alerts, destroying operator signal and creating alert fatigue.
+   If scheduled automation degraded on every single run containing ETFs or whenever Yahoo yielded no usable upcoming date, operational health monitoring would generate perpetual alerts, destroying operator signal and creating alert fatigue.
 
 READINESS-A concluded that TradeX cannot responsibly activate any operational universe until the semantics of capture success and health are resolved.
 
@@ -140,26 +140,46 @@ READINESS-A concluded that TradeX cannot responsibly activate any operational un
 
 ## 5. Observation-State Inventory
 
-The table below catalogs every currently reachable observation outcome across both capture families based strictly on repository code evidence.
+To understand how individual observation outcomes aggregate into run and slot states, we must first separate **preflight validation failures** (which occur before capture-run or snapshot creation) from **per-symbol observation outcomes** (which execute inside the symbol lookup loop and persist snapshots to the database).
 
-| Family | Observation Status | Triggering Code Path | Error Category / Reason Evidence | Terminal Run Impact | Provider Call Occurred? | Fact Known? | Applicability Knowable? | Current Family Status | Current Slot Status |
+### Preflight Source Validation (Zero Snapshots Created)
+Before creating a `PITCaptureRun` record or entering the symbol iteration loop, `capture_earnings_snapshot()` performs pure configuration and environment validation:
+* **Unsupported Configured Earnings Source:**
+  `_resolve_earnings_source(source, settings=settings)` validates the requested source against supported providers (currently only `"yahoo"`). If an unsupported source (e.g. `"schwab"`, `"alpaca"`) is configured or passed, it immediately raises `ProviderCapabilityError`.
+  * **Capture Impact:** The exception aborts execution immediately before run creation.
+  * **Database Impact:** Zero `PITCaptureRun` rows and zero `PITEarningsSnapshot` rows are created.
+  * **Slot Impact:** The slot runner catches the error and marks the slot `FAILED`.
+
+### Per-Symbol Observation Inventory
+Inside the symbol lookup loop, every requested symbol produces exactly one persisted observation snapshot. An individual non-`KNOWN` observation only proves that an all-known family `SUCCEEDED` result is prevented; the final family status (`PARTIAL` vs `FAILED`) depends on all observations in the run.
+
+* **Family aggregation rule:**
+  $$\begin{cases}
+  \text{known\_n} = \text{requested\_n} & \longrightarrow \text{SUCCEEDED} \\
+  \text{known\_n} > 0 \text{ and } \text{known\_n} < \text{requested\_n} & \longrightarrow \text{PARTIAL} \\
+  \text{known\_n} = 0 & \longrightarrow \text{FAILED}
+  \end{cases}$$
+
+The table below catalogs every currently reachable observation outcome across both capture families based strictly on repository code evidence:
+
+| Family | Observation Status | Triggering Code Path | Error Category / Reason Evidence | Terminal Run Impact | Provider Call Occurred? | Fact Known? | Applicability Knowable? | Current Family Effect | Current Slot Effect |
 |---|---|---|---|---|---|---|---|---|---|
-| **Earnings** | `KNOWN` | `_fetch_from_yahoo` returns valid `date` | None (`error_category=None`) | Increments `known_n` | Yes | Yes (date stored) | Yes (positive proof) | Contributes to `SUCCEEDED` | Contributes to `HEALTHY` |
-| **Earnings** | `UNAVAILABLE` | `_fetch_from_yahoo` raises `EarningsDataUnavailableError` (no date found) | `"EarningsDataUnavailableError"` | Increments `unavailable_n` | Yes | No | No (cannot prove why) | Degrades to `PARTIAL` | Degrades to `DEGRADED` |
-| **Earnings** | `UNAVAILABLE` | `_fetch_from_yahoo` swallows provider exception; raises `EarningsDataUnavailableError` | `"EarningsDataUnavailableError"` | Increments `unavailable_n` | Yes | No | No (hidden failure) | Degrades to `PARTIAL` | Degrades to `DEGRADED` |
-| **Earnings** | `UNAVAILABLE` | Lookup raises `ProviderDataUnavailableError` | `"ProviderDataUnavailableError"` | Increments `unavailable_n` | Yes | No | No | Degrades to `PARTIAL` | Degrades to `DEGRADED` |
-| **Earnings** | `UNAVAILABLE` | Source is not Yahoo (`ProviderCapabilityError`) | `"ProviderCapabilityError"` | Increments `unavailable_n` | No | No | No | Degrades to `PARTIAL` | Degrades to `DEGRADED` |
-| **Earnings** | `UNAVAILABLE` | Lookup returns `None` or non-date | `"EarningsDataUnavailableError"` | Increments `unavailable_n` | Yes | No | No | Degrades to `PARTIAL` | Degrades to `DEGRADED` |
-| **Earnings** | `ERROR` | Unexpected unhandled exception in `capture_earnings_snapshot` | Exception class name (e.g. `RuntimeError`) | Increments `error_n` | Attempted/Failed | No | No | Degrades to `PARTIAL` | Degrades to `DEGRADED` |
-| **Reference** | `KNOWN` | Active or inactive query returns exactly 1 exact match | None (`error_category=None`) | Increments `known_n` | Yes (1 or 2 calls) | Yes (record stored) | Yes (proven in master) | Contributes to `SUCCEEDED` | Contributes to `HEALTHY` |
-| **Reference** | `UNAVAILABLE` | Active and inactive queries both return 0 exact matches | `"MassiveDataUnavailableError"` | Increments `unavailable_n` | Yes (2 calls) | No | No | Degrades to `PARTIAL` | Degrades to `DEGRADED` |
-| **Reference** | `AMBIGUOUS` | Active or inactive query returns >1 exact matches | `"MassiveAmbiguousIdentityError"` | Increments `ambiguous_n` | Yes (1 or 2 calls) | No (candidates logged) | No | Degrades to `PARTIAL` | Degrades to `DEGRADED` |
-| **Reference** | `ERROR` | Provider auth failure (HTTP 401) | `"MassiveAuthError"` | Increments `error_n` | Yes | No | No | Degrades to `PARTIAL` | Degrades to `DEGRADED` |
-| **Reference** | `ERROR` | Provider entitlement denied (HTTP 403) | `"MassiveEntitlementError"` | Increments `error_n` | Yes | No | No | Degrades to `PARTIAL` | Degrades to `DEGRADED` |
-| **Reference** | `ERROR` | Rate limit exceeded (HTTP 429) | `"MassiveRateLimitError"` | Increments `error_n` | Yes | No | No | Degrades to `PARTIAL` | Degrades to `DEGRADED` |
-| **Reference** | `ERROR` | Server error or timeout (HTTP 5xx, network drop) | `"MassiveTransientError"` | Increments `error_n` | Yes/Failed | No | No | Degrades to `PARTIAL` | Degrades to `DEGRADED` |
-| **Reference** | `ERROR` | Malformed JSON or 404 response | `"MassiveResponseError"` | Increments `error_n` | Yes | No | No | Degrades to `PARTIAL` | Degrades to `DEGRADED` |
-| **Reference** | `ERROR` | Unexpected unhandled exception in reference capture | Exception class name | Increments `error_n` | Attempted/Failed | No | No | Degrades to `PARTIAL` | Degrades to `DEGRADED` |
+| **Earnings** | `KNOWN` | `_fetch_from_yahoo` returns valid `date` | None (`error_category=None`) | Increments `known_n` | Yes | Yes (date stored) | Yes (positive proof) | Contributes toward family `SUCCEEDED` (requires all requested observations `KNOWN`) | Contributes toward an all-`SUCCEEDED` slot (requires both family runs to `SUCCEED`) |
+| **Earnings** | `UNAVAILABLE` | `_fetch_from_yahoo` raises `EarningsDataUnavailableError` (no usable upcoming date) | `"EarningsDataUnavailableError"` | Increments `unavailable_n` | Yes | No | No (cannot prove why date is absent) | Prevents family `SUCCEEDED`. Final family status is `PARTIAL` if $\ge 1$ other observation is `KNOWN`, otherwise `FAILED`. | Prevents an all-`SUCCEEDED` slot for this attempt. Exact slot/health state depends on both family run records and runner/health aggregation. |
+| **Earnings** | `UNAVAILABLE` | `_fetch_from_yahoo` swallows provider exception; raises `EarningsDataUnavailableError` | `"EarningsDataUnavailableError"` | Increments `unavailable_n` | Yes | No | No (hidden technical failure) | Prevents family `SUCCEEDED`. Final family status is `PARTIAL` if $\ge 1$ other observation is `KNOWN`, otherwise `FAILED`. | Prevents an all-`SUCCEEDED` slot for this attempt. Exact slot/health state depends on both family run records and runner/health aggregation. |
+| **Earnings** | `UNAVAILABLE` | Per-symbol lookup raises `ProviderDataUnavailableError` | `"ProviderDataUnavailableError"` | Increments `unavailable_n` | Yes | No | No | Prevents family `SUCCEEDED`. Final family status is `PARTIAL` if $\ge 1$ other observation is `KNOWN`, otherwise `FAILED`. | Prevents an all-`SUCCEEDED` slot for this attempt. Exact slot/health state depends on both family run records and runner/health aggregation. |
+| **Earnings** | `UNAVAILABLE` | Per-symbol injected/custom `earnings_lookup` raises `ProviderCapabilityError` inside loop | `"ProviderCapabilityError"` | Increments `unavailable_n` | Injected call | No | No | Prevents family `SUCCEEDED`. Final family status is `PARTIAL` if $\ge 1$ other observation is `KNOWN`, otherwise `FAILED`. | Prevents an all-`SUCCEEDED` slot for this attempt. Exact slot/health state depends on both family run records and runner/health aggregation. |
+| **Earnings** | `UNAVAILABLE` | Lookup returns `None` or non-date | `"EarningsDataUnavailableError"` | Increments `unavailable_n` | Yes | No | No | Prevents family `SUCCEEDED`. Final family status is `PARTIAL` if $\ge 1$ other observation is `KNOWN`, otherwise `FAILED`. | Prevents an all-`SUCCEEDED` slot for this attempt. Exact slot/health state depends on both family run records and runner/health aggregation. |
+| **Earnings** | `ERROR` | Unexpected unhandled exception in per-symbol loop | Exception class name (e.g. `RuntimeError`) | Increments `error_n` | Attempted/Failed | No | No | Prevents family `SUCCEEDED`. Final family status is `PARTIAL` if $\ge 1$ other observation is `KNOWN`, otherwise `FAILED`. | Prevents an all-`SUCCEEDED` slot for this attempt. Exact slot/health state depends on both family run records and runner/health aggregation. |
+| **Reference** | `KNOWN` | Active or inactive query returns exactly 1 exact match | None (`error_category=None`) | Increments `known_n` | Yes (1 or 2 calls) | Yes (record stored) | Yes (proven in master) | Contributes toward family `SUCCEEDED` (requires all requested observations `KNOWN`) | Contributes toward an all-`SUCCEEDED` slot (requires both family runs to `SUCCEED`) |
+| **Reference** | `UNAVAILABLE` | Active and inactive queries both return 0 exact matches | `"MassiveDataUnavailableError"` | Increments `unavailable_n` | Yes (2 calls) | No | No | Prevents family `SUCCEEDED`. Final family status is `PARTIAL` if $\ge 1$ other observation is `KNOWN`, otherwise `FAILED`. | Prevents an all-`SUCCEEDED` slot for this attempt. Exact slot/health state depends on both family run records and runner/health aggregation. |
+| **Reference** | `AMBIGUOUS` | Active or inactive query returns $>1$ exact matches | `"MassiveAmbiguousIdentityError"` | Increments `ambiguous_n` | Yes (1 or 2 calls) | No (candidates logged) | No | Prevents family `SUCCEEDED`. Final family status is `PARTIAL` if $\ge 1$ other observation is `KNOWN`, otherwise `FAILED`. | Prevents an all-`SUCCEEDED` slot for this attempt. Exact slot/health state depends on both family run records and runner/health aggregation. |
+| **Reference** | `ERROR` | Provider auth failure (HTTP 401) | `"MassiveAuthError"` | Increments `error_n` | Yes | No | No | Prevents family `SUCCEEDED`. Final family status is `PARTIAL` if $\ge 1$ other observation is `KNOWN`, otherwise `FAILED`. | Prevents an all-`SUCCEEDED` slot for this attempt. Exact slot/health state depends on both family run records and runner/health aggregation. |
+| **Reference** | `ERROR` | Provider entitlement denied (HTTP 403) | `"MassiveEntitlementError"` | Increments `error_n` | Yes | No | No | Prevents family `SUCCEEDED`. Final family status is `PARTIAL` if $\ge 1$ other observation is `KNOWN`, otherwise `FAILED`. | Prevents an all-`SUCCEEDED` slot for this attempt. Exact slot/health state depends on both family run records and runner/health aggregation. |
+| **Reference** | `ERROR` | Rate limit exceeded (HTTP 429) | `"MassiveRateLimitError"` | Increments `error_n` | Yes | No | No | Prevents family `SUCCEEDED`. Final family status is `PARTIAL` if $\ge 1$ other observation is `KNOWN`, otherwise `FAILED`. | Prevents an all-`SUCCEEDED` slot for this attempt. Exact slot/health state depends on both family run records and runner/health aggregation. |
+| **Reference** | `ERROR` | Server error or timeout (HTTP 5xx, network drop) | `"MassiveTransientError"` | Increments `error_n` | Yes/Failed | No | No | Prevents family `SUCCEEDED`. Final family status is `PARTIAL` if $\ge 1$ other observation is `KNOWN`, otherwise `FAILED`. | Prevents an all-`SUCCEEDED` slot for this attempt. Exact slot/health state depends on both family run records and runner/health aggregation. |
+| **Reference** | `ERROR` | Malformed JSON or 404 response | `"MassiveResponseError"` | Increments `error_n` | Yes | No | No | Prevents family `SUCCEEDED`. Final family status is `PARTIAL` if $\ge 1$ other observation is `KNOWN`, otherwise `FAILED`. | Prevents an all-`SUCCEEDED` slot for this attempt. Exact slot/health state depends on both family run records and runner/health aggregation. |
+| **Reference** | `ERROR` | Unexpected unhandled exception in reference capture | Exception class name | Increments `error_n` | Attempted/Failed | No | No | Prevents family `SUCCEEDED`. Final family status is `PARTIAL` if $\ge 1$ other observation is `KNOWN`, otherwise `FAILED`. | Prevents an all-`SUCCEEDED` slot for this attempt. Exact slot/health state depends on both family run records and runner/health aggregation. |
 
 ---
 
@@ -291,7 +311,7 @@ The core design principle evaluated is whether operational health and research e
 
 ### Why Separating Them Is Desirable
 Equating these dimensions (as C1 currently does) creates false coupling:
-* If a domain fact is missing (e.g. no earnings date announced), the operational capture pipeline is declared `DEGRADED`. The scheduler alerts the engineer to fix a system that performed its job flawlessly.
+* If a domain fact is missing (e.g. Yahoo yields no usable upcoming earnings date for an equity), the operational capture pipeline is declared `DEGRADED`. The scheduler alerts the engineer to fix a system that performed its job flawlessly.
 * Conversely, if an operational status is relaxed without fine-grained provenance, technical provider outages are masked as "healthy absence."
 
 ### The Blocker to Immediate Separation
@@ -347,7 +367,7 @@ Maintain two independent, orthogonal status dimensions:
 1. `capture_execution_health`: `HEALTHY` | `DEGRADED` | `FAILED`
 2. `evidence_completeness`: `COMPLETE` | `PARTIAL` | `SPARSE`
 
-An observation where a provider was successfully queried and truthfully returned "no record exists" or "not announced" counts as **healthy execution** (100% execution fidelity), but results in **partial evidence completeness** (e.g. 95% data completeness).
+An observation where a provider was successfully queried without error but yielded no usable upcoming date counts as **healthy execution** (100% execution fidelity), but results in **partial evidence completeness** (e.g. 95% data completeness).
 
 ### Benefits
 * Truthful operations: OS scheduler alerts trigger only when the capture machinery breaks (HTTP 5xx, timeouts, 429 rate limits, unhandled exceptions, database locked).
@@ -365,7 +385,7 @@ An observation where a provider was successfully queried and truthfully returned
 Enrich observation outcomes to distinguish:
 * `KNOWN`: domain fact obtained.
 * `NOT_APPLICABLE`: domain fact does not conceptually apply to this instrument class.
-* `UNAVAILABLE`: domain fact applies, but provider has no data / not announced.
+* `UNAVAILABLE`: domain fact applies, but provider yields no usable upcoming date.
 * `AMBIGUOUS`: provider returned conflicting/multiple records.
 * `ERROR`: provider transport, authentication, rate limit, or parsing failure.
 
@@ -417,7 +437,7 @@ It is essential to separate two distinct questions:
 When authorized by Gary, the empirical study should be:
 * **Scope:** A separately Gary-authorized, bounded live-provider compatibility study using the minimum necessary provider access and credentials, with no credentials committed or exposed.
 * **Target Symbols:** Minimal representative subsets (e.g. 5 Dow equities + 3 Sector ETFs).
-* **Objective:** Record raw HTTP responses, status codes, and exception types from Yahoo and Massive for both equities and ETFs, proving exactly how non-announced dates, ETF earnings queries, and active/inactive ticker queries resolve in practice.
+* **Objective:** Record TradeX-observable behavior (returned dates, empty/no-usable results, exception classes visible to TradeX, timing, and sanitized returned structures where available) from Yahoo and Massive for both equities and ETFs, proving empirically how no-usable-upcoming-date outcomes, ETF queries, and active/inactive ticker queries resolve in practice.
 * **Boundary:** Zero trading decisions, zero database writes, zero model tuning.
 
 ---
@@ -518,7 +538,7 @@ Antigravity recommends that TradeX adopt **Option 2 (Separate Operational Health
 > **Strict Immutability Rule:** Historical PIT records in `signals.db` must NEVER be modified, backfilled, or retroactively reinterpreted.
 
 1. **Can existing v7 observations be reclassified?**
-   **No.** Historical earnings `UNAVAILABLE` rows cannot prove whether they were caused by a swallowed network failure, an unannounced date, or an ETF.
+   **No.** Historical earnings `UNAVAILABLE` rows cannot prove whether they were caused by a swallowed network failure, an unannounced date, an absent record, or an ETF.
 2. **Which states can be derived safely?**
    * `ObservationStatus.KNOWN` is safe and authoritative.
    * `ReferenceObservationStatus.KNOWN`, `AMBIGUOUS`, and `ERROR` are safe and authoritative.
@@ -540,8 +560,8 @@ Observation Outcome
 ├── KNOWN (Fact acquired and validated)
 ├── NOT_APPLICABLE (Fact conceptually inapplicable to instrument class)
 ├── UNAVAILABLE (Fact applicable, provider queried successfully, no fact exists)
-│     ├── NOT_ANNOUNCED (Corporate issuer has not announced date)
-│     └── NOT_FOUND (Provider security master has no record)
+│     ├── NOT_ANNOUNCED (Conceptual / requires authoritative source; not derivable from current Schema v7 evidence)
+│     └── NOT_FOUND (Provider security master has no record; supported in reference)
 ├── AMBIGUOUS (Provider returned conflicting candidate matches)
 └── ERROR (Technical capture failure)
       ├── TRANSPORT_FAILURE (HTTP 5xx, timeout, network disconnect)
@@ -550,6 +570,25 @@ Observation Outcome
       ├── PARSE_FAILURE (Malformed JSON/HTML, schema drift)
       └── INTERNAL_ERROR (Unexpected runtime exception)
 ```
+
+### Distinction Between Repository-Supported and Proposed Future Categories
+
+1. **Repository-Supported Technical Categories:**
+   Categories demonstrably supported by current TradeX reference/provider integration code:
+   * `AUTH_FAILURE`: Supported in reference adapter via `MassiveAuthError` (HTTP 401).
+   * `ENTITLEMENT_DENIED`: Supported in reference adapter via `MassiveEntitlementError` (HTTP 403).
+   * `RATE_LIMIT_EXCEEDED`: Supported in reference adapter via `MassiveRateLimitError` (HTTP 429).
+   * `TRANSPORT_FAILURE`: Supported in reference adapter via `MassiveTransientError` (HTTP 5xx, network drops, timeouts).
+   * `PARSE_FAILURE`: Supported in reference adapter via `MassiveResponseError` (malformed JSON / unexpected schema).
+   * `NOT_FOUND` (Reference): Supported in reference adapter when both active and inactive ticker queries return 0 matches (`MassiveDataUnavailableError`).
+   * `AMBIGUOUS`: Supported in reference adapter when queries return $>1$ candidate matches (`MassiveAmbiguousIdentityError`).
+   * `INTERNAL_ERROR`: Supported across both capture families via caught unhandled runtime exceptions mapped to `ERROR`.
+
+2. **Proposed Future Categories (Conceptual / Domain-Dependent):**
+   Categories that require provider-contract evidence, domain-source evidence, or new explicit manifest/instrument metadata:
+   * `NOT_APPLICABLE`: Conceptual category. Requires explicit instrument metadata or manifest-level eligibility declaration (`eligibility: {earnings: false, reference: true}`). Current providers and tables do not persist or verify asset-class applicability.
+   * `NOT_ANNOUNCED`: Conceptual category. Requires an authoritative provider or domain source that explicitly distinguishes "issuer has not yet scheduled an earnings announcement" from lookup failure, data omission, or parsing failure. **This is not derivable from current Schema v7 evidence or Yahoo absence.**
+   * `NOT_FOUND` (Earnings): Conceptual category for earnings. Current Yahoo code cannot distinguish a ticker unknown to Yahoo from a ticker known to Yahoo with no upcoming date.
 
 ---
 
@@ -568,7 +607,7 @@ Future operational monitoring in C2 should distinguish alert severities:
 3. **Research Completeness Warning (Low Severity — Research Log / Daily Summary):**
    * Scheduled capture succeeded, but domain completeness fell below research threshold.
    * Reference record resolved to `AMBIGUOUS`.
-   * Corporate earnings date is unannounced.
+   * Yahoo yields no usable upcoming earnings date for an equity.
 4. **Informational (No Alert):**
    * Slot not due (weekend, holiday, pre-slot).
    * Fact validly not applicable (ETF earnings).
@@ -582,7 +621,7 @@ Current C1 exit codes:
 * `health`: 0 = healthy/not_due; 2 = degraded/missing/incomplete; 1 = universe_conflict/error.
 
 Under the future two-dimensional model:
-* **Exit code 0:** Operational capture pipeline succeeded completely (`capture_execution_health == HEALTHY`), regardless of whether some domain facts were unannounced or inapplicable.
+* **Exit code 0:** Operational capture pipeline succeeded completely (`capture_execution_health == HEALTHY`), regardless of whether some domain facts yielded no upcoming date or were inapplicable.
 * **Exit code 2:** Operational degradation (e.g. transient retries exhausted, partial provider failure).
 * **Exit code 1:** Operational failure (drift conflict, auth failure, fatal crash).
 * Research completeness metrics should be surfaced in JSON stdout (`"evidence_completeness": "partial"`, `"completeness_pct": 93.3`) without corrupting process exit codes.
@@ -591,15 +630,15 @@ Under the future two-dimensional model:
 
 ## 24. Candidate B and Candidate C Implications
 
-Tying the status decision back to READINESS-A:
+Tying the status decision back to `MVP-ARCH-001-R7-PIT-001C2-READINESS-A`:
 
 ### Candidate B (Dow 30, 30 Equities)
-* **Under Current C1:** Operational compatibility is `unresolved`. Any single stock without an announced earnings date drops the family to `PARTIAL` and degrades the slot.
-* **Under Recommended Model:** Operational compatibility becomes **conditionally resolved**. Once exception hardening ensures provider errors are separated from unannounced dates, Candidate B capture will remain `HEALTHY` even when companies are between announcement cycles.
+* **Under Current C1:** Operational compatibility is `unresolved`. Any single requested equity for which Yahoo yields no usable upcoming earnings date, or where Massive produces an ambiguous match, prevents family `SUCCEEDED` and degrades the operational slot.
+* **Under Recommended Model:** Operational compatibility is **conditionally resolvable under the recommended architecture, but remains unresolved until the selected status policy, provenance requirements, and applicability/domain-absence rules are approved and implemented.** Exception hardening will separate technical transport/auth/rate-limit failures from clean empty results, but establishing that an equity's absence is benign operational behavior requires Gary's policy approval and defined domain-absence rules.
 
 ### Candidate C (Dow 30 + Sector ETFs, 45 Symbols)
-* **Under Current C1:** Operational compatibility is `unresolved` with high structural degradation risk due to 15 ETF symbols lacking corporate earnings dates.
-* **Under Recommended Model:** Operational compatibility becomes **conditionally resolved**. Once ETF earnings are recognized as non-applicable (via manifest declaration or reason taxonomy) and provider exceptions are hardened, Candidate C capture will achieve `HEALTHY` operational status while providing full equity and macro coverage.
+* **Under Current C1:** Operational compatibility is `unresolved` with elevated structural degradation risk due to 15 ETF symbols lacking corporate earnings dates.
+* **Under Recommended Model:** Operational compatibility is **conditionally resolvable under the recommended architecture, but remains unresolved until the selected status policy, provenance requirements, and applicability/domain-absence rules are approved and implemented.** Resolving Candidate C requires not only provider exception hardening but also an approved applicability mechanism (such as manifest-level eligibility declarations) to truthfully classify ETF earnings as non-applicable rather than operational capture failures.
 
 ---
 
@@ -630,9 +669,19 @@ If Gary authorizes a live-provider study prior to Phase 2/3 implementation, it s
   * 5 Corporate Equities: `AAPL`, `MSFT`, `JNJ`, `XOM`, `JPM` (Dow 30 sample across sectors).
   * 3 ETFs: `SPY` (broad market), `XLK` (tech sector), `XLF` (financial sector).
 * **Endpoints Probed:**
-  * Yahoo: `get_earnings_dates()`, `.calendar`.
+  * Yahoo: `get_earnings_dates()`, `.calendar` (invoked via `tradex/earnings/calendar.py` or direct production-equivalent calls).
   * Massive: `/v3/reference/tickers` (active=true and active=false).
-* **Metrics Recorded:** Raw HTTP status, response schema structure, presence/absence of future earnings dates, exception classes raised.
+* **Evidence Hierarchy & Observability:**
+  1. **Guaranteed Observable Behavior (Production Path):**
+     * Returned dates and datetimes.
+     * Empty / no-usable upcoming date results.
+     * Specific exception classes visible to TradeX (e.g. `EarningsDataUnavailableError`, `MassiveRateLimitError`, `MassiveTransientError`, etc.).
+     * Call durations and pacing.
+     * Sanitized return structures and dataframes where exposed by the integration layer.
+  2. **Raw Transport Evidence (Conditional / Out-of-Band):**
+     * Raw HTTP status codes (e.g. 200, 401, 404, 429, 500) and response bodies are directly observable for Massive via the existing HTTP adapter.
+     * For Yahoo (`yfinance`), raw HTTP status codes and response bodies must NOT be assumed to be exposed through the standard library interface; raw transport evidence should only be collected if a separately reviewed study implementation can safely instrument it without modifying production behavior, exposing credentials, violating provider boundaries, or bypassing the real integration path being evaluated. The study should test TradeX-visible behavior first.
+* **Metrics Recorded:** Observable dates, failure classifications, exception types, timing, and (for Massive) raw HTTP status and request IDs.
 * **Artifact:** Versioned, sanitized research report in `docs/research/`.
 
 ---

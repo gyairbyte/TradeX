@@ -101,14 +101,14 @@
     "candidate_b": {
       "universe_id": "candidate-dow30",
       "symbol_count": 30,
-      "status": "conditionally_resolved_pending_provenance_hardening_and_study",
-      "notes": "Avoids ETF structural earnings risk, but remains vulnerable under current all-known C1 semantics to degrading whenever any single equity lacks an announced earnings date or reference fact."
+      "status": "unresolved_pending_policy_and_prerequisites",
+      "notes": "Avoids ETF structural earnings risk, but remains vulnerable under current all-known C1 semantics to degrading whenever Yahoo yields no usable upcoming earnings date for any requested equity or reference fact. Conditionally resolvable under the recommended architecture, but remains unresolved until the selected status policy, provenance requirements, and applicability/domain-absence rules are approved and implemented."
     },
     "candidate_c": {
       "universe_id": "candidate-dow30-sector-etfs",
       "symbol_count": 45,
-      "status": "conditionally_resolved_pending_provenance_hardening_and_study",
-      "notes": "Faces elevated structural compatibility risk for ETF earnings under current C1 semantics. Conditionally resolved once orthogonal health/completeness or manifest-level applicability is implemented with hardened error provenance."
+      "status": "unresolved_pending_policy_and_prerequisites",
+      "notes": "Faces elevated structural compatibility risk for ETF earnings under current C1 semantics. Conditionally resolvable under the recommended architecture, but remains unresolved until the selected status policy, provenance requirements, and applicability/domain-absence rules are approved and implemented."
     }
   },
   "selected_status_policy": null,
