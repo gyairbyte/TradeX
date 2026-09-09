@@ -22,18 +22,19 @@ All candidate universes have been frozen into non-operational research artifacts
 1. **Coverage-First Pacing Candidate — Candidate C (Dow 30 + Sector ETFs, 45 symbols):** Combines 30 large-cap corporate equities across major economic sectors with 15 broad-market and sector SPDR ETFs. Its worst-case reference pacing floor is **17.95 minutes** (1,076.9 s), placing its reference-provider pacing floor below a hypothetical 20-minute reference-floor budget.
 2. **Latency-First Pacing Candidate — Candidate B (Dow 30, 30 symbols):** Offers a narrower equity-only focus with a worst-case reference pacing floor of **11.90 minutes** (713.9 s), placing its reference pacing floor below a hypothetical 15-minute reference-floor budget and providing lower intra-slot reference observation spread if ETF regime context is deferred.
 3. **Deferred Pacing Candidates — Candidate D (S&P 100, 100 symbols) and Candidate E (S&P 100 + Sector ETFs, 115 symbols):** Worst-case reference pacing floors of **40.13 minutes** (2,407.9 s) and **46.18 minutes** (2,770.9 s), respectively, creating materially larger intra-slot observation spread under free-tier pacing.
-4. **Reference Pacing Floor vs. Total Runtime:** The reference pacing floor reflects solely the sequential inter-request sleep time for Massive requests ($\max(R-1, 0) 	imes 12.1	ext{ s}$). It explicitly excludes preceding Yahoo earnings runtime, Massive network/HTTP latency, retries, startup overhead, and SQLite transaction time.
+4. **Reference Pacing Floor vs. Total Runtime:** The reference pacing floor reflects solely the sequential inter-request sleep time for Massive requests ($\max(R-1, 0) \times 12.1\text{ s}$). It explicitly excludes preceding Yahoo earnings runtime, Massive network/HTTP latency, retries, startup overhead, and SQLite transaction time.
 
 ### Material Review Finding (Operational Readiness: Blocked)
 **Operational activation is BLOCKED for all candidates (`operational_activation_recommendation: null`).**
 The pacing calculations confirm mathematical capacity feasibility under free-tier rate limits, but the repository's current C1 capture-status contract creates an operational compatibility blocker:
 - In `tradex.pit.earnings` and `tradex.pit.reference`, terminal family status is derived as:
-  - all requested symbols `KNOWN` $ightarrow$ `SUCCEEDED`
-  - some `KNOWN` with $\ge 1$ `UNAVAILABLE` / `AMBIGUOUS` / `ERROR` $ightarrow$ `PARTIAL`
-  - zero `KNOWN` $ightarrow$ `FAILED`
+  - all requested symbols `KNOWN` $\rightarrow$ `SUCCEEDED`
+  - some `KNOWN` with $\ge 1$ `UNAVAILABLE` / `AMBIGUOUS` / `ERROR` $\rightarrow$ `PARTIAL`
+  - zero `KNOWN` $\rightarrow$ `FAILED`
 - In `tradex.pit.ops._compute_operational_status`, overall slot operational status requires **both** families to achieve `SUCCEEDED`. Any `PARTIAL` family automatically degrades the entire slot to `DEGRADED`.
-- **ETF Earnings Reality:** ETFs do not report quarterly corporate earnings. When queried on Yahoo Finance, ETFs are expected to return `UNAVAILABLE`. Under current C1 code, an `UNAVAILABLE` observation is not treated as a successful neutral fact; it degrades the earnings family to `PARTIAL` (or `FAILED` for pure ETF baskets) and the slot to `DEGRADED`. Candidates containing ETFs (A, C, E) are therefore structurally predisposed to chronic `DEGRADED` slot statuses.
-- **Equity All-Known Hurdle:** For pure equity candidates (B and D), every single stock must successfully return `KNOWN` for both earnings and reference data. A single missing date or unmapped ticker degrades the family to `PARTIAL` and the slot to `DEGRADED`. Live provider behavior has not been tested in this offline study.
+- **Zero Live Provider Calls:** READINESS-A performed zero live provider calls. The compatibility blocker is established from C1 status semantics, not from measured Yahoo or Massive completeness.
+- **ETF Earnings Structural Risk:** ETFs generally do not have operating-company earnings dates comparable to corporate equities. READINESS-A performed no live Yahoo calls and therefore does not establish how Yahoo will resolve these specific ETF symbols. Under the current C1 contract, if Yahoo produces no usable upcoming earnings date for a requested ETF, that observation is recorded as `UNAVAILABLE`. Any such `UNAVAILABLE` observation prevents the earnings family from achieving all-known `SUCCEEDED` status and therefore causes the overall slot to be `DEGRADED`. Candidates containing ETFs (A, C, E) face this unresolved structural risk.
+- **Equity All-Known Contract:** For pure equity candidates (B and D), every single stock must return `KNOWN` for both earnings and reference data. Any single unavailable or error observation would degrade the family to `PARTIAL` and the slot to `DEGRADED`. Actual provider completeness has not been measured in this study.
 
 Therefore, **no candidate can be claimed operationally ready or recommended for activation** until Gary reviews and resolves the C1 capture-status contract disposition.
 
@@ -56,17 +57,17 @@ Following the completion of `MVP-ARCH-001-R7-PIT-001C1`:
 - **Universe Drift Guard:** `run_pit_slot` checks existing database records for the target `(capture_date, slot)`. Any existing run with a differing `universe_hash` causes an immediate fail-closed error with zero provider calls.
 - **Read-Only Health Inspector:** `get_pit_slot_health` inspects slot audit records and returns structured health states without provider calls or database writes.
 - **Capture-Status Derivation Contract:**
-  - Family level: All symbols `KNOWN` $ightarrow$ `SUCCEEDED`; partial known $ightarrow$ `PARTIAL`; 0 known $ightarrow$ `FAILED`.
-  - Slot level: Both families `SUCCEEDED` $ightarrow$ `SUCCEEDED`; both absent $ightarrow$ `FAILED`; any `PARTIAL` or mismatched family $ightarrow$ `DEGRADED`.
+  - Family level: All symbols `KNOWN` $\rightarrow$ `SUCCEEDED`; partial known $\rightarrow$ `PARTIAL`; 0 known $\rightarrow$ `FAILED`.
+  - Slot level: Both families `SUCCEEDED` $\rightarrow$ `SUCCEEDED`; both absent $\rightarrow$ `FAILED`; any `PARTIAL` or mismatched family $\rightarrow$ `DEGRADED`.
 - **CLI Subcommands:** `validate-universe`, `run-slot`, and `health` are exposed via `tradex.pit.ops`.
 - **Database Schema:** Schema version remains `v7`.
 - **Strategy Registry:** `APPROVED_PRODUCTION_STRATEGIES == ()`.
 - **Pacing Constant:** `DEFAULT_MASSIVE_MIN_INTERVAL_SECONDS = 12.1` (~5 requests per minute free tier).
 - **Reference Pacing Formulas:**
-  $$	ext{minimum\_reference\_requests} = N$$
-  $$	ext{maximum\_reference\_requests} = 2N$$
-  $$	ext{minimum\_reference\_pacing\_floor} = \max(N - 1, 0) 	imes 12.1	ext{ s}$$
-  $$	ext{maximum\_reference\_pacing\_floor} = \max(2N - 1, 0) 	imes 12.1	ext{ s}$$
+  $$\text{minimum\_reference\_requests} = N$$
+  $$\text{maximum\_reference\_requests} = 2N$$
+  $$\text{minimum\_reference\_pacing\_floor} = \max(N - 1, 0) \times 12.1\text{ s}$$
+  $$\text{maximum\_reference\_pacing\_floor} = \max(2N - 1, 0) \times 12.1\text{ s}$$
 
 ---
 
@@ -82,9 +83,9 @@ All candidate universes are derived deterministically from the committed source 
 - No live index constituent lookups were performed.
 - No dynamic scanner results, CandidateSnapshots, Journals, scores, or user watchlists were used.
 - Security classification is strictly deterministic based on source preset membership:
-  - Symbols from `SECTOR_ETFS` $ightarrow$ classified as **ETF**.
-  - Symbols from `DOW30` $ightarrow$ classified as **equity**.
-  - Symbols from `SP100` $ightarrow$ classified as **equity**.
+  - Symbols from `SECTOR_ETFS` $\rightarrow$ classified as **ETF**.
+  - Symbols from `DOW30` $\rightarrow$ classified as **equity**.
+  - Symbols from `SP100` $\rightarrow$ classified as **equity**.
 - Overlap verification: The intersection of `DOW30` and `SECTOR_ETFS` is empty ($\emptyset$). The intersection of `SP100` and `SECTOR_ETFS` is empty ($\emptyset$).
 
 ---
@@ -138,7 +139,7 @@ The following table documents the exact normalized symbol counts, security break
 
 ## 8. Capacity Table
 
-Using the real C1 `estimate_capacity` implementation at $12.1	ext{ s}$ per request:
+Using the real C1 `estimate_capacity` implementation at $12.1\text{ s}$ per request:
 
 | Candidate | Symbols ($N$) | Min Requests ($N$) | Max Requests ($2N$) | Min Reference Pacing Floor | Max Reference Pacing Floor |
 |---|---|---|---|---|---|
@@ -154,7 +155,7 @@ Using the real C1 `estimate_capacity` implementation at $12.1	ext{ s}$ per reque
 ## 9. Conditional Latency Matrix
 
 > [!NOTE]
-> The thresholds below represent **hypothetical reference-pacing-floor budgets**, NOT approved total runtime SLAs. A value of "YES" indicates that the candidate's worst-case reference-provider pacing floor ($\max(2N - 1, 0) 	imes 12.1	ext{ s}$) is strictly less than or equal to that hypothetical budget.
+> The thresholds below represent **hypothetical reference-pacing-floor budgets**, NOT approved total runtime SLAs. A value of "YES" indicates that the candidate's worst-case reference-provider pacing floor ($\max(2N - 1, 0) \times 12.1\text{ s}$) is strictly less than or equal to that hypothetical budget.
 
 | Candidate | Worst-Case Ref Floor | Budget: 10 min (600 s) | Budget: 15 min (900 s) | Budget: 20 min (1200 s) | Budget: 30 min (1800 s) | Budget: 45 min (2700 s) | Budget: 60 min (3600 s) |
 |---|---|---|---|---|---|---|---|
@@ -212,27 +213,27 @@ Under the merged C1 implementation (`tradex.pit.earnings`, `tradex.pit.reference
    - Derived as `DEGRADED` for **any other combination**.
    - **Crucial Invariant:** Any `PARTIAL` family terminal status automatically degrades the entire slot run to `DEGRADED`.
 
-### The ETF Corporate Earnings Dilemma
-- ETFs (e.g., `SPY`, `QQQ`, `XLK`, `XLF`) are pooled investment funds, not operating corporations. They do not report quarterly corporate earnings dates.
-- When queried on Yahoo Finance for earnings calendar data, ETFs are expected to resolve to `ObservationStatus.UNAVAILABLE`.
-- Under the current C1 contract, `UNAVAILABLE` is not treated as a successful neutral observation (e.g., "fund has no corporate earnings"). Instead, it drops `known_n` below `requested_n`, forcing terminal family status to `PARTIAL` (if any equities in the universe succeed) or `FAILED` (if the universe contains only ETFs).
-- Consequently, any universe containing ETFs (Candidates A, C, E) is structurally predisposed to yield `PARTIAL` earnings capture and `DEGRADED` operational slot health on every single run under current code.
+### The ETF Corporate Earnings Structural Risk
+- ETFs (e.g., `SPY`, `QQQ`, `XLK`, `XLF`) are pooled investment funds, not operating corporations, and generally lack operating-company earnings dates comparable to corporate equities.
+- **Zero Live Calls Conducted:** READINESS-A performed no live Yahoo calls and therefore does not establish how Yahoo will resolve these specific ETF symbols.
+- **Contract Consequence:** Under the current C1 contract, if Yahoo produces no usable upcoming earnings date for a requested ETF, that observation is recorded as `UNAVAILABLE`. Any such `UNAVAILABLE` observation drops `known_n` below `requested_n`, preventing an all-known `SUCCEEDED` family status and causing the overall slot operational status to be `DEGRADED`.
+- Candidates containing ETFs (A, C, E) face this unresolved structural compatibility risk.
 
-### The Equity All-Known Hurdle
-- Even for pure-equity universes (Candidate B: 30 symbols, Candidate D: 100 symbols), every single constituent must return `KNOWN` for both earnings and reference capture.
-- If a single equity has no announced earnings date on Yahoo, or Massive returns an unexpected payload or transient error, the family becomes `PARTIAL` and the slot degrades to `DEGRADED`.
-- In real-world provider feeds, 100% complete data for 30 or 100 equities is not guaranteed on any given trading day.
+### The Equity All-Known Contract
+- Even for pure-equity universes (Candidate B: 30 symbols, Candidate D: 100 symbols), every single constituent must return `KNOWN` for both earnings and reference capture to achieve family `SUCCEEDED`.
+- If a single equity has no announced earnings date on Yahoo, or Massive produces an unmapped ticker or unexpected error, that observation is recorded as `UNAVAILABLE` or `ERROR`, dropping the family to `PARTIAL` and degrading the slot.
+- A larger basket creates more opportunities for at least one requested observation to be `UNAVAILABLE`, `AMBIGUOUS`, or `ERROR` under the current all-known success contract. The actual incidence rate is unmeasured.
 - This offline study intentionally executed zero live provider calls, so actual provider availability distributions have not been measured.
 
 ### Candidate Status Compatibility Matrix
 
 | Candidate | Composition | Current C1 Compatibility | Operational Compatibility Assessment & Risk |
 |---|---|---|---|
-| **A (Sector ETFs)** | 15 ETFs, 0 Equities | **UNRESOLVED** | All 15 ETFs expected to return `UNAVAILABLE` for corporate earnings $ightarrow$ earnings family `FAILED` $ightarrow$ slot `DEGRADED`. Zero individual equities. |
-| **B (Dow 30)** | 30 Equities, 0 ETFs | **UNRESOLVED** | Avoids ETF earnings dilemma, but any single equity missing earnings or reference data degrades family to `PARTIAL` $ightarrow$ slot `DEGRADED`. Live provider reliability unmeasured. |
-| **C (Dow 30 + ETFs)** | 30 Equities, 15 ETFs | **UNRESOLVED** | 15 ETF earnings expected `UNAVAILABLE` $ightarrow$ earnings family `PARTIAL` $ightarrow$ slot `DEGRADED`. Plus equity missing observation risk. |
-| **D (S&P 100)** | 100 Equities, 0 ETFs | **UNRESOLVED** | 100 equities substantially increases the likelihood of at least one provider omission, risking chronic `DEGRADED` slot runs. |
-| **E (S&P 100 + ETFs)** | 100 Equities, 15 ETFs | **UNRESOLVED** | Combines guaranteed ETF earnings degradation with high large-basket equity omission risk. |
+| **A (Sector ETFs)** | 15 ETFs, 0 Equities | **UNRESOLVED** | Contains ETF symbols, creating a structural compatibility risk because these instruments generally do not have operating-company earnings dates. Actual Yahoo behavior for the frozen ETF symbols was not measured. If Yahoo produces no usable upcoming earnings date for one or more ETFs, C1 records those observations as `UNAVAILABLE`, preventing an all-known earnings `SUCCEEDED` result. |
+| **B (Dow 30)** | 30 Equities, 0 ETFs | **UNRESOLVED** | Avoids ETF earnings structural risk. However, under current C1 code, any single unavailable or error observation degrades the family to `PARTIAL` and the slot to `DEGRADED`. Actual provider completeness has not been measured in this study. |
+| **C (Dow 30 + ETFs)** | 30 Equities, 15 ETFs | **UNRESOLVED** | Contains 15 ETF symbols, creating an unresolved structural compatibility risk. If Yahoo produces no usable upcoming earnings date for one or more ETFs, C1 records `UNAVAILABLE`, preventing an all-known earnings `SUCCEEDED` result. For equities, any single missing observation also degrades the family; actual provider completeness is unmeasured. |
+| **D (S&P 100)** | 100 Equities, 0 ETFs | **UNRESOLVED** | A 100-equity basket creates more opportunities for at least one requested observation to be `UNAVAILABLE`, `AMBIGUOUS`, or `ERROR` under the current all-known contract. Any single omission degrades the family and slot. Actual provider completeness has not been measured in this study. |
+| **E (S&P 100 + ETFs)** | 100 Equities, 15 ETFs | **UNRESOLVED** | Combines ETF earnings structural risk with the increased opportunities for omission in a 100-equity basket. If Yahoo produces no usable earnings date for ETFs or any equity is missing data, the slot is degraded. Actual provider completeness is unmeasured. |
 
 ### Operational Readiness Conclusion
 - **Operational readiness status:** `blocked_pending_capture_status_compatibility_decision`.
@@ -260,7 +261,7 @@ Under the merged C1 implementation (`tradex.pit.earnings`, `tradex.pit.reference
 > **What This Study Does NOT Establish:**
 > - **End-to-End Slot Completion Lag:** The capacity estimate calculates only the reference provider pacing floor. It does not measure the actual duration of the slot run.
 > - **Preceding Yahoo Earnings Runtime:** `run_pit_slot` runs earnings capture before reference capture. The earnings family performs un-cached Yahoo queries for each symbol. Its runtime depends on network latency and Yahoo response characteristics.
-> - **Massive Network Latency:** The pacing interval ($12.1	ext{ s}$) is enforced between calls; each HTTP request also incurs round-trip network transit and processing time.
+> - **Massive Network Latency:** The pacing interval ($12.1\text{ s}$) is enforced between calls; each HTTP request also incurs round-trip network transit and processing time.
 > - **Inactive Fallback Frequency:** If a symbol is active, 1 request is made. If inactive, a second request is made. The actual request count $R$ will fall in the interval $[N, 2N]$.
 > - **Transient Failures and Retries:** Temporary HTTP disconnects or DNS delays will increase wall-clock time.
 > - **OS Scheduler Context:** Unattended execution via Windows Task Scheduler or cron involves wake/sleep states, process startup overhead, and environment credential access that cannot be evaluated without live deployment evidence.
@@ -271,28 +272,28 @@ Under the merged C1 implementation (`tradex.pit.earnings`, `tradex.pit.reference
 
 ### Candidate A: Sector ETFs (15 symbols)
 - **Pros:** Fast pacing floor (2.82 to 5.85 minutes); zero risk of substantial capture spread; provides clean macro regime context across all 11 GICS sectors.
-- **Cons:** Zero individual equities. Completely unsuited for individual stock earnings or security reference research. All 15 ETF earnings expected `UNAVAILABLE` $ightarrow$ earnings family `FAILED` under current C1 code.
+- **Cons:** Zero individual equities. Completely unsuited for individual stock earnings or security reference research. ETFs generally lack corporate earnings; if Yahoo produces no usable earnings date for ETFs, C1 records `UNAVAILABLE`, preventing an all-known earnings `SUCCEEDED` result.
 - **Verdict:** Unsuitable as a primary standalone operational universe; status compatibility unresolved.
 
 ### Candidate B: Dow 30 (30 symbols)
-- **Pros:** Worst-case reference pacing floor of 11.90 minutes; low intra-slot capture spread; transparent, highly liquid blue-chip equities with predictable corporate filings; avoids ETF corporate earnings dilemma.
+- **Pros:** Worst-case reference pacing floor of 11.90 minutes; low intra-slot capture spread; transparent, highly liquid blue-chip equities with predictable corporate filings; avoids ETF corporate earnings structural risk.
 - **Cons:** Narrow coverage (30 equities); lacks broad-market and sector ETF regime context; any single equity missing earnings or reference data degrades slot under current C1 code.
 - **Verdict:** Recommended **Latency-First Pacing Candidate** if minimizing intra-slot capture spread is the top priority; operational activation blocked pending Gary's C1 status decision.
 
 ### Candidate C: Dow 30 + Sector ETFs (45 symbols)
 - **Pros:** Balanced synthesis of 30 blue-chip equities and 15 macro/sector ETFs. Worst-case reference pacing floor of 17.95 minutes (below a hypothetical 20-minute reference-floor budget).
-- **Cons:** Slightly larger pacing floor than Dow 30 alone; 15 ETF earnings expected `UNAVAILABLE`, degrading earnings family to `PARTIAL` and slot to `DEGRADED` under current C1 code.
+- **Cons:** Slightly larger pacing floor than Dow 30 alone; structural compatibility risk for ETF earnings under current C1 code if Yahoo produces no usable earnings dates.
 - **Verdict:** Recommended **Coverage-First Pacing Candidate** for balanced market representation; operational activation blocked pending Gary's C1 status decision.
 
 ### Candidate D: S&P 100 (100 symbols)
 - **Pros:** Broader representation of top 100 U.S. large-cap equities.
-- **Cons:** Worst-case reference pacing floor is 40.13 minutes, creating substantial intra-slot observation spread across market open under free-tier pacing; 100 symbols substantially increases odds of $\ge 1$ provider omission degrading slot.
-- **Verdict:** **Deferred** from initial deployment due to pacing spread and operational degradation risk.
+- **Cons:** Worst-case reference pacing floor is 40.13 minutes, creating substantial intra-slot observation spread across market open under free-tier pacing; a 100-equity basket creates more opportunities for at least one requested observation to degrade the family under current all-known rules.
+- **Verdict:** **Deferred** from initial deployment due to pacing spread and operational degradation risk under current status rules.
 
 ### Candidate E: S&P 100 + Sector ETFs (115 symbols)
 - **Pros:** Comprehensive coverage of top large-caps plus full macro ETF regime suite.
-- **Cons:** Worst-case reference pacing floor is 46.18 minutes, resulting in an extended capture spread across market open under free-tier pacing; combines ETF earnings degradation with 100-equity omission risk.
-- **Verdict:** **Deferred** from initial deployment due to pacing spread and operational degradation risk.
+- **Cons:** Worst-case reference pacing floor is 46.18 minutes, resulting in an extended capture spread across market open under free-tier pacing; combines ETF earnings structural risk with 100-equity basket omission opportunities under current all-known rules.
+- **Verdict:** **Deferred** from initial deployment due to pacing spread and operational degradation risk under current status rules.
 
 ---
 
@@ -316,7 +317,7 @@ Under the merged C1 implementation (`tradex.pit.earnings`, `tradex.pit.reference
 **Pacing Rationale:**
 - Worst-case reference pacing floor is **11.90 minutes** (below a hypothetical 15-minute budget).
 - Restricts capture strictly to 30 well-behaved, highly liquid corporate equities.
-- Avoids the ETF earnings absence issue entirely.
+- Avoids the ETF earnings structural risk entirely.
 - Sacrifices macro/sector ETF regime context in exchange for tighter observation windows around the 09:00 morning slot.
 
 *Operational Status Caveat:* Activation is blocked until Gary resolves the C1 capture-status contract regarding single-equity `UNAVAILABLE` observation degradation.
@@ -368,7 +369,7 @@ The following decisions remain exclusively with Gary in strict sequence:
 
 ### Step 1: C1 Capture-Status Contract Disposition (Prerequisite)
 Gary must decide how TradeX should handle the C1 all-known capture-success criterion before any operational universe is activated:
-- [ ] **Option A (Accept Strict Semantics):** Proceed with current C1 code; accept that ETF earnings `UNAVAILABLE` and any single equity data absence will cause regular `DEGRADED` operational slot statuses.
+- [ ] **Option A (Accept Strict Semantics):** Proceed with current C1 code; accept that if Yahoo produces no earnings date for ETFs or any equity data is missing, slot operational status will be `DEGRADED`.
 - [ ] **Option B (Refine Status Contract):** Authorize a focused follow-up slice to refine status derivation (e.g., treat ETF earnings unavailability as a valid neutral observation, or permit an acceptable observation threshold for `SUCCEEDED`).
 - [ ] **Option C (Empirical Provider Study):** Authorize an empirical live-provider test on a minimal symbol set to measure actual Yahoo and Massive return distributions before deciding.
 

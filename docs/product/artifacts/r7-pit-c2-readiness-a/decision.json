@@ -76,7 +76,7 @@
         }
       },
       "current_c1_status_compatibility": "unresolved",
-      "status_compatibility_reason": "Contains 15 ETFs and 0 corporate equities. Under current C1 capture contracts, capture_earnings_snapshot requires all requested symbols to resolve to KNOWN for SUCCEEDED status. If Yahoo returns UNAVAILABLE for ETF corporate earnings, family status degrades to PARTIAL or FAILED, causing slot operational status to degrade to DEGRADED. Live provider behavior for ETFs has not been tested."
+      "status_compatibility_reason": "Contains 15 ETF symbols and 0 corporate equities, creating a structural compatibility risk because these instruments generally do not have operating-company earnings dates. READINESS-A performed no live Yahoo calls and actual Yahoo behavior for the frozen ETF symbols was not measured. Under the current C1 contract, if Yahoo produces no usable upcoming earnings date for one or more ETFs, C1 records those observations as UNAVAILABLE, preventing an all-known earnings SUCCEEDED result and causing the overall slot to be DEGRADED."
     },
     {
       "manifest_file": "candidate-dow30.json",
@@ -138,7 +138,7 @@
         }
       },
       "current_c1_status_compatibility": "unresolved",
-      "status_compatibility_reason": "Contains 30 equities. Under current C1 capture contracts, any single symbol returning UNAVAILABLE or ERROR for earnings or reference data degrades family status to PARTIAL, causing slot operational status to degrade to DEGRADED. Live provider reliability has not been observed in this study."
+      "status_compatibility_reason": "Contains 30 corporate equities. Under current C1 capture contracts, any single unavailable or error observation degrades the family to PARTIAL and causes the overall slot to be DEGRADED. Actual provider completeness has not been measured in this study."
     },
     {
       "manifest_file": "candidate-dow30-sector-etfs.json",
@@ -201,7 +201,7 @@
         }
       },
       "current_c1_status_compatibility": "unresolved",
-      "status_compatibility_reason": "Contains 15 ETFs alongside 30 equities. If Yahoo returns UNAVAILABLE for ETF corporate earnings, current C1 capture derives a PARTIAL earnings family and a DEGRADED operational slot. Any single equity returning UNAVAILABLE or ERROR also degrades the slot. Live provider behavior has not been tested."
+      "status_compatibility_reason": "Contains 15 ETF symbols alongside 30 corporate equities, creating an unresolved structural compatibility risk because ETFs generally do not have operating-company earnings dates. Actual Yahoo behavior for the frozen ETF symbols was not measured. If Yahoo produces no usable upcoming earnings date for one or more ETFs, C1 records those observations as UNAVAILABLE, preventing an all-known earnings SUCCEEDED result. For equities, any single unavailable or error observation also degrades the family; actual provider completeness is unmeasured."
     },
     {
       "manifest_file": "candidate-sp100.json",
@@ -263,7 +263,7 @@
         }
       },
       "current_c1_status_compatibility": "unresolved",
-      "status_compatibility_reason": "Contains 100 equities. Under current C1 capture contracts, any single symbol returning UNAVAILABLE or ERROR for earnings or reference data degrades family status to PARTIAL, causing slot operational status to degrade to DEGRADED. In a 100-symbol basket, provider omissions are likely without live observation and retry evidence."
+      "status_compatibility_reason": "Contains 100 corporate equities. A larger basket creates more opportunities for at least one requested observation to be UNAVAILABLE, AMBIGUOUS, or ERROR under the current all-known success contract. Any single unavailable or error observation degrades the family to PARTIAL and causes the overall slot to be DEGRADED. The actual provider incidence rate has not been measured in this study."
     },
     {
       "manifest_file": "candidate-sp100-sector-etfs.json",
@@ -326,7 +326,7 @@
         }
       },
       "current_c1_status_compatibility": "unresolved",
-      "status_compatibility_reason": "Contains 15 ETFs alongside 100 equities. If Yahoo returns UNAVAILABLE for ETF corporate earnings, current C1 capture derives a PARTIAL earnings family and a DEGRADED operational slot. Any single equity returning UNAVAILABLE or ERROR also degrades the slot. Live provider behavior has not been tested."
+      "status_compatibility_reason": "Contains 15 ETF symbols alongside 100 corporate equities. Creates a structural compatibility risk for ETFs because these instruments generally lack operating-company earnings dates (actual Yahoo behavior was not measured). If Yahoo produces no usable upcoming earnings date for one or more ETFs, C1 records UNAVAILABLE, preventing an all-known earnings SUCCEEDED result. Furthermore, a 100-equity basket creates more opportunities for provider omissions; actual provider completeness has not been measured in this study."
     }
   ],
   "sp500_reference": {
