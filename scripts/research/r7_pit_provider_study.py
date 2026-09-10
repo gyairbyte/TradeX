@@ -10,7 +10,7 @@ import logging
 import platform
 import sys
 import time
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import yfinance
@@ -123,7 +123,7 @@ def main() -> None:
         logger.error("Local system date (%s) != TradeX MARKET_TIMEZONE date (%s). Aborting.", now_local.date(), now_ny.date())
         sys.exit(1)
 
-    study_started_at_utc = datetime.now(UTC)
+    study_started_at_utc = datetime.now(timezone.utc)
     market_date = now_ny.date()
     
     logger.info("Loading manifests...")
@@ -140,11 +140,6 @@ def main() -> None:
     
     settings = load_runtime_settings()
     massive_api_key = settings.data.massive_api_key
-    if not massive_api_key:
-        logger.error("Massive credential is not configured. Aborting study.")
-        sys.exit(1)
-
-    massive_client = MassiveReferenceClient(settings=settings)
 
     results = {
         "artifact_schema_version": 1,
@@ -162,6 +157,18 @@ def main() -> None:
         "candidate_c_hash": manifest_c.universe_hash,
         "observations": []
     }
+
+    if not massive_api_key:
+        logger.error("Massive credential is not configured. Aborting study.")
+        results["study_disposition"] = "incomplete_environment_or_provider_block"
+        study_ended_at_utc = datetime.now(timezone.utc)
+        results["study_ended_at_utc"] = study_ended_at_utc.isoformat()
+        STUDY_ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+        with open(RESULTS_JSON, "w", encoding="utf-8") as f:
+            json.dump(results, f, indent=2)
+        sys.exit(1)
+
+    massive_client = MassiveReferenceClient(settings=settings)
 
     # Perform one primary prospective pass over Candidate C
     abort_massive = False
@@ -224,7 +231,7 @@ def main() -> None:
 
         results["observations"].append(obs)
 
-    study_ended_at_utc = datetime.now(UTC)
+    study_ended_at_utc = datetime.now(timezone.utc)
     results["study_ended_at_utc"] = study_ended_at_utc.isoformat()
 
     now_ny_end = datetime.now(MARKET_TIMEZONE)
@@ -233,6 +240,12 @@ def main() -> None:
         # We record it but it invalidates the run conceptually.
         results["market_date_rollover"] = True
 
+    if abort_massive:
+        results["study_disposition"] = "completed_provider_contract_review_required" # Or incomplete, but if it aborted massive it's an abort
+        results["study_disposition"] = "incomplete_environment_or_provider_block"
+    else:
+        results["study_disposition"] = "completed_evidence_sufficient_for_next_decision"
+        
     STUDY_ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     with open(RESULTS_JSON, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2)
