@@ -14,7 +14,7 @@
     "approved_by": "Gary Yang",
     "approved_on": "2026-09-09",
     "approval_scope": "architecture_direction_only",
-    "approval_source": "Gary approved continuing with the recommended Option 2 + Option 3 architecture direction in the TradeX ChatGPT workflow on 2026-09-09 following review and merge of PR #74, responding: 'continue, buld the prompt' (normalized to 'continue, build the prompt'). Architecture-direction approval only; does not authorize production implementation.",
+    "approval_source": "Gary explicitly approved the Option 2 + Option 3 architecture direction in the TradeX ChatGPT workflow on 2026-09-09: 'Yea, I approve option 2 and 3. If there are certain data we can't get, that shouldn't be a failure. We work with whatever data we have.' Architecture-direction approval only; 'work with whatever data we have' means missing observations do not automatically make capture execution an operational failure, but does not authorize fabricating/imputing missing facts, treating missing evidence as present, or relaxing future strategy-specific actionability gates; does not authorize production implementation.",
     "production_implementation_authorized": false
   },
   "non_authorizations": {

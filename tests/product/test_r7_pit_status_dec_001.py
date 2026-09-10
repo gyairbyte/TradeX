@@ -7,7 +7,7 @@ Verifies:
    - source_commit == "93d2174fed72f325e4ea87199c2aac9045998cbb"
    - selected_status_policy == "option_2_plus_3"
    - selected_status_policy_components == ["option_2", "option_3"]
-   - approval_record records Gary Yang, 2026-09-09, architecture_direction_only, verbatim source quote
+   - approval_record records Gary Yang, 2026-09-09, architecture_direction_only, explicit decision quote
    - production_status_semantics_change_authorized is False
    - schema_migration_authorized is False
    - provider_study_authorized is False
@@ -77,7 +77,9 @@ def test_decision_json_governance_invariants() -> None:
     assert approval["approved_on"] == "2026-09-09"
     assert approval["approval_scope"] == "architecture_direction_only"
     assert approval["production_implementation_authorized"] is False
-    assert "continue, buld the prompt" in approval["approval_source"]
+    assert "Yea, I approve option 2 and 3" in approval["approval_source"]
+    assert "We work with whatever data we have" in approval["approval_source"]
+    assert "continue, buld the prompt" not in approval["approval_source"]
 
     # Strict authorization booleans must all remain False
     assert packet["production_status_semantics_change_authorized"] is False
@@ -106,7 +108,9 @@ def test_approval_json_audit_record() -> None:
     assert approval["approved_on"] == "2026-09-09"
     assert approval["approval_scope"] == "architecture_direction_only"
     assert approval["production_implementation_authorized"] is False
-    assert "continue, buld the prompt" in approval["approval_source"]
+    assert "Yea, I approve option 2 and 3" in approval["approval_source"]
+    assert "We work with whatever data we have" in approval["approval_source"]
+    assert "continue, buld the prompt" not in approval["approval_source"]
 
     non_auth = record["non_authorizations"]
     assert non_auth["production_status_semantics_change_authorized"] is False
@@ -216,6 +220,9 @@ def test_decision_markdown_exists_and_contains_all_required_sections() -> None:
     assert "option_2_plus_3" in content
     assert "Schema v7 cannot reliably distinguish" in content
     assert "architecture direction only" in content.lower()
+    assert "Yea, I approve option 2 and 3" in content
+    assert "We work with whatever data we have" in content
+    assert "continue, buld the prompt" not in content
 
 
 def test_family_aggregation_three_way_contract() -> None:

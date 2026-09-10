@@ -714,9 +714,9 @@ Gary Yang formally approved the recommended architectural direction on **2026-09
 * **Approved By:** Gary Yang
 * **Approved On:** 2026-09-09
 * **Approval Scope:** Architecture direction only. Does **not** authorize production status-semantics implementation, Schema v8 migration, provider exception hardening, live provider testing, active-universe selection, C2 implementation, scheduler installation, or any trading behavior change.
-* **Approval Source:** TradeX ChatGPT workflow on 2026-09-09 following review and merge of PR #74 (`4680a13c140b8d93ff099b43cb818540f57a19c0`). ChatGPT presented Option 2 + Option 3 conceptually and distinguished that decision from production implementation authorization. Gary responded:
-  > `continue, buld the prompt`
-  *(Normalized to "continue, build the prompt" for explanatory prose).*
+* **Approval Source:** TradeX ChatGPT workflow on 2026-09-09 following review and merge of PR #74 (`4680a13c140b8d93ff099b43cb818540f57a19c0`). Gary Yang explicitly gave the architecture decision:
+  > `Yea, I approve option 2 and 3. If there are certain data we can't get, that shouldn't be a failure. We work with whatever data we have.`
+  *Interpretation Boundary:* "Work with whatever data we have" confirms Option 2's core principle that missing observations do not automatically make capture execution an operational failure; it does **not** authorize fabricating or imputing missing facts, treating missing mandatory evidence as present, or relaxing future strategy-specific actionability gates.
 * **Machine-Readable Audit Records:**
   * `docs/product/artifacts/r7-pit-status-dec-001/decision.json` (`selected_status_policy: "option_2_plus_3"`, `status: "gary_approved"`)
   * `docs/product/artifacts/r7-pit-status-dec-001/approval.json`
