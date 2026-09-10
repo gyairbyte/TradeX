@@ -1,9 +1,13 @@
 # R7-PIT-STATUS-DEC-001: Define PIT Observation Completeness and Operational Health Semantics
 
-> **Task ID:** `MVP-ARCH-001-R7-PIT-STATUS-DEC-001`
+> **Task ID:** `MVP-ARCH-001-R7-PIT-STATUS-DEC-001` (Approval Task: `MVP-ARCH-001-R7-PIT-STATUS-DEC-001-APPROVAL`)
 > **Classification:** Design-only / architecture decision
-> **Status:** `pending_gary_decision`
+> **Status:** `gary_approved`
+> **Approved Selection:** `option_2_plus_3` (Option 2 + Option 3)
+> **Approved By:** Gary Yang (2026-09-09)
+> **Approval Scope:** Architecture direction only (no production implementation authorized)
 > **Authoritative Base SHA:** `93d2174fed72f325e4ea87199c2aac9045998cbb`
+> **Prerequisite Decision Packet SHA:** `4680a13c140b8d93ff099b43cb818540f57a19c0` (PR #74 merge commit)
 > **Author:** Antigravity
 
 ---
@@ -700,26 +704,49 @@ If Gary authorizes a live-provider study prior to Phase 2/3 implementation, it s
 
 ---
 
-## 28. Gary Decision Required
+## 28. Gary Decision and Approval Record
 
-The following decision is presented to Gary Yang:
+Gary Yang formally approved the recommended architectural direction on **2026-09-09**:
 
-### Status Policy Selection
-- [ ] **Option 1 (Retain Strict Semantics):** Keep current C1 all-known rule; accept that operational slots degrade whenever any fact is missing or inapplicable.
-- [ ] **Option 2 + 3 (Adopt Phased Orthogonal Health & Applicability Model - Recommended):** Approve the conceptual separation of operational capture health from research completeness, with manifest-declared applicability and hardened provider error provenance.
-- [ ] **Option 5 (Require Empirical Study First):** Direct Antigravity to prepare and run a bounded live-provider empirical probe before deciding on the status architecture.
+> **Approved Policy:** `option_2_plus_3` — **Option 2 (Separate Operational Health From Evidence Completeness) + Option 3 (Applicability-Aware Semantics)**
+
+### Approval Record Details
+* **Approved By:** Gary Yang
+* **Approved On:** 2026-09-09
+* **Approval Scope:** Architecture direction only. Does **not** authorize production status-semantics implementation, Schema v8 migration, provider exception hardening, live provider testing, active-universe selection, C2 implementation, scheduler installation, or any trading behavior change.
+* **Approval Source:** TradeX ChatGPT workflow on 2026-09-09 following review and merge of PR #74 (`4680a13c140b8d93ff099b43cb818540f57a19c0`). Gary Yang explicitly gave the architecture decision:
+  > `Yea, I approve option 2 and 3. If there are certain data we can't get, that shouldn't be a failure. We work with whatever data we have.`
+  *Interpretation Boundary:* "Work with whatever data we have" confirms Option 2's core principle that missing observations do not automatically make capture execution an operational failure; it does **not** authorize fabricating or imputing missing facts, treating missing mandatory evidence as present, or relaxing future strategy-specific actionability gates.
+* **Machine-Readable Audit Records:**
+  * `docs/product/artifacts/r7-pit-status-dec-001/decision.json` (`selected_status_policy: "option_2_plus_3"`, `status: "gary_approved"`)
+  * `docs/product/artifacts/r7-pit-status-dec-001/approval.json`
+
+### Architecture Options Disposition
+* **Option 1 (Retain Strict All-Known Semantics):** **Not selected as future architecture.** Current production behavior nevertheless remains strict all-known Schema v7 until separately authorized implementation changes occur. (Do not confuse "not selected for future architecture" with "removed from current production.")
+* **Option 2 (Separate Operational Health From Evidence Completeness):** **Selected / Gary-approved as a conceptual architecture component.** Operational execution health (healthy / degraded / failed) and research evidence completeness (complete / partial / sparse) are separate, orthogonal dimensions.
+* **Option 3 (Applicability-Aware Semantics):** **Selected / Gary-approved as a conceptual architecture component.** Point-in-time observation semantics must distinguish applicable, unavailable, ambiguous, technically failed, and genuinely not-applicable observations. Applicability must be determined via a principled, point-in-time, versioned, auditable mechanism (manifest/instrument eligibility metadata), **not** hard-coded ticker lists.
+* **Option 4 (Threshold-Based Family Success):** **Rejected.** Percentage thresholds (e.g. 90%, 95%) are rejected.
+* **Option 5 (Empirical Provider Study First):** **Not selected as the architecture decision policy.** However, bounded live provider evidence remains required before implementation/mapping and operational activation, subject to separate Gary authorization.
+
+### Critical Boundary: Approved Future Architecture vs. Current Production Contract
+* **Current Production Behavior:** Schema remains v7; capture contract remains v1; strict all-known family success remains the active production behavior. Zero production code (`tradex/`) changes are introduced by this approval.
+* **Approved Future Architecture:** Option 2 + Option 3 conceptual separation and applicability-aware semantics are established as the target architectural direction.
+* **Historical Evidence Safeguard:** Historical Schema v7 `UNAVAILABLE` observations in `signals.db` cannot safely be reinterpreted retroactively as successful observations of structural absence or provider success.
+* **Next Prerequisites:** Production implementation requires separate future Gary authorizations for Phase 2 (provider exception hardening & explicit provenance taxonomy) and Phase 3 (bounded live-provider compatibility study) before Phase 4 (implementation & universe activation).
 
 ---
 
 ## 29. Non-Authorization Statement
 
-This document is strictly an architectural decision packet.
-* **`selected_status_policy` remains `null`.**
+This document records Gary Yang's architectural-direction approval.
+* **`selected_status_policy` is `option_2_plus_3` (architecture direction only).**
 * **NO production PIT behavior changes are authorized (`tradex/`).**
 * **NO database schema migration is authorized (Schema remains v7).**
-* **NO provider study is authorized or executed.**
-* **NO operational universe is selected (`selected_universe = null`).**
+* **NO provider study is authorized or executed (`provider_study_authorized = false`).**
+* **NO operational universe is selected (`selected_universe = null`, `active_universe_authorized = false`).**
 * **NO C2 scheduler installation is authorized (`scheduler_authorized = false`).**
+* **`production_status_semantics_change_authorized` remains `false`.**
+* **`c2_implementation_authorized` remains `false`.**
 * **`APPROVED_PRODUCTION_STRATEGIES` remains strictly `()`.**
 * **LONG-002C remains paused.**
 * **R8 remains unauthorized.**

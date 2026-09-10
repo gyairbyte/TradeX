@@ -1,6 +1,6 @@
 {
   "task_id": "MVP-ARCH-001-R7-PIT-STATUS-DEC-001",
-  "status": "pending_gary_decision",
+  "status": "gary_approved",
   "source_commit": "93d2174fed72f325e4ea87199c2aac9045998cbb",
   "current_contract": {
     "schema_version": 7,
@@ -44,29 +44,32 @@
     "option_1": {
       "name": "Retain Strict All-Known Semantics",
       "summary": "Every requested observation must be KNOWN for family SUCCEEDED; both families must be SUCCEEDED for slot HEALTHY.",
-      "disposition": "evaluated_not_recommended_for_operational_activation",
+      "disposition": "not_selected_for_future_architecture",
       "operational_health_truthfulness": "partially_supported",
       "research_completeness_fidelity": "supported",
       "masks_provider_failure": false,
-      "backward_compatibility": "supported"
+      "backward_compatibility": "supported",
+      "notes": "Not selected as the future architecture. Current production behavior nevertheless remains strict all-known Schema v7 until separately authorized implementation changes occur."
     },
     "option_2": {
       "name": "Separate Operational Health From Evidence Completeness",
       "summary": "Maintain two explicit, orthogonal dimensions: capture_execution_health (healthy/degraded/failed) vs evidence_completeness (complete/partial/sparse).",
-      "disposition": "recommended_direction_with_prerequisite_hardening",
+      "disposition": "selected_gary_approved_conceptual_component",
       "operational_health_truthfulness": "supported",
       "research_completeness_fidelity": "supported",
       "masks_provider_failure": false,
-      "backward_compatibility": "supported_prospectively"
+      "backward_compatibility": "supported_prospectively",
+      "notes": "Selected and Gary-approved as a conceptual architecture component on 2026-09-09. Does not authorize production implementation."
     },
     "option_3": {
       "name": "Applicability-Aware Semantics",
       "summary": "Distinguish known, not_applicable, unavailable, and error through principled point-in-time applicability mechanisms without hardcoded ticker lists.",
-      "disposition": "evaluated_viable_component_of_future_model",
+      "disposition": "selected_gary_approved_conceptual_component",
       "operational_health_truthfulness": "supported",
       "research_completeness_fidelity": "supported",
       "masks_provider_failure": false,
-      "backward_compatibility": "supported_prospectively"
+      "backward_compatibility": "supported_prospectively",
+      "notes": "Selected and Gary-approved as a conceptual architecture component on 2026-09-09. Requires deterministic and PIT-correct applicability mechanism without hardcoded ticker lists. Does not authorize production implementation."
     },
     "option_4": {
       "name": "Threshold-Based Family Success",
@@ -75,16 +78,18 @@
       "operational_health_truthfulness": "not_supported",
       "research_completeness_fidelity": "not_supported",
       "masks_provider_failure": true,
-      "backward_compatibility": "partially_supported"
+      "backward_compatibility": "partially_supported",
+      "notes": "Rejected. Percentage thresholds are not approved."
     },
     "option_5": {
       "name": "Empirical Provider Study First",
       "summary": "Require live provider observation evidence before finalizing status taxonomy, reason mapping, and operational activation.",
-      "disposition": "recommended_prior_to_implementation_not_required_for_architectural_decision",
+      "disposition": "not_selected_as_architecture_policy_prerequisite_to_implementation",
       "operational_health_truthfulness": "supported",
       "research_completeness_fidelity": "supported",
       "masks_provider_failure": false,
-      "backward_compatibility": "supported"
+      "backward_compatibility": "supported",
+      "notes": "Not selected as the architecture policy. However, bounded live provider evidence remains required before implementation/mapping and operational activation, subject to separate Gary authorization."
     }
   },
   "recommended_direction": {
@@ -111,7 +116,18 @@
       "notes": "Faces elevated structural compatibility risk for ETF earnings under current C1 semantics. Conditionally resolvable under the recommended architecture, but remains unresolved until the selected status policy, provenance requirements, and applicability/domain-absence rules are approved and implemented."
     }
   },
-  "selected_status_policy": null,
+  "selected_status_policy": "option_2_plus_3",
+  "selected_status_policy_components": [
+    "option_2",
+    "option_3"
+  ],
+  "approval_record": {
+    "approved_by": "Gary Yang",
+    "approved_on": "2026-09-09",
+    "approval_scope": "architecture_direction_only",
+    "approval_source": "Gary explicitly approved the Option 2 + Option 3 architecture direction in the TradeX ChatGPT workflow on 2026-09-09: 'Yea, I approve option 2 and 3. If there are certain data we can't get, that shouldn't be a failure. We work with whatever data we have.' Architecture-direction approval only; 'work with whatever data we have' means missing observations do not automatically make capture execution an operational failure, but does not authorize fabricating/imputing missing facts, treating missing evidence as present, or relaxing future strategy-specific actionability gates; does not authorize production implementation.",
+    "production_implementation_authorized": false
+  },
   "production_status_semantics_change_authorized": false,
   "schema_migration_authorized": false,
   "provider_study_authorized": false,
