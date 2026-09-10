@@ -897,4 +897,4 @@ The original engineering-foundation and UI-refactor backlog is substantially com
 6. **DAYTRADE-001** — Deferred until `LONG-002` is complete or Gary reprioritizes.
 
 **Recommended next pull request order:**
-1. **Unblock Provider Study or proceed with Option 2 + 3** — Depending on Gary's feedback, either re-run study with proper auth, or proceed to implementation. No production status semantics change or C2 deployment authorized.
+1. **Unblock Provider Study or proceed with Option 2 + 3** — No next implementation PR is currently authorized without separate Gary approval; depending on Gary's feedback, either re-run study with proper auth, or proceed to implementation. No production status semantics change or C2 deployment authorized.
