@@ -24,14 +24,26 @@ import pandas as pd
 import yfinance as yf
 
 from tradex.config import TradeXSettings, load_runtime_settings
-from tradex.data.fetcher import ProviderCapabilityError, ProviderDataUnavailableError
+from tradex.data.fetcher import (
+    ProviderCapabilityError,
+    ProviderDataUnavailableError,
+    ProviderError,
+)
 
 DEFAULT_CACHE_DB = Path("~/.tradex/earnings_cache.db")
 CACHE_TTL_HOURS = 24
 
 
+class EarningsProviderLookupError(ProviderError):
+    """Raised when an earnings provider lookup technically fails (transport, HTTP, unhandled runtime error)."""
+
+
+class EarningsProviderResponseError(EarningsProviderLookupError):
+    """Raised when an earnings provider returns a malformed or unexpected non-empty response."""
+
+
 class EarningsDataUnavailableError(ProviderDataUnavailableError):
-    """Raised when earnings data is unavailable, unparseable, or has no usable upcoming date."""
+    """Raised when earnings data is unavailable or has no usable upcoming date."""
 
 
 def _resolve_cache_db(settings: TradeXSettings | None = None) -> Path:
@@ -103,7 +115,7 @@ def _cache_get(
         if not is_fresh:
             return None, False
 
-        return datetime.strptime(next_str, "%Y-%m-%d").date(), True
+        return datetime.strptime(next_str, "%Y-%m-%d").date(), True  # noqa: DTZ007
     except (ValueError, TypeError):
         return None, False
 
@@ -136,47 +148,164 @@ def _cache_put(
 
 
 def _fetch_from_yahoo(ticker: str) -> date:
-    """
-    Pull the next upcoming earnings date from yfinance.
+    """Pull the next upcoming earnings date from yfinance.
 
-    Tries get_earnings_dates() first (returns past + future); falls back to
-    the older .calendar attribute. Raises EarningsDataUnavailableError if nothing
-    in the future is available or if provider lookups fail.
+    Tries get_earnings_dates(limit=12) first (returns past + future); falls back to
+    the older .calendar attribute.
+
+    Deterministic precedence:
+    1. Any lookup path produces a valid future date -> return that date (earlier
+       failures on another fallback path do not override a successful fact).
+    2. No valid date is found and at least one attempted path suffered a failure:
+       - If any failure is a malformed/response error -> raise EarningsProviderResponseError
+       - Otherwise -> raise EarningsProviderLookupError
+    3. Both paths execute cleanly without technical error but produce no usable
+       upcoming earnings date -> raise EarningsDataUnavailableError.
     """
     t = yf.Ticker(ticker)
-    today = date.today()
+    today = date.today()  # noqa: DTZ011
 
+    technical_errors: list[Exception] = []
+
+    # 1. Path 1: get_earnings_dates(limit=12)
     try:
         df = t.get_earnings_dates(limit=12)
-        if isinstance(df, pd.DataFrame) and not df.empty:
-            idx = pd.to_datetime(df.index, errors="coerce", utc=True).tz_convert(None)
-            future = [d.date() for d in idx if pd.notna(d) and d.date() >= today]
-            if future:
-                return min(future)
-    except Exception:  # noqa: BLE001
-        pass
+        if df is None:
+            # Clean empty response
+            pass
+        elif isinstance(df, pd.DataFrame):
+            if not df.empty:
+                idx = pd.to_datetime(df.index, errors="coerce", utc=True)
+                if idx.isna().all():
+                    raise EarningsProviderResponseError(
+                        f"Earnings provider response malformed for {ticker}"
+                    )
+                idx = idx.tz_convert(None)
+                future = [d.date() for d in idx if pd.notna(d) and d.date() >= today]
+                if future:
+                    return min(future)
+                # Valid non-empty DataFrame with only past dates -> clean absence of future dates
+        else:
+            raise EarningsProviderResponseError(
+                f"Earnings provider response malformed for {ticker}"
+            )
+    except EarningsProviderResponseError as exc:
+        technical_errors.append(exc)
+    except Exception as exc:  # noqa: BLE001
+        technical_errors.append(exc)
 
+    # 2. Path 2: t.calendar
     try:
         cal = t.calendar
-        if isinstance(cal, dict):
-            dates = cal.get("Earnings Date") or []
-            future = [
-                d
-                for d in dates
-                if isinstance(d, (date, datetime))
-                and (d.date() if isinstance(d, datetime) else d) >= today
-            ]
-            if future:
-                return future[0].date() if isinstance(future[0], datetime) else future[0]
-        elif isinstance(cal, pd.DataFrame) and not cal.empty:
-            val = cal.iloc[0, 0]
-            if isinstance(val, (pd.Timestamp, datetime)) and val.date() >= today:
-                return val.date()
-    except Exception:  # noqa: BLE001
-        pass
+        if cal is None:
+            # Clean empty response
+            pass
+        elif isinstance(cal, dict):
+            if not cal:
+                # Clean empty response
+                pass
+            elif "Earnings Date" in cal:
+                raw_dates = cal.get("Earnings Date")
+                if raw_dates is None:
+                    pass
+                elif isinstance(raw_dates, (list, tuple, pd.Series, pd.Index)):
+                    future = []
+                    has_valid_dates = False
+                    for d in raw_dates:
+                        if isinstance(d, datetime):
+                            has_valid_dates = True
+                            if d.date() >= today:
+                                future.append(d.date())
+                        elif isinstance(d, date):
+                            has_valid_dates = True
+                            if d >= today:
+                                future.append(d)
+                        elif isinstance(d, pd.Timestamp):
+                            has_valid_dates = True
+                            if d.date() >= today:
+                                future.append(d.date())
+                    if len(raw_dates) > 0 and not has_valid_dates:
+                        raise EarningsProviderResponseError(
+                            f"Earnings provider response malformed for {ticker}"
+                        )
+                    if future:
+                        return min(future)
+                else:
+                    raise EarningsProviderResponseError(
+                        f"Earnings provider response malformed for {ticker}"
+                    )
+            else:
+                # Non-empty dict missing "Earnings Date" -> unexpected response structure
+                raise EarningsProviderResponseError(
+                    f"Earnings provider response malformed for {ticker}"
+                )
+        elif isinstance(cal, pd.DataFrame):
+            if cal.empty:
+                # Clean empty response
+                pass
+            else:
+                val = None
+                if "Earnings Date" in cal.index:
+                    row_data = cal.loc["Earnings Date"]
+                    if isinstance(row_data, pd.Series):
+                        val = row_data.iloc[0]
+                    elif isinstance(row_data, pd.DataFrame):
+                        val = row_data.iloc[0, 0]
+                    else:
+                        val = row_data
+                elif "Earnings Date" in cal.columns:
+                    col_data = cal["Earnings Date"]
+                    if isinstance(col_data, pd.Series):
+                        val = col_data.iloc[0]
+                    else:
+                        val = col_data
+                else:
+                    # Unexpected non-empty DataFrame shape missing "Earnings Date"
+                    raise EarningsProviderResponseError(
+                        f"Earnings provider response malformed for {ticker}"
+                    )
 
-    # Neither method yielded a valid upcoming date.
-    # Ensure safe error message containing no secrets, tokens, credentials, or paths.
+                if isinstance(val, (list, tuple, pd.Series)):
+                    val = val[0] if len(val) > 0 else None
+
+                if isinstance(val, (pd.Timestamp, datetime)):
+                    if val.date() >= today:
+                        return val.date()
+                elif isinstance(val, date):
+                    if val >= today:
+                        return val
+                elif val is not None and not pd.isna(val):
+                    parsed = pd.to_datetime(val, errors="coerce")
+                    if pd.notna(parsed):
+                        if parsed.date() >= today:
+                            return parsed.date()
+                    else:
+                        raise EarningsProviderResponseError(
+                            f"Earnings provider response malformed for {ticker}"
+                        )
+        else:
+            raise EarningsProviderResponseError(
+                f"Earnings provider response malformed for {ticker}"
+            )
+    except EarningsProviderResponseError as exc:
+        technical_errors.append(exc)
+    except Exception as exc:  # noqa: BLE001
+        technical_errors.append(exc)
+
+    # 3. Final outcome evaluation
+    if technical_errors:
+        response_errors = [e for e in technical_errors if isinstance(e, EarningsProviderResponseError)]
+        if response_errors:
+            cause = response_errors[-1]
+            raise EarningsProviderResponseError(
+                f"Earnings provider response malformed for {ticker}"
+            ) from cause
+        cause = technical_errors[-1]
+        raise EarningsProviderLookupError(
+            f"Earnings provider lookup failed for {ticker}"
+        ) from cause
+
+    # Both methods cleanly executed but produced no usable upcoming date
     raise EarningsDataUnavailableError(f"Upcoming earnings date unavailable for {ticker}")
 
 
@@ -226,7 +355,7 @@ def days_until_earnings(
     next_date = get_next_earnings(
         ticker, force_refresh=force_refresh, source=source, settings=settings
     )
-    return (next_date - date.today()).days
+    return (next_date - date.today()).days  # noqa: DTZ011
 
 
 def is_within_earnings_window(
@@ -263,18 +392,30 @@ def annotate(
         error_message: str | None = None
         try:
             nxt = get_next_earnings(t, source=source, settings=settings)
-            days = (nxt - date.today()).days
-        except (ProviderDataUnavailableError, ProviderCapabilityError) as exc:
+            days = (nxt - date.today()).days  # noqa: DTZ011
+        except ProviderCapabilityError as exc:
             nxt = None
             days = None
             status = "unavailable"
             error_category = type(exc).__name__
-            error_message = str(exc)
+            error_message = f"Earnings source not supported for {t}"
+        except ProviderDataUnavailableError as exc:
+            nxt = None
+            days = None
+            status = "unavailable"
+            error_category = type(exc).__name__
+            error_message = f"Upcoming earnings date unavailable for {t}"
+        except EarningsProviderLookupError as exc:
+            nxt = None
+            days = None
+            status = "unavailable"
+            error_category = type(exc).__name__
+            error_message = f"Earnings provider lookup failed for {t}"
         except Exception as exc:  # noqa: BLE001
             nxt = None
             days = None
             status = "unavailable"
-            error_category = "EarningsDataUnavailableError"
+            error_category = type(exc).__name__
             error_message = f"Earnings lookup failed for {t}"
 
         rows.append(
