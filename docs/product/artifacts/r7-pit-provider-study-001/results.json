@@ -1,0 +1,20 @@
+{
+  "artifact_schema_version": 1,
+  "task_id": "MVP-ARCH-001-R7-PIT-PROVIDER-STUDY-001",
+  "protocol_commit_sha": "1c2d77e4bd49cf169904e730446c88113a66e4b4",
+  "starting_main_sha": "d86f0b6322e13e6801e06fd5b8eda6cf57a1faca",
+  "study_started_at_utc": "2026-09-10T18:14:13.809091+00:00",
+  "study_ended_at_utc": "2026-09-10T18:14:13.859763+00:00",
+  "market_date": "2026-09-10",
+  "timezone": "America/New_York",
+  "python_version": "3.11.15",
+  "yfinance_version": "1.7.0",
+  "provider_adapter_names": [
+    "tradex.earnings.calendar._fetch_from_yahoo",
+    "tradex.pit.massive_reference.MassiveReferenceClient"
+  ],
+  "candidate_b_hash": "173411d5854450294821e4dedbe5147278ccf248d8a21fc1973d81a41b9465b4",
+  "candidate_c_hash": "83d6e6e66991743b3a6301a674adbdf4425e2dc524ed027c7ee4d6097c371f29",
+  "observations": [],
+  "study_disposition": "incomplete_environment_or_provider_block"
+}

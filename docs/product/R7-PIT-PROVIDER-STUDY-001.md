@@ -1,16 +1,68 @@
 # R7 PIT Live Provider Compatibility Study (MVP-ARCH-001-R7-PIT-PROVIDER-STUDY-001)
 
-## Overview
-This document records the empirical measurement of how the current production provider adapters behave on the frozen Candidate B / Candidate C symbol set after HARDEN-001.
+## Study Disposition
+**`incomplete_environment_or_provider_block`**
 
-This study does **not** decide which universe to activate and does **not** change production semantics.
+The study could not validly complete because of a missing Massive credential. No live provider calls were performed to protect execution integrity.
 
-* **Task ID:** MVP-ARCH-001-R7-PIT-PROVIDER-STUDY-001
-* **Study Execution Status:** Scheduled
-* **Authorization:** Bounded study authorized by Gary on 2026-09-10.
+## Study Scope & Boundaries
+- **Task ID:** `MVP-ARCH-001-R7-PIT-PROVIDER-STUDY-001`
+- **Protocol Commit SHA:** `1c2d77e4bd49cf169904e730446c88113a66e4b4`
+- **Starting Main SHA:** `d86f0b6322e13e6801e06fd5b8eda6cf57a1faca`
+- **Market Date:** `2026-09-10` (`America/New_York`)
+- **Study Start UTC:** `2026-09-10T18:14:13.809091+00:00`
+- **Study End UTC:** `2026-09-10T18:14:13.859763+00:00`
+- **Python Version:** `3.11.15`
+- **yfinance Version:** `1.7.0`
+- **Candidate B Hash:** `173411d5854450294821e4dedbe5147278ccf248d8a21fc1973d81a41b9465b4`
+- **Candidate C Hash:** `83d6e6e66991743b3a6301a674adbdf4425e2dc524ed027c7ee4d6097c371f29`
 
-## Protocol
-The machine-readable protocol definition is located at `artifacts/r7-pit-provider-study-001/study_spec.json`.
+> This is one point-in-time provider compatibility observation. It does not establish long-term availability, provider reliability, instrument applicability, or a durable trading edge.
 
-## Live Execution Results
-*Pending execution.*
+## Results Summary
+
+Due to the missing Massive credential, 0 unique symbols were queried.
+
+### Candidate B (30 Equities)
+- **Yahoo:**
+  - `KNOWN`: 0 / 0%
+  - Clean no-usable-date: 0 / 0%
+  - Technical-error: 0 / 0%
+  - Response-error: 0 / 0%
+- **Massive:**
+  - `KNOWN`: 0
+  - `UNAVAILABLE`: 0
+  - `AMBIGUOUS`: 0
+  - `ERROR`: 0
+
+### ETF Subset (15 Symbols)
+- **Yahoo:**
+  - `KNOWN`: 0
+  - Clean no-usable-date: 0
+  - Technical-error: 0
+  - Response-error: 0
+- **Massive:**
+  - `KNOWN`: 0
+  - `UNAVAILABLE`: 0
+  - `AMBIGUOUS`: 0
+  - `ERROR`: 0
+
+### Candidate C (45 Symbols)
+- **Yahoo:**
+  - `KNOWN`: 0 / 0%
+  - Clean no-usable-date: 0 / 0%
+  - Technical-error: 0 / 0%
+  - Response-error: 0 / 0%
+- **Massive:**
+  - `KNOWN`: 0
+  - `UNAVAILABLE`: 0
+  - `AMBIGUOUS`: 0
+  - `ERROR`: 0
+
+- **Missing-field frequencies:** None
+- **Latency Summary:** N/A (study aborted before network calls).
+- **Technical/Response errors:** None observed.
+- **Abort/Rate-Limit/Auth/Entitlement events:** Study blocked due to missing Massive credential prior to execution.
+
+## Conclusion
+The study disposition is `incomplete_environment_or_provider_block`. The missing Massive credential prevented the collection of provider outcomes. No Candidate B or C universe selection is performed, and no production status semantics changed. Schema remains v7 / contract v1. C2/scheduler remains unauthorized. `APPROVED_PRODUCTION_STRATEGIES == ()`.

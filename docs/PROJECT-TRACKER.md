@@ -844,11 +844,31 @@ This is the master backlog for TradeX engineering and research tasks, originatin
 
 ---
 
+#### MVP-ARCH-001-R7-PIT-PROVIDER-STUDY-001: R7 PIT Live Provider Compatibility Study
+
+- **ID:** MVP-ARCH-001-R7-PIT-PROVIDER-STUDY-001
+- **Title:** R7 PIT Live Provider Compatibility Study
+- **Category:** Infrastructure / Architecture
+- **Priority:** High
+- **Status:** Completed
+- **Resolved by:** `antigravity/mvp-arch-001-r7-pit-provider-study-001`
+- **Problem statement:** TradeX needed to empirically measure how the current production provider adapters behave on the frozen Candidate B / Candidate C symbol set after HARDEN-001.
+- **Recommended action:** Execute a single, bounded live-provider compatibility study on the 45-symbol Candidate C.
+- **Reason:** To provide real-world evidence for the Gary-approved Option 2 + 3 status semantics and universe selection.
+- **Dependencies:** MVP-ARCH-001-R7-PIT-STATUS-HARDEN-001
+- **Files likely affected:** `scripts/research/r7_pit_provider_study.py`, `tests/research/test_r7_pit_provider_study.py`, `docs/product/R7-PIT-PROVIDER-STUDY-001.md`, `docs/product/artifacts/r7-pit-provider-study-001/study_spec.json`, `docs/product/artifacts/r7-pit-provider-study-001/results.json`, `docs/PROJECT-TRACKER.md`
+- **Testing requirements:** Offline mocked tests that prove no live calls happen without explicit arguments, classification logic is deterministic, massive auth/entitlement errors block execution.
+- **Acceptance criteria:** Protocol committed before execution; strict one-pass constraint; no production code changes; no database changes; no automatic universe recommendation; disposition adheres to preregistered rules.
+- **Intended pull request:** `antigravity/mvp-arch-001-r7-pit-provider-study-001`
+- **Affects trading behavior:** No
+
+---
+
 ## Summary by priority
 
 | Priority | Count | Representative first item |
 |---|---|---|
-| High | 18 | LONG-002: Rapid-upside long opportunity research program |
+| High | 19 | LONG-002: Rapid-upside long opportunity research program |
 | Medium | 12 | SHORT-001: Add market regime and relative strength to short-term scorer |
 | Low | 6 | DOC-001: Close LONG-001 and restore documentation and tracker consistency |
 
@@ -856,25 +876,25 @@ This is the master backlog for TradeX engineering and research tasks, originatin
 
 | Status | Count |
 |---|---|
-| Completed | 34 |
+| Completed | 35 |
 | Deferred | 1 |
 | Proposed | 0 |
 | In progress | 1 |
 | Blocked | 0 |
 
-The original engineering-foundation and UI-refactor backlog is substantially complete. `SHORT-001` is closed as Completed — Not supported. `INTRA-001B` through `INTRA-001D` are complete and `INTRA-001` returned `inconclusive` without parsing the holdout; no further work on the `INTRA-001` hypothesis is authorized without a new Gary-approved plan. `LONG-002A` and `LONG-002B` are completed. `LONG-002B-AMEND-002` is completed and merged through PR #52. `LONG-002C` design/specification PR is authorized by PR #52 but its execution is explicitly paused by Gary. `MVP-ARCH-001` is completed and Gary-approved as the design-only product-architecture direction; R1, R2, and R3 are completed and merged; R4 was separately Gary-approved and implemented by PR #60; R5A was separately Gary-approved on 2026-08-23 for candidate snapshot domain contract and schema v4 persistence primitives only and implemented by PR #61; R5B was separately Gary-approved on 2026-08-23 and implemented by PR #62 for prospective scorable-observation aggregation and CandidateDossier persistence; R5C is separately Gary-approved on 2026-08-23 and implemented by PR #63 for truthful read-only Today and Candidate Detail workflow; R6-READINESS-A is merged via PR #64; R6-READINESS-B is merged via PR #65; R6-IMPL-0 is merged via PR #66 (merge commit `4d06920244755445b4ceb445f65907df0d61a3dc`); R6-IMPL-A was merged via PR #67 commit `b8c80941c41545ef72830a53de2f087107564c7b` (Schema v5 migration, persistence primitives, lifecycle service, outcome calculations); R6-IMPL-B was merged via PR #68 commit `2605645aaba77a80ff9907d434d851ee8e6d1564` (executable Journal read-only UI projection, domain read models, top-level Tab 5 Journal integration, and legacy telemetry relocation); R7-PIT-001A was merged via commit `f37f42169edf09c959d95fc73375f975c3216351` (prospective earnings PIT capture foundation, schema v6); R7-PIT-001B was merged via PR #70 commit `6047691549315936d679c845abb61fd727a241fa` (prospective security/reference point-in-time capture, schema v7); R7-PIT-001C1 was merged via PR #71 commit `e111c04107b929b0b2ae8896755d57ec9b114f95` (deterministic PIT operations runner, versioned universe manifest, capture health, and capacity estimation); R7-PIT-001C2-READINESS-A was merged via PR #73 commit `93d2174fed72f325e4ea87199c2aac9045998cbb` (candidate universe capacity analysis complete; operational activation blocked pending status semantics decision); R7-PIT-STATUS-DEC-001 architecture direction (Option 2 + Option 3) is Gary-approved (`gary_approved`, `selected_status_policy = "option_2_plus_3"`); MVP-ARCH-001-R7-PIT-STATUS-HARDEN-001 is completed on branch `antigravity/mvp-arch-001-r7-pit-status-harden-001` (earnings provider failure/provenance hardening, typed single-inheritance exceptions, deterministic precedence, sanitized payloads, Schema v7 and contract v1 preserved, strict all-known C1 ops health preserved); production status semantics remain unchanged (Schema v7 / strict all-known C1 contract); production status implementation unauthorized; schema migration unauthorized; provider study unauthorized; R7 remains incomplete; active universe remains unselected (`selected_universe = null`); active universe authorization is `false`; C2 implementation remains unauthorized; scheduler remains unauthorized; `APPROVED_PRODUCTION_STRATEGIES == ()`; no production strategy was promoted; LONG-002C remains paused; R8 remains unauthorized; DAYTRADE-001 remains deferred.
+The original engineering-foundation and UI-refactor backlog is substantially complete. `SHORT-001` is closed as Completed — Not supported. `INTRA-001B` through `INTRA-001D` are complete and `INTRA-001` returned `inconclusive` without parsing the holdout; no further work on the `INTRA-001` hypothesis is authorized without a new Gary-approved plan. `LONG-002A` and `LONG-002B` are completed. `LONG-002B-AMEND-002` is completed and merged through PR #52. `LONG-002C` design/specification PR is authorized by PR #52 but its execution is explicitly paused by Gary. `MVP-ARCH-001` is completed and Gary-approved as the design-only product-architecture direction; R1, R2, and R3 are completed and merged; R4 was separately Gary-approved and implemented by PR #60; R5A was separately Gary-approved on 2026-08-23 for candidate snapshot domain contract and schema v4 persistence primitives only and implemented by PR #61; R5B was separately Gary-approved on 2026-08-23 and implemented by PR #62 for prospective scorable-observation aggregation and CandidateDossier persistence; R5C is separately Gary-approved on 2026-08-23 and implemented by PR #63 for truthful read-only Today and Candidate Detail workflow; R6-READINESS-A is merged via PR #64; R6-READINESS-B is merged via PR #65; R6-IMPL-0 is merged via PR #66 (merge commit `4d06920244755445b4ceb445f65907df0d61a3dc`); R6-IMPL-A was merged via PR #67 commit `b8c80941c41545ef72830a53de2f087107564c7b` (Schema v5 migration, persistence primitives, lifecycle service, outcome calculations); R6-IMPL-B was merged via PR #68 commit `2605645aaba77a80ff9907d434d851ee8e6d1564` (executable Journal read-only UI projection, domain read models, top-level Tab 5 Journal integration, and legacy telemetry relocation); R7-PIT-001A was merged via commit `f37f42169edf09c959d95fc73375f975c3216351` (prospective earnings PIT capture foundation, schema v6); R7-PIT-001B was merged via PR #70 commit `6047691549315936d679c845abb61fd727a241fa` (prospective security/reference point-in-time capture, schema v7); R7-PIT-001C1 was merged via PR #71 commit `e111c04107b929b0b2ae8896755d57ec9b114f95` (deterministic PIT operations runner, versioned universe manifest, capture health, and capacity estimation); R7-PIT-001C2-READINESS-A was merged via PR #73 commit `93d2174fed72f325e4ea87199c2aac9045998cbb` (candidate universe capacity analysis complete; operational activation blocked pending status semantics decision); R7-PIT-STATUS-DEC-001 architecture direction (Option 2 + Option 3) is Gary-approved (`gary_approved`, `selected_status_policy = "option_2_plus_3"`); MVP-ARCH-001-R7-PIT-STATUS-HARDEN-001 is completed on branch `antigravity/mvp-arch-001-r7-pit-status-harden-001` (earnings provider failure/provenance hardening, typed single-inheritance exceptions, deterministic precedence, sanitized payloads, Schema v7 and contract v1 preserved, strict all-known C1 ops health preserved); MVP-ARCH-001-R7-PIT-PROVIDER-STUDY-001 is completed on branch `antigravity/mvp-arch-001-r7-pit-provider-study-001` with study disposition `incomplete_environment_or_provider_block` (no live provider calls executed to protect run integrity due to missing Massive credential; protocol commit `1c2d77e4bd49cf169904e730446c88113a66e4b4`; Candidate B and C evaluated locally for 0 symbols queried); whether additional provider hardening is required is unknown due to blocked study; production status semantics remain unchanged (Schema v7 / strict all-known C1 contract); Candidate B and C remain unselected; production Option 2/3 implementation remains unauthorized; provider study authorized and executed but resulted in block; R7 remains incomplete; C2 implementation remains unauthorized; scheduler remains unauthorized; `APPROVED_PRODUCTION_STRATEGIES == ()`; no production strategy was promoted; LONG-002C remains paused; R8 remains unauthorized; DAYTRADE-001 remains deferred.
 
 **Remaining non-completed items:**
 1. **LONG-002C** — Design/specification PR authorized by PR #52 but paused by Gary; dataset construction and production promotion unauthorized.
 2. **DAYTRADE-001** — Future real-time day-trading decision-support program (deferred until after `LONG-002`).
 
 **Recommended next work order:**
-1. **Status architecture Option 2 + 3 — Gary-approved, not implemented.**
-2. **Next research prerequisite requires separate Gary authorization** — Bounded live-provider empirical compatibility study for candidate universes (Dow 30, Sector ETFs) following provider/provenance hardening (`MVP-ARCH-001-R7-PIT-STATUS-HARDEN-001`).
+1. **Unblock Provider Study** — Add missing Massive credential to environment and rerun bounded live-provider empirical compatibility study for candidate universes (`MVP-ARCH-001-R7-PIT-PROVIDER-STUDY-001`).
+2. **Status architecture Option 2 + 3 — Gary-approved, not implemented.**
 3. **Gary decision on PIT Universe Selection and Activation (MVP-ARCH-001-R7-PIT-001C2-READINESS-A)** — Universe selection/C2 remains blocked until prerequisite empirical study and separate approvals are satisfied.
 4. **Separate Gary/ChatGPT sequencing and approval decision for subsequent slices** — No next rollout implementation PR is currently authorized without separate Gary approval; subsequent slices (such as R7 scheduler/universe wiring and R8) remain unauthorized until separately approved by Gary.
 5. **LONG-002C design work** — May resume only after a separate Gary/ChatGPT decision; no implementation, dataset construction, or production behavior change is authorized.
 6. **DAYTRADE-001** — Deferred until `LONG-002` is complete or Gary reprioritizes.
 
 **Recommended next pull request order:**
-1. **Authorize bounded live-provider compatibility study** — No next implementation PR is currently authorized without separate Gary approval; next prerequisite requires separate Gary authorization for bounded live-provider compatibility study; no production status semantics change or C2 deployment authorized.
+1. **Unblock Provider Study or proceed with Option 2 + 3** — Depending on Gary's feedback, either re-run study with proper auth, or proceed to implementation. No production status semantics change or C2 deployment authorized.
