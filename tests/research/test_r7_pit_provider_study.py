@@ -1,8 +1,7 @@
 """
 Tests for r7_pit_provider_study.py
 """
-import subprocess
-from datetime import date
+from datetime import UTC, date
 from pathlib import Path
 from unittest import mock
 
@@ -166,13 +165,14 @@ def test_abort_on_auth_entitlement_rate_limit(monkeypatch, tmp_path):
         name = "ERROR"
 
     class MockRes:
-        observation_status = MockStatus()
-        error_category = "MassiveAuthError"
-        error_message = ""
-        provider_type_code = ""
-        provider_active = True
-        missing_fields = []
-        request_ids = []
+        def __init__(self):
+            self.observation_status = MockStatus()
+            self.error_category = "MassiveAuthError"
+            self.error_message = ""
+            self.provider_type_code = ""
+            self.provider_active = True
+            self.missing_fields = []
+            self.request_ids = []
 
     mock_massive = mock.Mock()
     mock_massive.fetch_ticker_reference.return_value = MockRes()
@@ -209,10 +209,8 @@ def test_result_ordering_deterministic():
     """16. result ordering is deterministic"""
     import sys
     sys.path.insert(0, str(REPO_ROOT))
-    from scripts.research import r7_pit_provider_study
     
-    c_manifest = load_universe_manifest(CANDIDATE_C_JSON)
-    c_symbols = c_manifest.symbols
+    load_universe_manifest(CANDIDATE_C_JSON)
     
 def test_market_date_rollover_and_dispositions(monkeypatch, tmp_path):
     """Test market-date rollover and dispositions."""
@@ -226,13 +224,14 @@ def test_market_date_rollover_and_dispositions(monkeypatch, tmp_path):
         name = "KNOWN"
 
     class MockRes:
-        observation_status = MockStatus()
-        error_category = None
-        error_message = ""
-        provider_type_code = ""
-        provider_active = True
-        missing_fields = []
-        request_ids = []
+        def __init__(self):
+            self.observation_status = MockStatus()
+            self.error_category = None
+            self.error_message = ""
+            self.provider_type_code = ""
+            self.provider_active = True
+            self.missing_fields = []
+            self.request_ids = []
 
     mock_massive = mock.Mock()
     mock_massive.fetch_ticker_reference.return_value = MockRes()
@@ -261,15 +260,15 @@ def test_market_date_rollover_and_dispositions(monkeypatch, tmp_path):
         assert not data.get("market_date_rollover")
 
     # 2. Date rollover -> incomplete_environment_or_provider_block
-    from datetime import datetime, timezone, timedelta
-    mock_datetime = mock.Mock()
+    from datetime import datetime, timedelta
+    mock.Mock()
     
     # Return local date normally, but ny_date rolls over at the end
     original_datetime = datetime
     class RolloverDatetime:
         @classmethod
         def now(cls, tz=None):
-            if tz is not None and tz != timezone.utc: # MARKET_TIMEZONE
+            if tz is not None and tz != UTC: # MARKET_TIMEZONE
                 import inspect
                 caller = inspect.currentframe().f_back.f_code.co_name
                 if caller == "main": # The final check
@@ -302,7 +301,6 @@ def test_secret_exclusion():
     from scripts.research import r7_pit_provider_study
     assert "massive_api_key" not in r7_pit_provider_study.RESULTS_JSON.name
     # The spec specifically verifies we don't save settings to results
-    pass
 
 def test_candidate_b_derived_from_c():
     """Ensure Candidate B is derived from C and not queried separately."""
