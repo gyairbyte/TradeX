@@ -5,8 +5,12 @@ import hashlib
 import sqlite3
 from datetime import UTC, date, datetime
 
-from tradex.data.fetcher import ProviderDataUnavailableError
-from tradex.earnings.calendar import EarningsDataUnavailableError
+from tradex.data.fetcher import ProviderCapabilityError, ProviderDataUnavailableError
+from tradex.earnings.calendar import (
+    EarningsDataUnavailableError,
+    EarningsProviderLookupError,
+    EarningsProviderResponseError,
+)
 from tradex.market.hours import MARKET_TIMEZONE
 from tradex.pit.earnings import capture_earnings_snapshot
 from tradex.pit.models import CaptureRunStatus, CaptureSlot, ObservationStatus
@@ -317,3 +321,143 @@ def test_rejected_validation_paths_do_not_create_database(tmp_path) -> None:
             now_fn=lambda: clock_before,
         )
     assert not db_before.exists()
+
+
+def test_earnings_capture_typed_technical_lookup_and_response_errors(tmp_path) -> None:
+    """Prove typed technical errors map to ObservationStatus.ERROR with clean categories."""
+    db_path = tmp_path / "typed_errors.db"
+    store.init(db_path)
+    clock = datetime(2026, 8, 30, 21, 0, 0, tzinfo=MARKET_TIMEZONE).astimezone(UTC)
+
+    def fake_lookup(symbol: str, **kwargs) -> date:
+        if symbol == "AAPL":
+            return date(2026, 9, 15)
+        if symbol == "CLEAN_UNAVAIL":
+            raise EarningsDataUnavailableError("Upcoming earnings date unavailable for CLEAN_UNAVAIL")
+        if symbol == "LOOKUP_FAIL":
+            raise EarningsProviderLookupError("Earnings provider lookup failed for LOOKUP_FAIL")
+        if symbol == "RESP_FAIL":
+            raise EarningsProviderResponseError("Earnings provider response malformed for RESP_FAIL")
+        raise AssertionError(f"Unexpected symbol: {symbol}")
+
+    result = capture_earnings_snapshot(
+        symbols=["AAPL", "CLEAN_UNAVAIL", "LOOKUP_FAIL", "RESP_FAIL"],
+        slot=CaptureSlot.EVENING,
+        db_path=db_path,
+        now_fn=lambda: clock,
+        earnings_lookup=fake_lookup,
+    )
+
+    run = result.run
+    assert run.status == CaptureRunStatus.PARTIAL
+    assert run.requested_n == 4
+    assert run.known_n == 1
+    assert run.unavailable_n == 1
+    assert run.error_n == 2
+
+    snaps = {s.symbol: s for s in result.snapshots}
+
+    # AAPL -> KNOWN
+    assert snaps["AAPL"].observation_status == ObservationStatus.KNOWN
+    assert snaps["AAPL"].next_earnings_date == date(2026, 9, 15)
+    assert snaps["AAPL"].error_category is None
+
+    # CLEAN_UNAVAIL -> UNAVAILABLE
+    assert snaps["CLEAN_UNAVAIL"].observation_status == ObservationStatus.UNAVAILABLE
+    assert snaps["CLEAN_UNAVAIL"].error_category == "EarningsDataUnavailableError"
+    assert snaps["CLEAN_UNAVAIL"].error_message == "Upcoming earnings date unavailable for CLEAN_UNAVAIL"
+
+    # LOOKUP_FAIL -> ERROR
+    assert snaps["LOOKUP_FAIL"].observation_status == ObservationStatus.ERROR
+    assert snaps["LOOKUP_FAIL"].error_category == "EarningsProviderLookupError"
+    assert snaps["LOOKUP_FAIL"].error_message == "Earnings provider lookup failed for LOOKUP_FAIL"
+
+    # RESP_FAIL -> ERROR
+    assert snaps["RESP_FAIL"].observation_status == ObservationStatus.ERROR
+    assert snaps["RESP_FAIL"].error_category == "EarningsProviderResponseError"
+    assert snaps["RESP_FAIL"].error_message == "Earnings provider lookup failed for RESP_FAIL"
+
+    # Verify database persistence matches schema v7
+    with sqlite3.connect(db_path) as con:
+        con.row_factory = sqlite3.Row
+        rows = con.execute("SELECT * FROM pit_earnings_snapshots ORDER BY symbol").fetchall()
+        rows_by_sym = {r["symbol"]: r for r in rows}
+
+        lookup_row = rows_by_sym["LOOKUP_FAIL"]
+        assert lookup_row["observation_status"] == "error"
+        assert lookup_row["error_category"] == "EarningsProviderLookupError"
+        assert lookup_row["error_message"] == "Earnings provider lookup failed for LOOKUP_FAIL"
+        assert '{"error_category":"EarningsProviderLookupError","error_message":"Earnings provider lookup failed for LOOKUP_FAIL","next_earnings_date":null}' == lookup_row["fact_json"]
+
+        resp_row = rows_by_sym["RESP_FAIL"]
+        assert resp_row["observation_status"] == "error"
+        assert resp_row["error_category"] == "EarningsProviderResponseError"
+        assert resp_row["error_message"] == "Earnings provider lookup failed for RESP_FAIL"
+
+
+def test_earnings_capture_sanitization_underlying_secrets(tmp_path) -> None:
+    """Prove underlying exception secrets never enter error_message, fact_json, or SQLite columns."""
+    db_path = tmp_path / "sanitization.db"
+    store.init(db_path)
+    clock = datetime(2026, 8, 30, 21, 0, 0, tzinfo=MARKET_TIMEZONE).astimezone(UTC)
+
+    secret_raw = (
+        "Connection reset at https://api.yahoo.com/v1?token=SECRET_AUTH_TOKEN&password=VERY_SECRET_PASSWORD "
+        "on machine path C:\\Users\\Gary\\Secrets\\keys.env"
+    )
+    underlying_secret_cause = RuntimeError(secret_raw)
+
+    def fake_lookup(symbol: str, **kwargs) -> date:
+        raise EarningsProviderLookupError(f"Earnings provider lookup failed for {symbol}") from underlying_secret_cause
+
+    result = capture_earnings_snapshot(
+        symbols=["SECRET_TICKER"],
+        slot=CaptureSlot.EVENING,
+        db_path=db_path,
+        now_fn=lambda: clock,
+        earnings_lookup=fake_lookup,
+    )
+
+    snap = result.snapshots[0]
+    assert snap.observation_status == ObservationStatus.ERROR
+    assert snap.error_category == "EarningsProviderLookupError"
+    assert snap.error_message == "Earnings provider lookup failed for SECRET_TICKER"
+
+    # Prove no raw secret text appears in snapshot fields
+    assert "SECRET_AUTH_TOKEN" not in snap.error_message
+    assert "VERY_SECRET_PASSWORD" not in snap.error_message
+    assert "C:\\Users\\Gary" not in snap.error_message
+    assert "SECRET_AUTH_TOKEN" not in snap.fact_json
+    assert "VERY_SECRET_PASSWORD" not in snap.fact_json
+    assert "C:\\Users\\Gary" not in snap.fact_json
+
+    # Prove no raw secret text appears in the persisted database row
+    with sqlite3.connect(db_path) as con:
+        con.row_factory = sqlite3.Row
+        row = con.execute("SELECT * FROM pit_earnings_snapshots WHERE symbol = 'SECRET_TICKER'").fetchone()
+        assert row is not None
+        for val in row:
+            col_val = str(val)
+            assert "SECRET_AUTH_TOKEN" not in col_val
+            assert "VERY_SECRET_PASSWORD" not in col_val
+            assert "C:\\Users\\Gary" not in col_val
+
+
+def test_earnings_capture_unsupported_source_preflight_no_side_effects(tmp_path) -> None:
+    """Prove unsupported configured source fails during preflight and creates zero DB records."""
+    db_path = tmp_path / "unsupported_preflight.db"
+    clock = datetime(2026, 8, 30, 21, 0, 0, tzinfo=MARKET_TIMEZONE).astimezone(UTC)
+
+    import pytest
+
+    with pytest.raises(ProviderCapabilityError, match="is not supported"):
+        capture_earnings_snapshot(
+            symbols=["AAPL"],
+            slot=CaptureSlot.EVENING,
+            source="schwab",
+            db_path=db_path,
+            now_fn=lambda: clock,
+        )
+
+    # Prove preflight failure creates zero database files / zero runs
+    assert not db_path.exists()

@@ -16,6 +16,7 @@ from tradex.config import TradeXSettings, load_runtime_settings
 from tradex.data.fetcher import ProviderCapabilityError, ProviderDataUnavailableError
 from tradex.earnings.calendar import (
     EarningsDataUnavailableError,
+    EarningsProviderLookupError,
     _resolve_earnings_source,
     get_next_earnings,
 )
@@ -268,6 +269,11 @@ def capture_earnings_snapshot(
             obs_status = ObservationStatus.UNAVAILABLE
             error_cat = type(exc).__name__
             error_msg = f"Upcoming earnings date unavailable for {sym}"
+            fact_payload = build_unavailable_fact_payload(error_cat, error_msg)
+        except EarningsProviderLookupError as exc:
+            obs_status = ObservationStatus.ERROR
+            error_cat = type(exc).__name__
+            error_msg = f"Earnings provider lookup failed for {sym}"
             fact_payload = build_unavailable_fact_payload(error_cat, error_msg)
         except Exception as exc:  # noqa: BLE001
             obs_status = ObservationStatus.ERROR
