@@ -86,13 +86,29 @@ def write_study_spec() -> None:
             "massive": "tradex.pit.massive_reference.MassiveReferenceClient.fetch_ticker_reference(symbol, capture_date)"
         },
         "pacing_rule": "Production massive pacing interval (~12.1 seconds). No concurrency.",
-        "abort_rules": "Abort on global auth/entitlement failures, or local date mismatch with MARKET_TIMEZONE.",
+        "abort_rules": "Abort on missing credential, global auth/entitlement/rate-limit failures, local date mismatch with MARKET_TIMEZONE, or market-date rollover.",
         "no_retry_rule": "No study-level retries. One primary pass only.",
-        "output_schema": "See results.json structure for required keys.",
+        "output_schema": {
+            "artifact_schema_version": "integer",
+            "task_id": "string",
+            "protocol_commit_sha": "string",
+            "starting_main_sha": "string",
+            "study_started_at_utc": "string",
+            "study_ended_at_utc": "string",
+            "market_date": "string",
+            "timezone": "string",
+            "python_version": "string",
+            "yfinance_version": "string",
+            "provider_adapter_names": ["string"],
+            "candidate_b_hash": "string",
+            "candidate_c_hash": "string",
+            "observations": "array of observation objects",
+            "study_disposition": "string"
+        },
         "predefined_conclusion_logic": [
-            "completed_evidence_sufficient_for_next_decision",
-            "completed_provider_contract_review_required",
-            "incomplete_environment_or_provider_block"
+            "completed_evidence_sufficient_for_next_decision (no provider technical/response contract errors)",
+            "completed_provider_contract_review_required (completed run with any provider technical/response ERROR)",
+            "incomplete_environment_or_provider_block (global environment/auth/entitlement/rate-limit/date-boundary abort)"
         ],
         "no_production_behavior": True
     }
@@ -240,9 +256,16 @@ def main() -> None:
         # We record it but it invalidates the run conceptually.
         results["market_date_rollover"] = True
 
-    if abort_massive:
-        results["study_disposition"] = "completed_provider_contract_review_required" # Or incomplete, but if it aborted massive it's an abort
+    has_contract_error = any(
+        obs["yahoo_outcome"] in ("TECHNICAL_ERROR", "RESPONSE_ERROR") or
+        obs["massive_observation_status"] == "ERROR"
+        for obs in results["observations"]
+    )
+
+    if abort_massive or results.get("market_date_rollover"):
         results["study_disposition"] = "incomplete_environment_or_provider_block"
+    elif has_contract_error:
+        results["study_disposition"] = "completed_provider_contract_review_required"
     else:
         results["study_disposition"] = "completed_evidence_sufficient_for_next_decision"
         
