@@ -76,7 +76,9 @@ def test_missing_credential_preflight(monkeypatch, tmp_path):
         data = json.load(f)
         assert data["study_disposition"] == "incomplete_environment_or_provider_block"
         assert "observations" in data
-        assert len(data["observations"]) == 0
+        assert len(data["observations"]) == 45
+        assert all(obs["yahoo_attempted"] is False for obs in data["observations"])
+        assert all(obs["massive_attempted"] is False for obs in data["observations"])
 
 def test_manifest_invariants():
     """2. Candidate C has exactly 45 unique symbols; 3. B has 30; 4. B in C; 5. C - B = 15; 6. Hashes verified; 7. equity/ETF classification comes only from manifest membership."""
@@ -152,8 +154,17 @@ def test_no_database_writes(monkeypatch):
     from scripts.research import r7_pit_provider_study
     assert not hasattr(r7_pit_provider_study, "sqlite3")
     assert "tradex.data.write" not in sys.modules
+    # Verify the code does not contain any reference to DB writes
+    with open(r7_pit_provider_study.__file__, "r") as f:
+        content = f.read()
+    assert "insert into" not in content.lower()
+    assert "db.commit()" not in content.lower()
 
-def test_abort_on_auth_entitlement_rate_limit(monkeypatch, tmp_path):
+import pytest
+
+
+@pytest.mark.parametrize("error_cat", ["MassiveAuthError", "MassiveEntitlementError", "MassiveRateLimitError"])
+def test_abort_on_auth_entitlement_rate_limit(monkeypatch, tmp_path, error_cat):
     """13, 14. auth/entitlement/rate-limit aborts further Massive execution"""
     import sys
     sys.path.insert(0, str(REPO_ROOT))
@@ -167,7 +178,7 @@ def test_abort_on_auth_entitlement_rate_limit(monkeypatch, tmp_path):
     class MockRes:
         def __init__(self):
             self.observation_status = MockStatus()
-            self.error_category = "MassiveAuthError"
+            self.error_category = error_cat
             self.error_message = ""
             self.provider_type_code = ""
             self.provider_active = True
@@ -204,13 +215,52 @@ def test_abort_on_auth_entitlement_rate_limit(monkeypatch, tmp_path):
         assert len(data["observations"]) == 45
         assert data["observations"][0]["massive_attempted"] is True
         assert data["observations"][1]["massive_attempted"] is False
+        assert data["observations"][0]["yahoo_attempted"] is True
+        assert data["observations"][1]["yahoo_attempted"] is True # Yahoo still runs
 
-def test_result_ordering_deterministic():
+def test_result_ordering_deterministic(monkeypatch, tmp_path):
     """16. result ordering is deterministic"""
     import sys
     sys.path.insert(0, str(REPO_ROOT))
+    from scripts.research import r7_pit_provider_study
     
-    load_universe_manifest(CANDIDATE_C_JSON)
+    mock_yahoo = mock.Mock(return_value=date(2026, 10, 10))
+    class MockStatus:
+        name = "KNOWN"
+    class MockRes:
+        def __init__(self):
+            self.observation_status = MockStatus()
+            self.error_category = None
+            self.error_message = ""
+            self.provider_type_code = ""
+            self.provider_active = True
+            self.missing_fields = []
+            self.request_ids = []
+    mock_massive = mock.Mock()
+    mock_massive.fetch_ticker_reference.return_value = MockRes()
+    mock_client = mock.Mock()
+    mock_client.return_value = mock_massive
+
+    monkeypatch.setattr("scripts.research.r7_pit_provider_study._fetch_from_yahoo", mock_yahoo)
+    monkeypatch.setattr("scripts.research.r7_pit_provider_study.MassiveReferenceClient", mock_client)
+    monkeypatch.setattr("time.sleep", lambda x: None)
+    mock_settings = mock.Mock()
+    mock_settings.data.massive_api_key = "FAKE"
+    monkeypatch.setattr("scripts.research.r7_pit_provider_study.load_runtime_settings", mock.Mock(return_value=mock_settings))
+    
+    tmp_json = tmp_path / "results.json"
+    monkeypatch.setattr("scripts.research.r7_pit_provider_study.RESULTS_JSON", tmp_json)
+    monkeypatch.setattr("sys.argv", ["r7_pit_provider_study.py", "--execute-live", "--confirm-task-id", "MVP-ARCH-001-R7-PIT-PROVIDER-STUDY-001"])
+    
+    r7_pit_provider_study.main()
+    
+    import json
+    with open(tmp_json) as f:
+        data = json.load(f)
+        
+    symbols = [obs["symbol"] for obs in data["observations"]]
+    assert symbols == sorted(symbols), "Observations are not sorted deterministically"
+    assert len(symbols) == 45
     
 def test_market_date_rollover_and_dispositions(monkeypatch, tmp_path):
     """Test market-date rollover and dispositions."""
@@ -241,6 +291,7 @@ def test_market_date_rollover_and_dispositions(monkeypatch, tmp_path):
 
     monkeypatch.setattr("scripts.research.r7_pit_provider_study._fetch_from_yahoo", mock_yahoo)
     monkeypatch.setattr("scripts.research.r7_pit_provider_study.MassiveReferenceClient", mock_client)
+    monkeypatch.setattr("time.sleep", lambda x: None)
     
     mock_settings = mock.Mock()
     mock_settings.data.massive_api_key = "FAKE"
@@ -261,7 +312,6 @@ def test_market_date_rollover_and_dispositions(monkeypatch, tmp_path):
 
     # 2. Date rollover -> incomplete_environment_or_provider_block
     from datetime import datetime, timedelta
-    mock.Mock()
     
     # Return local date normally, but ny_date rolls over at the end
     original_datetime = datetime
@@ -272,10 +322,9 @@ def test_market_date_rollover_and_dispositions(monkeypatch, tmp_path):
                 import inspect
                 caller = inspect.currentframe().f_back.f_code.co_name
                 if caller == "main": # The final check
-                     # if it's been called a few times, roll over
                      if not hasattr(cls, 'calls'): cls.calls = 0
                      cls.calls += 1
-                     if cls.calls > 1:
+                     if cls.calls > 1: # after initial check
                           return original_datetime.now(tz) + timedelta(days=1)
             return original_datetime.now(tz)
     
@@ -294,13 +343,76 @@ def test_market_date_rollover_and_dispositions(monkeypatch, tmp_path):
         data = json.load(f)
         assert data["study_disposition"] == "completed_provider_contract_review_required"
 
-def test_secret_exclusion():
+def test_local_date_mismatch_abort(monkeypatch, tmp_path):
+    import sys
+    sys.path.insert(0, str(REPO_ROOT))
+    from datetime import datetime, timedelta
+
+    from scripts.research import r7_pit_provider_study
+    
+    original_datetime = datetime
+    class MismatchDatetime:
+        @classmethod
+        def now(cls, tz=None):
+            if tz is None:
+                return original_datetime.now(tz) - timedelta(days=1)
+            return original_datetime.now(tz)
+
+    monkeypatch.setattr("scripts.research.r7_pit_provider_study.datetime", MismatchDatetime)
+    monkeypatch.setattr("sys.argv", ["r7_pit_provider_study.py", "--execute-live", "--confirm-task-id", "MVP-ARCH-001-R7-PIT-PROVIDER-STUDY-001"])
+    tmp_json = tmp_path / "results.json"
+    monkeypatch.setattr("scripts.research.r7_pit_provider_study.RESULTS_JSON", tmp_json)
+    
+    with pytest.raises(SystemExit):
+        r7_pit_provider_study.main()
+        
+    import json
+    with open(tmp_json) as f:
+        data = json.load(f)
+        assert data["study_disposition"] == "incomplete_environment_or_provider_block"
+        assert len(data["observations"]) == 45
+        assert all(obs["yahoo_attempted"] is False for obs in data["observations"])
+        assert all(obs["massive_attempted"] is False for obs in data["observations"])
+
+def test_secret_exclusion(monkeypatch, tmp_path):
     """Ensure no secrets are logged or saved."""
     import sys
     sys.path.insert(0, str(REPO_ROOT))
     from scripts.research import r7_pit_provider_study
-    assert "massive_api_key" not in r7_pit_provider_study.RESULTS_JSON.name
-    # The spec specifically verifies we don't save settings to results
+    
+    mock_yahoo = mock.Mock(return_value=date(2026, 10, 10))
+    class MockStatus:
+        name = "KNOWN"
+    class MockRes:
+        def __init__(self):
+            self.observation_status = MockStatus()
+            self.error_category = None
+            self.error_message = ""
+            self.provider_type_code = ""
+            self.provider_active = True
+            self.missing_fields = []
+            self.request_ids = []
+    mock_massive = mock.Mock()
+    mock_massive.fetch_ticker_reference.return_value = MockRes()
+    mock_client = mock.Mock()
+    mock_client.return_value = mock_massive
+    monkeypatch.setattr("scripts.research.r7_pit_provider_study._fetch_from_yahoo", mock_yahoo)
+    monkeypatch.setattr("scripts.research.r7_pit_provider_study.MassiveReferenceClient", mock_client)
+    monkeypatch.setattr("time.sleep", lambda x: None)
+    
+    mock_settings = mock.Mock()
+    mock_settings.data.massive_api_key = "SUPER_SECRET_API_KEY_123"
+    monkeypatch.setattr("scripts.research.r7_pit_provider_study.load_runtime_settings", mock.Mock(return_value=mock_settings))
+    
+    tmp_json = tmp_path / "results.json"
+    monkeypatch.setattr("scripts.research.r7_pit_provider_study.RESULTS_JSON", tmp_json)
+    monkeypatch.setattr("sys.argv", ["r7_pit_provider_study.py", "--execute-live", "--confirm-task-id", "MVP-ARCH-001-R7-PIT-PROVIDER-STUDY-001"])
+    
+    r7_pit_provider_study.main()
+    
+    with open(tmp_json) as f:
+        content = f.read()
+    assert "SUPER_SECRET_API_KEY_123" not in content
 
 def test_candidate_b_derived_from_c():
     """Ensure Candidate B is derived from C and not queried separately."""

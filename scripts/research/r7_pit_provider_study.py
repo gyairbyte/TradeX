@@ -132,14 +132,8 @@ def main() -> None:
         logger.info("Live execution requires --execute-live and --confirm-task-id MVP-ARCH-001-R7-PIT-PROVIDER-STUDY-001")
         return
 
-    # Check Date
-    now_local = datetime.now()  # noqa: DTZ005
-    now_ny = datetime.now(MARKET_TIMEZONE)
-    if now_local.date() != now_ny.date():
-        logger.error("Local system date (%s) != TradeX MARKET_TIMEZONE date (%s). Aborting.", now_local.date(), now_ny.date())
-        sys.exit(1)
-
     study_started_at_utc = datetime.now(UTC)
+    now_ny = datetime.now(MARKET_TIMEZONE)
     market_date = now_ny.date()
     
     logger.info("Loading manifests...")
@@ -173,12 +167,47 @@ def main() -> None:
         "candidate_c_hash": manifest_c.universe_hash,
         "observations": []
     }
+    
+    def generate_aborted_observations() -> None:
+        """Fills results with aborted observations for all C symbols."""
+        for symbol in sorted(c_symbols):
+            security_class = "equity" if symbol in b_symbols else "etf"
+            obs = {
+                "symbol": symbol,
+                "security_class": security_class,
+                "yahoo_attempted": False,
+                "yahoo_outcome": None,
+                "yahoo_returned_date": None,
+                "yahoo_elapsed_ms": None,
+                "massive_attempted": False,
+                "massive_observation_status": None,
+                "massive_error_category": None,
+                "massive_error_message": None,
+                "massive_provider_type_code": None,
+                "massive_provider_active": None,
+                "massive_missing_fields": [],
+                "massive_request_ids": [],
+                "massive_elapsed_ms": None,
+            }
+            results["observations"].append(obs)
+
+    # Check Date
+    now_local = datetime.now()  # noqa: DTZ005
+    if now_local.date() != now_ny.date():
+        logger.error("Local system date (%s) != TradeX MARKET_TIMEZONE date (%s). Aborting.", now_local.date(), now_ny.date())
+        results["study_disposition"] = "incomplete_environment_or_provider_block"
+        results["study_ended_at_utc"] = datetime.now(UTC).isoformat()
+        generate_aborted_observations()
+        STUDY_ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+        with open(RESULTS_JSON, "w", encoding="utf-8") as f:
+            json.dump(results, f, indent=2)
+        sys.exit(1)
 
     if not massive_api_key:
         logger.error("Massive credential is not configured. Aborting study.")
         results["study_disposition"] = "incomplete_environment_or_provider_block"
-        study_ended_at_utc = datetime.now(UTC)
-        results["study_ended_at_utc"] = study_ended_at_utc.isoformat()
+        results["study_ended_at_utc"] = datetime.now(UTC).isoformat()
+        generate_aborted_observations()
         STUDY_ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
         with open(RESULTS_JSON, "w", encoding="utf-8") as f:
             json.dump(results, f, indent=2)
@@ -195,9 +224,11 @@ def main() -> None:
         obs = {
             "symbol": symbol,
             "security_class": security_class,
+            "yahoo_attempted": True,
             "yahoo_outcome": None,
             "yahoo_returned_date": None,
             "yahoo_elapsed_ms": None,
+            "massive_attempted": not abort_massive,
             "massive_observation_status": None,
             "massive_error_category": None,
             "massive_error_message": None,
@@ -206,7 +237,6 @@ def main() -> None:
             "massive_missing_fields": [],
             "massive_request_ids": [],
             "massive_elapsed_ms": None,
-            "massive_attempted": True,
         }
         
         # Yahoo
@@ -227,9 +257,7 @@ def main() -> None:
         obs["yahoo_elapsed_ms"] = round((time.monotonic() - y_start) * 1000, 2)
         
         # Massive
-        if abort_massive:
-            obs["massive_attempted"] = False
-        else:
+        if not abort_massive:
             m_start = time.monotonic()
             m_res = massive_client.fetch_ticker_reference(symbol, market_date)
             obs["massive_elapsed_ms"] = round((time.monotonic() - m_start) * 1000, 2)
@@ -253,7 +281,6 @@ def main() -> None:
     now_ny_end = datetime.now(MARKET_TIMEZONE)
     if now_ny_end.date() != market_date:
         logger.error("TradeX MARKET_TIMEZONE date rolled over during the experiment.")
-        # We record it but it invalidates the run conceptually.
         results["market_date_rollover"] = True
 
     has_contract_error = any(
