@@ -7,11 +7,11 @@ The study could not validly complete because of a missing Massive credential. No
 
 ## Study Scope & Boundaries
 - **Task ID:** `MVP-ARCH-001-R7-PIT-PROVIDER-STUDY-001`
-- **Protocol Commit SHA:** `6906b2eef622d626f4c14338778651f740dac2e3`
+- **Protocol Commit SHA:** `5731baacf73197a15eb9c72c1d6eb2e16a09962b`
 - **Starting Main SHA:** `d86f0b6322e13e6801e06fd5b8eda6cf57a1faca`
 - **Market Date:** `2026-09-10` (`America/New_York`)
-- **Study Start UTC:** `2026-09-10T20:18:42.932592+00:00`
-- **Study End UTC:** `2026-09-10T20:18:42.969423+00:00`
+- **Study Start UTC:** `2026-09-11T01:17:06.501480+00:00`
+- **Study End UTC:** `2026-09-11T01:17:06.544544+00:00`
 - **Python Version:** `3.11.15`
 - **yfinance Version:** `1.7.0`
 - **Candidate B (`candidate-dow30`) Hash:** `173411d5854450294821e4dedbe5147278ccf248d8a21fc1973d81a41b9465b4`
