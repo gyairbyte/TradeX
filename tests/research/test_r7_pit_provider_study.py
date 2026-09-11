@@ -280,7 +280,13 @@ def test_market_date_rollover_and_dispositions(monkeypatch, tmp_path):
     """Test market-date rollover and dispositions."""
     import sys
     sys.path.insert(0, str(REPO_ROOT))
+    from datetime import datetime as _real_datetime
+    from datetime import timedelta
+
     from scripts.research import r7_pit_provider_study
+
+    FIXED_DATE = _real_datetime(2026, 9, 10, 12, 0, 0)  # noqa: DTZ001 (intentionally naive for local-date test)
+    FIXED_DATE_NY = _real_datetime(2026, 9, 10, 12, 0, 0, tzinfo=UTC)
     
     mock_yahoo = mock.Mock(return_value=date(2026, 10, 10))
     
@@ -317,6 +323,15 @@ def test_market_date_rollover_and_dispositions(monkeypatch, tmp_path):
     monkeypatch.setattr("sys.argv", ["r7_pit_provider_study.py", "--execute-live", "--confirm-task-id", "MVP-ARCH-001-R7-PIT-PROVIDER-STUDY-001"])
     
     # 1. Clean run -> completed_evidence_sufficient_for_next_decision
+    # Inject a static datetime so local date == NY date regardless of CI timezone
+    class StaticDatetime:
+        @classmethod
+        def now(cls, tz=None):
+            if tz is None:
+                return FIXED_DATE
+            return FIXED_DATE_NY.astimezone(tz) if tz else FIXED_DATE
+    monkeypatch.setattr("scripts.research.r7_pit_provider_study.datetime", StaticDatetime)
+    
     r7_pit_provider_study.main()
     import json
     with open(tmp_json) as f:
@@ -325,22 +340,23 @@ def test_market_date_rollover_and_dispositions(monkeypatch, tmp_path):
         assert not data.get("market_date_rollover")
 
     # 2. Date rollover -> incomplete_environment_or_provider_block
-    from datetime import datetime, timedelta
-    
-    # Return local date normally, but ny_date rolls over at the end
-    original_datetime = datetime
+    # Simulate: local date is 2026-09-10, but at end of run NY date rolls to 2026-09-11
+    market_tz_call_count = {"n": 0}
     class RolloverDatetime:
         @classmethod
         def now(cls, tz=None):
-            if tz is not None and tz != UTC: # MARKET_TIMEZONE
-                import inspect
-                caller = inspect.currentframe().f_back.f_code.co_name
-                if caller == "main": # The final check
-                     if not hasattr(cls, 'calls'): cls.calls = 0
-                     cls.calls += 1
-                     if cls.calls > 1: # after initial check
-                          return original_datetime.now(tz) + timedelta(days=1)
-            return original_datetime.now(tz)
+            if tz is None:
+                # local date stays on 2026-09-10 throughout
+                return FIXED_DATE
+            # UTC calls return fixed date (for study_started_at_utc, etc.)
+            if str(tz) == "UTC":
+                return FIXED_DATE_NY
+            # MARKET_TIMEZONE calls: first returns 2026-09-10, second returns 2026-09-11
+            market_tz_call_count["n"] += 1
+            if market_tz_call_count["n"] == 1:
+                return FIXED_DATE_NY.astimezone(tz)
+            else:
+                return (FIXED_DATE_NY + timedelta(days=1)).astimezone(tz)
     
     monkeypatch.setattr("scripts.research.r7_pit_provider_study.datetime", RolloverDatetime)
     r7_pit_provider_study.main()
@@ -350,7 +366,7 @@ def test_market_date_rollover_and_dispositions(monkeypatch, tmp_path):
         assert data.get("market_date_rollover") is True
 
     # 3. Contract error -> completed_provider_contract_review_required
-    monkeypatch.setattr("scripts.research.r7_pit_provider_study.datetime", original_datetime)
+    monkeypatch.setattr("scripts.research.r7_pit_provider_study.datetime", StaticDatetime)
     mock_yahoo.side_effect = EarningsProviderResponseError("Malformed")
     r7_pit_provider_study.main()
     with open(tmp_json) as f:
