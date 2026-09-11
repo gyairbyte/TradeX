@@ -193,6 +193,14 @@ def test_abort_on_auth_entitlement_rate_limit(monkeypatch, tmp_path, error_cat):
 
     monkeypatch.setattr("scripts.research.r7_pit_provider_study._fetch_from_yahoo", mock_yahoo)
     monkeypatch.setattr("scripts.research.r7_pit_provider_study.MassiveReferenceClient", mock_client)
+    monkeypatch.setattr("time.sleep", lambda x: None)
+    
+    class StaticDatetime:
+        @classmethod
+        def now(cls, tz=None):
+            from datetime import datetime as original_datetime
+            return original_datetime(2026, 9, 10, 12, 0, 0, tzinfo=tz)
+    monkeypatch.setattr("scripts.research.r7_pit_provider_study.datetime", StaticDatetime)
     
     # Mock settings to return a credential
     mock_settings = mock.Mock()
@@ -244,6 +252,12 @@ def test_result_ordering_deterministic(monkeypatch, tmp_path):
     monkeypatch.setattr("scripts.research.r7_pit_provider_study._fetch_from_yahoo", mock_yahoo)
     monkeypatch.setattr("scripts.research.r7_pit_provider_study.MassiveReferenceClient", mock_client)
     monkeypatch.setattr("time.sleep", lambda x: None)
+    class StaticDatetime:
+        @classmethod
+        def now(cls, tz=None):
+            from datetime import datetime as original_datetime
+            return original_datetime(2026, 9, 10, 12, 0, 0, tzinfo=tz)
+    monkeypatch.setattr("scripts.research.r7_pit_provider_study.datetime", StaticDatetime)
     mock_settings = mock.Mock()
     mock_settings.data.massive_api_key = "FAKE"
     monkeypatch.setattr("scripts.research.r7_pit_provider_study.load_runtime_settings", mock.Mock(return_value=mock_settings))
@@ -399,6 +413,12 @@ def test_secret_exclusion(monkeypatch, tmp_path):
     monkeypatch.setattr("scripts.research.r7_pit_provider_study._fetch_from_yahoo", mock_yahoo)
     monkeypatch.setattr("scripts.research.r7_pit_provider_study.MassiveReferenceClient", mock_client)
     monkeypatch.setattr("time.sleep", lambda x: None)
+    class StaticDatetime:
+        @classmethod
+        def now(cls, tz=None):
+            from datetime import datetime as original_datetime
+            return original_datetime(2026, 9, 10, 12, 0, 0, tzinfo=tz)
+    monkeypatch.setattr("scripts.research.r7_pit_provider_study.datetime", StaticDatetime)
     
     mock_settings = mock.Mock()
     mock_settings.data.massive_api_key = "SUPER_SECRET_API_KEY_123"

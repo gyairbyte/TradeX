@@ -887,17 +887,15 @@ The original engineering-foundation and UI-refactor backlog is substantially com
 
 **Remaining non-completed items:**
 1. **LONG-002C** — Design/specification PR authorized by PR #52 but paused by Gary; dataset construction and production promotion unauthorized.
-2. **DAYTRADE-001** — Future real-time day-trading decision-support program (deferred until after `LONG-002`).
+2. **DAYTRADE-001** — Future real-time day-trading decision-support program (deferred until after LONG-002).
 
 **Recommended next work order:**
-1. **Unblock Provider Study** — Add missing Massive credential to environment and rerun bounded live-provider empirical compatibility study for candidate universes (`MVP-ARCH-001-R7-PIT-PROVIDER-STUDY-001`).
+1. **Unblock Provider Study** — Add missing Massive credential to environment and rerun bounded live-provider empirical compatibility study for candidate universes (MVP-ARCH-001-R7-PIT-PROVIDER-STUDY-001).
 2. **Status architecture Option 2 + 3 — Gary-approved, not implemented.**
 3. **Gary decision on PIT Universe Selection and Activation (MVP-ARCH-001-R7-PIT-001C2-READINESS-A)** — Universe selection/C2 remains blocked until prerequisite empirical study and separate approvals are satisfied.
 4. **Separate Gary/ChatGPT sequencing and approval decision for subsequent slices** — No next rollout implementation PR is currently authorized without separate Gary approval; subsequent slices (such as R7 scheduler/universe wiring and R8) remain unauthorized until separately approved by Gary.
-
-**Remaining non-completed items:**
-- `LONG-002` (Paused; C dataset construction not authorized)
-- `DAYTRADE-001` (Deferred)
+5. **LONG-002C design work** — May resume only after a separate Gary/ChatGPT decision; no implementation, dataset construction, or production behavior change is authorized.
+6. **DAYTRADE-001** — Deferred until `LONG-002` is complete or Gary reprioritizes.
 
 **Recommended next pull request order:**
 1. **Unblock Provider Study** — No next implementation PR is currently authorized without separate Gary approval; rerun study with proper auth. No production status semantics change or C2 deployment authorized.
