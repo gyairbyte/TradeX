@@ -1,0 +1,205 @@
+{
+  "task_id": "MVP-ARCH-001-R7-PIT-STATUS-IMPL-READINESS-001",
+  "status": "ready_for_review",
+  "base_commit": "024dfc2659cd64bb96aff91ae8d312b9c049ac52",
+  "architecture_direction": "option_2_plus_3",
+  "governance_invariants": {
+    "production_status_semantics_change_authorized": false,
+    "schema_migration_authorized": false,
+    "provider_study_authorized": false,
+    "active_universe_authorized": false,
+    "c2_implementation_authorized": false,
+    "scheduler_authorized": false,
+    "approved_production_strategies": [],
+    "r7_status": "incomplete",
+    "candidate_b_status": "unselected",
+    "candidate_c_status": "unselected",
+    "selected_universe": null
+  },
+  "manifest_contract_v2": {
+    "contract_version": 2,
+    "material_fields": [
+      "contract_version",
+      "universe_id",
+      "universe_version",
+      "effective_from",
+      "symbols",
+      "applicability"
+    ],
+    "non_material_fields": [
+      "description"
+    ],
+    "symbol_normalization": [
+      "trim",
+      "uppercase",
+      "deduplicate",
+      "sort"
+    ],
+    "applicability_structure": "per_symbol_family_mapping",
+    "supported_families": [
+      "earnings",
+      "reference"
+    ],
+    "earnings_applicability_enum": [
+      "required",
+      "not_applicable"
+    ],
+    "reference_applicability_enum": [
+      "required"
+    ],
+    "missing_declaration_policy": "fail_closed",
+    "v1_compatibility_policy": "synthesize_required",
+    "hardcoded_ticker_rules_allowed": false,
+    "infer_from_provider_allowed": false
+  },
+  "audit_identity_and_drift_model": {
+    "universe_hash_definition": "sha256(','.join(normalized_sorted_symbols))",
+    "universe_hash_historical_meaning_preserved": true,
+    "v1_manifest_hash_definition": "sha256(canonical_json({'contract_version': 1, 'effective_from': iso, 'symbols': list(symbols), 'universe_id': uid, 'universe_version': uver}))",
+    "v2_manifest_hash_definition": "sha256(canonical_json({'applicability': sorted_dict, 'contract_version': 2, 'effective_from': iso, 'symbols': list(symbols), 'universe_id': uid, 'universe_version': uver}))",
+    "capture_request_fingerprint_v2": "sha256(canonical_json({'capture_date', 'capture_kind', 'capture_slot', 'contract_version': 2, 'manifest_hash', 'requested_provider', 'scheduled_for', 'symbols'}))",
+    "idempotency_key_formula": "f'pit-{family}-{capture_date}-{slot}-{request_fingerprint[:16]}'",
+    "persisted_manifest_identity": "manifest_hash column on capture run tables (NULL for v1 rows, non-null for v2 rows)",
+    "drift_checks": {
+      "symbol_drift": "fail_closed_universe_conflict",
+      "manifest_drift": "fail_closed_manifest_conflict",
+      "cross_version_conflict": "fail_closed_manifest_conflict"
+    }
+  },
+  "schema_v8_specification": {
+    "schema_version": 8,
+    "pit_capture_contract_version": 2,
+    "table_contract_version_constraints": {
+      "pit_capture_runs": "CHECK (contract_version IN (1, 2))",
+      "pit_earnings_snapshots": "CHECK (contract_version IN (1, 2))",
+      "pit_reference_capture_runs": "CHECK (contract_version IN (1, 2))",
+      "pit_reference_snapshots": "CHECK (contract_version IN (1, 2))"
+    },
+    "pit_capture_runs_changes": {
+      "manifest_hash": "TEXT NULL",
+      "manifest_hash_constraint": "CHECK ((contract_version = 1 AND manifest_hash IS NULL) OR (contract_version = 2 AND manifest_hash IS NOT NULL))",
+      "not_applicable_n": "INTEGER NOT NULL DEFAULT 0 CHECK (not_applicable_n >= 0)",
+      "terminal_count_constraint": "CHECK (status = 'started' OR requested_n = (known_n + not_applicable_n + unavailable_n + error_n))"
+    },
+    "pit_earnings_snapshots_changes": {
+      "observation_status_constraint": "CHECK (observation_status IN ('known', 'not_applicable', 'unavailable', 'error'))",
+      "observation_origin": "TEXT NOT NULL DEFAULT 'provider' CHECK (observation_origin IN ('provider', 'manifest'))",
+      "applicability_source": "TEXT NULL CHECK (applicability_source IS NULL OR applicability_source = 'manifest')",
+      "provider_call_attempted": "INTEGER NOT NULL DEFAULT 1 CHECK (provider_call_attempted IN (0, 1))",
+      "provider_nullability": "NULLABLE (required if provider_call_attempted=1, strictly NULL if provider_call_attempted=0)",
+      "request_started_at_nullability": "NULLABLE (required if provider_call_attempted=1, strictly NULL if provider_call_attempted=0)",
+      "response_received_at_nullability": "NULLABLE (required if provider_call_attempted=1, strictly NULL if provider_call_attempted=0)",
+      "provenance_mutual_exclusion_check": "CHECK ((observation_origin = 'manifest' AND observation_status = 'not_applicable' AND provider IS NULL AND provider_observed_at IS NULL AND request_started_at IS NULL AND response_received_at IS NULL AND provider_call_attempted = 0 AND applicability_source = 'manifest') OR (observation_origin = 'provider' AND observation_status != 'not_applicable' AND provider IS NOT NULL AND request_started_at IS NOT NULL AND response_received_at IS NOT NULL AND provider_call_attempted = 1 AND applicability_source IS NULL AND request_started_at <= response_received_at))",
+      "next_earnings_date_check": "CHECK ((observation_status = 'known' AND next_earnings_date IS NOT NULL) OR (observation_status != 'known' AND next_earnings_date IS NULL))"
+    },
+    "pit_reference_capture_runs_changes": {
+      "manifest_hash": "TEXT NULL",
+      "manifest_hash_constraint": "CHECK ((contract_version = 1 AND manifest_hash IS NULL) OR (contract_version = 2 AND manifest_hash IS NOT NULL))",
+      "terminal_count_constraint": "CHECK (status = 'started' OR requested_n = (known_n + unavailable_n + ambiguous_n + error_n))",
+      "not_applicable_n_persisted": false
+    },
+    "pit_reference_snapshots_changes": {
+      "contract_version_check_update": "CHECK (contract_version IN (1, 2))",
+      "not_applicable_supported": false,
+      "origin_columns_needed": false
+    }
+  },
+  "historical_v1_handling": {
+    "policy": "versioned_bifurcation_zero_reinterpretation",
+    "v1_manifest_hash_persisted": null,
+    "v1_observations_reinterpretation": false,
+    "v1_drift_guard": "legacy_universe_hash_only",
+    "v1_health_evaluation": "strict_legacy_all_known"
+  },
+  "operational_execution_health_model": {
+    "core_question": "Did TradeX execute reliably and truthfully record provider/domain evidence?",
+    "does_not_answer": "Did TradeX obtain every desired fact?",
+    "provider_required_n_formulas": {
+      "earnings": "requested_n - not_applicable_n",
+      "reference": "requested_n"
+    },
+    "run_status_lifecycle": {
+      "started": "run in progress",
+      "succeeded": "error_n == 0 (all requested observations completed with valid evidence; includes valid provider_required_n == 0 case)",
+      "partial": "0 < error_n < provider_required_n (some required provider observations suffered technical/provider errors)",
+      "failed": "provider_required_n > 0 and error_n == provider_required_n (total provider failure), or fatal unhandled run-level failure"
+    },
+    "slot_health_truth_table": {
+      "not_due": "Non-trading day OR current time before slot scheduled time",
+      "healthy": "Slot due, zero manifest/universe conflicts, both families have terminal SUCCEEDED runs (error_n == 0 for both)",
+      "degraded": "At least one family has a run that remains STARTED (incomplete), OR at least one family has a terminal PARTIAL run (0 < error_n < provider_required_n) and neither has FAILED",
+      "failed": "Slot due but expected family has zero runs (MISSING), OR manifest/universe conflict, OR total provider failure in either family (provider_required_n > 0 and error_n == provider_required_n), OR preflight/auth failure, OR database crash, OR future manifest effective date"
+    },
+    "stale_run_timeout": "explicitly_deferred"
+  },
+  "evidence_completeness_model": {
+    "family_level": {
+      "earnings": {
+        "applicable_n_formula": "requested_n - not_applicable_n",
+        "completeness_ratio_formula": "known_n / applicable_n if applicable_n > 0 else 1.0",
+        "all_not_applicable_tier": "COMPLETE",
+        "all_known_tier": "COMPLETE",
+        "some_known_tier": "PARTIAL",
+        "zero_known_tier": "SPARSE"
+      },
+      "reference": {
+        "logical_not_applicable_n": 0,
+        "applicable_n_formula": "requested_n",
+        "completeness_ratio_formula": "known_n / requested_n",
+        "all_known_tier": "COMPLETE",
+        "some_known_tier": "PARTIAL",
+        "zero_known_tier": "SPARSE"
+      }
+    },
+    "slot_level_aggregation": {
+      "complete_condition": "All expected families are COMPLETE",
+      "sparse_condition": "At least one expected family has applicable_n > 0 and known_n == 0",
+      "partial_condition": "Otherwise",
+      "pooled_ratio_role": "informational_only"
+    },
+    "operational_independence": "Completeness tier NEVER alters operational health or process exit codes"
+  },
+  "not_applicable_provider_behavior": {
+    "model": "skip_provider_call",
+    "network_calls": 0,
+    "latency_recorded": null,
+    "provider": null,
+    "observation_origin": "manifest",
+    "applicability_source": "manifest",
+    "provider_call_attempted": false,
+    "fact_json": "{\"applicability_source\":\"manifest\",\"error_category\":null,\"error_message\":null,\"next_earnings_date\":null,\"status_reason\":\"manifest_not_applicable\"}",
+    "fact_hash": "sha256(canonical_fact_json)"
+  },
+  "cli_contract": {
+    "exit_codes": {
+      "0": "operationally healthy or not due",
+      "2": "operational degradation (partial technical error or incomplete run)",
+      "1": "operational failure, manifest conflict, missing run, fatal error"
+    },
+    "completeness_impact_on_exit": "none"
+  },
+  "migration_v7_to_v8": {
+    "procedure": "14_step_sqlite_table_rebuild",
+    "transaction_boundary": "single_atomic_transaction",
+    "foreign_key_handling": "PRAGMA foreign_keys=OFF during table swap, PRAGMA foreign_key_check before commit, PRAGMA foreign_keys=ON restored",
+    "row_count_verification": "strict_pre_and_post_equality_for_all_4_pit_tables",
+    "historical_preservation": "all IDs, timestamps, fact hashes, fact JSON, provider data, error categories, and contract_version=1 preserved verbatim",
+    "manifest_hash_backfill": null,
+    "idempotency": "PRAGMA user_version == 8 is no-op; PRAGMA user_version > 8 raises StoreError",
+    "rollback": "unhandled exception triggers ROLLBACK, database remains at Schema v7"
+  },
+  "pr_decomposition": {
+    "pr_a": {
+      "name": "Implementation PR A — Versioned applicability and persistence primitives",
+      "scope": "Manifest contract v2, audit identity, Schema v8 migration, models, store primitives. No operational health policy activation beyond persistence."
+    },
+    "pr_b": {
+      "name": "Implementation PR B — Two-dimensional operational/read model semantics",
+      "scope": "Operational health runner, evidence completeness read model, CLI outputs and exit codes, backward handling of v1 records."
+    },
+    "pr_c": {
+      "name": "Implementation PR C — Universe selection / C2 activation",
+      "scope": "Separate Gary decision for Candidate B vs C, production manifest, effective date, scheduler installation/activation."
+    }
+  }
+}
