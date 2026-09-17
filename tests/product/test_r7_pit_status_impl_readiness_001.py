@@ -60,7 +60,7 @@ Validates:
    - exit codes: 0 = healthy/not_due, 2 = degraded, 1 = failed
    - completeness impact on exit code is none
 10. Migration Safety:
-    - 12-step SQLite table rebuild inside single atomic transaction
+    - 14-step SQLite table rebuild inside single atomic transaction
     - row count verification for all 4 tables
     - foreign key checks, idempotency, rollback
 11. PR Decomposition:
@@ -230,18 +230,62 @@ def test_operational_execution_health_model() -> None:
     assert "Did TradeX obtain every desired fact?" in health["does_not_answer"]
     assert health["stale_run_timeout"] == "explicitly_deferred"
 
+    formulas = health["provider_required_n_formulas"]
+    assert formulas["earnings"] == "requested_n - not_applicable_n"
+    assert formulas["reference"] == "requested_n"
+
     lifecycle = health["run_status_lifecycle"]
     assert "error_n == 0" in lifecycle["succeeded"]
-    assert "0 < error_n < requested_n" in lifecycle["partial"]
-    assert "error_n == requested_n" in lifecycle["failed"]
+    assert "0 < error_n < provider_required_n" in lifecycle["partial"]
+    assert "provider_required_n > 0 and error_n == provider_required_n" in lifecycle["failed"]
 
     tt = health["slot_health_truth_table"]
     assert "Non-trading day" in tt["not_due"]
     assert "error_n == 0 for both" in tt["healthy"]
     assert "remains STARTED" in tt["degraded"]
-    assert "PARTIAL run" in tt["degraded"]
+    assert "0 < error_n < provider_required_n" in tt["degraded"]
     assert "MISSING" in tt["failed"]
     assert "universe conflict" in tt["failed"].lower()
+    assert "provider_required_n > 0 and error_n == provider_required_n" in tt["failed"]
+
+
+def test_operational_health_provider_required_denominator_regression() -> None:
+    """Regression test: prove mixed-universe total provider failure is FAILED, not PARTIAL.
+
+    Candidate C has 45 requested symbols (30 equities + 15 sector ETFs with NOT_APPLICABLE).
+    If all 30 Yahoo calls fail technically, error_n=30, not_applicable_n=15, requested_n=45.
+    Under provider_required_n = requested_n - not_applicable_n = 30:
+    - error_n == 30 == provider_required_n => FAILED (total provider failure)
+    - error_n == 1 => PARTIAL (0 < 1 < 30)
+    - error_n == 0 => SUCCEEDED
+    - provider_required_n == 0, error_n == 0 => SUCCEEDED (all-not-applicable)
+    """
+    def derive_status(requested_n: int, not_applicable_n: int, error_n: int) -> str:
+        provider_required_n = requested_n - not_applicable_n
+        if error_n == 0:
+            return "SUCCEEDED"
+        if 0 < error_n < provider_required_n:
+            return "PARTIAL"
+        if provider_required_n > 0 and error_n == provider_required_n:
+            return "FAILED"
+        raise ValueError(f"Invalid counts: requested={requested_n}, na={not_applicable_n}, error={error_n}")
+
+    # Total provider failure in mixed universe must be FAILED, NOT PARTIAL
+    assert derive_status(requested_n=45, not_applicable_n=15, error_n=30) == "FAILED"
+
+    # Partial provider failure
+    assert derive_status(requested_n=45, not_applicable_n=15, error_n=1) == "PARTIAL"
+
+    # Perfect execution
+    assert derive_status(requested_n=45, not_applicable_n=15, error_n=0) == "SUCCEEDED"
+
+    # All NOT_APPLICABLE universe (e.g. pure ETF universe for earnings)
+    assert derive_status(requested_n=15, not_applicable_n=15, error_n=0) == "SUCCEEDED"
+
+    # Reference family (not_applicable_n = 0)
+    assert derive_status(requested_n=45, not_applicable_n=0, error_n=45) == "FAILED"
+    assert derive_status(requested_n=45, not_applicable_n=0, error_n=1) == "PARTIAL"
+    assert derive_status(requested_n=45, not_applicable_n=0, error_n=0) == "SUCCEEDED"
 
 
 def test_evidence_completeness_deterministic_count_model() -> None:
@@ -300,13 +344,13 @@ def test_cli_contract_exit_codes() -> None:
     assert cli["completeness_impact_on_exit"] == "none"
 
 
-def test_migration_safety_12_step_rebuild() -> None:
+def test_migration_safety_14_step_rebuild() -> None:
     """Verify Schema v7 to v8 migration specifications."""
     with open(DECISION_JSON, "r", encoding="utf-8") as f:
         packet = json.load(f)
 
     mig = packet["migration_v7_to_v8"]
-    assert mig["procedure"] == "12_step_sqlite_table_rebuild"
+    assert mig["procedure"] == "14_step_sqlite_table_rebuild"
     assert mig["transaction_boundary"] == "single_atomic_transaction"
     assert mig["manifest_hash_backfill"] is None
     assert "strict_pre_and_post_equality" in mig["row_count_verification"]
@@ -344,7 +388,7 @@ def test_readiness_markdown_exists_and_contains_sections() -> None:
         "10. Core Contract 7: Provider-Call Behavior for NOT_APPLICABLE",
         "11. Core Contract 8: Capture-Run Lifecycle Compatibility",
         "12. Core Contract 9: CLI Contract",
-        "13. Core Contract 10: Migration Safety & 12-Step Rebuild Procedure",
+        "13. Core Contract 10: Migration Safety & 14-Step Rebuild Procedure",
         "14. Candidate B and Candidate C Dispositions",
         "15. Bounded Future Implementation PR Decomposition",
         "16. Non-Authorizations & Governance Invariants",
@@ -363,5 +407,5 @@ def test_readiness_markdown_exists_and_contains_sections() -> None:
     assert "option_2_plus_3" in content
     assert "manifest_hash" in content
     assert "skip provider call" in content.lower()
-    assert "12-step" in content.lower()
+    assert "14-step" in content.lower()
     assert "zero historical reinterpretation" in content.lower()

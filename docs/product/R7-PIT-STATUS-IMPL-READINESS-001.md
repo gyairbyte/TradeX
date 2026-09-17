@@ -408,10 +408,10 @@ It does **not** answer:
 | Non-trading day OR current time before slot scheduled time | `NOT_DUE` | `0` |
 | Slot due; zero conflicts; both families have terminal `SUCCEEDED` runs (`error_n == 0`) | `HEALTHY` | `0` |
 | Slot due; at least one family run remains in `STARTED` state | `DEGRADED` | `2` |
-| Slot due; at least one family has terminal `PARTIAL` run (`0 < error_n < requested_n`) and neither has failed | `DEGRADED` | `2` |
+| Slot due; at least one family has terminal `PARTIAL` run (`0 < error_n < provider_required_n`) and neither has failed | `DEGRADED` | `2` |
 | Slot due; expected family has zero runs (`MISSING`) | `FAILED` | `1` |
 | Manifest or symbol hash conflict with existing runs | `FAILED` (`UNIVERSE_CONFLICT`) | `1` |
-| Total provider failure in either family (`error_n == requested_n`) | `FAILED` | `1` |
+| Total provider failure in either family (`provider_required_n > 0` and `error_n == provider_required_n`) | `FAILED` | `1` |
 | Preflight abort, authentication error, entitlement failure, or unhandled exception | `FAILED` | `1` |
 | Database corruption or SQLite write failure | `FAILED` | `1` |
 | Future-dated manifest (`manifest.effective_from > current_date`) | `FAILED` | `1` |
@@ -484,11 +484,17 @@ Zero network traffic occurs, zero latency is fabricated, and provider response v
 `CaptureRunStatus` remains strictly:
 $$\text{STARTED} \longrightarrow \text{SUCCEEDED} \mid \text{PARTIAL} \mid \text{FAILED}$$
 
-It represents the **operational execution lifecycle of the run**, completely distinct from evidence completeness:
+It represents the **operational execution lifecycle of the run**, completely distinct from evidence completeness.
+
+To prevent masking total provider outages in mixed universes (e.g. Candidate C where 15 symbols are `not_applicable` and 30 symbols are provider-required equities), the operational denominator is locked to the number of provider calls actually required:
+- **Earnings Family**: $\text{provider\_required\_n} = \text{requested\_n} - \text{not\_applicable\_n}$
+- **Reference Family**: $\text{provider\_required\_n} = \text{requested\_n}$ ($\text{not\_applicable\_n} = 0$ logically)
+
+Operational lifecycle states are deterministically evaluated as:
 - `STARTED`: Capture run initialized in database; execution in progress.
-- `SUCCEEDED`: 100% of symbols resolved with zero technical or provider errors ($\text{error\_n} == 0$). Clean `UNAVAILABLE`, legitimate `NOT_APPLICABLE`, and reference `AMBIGUOUS` records do **not** prevent `SUCCEEDED`.
-- `PARTIAL`: Some but not all requested symbols suffered technical/provider errors ($0 < \text{error\_n} < \text{requested\_n}$).
-- `FAILED`: All requested symbols suffered technical/provider errors ($\text{error\_n} == \text{requested\_n}$), or an unhandled fatal run-level exception occurred.
+- `SUCCEEDED`: Zero technical or provider errors ($\text{error\_n} == 0$), including the valid $\text{provider\_required\_n} == 0$ (all-not-applicable) case. Clean `UNAVAILABLE`, legitimate `NOT_APPLICABLE`, and reference `AMBIGUOUS` records do **not** prevent `SUCCEEDED`.
+- `PARTIAL`: Some but not all required provider calls failed ($0 < \text{error\_n} < \text{provider\_required\_n}$).
+- `FAILED`: Total provider failure where all required provider calls failed ($\text{provider\_required\_n} > 0 \land \text{error\_n} == \text{provider\_required\_n}$), or an unhandled fatal run-level exception occurred.
 
 ---
 
@@ -497,8 +503,8 @@ It represents the **operational execution lifecycle of the run**, completely dis
 ### 12.1 Exit Codes
 Process exit codes are governed strictly by **operational execution health**:
 - **Exit `0`**: Operationally `HEALTHY` or `NOT_DUE`.
-- **Exit `2`**: Operational `DEGRADED` (incomplete run or partial provider errors).
-- **Exit `1`**: Operational `FAILED` (missing run, manifest conflict, total provider failure, fatal exception).
+- **Exit `2`**: Operational `DEGRADED` (incomplete run or partial provider errors: $0 < \text{error\_n} < \text{provider\_required\_n}$).
+- **Exit `1`**: Operational `FAILED` (missing run, manifest conflict, total provider failure where $\text{provider\_required\_n} > 0 \land \text{error\_n} == \text{provider\_required\_n}$, fatal exception).
 
 Evidence completeness is surfaced in JSON read models but **never alters process exit codes**.
 
@@ -563,9 +569,9 @@ Evidence completeness is surfaced in JSON read models but **never alters process
 
 ---
 
-## 13. Core Contract 10: Migration Safety & 12-Step Rebuild Procedure
+## 13. Core Contract 10: Migration Safety & 14-Step Rebuild Procedure
 
-Because SQLite does not support modifying existing table `CHECK` constraints in place, Schema v7 $\to$ v8 uses SQLite's canonical 12-step table rebuild inside a single atomic transaction:
+Because SQLite does not support modifying existing table `CHECK` constraints in place, Schema v7 $\to$ v8 uses a 14-step table rebuild procedure inside a single atomic transaction:
 
 1. `PRAGMA foreign_keys = OFF;` (disabled temporarily for table swaps).
 2. `BEGIN TRANSACTION;`

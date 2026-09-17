@@ -114,17 +114,21 @@
   "operational_execution_health_model": {
     "core_question": "Did TradeX execute reliably and truthfully record provider/domain evidence?",
     "does_not_answer": "Did TradeX obtain every desired fact?",
+    "provider_required_n_formulas": {
+      "earnings": "requested_n - not_applicable_n",
+      "reference": "requested_n"
+    },
     "run_status_lifecycle": {
       "started": "run in progress",
-      "succeeded": "error_n == 0 (all requested observations completed with valid evidence: known, not_applicable, unavailable, ambiguous)",
-      "partial": "0 < error_n < requested_n (some observations suffered technical/provider errors)",
-      "failed": "error_n == requested_n, or fatal unhandled run-level failure"
+      "succeeded": "error_n == 0 (all requested observations completed with valid evidence; includes valid provider_required_n == 0 case)",
+      "partial": "0 < error_n < provider_required_n (some required provider observations suffered technical/provider errors)",
+      "failed": "provider_required_n > 0 and error_n == provider_required_n (total provider failure), or fatal unhandled run-level failure"
     },
     "slot_health_truth_table": {
       "not_due": "Non-trading day OR current time before slot scheduled time",
       "healthy": "Slot due, zero manifest/universe conflicts, both families have terminal SUCCEEDED runs (error_n == 0 for both)",
-      "degraded": "At least one family has a run that remains STARTED (incomplete), OR at least one family has a terminal PARTIAL run (0 < error_n < requested_n) and neither has FAILED",
-      "failed": "Slot due but expected family has zero runs (MISSING), OR manifest/universe conflict, OR total provider failure in either family (error_n == requested_n), OR preflight/auth failure, OR database crash, OR future manifest effective date"
+      "degraded": "At least one family has a run that remains STARTED (incomplete), OR at least one family has a terminal PARTIAL run (0 < error_n < provider_required_n) and neither has FAILED",
+      "failed": "Slot due but expected family has zero runs (MISSING), OR manifest/universe conflict, OR total provider failure in either family (provider_required_n > 0 and error_n == provider_required_n), OR preflight/auth failure, OR database crash, OR future manifest effective date"
     },
     "stale_run_timeout": "explicitly_deferred"
   },
@@ -175,7 +179,7 @@
     "completeness_impact_on_exit": "none"
   },
   "migration_v7_to_v8": {
-    "procedure": "12_step_sqlite_table_rebuild",
+    "procedure": "14_step_sqlite_table_rebuild",
     "transaction_boundary": "single_atomic_transaction",
     "foreign_key_handling": "PRAGMA foreign_keys=OFF during table swap, PRAGMA foreign_key_check before commit, PRAGMA foreign_keys=ON restored",
     "row_count_verification": "strict_pre_and_post_equality_for_all_4_pit_tables",
