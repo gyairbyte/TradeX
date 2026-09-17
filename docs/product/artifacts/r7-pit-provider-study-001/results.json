@@ -1,0 +1,966 @@
+{
+  "artifact_schema_version": 1,
+  "task_id": "MVP-ARCH-001-R7-PIT-PROVIDER-STUDY-001",
+  "protocol_commit_sha": "5731baacf73197a15eb9c72c1d6eb2e16a09962b",
+  "starting_main_sha": "d86f0b6322e13e6801e06fd5b8eda6cf57a1faca",
+  "study_started_at_utc": "2026-09-17T14:41:31.316658+00:00",
+  "study_ended_at_utc": "2026-09-17T14:50:24.994278+00:00",
+  "market_date": "2026-09-17",
+  "timezone": "America/New_York",
+  "python_version": "3.11.15",
+  "yfinance_version": "1.7.0",
+  "provider_adapter_names": [
+    "tradex.earnings.calendar._fetch_from_yahoo",
+    "tradex.pit.massive_reference.MassiveReferenceClient"
+  ],
+  "candidate_b_hash": "173411d5854450294821e4dedbe5147278ccf248d8a21fc1973d81a41b9465b4",
+  "candidate_c_hash": "83d6e6e66991743b3a6301a674adbdf4425e2dc524ed027c7ee4d6097c371f29",
+  "observations": [
+    {
+      "symbol": "AAPL",
+      "security_class": "equity",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "KNOWN",
+      "yahoo_returned_date": "2026-10-29",
+      "yahoo_elapsed_ms": 1016.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "CS",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "dd082f92963e3a3b1e1a16a8fca16814"
+      ],
+      "massive_elapsed_ms": 140.0
+    },
+    {
+      "symbol": "AMGN",
+      "security_class": "equity",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "KNOWN",
+      "yahoo_returned_date": "2026-11-03",
+      "yahoo_elapsed_ms": 422.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "CS",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "c0ed1d4f95517010bcd6293c87007251"
+      ],
+      "massive_elapsed_ms": 11688.0
+    },
+    {
+      "symbol": "AMZN",
+      "security_class": "equity",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "KNOWN",
+      "yahoo_returned_date": "2026-10-29",
+      "yahoo_elapsed_ms": 422.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "CS",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "011a8728787a5b149f035fbc42614cc0"
+      ],
+      "massive_elapsed_ms": 11625.0
+    },
+    {
+      "symbol": "AXP",
+      "security_class": "equity",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "KNOWN",
+      "yahoo_returned_date": "2026-10-23",
+      "yahoo_elapsed_ms": 484.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "CS",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "7912f4268b0eef3368bb9249b62f66ea"
+      ],
+      "massive_elapsed_ms": 11641.0
+    },
+    {
+      "symbol": "BA",
+      "security_class": "equity",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "KNOWN",
+      "yahoo_returned_date": "2026-10-28",
+      "yahoo_elapsed_ms": 500.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "CS",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "1b97d4407aef455654784054e8ab9178"
+      ],
+      "massive_elapsed_ms": 11593.0
+    },
+    {
+      "symbol": "CAT",
+      "security_class": "equity",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "KNOWN",
+      "yahoo_returned_date": "2026-10-29",
+      "yahoo_elapsed_ms": 407.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "CS",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "2d5fce6efb1888eac0dc9109340b6f94"
+      ],
+      "massive_elapsed_ms": 11703.0
+    },
+    {
+      "symbol": "CRM",
+      "security_class": "equity",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "KNOWN",
+      "yahoo_returned_date": "2026-12-02",
+      "yahoo_elapsed_ms": 437.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "CS",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "33b6f9b98ec3ed959a42d2e510b6dfb4"
+      ],
+      "massive_elapsed_ms": 11641.0
+    },
+    {
+      "symbol": "CSCO",
+      "security_class": "equity",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "KNOWN",
+      "yahoo_returned_date": "2026-11-12",
+      "yahoo_elapsed_ms": 484.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "CS",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "955b719435358b92abff64c0d2ed3438"
+      ],
+      "massive_elapsed_ms": 11610.0
+    },
+    {
+      "symbol": "CVX",
+      "security_class": "equity",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "KNOWN",
+      "yahoo_returned_date": "2026-10-30",
+      "yahoo_elapsed_ms": 406.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "CS",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "5672efeae3d894bbcade16a8845f5e27"
+      ],
+      "massive_elapsed_ms": 11719.0
+    },
+    {
+      "symbol": "DIA",
+      "security_class": "etf",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "CLEAN_NO_USABLE_UPCOMING_DATE",
+      "yahoo_returned_date": null,
+      "yahoo_elapsed_ms": 640.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "ETF",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "79b74058a51865ea5eb3d453472a4573"
+      ],
+      "massive_elapsed_ms": 11453.0
+    },
+    {
+      "symbol": "DIS",
+      "security_class": "equity",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "KNOWN",
+      "yahoo_returned_date": "2026-11-12",
+      "yahoo_elapsed_ms": 719.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "CS",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "002c7d8c864bc93f6d39c1aa3277389f"
+      ],
+      "massive_elapsed_ms": 11844.0
+    },
+    {
+      "symbol": "GS",
+      "security_class": "equity",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "KNOWN",
+      "yahoo_returned_date": "2026-10-13",
+      "yahoo_elapsed_ms": 422.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "CS",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "a7f4a027fbdc5613104c5f27bd39b2f2"
+      ],
+      "massive_elapsed_ms": 11203.0
+    },
+    {
+      "symbol": "HD",
+      "security_class": "equity",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "KNOWN",
+      "yahoo_returned_date": "2026-11-17",
+      "yahoo_elapsed_ms": 391.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "CS",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "725505727571e1bb4246f314f9b30bbb"
+      ],
+      "massive_elapsed_ms": 11687.0
+    },
+    {
+      "symbol": "HON",
+      "security_class": "equity",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "KNOWN",
+      "yahoo_returned_date": "2026-10-22",
+      "yahoo_elapsed_ms": 438.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "CS",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "46a42d38f17bd431edfddf8cad31e7d4"
+      ],
+      "massive_elapsed_ms": 11750.0
+    },
+    {
+      "symbol": "IBM",
+      "security_class": "equity",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "KNOWN",
+      "yahoo_returned_date": "2026-10-21",
+      "yahoo_elapsed_ms": 359.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "CS",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "29018aa2979c3fe3747c2e30b92dc090"
+      ],
+      "massive_elapsed_ms": 11719.0
+    },
+    {
+      "symbol": "IWM",
+      "security_class": "etf",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "CLEAN_NO_USABLE_UPCOMING_DATE",
+      "yahoo_returned_date": null,
+      "yahoo_elapsed_ms": 843.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "ETF",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "025ee0bcc8c6ea824f3ee4e2114d4bc3"
+      ],
+      "massive_elapsed_ms": 11297.0
+    },
+    {
+      "symbol": "JNJ",
+      "security_class": "equity",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "KNOWN",
+      "yahoo_returned_date": "2026-10-13",
+      "yahoo_elapsed_ms": 797.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "CS",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "fb121c4b662bf3206437e77277348654"
+      ],
+      "massive_elapsed_ms": 11219.0
+    },
+    {
+      "symbol": "JPM",
+      "security_class": "equity",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "KNOWN",
+      "yahoo_returned_date": "2026-10-13",
+      "yahoo_elapsed_ms": 422.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "CS",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "878d5c07e9d5fa3fb8091ba1b859783d"
+      ],
+      "massive_elapsed_ms": 11750.0
+    },
+    {
+      "symbol": "KO",
+      "security_class": "equity",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "KNOWN",
+      "yahoo_returned_date": "2026-10-20",
+      "yahoo_elapsed_ms": 437.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "CS",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "95d9f57e24fdd5d6717fec0440fa8fc5"
+      ],
+      "massive_elapsed_ms": 11594.0
+    },
+    {
+      "symbol": "MCD",
+      "security_class": "equity",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "KNOWN",
+      "yahoo_returned_date": "2026-11-05",
+      "yahoo_elapsed_ms": 391.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "CS",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "2208c749f7c0c7682bb67a0903dcccc5"
+      ],
+      "massive_elapsed_ms": 11718.0
+    },
+    {
+      "symbol": "MMM",
+      "security_class": "equity",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "KNOWN",
+      "yahoo_returned_date": "2026-10-20",
+      "yahoo_elapsed_ms": 391.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "CS",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "dd77cd57457a744675056902fba48859"
+      ],
+      "massive_elapsed_ms": 11703.0
+    },
+    {
+      "symbol": "MRK",
+      "security_class": "equity",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "KNOWN",
+      "yahoo_returned_date": "2026-10-29",
+      "yahoo_elapsed_ms": 422.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "CS",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "9bf872bc55d0e79a8fad9a91db17663c"
+      ],
+      "massive_elapsed_ms": 11688.0
+    },
+    {
+      "symbol": "MSFT",
+      "security_class": "equity",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "KNOWN",
+      "yahoo_returned_date": "2026-10-28",
+      "yahoo_elapsed_ms": 406.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "CS",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "a30e57ccc4358db571e356ab5b5f45c0"
+      ],
+      "massive_elapsed_ms": 11687.0
+    },
+    {
+      "symbol": "NKE",
+      "security_class": "equity",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "KNOWN",
+      "yahoo_returned_date": "2026-10-01",
+      "yahoo_elapsed_ms": 516.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "CS",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "c5c7229fd8909766b7808a654bcc1563"
+      ],
+      "massive_elapsed_ms": 11578.0
+    },
+    {
+      "symbol": "NVDA",
+      "security_class": "equity",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "KNOWN",
+      "yahoo_returned_date": "2026-11-17",
+      "yahoo_elapsed_ms": 406.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "CS",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "686732b3e4e6e740d052f53737ef5a6a"
+      ],
+      "massive_elapsed_ms": 11703.0
+    },
+    {
+      "symbol": "PG",
+      "security_class": "equity",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "KNOWN",
+      "yahoo_returned_date": "2026-10-22",
+      "yahoo_elapsed_ms": 454.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "CS",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "54df5b253c835fcc52439f9fd6e378c6"
+      ],
+      "massive_elapsed_ms": 11718.0
+    },
+    {
+      "symbol": "QQQ",
+      "security_class": "etf",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "CLEAN_NO_USABLE_UPCOMING_DATE",
+      "yahoo_returned_date": null,
+      "yahoo_elapsed_ms": 625.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "ETF",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "c6361e04e8141b5db4b51503aae77c31"
+      ],
+      "massive_elapsed_ms": 11469.0
+    },
+    {
+      "symbol": "SHW",
+      "security_class": "equity",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "KNOWN",
+      "yahoo_returned_date": "2026-10-27",
+      "yahoo_elapsed_ms": 625.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "CS",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "94007999fa768046c19a8d2bc30fbb08"
+      ],
+      "massive_elapsed_ms": 11469.0
+    },
+    {
+      "symbol": "SPY",
+      "security_class": "etf",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "CLEAN_NO_USABLE_UPCOMING_DATE",
+      "yahoo_returned_date": null,
+      "yahoo_elapsed_ms": 609.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "ETF",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "fcc171a3160d013b7961b55d3ae35849"
+      ],
+      "massive_elapsed_ms": 11438.0
+    },
+    {
+      "symbol": "TRV",
+      "security_class": "equity",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "KNOWN",
+      "yahoo_returned_date": "2026-10-16",
+      "yahoo_elapsed_ms": 547.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "CS",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "18536c125ba924a1fb26059d695fef80"
+      ],
+      "massive_elapsed_ms": 11796.0
+    },
+    {
+      "symbol": "UNH",
+      "security_class": "equity",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "KNOWN",
+      "yahoo_returned_date": "2026-10-13",
+      "yahoo_elapsed_ms": 516.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "CS",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "9ca40a36db1f856f7475df8fe4297839"
+      ],
+      "massive_elapsed_ms": 11328.0
+    },
+    {
+      "symbol": "V",
+      "security_class": "equity",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "KNOWN",
+      "yahoo_returned_date": "2026-10-27",
+      "yahoo_elapsed_ms": 438.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "CS",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "03d8f6a971b26b6a0164e85a6058990a"
+      ],
+      "massive_elapsed_ms": 11672.0
+    },
+    {
+      "symbol": "VZ",
+      "security_class": "equity",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "KNOWN",
+      "yahoo_returned_date": "2026-10-20",
+      "yahoo_elapsed_ms": 406.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "CS",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "f589048e0d904ad6a273989fb8b00638"
+      ],
+      "massive_elapsed_ms": 11734.0
+    },
+    {
+      "symbol": "WMT",
+      "security_class": "equity",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "KNOWN",
+      "yahoo_returned_date": "2026-11-19",
+      "yahoo_elapsed_ms": 406.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "CS",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "16b52c7eaf559090d8e0aaa28e02e1ea"
+      ],
+      "massive_elapsed_ms": 11657.0
+    },
+    {
+      "symbol": "XLB",
+      "security_class": "etf",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "CLEAN_NO_USABLE_UPCOMING_DATE",
+      "yahoo_returned_date": null,
+      "yahoo_elapsed_ms": 578.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "ETF",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "3e9920a4dae916eb62003fe7e0b3974c"
+      ],
+      "massive_elapsed_ms": 11609.0
+    },
+    {
+      "symbol": "XLC",
+      "security_class": "etf",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "CLEAN_NO_USABLE_UPCOMING_DATE",
+      "yahoo_returned_date": null,
+      "yahoo_elapsed_ms": 719.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "ETF",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "91bb28e4bf48f01da23985568104c5c5"
+      ],
+      "massive_elapsed_ms": 11437.0
+    },
+    {
+      "symbol": "XLE",
+      "security_class": "etf",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "CLEAN_NO_USABLE_UPCOMING_DATE",
+      "yahoo_returned_date": null,
+      "yahoo_elapsed_ms": 844.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "ETF",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "ab770095cf37a7ae5a5c23e000dceabc"
+      ],
+      "massive_elapsed_ms": 11110.0
+    },
+    {
+      "symbol": "XLF",
+      "security_class": "etf",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "CLEAN_NO_USABLE_UPCOMING_DATE",
+      "yahoo_returned_date": null,
+      "yahoo_elapsed_ms": 687.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "ETF",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "98367655ae415bdc9c97a9fa9026fcd7"
+      ],
+      "massive_elapsed_ms": 11469.0
+    },
+    {
+      "symbol": "XLI",
+      "security_class": "etf",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "CLEAN_NO_USABLE_UPCOMING_DATE",
+      "yahoo_returned_date": null,
+      "yahoo_elapsed_ms": 719.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "ETF",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "feba36cea0cdbe1fade4ec58fd983074"
+      ],
+      "massive_elapsed_ms": 11421.0
+    },
+    {
+      "symbol": "XLK",
+      "security_class": "etf",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "CLEAN_NO_USABLE_UPCOMING_DATE",
+      "yahoo_returned_date": null,
+      "yahoo_elapsed_ms": 719.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "ETF",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "9bbe1790ee28a80557e95f0fb90ea547"
+      ],
+      "massive_elapsed_ms": 11328.0
+    },
+    {
+      "symbol": "XLP",
+      "security_class": "etf",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "CLEAN_NO_USABLE_UPCOMING_DATE",
+      "yahoo_returned_date": null,
+      "yahoo_elapsed_ms": 641.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "ETF",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "5daa2d22e7c645a39e742b29385161ae"
+      ],
+      "massive_elapsed_ms": 11516.0
+    },
+    {
+      "symbol": "XLRE",
+      "security_class": "etf",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "CLEAN_NO_USABLE_UPCOMING_DATE",
+      "yahoo_returned_date": null,
+      "yahoo_elapsed_ms": 718.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "ETF",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "2415da38bb3f5efa99f100839ea5ea7d"
+      ],
+      "massive_elapsed_ms": 11297.0
+    },
+    {
+      "symbol": "XLU",
+      "security_class": "etf",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "CLEAN_NO_USABLE_UPCOMING_DATE",
+      "yahoo_returned_date": null,
+      "yahoo_elapsed_ms": 703.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "ETF",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "5828638adbd581d8265de0c48f98dfa3"
+      ],
+      "massive_elapsed_ms": 11578.0
+    },
+    {
+      "symbol": "XLV",
+      "security_class": "etf",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "CLEAN_NO_USABLE_UPCOMING_DATE",
+      "yahoo_returned_date": null,
+      "yahoo_elapsed_ms": 625.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "ETF",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "015fd60c5491b0c6154ca60f969032dc"
+      ],
+      "massive_elapsed_ms": 11313.0
+    },
+    {
+      "symbol": "XLY",
+      "security_class": "etf",
+      "yahoo_attempted": true,
+      "yahoo_outcome": "CLEAN_NO_USABLE_UPCOMING_DATE",
+      "yahoo_returned_date": null,
+      "yahoo_elapsed_ms": 687.0,
+      "massive_attempted": true,
+      "massive_observation_status": "KNOWN",
+      "massive_error_category": null,
+      "massive_error_message": null,
+      "massive_provider_type_code": "ETF",
+      "massive_provider_active": true,
+      "massive_missing_fields": [
+        "delisted_utc"
+      ],
+      "massive_request_ids": [
+        "157b41591fa3f99b8bfad11496b57f07"
+      ],
+      "massive_elapsed_ms": 11422.0
+    }
+  ],
+  "study_disposition": "completed_evidence_sufficient_for_next_decision"
+}
