@@ -136,7 +136,7 @@ def test_fresh_db_creates_schema_v6(tmp_path) -> None:
 
     with sqlite3.connect(db_path) as con:
         version = con.execute("PRAGMA user_version").fetchone()[0]
-        assert version == 7
+        assert version == 8
 
         tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         # Legacy tables
@@ -177,7 +177,7 @@ def test_v5_to_v6_migration_preserves_journal_candidate_and_legacy_data(tmp_path
     store.init(db_path)
 
     with sqlite3.connect(db_path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 8
 
         # Check legacy rows preserved
         sh = con.execute("SELECT ticker, score, provider FROM signal_history WHERE ticker = 'AAPL'").fetchone()
@@ -202,7 +202,7 @@ def test_v0_db_migrates_to_v6(tmp_path) -> None:
     store.init(db_path)
 
     with sqlite3.connect(db_path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 8
         tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         assert "pit_capture_runs" in tables
         assert "pit_earnings_snapshots" in tables
@@ -220,7 +220,7 @@ def test_v1_to_v6_migration(tmp_path) -> None:
 
     store.init(db_path)
     with sqlite3.connect(db_path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 8
 
 
 def test_v2_to_v6_migration(tmp_path) -> None:
@@ -236,7 +236,7 @@ def test_v2_to_v6_migration(tmp_path) -> None:
 
     store.init(db_path)
     with sqlite3.connect(db_path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 8
 
 
 def test_v3_to_v6_migration(tmp_path) -> None:
@@ -253,7 +253,7 @@ def test_v3_to_v6_migration(tmp_path) -> None:
 
     store.init(db_path)
     with sqlite3.connect(db_path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 8
 
 
 def test_v4_to_v6_migration(tmp_path) -> None:
@@ -262,7 +262,7 @@ def test_v4_to_v6_migration(tmp_path) -> None:
     store.init(db_path)
 
     with sqlite3.connect(db_path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 8
 
 
 def test_v6_repeat_init_is_idempotent(tmp_path) -> None:
@@ -271,7 +271,7 @@ def test_v6_repeat_init_is_idempotent(tmp_path) -> None:
     store.init(db_path)
 
     with sqlite3.connect(db_path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 8
 
 
 def test_future_schema_version_rejected(tmp_path) -> None:
@@ -283,11 +283,12 @@ def test_future_schema_version_rejected(tmp_path) -> None:
     finally:
         con.close()
 
-    with pytest.raises(store.StoreError, match="newer than supported schema version 7"):
+    with pytest.raises(store.StoreError, match="newer than supported schema version 8"):
         store.init(db_path)
 
     with sqlite3.connect(db_path) as con:
         assert con.execute("PRAGMA user_version").fetchone()[0] == 99
+
 
 
 def test_atomic_rollback_on_v5_to_v6_failure(tmp_path, monkeypatch) -> None:
@@ -323,11 +324,11 @@ def test_pit_capture_runs_check_constraints(tmp_path) -> None:
                 INSERT INTO pit_capture_runs (
                     capture_run_id, idempotency_key, request_fingerprint, capture_kind,
                     capture_slot, capture_date, scheduled_for, requested_at, requested_provider,
-                    universe_hash, requested_n, status, created_at, updated_at
+                    universe_hash, requested_n, status, created_at, updated_at, contract_version
                 ) VALUES (
                     'run-1', 'idem-1', 'fp-1', 'earnings', 'noon', '2026-08-30',
                     '2026-08-30T13:00:00Z', '2026-08-30T13:00:00Z', 'yahoo', 'uhash',
-                    1, 'started', '2026-08-30T13:00:00Z', '2026-08-30T13:00:00Z'
+                    1, 'started', '2026-08-30T13:00:00Z', '2026-08-30T13:00:00Z', 1
                 )
                 """
             )
@@ -340,11 +341,11 @@ def test_pit_capture_runs_check_constraints(tmp_path) -> None:
                     capture_run_id, idempotency_key, request_fingerprint, capture_kind,
                     capture_slot, capture_date, scheduled_for, requested_at, requested_provider,
                     universe_hash, requested_n, known_n, unavailable_n, error_n,
-                    status, created_at, updated_at
+                    status, created_at, updated_at, contract_version
                 ) VALUES (
                     'run-1', 'idem-1', 'fp-1', 'earnings', 'morning', '2026-08-30',
                     '2026-08-30T13:00:00Z', '2026-08-30T13:00:00Z', 'yahoo', 'uhash',
-                    1, 1, 0, 0, 'succeeded', '2026-08-30T13:00:00Z', '2026-08-30T13:00:00Z'
+                    1, 1, 0, 0, 'succeeded', '2026-08-30T13:00:00Z', '2026-08-30T13:00:00Z', 1
                 )
                 """
             )
@@ -357,11 +358,11 @@ def test_pit_capture_runs_check_constraints(tmp_path) -> None:
                     capture_run_id, idempotency_key, request_fingerprint, capture_kind,
                     capture_slot, capture_date, scheduled_for, requested_at, completed_at,
                     requested_provider, universe_hash, requested_n, known_n, unavailable_n, error_n,
-                    status, created_at, updated_at
+                    status, created_at, updated_at, contract_version
                 ) VALUES (
                     'run-1', 'idem-1', 'fp-1', 'earnings', 'morning', '2026-08-30',
                     '2026-08-30T13:00:00Z', '2026-08-30T13:00:00Z', '2026-08-30T13:05:00Z',
-                    'yahoo', 'uhash', 2, 1, 0, 0, 'succeeded', '2026-08-30T13:00:00Z', '2026-08-30T13:00:00Z'
+                    'yahoo', 'uhash', 2, 1, 0, 0, 'succeeded', '2026-08-30T13:00:00Z', '2026-08-30T13:00:00Z', 1
                 )
                 """
             )
@@ -378,11 +379,11 @@ def test_pit_earnings_snapshots_check_constraints(tmp_path) -> None:
             INSERT INTO pit_capture_runs (
                 capture_run_id, idempotency_key, request_fingerprint, capture_kind,
                 capture_slot, capture_date, scheduled_for, requested_at, requested_provider,
-                universe_hash, requested_n, status, created_at, updated_at
+                universe_hash, requested_n, status, created_at, updated_at, contract_version
             ) VALUES (
                 'run-1', 'idem-1', 'fp-1', 'earnings', 'morning', '2026-08-30',
                 '2026-08-30T13:00:00Z', '2026-08-30T13:00:00Z', 'yahoo', 'uhash',
-                1, 'started', '2026-08-30T13:00:00Z', '2026-08-30T13:00:00Z'
+                1, 'started', '2026-08-30T13:00:00Z', '2026-08-30T13:00:00Z', 1
             )
             """
         )

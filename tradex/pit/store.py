@@ -64,6 +64,10 @@ def _row_to_run(row: sqlite3.Row) -> PITCaptureRun:
     created_at = _parse_dt(row["created_at"], "created_at")
     updated_at = _parse_dt(row["updated_at"], "updated_at")
 
+    row_keys = set(row.keys())
+    manifest_hash = row["manifest_hash"] if "manifest_hash" in row_keys else None
+    not_applicable_n = int(row["not_applicable_n"]) if "not_applicable_n" in row_keys else 0
+
     return PITCaptureRun(
         capture_run_id=row["capture_run_id"],
         idempotency_key=row["idempotency_key"],
@@ -76,8 +80,10 @@ def _row_to_run(row: sqlite3.Row) -> PITCaptureRun:
         completed_at=comp_at,
         requested_provider=row["requested_provider"],
         universe_hash=row["universe_hash"],
+        manifest_hash=manifest_hash,
         requested_n=int(row["requested_n"]),
         known_n=int(row["known_n"]),
+        not_applicable_n=not_applicable_n,
         unavailable_n=int(row["unavailable_n"]),
         error_n=int(row["error_n"]),
         status=CaptureRunStatus(row["status"]),
@@ -101,11 +107,19 @@ def _row_to_snapshot(row: sqlite3.Row) -> PITEarningsSnapshot:
     resp_rcvd = _parse_dt(row["response_received_at"], "response_received_at")
     created_at = _parse_dt(row["created_at"], "created_at")
 
+    row_keys = set(row.keys())
+    obs_origin = row["observation_origin"] if "observation_origin" in row_keys else "provider"
+    app_source = row["applicability_source"] if "applicability_source" in row_keys else None
+    prov_call_att = bool(row["provider_call_attempted"]) if "provider_call_attempted" in row_keys else True
+
     return PITEarningsSnapshot(
         snapshot_id=row["snapshot_id"],
         capture_run_id=row["capture_run_id"],
         symbol=row["symbol"],
         observation_status=ObservationStatus(row["observation_status"]),
+        observation_origin=obs_origin,
+        applicability_source=app_source,
+        provider_call_attempted=prov_call_att,
         next_earnings_date=nxt_date,
         provider=row["provider"],
         provider_observed_at=prov_obs_at,
@@ -132,6 +146,9 @@ def _row_to_reference_run(row: sqlite3.Row) -> PITReferenceCaptureRun:
     created_at = _parse_dt(row["created_at"], "created_at")
     updated_at = _parse_dt(row["updated_at"], "updated_at")
 
+    row_keys = set(row.keys())
+    manifest_hash = row["manifest_hash"] if "manifest_hash" in row_keys else None
+
     return PITReferenceCaptureRun(
         capture_run_id=row["capture_run_id"],
         idempotency_key=row["idempotency_key"],
@@ -143,6 +160,7 @@ def _row_to_reference_run(row: sqlite3.Row) -> PITReferenceCaptureRun:
         completed_at=comp_at,
         requested_provider=row["requested_provider"],
         universe_hash=row["universe_hash"],
+        manifest_hash=manifest_hash,
         requested_n=int(row["requested_n"]),
         known_n=int(row["known_n"]),
         unavailable_n=int(row["unavailable_n"]),
@@ -222,9 +240,10 @@ def create_capture_run(
             INSERT INTO pit_capture_runs (
                 capture_run_id, contract_version, idempotency_key, request_fingerprint,
                 capture_kind, capture_slot, capture_date, scheduled_for, requested_at,
-                completed_at, requested_provider, universe_hash, requested_n, known_n,
-                unavailable_n, error_n, status, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                completed_at, requested_provider, universe_hash, manifest_hash,
+                requested_n, known_n, not_applicable_n, unavailable_n, error_n,
+                status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 run.capture_run_id,
@@ -239,8 +258,10 @@ def create_capture_run(
                 run.completed_at.astimezone(UTC).isoformat() if run.completed_at else None,
                 run.requested_provider,
                 run.universe_hash,
+                run.manifest_hash,
                 run.requested_n,
                 run.known_n,
+                run.not_applicable_n,
                 run.unavailable_n,
                 run.error_n,
                 run.status.value,
@@ -267,10 +288,11 @@ def insert_earnings_snapshots(
                 """
                 INSERT INTO pit_earnings_snapshots (
                     snapshot_id, contract_version, capture_run_id, symbol,
-                    observation_status, next_earnings_date, provider,
+                    observation_status, observation_origin, applicability_source,
+                    provider_call_attempted, next_earnings_date, provider,
                     provider_observed_at, request_started_at, response_received_at,
                     fact_hash, fact_json, error_category, error_message, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     snap.snapshot_id,
@@ -278,11 +300,14 @@ def insert_earnings_snapshots(
                     snap.capture_run_id,
                     snap.symbol,
                     snap.observation_status.value,
+                    snap.observation_origin,
+                    snap.applicability_source,
+                    1 if snap.provider_call_attempted else 0,
                     snap.next_earnings_date.isoformat() if snap.next_earnings_date else None,
                     snap.provider,
                     snap.provider_observed_at.astimezone(UTC).isoformat() if snap.provider_observed_at else None,
-                    snap.request_started_at.astimezone(UTC).isoformat(),
-                    snap.response_received_at.astimezone(UTC).isoformat(),
+                    snap.request_started_at.astimezone(UTC).isoformat() if snap.request_started_at else None,
+                    snap.response_received_at.astimezone(UTC).isoformat() if snap.response_received_at else None,
                     snap.fact_hash,
                     snap.fact_json,
                     snap.error_category,
@@ -301,6 +326,7 @@ def finalize_capture_run(
     error_n: int,
     completed_at: datetime,
     updated_at: datetime,
+    not_applicable_n: int = 0,
     db_path: Path | None = None,
     settings: TradeXSettings | None = None,
 ) -> PITCaptureRun:
@@ -318,6 +344,7 @@ def finalize_capture_run(
             UPDATE pit_capture_runs
             SET status = ?,
                 known_n = ?,
+                not_applicable_n = ?,
                 unavailable_n = ?,
                 error_n = ?,
                 completed_at = ?,
@@ -327,6 +354,7 @@ def finalize_capture_run(
             (
                 status.value,
                 known_n,
+                not_applicable_n,
                 unavailable_n,
                 error_n,
                 norm_completed_at.isoformat(),
@@ -446,9 +474,10 @@ def create_reference_capture_run(
             INSERT INTO pit_reference_capture_runs (
                 capture_run_id, contract_version, idempotency_key, request_fingerprint,
                 capture_slot, capture_date, scheduled_for, requested_at,
-                completed_at, requested_provider, universe_hash, requested_n, known_n,
-                unavailable_n, ambiguous_n, error_n, status, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                completed_at, requested_provider, universe_hash, manifest_hash,
+                requested_n, known_n, unavailable_n, ambiguous_n, error_n,
+                status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 run.capture_run_id,
@@ -462,6 +491,7 @@ def create_reference_capture_run(
                 run.completed_at.astimezone(UTC).isoformat() if run.completed_at else None,
                 run.requested_provider,
                 run.universe_hash,
+                run.manifest_hash,
                 run.requested_n,
                 run.known_n,
                 run.unavailable_n,

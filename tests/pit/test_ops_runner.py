@@ -65,7 +65,7 @@ def _before_morning_now(d: date) -> datetime:
 
 
 def _build_earnings_run(run_id: str, manifest: PITUniverseManifest) -> PITCaptureRun:
-    from tradex.pit.models import PIT_CAPTURE_CONTRACT_VERSION, CaptureKind
+    from tradex.pit.models import PIT_CAPTURE_WRITE_CONTRACT_VERSION, CaptureKind
     now = datetime(2026, 1, 2, 13, 30, tzinfo=UTC)
     return PITCaptureRun(
         capture_run_id=run_id,
@@ -86,7 +86,7 @@ def _build_earnings_run(run_id: str, manifest: PITUniverseManifest) -> PITCaptur
         status=CaptureRunStatus.SUCCEEDED,
         created_at=now,
         updated_at=now,
-        contract_version=PIT_CAPTURE_CONTRACT_VERSION,
+        contract_version=PIT_CAPTURE_WRITE_CONTRACT_VERSION,
     )
 
 
@@ -96,7 +96,7 @@ def _earnings_result_succeeded(run_id: str, manifest: PITUniverseManifest) -> PI
 
 
 def _reference_result_succeeded(run_id: str, manifest: PITUniverseManifest) -> PITReferenceCaptureResult:
-    from tradex.pit.models import PIT_CAPTURE_CONTRACT_VERSION
+    from tradex.pit.models import PIT_CAPTURE_WRITE_CONTRACT_VERSION
     now = datetime(2026, 1, 2, 13, 30, tzinfo=UTC)
     run = PITReferenceCaptureRun(
         capture_run_id=run_id,
@@ -117,7 +117,7 @@ def _reference_result_succeeded(run_id: str, manifest: PITUniverseManifest) -> P
         status=CaptureRunStatus.SUCCEEDED,
         created_at=now,
         updated_at=now,
-        contract_version=PIT_CAPTURE_CONTRACT_VERSION,
+        contract_version=PIT_CAPTURE_WRITE_CONTRACT_VERSION,
     )
     return PITReferenceCaptureResult(run=run, snapshots=())
 
@@ -247,7 +247,7 @@ class TestRunPitSlotEffectiveFrom:
 class TestUniverseDriftGuard:
     def test_conflict_on_existing_different_hash(self, tmp_path):
         """Existing run with different universe_hash raises PITOperationalUniverseConflictError."""
-        from tradex.pit.models import PIT_CAPTURE_CONTRACT_VERSION, CaptureKind
+        from tradex.pit.models import PIT_CAPTURE_WRITE_CONTRACT_VERSION, CaptureKind
         from tradex.pit.store import create_capture_run
         from tradex.tracker.store import init as store_init
 
@@ -277,7 +277,7 @@ class TestUniverseDriftGuard:
             status=CaptureRunStatus.SUCCEEDED,
             created_at=now,
             updated_at=now,
-            contract_version=PIT_CAPTURE_CONTRACT_VERSION,
+            contract_version=PIT_CAPTURE_WRITE_CONTRACT_VERSION,
         )
         create_capture_run(old_run, db_path=db_path, settings=settings)
 
@@ -297,7 +297,7 @@ class TestUniverseDriftGuard:
 
     def test_no_conflict_when_hash_matches(self, tmp_path):
         """No exception when existing run has the same universe hash."""
-        from tradex.pit.models import PIT_CAPTURE_CONTRACT_VERSION, CaptureKind
+        from tradex.pit.models import PIT_CAPTURE_WRITE_CONTRACT_VERSION, CaptureKind
         from tradex.pit.store import create_capture_run
         from tradex.tracker.store import init as store_init
 
@@ -326,7 +326,7 @@ class TestUniverseDriftGuard:
             status=CaptureRunStatus.SUCCEEDED,
             created_at=now,
             updated_at=now,
-            contract_version=PIT_CAPTURE_CONTRACT_VERSION,
+            contract_version=PIT_CAPTURE_WRITE_CONTRACT_VERSION,
         )
         create_capture_run(run, db_path=db_path, settings=settings)
 
@@ -341,7 +341,7 @@ class TestUniverseDriftGuard:
 
     def test_drift_guard_returns_failed_result(self, tmp_path):
         """run_pit_slot returns failed (not raises) when drift is detected."""
-        from tradex.pit.models import PIT_CAPTURE_CONTRACT_VERSION, CaptureKind
+        from tradex.pit.models import PIT_CAPTURE_WRITE_CONTRACT_VERSION, CaptureKind
         from tradex.pit.store import create_capture_run
         from tradex.tracker.store import init as store_init
 
@@ -373,7 +373,7 @@ class TestUniverseDriftGuard:
             status=CaptureRunStatus.SUCCEEDED,
             created_at=now,
             updated_at=now,
-            contract_version=PIT_CAPTURE_CONTRACT_VERSION,
+            contract_version=PIT_CAPTURE_WRITE_CONTRACT_VERSION,
         )
         create_capture_run(old_run, db_path=db_path, settings=settings)
 
@@ -1108,7 +1108,7 @@ class TestStrengthenedUniverseDrift:
         """When universe drift is detected, zero provider calls and zero DB mutations occur."""
         import sqlite3
 
-        from tradex.pit.models import PIT_CAPTURE_CONTRACT_VERSION, CaptureKind
+        from tradex.pit.models import PIT_CAPTURE_WRITE_CONTRACT_VERSION, CaptureKind
         from tradex.pit.store import create_capture_run
         from tradex.tracker.store import init as store_init
 
@@ -1140,7 +1140,7 @@ class TestStrengthenedUniverseDrift:
             status=CaptureRunStatus.SUCCEEDED,
             created_at=now,
             updated_at=now,
-            contract_version=PIT_CAPTURE_CONTRACT_VERSION,
+            contract_version=PIT_CAPTURE_WRITE_CONTRACT_VERSION,
         )
         create_capture_run(run_a, db_path=db_path, settings=settings)
 
@@ -1180,4 +1180,159 @@ class TestStrengthenedUniverseDrift:
         assert mock_r.call_count == 0
 
         db_after = dump_db()
+        assert db_before == db_after
+
+
+class TestV2RunnerActivationGuard:
+    """Premature contract v2 execution attempts must deterministically fail closed before provider calls or DB writes."""
+
+    def _v2_manifest(self, eff: date | None = None) -> PITUniverseManifest:
+        return PITUniverseManifest(
+            contract_version=2,
+            universe_id="u-v2",
+            universe_version="v1",
+            effective_from=eff or date(2025, 1, 1),
+            symbols=("AAPL", "MSFT"),
+            description="v2 runner guard test",
+            applicability={
+                "AAPL": {"earnings": "required", "reference": "required"},
+                "MSFT": {"earnings": "required", "reference": "required"},
+            },
+        )
+
+    def _dump_db(self, db_path: Path) -> dict[str, list]:
+        import sqlite3
+        con = sqlite3.connect(str(db_path))
+        try:
+            tables = [
+                "pit_capture_runs",
+                "pit_earnings_snapshots",
+                "pit_reference_capture_runs",
+                "pit_reference_snapshots",
+            ]
+            return {t: con.execute(f"SELECT * FROM {t}").fetchall() for t in tables}
+        finally:
+            con.close()
+
+    def test_v2_fails_closed_on_due_trading_day(self, tmp_path):
+        """Due trading day after slot time: returns FAILED, 0 calls, 0 writes."""
+        db_path = tmp_path / "signals.db"
+        from tradex.tracker import store
+        store.init(db_path)
+        settings = _settings(tmp_path)
+        manifest_v2 = self._v2_manifest()
+
+        mock_e = MagicMock()
+        mock_r = MagicMock()
+        now = _morning_now(_TRADING_DATE)  # after morning slot on trading day
+        db_before = self._dump_db(db_path)
+
+        result = run_pit_slot(
+            slot=CaptureSlot.MORNING,
+            universe_manifest=manifest_v2,
+            settings=settings,
+            db_path=db_path,
+            now_fn=lambda: now,
+            earnings_capture=mock_e,
+            reference_capture=mock_r,
+        )
+
+        assert result.operational_status == PITOperationalStatus.FAILED
+        assert "execution activation deferred to PR B" in (result.earnings.error_detail or "")
+        assert mock_e.call_count == 0
+        assert mock_r.call_count == 0
+        db_after = self._dump_db(db_path)
+        assert db_before == db_after
+
+    def test_v2_fails_closed_on_non_trading_day_weekend(self, tmp_path):
+        """Non-trading day (weekend): must return FAILED (NOT NOT_DUE), 0 calls, 0 writes."""
+        db_path = tmp_path / "signals.db"
+        from tradex.tracker import store
+        store.init(db_path)
+        settings = _settings(tmp_path)
+        manifest_v2 = self._v2_manifest()
+
+        mock_e = MagicMock()
+        mock_r = MagicMock()
+        now = _morning_now(_NON_TRADING_DATE)  # Saturday
+        db_before = self._dump_db(db_path)
+
+        result = run_pit_slot(
+            slot=CaptureSlot.MORNING,
+            universe_manifest=manifest_v2,
+            settings=settings,
+            db_path=db_path,
+            now_fn=lambda: now,
+            earnings_capture=mock_e,
+            reference_capture=mock_r,
+        )
+
+        assert result.operational_status == PITOperationalStatus.FAILED
+        assert result.operational_status != PITOperationalStatus.NOT_DUE
+        assert "execution activation deferred to PR B" in (result.earnings.error_detail or "")
+        assert mock_e.call_count == 0
+        assert mock_r.call_count == 0
+        db_after = self._dump_db(db_path)
+        assert db_before == db_after
+
+    def test_v2_fails_closed_pre_slot_time(self, tmp_path):
+        """Pre-slot time on trading day: must return FAILED (NOT NOT_DUE), 0 calls, 0 writes."""
+        db_path = tmp_path / "signals.db"
+        from tradex.tracker import store
+        store.init(db_path)
+        settings = _settings(tmp_path)
+        manifest_v2 = self._v2_manifest()
+
+        mock_e = MagicMock()
+        mock_r = MagicMock()
+        now = _before_morning_now(_TRADING_DATE)  # before morning slot
+        db_before = self._dump_db(db_path)
+
+        result = run_pit_slot(
+            slot=CaptureSlot.MORNING,
+            universe_manifest=manifest_v2,
+            settings=settings,
+            db_path=db_path,
+            now_fn=lambda: now,
+            earnings_capture=mock_e,
+            reference_capture=mock_r,
+        )
+
+        assert result.operational_status == PITOperationalStatus.FAILED
+        assert result.operational_status != PITOperationalStatus.NOT_DUE
+        assert "execution activation deferred to PR B" in (result.earnings.error_detail or "")
+        assert mock_e.call_count == 0
+        assert mock_r.call_count == 0
+        db_after = self._dump_db(db_path)
+        assert db_before == db_after
+
+    def test_v2_fails_closed_future_effective_from(self, tmp_path):
+        """Future effective_from: returns FAILED with contract version rejection, 0 calls, 0 writes."""
+        db_path = tmp_path / "signals.db"
+        from tradex.tracker import store
+        store.init(db_path)
+        settings = _settings(tmp_path)
+        future_eff = date(2099, 1, 1)
+        manifest_v2 = self._v2_manifest(eff=future_eff)
+
+        mock_e = MagicMock()
+        mock_r = MagicMock()
+        now = _morning_now(_TRADING_DATE)
+        db_before = self._dump_db(db_path)
+
+        result = run_pit_slot(
+            slot=CaptureSlot.MORNING,
+            universe_manifest=manifest_v2,
+            settings=settings,
+            db_path=db_path,
+            now_fn=lambda: now,
+            earnings_capture=mock_e,
+            reference_capture=mock_r,
+        )
+
+        assert result.operational_status == PITOperationalStatus.FAILED
+        assert "execution activation deferred to PR B" in (result.earnings.error_detail or "")
+        assert mock_e.call_count == 0
+        assert mock_r.call_count == 0
+        db_after = self._dump_db(db_path)
         assert db_before == db_after

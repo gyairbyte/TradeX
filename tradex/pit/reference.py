@@ -21,7 +21,7 @@ from tradex.pit.massive_reference import (
     MassiveReferenceClient,
 )
 from tradex.pit.models import (
-    PIT_CAPTURE_CONTRACT_VERSION,
+    PIT_CAPTURE_WRITE_CONTRACT_VERSION,
     CaptureRunStatus,
     CaptureSlot,
     PITReferenceCaptureResult,
@@ -133,8 +133,9 @@ def capture_reference_snapshot(
             f"{scheduled_for.isoformat()} for {slot.value} slot on {target_capture_date.isoformat()}."
         )
 
+    # Note: Capture write execution remains strictly pinned to contract v1 until PR B.
     fingerprint = compute_request_fingerprint(
-        contract_version=PIT_CAPTURE_CONTRACT_VERSION,
+        contract_version=PIT_CAPTURE_WRITE_CONTRACT_VERSION,
         capture_kind="reference",
         capture_slot=slot.value,
         capture_date=target_capture_date.isoformat(),
@@ -200,7 +201,7 @@ def capture_reference_snapshot(
         status=CaptureRunStatus.STARTED,
         created_at=current_dt,
         updated_at=current_dt,
-        contract_version=PIT_CAPTURE_CONTRACT_VERSION,
+        contract_version=PIT_CAPTURE_WRITE_CONTRACT_VERSION,
     )
 
     create_reference_capture_run(started_run, db_path=target_path, settings=settings)
@@ -253,7 +254,7 @@ def capture_reference_snapshot(
             error_category=obs_res.error_category,
             error_message=obs_res.error_message,
             created_at=req_end,
-            contract_version=PIT_CAPTURE_CONTRACT_VERSION,
+            contract_version=PIT_CAPTURE_WRITE_CONTRACT_VERSION,
         )
         # Persist observation immediately upon completion of provider lookup.
         insert_reference_snapshots([snapshot], db_path=target_path, settings=settings)

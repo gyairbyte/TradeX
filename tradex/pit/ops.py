@@ -24,11 +24,12 @@ import json
 import math
 import re
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from enum import Enum
 from pathlib import Path
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from tradex.market.hours import MARKET_TIMEZONE, is_trading_day
@@ -55,8 +56,9 @@ from tradex.pit.store import (
 if TYPE_CHECKING:
     from tradex.config import TradeXSettings
 
-# Universe manifest contract version supported by this implementation.
+# Universe manifest contract versions supported by this implementation.
 _MANIFEST_CONTRACT_VERSION: int = 1
+_MANIFEST_CONTRACT_VERSIONS: tuple[int, ...] = (1, 2)
 
 # Pattern for syntactically valid universe_id: alphanumeric, hyphens, underscores, 1-64 chars.
 _UNIVERSE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
@@ -87,6 +89,23 @@ class PITOperationalUniverseConflictError(Exception):
         self.family = family
 
 
+class PITOperationalManifestConflictError(Exception):
+    """Raised when existing PIT runs for the same date/slot have a conflicting manifest or contract version."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        existing_hash: str | None = None,
+        new_hash: str | None = None,
+        family: str,
+    ) -> None:
+        super().__init__(message)
+        self.existing_hash = existing_hash
+        self.new_hash = new_hash
+        self.family = family
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Universe Manifest
 # ─────────────────────────────────────────────────────────────────────────────
@@ -108,12 +127,17 @@ class PITUniverseManifest:
     effective_from: date
     symbols: tuple[str, ...]
     description: str
+    applicability: Mapping[str, Mapping[str, str]] | None = None
 
     def __post_init__(self) -> None:
-        if isinstance(self.contract_version, bool) or not isinstance(self.contract_version, int) or self.contract_version != _MANIFEST_CONTRACT_VERSION:
+        if (
+            isinstance(self.contract_version, bool)
+            or not isinstance(self.contract_version, int)
+            or self.contract_version not in _MANIFEST_CONTRACT_VERSIONS
+        ):
             raise ValueError(
                 f"Unsupported manifest contract_version {self.contract_version!r}; "
-                f"only contract_version={_MANIFEST_CONTRACT_VERSION} is supported."
+                f"only contract_versions {_MANIFEST_CONTRACT_VERSIONS} are supported."
             )
         if not isinstance(self.universe_id, str) or not self.universe_id.strip():
             raise ValueError("universe_id must be a non-empty string")
@@ -138,6 +162,58 @@ class PITUniverseManifest:
         normalized = normalize_symbols(self.symbols)
         object.__setattr__(self, "symbols", normalized)
 
+        # Validate and normalize applicability
+        if self.contract_version == 1:
+            # v1: synthesize immutable {sym: {"earnings": "required", "reference": "required"}} in memory
+            synthesized = MappingProxyType({
+                sym: MappingProxyType({"earnings": "required", "reference": "required"})
+                for sym in normalized
+            })
+            object.__setattr__(self, "applicability", synthesized)
+        elif self.contract_version == 2:
+            if self.applicability is None:
+                raise ValueError("applicability field is required for contract_version=2")
+            if not isinstance(self.applicability, (dict, Mapping)):
+                raise TypeError(f"applicability must be a dict or mapping, got {type(self.applicability).__name__}")
+
+            app_keys = set(self.applicability.keys())
+            sym_set = set(normalized)
+
+            missing_symbols = sorted(sym_set - app_keys)
+            if missing_symbols:
+                raise ValueError(f"Missing applicability declarations for symbols: {missing_symbols}")
+
+            extra_symbols = sorted(app_keys - sym_set)
+            if extra_symbols:
+                raise ValueError(f"Extra symbols in applicability not present in symbols: {extra_symbols}")
+
+            canonical_app: dict[str, Mapping[str, str]] = {}
+            for sym in normalized:
+                entry = self.applicability[sym]
+                if not isinstance(entry, (dict, Mapping)):
+                    raise TypeError(f"Applicability entry for symbol {sym!r} must be a dict, got {type(entry).__name__}")
+                families = set(entry.keys())
+                expected_families = {"earnings", "reference"}
+                if families != expected_families:
+                    raise ValueError(
+                        f"Applicability for symbol {sym!r} must contain exactly {expected_families}, got {families}"
+                    )
+                earn_val = entry["earnings"]
+                if earn_val not in ("required", "not_applicable"):
+                    raise ValueError(
+                        f"Invalid earnings applicability {earn_val!r} for symbol {sym!r}; must be 'required' or 'not_applicable'"
+                    )
+                ref_val = entry["reference"]
+                if ref_val != "required":
+                    raise ValueError(
+                        f"Invalid reference applicability {ref_val!r} for symbol {sym!r}; must be 'required'"
+                    )
+                canonical_app[sym] = MappingProxyType({
+                    "earnings": earn_val,
+                    "reference": ref_val,
+                })
+            object.__setattr__(self, "applicability", MappingProxyType(canonical_app))
+
     @property
     def universe_hash(self) -> str:
         """SHA-256 hash of the normalized sorted symbol universe.
@@ -153,7 +229,8 @@ class PITUniverseManifest:
         """SHA-256 hash of the canonical material manifest fields.
 
         Material fields (deterministically serialized):
-          contract_version, universe_id, universe_version, effective_from, symbols
+          v1: contract_version, universe_id, universe_version, effective_from, symbols
+          v2: contract_version, universe_id, universe_version, effective_from, symbols, applicability
         Non-material fields (excluded):
           description, filesystem path, file mtime, JSON key ordering
         """
@@ -162,13 +239,33 @@ class PITUniverseManifest:
 
 def _compute_manifest_hash(manifest: PITUniverseManifest) -> str:
     """Compute deterministic SHA-256 hash of the manifest material fields."""
-    payload: dict[str, Any] = {
-        "contract_version": manifest.contract_version,
-        "effective_from": manifest.effective_from.isoformat(),
-        "symbols": list(manifest.symbols),
-        "universe_id": manifest.universe_id,
-        "universe_version": manifest.universe_version,
-    }
+    if manifest.contract_version == 1:
+        payload: dict[str, Any] = {
+            "contract_version": 1,
+            "effective_from": manifest.effective_from.isoformat(),
+            "symbols": list(manifest.symbols),
+            "universe_id": manifest.universe_id,
+            "universe_version": manifest.universe_version,
+        }
+    elif manifest.contract_version == 2:
+        assert manifest.applicability is not None
+        payload = {
+            "applicability": {
+                sym: {
+                    fam: manifest.applicability[sym][fam]
+                    for fam in sorted(manifest.applicability[sym].keys())
+                }
+                for sym in sorted(manifest.symbols)
+            },
+            "contract_version": 2,
+            "effective_from": manifest.effective_from.isoformat(),
+            "symbols": list(manifest.symbols),
+            "universe_id": manifest.universe_id,
+            "universe_version": manifest.universe_version,
+        }
+    else:
+        raise ValueError(f"Unsupported manifest contract_version {manifest.contract_version}")
+
     canonical_json = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
     return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
 
@@ -200,9 +297,9 @@ def load_universe_manifest(path: Path | str) -> PITUniverseManifest:
 
     # Validate contract_version
     cv = raw.get("contract_version")
-    if isinstance(cv, bool) or not isinstance(cv, int) or cv != _MANIFEST_CONTRACT_VERSION:
+    if isinstance(cv, bool) or not isinstance(cv, int) or cv not in _MANIFEST_CONTRACT_VERSIONS:
         raise ValueError(
-            f"contract_version must be integer {_MANIFEST_CONTRACT_VERSION}, got "
+            f"contract_version must be integer in {_MANIFEST_CONTRACT_VERSIONS}, got "
             f"{type(cv).__name__ if cv is not None else 'missing'} ({cv!r})"
         )
 
@@ -241,14 +338,26 @@ def load_universe_manifest(path: Path | str) -> PITUniverseManifest:
     if not isinstance(syms_raw, list):
         raise ValueError(f"symbols must be a JSON array, got {type(syms_raw).__name__}")  # noqa: TRY004
 
-    # normalize_symbols raises TypeError for non-string, ValueError for blank/empty
-
     try:
         normalized = normalize_symbols(syms_raw)
     except TypeError as exc:
         raise TypeError(f"Invalid symbol in manifest: {exc}") from exc
     except ValueError as exc:
         raise ValueError(f"Invalid symbols in manifest: {exc}") from exc
+
+    # Validate applicability for v2 manifests
+    applicability: Mapping[str, Mapping[str, str]] | None = None
+    if cv == 2:
+        if "applicability" not in raw:
+            raise ValueError("applicability field is required for contract_version=2")
+        app_raw = raw["applicability"]
+        if not isinstance(app_raw, dict):
+            raise TypeError(f"applicability must be a JSON object, got {type(app_raw).__name__}")
+        applicability = app_raw
+    elif "applicability" in raw and raw["applicability"] is not None:
+        if not isinstance(raw["applicability"], dict):
+            raise TypeError(f"applicability must be a JSON object, got {type(raw['applicability']).__name__}")
+        applicability = raw["applicability"]
 
     # Optional description
     desc_raw = raw.get("description", "")
@@ -263,6 +372,7 @@ def load_universe_manifest(path: Path | str) -> PITUniverseManifest:
         effective_from=effective_from,
         symbols=normalized,
         description=description,
+        applicability=applicability,
     )
 
 
@@ -618,6 +728,7 @@ def _check_universe_drift(
 
     Raises PITOperationalUniverseConflictError if any existing run for this
     date/slot has a materially different universe hash.
+    Raises PITOperationalManifestConflictError if existing runs have cross-version conflicts.
 
     Zero provider calls, zero writes, zero new runs.
     """
@@ -625,6 +736,15 @@ def _check_universe_drift(
         capture_date, slot, db_path=db_path, settings=settings
     )
     for run in existing_earnings:
+        if run.contract_version != 1:
+            raise PITOperationalManifestConflictError(
+                f"Cross-version conflict for earnings on {capture_date.isoformat()} {slot.value}: "
+                f"existing run {run.capture_run_id!r} has contract_version {run.contract_version}, "
+                "which cannot execute under contract v1 runtime.",
+                existing_hash=getattr(run, "manifest_hash", None),
+                new_hash=None,
+                family="earnings",
+            )
         if run.universe_hash != expected_universe_hash:
             raise PITOperationalUniverseConflictError(
                 f"Universe conflict for earnings on {capture_date.isoformat()} {slot.value}: "
@@ -641,6 +761,15 @@ def _check_universe_drift(
         capture_date, slot, db_path=db_path, settings=settings
     )
     for run in existing_ref:
+        if run.contract_version != 1:
+            raise PITOperationalManifestConflictError(
+                f"Cross-version conflict for reference on {capture_date.isoformat()} {slot.value}: "
+                f"existing run {run.capture_run_id!r} has contract_version {run.contract_version}, "
+                "which cannot execute under contract v1 runtime.",
+                existing_hash=getattr(run, "manifest_hash", None),
+                new_hash=None,
+                family="reference",
+            )
         if run.universe_hash != expected_universe_hash:
             raise PITOperationalUniverseConflictError(
                 f"Universe conflict for reference on {capture_date.isoformat()} {slot.value}: "
@@ -671,10 +800,11 @@ def run_pit_slot(
     2. Return not_due if NOT a XNYS trading day (zero writes, zero provider calls).
     3. Return not_due if slot has not yet been reached (zero writes, zero provider calls).
     4. Return failed if manifest effective_from > current ET date.
-    5. Universe drift guard: fail closed if existing runs have different hash.
-    6. Run earnings capture (family 1).
-    7. Run reference capture (family 2) regardless of earnings outcome.
-    8. Return deterministic PITSlotRunResult.
+    5. Return failed if manifest contract_version != 1 (v2 execution activation deferred to PR B).
+    6. Universe drift guard: fail closed if existing runs have different hash.
+    7. Run earnings capture (family 1).
+    8. Run reference capture (family 2) regardless of earnings outcome.
+    9. Return deterministic PITSlotRunResult.
 
     No OS scheduler. No retry loops. No Candidate/Journal writes.
     The same normalized symbol tuple is used for BOTH families (invariant).
@@ -695,6 +825,14 @@ def run_pit_slot(
     current_dt = _get_aware_utc_now(now_fn)
     current_ny_date = current_dt.astimezone(MARKET_TIMEZONE).date()
     scheduled_for = compute_scheduled_slot_time(current_ny_date, slot)
+
+    # Manifest contract_version gate: fail closed on premature v2 execution before PR B
+    if universe_manifest.contract_version != 1:
+        err_msg = (
+            f"Manifest contract_version {universe_manifest.contract_version} execution is not supported "
+            "under contract v1 runtime (execution activation deferred to PR B)."
+        )
+        return _failed_result(current_ny_date, slot, scheduled_for, current_dt, universe_manifest, err_msg)
 
     # Trading-day gate: zero side effects on non-trading dates
     if not is_trading_day(current_ny_date):
@@ -721,7 +859,7 @@ def run_pit_slot(
             db_path=db_path,
             settings=settings,
         )
-    except PITOperationalUniverseConflictError as exc:
+    except (PITOperationalUniverseConflictError, PITOperationalManifestConflictError) as exc:
         return _failed_result(
             current_ny_date, slot, scheduled_for, current_dt, universe_manifest,
             _sanitize_error(exc),
@@ -958,7 +1096,11 @@ def get_pit_slot_health(
     trading_day = is_trading_day(capture_date)
     slot_due = trading_day and now_utc >= scheduled_for
 
-    expected_hash = universe_manifest.universe_hash
+    if universe_manifest.contract_version != 1:
+        raise ValueError(
+            f"Manifest contract_version {universe_manifest.contract_version} health evaluation is not supported "
+            "under contract v1 runtime (deferred to PR B)."
+        )
 
     # Read existing runs (read-only, does not create DB)
     earnings_runs = list_earnings_capture_runs(
@@ -967,6 +1109,14 @@ def get_pit_slot_health(
     ref_runs = list_reference_capture_runs(
         capture_date, slot, db_path=db_path, settings=settings
     )
+
+    all_runs = list(earnings_runs) + list(ref_runs)
+    if any(r.contract_version != 1 for r in all_runs):
+        raise ValueError(
+            "Existing contract-v2 run cannot be evaluated under contract v1 health semantics (deferred to PR B)."
+        )
+
+    expected_hash = universe_manifest.universe_hash
 
     overall_status = _derive_slot_health_status(
         slot_due, earnings_runs, ref_runs, expected_hash

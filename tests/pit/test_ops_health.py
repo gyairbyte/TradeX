@@ -10,7 +10,7 @@ import pytest
 
 from tradex.config import settings_from_mapping
 from tradex.pit.models import (
-    PIT_CAPTURE_CONTRACT_VERSION,
+    PIT_CAPTURE_WRITE_CONTRACT_VERSION,
     CaptureKind,
     CaptureRunStatus,
     CaptureSlot,
@@ -87,7 +87,7 @@ def _make_earnings_run(
         status=status,
         created_at=now,
         updated_at=now,
-        contract_version=PIT_CAPTURE_CONTRACT_VERSION,
+        contract_version=PIT_CAPTURE_WRITE_CONTRACT_VERSION,
     )
 
 
@@ -129,7 +129,7 @@ def _make_reference_run(
         status=status,
         created_at=now,
         updated_at=now,
-        contract_version=PIT_CAPTURE_CONTRACT_VERSION,
+        contract_version=PIT_CAPTURE_WRITE_CONTRACT_VERSION,
     )
 
 
@@ -448,7 +448,7 @@ class TestHealthIncomplete:
             status=CaptureRunStatus.STARTED,
             created_at=now,
             updated_at=now,
-            contract_version=PIT_CAPTURE_CONTRACT_VERSION,
+            contract_version=PIT_CAPTURE_WRITE_CONTRACT_VERSION,
         )
         r_run = _make_reference_run("r-done", manifest)
         create_capture_run(e_started, db_path=db_path, settings=settings)
@@ -569,7 +569,7 @@ class TestHealthLags:
             status=CaptureRunStatus.STARTED,
             created_at=scheduled_for + timedelta(seconds=10),
             updated_at=scheduled_for + timedelta(seconds=10),
-            contract_version=PIT_CAPTURE_CONTRACT_VERSION,
+            contract_version=PIT_CAPTURE_WRITE_CONTRACT_VERSION,
         )
         # Attempt 2: SUCCEEDED at scheduled_for + 30s, completed at scheduled_for + 60s
         e_run_2 = PITCaptureRun(
@@ -591,7 +591,7 @@ class TestHealthLags:
             status=CaptureRunStatus.SUCCEEDED,
             created_at=scheduled_for + timedelta(seconds=30),
             updated_at=scheduled_for + timedelta(seconds=60),
-            contract_version=PIT_CAPTURE_CONTRACT_VERSION,
+            contract_version=PIT_CAPTURE_WRITE_CONTRACT_VERSION,
         )
 
         create_capture_run(e_run_1, db_path=db_path, settings=settings)
@@ -687,3 +687,74 @@ class TestHealthSqlTraceReadOnly:
         assert post_e_count == pre_e_count
         assert post_r_count == pre_r_count
         assert post_schema == pre_schema
+
+
+def test_get_pit_slot_health_rejects_v2_manifest(tmp_path) -> None:
+    """Verify get_pit_slot_health raises ValueError deferred to PR B when given a v2 manifest."""
+    manifest_v2 = PITUniverseManifest(
+        contract_version=2,
+        universe_id="health-test-v2",
+        universe_version="v2",
+        effective_from=date(2025, 1, 1),
+        symbols=("AAPL", "MSFT"),
+        description="v2 test universe",
+        applicability={
+            "AAPL": {"earnings": "required", "reference": "required"},
+            "MSFT": {"earnings": "required", "reference": "required"},
+        },
+    )
+    with pytest.raises(ValueError, match="deferred to PR B"):
+        get_pit_slot_health(
+            universe_manifest=manifest_v2,
+            capture_date=_TRADING_DATE,
+            slot=CaptureSlot.MORNING,
+            now=_NOW_AFTER_MORNING,
+            db_path=tmp_path / "signals.db",
+            settings=_settings(tmp_path),
+        )
+
+
+def test_get_pit_slot_health_rejects_v2_db_rows(tmp_path) -> None:
+    """Verify get_pit_slot_health raises ValueError deferred to PR B when DB contains v2 capture runs."""
+    from tradex.tracker import store
+
+    db_path = tmp_path / "signals.db"
+    store.init(db_path)
+
+    manifest_v1 = _manifest()
+    now = datetime(2026, 1, 2, 14, 0, tzinfo=UTC)
+
+    # Insert a v2 capture run into DB
+    v2_run = PITCaptureRun(
+        capture_run_id="run-v2-health-reject",
+        idempotency_key="key-v2-health-reject",
+        request_fingerprint="fp-v2-health-reject",
+        capture_kind=CaptureKind.EARNINGS,
+        capture_slot=CaptureSlot.MORNING,
+        capture_date=_TRADING_DATE,
+        scheduled_for=now,
+        requested_at=now,
+        completed_at=now,
+        requested_provider="yahoo",
+        universe_hash=manifest_v1.universe_hash,
+        manifest_hash="m" * 64,
+        requested_n=2,
+        known_n=2,
+        unavailable_n=0,
+        error_n=0,
+        status=CaptureRunStatus.SUCCEEDED,
+        created_at=now,
+        updated_at=now,
+        contract_version=2,
+    )
+    create_capture_run(v2_run, db_path=db_path)
+
+    with pytest.raises(ValueError, match="deferred to PR B"):
+        get_pit_slot_health(
+            universe_manifest=manifest_v1,
+            capture_date=_TRADING_DATE,
+            slot=CaptureSlot.MORNING,
+            now=_NOW_AFTER_MORNING,
+            db_path=db_path,
+            settings=_settings(tmp_path),
+        )
