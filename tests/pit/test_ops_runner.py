@@ -1214,18 +1214,17 @@ class TestV2RunnerActivationGuard:
         finally:
             con.close()
 
-    def test_v2_fails_closed_on_due_trading_day(self, tmp_path):
-        """Due trading day after slot time: returns FAILED, 0 calls, 0 writes."""
+    def test_v2_executes_on_due_trading_day(self, tmp_path):
+        """Due trading day after slot time: v2 executes with contract_version=2 and manifest."""
         db_path = tmp_path / "signals.db"
         from tradex.tracker import store
         store.init(db_path)
         settings = _settings(tmp_path)
         manifest_v2 = self._v2_manifest()
 
-        mock_e = MagicMock()
-        mock_r = MagicMock()
+        mock_e = MagicMock(return_value=_earnings_result_succeeded("e-v2-ok", manifest_v2))
+        mock_r = MagicMock(return_value=_reference_result_succeeded("r-v2-ok", manifest_v2))
         now = _morning_now(_TRADING_DATE)  # after morning slot on trading day
-        db_before = self._dump_db(db_path)
 
         result = run_pit_slot(
             slot=CaptureSlot.MORNING,
@@ -1237,15 +1236,19 @@ class TestV2RunnerActivationGuard:
             reference_capture=mock_r,
         )
 
-        assert result.operational_status == PITOperationalStatus.FAILED
-        assert "execution activation deferred to PR B" in (result.earnings.error_detail or "")
-        assert mock_e.call_count == 0
-        assert mock_r.call_count == 0
-        db_after = self._dump_db(db_path)
-        assert db_before == db_after
+        assert result.operational_status == PITOperationalStatus.SUCCEEDED
+        assert result.contract_version == 2
+        assert mock_e.call_count == 1
+        assert mock_r.call_count == 1
+        _, e_kwargs = mock_e.call_args
+        assert e_kwargs.get("contract_version") == 2
+        assert e_kwargs.get("manifest") == manifest_v2
+        _, r_kwargs = mock_r.call_args
+        assert r_kwargs.get("contract_version") == 2
+        assert r_kwargs.get("manifest") == manifest_v2
 
-    def test_v2_fails_closed_on_non_trading_day_weekend(self, tmp_path):
-        """Non-trading day (weekend): must return FAILED (NOT NOT_DUE), 0 calls, 0 writes."""
+    def test_v2_not_due_on_non_trading_day_weekend(self, tmp_path):
+        """Non-trading day (weekend): returns NOT_DUE, 0 calls, 0 writes."""
         db_path = tmp_path / "signals.db"
         from tradex.tracker import store
         store.init(db_path)
@@ -1267,16 +1270,14 @@ class TestV2RunnerActivationGuard:
             reference_capture=mock_r,
         )
 
-        assert result.operational_status == PITOperationalStatus.FAILED
-        assert result.operational_status != PITOperationalStatus.NOT_DUE
-        assert "execution activation deferred to PR B" in (result.earnings.error_detail or "")
+        assert result.operational_status == PITOperationalStatus.NOT_DUE
         assert mock_e.call_count == 0
         assert mock_r.call_count == 0
         db_after = self._dump_db(db_path)
         assert db_before == db_after
 
-    def test_v2_fails_closed_pre_slot_time(self, tmp_path):
-        """Pre-slot time on trading day: must return FAILED (NOT NOT_DUE), 0 calls, 0 writes."""
+    def test_v2_not_due_pre_slot_time(self, tmp_path):
+        """Pre-slot time on trading day: returns NOT_DUE, 0 calls, 0 writes."""
         db_path = tmp_path / "signals.db"
         from tradex.tracker import store
         store.init(db_path)
@@ -1298,16 +1299,14 @@ class TestV2RunnerActivationGuard:
             reference_capture=mock_r,
         )
 
-        assert result.operational_status == PITOperationalStatus.FAILED
-        assert result.operational_status != PITOperationalStatus.NOT_DUE
-        assert "execution activation deferred to PR B" in (result.earnings.error_detail or "")
+        assert result.operational_status == PITOperationalStatus.NOT_DUE
         assert mock_e.call_count == 0
         assert mock_r.call_count == 0
         db_after = self._dump_db(db_path)
         assert db_before == db_after
 
     def test_v2_fails_closed_future_effective_from(self, tmp_path):
-        """Future effective_from: returns FAILED with contract version rejection, 0 calls, 0 writes."""
+        """Future effective_from: returns FAILED, 0 calls, 0 writes."""
         db_path = tmp_path / "signals.db"
         from tradex.tracker import store
         store.init(db_path)
@@ -1331,7 +1330,7 @@ class TestV2RunnerActivationGuard:
         )
 
         assert result.operational_status == PITOperationalStatus.FAILED
-        assert "execution activation deferred to PR B" in (result.earnings.error_detail or "")
+        assert "is in the future" in (result.earnings.error_detail or "")
         assert mock_e.call_count == 0
         assert mock_r.call_count == 0
         db_after = self._dump_db(db_path)

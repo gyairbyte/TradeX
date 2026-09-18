@@ -14,7 +14,7 @@ from enum import Enum
 from typing import Any
 
 PIT_CAPTURE_CONTRACT_VERSION: int = 2
-# Currently active production capture-write contract pinned to v1 until authorized PR B.
+# Legacy/default direct-write contract version (v1). Runner-driven v2 execution explicitly passes contract_version=2.
 PIT_CAPTURE_WRITE_CONTRACT_VERSION: int = 1
 
 
@@ -56,6 +56,46 @@ class ReferenceObservationStatus(str, Enum):
     UNAVAILABLE = "unavailable"
     AMBIGUOUS = "ambiguous"
     ERROR = "error"
+
+
+class PITEvidenceCompletenessTier(str, Enum):
+    """Categorical evidence completeness tier."""
+
+    COMPLETE = "complete"
+    PARTIAL = "partial"
+    SPARSE = "sparse"
+
+
+@dataclass(frozen=True, slots=True)
+class PITFamilyCompleteness:
+    """Read model representing evidence completeness for one capture family."""
+
+    tier: PITEvidenceCompletenessTier
+    ratio: float
+    pct: float
+    applicable_n: int
+    known_n: int
+    all_not_applicable: bool
+
+    def __post_init__(self) -> None:
+        if self.applicable_n < 0:
+            raise ValueError(f"applicable_n must be >= 0, got {self.applicable_n}")
+        if not (0 <= self.known_n <= self.applicable_n):
+            raise ValueError(
+                f"known_n must satisfy 0 <= known_n <= applicable_n, "
+                f"got known_n={self.known_n} vs applicable_n={self.applicable_n}"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class PITSlotCompleteness:
+    """Read model representing aggregated evidence completeness across the slot."""
+
+    overall_tier: PITEvidenceCompletenessTier
+    pooled_ratio: float
+    pooled_pct: float
+    total_applicable_n: int
+    total_known_n: int
 
 
 REFERENCE_CONTRACT_FIELDS: tuple[str, ...] = (

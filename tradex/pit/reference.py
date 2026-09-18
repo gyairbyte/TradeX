@@ -9,6 +9,7 @@ import uuid
 from collections.abc import Callable, Sequence
 from datetime import UTC, date, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from tradex.config import TradeXSettings, load_runtime_settings
 from tradex.market.hours import MARKET_TIMEZONE
@@ -19,20 +20,26 @@ from tradex.pit.earnings import (
 from tradex.pit.massive_reference import (
     MassiveObservationResult,
     MassiveReferenceClient,
+    sanitize_text,
 )
 from tradex.pit.models import (
-    PIT_CAPTURE_WRITE_CONTRACT_VERSION,
     CaptureRunStatus,
     CaptureSlot,
     PITReferenceCaptureResult,
     PITReferenceCaptureRun,
     PITReferenceSnapshot,
     ReferenceObservationStatus,
+    build_error_reference_fact_payload,
+    compute_fact_hash,
     compute_reference_default_idempotency_key,
     compute_request_fingerprint,
     compute_universe_hash,
     normalize_symbols,
+    serialize_canonical_fact_json,
 )
+
+if TYPE_CHECKING:
+    from tradex.pit.ops import PITUniverseManifest
 from tradex.pit.store import (
     PITIdempotencyConflictError,
     create_reference_capture_run,
@@ -70,24 +77,28 @@ def capture_reference_snapshot(
     now_fn: Callable[[], datetime] | None = None,
     reference_lookup: Callable[[str, date, TradeXSettings | None], MassiveObservationResult] | None = None,
     client: MassiveReferenceClient | None = None,
+    contract_version: int = 1,
+    manifest: PITUniverseManifest | None = None,
 ) -> PITReferenceCaptureResult:
     """Orchestrate prospective point-in-time security/reference observation capture.
 
     Steps:
     1. Resolve runtime settings and validate reference provider source ('massive').
     2. Normalize, deduplicate, and sort symbol universe.
-    3. Validate prospective calendar date (rejecting future/historical) and scheduled slot time.
-    4. Compute request fingerprint and derive default idempotency key.
-    5. Perform side-effect-free preflight idempotency check against existing DB.
-    6. For new capture requests, initialize Schema v7 and persist started capture run.
-    7. For each symbol:
+    3. Enforce contract_version and manifest preflight guards.
+    4. Validate prospective calendar date (rejecting future/historical) and scheduled slot time.
+    5. Compute request fingerprint and derive default idempotency key.
+    6. Perform side-effect-free preflight idempotency check against existing DB.
+    7. For new capture requests, initialize Schema v8 and persist started capture run.
+    8. For each symbol:
        a. Record request start time.
-       b. Perform provider lookup with NO DB lock open.
+       b. Perform provider lookup with NO DB lock open, catching unexpected exceptions to yield
+          truthfully recorded and sanitized per-symbol ERROR observations.
        c. Record response received time and validate clock monotonicity.
-       d. Build immutable reference snapshot.
+       d. Build immutable reference snapshot with correct contract_version.
        e. Immediately persist completed snapshot in SQLite.
-    8. Atomically finalize capture run with terminal status and resolved counts.
-    9. Return immutable read-model result.
+    9. Atomically finalize capture run with terminal status and resolved counts.
+    10. Return immutable read-model result.
     """
     if settings is None:
         settings = load_runtime_settings()
@@ -103,6 +114,23 @@ def capture_reference_snapshot(
     resolved_provider = _resolve_reference_source(source, settings=settings)
     normalized_symbols = normalize_symbols(symbols)
     universe_hash = compute_universe_hash(normalized_symbols)
+
+    # 2. Contract version and manifest preflight guards
+    if contract_version not in (1, 2):
+        raise ValueError(f"Unsupported contract_version {contract_version}; expected 1 or 2")
+
+    if contract_version == 1:
+        if manifest is not None:
+            raise ValueError("manifest must be None when contract_version=1")
+    elif contract_version == 2:
+        if manifest is None:
+            raise ValueError("manifest is required when contract_version=2")
+        if manifest.contract_version != 2:
+            raise ValueError(f"manifest.contract_version must be 2, got {manifest.contract_version}")
+        if normalized_symbols != manifest.symbols:
+            raise ValueError(
+                f"symbols mismatch between arguments and manifest: {normalized_symbols} != {manifest.symbols}"
+            )
 
     current_dt = _get_aware_utc_now(now_fn)
     current_ny_dt = current_dt.astimezone(MARKET_TIMEZONE)
@@ -133,16 +161,30 @@ def capture_reference_snapshot(
             f"{scheduled_for.isoformat()} for {slot.value} slot on {target_capture_date.isoformat()}."
         )
 
-    # Note: Capture write execution remains strictly pinned to contract v1 until PR B.
-    fingerprint = compute_request_fingerprint(
-        contract_version=PIT_CAPTURE_WRITE_CONTRACT_VERSION,
-        capture_kind="reference",
-        capture_slot=slot.value,
-        capture_date=target_capture_date.isoformat(),
-        scheduled_for_iso=scheduled_for.isoformat(),
-        requested_provider=resolved_provider,
-        normalized_symbols=normalized_symbols,
-    )
+    if contract_version == 1:
+        manifest_hash_val: str | None = None
+        fingerprint = compute_request_fingerprint(
+            contract_version=1,
+            capture_kind="reference",
+            capture_slot=slot.value,
+            capture_date=target_capture_date.isoformat(),
+            scheduled_for_iso=scheduled_for.isoformat(),
+            requested_provider=resolved_provider,
+            normalized_symbols=normalized_symbols,
+        )
+    else:
+        assert manifest is not None
+        manifest_hash_val = manifest.manifest_hash
+        fingerprint = compute_request_fingerprint(
+            contract_version=2,
+            capture_kind="reference",
+            capture_slot=slot.value,
+            capture_date=target_capture_date.isoformat(),
+            scheduled_for_iso=scheduled_for.isoformat(),
+            requested_provider=resolved_provider,
+            normalized_symbols=normalized_symbols,
+            manifest_hash=manifest_hash_val,
+        )
 
     if idempotency_key is None:
         resolved_idempotency_key = compute_reference_default_idempotency_key(
@@ -201,7 +243,8 @@ def capture_reference_snapshot(
         status=CaptureRunStatus.STARTED,
         created_at=current_dt,
         updated_at=current_dt,
-        contract_version=PIT_CAPTURE_WRITE_CONTRACT_VERSION,
+        contract_version=contract_version,
+        manifest_hash=manifest_hash_val,
     )
 
     create_reference_capture_run(started_run, db_path=target_path, settings=settings)
@@ -213,11 +256,52 @@ def capture_reference_snapshot(
     for sym in normalized_symbols:
         req_start = _get_aware_utc_now(now_fn)
 
-        if reference_lookup is not None:
-            obs_res = reference_lookup(sym, target_capture_date, settings)
+        if contract_version == 1:
+            if reference_lookup is not None:
+                obs_res = reference_lookup(sym, target_capture_date, settings)
+            else:
+                assert client is not None
+                obs_res = client.fetch_ticker_reference(sym, target_capture_date)
         else:
-            assert client is not None
-            obs_res = client.fetch_ticker_reference(sym, target_capture_date)
+            try:
+                if reference_lookup is not None:
+                    obs_res = reference_lookup(sym, target_capture_date, settings)
+                else:
+                    assert client is not None
+                    obs_res = client.fetch_ticker_reference(sym, target_capture_date)
+            except Exception as exc:  # noqa: BLE001
+                error_cat = type(exc).__name__
+                clean_msg = sanitize_text(str(exc))
+                fact_payload = build_error_reference_fact_payload(
+                    ticker=sym,
+                    error_category=error_cat,
+                    error_message=clean_msg,
+                )
+                fact_json = serialize_canonical_fact_json(fact_payload)
+                fact_hash = compute_fact_hash(fact_json)
+                obs_res = MassiveObservationResult(
+                    observation_status=ReferenceObservationStatus.ERROR,
+                    symbol=sym,
+                    query_date=target_capture_date,
+                    request_ids=(),
+                    provider_ticker=None,
+                    provider_name=None,
+                    provider_market=None,
+                    provider_locale=None,
+                    provider_active=None,
+                    provider_type_code=None,
+                    provider_primary_exchange=None,
+                    provider_cik=None,
+                    provider_composite_figi=None,
+                    provider_share_class_figi=None,
+                    provider_last_updated_at=None,
+                    provider_delisted_at=None,
+                    missing_fields=(),
+                    fact_hash=fact_hash,
+                    fact_json=fact_json,
+                    error_category=error_cat,
+                    error_message=clean_msg,
+                )
 
         req_end = _get_aware_utc_now(now_fn)
         if req_end < req_start:
@@ -254,7 +338,7 @@ def capture_reference_snapshot(
             error_category=obs_res.error_category,
             error_message=obs_res.error_message,
             created_at=req_end,
-            contract_version=PIT_CAPTURE_WRITE_CONTRACT_VERSION,
+            contract_version=contract_version,
         )
         # Persist observation immediately upon completion of provider lookup.
         insert_reference_snapshots([snapshot], db_path=target_path, settings=settings)
@@ -270,12 +354,20 @@ def capture_reference_snapshot(
     error_n = sum(1 for s in snapshots if s.observation_status == ReferenceObservationStatus.ERROR)
     requested_n = len(snapshots)
 
-    if known_n == requested_n:
-        terminal_status = CaptureRunStatus.SUCCEEDED
-    elif known_n > 0:
-        terminal_status = CaptureRunStatus.PARTIAL
+    if contract_version == 1:
+        if known_n == requested_n:
+            terminal_status = CaptureRunStatus.SUCCEEDED
+        elif known_n > 0:
+            terminal_status = CaptureRunStatus.PARTIAL
+        else:
+            terminal_status = CaptureRunStatus.FAILED
     else:
-        terminal_status = CaptureRunStatus.FAILED
+        if error_n == 0:
+            terminal_status = CaptureRunStatus.SUCCEEDED
+        elif 0 < error_n < requested_n:
+            terminal_status = CaptureRunStatus.PARTIAL
+        else:
+            terminal_status = CaptureRunStatus.FAILED
 
     completed_at = _get_aware_utc_now(now_fn)
     finalized_run = finalize_reference_capture_run(

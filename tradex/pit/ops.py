@@ -41,8 +41,13 @@ from tradex.pit.massive_reference import DEFAULT_MASSIVE_MIN_INTERVAL_SECONDS
 from tradex.pit.models import (
     CaptureRunStatus,
     CaptureSlot,
+    ObservationStatus,
     PITCaptureResult,
+    PITEvidenceCompletenessTier,
+    PITFamilyCompleteness,
     PITReferenceCaptureResult,
+    PITSlotCompleteness,
+    ReferenceObservationStatus,
     compute_universe_hash,
     normalize_symbols,
 )
@@ -456,6 +461,74 @@ def estimate_capacity(
 # Slot Run Result
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Evidence Completeness Functions
+# ─────────────────────────────────────────────────────────────────────────────
+
+def compute_family_completeness(
+    family: str,
+    *,
+    requested_n: int,
+    known_n: int,
+    not_applicable_n: int = 0,
+) -> PITFamilyCompleteness:
+    """Derive deterministic evidence completeness read model for a capture family."""
+    applicable_n = requested_n - not_applicable_n if family == "earnings" else requested_n
+    all_na = (applicable_n == 0)
+
+    if all_na:
+        ratio = 1.0
+        tier = PITEvidenceCompletenessTier.COMPLETE
+    else:
+        ratio = known_n / applicable_n
+        if known_n == applicable_n:
+            tier = PITEvidenceCompletenessTier.COMPLETE
+        elif known_n > 0:
+            tier = PITEvidenceCompletenessTier.PARTIAL
+        else:
+            tier = PITEvidenceCompletenessTier.SPARSE
+
+    pct = round(ratio * 100.0, 4)
+    return PITFamilyCompleteness(
+        tier=tier,
+        ratio=ratio,
+        pct=pct,
+        applicable_n=applicable_n,
+        known_n=known_n,
+        all_not_applicable=all_na,
+    )
+
+
+def aggregate_slot_completeness(
+    earnings: PITFamilyCompleteness,
+    reference: PITFamilyCompleteness,
+) -> PITSlotCompleteness:
+    """Aggregate family evidence completeness into a slot-level read model."""
+    total_app = earnings.applicable_n + reference.applicable_n
+    total_known = earnings.known_n + reference.known_n
+
+    if total_app == 0:
+        pooled_ratio = 1.0
+    else:
+        pooled_ratio = total_known / total_app
+    pooled_pct = round(pooled_ratio * 100.0, 4)
+
+    if earnings.tier == PITEvidenceCompletenessTier.COMPLETE and reference.tier == PITEvidenceCompletenessTier.COMPLETE:
+        overall_tier = PITEvidenceCompletenessTier.COMPLETE
+    elif earnings.tier == PITEvidenceCompletenessTier.SPARSE or reference.tier == PITEvidenceCompletenessTier.SPARSE:
+        overall_tier = PITEvidenceCompletenessTier.SPARSE
+    else:
+        overall_tier = PITEvidenceCompletenessTier.PARTIAL
+
+    return PITSlotCompleteness(
+        overall_tier=overall_tier,
+        pooled_ratio=pooled_ratio,
+        pooled_pct=pooled_pct,
+        total_applicable_n=total_app,
+        total_known_n=total_known,
+    )
+
+
 class PITOperationalStatus(str, Enum):
     """Operational status of a PIT slot run."""
 
@@ -477,6 +550,9 @@ class PITFamilyRunResult:
     ambiguous_n: int  # reference only; 0 for earnings
     error_n: int
     error_detail: str | None        # sanitized, no credentials
+    requested_n: int = 0
+    not_applicable_n: int = 0
+    completeness: PITFamilyCompleteness | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -496,6 +572,7 @@ class PITSlotRunResult:
     operational_status: PITOperationalStatus
     earnings: PITFamilyRunResult
     reference: PITFamilyRunResult
+    evidence_completeness: PITSlotCompleteness | None = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -511,6 +588,7 @@ class PITSlotHealthStatus(str, Enum):
     MISSING = "missing"
     INCOMPLETE = "incomplete"
     UNIVERSE_CONFLICT = "universe_conflict"
+    FAILED = "failed"
 
 
 @dataclass(frozen=True, slots=True)
@@ -528,6 +606,8 @@ class PITFamilyHealth:
     snapshot_count: int
     first_request_lag_seconds: float | None # seconds from scheduled_for to first request
     completion_lag_seconds: float | None    # seconds from scheduled_for to first completion
+    manifest_hashes: tuple[str, ...] = ()
+    completeness: PITFamilyCompleteness | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -545,6 +625,9 @@ class PITSlotHealth:
     overall_status: PITSlotHealthStatus
     earnings: PITFamilyHealth
     reference: PITFamilyHealth
+    contract_version: int = 1
+    failure_reason: str | None = None
+    evidence_completeness: PITSlotCompleteness | None = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -560,10 +643,13 @@ def _sanitize_error(exc: Exception) -> str:
 def _family_result_from_capture(
     family: str,
     result: PITCaptureResult | PITReferenceCaptureResult,
+    *,
+    completeness: PITFamilyCompleteness | None = None,
 ) -> PITFamilyRunResult:
     """Build a PITFamilyRunResult from a successful capture result."""
     run = result.run
     ambiguous_n = getattr(run, "ambiguous_n", 0)
+    not_applicable_n = getattr(run, "not_applicable_n", 0)
     return PITFamilyRunResult(
         family=family,
         capture_run_id=run.capture_run_id,
@@ -573,6 +659,9 @@ def _family_result_from_capture(
         ambiguous_n=ambiguous_n,
         error_n=run.error_n,
         error_detail=None,
+        requested_n=run.requested_n,
+        not_applicable_n=not_applicable_n,
+        completeness=completeness,
     )
 
 
@@ -585,6 +674,9 @@ def _family_result_on_exception(
     pre_existing_run_ids: set[str],
     db_path: Path | None,
     settings: TradeXSettings | None,
+    requested_n: int = 0,
+    contract_version: int = 1,
+    manifest: PITUniverseManifest | None = None,
 ) -> PITFamilyRunResult:
     """Build PITFamilyRunResult truthfully reflecting any durably created run, with safe generic error."""
     safe_error_detail = (
@@ -605,6 +697,33 @@ def _family_result_on_exception(
     if len(new_runs) == 1:
         durable_run = new_runs[0]
         ambiguous_n = getattr(durable_run, "ambiguous_n", 0)
+        not_applicable_n = getattr(durable_run, "not_applicable_n", 0)
+
+        family_comp = None
+        if contract_version == 2 and manifest is not None:
+            if durable_run.status == CaptureRunStatus.STARTED:
+                if family == "earnings":
+                    snaps = list_earnings_snapshots(durable_run.capture_run_id, db_path=db_path, settings=settings)
+                    known_n = sum(1 for s in snaps if s.observation_status == ObservationStatus.KNOWN)
+                    na_n = sum(1 for s in snaps if s.observation_status == ObservationStatus.NOT_APPLICABLE)
+                else:
+                    snaps = list_reference_snapshots(durable_run.capture_run_id, db_path=db_path, settings=settings)
+                    known_n = sum(1 for s in snaps if s.observation_status == ReferenceObservationStatus.KNOWN)
+                    na_n = 0
+                family_comp = compute_family_completeness(
+                    family,
+                    requested_n=requested_n or durable_run.requested_n,
+                    known_n=known_n,
+                    not_applicable_n=na_n,
+                )
+            else:
+                family_comp = compute_family_completeness(
+                    family,
+                    requested_n=durable_run.requested_n,
+                    known_n=durable_run.known_n,
+                    not_applicable_n=not_applicable_n,
+                )
+
         return PITFamilyRunResult(
             family=family,
             capture_run_id=durable_run.capture_run_id,
@@ -614,6 +733,23 @@ def _family_result_on_exception(
             ambiguous_n=ambiguous_n,
             error_n=durable_run.error_n,
             error_detail=safe_error_detail,
+            requested_n=durable_run.requested_n,
+            not_applicable_n=not_applicable_n,
+            completeness=family_comp,
+        )
+
+    family_comp = None
+    if contract_version == 2 and manifest is not None:
+        na_n = (
+            sum(1 for sym in manifest.symbols if manifest.applicability.get(sym, {}).get("earnings") == "not_applicable")
+            if family == "earnings"
+            else 0
+        )
+        family_comp = compute_family_completeness(
+            family,
+            requested_n=requested_n or len(manifest.symbols),
+            known_n=0,
+            not_applicable_n=na_n,
         )
 
     return PITFamilyRunResult(
@@ -625,8 +761,10 @@ def _family_result_on_exception(
         ambiguous_n=0,
         error_n=0,
         error_detail=safe_error_detail,
+        requested_n=requested_n,
+        not_applicable_n=0,
+        completeness=family_comp,
     )
-
 
 
 def _not_due_result(
@@ -637,8 +775,17 @@ def _not_due_result(
     manifest: PITUniverseManifest,
 ) -> PITSlotRunResult:
     """Build a not_due result with zero side effects."""
+    e_comp = None
+    r_comp = None
+    slot_comp = None
+    if manifest.contract_version == 2:
+        na_n = sum(1 for sym in manifest.symbols if manifest.applicability.get(sym, {}).get("earnings") == "not_applicable")
+        e_comp = compute_family_completeness("earnings", requested_n=len(manifest.symbols), known_n=0, not_applicable_n=na_n)
+        r_comp = compute_family_completeness("reference", requested_n=len(manifest.symbols), known_n=0, not_applicable_n=0)
+        slot_comp = aggregate_slot_completeness(e_comp, r_comp)
+
     return PITSlotRunResult(
-        contract_version=1,
+        contract_version=manifest.contract_version,
         capture_date=capture_date,
         slot=slot,
         scheduled_for=scheduled_for,
@@ -652,11 +799,16 @@ def _not_due_result(
         earnings=PITFamilyRunResult(
             family="earnings", capture_run_id=None, status=None,
             known_n=0, unavailable_n=0, ambiguous_n=0, error_n=0, error_detail=None,
+            requested_n=len(manifest.symbols),
+            completeness=e_comp,
         ),
         reference=PITFamilyRunResult(
             family="reference", capture_run_id=None, status=None,
             known_n=0, unavailable_n=0, ambiguous_n=0, error_n=0, error_detail=None,
+            requested_n=len(manifest.symbols),
+            completeness=r_comp,
         ),
+        evidence_completeness=slot_comp,
     )
 
 
@@ -669,8 +821,17 @@ def _failed_result(
     error_detail: str,
 ) -> PITSlotRunResult:
     """Build a failed result with the given error detail."""
+    e_comp = None
+    r_comp = None
+    slot_comp = None
+    if manifest.contract_version == 2:
+        na_n = sum(1 for sym in manifest.symbols if manifest.applicability.get(sym, {}).get("earnings") == "not_applicable")
+        e_comp = compute_family_completeness("earnings", requested_n=len(manifest.symbols), known_n=0, not_applicable_n=na_n)
+        r_comp = compute_family_completeness("reference", requested_n=len(manifest.symbols), known_n=0, not_applicable_n=0)
+        slot_comp = aggregate_slot_completeness(e_comp, r_comp)
+
     return PITSlotRunResult(
-        contract_version=1,
+        contract_version=manifest.contract_version,
         capture_date=capture_date,
         slot=slot,
         scheduled_for=scheduled_for,
@@ -685,35 +846,64 @@ def _failed_result(
             family="earnings", capture_run_id=None, status=None,
             known_n=0, unavailable_n=0, ambiguous_n=0, error_n=0,
             error_detail=error_detail,
+            requested_n=len(manifest.symbols),
+            completeness=e_comp,
         ),
         reference=PITFamilyRunResult(
             family="reference", capture_run_id=None, status=None,
             known_n=0, unavailable_n=0, ambiguous_n=0, error_n=0,
             error_detail=error_detail,
+            requested_n=len(manifest.symbols),
+            completeness=r_comp,
         ),
+        evidence_completeness=slot_comp,
     )
 
 
 def _compute_operational_status(
     earnings_result: PITFamilyRunResult,
     ref_result: PITFamilyRunResult,
+    *,
+    contract_version: int = 1,
+    had_fatal_error: bool = False,
 ) -> PITOperationalStatus:
-    """Derive overall operational status from family results."""
-    # Operations-level failures: both families failed to create runs
-    if earnings_result.capture_run_id is None and ref_result.capture_run_id is None:
+    if contract_version == 1:
+        if earnings_result.capture_run_id is None and ref_result.capture_run_id is None:
+            return PITOperationalStatus.FAILED
+        both_succeeded = (
+            earnings_result.status == CaptureRunStatus.SUCCEEDED
+            and ref_result.status == CaptureRunStatus.SUCCEEDED
+        )
+        if both_succeeded:
+            return PITOperationalStatus.SUCCEEDED
+        return PITOperationalStatus.DEGRADED
+
+    # Contract v2
+    if had_fatal_error:
+        return PITOperationalStatus.FAILED
+    if (
+        earnings_result.capture_run_id is None
+        or ref_result.capture_run_id is None
+        or earnings_result.status == CaptureRunStatus.FAILED
+        or ref_result.status == CaptureRunStatus.FAILED
+        or earnings_result.error_detail is not None
+        or ref_result.error_detail is not None
+    ):
         return PITOperationalStatus.FAILED
 
-    e_status = earnings_result.status
-    r_status = ref_result.status
+    if (
+        earnings_result.status in (CaptureRunStatus.STARTED, CaptureRunStatus.PARTIAL)
+        or ref_result.status in (CaptureRunStatus.STARTED, CaptureRunStatus.PARTIAL)
+    ):
+        return PITOperationalStatus.DEGRADED
 
-    both_succeeded = (
-        e_status == CaptureRunStatus.SUCCEEDED
-        and r_status == CaptureRunStatus.SUCCEEDED
-    )
-    if both_succeeded:
+    if (
+        earnings_result.status == CaptureRunStatus.SUCCEEDED
+        and ref_result.status == CaptureRunStatus.SUCCEEDED
+    ):
         return PITOperationalStatus.SUCCEEDED
 
-    return PITOperationalStatus.DEGRADED
+    return PITOperationalStatus.FAILED
 
 
 def _check_universe_drift(
@@ -721,14 +911,17 @@ def _check_universe_drift(
     slot: CaptureSlot,
     expected_universe_hash: str,
     *,
+    expected_contract_version: int = 1,
+    expected_manifest_hash: str | None = None,
     db_path: Path | None,
     settings: TradeXSettings | None,
 ) -> None:
-    """Inspect existing runs for universe hash drift.
+    """Inspect existing runs for universe hash and manifest drift.
 
     Raises PITOperationalUniverseConflictError if any existing run for this
     date/slot has a materially different universe hash.
-    Raises PITOperationalManifestConflictError if existing runs have cross-version conflicts.
+    Raises PITOperationalManifestConflictError if existing runs have cross-version conflicts
+    or manifest hash conflicts.
 
     Zero provider calls, zero writes, zero new runs.
     """
@@ -736,13 +929,13 @@ def _check_universe_drift(
         capture_date, slot, db_path=db_path, settings=settings
     )
     for run in existing_earnings:
-        if run.contract_version != 1:
+        if run.contract_version != expected_contract_version:
             raise PITOperationalManifestConflictError(
                 f"Cross-version conflict for earnings on {capture_date.isoformat()} {slot.value}: "
                 f"existing run {run.capture_run_id!r} has contract_version {run.contract_version}, "
-                "which cannot execute under contract v1 runtime.",
+                f"which cannot execute under contract v{expected_contract_version} runtime.",
                 existing_hash=getattr(run, "manifest_hash", None),
-                new_hash=None,
+                new_hash=expected_manifest_hash,
                 family="earnings",
             )
         if run.universe_hash != expected_universe_hash:
@@ -756,18 +949,27 @@ def _check_universe_drift(
                 new_hash=expected_universe_hash,
                 family="earnings",
             )
+        if expected_contract_version == 2 and getattr(run, "manifest_hash", None) != expected_manifest_hash:
+            raise PITOperationalManifestConflictError(
+                f"Manifest conflict for earnings on {capture_date.isoformat()} {slot.value}: "
+                f"existing run {run.capture_run_id!r} has manifest_hash {getattr(run, 'manifest_hash', None)!r} "
+                f"but supplied manifest has {expected_manifest_hash!r}.",
+                existing_hash=getattr(run, "manifest_hash", None),
+                new_hash=expected_manifest_hash,
+                family="earnings",
+            )
 
     existing_ref = list_reference_capture_runs(
         capture_date, slot, db_path=db_path, settings=settings
     )
     for run in existing_ref:
-        if run.contract_version != 1:
+        if run.contract_version != expected_contract_version:
             raise PITOperationalManifestConflictError(
                 f"Cross-version conflict for reference on {capture_date.isoformat()} {slot.value}: "
                 f"existing run {run.capture_run_id!r} has contract_version {run.contract_version}, "
-                "which cannot execute under contract v1 runtime.",
+                f"which cannot execute under contract v{expected_contract_version} runtime.",
                 existing_hash=getattr(run, "manifest_hash", None),
-                new_hash=None,
+                new_hash=expected_manifest_hash,
                 family="reference",
             )
         if run.universe_hash != expected_universe_hash:
@@ -779,6 +981,15 @@ def _check_universe_drift(
                 "future operational decision.",
                 existing_hash=run.universe_hash,
                 new_hash=expected_universe_hash,
+                family="reference",
+            )
+        if expected_contract_version == 2 and getattr(run, "manifest_hash", None) != expected_manifest_hash:
+            raise PITOperationalManifestConflictError(
+                f"Manifest conflict for reference on {capture_date.isoformat()} {slot.value}: "
+                f"existing run {run.capture_run_id!r} has manifest_hash {getattr(run, 'manifest_hash', None)!r} "
+                f"but supplied manifest has {expected_manifest_hash!r}.",
+                existing_hash=getattr(run, "manifest_hash", None),
+                new_hash=expected_manifest_hash,
                 family="reference",
             )
 
@@ -826,11 +1037,10 @@ def run_pit_slot(
     current_ny_date = current_dt.astimezone(MARKET_TIMEZONE).date()
     scheduled_for = compute_scheduled_slot_time(current_ny_date, slot)
 
-    # Manifest contract_version gate: fail closed on premature v2 execution before PR B
-    if universe_manifest.contract_version != 1:
+    # Manifest contract_version gate
+    if universe_manifest.contract_version not in (1, 2):
         err_msg = (
-            f"Manifest contract_version {universe_manifest.contract_version} execution is not supported "
-            "under contract v1 runtime (execution activation deferred to PR B)."
+            f"Manifest contract_version {universe_manifest.contract_version} execution is not supported."
         )
         return _failed_result(current_ny_date, slot, scheduled_for, current_dt, universe_manifest, err_msg)
 
@@ -856,6 +1066,8 @@ def run_pit_slot(
             current_ny_date,
             slot,
             universe_manifest.universe_hash,
+            expected_contract_version=universe_manifest.contract_version,
+            expected_manifest_hash=universe_manifest.manifest_hash,
             db_path=db_path,
             settings=settings,
         )
@@ -867,6 +1079,7 @@ def run_pit_slot(
 
     # The same normalized symbol tuple is used for BOTH families (required invariant).
     symbols = universe_manifest.symbols
+    had_fatal_error = False
 
     # ── Earnings capture (family 1) ────────────────────────────────────────
     pre_earnings_runs = list_earnings_capture_runs(
@@ -878,16 +1091,36 @@ def run_pit_slot(
 
     earnings_result: PITFamilyRunResult
     try:
-        e_capture = earnings_capture(
-            symbols=symbols,
-            slot=slot,
-            settings=settings,
-            db_path=db_path,
-            now_fn=now_fn,
-        )
-        earnings_result = _family_result_from_capture("earnings", e_capture)
+        if universe_manifest.contract_version == 1:
+            e_capture = earnings_capture(
+                symbols=symbols,
+                slot=slot,
+                settings=settings,
+                db_path=db_path,
+                now_fn=now_fn,
+            )
+        else:
+            e_capture = earnings_capture(
+                symbols=symbols,
+                slot=slot,
+                settings=settings,
+                db_path=db_path,
+                now_fn=now_fn,
+                contract_version=2,
+                manifest=universe_manifest,
+            )
+        e_comp = None
+        if universe_manifest.contract_version == 2:
+            e_comp = compute_family_completeness(
+                "earnings",
+                requested_n=e_capture.run.requested_n,
+                known_n=e_capture.run.known_n,
+                not_applicable_n=getattr(e_capture.run, "not_applicable_n", 0),
+            )
+        earnings_result = _family_result_from_capture("earnings", e_capture, completeness=e_comp)
     except Exception:  # noqa: BLE001
         # Family failure isolation: controlled exception captured, continue to reference.
+        had_fatal_error = True
         earnings_result = _family_result_on_exception(
             "earnings",
             capture_date=current_ny_date,
@@ -896,6 +1129,9 @@ def run_pit_slot(
             pre_existing_run_ids=pre_earnings_ids,
             db_path=db_path,
             settings=settings,
+            requested_n=len(symbols),
+            contract_version=universe_manifest.contract_version,
+            manifest=universe_manifest,
         )
 
     # ── Reference capture (family 2) ──────────────────────────────────────
@@ -909,15 +1145,35 @@ def run_pit_slot(
 
     ref_result: PITFamilyRunResult
     try:
-        r_capture = reference_capture(
-            symbols=symbols,
-            slot=slot,
-            settings=settings,
-            db_path=db_path,
-            now_fn=now_fn,
-        )
-        ref_result = _family_result_from_capture("reference", r_capture)
+        if universe_manifest.contract_version == 1:
+            r_capture = reference_capture(
+                symbols=symbols,
+                slot=slot,
+                settings=settings,
+                db_path=db_path,
+                now_fn=now_fn,
+            )
+        else:
+            r_capture = reference_capture(
+                symbols=symbols,
+                slot=slot,
+                settings=settings,
+                db_path=db_path,
+                now_fn=now_fn,
+                contract_version=2,
+                manifest=universe_manifest,
+            )
+        r_comp = None
+        if universe_manifest.contract_version == 2:
+            r_comp = compute_family_completeness(
+                "reference",
+                requested_n=r_capture.run.requested_n,
+                known_n=r_capture.run.known_n,
+                not_applicable_n=0,
+            )
+        ref_result = _family_result_from_capture("reference", r_capture, completeness=r_comp)
     except Exception:  # noqa: BLE001
+        had_fatal_error = True
         ref_result = _family_result_on_exception(
             "reference",
             capture_date=current_ny_date,
@@ -926,13 +1182,31 @@ def run_pit_slot(
             pre_existing_run_ids=pre_ref_ids,
             db_path=db_path,
             settings=settings,
+            requested_n=len(symbols),
+            contract_version=universe_manifest.contract_version,
+            manifest=universe_manifest,
         )
 
+    operational_status = _compute_operational_status(
+        earnings_result,
+        ref_result,
+        contract_version=universe_manifest.contract_version,
+        had_fatal_error=had_fatal_error,
+    )
 
-    operational_status = _compute_operational_status(earnings_result, ref_result)
+    evidence_completeness = None
+    if (
+        universe_manifest.contract_version == 2
+        and earnings_result.completeness is not None
+        and ref_result.completeness is not None
+    ):
+        evidence_completeness = aggregate_slot_completeness(
+            earnings_result.completeness,
+            ref_result.completeness,
+        )
 
     return PITSlotRunResult(
-        contract_version=1,
+        contract_version=universe_manifest.contract_version,
         capture_date=current_ny_date,
         slot=slot,
         scheduled_for=scheduled_for,
@@ -945,6 +1219,7 @@ def run_pit_slot(
         operational_status=operational_status,
         earnings=earnings_result,
         reference=ref_result,
+        evidence_completeness=evidence_completeness,
     )
 
 
@@ -961,6 +1236,8 @@ def _build_family_health(
     *,
     db_path: Path | None,
     settings: TradeXSettings | None,
+    manifest_hashes: tuple[str, ...] = (),
+    completeness: PITFamilyCompleteness | None = None,
 ) -> PITFamilyHealth:
     """Build PITFamilyHealth from existing run records (read-only)."""
     run_ids = tuple(r.capture_run_id for r in runs)
@@ -1000,11 +1277,13 @@ def _build_family_health(
         run_ids=run_ids,
         statuses=statuses,
         universe_hashes=universe_hashes,
+        manifest_hashes=manifest_hashes,
         latest_requested_at=latest_requested_at,
         latest_completed_at=latest_completed_at,
         snapshot_count=snapshot_count,
         first_request_lag_seconds=first_request_lag_seconds,
         completion_lag_seconds=completion_lag_seconds,
+        completeness=completeness,
     )
 
 
@@ -1055,6 +1334,84 @@ def _derive_slot_health_status(
     return PITSlotHealthStatus.DEGRADED
 
 
+def _derive_family_completeness_read_model(
+    family: str,
+    runs: tuple,
+    manifest: PITUniverseManifest,
+    db_path: Path | None = None,
+    settings: TradeXSettings | None = None,
+) -> PITFamilyCompleteness:
+    """Derive family completeness independently from matching runs."""
+    candidate_runs = [
+        r for r in runs
+        if r.universe_hash == manifest.universe_hash
+        and getattr(r, "manifest_hash", None) == manifest.manifest_hash
+    ]
+    if candidate_runs:
+        authoritative_attempt = max(candidate_runs, key=lambda r: (r.requested_at, r.capture_run_id))
+        if authoritative_attempt.status in (
+            CaptureRunStatus.SUCCEEDED,
+            CaptureRunStatus.PARTIAL,
+            CaptureRunStatus.FAILED,
+        ):
+            return compute_family_completeness(
+                family,
+                requested_n=authoritative_attempt.requested_n,
+                known_n=authoritative_attempt.known_n,
+                not_applicable_n=getattr(authoritative_attempt, "not_applicable_n", 0),
+            )
+        if authoritative_attempt.status == CaptureRunStatus.STARTED:
+            if family == "earnings":
+                from tradex.pit.models import ObservationStatus
+                from tradex.pit.store import list_earnings_snapshots
+
+                snaps = list_earnings_snapshots(
+                    authoritative_attempt.capture_run_id,
+                    db_path=db_path,
+                    settings=settings,
+                )
+                known_n = sum(1 for s in snaps if s.observation_status == ObservationStatus.KNOWN)
+                na_n = sum(
+                    1
+                    for sym in manifest.symbols
+                    if (manifest.applicability or {}).get(sym, {}).get("earnings") == "not_applicable"
+                )
+                return compute_family_completeness(
+                    family,
+                    requested_n=len(manifest.symbols),
+                    known_n=known_n,
+                    not_applicable_n=na_n,
+                )
+            else:
+                from tradex.pit.models import ReferenceObservationStatus
+                from tradex.pit.store import list_reference_snapshots
+
+                snaps = list_reference_snapshots(
+                    authoritative_attempt.capture_run_id,
+                    db_path=db_path,
+                    settings=settings,
+                )
+                known_n = sum(1 for s in snaps if s.observation_status == ReferenceObservationStatus.KNOWN)
+                return compute_family_completeness(
+                    family,
+                    requested_n=len(manifest.symbols),
+                    known_n=known_n,
+                    not_applicable_n=0,
+                )
+
+    na_n = (
+        sum(1 for sym in manifest.symbols if (manifest.applicability or {}).get(sym, {}).get("earnings") == "not_applicable")
+        if family == "earnings"
+        else 0
+    )
+    return compute_family_completeness(
+        family,
+        requested_n=len(manifest.symbols),
+        known_n=0,
+        not_applicable_n=na_n,
+    )
+
+
 def get_pit_slot_health(
     *,
     universe_manifest: PITUniverseManifest,
@@ -1096,10 +1453,9 @@ def get_pit_slot_health(
     trading_day = is_trading_day(capture_date)
     slot_due = trading_day and now_utc >= scheduled_for
 
-    if universe_manifest.contract_version != 1:
+    if universe_manifest.contract_version not in (1, 2):
         raise ValueError(
-            f"Manifest contract_version {universe_manifest.contract_version} health evaluation is not supported "
-            "under contract v1 runtime (deferred to PR B)."
+            f"Manifest contract_version {universe_manifest.contract_version} health evaluation is not supported."
         )
 
     # Read existing runs (read-only, does not create DB)
@@ -1111,24 +1467,112 @@ def get_pit_slot_health(
     )
 
     all_runs = list(earnings_runs) + list(ref_runs)
-    if any(r.contract_version != 1 for r in all_runs):
-        raise ValueError(
-            "Existing contract-v2 run cannot be evaluated under contract v1 health semantics (deferred to PR B)."
-        )
-
     expected_hash = universe_manifest.universe_hash
 
-    overall_status = _derive_slot_health_status(
-        slot_due, earnings_runs, ref_runs, expected_hash
+    if universe_manifest.contract_version == 1:
+        if any(r.contract_version != 1 for r in all_runs):
+            raise ValueError(
+                "Existing contract-v2 run cannot be evaluated under contract v1 health semantics (deferred to PR B)."
+            )
+
+        overall_status = _derive_slot_health_status(
+            slot_due, earnings_runs, ref_runs, expected_hash
+        )
+
+        earnings_health = _build_family_health(
+            "earnings", earnings_runs, expected_hash, scheduled_for, slot_due,
+            db_path=db_path, settings=settings,
+        )
+        ref_health = _build_family_health(
+            "reference", ref_runs, expected_hash, scheduled_for, slot_due,
+            db_path=db_path, settings=settings,
+        )
+
+        return PITSlotHealth(
+            universe_id=universe_manifest.universe_id,
+            universe_version=universe_manifest.universe_version,
+            manifest_hash=universe_manifest.manifest_hash,
+            universe_hash=expected_hash,
+            capture_date=capture_date,
+            slot=slot,
+            scheduled_for=scheduled_for,
+            health_checked_at=now_utc,
+            overall_status=overall_status,
+            earnings=earnings_health,
+            reference=ref_health,
+            contract_version=1,
+            failure_reason=None,
+            evidence_completeness=None,
+        )
+
+    # Contract v2 Health Evaluation
+    has_cv_conflict = any(r.contract_version != 2 for r in all_runs)
+    has_universe_conflict = any(r.universe_hash != expected_hash for r in all_runs)
+    has_manifest_conflict = any(
+        getattr(r, "manifest_hash", None) != universe_manifest.manifest_hash
+        for r in all_runs
     )
+
+    overall_status: PITSlotHealthStatus
+    failure_reason: str | None = None
+
+    if has_universe_conflict:
+        overall_status = PITSlotHealthStatus.FAILED
+        failure_reason = "universe_conflict"
+    elif has_cv_conflict or has_manifest_conflict:
+        overall_status = PITSlotHealthStatus.FAILED
+        failure_reason = "manifest_conflict"
+    elif not slot_due:
+        overall_status = PITSlotHealthStatus.NOT_DUE
+        failure_reason = None
+    elif not earnings_runs or not ref_runs:
+        overall_status = PITSlotHealthStatus.FAILED
+        failure_reason = "missing_due_family"
+    elif any(r.status == CaptureRunStatus.STARTED for r in all_runs):
+        overall_status = PITSlotHealthStatus.DEGRADED
+        failure_reason = "run_in_progress"
+    else:
+        e_terminal = [r for r in earnings_runs if r.status != CaptureRunStatus.STARTED]
+        r_terminal = [r for r in ref_runs if r.status != CaptureRunStatus.STARTED]
+        if not e_terminal or not r_terminal:
+            overall_status = PITSlotHealthStatus.FAILED
+            failure_reason = "missing_due_family"
+        else:
+            latest_e = max(e_terminal, key=lambda r: (r.requested_at, r.capture_run_id))
+            latest_r = max(r_terminal, key=lambda r: (r.requested_at, r.capture_run_id))
+
+            if latest_e.status == CaptureRunStatus.FAILED or latest_r.status == CaptureRunStatus.FAILED:
+                overall_status = PITSlotHealthStatus.FAILED
+                failure_reason = "capture_failed"
+            elif latest_e.status == CaptureRunStatus.PARTIAL or latest_r.status == CaptureRunStatus.PARTIAL:
+                overall_status = PITSlotHealthStatus.DEGRADED
+                failure_reason = "partial_evidence"
+            elif latest_e.status == CaptureRunStatus.SUCCEEDED and latest_r.status == CaptureRunStatus.SUCCEEDED:
+                overall_status = PITSlotHealthStatus.HEALTHY
+                failure_reason = None
+            else:
+                overall_status = PITSlotHealthStatus.FAILED
+                failure_reason = "capture_failed"
+
+    e_comp = _derive_family_completeness_read_model(
+        "earnings", earnings_runs, universe_manifest, db_path=db_path, settings=settings
+    )
+    r_comp = _derive_family_completeness_read_model(
+        "reference", ref_runs, universe_manifest, db_path=db_path, settings=settings
+    )
+    slot_comp = aggregate_slot_completeness(e_comp, r_comp)
 
     earnings_health = _build_family_health(
         "earnings", earnings_runs, expected_hash, scheduled_for, slot_due,
         db_path=db_path, settings=settings,
+        manifest_hashes=tuple(getattr(r, "manifest_hash", "") for r in earnings_runs if getattr(r, "manifest_hash", None)),
+        completeness=e_comp,
     )
     ref_health = _build_family_health(
         "reference", ref_runs, expected_hash, scheduled_for, slot_due,
         db_path=db_path, settings=settings,
+        manifest_hashes=tuple(getattr(r, "manifest_hash", "") for r in ref_runs if getattr(r, "manifest_hash", None)),
+        completeness=r_comp,
     )
 
     return PITSlotHealth(
@@ -1141,8 +1585,11 @@ def get_pit_slot_health(
         scheduled_for=scheduled_for,
         health_checked_at=now_utc,
         overall_status=overall_status,
+        failure_reason=failure_reason,
         earnings=earnings_health,
         reference=ref_health,
+        contract_version=2,
+        evidence_completeness=slot_comp,
     )
 
 
@@ -1177,18 +1624,61 @@ def _build_validate_universe_output(
 
 def _build_run_slot_output(result: PITSlotRunResult) -> dict[str, Any]:
     """Build structured run-slot output."""
-    def _family_dict(f: PITFamilyRunResult) -> dict[str, Any]:
+    if result.contract_version == 1:
+        def _family_dict(f: PITFamilyRunResult) -> dict[str, Any]:
+            return {
+                "capture_run_id": f.capture_run_id,
+                "status": f.status.value if f.status is not None else None,
+                "known_n": f.known_n,
+                "unavailable_n": f.unavailable_n,
+                "ambiguous_n": f.ambiguous_n,
+                "error_n": f.error_n,
+                "error_detail": f.error_detail,
+            }
+
         return {
+            "contract_version": result.contract_version,
+            "capture_date": result.capture_date.isoformat(),
+            "slot": result.slot.value,
+            "scheduled_for": result.scheduled_for.isoformat(),
+            "requested_at": result.requested_at.isoformat(),
+            "universe_id": result.universe_id,
+            "universe_version": result.universe_version,
+            "manifest_hash": result.manifest_hash,
+            "universe_hash": result.universe_hash,
+            "symbol_count": result.symbol_count,
+            "operational_status": result.operational_status.value,
+            "earnings": _family_dict(result.earnings),
+            "reference": _family_dict(result.reference),
+        }
+
+    # Contract v2 output
+    def _v2_family_dict(f: PITFamilyRunResult) -> dict[str, Any]:
+        d: dict[str, Any] = {
             "capture_run_id": f.capture_run_id,
             "status": f.status.value if f.status is not None else None,
+            "requested_n": f.requested_n,
             "known_n": f.known_n,
             "unavailable_n": f.unavailable_n,
             "ambiguous_n": f.ambiguous_n,
             "error_n": f.error_n,
+            "not_applicable_n": f.not_applicable_n,
             "error_detail": f.error_detail,
         }
+        if f.completeness is not None:
+            d["completeness"] = {
+                "tier": f.completeness.tier.value,
+                "ratio": f.completeness.ratio,
+                "pct": f.completeness.pct,
+                "applicable_n": f.completeness.applicable_n,
+                "known_n": f.completeness.known_n,
+                "all_not_applicable": f.completeness.all_not_applicable,
+            }
+        else:
+            d["completeness"] = None
+        return d
 
-    return {
+    v2_output: dict[str, Any] = {
         "contract_version": result.contract_version,
         "capture_date": result.capture_date.isoformat(),
         "slot": result.slot.value,
@@ -1200,21 +1690,68 @@ def _build_run_slot_output(result: PITSlotRunResult) -> dict[str, Any]:
         "universe_hash": result.universe_hash,
         "symbol_count": result.symbol_count,
         "operational_status": result.operational_status.value,
-        "earnings": _family_dict(result.earnings),
-        "reference": _family_dict(result.reference),
+        "earnings": _v2_family_dict(result.earnings),
+        "reference": _v2_family_dict(result.reference),
     }
+    if result.evidence_completeness is not None:
+        v2_output["evidence_completeness"] = {
+            "overall_tier": result.evidence_completeness.overall_tier.value,
+            "pooled_ratio": result.evidence_completeness.pooled_ratio,
+            "pooled_pct": result.evidence_completeness.pooled_pct,
+            "total_applicable_n": result.evidence_completeness.total_applicable_n,
+            "total_known_n": result.evidence_completeness.total_known_n,
+        }
+    else:
+        v2_output["evidence_completeness"] = None
+    return v2_output
 
 
 def _build_health_output(health: PITSlotHealth) -> dict[str, Any]:
     """Build structured health output."""
-    def _fh_dict(fh: PITFamilyHealth) -> dict[str, Any]:
+    if health.contract_version == 1:
+        def _fh_dict(fh: PITFamilyHealth) -> dict[str, Any]:
+            return {
+                "family": fh.family,
+                "expected": fh.expected,
+                "attempt_count": fh.attempt_count,
+                "run_ids": list(fh.run_ids),
+                "statuses": list(fh.statuses),
+                "universe_hashes": list(fh.universe_hashes),
+                "latest_requested_at": (
+                    fh.latest_requested_at.isoformat() if fh.latest_requested_at else None
+                ),
+                "latest_completed_at": (
+                    fh.latest_completed_at.isoformat() if fh.latest_completed_at else None
+                ),
+                "snapshot_count": fh.snapshot_count,
+                "first_request_lag_seconds": fh.first_request_lag_seconds,
+                "completion_lag_seconds": fh.completion_lag_seconds,
+            }
+
         return {
+            "universe_id": health.universe_id,
+            "universe_version": health.universe_version,
+            "manifest_hash": health.manifest_hash,
+            "universe_hash": health.universe_hash,
+            "capture_date": health.capture_date.isoformat(),
+            "slot": health.slot.value,
+            "scheduled_for": health.scheduled_for.isoformat(),
+            "health_checked_at": health.health_checked_at.isoformat(),
+            "overall_status": health.overall_status.value,
+            "earnings": _fh_dict(health.earnings),
+            "reference": _fh_dict(health.reference),
+        }
+
+    # Contract v2 output
+    def _v2_fh_dict(fh: PITFamilyHealth) -> dict[str, Any]:
+        d: dict[str, Any] = {
             "family": fh.family,
             "expected": fh.expected,
             "attempt_count": fh.attempt_count,
             "run_ids": list(fh.run_ids),
             "statuses": list(fh.statuses),
             "universe_hashes": list(fh.universe_hashes),
+            "manifest_hashes": list(fh.manifest_hashes),
             "latest_requested_at": (
                 fh.latest_requested_at.isoformat() if fh.latest_requested_at else None
             ),
@@ -1225,8 +1762,21 @@ def _build_health_output(health: PITSlotHealth) -> dict[str, Any]:
             "first_request_lag_seconds": fh.first_request_lag_seconds,
             "completion_lag_seconds": fh.completion_lag_seconds,
         }
+        if fh.completeness is not None:
+            d["completeness"] = {
+                "tier": fh.completeness.tier.value,
+                "ratio": fh.completeness.ratio,
+                "pct": fh.completeness.pct,
+                "applicable_n": fh.completeness.applicable_n,
+                "known_n": fh.completeness.known_n,
+                "all_not_applicable": fh.completeness.all_not_applicable,
+            }
+        else:
+            d["completeness"] = None
+        return d
 
-    return {
+    v2_health: dict[str, Any] = {
+        "contract_version": 2,
         "universe_id": health.universe_id,
         "universe_version": health.universe_version,
         "manifest_hash": health.manifest_hash,
@@ -1236,9 +1786,21 @@ def _build_health_output(health: PITSlotHealth) -> dict[str, Any]:
         "scheduled_for": health.scheduled_for.isoformat(),
         "health_checked_at": health.health_checked_at.isoformat(),
         "overall_status": health.overall_status.value,
-        "earnings": _fh_dict(health.earnings),
-        "reference": _fh_dict(health.reference),
+        "failure_reason": health.failure_reason,
+        "earnings": _v2_fh_dict(health.earnings),
+        "reference": _v2_fh_dict(health.reference),
     }
+    if health.evidence_completeness is not None:
+        v2_health["evidence_completeness"] = {
+            "overall_tier": health.evidence_completeness.overall_tier.value,
+            "pooled_ratio": health.evidence_completeness.pooled_ratio,
+            "pooled_pct": health.evidence_completeness.pooled_pct,
+            "total_applicable_n": health.evidence_completeness.total_applicable_n,
+            "total_known_n": health.evidence_completeness.total_known_n,
+        }
+    else:
+        v2_health["evidence_completeness"] = None
+    return v2_health
 
 
 def _cmd_validate_universe(args: argparse.Namespace) -> int:
@@ -1367,7 +1929,7 @@ def _cmd_health(args: argparse.Namespace) -> int:
         results.append(output)
 
         s = health.overall_status
-        if s == PITSlotHealthStatus.UNIVERSE_CONFLICT:
+        if s in (PITSlotHealthStatus.UNIVERSE_CONFLICT, PITSlotHealthStatus.FAILED):
             has_conflict_or_error = True
         elif s in (
             PITSlotHealthStatus.DEGRADED,

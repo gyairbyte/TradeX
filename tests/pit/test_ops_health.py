@@ -689,28 +689,16 @@ class TestHealthSqlTraceReadOnly:
         assert post_schema == pre_schema
 
 
-def test_get_pit_slot_health_rejects_v2_manifest(tmp_path) -> None:
-    """Verify get_pit_slot_health raises ValueError deferred to PR B when given a v2 manifest."""
-    manifest_v2 = PITUniverseManifest(
-        contract_version=2,
-        universe_id="health-test-v2",
-        universe_version="v2",
-        effective_from=date(2025, 1, 1),
-        symbols=("AAPL", "MSFT"),
-        description="v2 test universe",
-        applicability={
-            "AAPL": {"earnings": "required", "reference": "required"},
-            "MSFT": {"earnings": "required", "reference": "required"},
-        },
-    )
-    with pytest.raises(ValueError, match="deferred to PR B"):
-        get_pit_slot_health(
-            universe_manifest=manifest_v2,
-            capture_date=_TRADING_DATE,
-            slot=CaptureSlot.MORNING,
-            now=_NOW_AFTER_MORNING,
-            db_path=tmp_path / "signals.db",
-            settings=_settings(tmp_path),
+def test_manifest_rejects_unsupported_contract_version() -> None:
+    """Verify PITUniverseManifest raises ValueError when given an unsupported contract_version."""
+    with pytest.raises(ValueError, match="only contract_versions"):
+        PITUniverseManifest(
+            contract_version=3,
+            universe_id="health-test-unsupported",
+            universe_version="v3",
+            effective_from=date(2025, 1, 1),
+            symbols=("AAPL", "MSFT"),
+            description="unsupported test universe",
         )
 
 
