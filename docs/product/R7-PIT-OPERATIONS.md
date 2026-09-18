@@ -252,7 +252,7 @@ python -m tradex.pit.ops health \
   ```
 - **Deep Immutability**: `PITUniverseManifest.applicability` enforces recursive immutability using `types.MappingProxyType` for both outer and inner mappings, preventing in-memory mutations post-construction.
 - **Material Hashing**: For contract v2 manifests, `manifest_hash` commits to normalized, sorted per-symbol applicability declarations, while `universe_hash` remains strictly the SHA-256 of the symbol list.
-- **Fail-Closed Execution Guard**: `run_pit_slot` checks `contract_version != 1` immediately at entry before any trading-day, slot-time, or effective-from gates, failing closed with zero provider calls and zero DB writes until PR B.
+- **PR-A Transition Guard**: Before PR B, `run_pit_slot` rejected contract-v2 execution. PR B supersedes that temporary guard and explicitly dispatches v1 or v2 runtime execution according to the supplied manifest contract version.
 - **Default Capture Contract**: `PIT_CAPTURE_WRITE_CONTRACT_VERSION = 1` is retained as the legacy/default direct-write contract version, while runner-driven v2 execution explicitly passes `contract_version=2` when a v2 manifest is supplied.
 - **Truthful Provenance**: `NOT_APPLICABLE` earnings records persist `observation_origin = 'manifest'`, `applicability_source = 'manifest'`, `provider = NULL`, `provider_call_attempted = 0`, with no fictitious timestamps or provider names.
 - `APPROVED_PRODUCTION_STRATEGIES == ()` (unchanged).
