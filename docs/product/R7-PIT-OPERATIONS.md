@@ -253,8 +253,7 @@ python -m tradex.pit.ops health \
 - **Deep Immutability**: `PITUniverseManifest.applicability` enforces recursive immutability using `types.MappingProxyType` for both outer and inner mappings, preventing in-memory mutations post-construction.
 - **Material Hashing**: For contract v2 manifests, `manifest_hash` commits to normalized, sorted per-symbol applicability declarations, while `universe_hash` remains strictly the SHA-256 of the symbol list.
 - **Fail-Closed Execution Guard**: `run_pit_slot` checks `contract_version != 1` immediately at entry before any trading-day, slot-time, or effective-from gates, failing closed with zero provider calls and zero DB writes until PR B.
-- **Cross-Version Conflict Guard**: `(capture_date, slot)` runs cannot mix contract v1 and v2.
-- **Runtime Capture Pinning**: Write execution is pinned to `PIT_CAPTURE_WRITE_CONTRACT_VERSION = 1` until PR B. Premature v2 runtime capture attempts fail closed.
+- **Default Capture Contract**: `PIT_CAPTURE_WRITE_CONTRACT_VERSION = 1` is retained as the legacy/default direct-write contract version, while runner-driven v2 execution explicitly passes `contract_version=2` when a v2 manifest is supplied.
 - **Truthful Provenance**: `NOT_APPLICABLE` earnings records persist `observation_origin = 'manifest'`, `applicability_source = 'manifest'`, `provider = NULL`, `provider_call_attempted = 0`, with no fictitious timestamps or provider names.
 - `APPROVED_PRODUCTION_STRATEGIES == ()` (unchanged).
 
@@ -272,7 +271,7 @@ Introduced in `MVP-ARCH-001-R7-PIT-STATUS-IMPL-B` on branch `antigravity/mvp-arc
 
 2. **Multi-Attempt & Retry Reconciliation**:
    - When multiple capture attempts exist for a `(capture_date, slot)`:
-     - **Operational Health**: Evaluates the latest terminal attempt (`SUCCEEDED`, `PARTIAL`, `FAILED`). A successful retry supersedes an earlier failed or in-progress attempt. Conversely, if a later retry fails, the slot is evaluated as degraded/failed to truthfully reflect current operational reality.
+     - **Operational Health**: Evaluates the latest terminal attempt (`SUCCEEDED`, `PARTIAL`, `FAILED`). A successful retry supersedes an earlier failed attempt; however, **any matching STARTED run keeps operational health DEGRADED** (`run_in_progress`). A newer terminal retry may supply the evidence-completeness attempt, but does not erase the STARTED operational-health condition. Conversely, if a later retry fails, the slot is evaluated as degraded/failed to truthfully reflect current operational reality.
      - **Evidence Completeness**: Selected from the attempt with maximal evidence across matching runs (`max(matching_runs, key=lambda r: (r.requested_at, r.capture_run_id))`), ensuring completeness reflects the best factual evidence available.
 
 3. **Massive Reference 404 & Exception Handling**:

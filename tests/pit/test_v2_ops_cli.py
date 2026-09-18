@@ -19,8 +19,19 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from unittest.mock import patch
 
-from tradex.pit.models import CaptureSlot
-from tradex.pit.ops import main
+from tradex.pit.models import (
+    CaptureKind,
+    CaptureRunStatus,
+    CaptureSlot,
+    PITCaptureRun,
+)
+from tradex.pit.ops import (
+    PITSlotHealthStatus,
+    get_pit_slot_health,
+    load_universe_manifest,
+    main,
+)
+from tradex.pit.store import create_capture_run
 from tradex.tracker import store
 
 
@@ -226,3 +237,127 @@ class TestV2OpsCLI:
         assert "evidence_completeness" not in out
         assert "completeness" not in out["earnings"]
         assert "requested_n" not in out["earnings"]
+
+    def test_cli_health_v2_universe_conflict_failed_and_exit_1(
+        self, tmp_path: Path, capsys
+    ) -> None:
+        """For contract v2, universe drift causes health failure: overall_status=FAILED, failure_reason='universe_conflict', CLI exit 1."""
+        db_path = tmp_path / "signals.db"
+        store.init(db_path)
+        manifest_file = _write_v2_manifest(tmp_path)
+        manifest = load_universe_manifest(manifest_file)
+        t = datetime(2026, 1, 2, 14, 30, tzinfo=UTC)
+
+        # Existing run with a different/conflicting universe_hash
+        e_run = PITCaptureRun(
+            capture_run_id="e-conflict-run",
+            idempotency_key="key-e-conflict",
+            request_fingerprint="f" * 64,
+            capture_kind=CaptureKind.EARNINGS,
+            capture_slot=CaptureSlot.MORNING,
+            capture_date=date(2026, 1, 2),
+            scheduled_for=t,
+            requested_at=t,
+            completed_at=t,
+            requested_provider="yahoo",
+            universe_hash="0" * 64,  # conflicting universe hash
+            requested_n=2,
+            known_n=2,
+            unavailable_n=0,
+            error_n=0,
+            not_applicable_n=0,
+            status=CaptureRunStatus.SUCCEEDED,
+            created_at=t,
+            updated_at=t,
+            contract_version=2,
+            manifest_hash="m" * 64,
+        )
+        create_capture_run(e_run, db_path=db_path)
+
+        with patch("tradex.pit.ops.is_trading_day", return_value=True):
+            health = get_pit_slot_health(
+                universe_manifest=manifest,
+                capture_date=date(2026, 1, 2),
+                slot=CaptureSlot.MORNING,
+                now=t,
+                db_path=db_path,
+            )
+            assert health.overall_status == PITSlotHealthStatus.FAILED
+            assert health.failure_reason == "universe_conflict"
+
+            exit_code = main([
+                "health",
+                "--slot", "morning",
+                "--universe-file", str(manifest_file),
+                "--date", "2026-01-02",
+                "--db-path", str(db_path),
+            ])
+
+        assert exit_code == 1
+        captured = capsys.readouterr()
+        out = json.loads(captured.out)
+
+        assert out["contract_version"] == 2
+        assert out["overall_status"] == "failed"
+        assert out["failure_reason"] == "universe_conflict"
+
+    def test_cli_health_v1_universe_conflict_preserved_and_exit_1(
+        self, tmp_path: Path, capsys
+    ) -> None:
+        """For contract v1, universe drift preserves legacy overall_status=UNIVERSE_CONFLICT and exit code 1."""
+        db_path = tmp_path / "signals.db"
+        store.init(db_path)
+        manifest_file = _write_v1_manifest(tmp_path)
+        manifest = load_universe_manifest(manifest_file)
+        t = datetime(2026, 1, 2, 14, 30, tzinfo=UTC)
+
+        e_run = PITCaptureRun(
+            capture_run_id="e-conflict-v1",
+            idempotency_key="key-e-conflict-v1",
+            request_fingerprint="f" * 64,
+            capture_kind=CaptureKind.EARNINGS,
+            capture_slot=CaptureSlot.MORNING,
+            capture_date=date(2026, 1, 2),
+            scheduled_for=t,
+            requested_at=t,
+            completed_at=t,
+            requested_provider="yahoo",
+            universe_hash="0" * 64,  # conflicting universe hash
+            requested_n=2,
+            known_n=2,
+            unavailable_n=0,
+            error_n=0,
+            not_applicable_n=0,
+            status=CaptureRunStatus.SUCCEEDED,
+            created_at=t,
+            updated_at=t,
+            contract_version=1,
+            manifest_hash=None,
+        )
+        create_capture_run(e_run, db_path=db_path)
+
+        with patch("tradex.pit.ops.is_trading_day", return_value=True):
+            health = get_pit_slot_health(
+                universe_manifest=manifest,
+                capture_date=date(2026, 1, 2),
+                slot=CaptureSlot.MORNING,
+                now=t,
+                db_path=db_path,
+            )
+            assert health.overall_status == PITSlotHealthStatus.UNIVERSE_CONFLICT
+
+            exit_code = main([
+                "health",
+                "--slot", "morning",
+                "--universe-file", str(manifest_file),
+                "--date", "2026-01-02",
+                "--db-path", str(db_path),
+            ])
+
+        assert exit_code == 1
+        captured = capsys.readouterr()
+        out = json.loads(captured.out)
+
+        assert "contract_version" not in out
+        assert "evidence_completeness" not in out
+        assert out["overall_status"] == "universe_conflict"

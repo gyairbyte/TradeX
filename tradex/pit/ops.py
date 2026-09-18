@@ -1338,6 +1338,8 @@ def _derive_family_completeness_read_model(
     family: str,
     runs: tuple,
     manifest: PITUniverseManifest,
+    db_path: Path | None = None,
+    settings: TradeXSettings | None = None,
 ) -> PITFamilyCompleteness:
     """Derive family completeness independently from matching runs."""
     candidate_runs = [
@@ -1358,6 +1360,44 @@ def _derive_family_completeness_read_model(
                 known_n=authoritative_attempt.known_n,
                 not_applicable_n=getattr(authoritative_attempt, "not_applicable_n", 0),
             )
+        if authoritative_attempt.status == CaptureRunStatus.STARTED:
+            if family == "earnings":
+                from tradex.pit.models import ObservationStatus
+                from tradex.pit.store import list_earnings_snapshots
+
+                snaps = list_earnings_snapshots(
+                    authoritative_attempt.capture_run_id,
+                    db_path=db_path,
+                    settings=settings,
+                )
+                known_n = sum(1 for s in snaps if s.observation_status == ObservationStatus.KNOWN)
+                na_n = sum(
+                    1
+                    for sym in manifest.symbols
+                    if (manifest.applicability or {}).get(sym, {}).get("earnings") == "not_applicable"
+                )
+                return compute_family_completeness(
+                    family,
+                    requested_n=len(manifest.symbols),
+                    known_n=known_n,
+                    not_applicable_n=na_n,
+                )
+            else:
+                from tradex.pit.models import ReferenceObservationStatus
+                from tradex.pit.store import list_reference_snapshots
+
+                snaps = list_reference_snapshots(
+                    authoritative_attempt.capture_run_id,
+                    db_path=db_path,
+                    settings=settings,
+                )
+                known_n = sum(1 for s in snaps if s.observation_status == ReferenceObservationStatus.KNOWN)
+                return compute_family_completeness(
+                    family,
+                    requested_n=len(manifest.symbols),
+                    known_n=known_n,
+                    not_applicable_n=0,
+                )
 
     na_n = (
         sum(1 for sym in manifest.symbols if (manifest.applicability or {}).get(sym, {}).get("earnings") == "not_applicable")
@@ -1477,7 +1517,7 @@ def get_pit_slot_health(
     failure_reason: str | None = None
 
     if has_universe_conflict:
-        overall_status = PITSlotHealthStatus.UNIVERSE_CONFLICT
+        overall_status = PITSlotHealthStatus.FAILED
         failure_reason = "universe_conflict"
     elif has_cv_conflict or has_manifest_conflict:
         overall_status = PITSlotHealthStatus.FAILED
@@ -1514,8 +1554,12 @@ def get_pit_slot_health(
                 overall_status = PITSlotHealthStatus.FAILED
                 failure_reason = "capture_failed"
 
-    e_comp = _derive_family_completeness_read_model("earnings", earnings_runs, universe_manifest)
-    r_comp = _derive_family_completeness_read_model("reference", ref_runs, universe_manifest)
+    e_comp = _derive_family_completeness_read_model(
+        "earnings", earnings_runs, universe_manifest, db_path=db_path, settings=settings
+    )
+    r_comp = _derive_family_completeness_read_model(
+        "reference", ref_runs, universe_manifest, db_path=db_path, settings=settings
+    )
     slot_comp = aggregate_slot_completeness(e_comp, r_comp)
 
     earnings_health = _build_family_health(

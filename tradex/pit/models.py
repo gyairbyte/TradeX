@@ -14,7 +14,7 @@ from enum import Enum
 from typing import Any
 
 PIT_CAPTURE_CONTRACT_VERSION: int = 2
-# Currently active production capture-write contract pinned to v1 until authorized PR B.
+# Legacy/default direct-write contract version (v1). Runner-driven v2 execution explicitly passes contract_version=2.
 PIT_CAPTURE_WRITE_CONTRACT_VERSION: int = 1
 
 
