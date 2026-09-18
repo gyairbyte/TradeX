@@ -1016,7 +1016,7 @@ _PIT_V8_INDEXES_SCRIPT = """
 
 def _migrate_v7_to_v8(db_path: Path | str) -> None:
     """Execute the 14-step atomic table rebuild from Schema v7 to Schema v8."""
-    path = Path(db_path)
+    path = Path(_db_path(Path(db_path)))
     con = sqlite3.connect(str(path))
     con.row_factory = sqlite3.Row
     in_transaction = False
@@ -1171,7 +1171,7 @@ def _migrate_v7_to_v8(db_path: Path | str) -> None:
 
 def init(db_path: str | Path | None = None, *, settings: TradeXSettings | None = None):
     """Create tables if they don't exist and migrate older schemas atomically."""
-    path = _resolve_db_path(settings) if db_path is None else Path(db_path)
+    path = Path(_db_path(_resolve_db_path(settings) if db_path is None else Path(db_path)))
     _ensure_db_dir(path)
 
     # Determine schema version on a clean connection without starting a transaction
