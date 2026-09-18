@@ -1,0 +1,236 @@
+{
+  "contract_version": 2,
+  "universe_id": "candidate-dow30-sector-etfs",
+  "universe_version": "2026-09-21-v1",
+  "effective_from": "2026-09-21",
+  "symbols": [
+    "AAPL",
+    "AMGN",
+    "AMZN",
+    "AXP",
+    "BA",
+    "CAT",
+    "CRM",
+    "CSCO",
+    "CVX",
+    "DIA",
+    "DIS",
+    "GS",
+    "HD",
+    "HON",
+    "IBM",
+    "IWM",
+    "JNJ",
+    "JPM",
+    "KO",
+    "MCD",
+    "MMM",
+    "MRK",
+    "MSFT",
+    "NKE",
+    "NVDA",
+    "PG",
+    "QQQ",
+    "SHW",
+    "SPY",
+    "TRV",
+    "UNH",
+    "V",
+    "VZ",
+    "WMT",
+    "XLB",
+    "XLC",
+    "XLE",
+    "XLF",
+    "XLI",
+    "XLK",
+    "XLP",
+    "XLRE",
+    "XLU",
+    "XLV",
+    "XLY"
+  ],
+  "applicability": {
+    "AAPL": {
+      "earnings": "required",
+      "reference": "required"
+    },
+    "AMGN": {
+      "earnings": "required",
+      "reference": "required"
+    },
+    "AMZN": {
+      "earnings": "required",
+      "reference": "required"
+    },
+    "AXP": {
+      "earnings": "required",
+      "reference": "required"
+    },
+    "BA": {
+      "earnings": "required",
+      "reference": "required"
+    },
+    "CAT": {
+      "earnings": "required",
+      "reference": "required"
+    },
+    "CRM": {
+      "earnings": "required",
+      "reference": "required"
+    },
+    "CSCO": {
+      "earnings": "required",
+      "reference": "required"
+    },
+    "CVX": {
+      "earnings": "required",
+      "reference": "required"
+    },
+    "DIA": {
+      "earnings": "not_applicable",
+      "reference": "required"
+    },
+    "DIS": {
+      "earnings": "required",
+      "reference": "required"
+    },
+    "GS": {
+      "earnings": "required",
+      "reference": "required"
+    },
+    "HD": {
+      "earnings": "required",
+      "reference": "required"
+    },
+    "HON": {
+      "earnings": "required",
+      "reference": "required"
+    },
+    "IBM": {
+      "earnings": "required",
+      "reference": "required"
+    },
+    "IWM": {
+      "earnings": "not_applicable",
+      "reference": "required"
+    },
+    "JNJ": {
+      "earnings": "required",
+      "reference": "required"
+    },
+    "JPM": {
+      "earnings": "required",
+      "reference": "required"
+    },
+    "KO": {
+      "earnings": "required",
+      "reference": "required"
+    },
+    "MCD": {
+      "earnings": "required",
+      "reference": "required"
+    },
+    "MMM": {
+      "earnings": "required",
+      "reference": "required"
+    },
+    "MRK": {
+      "earnings": "required",
+      "reference": "required"
+    },
+    "MSFT": {
+      "earnings": "required",
+      "reference": "required"
+    },
+    "NKE": {
+      "earnings": "required",
+      "reference": "required"
+    },
+    "NVDA": {
+      "earnings": "required",
+      "reference": "required"
+    },
+    "PG": {
+      "earnings": "required",
+      "reference": "required"
+    },
+    "QQQ": {
+      "earnings": "not_applicable",
+      "reference": "required"
+    },
+    "SHW": {
+      "earnings": "required",
+      "reference": "required"
+    },
+    "SPY": {
+      "earnings": "not_applicable",
+      "reference": "required"
+    },
+    "TRV": {
+      "earnings": "required",
+      "reference": "required"
+    },
+    "UNH": {
+      "earnings": "required",
+      "reference": "required"
+    },
+    "V": {
+      "earnings": "required",
+      "reference": "required"
+    },
+    "VZ": {
+      "earnings": "required",
+      "reference": "required"
+    },
+    "WMT": {
+      "earnings": "required",
+      "reference": "required"
+    },
+    "XLB": {
+      "earnings": "not_applicable",
+      "reference": "required"
+    },
+    "XLC": {
+      "earnings": "not_applicable",
+      "reference": "required"
+    },
+    "XLE": {
+      "earnings": "not_applicable",
+      "reference": "required"
+    },
+    "XLF": {
+      "earnings": "not_applicable",
+      "reference": "required"
+    },
+    "XLI": {
+      "earnings": "not_applicable",
+      "reference": "required"
+    },
+    "XLK": {
+      "earnings": "not_applicable",
+      "reference": "required"
+    },
+    "XLP": {
+      "earnings": "not_applicable",
+      "reference": "required"
+    },
+    "XLRE": {
+      "earnings": "not_applicable",
+      "reference": "required"
+    },
+    "XLU": {
+      "earnings": "not_applicable",
+      "reference": "required"
+    },
+    "XLV": {
+      "earnings": "not_applicable",
+      "reference": "required"
+    },
+    "XLY": {
+      "earnings": "not_applicable",
+      "reference": "required"
+    }
+  },
+  "description": "Gary-approved initial operational PIT universe (Candidate C: Dow 30 + Sector ETFs). Selection of this operational data-capture universe does not imply an approved trading strategy or strategy promotion (APPROVED_PRODUCTION_STRATEGIES remains empty)."
+}

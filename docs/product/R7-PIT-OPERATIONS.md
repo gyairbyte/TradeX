@@ -291,3 +291,88 @@ Introduced in `MVP-ARCH-001-R7-PIT-STATUS-IMPL-B` on branch `antigravity/mvp-arc
 
 6. **Exact Backward Compatibility with Contract v1**:
    - Manifest v1 executions continue to run with exact legacy keyword signatures, strict all-known operational health rules, and legacy JSON serialization shapes without v2 `evidence_completeness` fields.
+
+---
+
+## Production Operational Universe & Scheduling (PR C)
+
+### 1. Selected Operational Universe (Candidate C)
+- **Universe ID:** `candidate-dow30-sector-etfs`
+- **Universe Version:** `2026-09-21-v1`
+- **Effective From:** `2026-09-21`
+- **Canonical Manifest Path:** `docs/product/manifests/pit-universe-2026-09-21-v1.json`
+- **Contract Version:** 2
+- **Total Symbols:** 45 (30 corporate equities, 15 broad-market / sector ETFs)
+- **Applicability:**
+  - **Earnings:** 30 corporate equities `required`; 15 ETFs (`DIA`, `IWM`, `QQQ`, `SPY`, `XLB`, `XLC`, `XLE`, `XLF`, `XLI`, `XLK`, `XLP`, `XLRE`, `XLU`, `XLV`, `XLY`) `not_applicable`.
+  - **Reference:** All 45 symbols `required`.
+- **Hashes:**
+  - `universe_hash`: `83d6e6e66991743b3a6301a674adbdf4425e2dc524ed027c7ee4d6097c371f29`
+  - `manifest_hash`: `4eee8a5da39c74db499b6f644f6891d61f6a30b0f98d95b53445b12929c9dedb`
+
+### 2. Intended Operational Schedule
+- **Morning Slot:** 09:00 America/New_York (market open capture)
+- **Evening Slot:** 20:30 America/New_York (post-market capture)
+- **Windows Timezone Requirement:** `Eastern Standard Time` (handles New York DST transitions).
+- **Missed Slot Policy:** No automatic catch-up (`StartWhenAvailable = false`). Missed executions remain visible in health audit.
+
+### 3. Windows Scheduler Management Commands
+Script: `scripts/manage_pit_scheduler.ps1`
+
+- **Safe Configuration Validation (Non-mutating):**
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File scripts/manage_pit_scheduler.ps1 -Action Validate
+  ```
+  Validates host timezone, project root, `uv` presence, and canonical manifest without modifying OS tasks.
+
+- **Status Inspection:**
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File scripts/manage_pit_scheduler.ps1 -Action Status
+  ```
+  Inspects whether `TradeX PIT Morning` and `TradeX PIT Evening` tasks are registered.
+
+- **Future Installation (Explicit Gary Action Post-Merge):**
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File scripts/manage_pit_scheduler.ps1 -Action Install
+  ```
+  Registers the two scheduled tasks. (Do not execute until authorized post-merge).
+
+- **Removal / Rollback:**
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File scripts/manage_pit_scheduler.ps1 -Action Remove
+  ```
+  Safely unregisters the two TradeX scheduled tasks without touching other system tasks.
+
+### 4. Direct Operations Runner & Health Commands
+- **Manual Slot Execution:**
+  ```bash
+  uv run python -m tradex.pit.ops run-slot \
+    --slot morning \
+    --universe-file docs/product/manifests/pit-universe-2026-09-21-v1.json
+  ```
+  ```bash
+  uv run python -m tradex.pit.ops run-slot \
+    --slot evening \
+    --universe-file docs/product/manifests/pit-universe-2026-09-21-v1.json
+  ```
+
+- **Health Inspection:**
+  ```bash
+  uv run python -m tradex.pit.ops health \
+    --universe-file docs/product/manifests/pit-universe-2026-09-21-v1.json
+  ```
+
+### 5. Exit Code Semantics
+- **`run-slot`**:
+  - `0`: `succeeded` or `not_due` (terminal success or outside trading window)
+  - `2`: `degraded` (at least one family partial or degraded)
+  - `1`: `failed` (both families failed, manifest drift, or fatal error)
+- **`health`**:
+  - `0`: `healthy` or `not_due`
+  - `2`: `degraded`, `missing`, or `incomplete`
+  - `1`: `universe_conflict`, audit corruption, or fatal error
+
+### 6. Operational Notes & Limitations
+- **Credentials:** Credentials (`MASSIVE_API_KEY`, etc.) remain in local `.env` or system environment; never embedded in scheduler commands or repository files.
+- **Stranded-STARTED Limitation:** If an unexpected process termination occurs during a run, the record remains in `STARTED` state and offline health reports `degraded` (`run_in_progress`). A subsequent successful retry provides evidence completeness but keeps operational health degraded until reconciled.
+- **Strategy Independence:** Production strategy registry remains empty (`APPROVED_PRODUCTION_STRATEGIES == ()`). Point-in-time capture is data infrastructure only.

@@ -1,0 +1,47 @@
+{
+  "task_id": "MVP-ARCH-001-R7-PIT-STATUS-IMPL-C",
+  "decision_status": "gary_approved",
+  "approved_by": "Gary Yang",
+  "approved_on": "2026-09-18",
+  "selected_candidate": "C",
+  "selected_universe": "candidate-dow30-sector-etfs",
+  "selected_universe_version": "2026-09-21-v1",
+  "effective_from": "2026-09-21",
+  "canonical_manifest_path": "docs/product/manifests/pit-universe-2026-09-21-v1.json",
+  "contract_version": 2,
+  "symbol_count": 45,
+  "equity_count": 30,
+  "etf_count": 15,
+  "equities_requiring_earnings": 30,
+  "etfs_earnings_not_applicable": 15,
+  "reference_required": 45,
+  "universe_hash": "83d6e6e66991743b3a6301a674adbdf4425e2dc524ed027c7ee4d6097c371f29",
+  "manifest_hash": "4eee8a5da39c74db499b6f644f6891d61f6a30b0f98d95b53445b12929c9dedb",
+  "candidate_b_status": "not_selected",
+  "candidate_c_status": "selected",
+  "operational_universe_selected": true,
+  "scheduler_assets_authorized": true,
+  "scheduler_installed": false,
+  "scheduler_enabled": false,
+  "live_provider_calls_performed": false,
+  "approved_production_strategies": [],
+  "capacity_estimates": {
+    "minimum_reference_requests": 45,
+    "maximum_reference_requests": 90,
+    "pacing_interval_seconds": 12.1,
+    "minimum_pacing_floor_seconds": 532.4,
+    "maximum_pacing_floor_seconds": 1076.9
+  },
+  "operational_schedule_target": {
+    "morning_slot": "09:00 America/New_York",
+    "evening_slot": "20:30 America/New_York",
+    "windows_timezone": "Eastern Standard Time"
+  },
+  "governance": {
+    "schema_version": 8,
+    "trading_logic_changed": false,
+    "strategy_promoted": false,
+    "data_capture_only": true,
+    "live_activation_requires_explicit_gary_action": true
+  }
+}
