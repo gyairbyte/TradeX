@@ -257,3 +257,38 @@ python -m tradex.pit.ops health \
 - **Runtime Capture Pinning**: Write execution is pinned to `PIT_CAPTURE_WRITE_CONTRACT_VERSION = 1` until PR B. Premature v2 runtime capture attempts fail closed.
 - **Truthful Provenance**: `NOT_APPLICABLE` earnings records persist `observation_origin = 'manifest'`, `applicability_source = 'manifest'`, `provider = NULL`, `provider_call_attempted = 0`, with no fictitious timestamps or provider names.
 - `APPROVED_PRODUCTION_STRATEGIES == ()` (unchanged).
+
+### Manifest Contract v2 Runtime Execution & Two-Dimensional Status Semantics (PR B)
+
+Introduced in `MVP-ARCH-001-R7-PIT-STATUS-IMPL-B` on branch `antigravity/mvp-arch-001-r7-pit-status-impl-b`:
+
+1. **Two-Dimensional Status Semantics**:
+   - **Operational Health** (`operational_status` / `overall_status`): Tracks capture execution success, scheduling/drift compliance, and process/system failures. Evaluates to `healthy` (exit 0), `degraded` (exit 2), `failed` (exit 1), or `not_due` (exit 0).
+   - **Evidence Completeness** (`evidence_completeness` read model): Measures factual market evidence depth across applicable symbols. Categorized into discrete tiers:
+     - `complete`: 100% of applicable symbols have known observations (`known_n == applicable_n`). If all symbols are declared `not_applicable`, tier is `complete` and ratio is `1.0`.
+     - `partial`: At least one known fact exists, but not all applicable symbols are known (`0 < known_n < applicable_n`).
+     - `sparse`: Applicable symbols exist, but zero known facts were obtained (`applicable_n > 0` and `known_n == 0`).
+   - **Slot-Level Aggregation Invariant**: The overall slot tier requires all expected families to be `complete` for the slot to be `complete`. If any family is `sparse`, the overall tier is `sparse`, even if pooled completion ratio is high. Pooled ratio is informational only and never masks a sparse family tier.
+
+2. **Multi-Attempt & Retry Reconciliation**:
+   - When multiple capture attempts exist for a `(capture_date, slot)`:
+     - **Operational Health**: Evaluates the latest terminal attempt (`SUCCEEDED`, `PARTIAL`, `FAILED`). A successful retry supersedes an earlier failed or in-progress attempt. Conversely, if a later retry fails, the slot is evaluated as degraded/failed to truthfully reflect current operational reality.
+     - **Evidence Completeness**: Selected from the attempt with maximal evidence across matching runs (`max(matching_runs, key=lambda r: (r.requested_at, r.capture_run_id))`), ensuring completeness reflects the best factual evidence available.
+
+3. **Massive Reference 404 & Exception Handling**:
+   - HTTP 404 from Massive/Polygon reference endpoint indicates an endpoint or query error (`MassiveResponseError`), caught per-symbol and recorded truthfully as `ReferenceObservationStatus.ERROR`, incrementing `error_n`. It contributes to `PARTIAL` or `FAILED` terminal run status.
+   - This is strictly distinguished from a clean absence (HTTP 200 active with 0 results + HTTP 200 inactive with 0 results), which produces `ReferenceObservationStatus.UNAVAILABLE` and `error_n = 0` (`SUCCEEDED`).
+   - Exceptions in the per-symbol loop are caught, sanitized against secrets (`apiKey=[REDACTED]`), and recorded truthfully with request start and end timestamps.
+
+4. **Schema-v8 Limitation around Fatal DB Failures**:
+   - Under Schema v8, if SQLite or I/O encounters a fatal failure during runner execution after a run record is created, the active runner catches the failure and returns `operational_status = FAILED` (exit 1).
+   - The surviving DB row remains stranded in `STARTED` state with `completed_at = NULL`.
+   - Subsequent offline health inspection evaluates any stranded `STARTED` run as `DEGRADED` (`run_in_progress`), because Schema v8 lacks a supervisor/daemon or timeout state machine to transition stranded runs.
+
+5. **Manifest-only Earnings Applicability**:
+   - If an equity is declared `not_applicable` in the manifest applicability mapping, the runner skips provider calls entirely (0 calls, `provider = NULL`, `provider_call_attempted = 0`, `observation_origin = 'manifest'`, `applicability_source = 'manifest'`, `not_applicable_n` incremented).
+   - No heuristic inference (e.g. ticker name pattern matching) is performed.
+   - Reference capture remains universal (`reference: required` for 100% of symbols).
+
+6. **Exact Backward Compatibility with Contract v1**:
+   - Manifest v1 executions continue to run with exact legacy keyword signatures, strict all-known operational health rules, and legacy JSON serialization shapes without v2 `evidence_completeness` fields.

@@ -559,12 +559,12 @@ def test_tracker_summary_and_remaining_work_are_consistent(tracker_text: str) ->
     pr_order = _section(tracker_text, "**Recommended next pull request order:**")
 
     # MVP-ARCH-001 parent product-architecture work is completed and must not appear as an
-    # unfinished standalone parent item. Completed slice PR A must not appear in remaining work,
-    # while pending slices PR B and PR C remain listed as unauthorized.
+    # unfinished standalone parent item. Completed slices PR A and PR B must not appear in remaining work,
+    # while pending slice PR C remains listed as unauthorized.
     assert "MVP-ARCH-001:" not in remaining
     assert "MVP-ARCH-001 " not in remaining
     assert "MVP-ARCH-001-R7-PIT-STATUS-IMPL-A" not in remaining
-    assert "MVP-ARCH-001-R7-PIT-STATUS-IMPL-B" in remaining
+    assert "MVP-ARCH-001-R7-PIT-STATUS-IMPL-B" not in remaining
     assert "MVP-ARCH-001-R7-PIT-STATUS-IMPL-C" in remaining
     assert "Operational Universe Selection & Verification" in remaining
     assert "LONG-002C" in remaining

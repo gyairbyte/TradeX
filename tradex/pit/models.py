@@ -58,6 +58,46 @@ class ReferenceObservationStatus(str, Enum):
     ERROR = "error"
 
 
+class PITEvidenceCompletenessTier(str, Enum):
+    """Categorical evidence completeness tier."""
+
+    COMPLETE = "complete"
+    PARTIAL = "partial"
+    SPARSE = "sparse"
+
+
+@dataclass(frozen=True, slots=True)
+class PITFamilyCompleteness:
+    """Read model representing evidence completeness for one capture family."""
+
+    tier: PITEvidenceCompletenessTier
+    ratio: float
+    pct: float
+    applicable_n: int
+    known_n: int
+    all_not_applicable: bool
+
+    def __post_init__(self) -> None:
+        if self.applicable_n < 0:
+            raise ValueError(f"applicable_n must be >= 0, got {self.applicable_n}")
+        if not (0 <= self.known_n <= self.applicable_n):
+            raise ValueError(
+                f"known_n must satisfy 0 <= known_n <= applicable_n, "
+                f"got known_n={self.known_n} vs applicable_n={self.applicable_n}"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class PITSlotCompleteness:
+    """Read model representing aggregated evidence completeness across the slot."""
+
+    overall_tier: PITEvidenceCompletenessTier
+    pooled_ratio: float
+    pooled_pct: float
+    total_applicable_n: int
+    total_known_n: int
+
+
 REFERENCE_CONTRACT_FIELDS: tuple[str, ...] = (
     "active",
     "cik",

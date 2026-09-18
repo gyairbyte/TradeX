@@ -10,6 +10,7 @@ import uuid
 from collections.abc import Callable, Sequence
 from datetime import UTC, date, datetime, time
 from pathlib import Path
+from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 from tradex.config import TradeXSettings, load_runtime_settings
@@ -22,7 +23,6 @@ from tradex.earnings.calendar import (
 )
 from tradex.market.hours import MARKET_TIMEZONE
 from tradex.pit.models import (
-    PIT_CAPTURE_WRITE_CONTRACT_VERSION,
     CaptureKind,
     CaptureRunStatus,
     CaptureSlot,
@@ -31,6 +31,7 @@ from tradex.pit.models import (
     PITCaptureRun,
     PITEarningsSnapshot,
     build_known_fact_payload,
+    build_not_applicable_earnings_fact_payload,
     build_unavailable_fact_payload,
     compute_default_idempotency_key,
     compute_fact_hash,
@@ -39,6 +40,9 @@ from tradex.pit.models import (
     normalize_symbols,
     serialize_canonical_fact_json,
 )
+
+if TYPE_CHECKING:
+    from tradex.pit.ops import PITUniverseManifest
 from tradex.pit.store import (
     PITIdempotencyConflictError,
     create_capture_run,
@@ -105,24 +109,25 @@ def capture_earnings_snapshot(
     db_path: Path | None = None,
     now_fn: Callable[[], datetime] | None = None,
     earnings_lookup: Callable[..., date] | None = None,
+    contract_version: int = 1,
+    manifest: PITUniverseManifest | None = None,
 ) -> PITCaptureResult:
     """Orchestrate prospective point-in-time earnings observation capture.
 
     Steps:
     1. Resolve settings and provider identity.
     2. Normalize and deduplicate symbol universe (pure validation).
-    3. Resolve current UTC/ET time and validate prospective calendar date & scheduled slot time.
-    4. Compute request fingerprint and derive canonical idempotency key.
-    5. Perform side-effect-free preflight idempotency check against existing DB.
-    6. For new capture requests, initialize Schema v6 and persist started capture run.
-    7. For each symbol:
-       a. Record request start time.
-       b. Perform provider lookup with NO DB lock open.
-       c. Record response received time and validate clock monotonicity.
-       d. Build immutable observation snapshot.
-       e. Immediately persist completed snapshot in SQLite.
-    8. Atomically finalize capture run with terminal status and counts.
-    9. Return immutable read-model result.
+    3. Enforce contract_version and manifest preflight guards.
+    4. Resolve current UTC/ET time and validate prospective calendar date & scheduled slot time.
+    5. Compute request fingerprint and derive canonical idempotency key.
+    6. Perform side-effect-free preflight idempotency check against existing DB.
+    7. For new capture requests, initialize Schema v8 and persist started capture run.
+    8. For each symbol:
+       a. If contract_version == 2 and earnings applicability is not_applicable, skip provider call
+          and create truthful manifest-origin observation.
+       b. Otherwise, perform provider lookup, record timestamps and provenance, and persist snapshot.
+    9. Atomically finalize capture run with terminal status and counts.
+    10. Return immutable read-model result.
     """
     if settings is None:
         settings = load_runtime_settings()
@@ -140,6 +145,23 @@ def capture_earnings_snapshot(
     resolved_provider = _resolve_earnings_source(source, settings=settings)
     normalized_symbols = normalize_symbols(symbols)
     universe_hash = compute_universe_hash(normalized_symbols)
+
+    # 2. Contract version and manifest preflight guards
+    if contract_version not in (1, 2):
+        raise ValueError(f"Unsupported contract_version {contract_version}; expected 1 or 2")
+
+    if contract_version == 1:
+        if manifest is not None:
+            raise ValueError("manifest must be None when contract_version=1")
+    elif contract_version == 2:
+        if manifest is None:
+            raise ValueError("manifest is required when contract_version=2")
+        if manifest.contract_version != 2:
+            raise ValueError(f"manifest.contract_version must be 2, got {manifest.contract_version}")
+        if normalized_symbols != manifest.symbols:
+            raise ValueError(
+                f"symbols mismatch between arguments and manifest: {normalized_symbols} != {manifest.symbols}"
+            )
 
     current_dt = _get_aware_utc_now(now_fn)
     current_ny_dt = current_dt.astimezone(MARKET_TIMEZONE)
@@ -170,16 +192,30 @@ def capture_earnings_snapshot(
             f"{scheduled_for.isoformat()} for {slot.value} slot on {target_capture_date.isoformat()}."
         )
 
-    # Note: Capture write execution remains strictly pinned to contract v1 until PR B.
-    fingerprint = compute_request_fingerprint(
-        contract_version=PIT_CAPTURE_WRITE_CONTRACT_VERSION,
-        capture_kind=CaptureKind.EARNINGS.value,
-        capture_slot=slot.value,
-        capture_date=target_capture_date.isoformat(),
-        scheduled_for_iso=scheduled_for.isoformat(),
-        requested_provider=resolved_provider,
-        normalized_symbols=normalized_symbols,
-    )
+    if contract_version == 1:
+        manifest_hash_val: str | None = None
+        fingerprint = compute_request_fingerprint(
+            contract_version=1,
+            capture_kind=CaptureKind.EARNINGS.value,
+            capture_slot=slot.value,
+            capture_date=target_capture_date.isoformat(),
+            scheduled_for_iso=scheduled_for.isoformat(),
+            requested_provider=resolved_provider,
+            normalized_symbols=normalized_symbols,
+        )
+    else:
+        assert manifest is not None
+        manifest_hash_val = manifest.manifest_hash
+        fingerprint = compute_request_fingerprint(
+            contract_version=2,
+            capture_kind=CaptureKind.EARNINGS.value,
+            capture_slot=slot.value,
+            capture_date=target_capture_date.isoformat(),
+            scheduled_for_iso=scheduled_for.isoformat(),
+            requested_provider=resolved_provider,
+            normalized_symbols=normalized_symbols,
+            manifest_hash=manifest_hash_val,
+        )
 
     if idempotency_key is None:
         resolved_idempotency_key = compute_default_idempotency_key(
@@ -238,18 +274,57 @@ def capture_earnings_snapshot(
         status=CaptureRunStatus.STARTED,
         created_at=current_dt,
         updated_at=current_dt,
-        contract_version=PIT_CAPTURE_WRITE_CONTRACT_VERSION,
+        contract_version=contract_version,
+        manifest_hash=manifest_hash_val,
+        not_applicable_n=0,
     )
 
     create_capture_run(started_run, db_path=target_path, settings=settings)
 
     snapshots: list[PITEarningsSnapshot] = []
     for sym in normalized_symbols:
+        if (
+            contract_version == 2
+            and manifest is not None
+            and manifest.applicability.get(sym, {}).get("earnings") == "not_applicable"
+        ):
+            # Manifest-declared not_applicable: strictly skip provider call
+            obs_status = ObservationStatus.NOT_APPLICABLE
+            fact_payload = build_not_applicable_earnings_fact_payload()
+            fact_json = serialize_canonical_fact_json(fact_payload)
+            fact_hash = compute_fact_hash(fact_json)
+            snap_id = uuid.uuid4().hex
+            snapshot_dt = _get_aware_utc_now(now_fn)
+
+            snapshot = PITEarningsSnapshot(
+                snapshot_id=snap_id,
+                capture_run_id=run_id,
+                symbol=sym,
+                observation_status=obs_status,
+                next_earnings_date=None,
+                provider=None,
+                provider_observed_at=None,
+                request_started_at=None,
+                response_received_at=None,
+                fact_hash=fact_hash,
+                fact_json=fact_json,
+                error_category=None,
+                error_message=None,
+                created_at=snapshot_dt,
+                observation_origin="manifest",
+                applicability_source="manifest",
+                provider_call_attempted=False,
+                contract_version=2,
+            )
+            insert_earnings_snapshots([snapshot], db_path=target_path, settings=settings)
+            snapshots.append(snapshot)
+            continue
+
         req_start = _get_aware_utc_now(now_fn)
-        obs_status: ObservationStatus
-        next_earnings_date: date | None = None
-        error_cat: str | None = None
-        error_msg: str | None = None
+        obs_status = ObservationStatus.UNAVAILABLE
+        next_earnings_date = None
+        error_cat = None
+        error_msg = None
 
         try:
             nxt = earnings_lookup(sym, source=resolved_provider, settings=settings)
@@ -307,25 +382,40 @@ def capture_earnings_snapshot(
             error_category=error_cat,
             error_message=error_msg,
             created_at=req_end,
-            contract_version=PIT_CAPTURE_WRITE_CONTRACT_VERSION,
+            observation_origin="provider",
+            applicability_source=None,
+            provider_call_attempted=True,
+            contract_version=contract_version,
         )
         # Persist observation immediately upon completion of provider lookup.
         insert_earnings_snapshots([snapshot], db_path=target_path, settings=settings)
         snapshots.append(snapshot)
 
     known_n = sum(1 for s in snapshots if s.observation_status == ObservationStatus.KNOWN)
+    not_applicable_n = sum(
+        1 for s in snapshots if s.observation_status == ObservationStatus.NOT_APPLICABLE
+    )
     unavailable_n = sum(
         1 for s in snapshots if s.observation_status == ObservationStatus.UNAVAILABLE
     )
     error_n = sum(1 for s in snapshots if s.observation_status == ObservationStatus.ERROR)
     requested_n = len(snapshots)
 
-    if known_n == requested_n:
-        terminal_status = CaptureRunStatus.SUCCEEDED
-    elif known_n > 0:
-        terminal_status = CaptureRunStatus.PARTIAL
+    if contract_version == 1:
+        if known_n == requested_n:
+            terminal_status = CaptureRunStatus.SUCCEEDED
+        elif known_n > 0:
+            terminal_status = CaptureRunStatus.PARTIAL
+        else:
+            terminal_status = CaptureRunStatus.FAILED
     else:
-        terminal_status = CaptureRunStatus.FAILED
+        provider_required_n = requested_n - not_applicable_n
+        if error_n == 0:
+            terminal_status = CaptureRunStatus.SUCCEEDED
+        elif 0 < error_n < provider_required_n:
+            terminal_status = CaptureRunStatus.PARTIAL
+        else:
+            terminal_status = CaptureRunStatus.FAILED
 
     completed_at = _get_aware_utc_now(now_fn)
     finalized_run = finalize_capture_run(
@@ -336,6 +426,7 @@ def capture_earnings_snapshot(
         error_n=error_n,
         completed_at=completed_at,
         updated_at=completed_at,
+        not_applicable_n=not_applicable_n,
         db_path=target_path,
         settings=settings,
     )
