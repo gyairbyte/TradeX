@@ -10,19 +10,28 @@ from tradex.pit.models import (
     ObservationStatus,
     PITCaptureRun,
     PITEarningsSnapshot,
+    PITReferenceCaptureRun,
+    PITReferenceSnapshot,
+    ReferenceObservationStatus,
     build_known_fact_payload,
+    build_known_reference_fact_payload,
+    build_not_applicable_earnings_fact_payload,
     compute_fact_hash,
     serialize_canonical_fact_json,
 )
 from tradex.pit.store import (
     PITStoreError,
     create_capture_run,
+    create_reference_capture_run,
     finalize_capture_run,
     get_capture_result,
     get_capture_run,
     get_capture_run_by_idempotency_key,
     insert_earnings_snapshots,
+    insert_reference_snapshots,
     list_earnings_snapshots,
+    list_reference_capture_runs,
+    list_reference_snapshots,
 )
 from tradex.tracker import store
 
@@ -427,3 +436,361 @@ def test_read_queries_on_nonexistent_db_do_not_create_file(tmp_path) -> None:
 
     assert get_capture_result("any-id", db_path=nonexistent) is None
     assert not nonexistent.exists()
+
+
+def test_v2_store_crud_round_trip(tmp_path) -> None:
+    """Verify v2 earnings run, v2 provider snapshot, v2 manifest N-A snapshot, and v2 reference run/snapshot round trip in Schema v8."""
+    db_path = tmp_path / "v2_store_test.db"
+    store.init(db_path)
+
+    now = datetime(2026, 8, 30, 13, 0, 0, tzinfo=UTC)
+    mhash = "m" * 64
+
+    # 1. Create v2 earnings run with manifest_hash and not_applicable_n
+    run_v2 = PITCaptureRun(
+        capture_run_id="run-v2-100",
+        idempotency_key="key-v2-100",
+        request_fingerprint="fp-v2-100",
+        capture_kind=CaptureKind.EARNINGS,
+        capture_slot=CaptureSlot.MORNING,
+        capture_date=date(2026, 8, 30),
+        scheduled_for=now,
+        requested_at=now,
+        completed_at=None,
+        requested_provider="yahoo",
+        universe_hash="uhash-v2",
+        manifest_hash=mhash,
+        requested_n=2,
+        known_n=0,
+        not_applicable_n=1,
+        unavailable_n=0,
+        error_n=0,
+        status=CaptureRunStatus.STARTED,
+        created_at=now,
+        updated_at=now,
+        contract_version=2,
+    )
+    created = create_capture_run(run_v2, db_path=db_path)
+    assert created.contract_version == 2
+    assert created.manifest_hash == mhash
+    assert created.not_applicable_n == 1
+
+    fetched_run = get_capture_run("run-v2-100", db_path=db_path)
+    assert fetched_run is not None
+    assert fetched_run.contract_version == 2
+    assert fetched_run.manifest_hash == mhash
+    assert fetched_run.not_applicable_n == 1
+
+    # 2. Insert v2 snapshots: 1 provider-origin known, 1 manifest-origin NOT_APPLICABLE
+    fact_known = serialize_canonical_fact_json(build_known_fact_payload(date(2026, 9, 15)))
+    snap_known = PITEarningsSnapshot(
+        snapshot_id="snap-v2-known",
+        capture_run_id="run-v2-100",
+        symbol="AAPL",
+        observation_status=ObservationStatus.KNOWN,
+        observation_origin="provider",
+        applicability_source=None,
+        provider_call_attempted=True,
+        next_earnings_date=date(2026, 9, 15),
+        provider="yahoo",
+        provider_observed_at=None,
+        request_started_at=now,
+        response_received_at=now,
+        fact_hash=compute_fact_hash(fact_known),
+        fact_json=fact_known,
+        error_category=None,
+        error_message=None,
+        created_at=now,
+        contract_version=2,
+    )
+    fact_na = serialize_canonical_fact_json(build_not_applicable_earnings_fact_payload())
+    snap_na = PITEarningsSnapshot(
+        snapshot_id="snap-v2-na",
+        capture_run_id="run-v2-100",
+        symbol="SPY",
+        observation_status=ObservationStatus.NOT_APPLICABLE,
+        observation_origin="manifest",
+        applicability_source="manifest",
+        provider_call_attempted=False,
+        next_earnings_date=None,
+        provider=None,
+        provider_observed_at=None,
+        request_started_at=None,
+        response_received_at=None,
+        fact_hash=compute_fact_hash(fact_na),
+        fact_json=fact_na,
+        error_category=None,
+        error_message=None,
+        created_at=now,
+        contract_version=2,
+    )
+    insert_earnings_snapshots([snap_known, snap_na], db_path=db_path)
+
+    snapshots = list_earnings_snapshots("run-v2-100", db_path=db_path)
+    assert len(snapshots) == 2
+    by_sym = {s.symbol: s for s in snapshots}
+
+    s_aapl = by_sym["AAPL"]
+    assert s_aapl.contract_version == 2
+    assert s_aapl.observation_origin == "provider"
+    assert s_aapl.applicability_source is None
+    assert s_aapl.provider_call_attempted is True
+    assert s_aapl.provider == "yahoo"
+
+    s_spy = by_sym["SPY"]
+    assert s_spy.contract_version == 2
+    assert s_spy.observation_status == ObservationStatus.NOT_APPLICABLE
+    assert s_spy.observation_origin == "manifest"
+    assert s_spy.applicability_source == "manifest"
+    assert s_spy.provider_call_attempted is False
+    assert s_spy.provider is None
+    assert s_spy.request_started_at is None
+    assert s_spy.response_received_at is None
+
+    # 3. Finalize run
+    finalized = finalize_capture_run(
+        "run-v2-100",
+        status=CaptureRunStatus.SUCCEEDED,
+        known_n=1,
+        not_applicable_n=1,
+        unavailable_n=0,
+        error_n=0,
+        completed_at=now,
+        updated_at=now,
+        db_path=db_path,
+    )
+    assert finalized.status == CaptureRunStatus.SUCCEEDED
+    assert finalized.known_n == 1
+    assert finalized.not_applicable_n == 1
+
+    persisted_final = get_capture_run("run-v2-100", db_path=db_path)
+    assert persisted_final is not None
+    assert persisted_final.status == CaptureRunStatus.SUCCEEDED
+    assert persisted_final.not_applicable_n == 1
+
+    # 4. Reference run & snapshot v2 round-trip
+    ref_run_v2 = PITReferenceCaptureRun(
+        capture_run_id="ref-run-v2-100",
+        idempotency_key="ref-key-v2-100",
+        request_fingerprint="ref-fp-v2-100",
+        capture_slot=CaptureSlot.MORNING,
+        capture_date=date(2026, 8, 30),
+        scheduled_for=now,
+        requested_at=now,
+        completed_at=now,
+        requested_provider="massive",
+        universe_hash="ref-uhash-v2",
+        manifest_hash=mhash,
+        requested_n=1,
+        known_n=1,
+        unavailable_n=0,
+        ambiguous_n=0,
+        error_n=0,
+        status=CaptureRunStatus.SUCCEEDED,
+        created_at=now,
+        updated_at=now,
+        contract_version=2,
+    )
+    create_reference_capture_run(ref_run_v2, db_path=db_path)
+
+    ref_fact_payload = build_known_reference_fact_payload(
+        active=True,
+        cik="0000320193",
+        composite_figi="FIGI123",
+        delisted_utc=None,
+        last_updated_utc="2026-08-29T20:00:00Z",
+        locale="us",
+        market="stocks",
+        name="Apple Inc",
+        primary_exchange="XNAS",
+        share_class_figi="FIGI456",
+        ticker="AAPL",
+        type_code="CS",
+    )
+    ref_fact_json = serialize_canonical_fact_json(ref_fact_payload)
+    ref_fact_hash = compute_fact_hash(ref_fact_json)
+    ref_snap_v2 = PITReferenceSnapshot(
+        snapshot_id="ref-snap-v2-100",
+        capture_run_id="ref-run-v2-100",
+        symbol="AAPL",
+        observation_status=ReferenceObservationStatus.KNOWN,
+        provider="massive",
+        provider_query_date=date(2026, 8, 30),
+        provider_request_ids=("req-1",),
+        provider_ticker="AAPL",
+        provider_name="Apple Inc",
+        provider_market="stocks",
+        provider_locale="us",
+        provider_active=True,
+        provider_type_code="CS",
+        provider_primary_exchange="XNAS",
+        provider_cik="0000320193",
+        provider_composite_figi="FIGI123",
+        provider_share_class_figi="FIGI456",
+        provider_last_updated_at=datetime(2026, 8, 29, 20, 0, tzinfo=UTC),
+        provider_delisted_at=None,
+        missing_fields=("delisted_utc",),
+        request_started_at=now,
+        response_received_at=now,
+        fact_hash=ref_fact_hash,
+        fact_json=ref_fact_json,
+        error_category=None,
+        error_message=None,
+        created_at=now,
+        contract_version=2,
+    )
+    insert_reference_snapshots([ref_snap_v2], db_path=db_path)
+
+    ref_runs = list_reference_capture_runs(date(2026, 8, 30), CaptureSlot.MORNING, db_path=db_path)
+    assert len(ref_runs) == 1
+    assert ref_runs[0].contract_version == 2
+    assert ref_runs[0].manifest_hash == mhash
+
+    ref_snaps = list_reference_snapshots("ref-run-v2-100", db_path=db_path)
+    assert len(ref_snaps) == 1
+    assert ref_snaps[0].contract_version == 2
+
+
+def test_legacy_schema_v7_pre_init_row_reads(tmp_path) -> None:
+    """Verify row mappers defensively supply defaults when reading rows from unmigrated Schema v7 tables before store.init()."""
+    db_path = tmp_path / "legacy_v7_preflight.db"
+
+    # Build raw Schema v7 database without calling store.init()
+    con = sqlite3.connect(str(db_path))
+    try:
+        con.execute(
+            """
+            CREATE TABLE pit_capture_runs (
+                capture_run_id TEXT PRIMARY KEY,
+                contract_version INTEGER NOT NULL DEFAULT 1 CHECK (contract_version = 1),
+                idempotency_key TEXT NOT NULL UNIQUE,
+                request_fingerprint TEXT NOT NULL,
+                capture_kind TEXT NOT NULL CHECK (capture_kind = 'earnings'),
+                capture_slot TEXT NOT NULL CHECK (capture_slot IN ('morning', 'evening')),
+                capture_date TEXT NOT NULL CHECK (length(capture_date) = 10),
+                scheduled_for TEXT NOT NULL,
+                requested_at TEXT NOT NULL,
+                completed_at TEXT,
+                requested_provider TEXT NOT NULL,
+                universe_hash TEXT NOT NULL,
+                requested_n INTEGER NOT NULL CHECK (requested_n >= 0),
+                known_n INTEGER NOT NULL DEFAULT 0 CHECK (known_n >= 0),
+                unavailable_n INTEGER NOT NULL DEFAULT 0 CHECK (unavailable_n >= 0),
+                error_n INTEGER NOT NULL DEFAULT 0 CHECK (error_n >= 0),
+                status TEXT NOT NULL CHECK (status IN ('started', 'succeeded', 'partial', 'failed')),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            """
+        )
+        con.execute(
+            """
+            CREATE TABLE pit_earnings_snapshots (
+                snapshot_id TEXT PRIMARY KEY,
+                contract_version INTEGER NOT NULL DEFAULT 1 CHECK (contract_version = 1),
+                capture_run_id TEXT NOT NULL REFERENCES pit_capture_runs(capture_run_id) ON DELETE CASCADE,
+                symbol TEXT NOT NULL,
+                observation_status TEXT NOT NULL CHECK (observation_status IN ('known', 'unavailable', 'error')),
+                next_earnings_date TEXT,
+                provider TEXT NOT NULL,
+                provider_observed_at TEXT,
+                request_started_at TEXT NOT NULL,
+                response_received_at TEXT NOT NULL,
+                fact_hash TEXT NOT NULL,
+                fact_json TEXT NOT NULL,
+                error_category TEXT,
+                error_message TEXT,
+                created_at TEXT NOT NULL
+            );
+            """
+        )
+        con.execute(
+            """
+            CREATE TABLE pit_reference_capture_runs (
+                capture_run_id TEXT PRIMARY KEY,
+                contract_version INTEGER NOT NULL DEFAULT 1 CHECK (contract_version = 1),
+                idempotency_key TEXT NOT NULL UNIQUE,
+                request_fingerprint TEXT NOT NULL,
+                capture_slot TEXT NOT NULL CHECK (capture_slot IN ('morning', 'evening')),
+                capture_date TEXT NOT NULL CHECK (length(capture_date) = 10),
+                scheduled_for TEXT NOT NULL,
+                requested_at TEXT NOT NULL,
+                completed_at TEXT,
+                requested_provider TEXT NOT NULL,
+                universe_hash TEXT NOT NULL,
+                requested_n INTEGER NOT NULL CHECK (requested_n >= 0),
+                known_n INTEGER NOT NULL DEFAULT 0 CHECK (known_n >= 0),
+                unavailable_n INTEGER NOT NULL DEFAULT 0 CHECK (unavailable_n >= 0),
+                ambiguous_n INTEGER NOT NULL DEFAULT 0 CHECK (ambiguous_n >= 0),
+                error_n INTEGER NOT NULL DEFAULT 0 CHECK (error_n >= 0),
+                status TEXT NOT NULL CHECK (status IN ('started', 'succeeded', 'partial', 'failed')),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            """
+        )
+        con.execute("PRAGMA user_version = 7;")
+
+        # Insert historical rows into v7 tables
+        now_iso = "2026-08-30T13:00:00+00:00"
+        con.execute(
+            """
+            INSERT INTO pit_capture_runs (
+                capture_run_id, contract_version, idempotency_key, request_fingerprint,
+                capture_kind, capture_slot, capture_date, scheduled_for, requested_at,
+                completed_at, requested_provider, universe_hash, requested_n, known_n,
+                unavailable_n, error_n, status, created_at, updated_at
+            ) VALUES ('run-v7-1', 1, 'key-v7-1', 'fp-v7', 'earnings', 'morning', '2026-08-30',
+                      ?, ?, ?, 'yahoo', 'uhash-v7', 1, 1, 0, 0, 'succeeded', ?, ?);
+            """,
+            (now_iso, now_iso, now_iso, now_iso, now_iso),
+        )
+        v7_fact_json = '{"next_earnings_date":"2026-09-15"}'
+        v7_fact_hash = compute_fact_hash(v7_fact_json)
+        con.execute(
+            """
+            INSERT INTO pit_earnings_snapshots (
+                snapshot_id, contract_version, capture_run_id, symbol, observation_status,
+                next_earnings_date, provider, provider_observed_at, request_started_at,
+                response_received_at, fact_hash, fact_json, error_category, error_message, created_at
+            ) VALUES ('snap-v7-1', 1, 'run-v7-1', 'AAPL', 'known', '2026-09-15', 'yahoo',
+                      NULL, ?, ?, ?, ?, NULL, NULL, ?);
+            """,
+            (now_iso, now_iso, v7_fact_hash, v7_fact_json, now_iso),
+        )
+        con.execute(
+            """
+            INSERT INTO pit_reference_capture_runs (
+                capture_run_id, contract_version, idempotency_key, request_fingerprint,
+                capture_slot, capture_date, scheduled_for, requested_at, completed_at,
+                requested_provider, universe_hash, requested_n, known_n, unavailable_n,
+                ambiguous_n, error_n, status, created_at, updated_at
+            ) VALUES ('ref-v7-1', 1, 'ref-key-v7-1', 'ref-fp-v7', 'morning', '2026-08-30',
+                      ?, ?, ?, 'massive', 'uhash-v7', 1, 1, 0, 0, 0, 'succeeded', ?, ?);
+            """,
+            (now_iso, now_iso, now_iso, now_iso, now_iso),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+    # Preflight read BEFORE store.init() migration
+    run = get_capture_run("run-v7-1", db_path=db_path)
+    assert run is not None
+    assert run.contract_version == 1
+    assert run.manifest_hash is None
+    assert run.not_applicable_n == 0
+
+    snaps = list_earnings_snapshots("run-v7-1", db_path=db_path)
+    assert len(snaps) == 1
+    s = snaps[0]
+    assert s.contract_version == 1
+    assert s.observation_origin == "provider"
+    assert s.applicability_source is None
+    assert s.provider_call_attempted is True
+    assert s.provider == "yahoo"
+
+    ref_runs = list_reference_capture_runs(date(2026, 8, 30), CaptureSlot.MORNING, db_path=db_path)
+    assert len(ref_runs) == 1
+    assert ref_runs[0].contract_version == 1
+    assert ref_runs[0].manifest_hash is None

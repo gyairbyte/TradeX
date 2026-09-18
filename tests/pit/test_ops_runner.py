@@ -1181,3 +1181,158 @@ class TestStrengthenedUniverseDrift:
 
         db_after = dump_db()
         assert db_before == db_after
+
+
+class TestV2RunnerActivationGuard:
+    """Premature contract v2 execution attempts must deterministically fail closed before provider calls or DB writes."""
+
+    def _v2_manifest(self, eff: date | None = None) -> PITUniverseManifest:
+        return PITUniverseManifest(
+            contract_version=2,
+            universe_id="u-v2",
+            universe_version="v1",
+            effective_from=eff or date(2025, 1, 1),
+            symbols=("AAPL", "MSFT"),
+            description="v2 runner guard test",
+            applicability={
+                "AAPL": {"earnings": "required", "reference": "required"},
+                "MSFT": {"earnings": "required", "reference": "required"},
+            },
+        )
+
+    def _dump_db(self, db_path: Path) -> dict[str, list]:
+        import sqlite3
+        con = sqlite3.connect(str(db_path))
+        try:
+            tables = [
+                "pit_capture_runs",
+                "pit_earnings_snapshots",
+                "pit_reference_capture_runs",
+                "pit_reference_snapshots",
+            ]
+            return {t: con.execute(f"SELECT * FROM {t}").fetchall() for t in tables}
+        finally:
+            con.close()
+
+    def test_v2_fails_closed_on_due_trading_day(self, tmp_path):
+        """Due trading day after slot time: returns FAILED, 0 calls, 0 writes."""
+        db_path = tmp_path / "signals.db"
+        from tradex.tracker import store
+        store.init(db_path)
+        settings = _settings(tmp_path)
+        manifest_v2 = self._v2_manifest()
+
+        mock_e = MagicMock()
+        mock_r = MagicMock()
+        now = _morning_now(_TRADING_DATE)  # after morning slot on trading day
+        db_before = self._dump_db(db_path)
+
+        result = run_pit_slot(
+            slot=CaptureSlot.MORNING,
+            universe_manifest=manifest_v2,
+            settings=settings,
+            db_path=db_path,
+            now_fn=lambda: now,
+            earnings_capture=mock_e,
+            reference_capture=mock_r,
+        )
+
+        assert result.operational_status == PITOperationalStatus.FAILED
+        assert "execution activation deferred to PR B" in (result.earnings.error_detail or "")
+        assert mock_e.call_count == 0
+        assert mock_r.call_count == 0
+        db_after = self._dump_db(db_path)
+        assert db_before == db_after
+
+    def test_v2_fails_closed_on_non_trading_day_weekend(self, tmp_path):
+        """Non-trading day (weekend): must return FAILED (NOT NOT_DUE), 0 calls, 0 writes."""
+        db_path = tmp_path / "signals.db"
+        from tradex.tracker import store
+        store.init(db_path)
+        settings = _settings(tmp_path)
+        manifest_v2 = self._v2_manifest()
+
+        mock_e = MagicMock()
+        mock_r = MagicMock()
+        now = _morning_now(_NON_TRADING_DATE)  # Saturday
+        db_before = self._dump_db(db_path)
+
+        result = run_pit_slot(
+            slot=CaptureSlot.MORNING,
+            universe_manifest=manifest_v2,
+            settings=settings,
+            db_path=db_path,
+            now_fn=lambda: now,
+            earnings_capture=mock_e,
+            reference_capture=mock_r,
+        )
+
+        assert result.operational_status == PITOperationalStatus.FAILED
+        assert result.operational_status != PITOperationalStatus.NOT_DUE
+        assert "execution activation deferred to PR B" in (result.earnings.error_detail or "")
+        assert mock_e.call_count == 0
+        assert mock_r.call_count == 0
+        db_after = self._dump_db(db_path)
+        assert db_before == db_after
+
+    def test_v2_fails_closed_pre_slot_time(self, tmp_path):
+        """Pre-slot time on trading day: must return FAILED (NOT NOT_DUE), 0 calls, 0 writes."""
+        db_path = tmp_path / "signals.db"
+        from tradex.tracker import store
+        store.init(db_path)
+        settings = _settings(tmp_path)
+        manifest_v2 = self._v2_manifest()
+
+        mock_e = MagicMock()
+        mock_r = MagicMock()
+        now = _before_morning_now(_TRADING_DATE)  # before morning slot
+        db_before = self._dump_db(db_path)
+
+        result = run_pit_slot(
+            slot=CaptureSlot.MORNING,
+            universe_manifest=manifest_v2,
+            settings=settings,
+            db_path=db_path,
+            now_fn=lambda: now,
+            earnings_capture=mock_e,
+            reference_capture=mock_r,
+        )
+
+        assert result.operational_status == PITOperationalStatus.FAILED
+        assert result.operational_status != PITOperationalStatus.NOT_DUE
+        assert "execution activation deferred to PR B" in (result.earnings.error_detail or "")
+        assert mock_e.call_count == 0
+        assert mock_r.call_count == 0
+        db_after = self._dump_db(db_path)
+        assert db_before == db_after
+
+    def test_v2_fails_closed_future_effective_from(self, tmp_path):
+        """Future effective_from: returns FAILED with contract version rejection, 0 calls, 0 writes."""
+        db_path = tmp_path / "signals.db"
+        from tradex.tracker import store
+        store.init(db_path)
+        settings = _settings(tmp_path)
+        future_eff = date(2099, 1, 1)
+        manifest_v2 = self._v2_manifest(eff=future_eff)
+
+        mock_e = MagicMock()
+        mock_r = MagicMock()
+        now = _morning_now(_TRADING_DATE)
+        db_before = self._dump_db(db_path)
+
+        result = run_pit_slot(
+            slot=CaptureSlot.MORNING,
+            universe_manifest=manifest_v2,
+            settings=settings,
+            db_path=db_path,
+            now_fn=lambda: now,
+            earnings_capture=mock_e,
+            reference_capture=mock_r,
+        )
+
+        assert result.operational_status == PITOperationalStatus.FAILED
+        assert "execution activation deferred to PR B" in (result.earnings.error_detail or "")
+        assert mock_e.call_count == 0
+        assert mock_r.call_count == 0
+        db_after = self._dump_db(db_path)
+        assert db_before == db_after

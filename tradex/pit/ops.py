@@ -24,11 +24,12 @@ import json
 import math
 import re
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from enum import Enum
 from pathlib import Path
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from tradex.market.hours import MARKET_TIMEZONE, is_trading_day
@@ -126,7 +127,7 @@ class PITUniverseManifest:
     effective_from: date
     symbols: tuple[str, ...]
     description: str
-    applicability: dict[str, dict[str, str]] | None = None
+    applicability: Mapping[str, Mapping[str, str]] | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -163,17 +164,17 @@ class PITUniverseManifest:
 
         # Validate and normalize applicability
         if self.contract_version == 1:
-            # v1: synthesize {sym: {"earnings": "required", "reference": "required"}} in memory
-            synthesized = {
-                sym: {"earnings": "required", "reference": "required"}
+            # v1: synthesize immutable {sym: {"earnings": "required", "reference": "required"}} in memory
+            synthesized = MappingProxyType({
+                sym: MappingProxyType({"earnings": "required", "reference": "required"})
                 for sym in normalized
-            }
+            })
             object.__setattr__(self, "applicability", synthesized)
         elif self.contract_version == 2:
             if self.applicability is None:
                 raise ValueError("applicability field is required for contract_version=2")
-            if not isinstance(self.applicability, dict):
-                raise ValueError(f"applicability must be a dict, got {type(self.applicability).__name__}")
+            if not isinstance(self.applicability, (dict, Mapping)):
+                raise TypeError(f"applicability must be a dict or mapping, got {type(self.applicability).__name__}")
 
             app_keys = set(self.applicability.keys())
             sym_set = set(normalized)
@@ -186,11 +187,11 @@ class PITUniverseManifest:
             if extra_symbols:
                 raise ValueError(f"Extra symbols in applicability not present in symbols: {extra_symbols}")
 
-            canonical_app: dict[str, dict[str, str]] = {}
+            canonical_app: dict[str, Mapping[str, str]] = {}
             for sym in normalized:
                 entry = self.applicability[sym]
-                if not isinstance(entry, dict):
-                    raise ValueError(f"Applicability entry for symbol {sym!r} must be a dict, got {type(entry).__name__}")
+                if not isinstance(entry, (dict, Mapping)):
+                    raise TypeError(f"Applicability entry for symbol {sym!r} must be a dict, got {type(entry).__name__}")
                 families = set(entry.keys())
                 expected_families = {"earnings", "reference"}
                 if families != expected_families:
@@ -207,11 +208,11 @@ class PITUniverseManifest:
                     raise ValueError(
                         f"Invalid reference applicability {ref_val!r} for symbol {sym!r}; must be 'required'"
                     )
-                canonical_app[sym] = {
+                canonical_app[sym] = MappingProxyType({
                     "earnings": earn_val,
                     "reference": ref_val,
-                }
-            object.__setattr__(self, "applicability", canonical_app)
+                })
+            object.__setattr__(self, "applicability", MappingProxyType(canonical_app))
 
     @property
     def universe_hash(self) -> str:
@@ -345,17 +346,17 @@ def load_universe_manifest(path: Path | str) -> PITUniverseManifest:
         raise ValueError(f"Invalid symbols in manifest: {exc}") from exc
 
     # Validate applicability for v2 manifests
-    applicability: dict[str, dict[str, str]] | None = None
+    applicability: Mapping[str, Mapping[str, str]] | None = None
     if cv == 2:
         if "applicability" not in raw:
             raise ValueError("applicability field is required for contract_version=2")
         app_raw = raw["applicability"]
         if not isinstance(app_raw, dict):
-            raise ValueError(f"applicability must be a JSON object, got {type(app_raw).__name__}")  # noqa: TRY004
+            raise TypeError(f"applicability must be a JSON object, got {type(app_raw).__name__}")
         applicability = app_raw
     elif "applicability" in raw and raw["applicability"] is not None:
         if not isinstance(raw["applicability"], dict):
-            raise ValueError(f"applicability must be a JSON object, got {type(raw['applicability']).__name__}")  # noqa: TRY004
+            raise TypeError(f"applicability must be a JSON object, got {type(raw['applicability']).__name__}")
         applicability = raw["applicability"]
 
     # Optional description
@@ -825,6 +826,14 @@ def run_pit_slot(
     current_ny_date = current_dt.astimezone(MARKET_TIMEZONE).date()
     scheduled_for = compute_scheduled_slot_time(current_ny_date, slot)
 
+    # Manifest contract_version gate: fail closed on premature v2 execution before PR B
+    if universe_manifest.contract_version != 1:
+        err_msg = (
+            f"Manifest contract_version {universe_manifest.contract_version} execution is not supported "
+            "under contract v1 runtime (execution activation deferred to PR B)."
+        )
+        return _failed_result(current_ny_date, slot, scheduled_for, current_dt, universe_manifest, err_msg)
+
     # Trading-day gate: zero side effects on non-trading dates
     if not is_trading_day(current_ny_date):
         return _not_due_result(current_ny_date, slot, scheduled_for, current_dt, universe_manifest)
@@ -838,14 +847,6 @@ def run_pit_slot(
         err_msg = (
             f"Manifest effective_from {universe_manifest.effective_from.isoformat()} "
             f"is in the future relative to current ET date {current_ny_date.isoformat()}."
-        )
-        return _failed_result(current_ny_date, slot, scheduled_for, current_dt, universe_manifest, err_msg)
-
-    # Manifest contract_version gate: fail closed on premature v2 execution before PR B
-    if universe_manifest.contract_version != 1:
-        err_msg = (
-            f"Manifest contract_version {universe_manifest.contract_version} execution is not supported "
-            "under contract v1 runtime (execution activation deferred to PR B)."
         )
         return _failed_result(current_ny_date, slot, scheduled_for, current_dt, universe_manifest, err_msg)
 

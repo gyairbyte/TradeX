@@ -62,7 +62,9 @@ class TestPITUniverseManifestValidation:
 
     def test_invalid_contract_version(self):
         with pytest.raises(ValueError, match="contract_version"):
-            self._make(contract_version=2)
+            self._make(contract_version=99)
+        with pytest.raises(ValueError, match="contract_version"):
+            self._make(contract_version=0)
 
     def test_invalid_contract_version_bool(self):
         with pytest.raises(ValueError, match="contract_version"):
@@ -449,3 +451,222 @@ class TestEstimateCapacity:
         est2 = estimate_capacity(m, pacing_interval_seconds=12.1)
         assert est1.minimum_pacing_floor_seconds == est2.minimum_pacing_floor_seconds
         assert est1.maximum_pacing_floor_seconds == est2.maximum_pacing_floor_seconds
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Manifest Contract v2 & Applicability Tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestPITUniverseManifestV2:
+    def _make_v2(self, **kw) -> PITUniverseManifest:
+        defaults = {
+            "contract_version": 2,
+            "universe_id": "test-v2",
+            "universe_version": "v1",
+            "effective_from": date(2026, 1, 1),
+            "symbols": ("AAPL", "MSFT", "SPY"),
+            "description": "Test v2 manifest",
+            "applicability": {
+                "AAPL": {"earnings": "required", "reference": "required"},
+                "MSFT": {"earnings": "required", "reference": "required"},
+                "SPY": {"earnings": "not_applicable", "reference": "required"},
+            },
+        }
+        defaults.update(kw)
+        return PITUniverseManifest(**defaults)
+
+    def test_valid_v2_manifest(self):
+        m = self._make_v2()
+        assert m.contract_version == 2
+        assert m.universe_id == "test-v2"
+        assert m.symbols == ("AAPL", "MSFT", "SPY")
+        assert m.applicability["AAPL"]["earnings"] == "required"
+        assert m.applicability["AAPL"]["reference"] == "required"
+        assert m.applicability["SPY"]["earnings"] == "not_applicable"
+        assert m.applicability["SPY"]["reference"] == "required"
+
+    def test_v2_immutability_enforced_against_mutation(self):
+        m = self._make_v2()
+
+        # Mutating top-level attribute fails (frozen dataclass)
+        with pytest.raises((TypeError, AttributeError)):
+            m.symbols = ("NEW",)  # type: ignore[misc]
+
+        # Mutating applicability dictionary directly fails (MappingProxyType)
+        with pytest.raises(TypeError, match="does not support item assignment"):
+            m.applicability["NEW"] = {"earnings": "required", "reference": "required"}  # type: ignore[index]
+
+        # Mutating nested symbol dictionary fails (MappingProxyType)
+        with pytest.raises(TypeError, match="does not support item assignment"):
+            m.applicability["SPY"]["earnings"] = "required"  # type: ignore[index]
+
+    def test_v2_post_construction_caller_mutation_has_no_effect(self):
+        raw_app = {
+            "AAPL": {"earnings": "required", "reference": "required"},
+            "MSFT": {"earnings": "required", "reference": "required"},
+            "SPY": {"earnings": "not_applicable", "reference": "required"},
+        }
+        m = self._make_v2(applicability=raw_app)
+        initial_hash = m.manifest_hash
+
+        # Mutate the dictionary that was passed in
+        raw_app["SPY"]["earnings"] = "required"
+        raw_app["EXTRA"] = {"earnings": "required", "reference": "required"}
+
+        # Manifest mapping and manifest_hash remain strictly unchanged
+        assert m.applicability["SPY"]["earnings"] == "not_applicable"
+        assert "EXTRA" not in m.applicability
+        assert m.manifest_hash == initial_hash
+
+    def test_v1_synthesizes_immutable_applicability(self):
+        m = PITUniverseManifest(
+            contract_version=1,
+            universe_id="u-1",
+            universe_version="v1",
+            effective_from=date(2026, 1, 1),
+            symbols=("AAPL", "MSFT"),
+            description="v1 test",
+        )
+        assert m.applicability is not None
+        assert m.applicability["AAPL"] == {"earnings": "required", "reference": "required"}
+        assert m.applicability["MSFT"] == {"earnings": "required", "reference": "required"}
+
+        # Immutability holds for synthesized v1 mapping
+        with pytest.raises(TypeError, match="does not support item assignment"):
+            m.applicability["AAPL"] = {"earnings": "not_applicable", "reference": "required"}  # type: ignore[index]
+        with pytest.raises(TypeError, match="does not support item assignment"):
+            m.applicability["AAPL"]["earnings"] = "not_applicable"  # type: ignore[index]
+
+    def test_v2_requires_applicability(self):
+        with pytest.raises(ValueError, match="applicability field is required for contract_version=2"):
+            self._make_v2(applicability=None)
+
+    def test_v2_rejects_non_dict_applicability(self):
+        with pytest.raises(TypeError, match="must be a dict or mapping"):
+            self._make_v2(applicability=["AAPL"])  # type: ignore[arg-type]
+        with pytest.raises(TypeError, match="must be a dict or mapping"):
+            self._make_v2(applicability="invalid")  # type: ignore[arg-type]
+
+    def test_v2_rejects_missing_symbol(self):
+        app = {
+            "AAPL": {"earnings": "required", "reference": "required"},
+            "MSFT": {"earnings": "required", "reference": "required"},
+        }
+        with pytest.raises(ValueError, match="Missing applicability declarations for symbols: \\['SPY'\\]"):
+            self._make_v2(symbols=("AAPL", "MSFT", "SPY"), applicability=app)
+
+    def test_v2_rejects_extra_symbol(self):
+        app = {
+            "AAPL": {"earnings": "required", "reference": "required"},
+            "MSFT": {"earnings": "required", "reference": "required"},
+            "SPY": {"earnings": "not_applicable", "reference": "required"},
+            "GOOG": {"earnings": "required", "reference": "required"},
+        }
+        with pytest.raises(ValueError, match="Extra symbols in applicability not present in symbols: \\['GOOG'\\]"):
+            self._make_v2(symbols=("AAPL", "MSFT", "SPY"), applicability=app)
+
+    def test_v2_rejects_lowercase_or_mismatched_symbol_keys(self):
+        app = {
+            "aapl": {"earnings": "required", "reference": "required"},
+            "MSFT": {"earnings": "required", "reference": "required"},
+            "SPY": {"earnings": "not_applicable", "reference": "required"},
+        }
+        # Symbols are normalized to uppercase AAPL, so lowercase aapl counts as missing AAPL
+        with pytest.raises(ValueError, match="Missing applicability declarations for symbols: \\['AAPL'\\]"):
+            self._make_v2(symbols=("AAPL", "MSFT", "SPY"), applicability=app)
+
+    def test_v2_rejects_missing_or_extra_families(self):
+        # Missing reference family
+        app_missing = {
+            "AAPL": {"earnings": "required"},
+            "MSFT": {"earnings": "required", "reference": "required"},
+            "SPY": {"earnings": "not_applicable", "reference": "required"},
+        }
+        with pytest.raises(ValueError, match="must contain exactly"):
+            self._make_v2(applicability=app_missing)
+
+        # Extra family
+        app_extra = {
+            "AAPL": {"earnings": "required", "reference": "required", "options": "required"},
+            "MSFT": {"earnings": "required", "reference": "required"},
+            "SPY": {"earnings": "not_applicable", "reference": "required"},
+        }
+        with pytest.raises(ValueError, match="must contain exactly"):
+            self._make_v2(applicability=app_extra)
+
+    def test_v2_rejects_reference_not_applicable(self):
+        app = {
+            "AAPL": {"earnings": "required", "reference": "not_applicable"},
+            "MSFT": {"earnings": "required", "reference": "required"},
+            "SPY": {"earnings": "not_applicable", "reference": "required"},
+        }
+        with pytest.raises(ValueError, match="Invalid reference applicability 'not_applicable' for symbol 'AAPL'; must be 'required'"):
+            self._make_v2(applicability=app)
+
+    def test_v2_rejects_invalid_earnings_applicability(self):
+        app = {
+            "AAPL": {"earnings": "optional", "reference": "required"},
+            "MSFT": {"earnings": "required", "reference": "required"},
+            "SPY": {"earnings": "not_applicable", "reference": "required"},
+        }
+        with pytest.raises(ValueError, match="Invalid earnings applicability 'optional' for symbol 'AAPL'"):
+            self._make_v2(applicability=app)
+
+    def test_v1_manifest_hash_golden_compatibility(self):
+        """v1 manifest hash must remain bit-for-bit identical to the established golden value."""
+        m_v1 = PITUniverseManifest(
+            contract_version=1,
+            universe_id="test-universe",
+            universe_version="v1",
+            effective_from=date(2026, 1, 1),
+            symbols=("AAPL", "MSFT"),
+            description="golden test",
+        )
+        expected_golden_hash = "c6c13148a933dd4c637258e4e94dfd2553a36a0b73fd233d2a0c877c0c93361e"
+        assert m_v1.manifest_hash == expected_golden_hash
+
+    def test_v2_manifest_hash_sensitive_to_applicability_and_preserves_universe_hash(self):
+        """Changing applicability must change manifest_hash while universe_hash remains strictly identical."""
+        m_all_req = self._make_v2(
+            symbols=("AAPL", "SPY"),
+            applicability={
+                "AAPL": {"earnings": "required", "reference": "required"},
+                "SPY": {"earnings": "required", "reference": "required"},
+            },
+        )
+        m_spy_na = self._make_v2(
+            symbols=("AAPL", "SPY"),
+            applicability={
+                "AAPL": {"earnings": "required", "reference": "required"},
+                "SPY": {"earnings": "not_applicable", "reference": "required"},
+            },
+        )
+
+        # Same symbols -> strictly identical universe_hash
+        assert m_all_req.universe_hash == m_spy_na.universe_hash
+
+        # Different applicability -> strictly different manifest_hash
+        assert m_all_req.manifest_hash != m_spy_na.manifest_hash
+
+        # Verify deterministic calculation of v2 hash
+        expected_payload = {
+            "applicability": {
+                "AAPL": {"earnings": "not_applicable", "reference": "required"},
+                "SPY": {"earnings": "required", "reference": "required"},
+            },
+            "contract_version": 2,
+            "effective_from": "2026-01-01",
+            "symbols": ["AAPL", "SPY"],
+            "universe_id": "test-v2",
+            "universe_version": "v1",
+        }
+        m_reordered = self._make_v2(
+            symbols=("SPY", "AAPL"),
+            applicability={
+                "SPY": {"earnings": "required", "reference": "required"},
+                "AAPL": {"earnings": "not_applicable", "reference": "required"},
+            },
+        )
+        canonical_json = json.dumps(expected_payload, sort_keys=True, separators=(",", ":"))
+        expected_hash = hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
+        assert m_reordered.manifest_hash == expected_hash

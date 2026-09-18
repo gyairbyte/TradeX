@@ -207,12 +207,25 @@ python -m tradex.pit.ops health \
 
 ### Schema Version
 - **Schema v8**: Introduced in `MVP-ARCH-001-R7-PIT-STATUS-IMPL-A` via an atomic 14-step table rebuild.
-- Prior Schema v7 data is fully preserved with exact row count verification.
-- `PRAGMA foreign_keys = OFF` is executed strictly before `BEGIN TRANSACTION`.
-- Foreign key integrity is verified with `PRAGMA foreign_key_check` before committing.
+- Prior Schema v7 data is fully preserved with exact row count verification across all 4 PIT tables.
+- Rebuild execution sequence strictly adheres to:
+  1. Open dedicated connection to database
+  2. `PRAGMA foreign_keys = OFF` executed strictly *before* `BEGIN TRANSACTION`
+  3. Verify `PRAGMA user_version == 7`
+  4. Query source row counts across all 4 PIT tables
+  5. Create temporary `_v8` tables (`pit_capture_runs_v8`, `pit_earnings_snapshots_v8`, `pit_reference_capture_runs_v8`, `pit_reference_snapshots_v8`)
+  6. Copy source data verbatim with Schema v8 column backfills
+  7. Verify destination row counts equal source row counts
+  8. Drop old tables
+  9. Rename `_v8` tables to canonical table names
+  10. Recreate indexes
+  11. `PRAGMA foreign_key_check` asserting zero violations
+  12. `PRAGMA user_version = 8`
+  13. `COMMIT`
+  14. `PRAGMA foreign_keys = ON`, close connection
 
 ### Manifest Contract v2 Primitives
-- **Contract Version 2**: Adds optional `applicability` field to the manifest:
+- **Contract Version 2**: Requires the normative per-symbol `applicability` mapping where each symbol declares both `earnings` and `reference` families:
   ```json
   {
     "contract_version": 2,
@@ -220,14 +233,26 @@ python -m tradex.pit.ops health \
     "universe_version": "v1",
     "effective_from": "2026-09-01",
     "symbols": ["AAPL", "MSFT", "SPY"],
+    "description": "Example manifest with per-symbol applicability",
     "applicability": {
-      "earnings": {
-        "not_applicable": ["SPY"]
+      "AAPL": {
+        "earnings": "required",
+        "reference": "required"
+      },
+      "MSFT": {
+        "earnings": "required",
+        "reference": "required"
+      },
+      "SPY": {
+        "earnings": "not_applicable",
+        "reference": "required"
       }
     }
   }
   ```
-- **Material Hashing**: For contract v2 manifests, `manifest_hash` includes sorted `not_applicable` symbols.
+- **Deep Immutability**: `PITUniverseManifest.applicability` enforces recursive immutability using `types.MappingProxyType` for both outer and inner mappings, preventing in-memory mutations post-construction.
+- **Material Hashing**: For contract v2 manifests, `manifest_hash` commits to normalized, sorted per-symbol applicability declarations, while `universe_hash` remains strictly the SHA-256 of the symbol list.
+- **Fail-Closed Execution Guard**: `run_pit_slot` checks `contract_version != 1` immediately at entry before any trading-day, slot-time, or effective-from gates, failing closed with zero provider calls and zero DB writes until PR B.
 - **Cross-Version Conflict Guard**: `(capture_date, slot)` runs cannot mix contract v1 and v2.
 - **Runtime Capture Pinning**: Write execution is pinned to `PIT_CAPTURE_WRITE_CONTRACT_VERSION = 1` until PR B. Premature v2 runtime capture attempts fail closed.
 - **Truthful Provenance**: `NOT_APPLICABLE` earnings records persist `observation_origin = 'manifest'`, `applicability_source = 'manifest'`, `provider = NULL`, `provider_call_attempted = 0`, with no fictitious timestamps or provider names.

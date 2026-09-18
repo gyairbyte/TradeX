@@ -22,7 +22,6 @@ from tradex.earnings.calendar import (
 )
 from tradex.market.hours import MARKET_TIMEZONE
 from tradex.pit.models import (
-    PIT_CAPTURE_CONTRACT_VERSION,
     PIT_CAPTURE_WRITE_CONTRACT_VERSION,
     CaptureKind,
     CaptureRunStatus,

@@ -64,8 +64,9 @@ def _row_to_run(row: sqlite3.Row) -> PITCaptureRun:
     created_at = _parse_dt(row["created_at"], "created_at")
     updated_at = _parse_dt(row["updated_at"], "updated_at")
 
-    manifest_hash = row["manifest_hash"] if "manifest_hash" in row.keys() else None
-    not_applicable_n = int(row["not_applicable_n"]) if "not_applicable_n" in row.keys() else 0
+    row_keys = set(row.keys())
+    manifest_hash = row["manifest_hash"] if "manifest_hash" in row_keys else None
+    not_applicable_n = int(row["not_applicable_n"]) if "not_applicable_n" in row_keys else 0
 
     return PITCaptureRun(
         capture_run_id=row["capture_run_id"],
@@ -106,9 +107,10 @@ def _row_to_snapshot(row: sqlite3.Row) -> PITEarningsSnapshot:
     resp_rcvd = _parse_dt(row["response_received_at"], "response_received_at")
     created_at = _parse_dt(row["created_at"], "created_at")
 
-    obs_origin = row["observation_origin"] if "observation_origin" in row.keys() else "provider"
-    app_source = row["applicability_source"] if "applicability_source" in row.keys() else None
-    prov_call_att = bool(row["provider_call_attempted"]) if "provider_call_attempted" in row.keys() else True
+    row_keys = set(row.keys())
+    obs_origin = row["observation_origin"] if "observation_origin" in row_keys else "provider"
+    app_source = row["applicability_source"] if "applicability_source" in row_keys else None
+    prov_call_att = bool(row["provider_call_attempted"]) if "provider_call_attempted" in row_keys else True
 
     return PITEarningsSnapshot(
         snapshot_id=row["snapshot_id"],
@@ -144,7 +146,8 @@ def _row_to_reference_run(row: sqlite3.Row) -> PITReferenceCaptureRun:
     created_at = _parse_dt(row["created_at"], "created_at")
     updated_at = _parse_dt(row["updated_at"], "updated_at")
 
-    manifest_hash = row["manifest_hash"] if "manifest_hash" in row.keys() else None
+    row_keys = set(row.keys())
+    manifest_hash = row["manifest_hash"] if "manifest_hash" in row_keys else None
 
     return PITReferenceCaptureRun(
         capture_run_id=row["capture_run_id"],

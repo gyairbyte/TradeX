@@ -828,12 +828,12 @@ class PITReferenceCaptureRun:
         ):
             raise ValueError("counts must be non-negative")
 
-        if self.contract_version == 1:
-            if self.manifest_hash is not None:
-                raise ValueError("manifest_hash must be None for contract_version=1")
-        elif self.contract_version == 2:
-            if not self.manifest_hash or not isinstance(self.manifest_hash, str) or not self.manifest_hash.strip():
-                raise ValueError("manifest_hash is required and must be non-empty for contract_version=2")
+        if self.contract_version == 1 and self.manifest_hash is not None:
+            raise ValueError("manifest_hash must be None for contract_version=1")
+        elif self.contract_version == 2 and (
+            not self.manifest_hash or not isinstance(self.manifest_hash, str) or not self.manifest_hash.strip()
+        ):
+            raise ValueError("manifest_hash is required and must be non-empty for contract_version=2")
 
         if self.status != CaptureRunStatus.STARTED:
             if self.completed_at is None:

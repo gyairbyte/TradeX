@@ -21,7 +21,6 @@ from tradex.pit.massive_reference import (
     MassiveReferenceClient,
 )
 from tradex.pit.models import (
-    PIT_CAPTURE_CONTRACT_VERSION,
     PIT_CAPTURE_WRITE_CONTRACT_VERSION,
     CaptureRunStatus,
     CaptureSlot,
