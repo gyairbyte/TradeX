@@ -27,7 +27,7 @@ DB_PATH: Path = Path("~/.tradex/signals.db")
 _DEFAULT_DB_PATH = DB_PATH  # sentinel for legacy DB_PATH monkeypatch detection
 
 # DB schema version managed by PRAGMA user_version.
-_SCHEMA_VERSION = 7
+_SCHEMA_VERSION = 8
 
 
 class StoreError(Exception):
@@ -864,69 +864,385 @@ _PIT_REFERENCE_SCHEMA_SCRIPT = """
 """
 
 
+_PIT_V8_REBUILD_TABLES_SCRIPT = """
+    CREATE TABLE pit_capture_runs_v8 (
+        capture_run_id      TEXT PRIMARY KEY,
+        contract_version    INTEGER NOT NULL DEFAULT 2 CHECK (contract_version IN (1, 2)),
+        idempotency_key     TEXT NOT NULL UNIQUE,
+        request_fingerprint TEXT NOT NULL,
+        capture_kind        TEXT NOT NULL CHECK (capture_kind IN ('earnings')),
+        capture_slot        TEXT NOT NULL CHECK (capture_slot IN ('evening', 'morning')),
+        capture_date        TEXT NOT NULL,
+        scheduled_for       TEXT NOT NULL,
+        requested_at        TEXT NOT NULL,
+        completed_at        TEXT,
+        requested_provider  TEXT NOT NULL,
+        universe_hash       TEXT NOT NULL,
+        manifest_hash       TEXT,
+        requested_n         INTEGER NOT NULL CHECK (requested_n >= 1),
+        known_n             INTEGER NOT NULL DEFAULT 0 CHECK (known_n >= 0),
+        not_applicable_n    INTEGER NOT NULL DEFAULT 0 CHECK (not_applicable_n >= 0),
+        unavailable_n       INTEGER NOT NULL DEFAULT 0 CHECK (unavailable_n >= 0),
+        error_n             INTEGER NOT NULL DEFAULT 0 CHECK (error_n >= 0),
+        status              TEXT NOT NULL CHECK (status IN ('started', 'succeeded', 'partial', 'failed')),
+        created_at          TEXT NOT NULL,
+        updated_at          TEXT NOT NULL,
+        CHECK ((contract_version = 1 AND manifest_hash IS NULL) OR (contract_version = 2 AND manifest_hash IS NOT NULL)),
+        CHECK (status = 'started' OR completed_at IS NOT NULL),
+        CHECK (status = 'started' OR requested_n = (known_n + not_applicable_n + unavailable_n + error_n))
+    );
+
+    CREATE TABLE pit_earnings_snapshots_v8 (
+        snapshot_id             TEXT PRIMARY KEY,
+        contract_version        INTEGER NOT NULL DEFAULT 2 CHECK (contract_version IN (1, 2)),
+        capture_run_id          TEXT NOT NULL REFERENCES pit_capture_runs(capture_run_id) ON DELETE CASCADE,
+        symbol                  TEXT NOT NULL,
+        observation_status      TEXT NOT NULL CHECK (observation_status IN ('known', 'not_applicable', 'unavailable', 'error')),
+        observation_origin      TEXT NOT NULL DEFAULT 'provider' CHECK (observation_origin IN ('provider', 'manifest')),
+        applicability_source    TEXT CHECK (applicability_source IS NULL OR applicability_source IN ('manifest')),
+        provider_call_attempted INTEGER NOT NULL DEFAULT 1 CHECK (provider_call_attempted IN (0, 1)),
+        next_earnings_date      TEXT,
+        provider                TEXT,
+        provider_observed_at    TEXT,
+        request_started_at      TEXT,
+        response_received_at    TEXT,
+        fact_hash               TEXT NOT NULL,
+        fact_json               TEXT NOT NULL,
+        error_category          TEXT,
+        error_message           TEXT,
+        created_at              TEXT NOT NULL,
+        UNIQUE (capture_run_id, symbol),
+        CHECK ((observation_status = 'known' AND next_earnings_date IS NOT NULL) OR (observation_status != 'known' AND next_earnings_date IS NULL)),
+        CHECK (
+            (observation_origin = 'manifest'
+             AND observation_status = 'not_applicable'
+             AND provider IS NULL
+             AND provider_observed_at IS NULL
+             AND request_started_at IS NULL
+             AND response_received_at IS NULL
+             AND provider_call_attempted = 0
+             AND applicability_source = 'manifest')
+            OR
+            (observation_origin = 'provider'
+             AND observation_status != 'not_applicable'
+             AND provider IS NOT NULL
+             AND request_started_at IS NOT NULL
+             AND response_received_at IS NOT NULL
+             AND provider_call_attempted = 1
+             AND applicability_source IS NULL
+             AND request_started_at <= response_received_at)
+        )
+    );
+
+    CREATE TABLE pit_reference_capture_runs_v8 (
+        capture_run_id      TEXT PRIMARY KEY,
+        contract_version    INTEGER NOT NULL DEFAULT 2 CHECK (contract_version IN (1, 2)),
+        idempotency_key     TEXT NOT NULL UNIQUE,
+        request_fingerprint TEXT NOT NULL,
+        capture_slot        TEXT NOT NULL CHECK (capture_slot IN ('evening', 'morning')),
+        capture_date        TEXT NOT NULL,
+        scheduled_for       TEXT NOT NULL,
+        requested_at        TEXT NOT NULL,
+        completed_at        TEXT,
+        requested_provider  TEXT NOT NULL,
+        universe_hash       TEXT NOT NULL,
+        manifest_hash       TEXT,
+        requested_n         INTEGER NOT NULL CHECK (requested_n >= 1),
+        known_n             INTEGER NOT NULL DEFAULT 0 CHECK (known_n >= 0),
+        unavailable_n       INTEGER NOT NULL DEFAULT 0 CHECK (unavailable_n >= 0),
+        ambiguous_n         INTEGER NOT NULL DEFAULT 0 CHECK (ambiguous_n >= 0),
+        error_n             INTEGER NOT NULL DEFAULT 0 CHECK (error_n >= 0),
+        status              TEXT NOT NULL CHECK (status IN ('started', 'succeeded', 'partial', 'failed')),
+        created_at          TEXT NOT NULL,
+        updated_at          TEXT NOT NULL,
+        CHECK ((contract_version = 1 AND manifest_hash IS NULL) OR (contract_version = 2 AND manifest_hash IS NOT NULL)),
+        CHECK (status = 'started' OR completed_at IS NOT NULL),
+        CHECK (status = 'started' OR requested_n = (known_n + unavailable_n + ambiguous_n + error_n))
+    );
+
+    CREATE TABLE pit_reference_snapshots_v8 (
+        snapshot_id                TEXT PRIMARY KEY,
+        contract_version           INTEGER NOT NULL DEFAULT 2 CHECK (contract_version IN (1, 2)),
+        capture_run_id             TEXT NOT NULL REFERENCES pit_reference_capture_runs(capture_run_id) ON DELETE CASCADE,
+        symbol                     TEXT NOT NULL,
+        observation_status         TEXT NOT NULL CHECK (observation_status IN ('known', 'unavailable', 'ambiguous', 'error')),
+        provider                   TEXT NOT NULL,
+        provider_query_date        TEXT NOT NULL,
+        provider_request_ids_json  TEXT NOT NULL DEFAULT '[]',
+        provider_ticker            TEXT,
+        provider_name              TEXT,
+        provider_market            TEXT,
+        provider_locale            TEXT,
+        provider_active            INTEGER CHECK (provider_active IS NULL OR provider_active IN (0, 1)),
+        provider_type_code         TEXT,
+        provider_primary_exchange  TEXT,
+        provider_cik               TEXT,
+        provider_composite_figi    TEXT,
+        provider_share_class_figi  TEXT,
+        provider_last_updated_at   TEXT,
+        provider_delisted_at       TEXT,
+        missing_fields_json        TEXT NOT NULL DEFAULT '[]',
+        request_started_at         TEXT NOT NULL,
+        response_received_at       TEXT NOT NULL,
+        fact_hash                  TEXT NOT NULL,
+        fact_json                  TEXT NOT NULL,
+        error_category             TEXT,
+        error_message              TEXT,
+        created_at                 TEXT NOT NULL,
+        UNIQUE (capture_run_id, symbol),
+        CHECK (request_started_at <= response_received_at)
+    );
+"""
+
+_PIT_V8_INDEXES_SCRIPT = """
+    CREATE INDEX IF NOT EXISTS idx_pit_runs_date_slot ON pit_capture_runs(capture_date, capture_slot);
+    CREATE INDEX IF NOT EXISTS idx_pit_runs_status    ON pit_capture_runs(status);
+    CREATE INDEX IF NOT EXISTS idx_pit_runs_requested ON pit_capture_runs(requested_at);
+
+    CREATE INDEX IF NOT EXISTS idx_pit_snaps_run_id    ON pit_earnings_snapshots(capture_run_id);
+    CREATE INDEX IF NOT EXISTS idx_pit_snaps_symbol    ON pit_earnings_snapshots(symbol);
+    CREATE INDEX IF NOT EXISTS idx_pit_snaps_next_date ON pit_earnings_snapshots(next_earnings_date);
+    CREATE INDEX IF NOT EXISTS idx_pit_snaps_status    ON pit_earnings_snapshots(observation_status);
+
+    CREATE INDEX IF NOT EXISTS idx_pit_ref_runs_date_slot ON pit_reference_capture_runs(capture_date, capture_slot);
+    CREATE INDEX IF NOT EXISTS idx_pit_ref_runs_status    ON pit_reference_capture_runs(status);
+    CREATE INDEX IF NOT EXISTS idx_pit_ref_runs_requested ON pit_reference_capture_runs(requested_at);
+
+    CREATE INDEX IF NOT EXISTS idx_pit_ref_snaps_run_id ON pit_reference_snapshots(capture_run_id);
+    CREATE INDEX IF NOT EXISTS idx_pit_ref_snaps_symbol ON pit_reference_snapshots(symbol);
+    CREATE INDEX IF NOT EXISTS idx_pit_ref_snaps_status ON pit_reference_snapshots(observation_status);
+"""
+
+
+def _migrate_v7_to_v8(db_path: Path | str) -> None:
+    """Execute the 14-step atomic table rebuild from Schema v7 to Schema v8."""
+    path = Path(db_path)
+    con = sqlite3.connect(str(path))
+    con.row_factory = sqlite3.Row
+    in_transaction = False
+    try:
+        # Step 1: Disable foreign keys before beginning transaction
+        con.execute("PRAGMA foreign_keys = OFF")
+        # Step 2: Begin atomic transaction
+        con.execute("BEGIN TRANSACTION")
+        in_transaction = True
+
+        # Step 3: Verify current user_version == 7 (or 8 for idempotent no-op)
+        cur_version = con.execute("PRAGMA user_version").fetchone()[0]
+        if cur_version == 8:
+            con.execute("COMMIT")
+            in_transaction = False
+            con.execute("PRAGMA foreign_keys = ON")
+            return
+        if cur_version != 7:
+            raise StoreError(
+                f"Cannot run Schema v7 -> v8 migration on database with version {cur_version} (expected 7)."
+            )
+
+        # Step 4: Capture source row counts from all 4 PIT tables
+        c_runs = con.execute("SELECT count(*) FROM pit_capture_runs").fetchone()[0]
+        c_snaps = con.execute("SELECT count(*) FROM pit_earnings_snapshots").fetchone()[0]
+        c_ref_runs = con.execute("SELECT count(*) FROM pit_reference_capture_runs").fetchone()[0]
+        c_ref_snaps = con.execute("SELECT count(*) FROM pit_reference_snapshots").fetchone()[0]
+
+        # Step 5: Create temporary Schema v8 tables
+        _execute_schema_statements(con, _PIT_V8_REBUILD_TABLES_SCRIPT)
+
+        # Step 6: Copy data verbatim
+        con.execute("""
+            INSERT INTO pit_capture_runs_v8 (
+                capture_run_id, contract_version, idempotency_key, request_fingerprint,
+                capture_kind, capture_slot, capture_date, scheduled_for, requested_at,
+                completed_at, requested_provider, universe_hash, manifest_hash,
+                requested_n, known_n, not_applicable_n, unavailable_n, error_n,
+                status, created_at, updated_at
+            )
+            SELECT
+                capture_run_id, contract_version, idempotency_key, request_fingerprint,
+                capture_kind, capture_slot, capture_date, scheduled_for, requested_at,
+                completed_at, requested_provider, universe_hash, NULL,
+                requested_n, known_n, 0, unavailable_n, error_n,
+                status, created_at, updated_at
+            FROM pit_capture_runs
+        """)
+        con.execute("""
+            INSERT INTO pit_earnings_snapshots_v8 (
+                snapshot_id, contract_version, capture_run_id, symbol,
+                observation_status, observation_origin, applicability_source,
+                provider_call_attempted, next_earnings_date, provider,
+                provider_observed_at, request_started_at, response_received_at,
+                fact_hash, fact_json, error_category, error_message, created_at
+            )
+            SELECT
+                snapshot_id, contract_version, capture_run_id, symbol,
+                observation_status, 'provider', NULL,
+                1, next_earnings_date, provider,
+                provider_observed_at, request_started_at, response_received_at,
+                fact_hash, fact_json, error_category, error_message, created_at
+            FROM pit_earnings_snapshots
+        """)
+        con.execute("""
+            INSERT INTO pit_reference_capture_runs_v8 (
+                capture_run_id, contract_version, idempotency_key, request_fingerprint,
+                capture_slot, capture_date, scheduled_for, requested_at,
+                completed_at, requested_provider, universe_hash, manifest_hash,
+                requested_n, known_n, unavailable_n, ambiguous_n, error_n,
+                status, created_at, updated_at
+            )
+            SELECT
+                capture_run_id, contract_version, idempotency_key, request_fingerprint,
+                capture_slot, capture_date, scheduled_for, requested_at,
+                completed_at, requested_provider, universe_hash, NULL,
+                requested_n, known_n, unavailable_n, ambiguous_n, error_n,
+                status, created_at, updated_at
+            FROM pit_reference_capture_runs
+        """)
+        con.execute("""
+            INSERT INTO pit_reference_snapshots_v8 (
+                snapshot_id, contract_version, capture_run_id, symbol,
+                observation_status, provider, provider_query_date, provider_request_ids_json,
+                provider_ticker, provider_name, provider_market, provider_locale,
+                provider_active, provider_type_code, provider_primary_exchange,
+                provider_cik, provider_composite_figi, provider_share_class_figi,
+                provider_last_updated_at, provider_delisted_at, missing_fields_json,
+                request_started_at, response_received_at, fact_hash, fact_json,
+                error_category, error_message, created_at
+            )
+            SELECT
+                snapshot_id, contract_version, capture_run_id, symbol,
+                observation_status, provider, provider_query_date, provider_request_ids_json,
+                provider_ticker, provider_name, provider_market, provider_locale,
+                provider_active, provider_type_code, provider_primary_exchange,
+                provider_cik, provider_composite_figi, provider_share_class_figi,
+                provider_last_updated_at, provider_delisted_at, missing_fields_json,
+                request_started_at, response_received_at, fact_hash, fact_json,
+                error_category, error_message, created_at
+            FROM pit_reference_snapshots
+        """)
+
+        # Step 7: Verify destination row counts equal source row counts exactly
+        d_runs = con.execute("SELECT count(*) FROM pit_capture_runs_v8").fetchone()[0]
+        d_snaps = con.execute("SELECT count(*) FROM pit_earnings_snapshots_v8").fetchone()[0]
+        d_ref_runs = con.execute("SELECT count(*) FROM pit_reference_capture_runs_v8").fetchone()[0]
+        d_ref_snaps = con.execute("SELECT count(*) FROM pit_reference_snapshots_v8").fetchone()[0]
+        if (c_runs, c_snaps, c_ref_runs, c_ref_snaps) != (d_runs, d_snaps, d_ref_runs, d_ref_snaps):
+            raise StoreError(
+                f"Row count mismatch during Schema v8 rebuild: "
+                f"source=({c_runs}, {c_snaps}, {c_ref_runs}, {c_ref_snaps}) != "
+                f"dest=({d_runs}, {d_snaps}, {d_ref_runs}, {d_ref_snaps})"
+            )
+
+        # Step 8: Drop old tables
+        con.execute("DROP TABLE pit_earnings_snapshots")
+        con.execute("DROP TABLE pit_capture_runs")
+        con.execute("DROP TABLE pit_reference_snapshots")
+        con.execute("DROP TABLE pit_reference_capture_runs")
+
+        # Step 9: Rename _v8 tables to canonical table names
+        con.execute("ALTER TABLE pit_capture_runs_v8 RENAME TO pit_capture_runs")
+        con.execute("ALTER TABLE pit_earnings_snapshots_v8 RENAME TO pit_earnings_snapshots")
+        con.execute("ALTER TABLE pit_reference_capture_runs_v8 RENAME TO pit_reference_capture_runs")
+        con.execute("ALTER TABLE pit_reference_snapshots_v8 RENAME TO pit_reference_snapshots")
+
+        # Step 10: Recreate all original indexes
+        _execute_schema_statements(con, _PIT_V8_INDEXES_SCRIPT)
+
+        # Step 11: Assert zero foreign key violations
+        violations = con.execute("PRAGMA foreign_key_check").fetchall()
+        if violations:
+            raise StoreError(f"Foreign key violations detected during Schema v8 rebuild: {violations}")
+
+        # Step 12: Set PRAGMA user_version = 8
+        con.execute("PRAGMA user_version = 8")
+
+        # Step 13: Commit transaction
+        con.execute("COMMIT")
+        in_transaction = False
+
+        # Step 14: Re-enable foreign keys
+        con.execute("PRAGMA foreign_keys = ON")
+    except Exception:
+        if in_transaction:
+            con.execute("ROLLBACK")
+        raise
+    finally:
+        con.close()
+
+
 def init(db_path: str | Path | None = None, *, settings: TradeXSettings | None = None):
     """Create tables if they don't exist and migrate older schemas atomically."""
     path = _resolve_db_path(settings) if db_path is None else Path(db_path)
-    with _transaction(db_path=path) as con:
+    _ensure_db_dir(path)
+
+    # Determine schema version on a clean connection without starting a transaction
+    with sqlite3.connect(str(path)) as con:
+        con.row_factory = sqlite3.Row
         version = con.execute("PRAGMA user_version").fetchone()[0]
-        if version > _SCHEMA_VERSION:
-            raise StoreError(
-                f"Database schema version {version} is newer than supported schema version {_SCHEMA_VERSION}. "
-                "Downgrades and unknown future versions are rejected."
-            )
-        if version < _SCHEMA_VERSION:
-            if version == 0 and _table_exists(con, "signal_history"):
-                _migrate_v0(con)
-                _migrate_v1_to_v2(con)
-                _migrate_v2_to_v3(con)
-                _migrate_v3_to_v4(con)
-                _migrate_v4_to_v5(con)
-                _migrate_v5_to_v6(con)
-                _migrate_v6_to_v7(con)
-            elif version == 1 and _table_exists(con, "signal_history"):
-                _migrate_v1_to_v2(con)
-                _migrate_v2_to_v3(con)
-                _migrate_v3_to_v4(con)
-                _migrate_v4_to_v5(con)
-                _migrate_v5_to_v6(con)
-                _migrate_v6_to_v7(con)
-            elif version == 2 and _table_exists(con, "signal_history"):
-                _migrate_v2_to_v3(con)
-                _migrate_v3_to_v4(con)
-                _migrate_v4_to_v5(con)
-                _migrate_v5_to_v6(con)
-                _migrate_v6_to_v7(con)
-            elif version == 3 and _table_exists(con, "signal_history"):
-                _migrate_v3_to_v4(con)
-                _migrate_v4_to_v5(con)
-                _migrate_v5_to_v6(con)
-                _migrate_v6_to_v7(con)
-            elif version == 4 and _table_exists(con, "signal_history"):
-                _migrate_v4_to_v5(con)
-                _migrate_v5_to_v6(con)
-                _migrate_v6_to_v7(con)
-            elif version == 5 and (_table_exists(con, "signal_history") or _table_exists(con, "journal_trades")):
-                _migrate_v5_to_v6(con)
-                _migrate_v6_to_v7(con)
-            elif version == 6 and (
-                _table_exists(con, "signal_history")
-                or _table_exists(con, "journal_trades")
-                or _table_exists(con, "pit_capture_runs")
-            ):
-                _migrate_v6_to_v7(con)
-            else:
-                _create_schema_v1(con)
-                _migrate_v3_to_v4(con)
-                _migrate_v4_to_v5(con)
-                _migrate_v5_to_v6(con)
-                _migrate_v6_to_v7(con)
-        else:
-            _create_schema_v1(con)
-            _migrate_v3_to_v4(con)
-            _migrate_v4_to_v5(con)
-            _migrate_v5_to_v6(con)
-            _migrate_v6_to_v7(con)
-        _set_schema_version(con)
+
+    if version > _SCHEMA_VERSION:
+        raise StoreError(
+            f"Database schema version {version} is newer than supported schema version {_SCHEMA_VERSION}. "
+            "Downgrades and unknown future versions are rejected."
+        )
+
+    if version == _SCHEMA_VERSION:
+        return
+
+    # If database is at an older schema version (< 7), migrate up to v7 first
+    if version < 7:
+        with _transaction(db_path=path) as con:
+            cur_ver = con.execute("PRAGMA user_version").fetchone()[0]
+            if cur_ver < 7:
+                if cur_ver == 0 and _table_exists(con, "signal_history"):
+                    _migrate_v0(con)
+                    _migrate_v1_to_v2(con)
+                    _migrate_v2_to_v3(con)
+                    _migrate_v3_to_v4(con)
+                    _migrate_v4_to_v5(con)
+                    _migrate_v5_to_v6(con)
+                    _migrate_v6_to_v7(con)
+                elif cur_ver == 1 and _table_exists(con, "signal_history"):
+                    _migrate_v1_to_v2(con)
+                    _migrate_v2_to_v3(con)
+                    _migrate_v3_to_v4(con)
+                    _migrate_v4_to_v5(con)
+                    _migrate_v5_to_v6(con)
+                    _migrate_v6_to_v7(con)
+                elif cur_ver == 2 and _table_exists(con, "signal_history"):
+                    _migrate_v2_to_v3(con)
+                    _migrate_v3_to_v4(con)
+                    _migrate_v4_to_v5(con)
+                    _migrate_v5_to_v6(con)
+                    _migrate_v6_to_v7(con)
+                elif cur_ver == 3 and _table_exists(con, "signal_history"):
+                    _migrate_v3_to_v4(con)
+                    _migrate_v4_to_v5(con)
+                    _migrate_v5_to_v6(con)
+                    _migrate_v6_to_v7(con)
+                elif cur_ver == 4 and _table_exists(con, "signal_history"):
+                    _migrate_v4_to_v5(con)
+                    _migrate_v5_to_v6(con)
+                    _migrate_v6_to_v7(con)
+                elif cur_ver == 5 and (_table_exists(con, "signal_history") or _table_exists(con, "journal_trades")):
+                    _migrate_v5_to_v6(con)
+                    _migrate_v6_to_v7(con)
+                elif cur_ver == 6 and (
+                    _table_exists(con, "signal_history")
+                    or _table_exists(con, "journal_trades")
+                    or _table_exists(con, "pit_capture_runs")
+                ):
+                    _migrate_v6_to_v7(con)
+                else:
+                    _create_schema_v1(con)
+                    _migrate_v3_to_v4(con)
+                    _migrate_v4_to_v5(con)
+                    _migrate_v5_to_v6(con)
+                    _migrate_v6_to_v7(con)
+                con.execute("PRAGMA user_version = 7")
+
+    # Migrate from v7 to v8 on a fresh migration connection outside any transaction
+    _migrate_v7_to_v8(path)
+
 
 
 _MISSING_PROVIDERS = {"", "unknown", "nan", "<na>", "none"}

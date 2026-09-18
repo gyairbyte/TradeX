@@ -107,7 +107,7 @@ def test_fresh_db_creates_schema_v4(tmp_path) -> None:
 
     with sqlite3.connect(db_path) as con:
         version = con.execute("PRAGMA user_version").fetchone()[0]
-        assert version == 7
+        assert version == 8
 
         tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         assert "candidates" in tables
@@ -123,7 +123,7 @@ def test_fresh_db_creates_schema_v4(tmp_path) -> None:
     # Idempotent repeat init
     store.init(db_path)
     with sqlite3.connect(db_path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 8
 
 
 def test_v3_to_v4_migration_preserves_legacy_data(tmp_path) -> None:
@@ -135,7 +135,7 @@ def test_v3_to_v4_migration_preserves_legacy_data(tmp_path) -> None:
 
     with sqlite3.connect(db_path) as con:
         version = con.execute("PRAGMA user_version").fetchone()[0]
-        assert version == 7
+        assert version == 8
 
         # Candidate tables exist
         tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
@@ -170,7 +170,7 @@ def test_v0_db_migrates_to_v4(tmp_path) -> None:
     store.init(db_path)
 
     with sqlite3.connect(db_path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 8
         tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         assert "candidates" in tables
         sh_row = con.execute("SELECT ticker, score, provider FROM signal_history WHERE ticker = 'MSFT'").fetchone()
@@ -203,7 +203,7 @@ def test_v1_db_migrates_to_v4(tmp_path) -> None:
     store.init(db_path)
 
     with sqlite3.connect(db_path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 8
         tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         assert "candidates" in tables
         obs = con.execute("SELECT ticker, score FROM scan_observations WHERE session_id = 'sess-v1'").fetchone()
@@ -237,7 +237,7 @@ def test_v2_db_migrates_to_v4(tmp_path) -> None:
     store.init(db_path)
 
     with sqlite3.connect(db_path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 8
         tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         assert "candidates" in tables
         obs = con.execute("SELECT ticker, score FROM scan_observations WHERE session_id = 'sess-v2'").fetchone()
@@ -283,7 +283,7 @@ def test_future_schema_version_rejected(tmp_path) -> None:
     finally:
         con.close()
 
-    with pytest.raises(store.StoreError, match="newer than supported schema version 7"):
+    with pytest.raises(store.StoreError, match="newer than supported schema version 8"):
         store.init(db_path)
 
     with sqlite3.connect(db_path) as con:

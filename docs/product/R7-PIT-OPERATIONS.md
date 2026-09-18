@@ -201,8 +201,34 @@ python -m tradex.pit.ops health \
 
 ---
 
-## Schema Invariant
+---
 
-- Schema version: `v7` (unchanged by C1)
-- No new tables, no migrations
-- `APPROVED_PRODUCTION_STRATEGIES == ()` (unchanged)
+## Schema & Contract Evolution
+
+### Schema Version
+- **Schema v8**: Introduced in `MVP-ARCH-001-R7-PIT-STATUS-IMPL-A` via an atomic 14-step table rebuild.
+- Prior Schema v7 data is fully preserved with exact row count verification.
+- `PRAGMA foreign_keys = OFF` is executed strictly before `BEGIN TRANSACTION`.
+- Foreign key integrity is verified with `PRAGMA foreign_key_check` before committing.
+
+### Manifest Contract v2 Primitives
+- **Contract Version 2**: Adds optional `applicability` field to the manifest:
+  ```json
+  {
+    "contract_version": 2,
+    "universe_id": "candidate-c",
+    "universe_version": "v1",
+    "effective_from": "2026-09-01",
+    "symbols": ["AAPL", "MSFT", "SPY"],
+    "applicability": {
+      "earnings": {
+        "not_applicable": ["SPY"]
+      }
+    }
+  }
+  ```
+- **Material Hashing**: For contract v2 manifests, `manifest_hash` includes sorted `not_applicable` symbols.
+- **Cross-Version Conflict Guard**: `(capture_date, slot)` runs cannot mix contract v1 and v2.
+- **Runtime Capture Pinning**: Write execution is pinned to `PIT_CAPTURE_WRITE_CONTRACT_VERSION = 1` until PR B. Premature v2 runtime capture attempts fail closed.
+- **Truthful Provenance**: `NOT_APPLICABLE` earnings records persist `observation_origin = 'manifest'`, `applicability_source = 'manifest'`, `provider = NULL`, `provider_call_attempted = 0`, with no fictitious timestamps or provider names.
+- `APPROVED_PRODUCTION_STRATEGIES == ()` (unchanged).

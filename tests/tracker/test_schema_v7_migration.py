@@ -168,7 +168,7 @@ def test_fresh_db_creates_schema_v7(tmp_path) -> None:
 
     with sqlite3.connect(db_path) as con:
         version = con.execute("PRAGMA user_version").fetchone()[0]
-        assert version == 7
+        assert version == 8
 
         tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         # Legacy tables
@@ -211,7 +211,7 @@ def test_v6_to_v7_migration_preserves_earnings_pit_journal_candidate_and_legacy_
     store.init(db_path)
 
     with sqlite3.connect(db_path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 8
 
         # Check legacy rows preserved
         sh = con.execute("SELECT ticker, score, provider FROM signal_history WHERE ticker = 'AAPL'").fetchone()
@@ -243,7 +243,7 @@ def test_v5_to_v7_migration(tmp_path) -> None:
     store.init(db_path)
 
     with sqlite3.connect(db_path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 8
         tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         assert "pit_capture_runs" in tables
         assert "pit_earnings_snapshots" in tables
@@ -257,7 +257,7 @@ def test_v0_db_migrates_to_v7(tmp_path) -> None:
     store.init(db_path)
 
     with sqlite3.connect(db_path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 8
         tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         assert "pit_reference_capture_runs" in tables
         assert "pit_reference_snapshots" in tables
@@ -269,7 +269,7 @@ def test_v7_repeat_init_is_idempotent(tmp_path) -> None:
     store.init(db_path)
 
     with sqlite3.connect(db_path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 8
 
 
 def test_future_schema_version_rejected(tmp_path) -> None:
@@ -281,7 +281,7 @@ def test_future_schema_version_rejected(tmp_path) -> None:
     finally:
         con.close()
 
-    with pytest.raises(store.StoreError, match="newer than supported schema version 7"):
+    with pytest.raises(store.StoreError, match="newer than supported schema version 8"):
         store.init(db_path)
 
     with sqlite3.connect(db_path) as con:
@@ -321,11 +321,11 @@ def test_pit_reference_capture_runs_check_constraints(tmp_path) -> None:
                 INSERT INTO pit_reference_capture_runs (
                     capture_run_id, idempotency_key, request_fingerprint,
                     capture_slot, capture_date, scheduled_for, requested_at, requested_provider,
-                    universe_hash, requested_n, status, created_at, updated_at
+                    universe_hash, requested_n, status, created_at, updated_at, contract_version
                 ) VALUES (
                     'run-1', 'idem-1', 'fp-1', 'midnight', '2026-08-30',
                     '2026-08-30T13:00:00Z', '2026-08-30T13:00:00Z', 'massive', 'uhash',
-                    1, 'started', '2026-08-30T13:00:00Z', '2026-08-30T13:00:00Z'
+                    1, 'started', '2026-08-30T13:00:00Z', '2026-08-30T13:00:00Z', 1
                 )
                 """
             )
@@ -338,11 +338,11 @@ def test_pit_reference_capture_runs_check_constraints(tmp_path) -> None:
                     capture_run_id, idempotency_key, request_fingerprint,
                     capture_slot, capture_date, scheduled_for, requested_at, requested_provider,
                     universe_hash, requested_n, known_n, unavailable_n, ambiguous_n, error_n,
-                    status, created_at, updated_at
+                    status, created_at, updated_at, contract_version
                 ) VALUES (
                     'run-1', 'idem-1', 'fp-1', 'morning', '2026-08-30',
                     '2026-08-30T13:00:00Z', '2026-08-30T13:00:00Z', 'massive', 'uhash',
-                    1, 1, 0, 0, 0, 'succeeded', '2026-08-30T13:00:00Z', '2026-08-30T13:00:00Z'
+                    1, 1, 0, 0, 0, 'succeeded', '2026-08-30T13:00:00Z', '2026-08-30T13:00:00Z', 1
                 )
                 """
             )
@@ -355,11 +355,11 @@ def test_pit_reference_capture_runs_check_constraints(tmp_path) -> None:
                     capture_run_id, idempotency_key, request_fingerprint,
                     capture_slot, capture_date, scheduled_for, requested_at, completed_at,
                     requested_provider, universe_hash, requested_n, known_n, unavailable_n, ambiguous_n, error_n,
-                    status, created_at, updated_at
+                    status, created_at, updated_at, contract_version
                 ) VALUES (
                     'run-1', 'idem-1', 'fp-1', 'morning', '2026-08-30',
                     '2026-08-30T13:00:00Z', '2026-08-30T13:00:00Z', '2026-08-30T13:05:00Z',
-                    'massive', 'uhash', 3, 1, 0, 0, 0, 'succeeded', '2026-08-30T13:00:00Z', '2026-08-30T13:00:00Z'
+                    'massive', 'uhash', 3, 1, 0, 0, 0, 'succeeded', '2026-08-30T13:00:00Z', '2026-08-30T13:00:00Z', 1
                 )
                 """
             )
@@ -376,11 +376,11 @@ def test_pit_reference_snapshots_check_constraints(tmp_path) -> None:
             INSERT INTO pit_reference_capture_runs (
                 capture_run_id, idempotency_key, request_fingerprint,
                 capture_slot, capture_date, scheduled_for, requested_at, requested_provider,
-                universe_hash, requested_n, status, created_at, updated_at
+                universe_hash, requested_n, status, created_at, updated_at, contract_version
             ) VALUES (
                 'run-ref-1', 'idem-ref-1', 'fp-ref-1', 'morning', '2026-08-30',
                 '2026-08-30T13:00:00Z', '2026-08-30T13:00:00Z', 'massive', 'uhash',
-                1, 'started', '2026-08-30T13:00:00Z', '2026-08-30T13:00:00Z'
+                1, 'started', '2026-08-30T13:00:00Z', '2026-08-30T13:00:00Z', 1
             )
             """
         )
@@ -474,11 +474,11 @@ def test_pit_reference_metadata_canonical_json_persistence(tmp_path) -> None:
             INSERT INTO pit_reference_capture_runs (
                 capture_run_id, idempotency_key, request_fingerprint,
                 capture_slot, capture_date, scheduled_for, requested_at, requested_provider,
-                universe_hash, requested_n, status, created_at, updated_at
+                universe_hash, requested_n, status, created_at, updated_at, contract_version
             ) VALUES (
                 'run-m1', 'idem-m1', 'fp-m1', 'evening', '2026-08-30',
                 '2026-08-31T00:30:00Z', '2026-08-31T00:30:00Z', 'massive', 'uhash',
-                1, 'started', '2026-08-31T00:30:00Z', '2026-08-31T00:30:00Z'
+                1, 'started', '2026-08-31T00:30:00Z', '2026-08-31T00:30:00Z', 1
             )
             """
         )

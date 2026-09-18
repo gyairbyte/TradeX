@@ -65,7 +65,7 @@ def _before_morning_now(d: date) -> datetime:
 
 
 def _build_earnings_run(run_id: str, manifest: PITUniverseManifest) -> PITCaptureRun:
-    from tradex.pit.models import PIT_CAPTURE_CONTRACT_VERSION, CaptureKind
+    from tradex.pit.models import PIT_CAPTURE_WRITE_CONTRACT_VERSION, CaptureKind
     now = datetime(2026, 1, 2, 13, 30, tzinfo=UTC)
     return PITCaptureRun(
         capture_run_id=run_id,
@@ -86,7 +86,7 @@ def _build_earnings_run(run_id: str, manifest: PITUniverseManifest) -> PITCaptur
         status=CaptureRunStatus.SUCCEEDED,
         created_at=now,
         updated_at=now,
-        contract_version=PIT_CAPTURE_CONTRACT_VERSION,
+        contract_version=PIT_CAPTURE_WRITE_CONTRACT_VERSION,
     )
 
 
@@ -96,7 +96,7 @@ def _earnings_result_succeeded(run_id: str, manifest: PITUniverseManifest) -> PI
 
 
 def _reference_result_succeeded(run_id: str, manifest: PITUniverseManifest) -> PITReferenceCaptureResult:
-    from tradex.pit.models import PIT_CAPTURE_CONTRACT_VERSION
+    from tradex.pit.models import PIT_CAPTURE_WRITE_CONTRACT_VERSION
     now = datetime(2026, 1, 2, 13, 30, tzinfo=UTC)
     run = PITReferenceCaptureRun(
         capture_run_id=run_id,
@@ -117,7 +117,7 @@ def _reference_result_succeeded(run_id: str, manifest: PITUniverseManifest) -> P
         status=CaptureRunStatus.SUCCEEDED,
         created_at=now,
         updated_at=now,
-        contract_version=PIT_CAPTURE_CONTRACT_VERSION,
+        contract_version=PIT_CAPTURE_WRITE_CONTRACT_VERSION,
     )
     return PITReferenceCaptureResult(run=run, snapshots=())
 
@@ -247,7 +247,7 @@ class TestRunPitSlotEffectiveFrom:
 class TestUniverseDriftGuard:
     def test_conflict_on_existing_different_hash(self, tmp_path):
         """Existing run with different universe_hash raises PITOperationalUniverseConflictError."""
-        from tradex.pit.models import PIT_CAPTURE_CONTRACT_VERSION, CaptureKind
+        from tradex.pit.models import PIT_CAPTURE_WRITE_CONTRACT_VERSION, CaptureKind
         from tradex.pit.store import create_capture_run
         from tradex.tracker.store import init as store_init
 
@@ -277,7 +277,7 @@ class TestUniverseDriftGuard:
             status=CaptureRunStatus.SUCCEEDED,
             created_at=now,
             updated_at=now,
-            contract_version=PIT_CAPTURE_CONTRACT_VERSION,
+            contract_version=PIT_CAPTURE_WRITE_CONTRACT_VERSION,
         )
         create_capture_run(old_run, db_path=db_path, settings=settings)
 
@@ -297,7 +297,7 @@ class TestUniverseDriftGuard:
 
     def test_no_conflict_when_hash_matches(self, tmp_path):
         """No exception when existing run has the same universe hash."""
-        from tradex.pit.models import PIT_CAPTURE_CONTRACT_VERSION, CaptureKind
+        from tradex.pit.models import PIT_CAPTURE_WRITE_CONTRACT_VERSION, CaptureKind
         from tradex.pit.store import create_capture_run
         from tradex.tracker.store import init as store_init
 
@@ -326,7 +326,7 @@ class TestUniverseDriftGuard:
             status=CaptureRunStatus.SUCCEEDED,
             created_at=now,
             updated_at=now,
-            contract_version=PIT_CAPTURE_CONTRACT_VERSION,
+            contract_version=PIT_CAPTURE_WRITE_CONTRACT_VERSION,
         )
         create_capture_run(run, db_path=db_path, settings=settings)
 
@@ -341,7 +341,7 @@ class TestUniverseDriftGuard:
 
     def test_drift_guard_returns_failed_result(self, tmp_path):
         """run_pit_slot returns failed (not raises) when drift is detected."""
-        from tradex.pit.models import PIT_CAPTURE_CONTRACT_VERSION, CaptureKind
+        from tradex.pit.models import PIT_CAPTURE_WRITE_CONTRACT_VERSION, CaptureKind
         from tradex.pit.store import create_capture_run
         from tradex.tracker.store import init as store_init
 
@@ -373,7 +373,7 @@ class TestUniverseDriftGuard:
             status=CaptureRunStatus.SUCCEEDED,
             created_at=now,
             updated_at=now,
-            contract_version=PIT_CAPTURE_CONTRACT_VERSION,
+            contract_version=PIT_CAPTURE_WRITE_CONTRACT_VERSION,
         )
         create_capture_run(old_run, db_path=db_path, settings=settings)
 
@@ -1108,7 +1108,7 @@ class TestStrengthenedUniverseDrift:
         """When universe drift is detected, zero provider calls and zero DB mutations occur."""
         import sqlite3
 
-        from tradex.pit.models import PIT_CAPTURE_CONTRACT_VERSION, CaptureKind
+        from tradex.pit.models import PIT_CAPTURE_WRITE_CONTRACT_VERSION, CaptureKind
         from tradex.pit.store import create_capture_run
         from tradex.tracker.store import init as store_init
 
@@ -1140,7 +1140,7 @@ class TestStrengthenedUniverseDrift:
             status=CaptureRunStatus.SUCCEEDED,
             created_at=now,
             updated_at=now,
-            contract_version=PIT_CAPTURE_CONTRACT_VERSION,
+            contract_version=PIT_CAPTURE_WRITE_CONTRACT_VERSION,
         )
         create_capture_run(run_a, db_path=db_path, settings=settings)
 

@@ -10,7 +10,7 @@ import pytest
 
 from tradex.config import settings_from_mapping
 from tradex.pit.models import (
-    PIT_CAPTURE_CONTRACT_VERSION,
+    PIT_CAPTURE_WRITE_CONTRACT_VERSION,
     CaptureKind,
     CaptureRunStatus,
     CaptureSlot,
@@ -87,7 +87,7 @@ def _make_earnings_run(
         status=status,
         created_at=now,
         updated_at=now,
-        contract_version=PIT_CAPTURE_CONTRACT_VERSION,
+        contract_version=PIT_CAPTURE_WRITE_CONTRACT_VERSION,
     )
 
 
@@ -129,7 +129,7 @@ def _make_reference_run(
         status=status,
         created_at=now,
         updated_at=now,
-        contract_version=PIT_CAPTURE_CONTRACT_VERSION,
+        contract_version=PIT_CAPTURE_WRITE_CONTRACT_VERSION,
     )
 
 
@@ -448,7 +448,7 @@ class TestHealthIncomplete:
             status=CaptureRunStatus.STARTED,
             created_at=now,
             updated_at=now,
-            contract_version=PIT_CAPTURE_CONTRACT_VERSION,
+            contract_version=PIT_CAPTURE_WRITE_CONTRACT_VERSION,
         )
         r_run = _make_reference_run("r-done", manifest)
         create_capture_run(e_started, db_path=db_path, settings=settings)
@@ -569,7 +569,7 @@ class TestHealthLags:
             status=CaptureRunStatus.STARTED,
             created_at=scheduled_for + timedelta(seconds=10),
             updated_at=scheduled_for + timedelta(seconds=10),
-            contract_version=PIT_CAPTURE_CONTRACT_VERSION,
+            contract_version=PIT_CAPTURE_WRITE_CONTRACT_VERSION,
         )
         # Attempt 2: SUCCEEDED at scheduled_for + 30s, completed at scheduled_for + 60s
         e_run_2 = PITCaptureRun(
@@ -591,7 +591,7 @@ class TestHealthLags:
             status=CaptureRunStatus.SUCCEEDED,
             created_at=scheduled_for + timedelta(seconds=30),
             updated_at=scheduled_for + timedelta(seconds=60),
-            contract_version=PIT_CAPTURE_CONTRACT_VERSION,
+            contract_version=PIT_CAPTURE_WRITE_CONTRACT_VERSION,
         )
 
         create_capture_run(e_run_1, db_path=db_path, settings=settings)

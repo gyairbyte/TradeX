@@ -119,7 +119,7 @@ def test_fresh_db_creates_schema_v5(tmp_path) -> None:
 
     with sqlite3.connect(db_path) as con:
         version = con.execute("PRAGMA user_version").fetchone()[0]
-        assert version == 7
+        assert version == 8
 
         tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         # Legacy tables
@@ -157,7 +157,7 @@ def test_v4_to_v5_migration_preserves_candidate_and_legacy_data(tmp_path) -> Non
     store.init(db_path)
 
     with sqlite3.connect(db_path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 8
 
         # Check legacy rows preserved
         sh = con.execute("SELECT ticker, score, provider FROM signal_history WHERE ticker = 'AAPL'").fetchone()
@@ -179,7 +179,7 @@ def test_v0_db_migrates_to_v5(tmp_path) -> None:
     store.init(db_path)
 
     with sqlite3.connect(db_path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 8
         tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         assert "journal_trades" in tables
         assert "journal_events" in tables
@@ -198,7 +198,7 @@ def test_v1_db_migrates_to_v5(tmp_path) -> None:
 
     store.init(db_path)
     with sqlite3.connect(db_path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 8
 
 
 def test_v2_db_migrates_to_v5(tmp_path) -> None:
@@ -214,7 +214,7 @@ def test_v2_db_migrates_to_v5(tmp_path) -> None:
 
     store.init(db_path)
     with sqlite3.connect(db_path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 8
 
 
 def test_v3_db_migrates_to_v5(tmp_path) -> None:
@@ -223,7 +223,7 @@ def test_v3_db_migrates_to_v5(tmp_path) -> None:
     store.init(db_path)
 
     with sqlite3.connect(db_path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 8
 
 
 def test_v5_repeat_init_is_idempotent(tmp_path) -> None:
@@ -232,7 +232,7 @@ def test_v5_repeat_init_is_idempotent(tmp_path) -> None:
     store.init(db_path)
 
     with sqlite3.connect(db_path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 8
 
 
 def test_future_schema_version_rejected(tmp_path) -> None:
@@ -244,7 +244,7 @@ def test_future_schema_version_rejected(tmp_path) -> None:
     finally:
         con.close()
 
-    with pytest.raises(store.StoreError, match="newer than supported schema version 7"):
+    with pytest.raises(store.StoreError, match="newer than supported schema version 8"):
         store.init(db_path)
 
     with sqlite3.connect(db_path) as con:

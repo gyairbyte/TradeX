@@ -13,7 +13,9 @@ from datetime import UTC, date, datetime
 from enum import Enum
 from typing import Any
 
-PIT_CAPTURE_CONTRACT_VERSION: int = 1
+PIT_CAPTURE_CONTRACT_VERSION: int = 2
+# Currently active production capture-write contract pinned to v1 until authorized PR B.
+PIT_CAPTURE_WRITE_CONTRACT_VERSION: int = 1
 
 
 class CaptureSlot(str, Enum):
@@ -42,6 +44,7 @@ class ObservationStatus(str, Enum):
     """Point-in-time observation outcome for a single symbol."""
 
     KNOWN = "known"
+    NOT_APPLICABLE = "not_applicable"
     UNAVAILABLE = "unavailable"
     ERROR = "error"
 
@@ -95,6 +98,17 @@ def build_unavailable_fact_payload(
         "error_category": error_category,
         "error_message": error_message,
         "next_earnings_date": None,
+    }
+
+
+def build_not_applicable_earnings_fact_payload() -> dict[str, Any]:
+    """Build normalized canonical fact payload for a manifest-origin not_applicable earnings observation."""
+    return {
+        "applicability_source": "manifest",
+        "error_category": None,
+        "error_message": None,
+        "next_earnings_date": None,
+        "status_reason": "manifest_not_applicable",
     }
 
 
@@ -319,17 +333,37 @@ def compute_request_fingerprint(
     scheduled_for_iso: str,
     requested_provider: str,
     normalized_symbols: Sequence[str],
+    manifest_hash: str | None = None,
 ) -> str:
     """Compute SHA-256 request fingerprint from canonical JSON representation."""
-    canonical_dict = {
-        "capture_date": capture_date,
-        "capture_kind": capture_kind,
-        "capture_slot": capture_slot,
-        "contract_version": contract_version,
-        "requested_provider": requested_provider,
-        "scheduled_for": scheduled_for_iso,
-        "symbols": list(normalized_symbols),
-    }
+    if contract_version == 1:
+        if manifest_hash is not None:
+            raise ValueError("manifest_hash must be None for contract_version=1")
+        canonical_dict: dict[str, Any] = {
+            "capture_date": capture_date,
+            "capture_kind": capture_kind,
+            "capture_slot": capture_slot,
+            "contract_version": 1,
+            "requested_provider": requested_provider,
+            "scheduled_for": scheduled_for_iso,
+            "symbols": list(normalized_symbols),
+        }
+    elif contract_version == 2:
+        if not manifest_hash or not isinstance(manifest_hash, str) or not manifest_hash.strip():
+            raise ValueError("manifest_hash is required and must be non-empty for contract_version=2")
+        canonical_dict = {
+            "capture_date": capture_date,
+            "capture_kind": capture_kind,
+            "capture_slot": capture_slot,
+            "contract_version": 2,
+            "manifest_hash": manifest_hash.strip(),
+            "requested_provider": requested_provider,
+            "scheduled_for": scheduled_for_iso,
+            "symbols": list(normalized_symbols),
+        }
+    else:
+        raise ValueError(f"Unsupported contract_version {contract_version}; expected 1 or 2")
+
     raw_json = json.dumps(canonical_dict, sort_keys=True, separators=(",", ":"), allow_nan=False)
     return hashlib.sha256(raw_json.encode("utf-8")).hexdigest()
 
@@ -370,21 +404,24 @@ class PITEarningsSnapshot:
     symbol: str
     observation_status: ObservationStatus
     next_earnings_date: date | None
-    provider: str
+    provider: str | None
     provider_observed_at: datetime | None
-    request_started_at: datetime
-    response_received_at: datetime
+    request_started_at: datetime | None
+    response_received_at: datetime | None
     fact_hash: str
     fact_json: str
     error_category: str | None
     error_message: str | None
     created_at: datetime
-    contract_version: int = PIT_CAPTURE_CONTRACT_VERSION
+    observation_origin: str = "provider"
+    applicability_source: str | None = None
+    provider_call_attempted: bool = True
+    contract_version: int = PIT_CAPTURE_WRITE_CONTRACT_VERSION
 
     def __post_init__(self) -> None:
-        if self.contract_version != PIT_CAPTURE_CONTRACT_VERSION:
+        if self.contract_version not in (1, 2):
             raise ValueError(
-                f"Invalid contract_version {self.contract_version}; must be {PIT_CAPTURE_CONTRACT_VERSION}"
+                f"Invalid contract_version {self.contract_version}; must be 1 or 2"
             )
         if not self.snapshot_id or not isinstance(self.snapshot_id, str):
             raise ValueError("snapshot_id must be a non-empty string")
@@ -407,24 +444,6 @@ class PITEarningsSnapshot:
                     f"next_earnings_date must be None when observation_status is '{self.observation_status.value}'"
                 )
 
-        if not self.provider or not isinstance(self.provider, str) or not self.provider.strip():
-            raise ValueError("provider must be a non-empty string")
-
-        started = _normalize_aware_utc(self.request_started_at, "request_started_at")
-        received = _normalize_aware_utc(self.response_received_at, "response_received_at")
-        if started > received:
-            raise ValueError("request_started_at must be <= response_received_at")
-
-        created = _normalize_aware_utc(self.created_at, "created_at")
-
-        object.__setattr__(self, "request_started_at", started)
-        object.__setattr__(self, "response_received_at", received)
-        object.__setattr__(self, "created_at", created)
-
-        if self.provider_observed_at is not None:
-            prov_obs = _normalize_aware_utc(self.provider_observed_at, "provider_observed_at")
-            object.__setattr__(self, "provider_observed_at", prov_obs)
-
         if not self.fact_json or not isinstance(self.fact_json, str):
             raise ValueError("fact_json must be a non-empty string")
 
@@ -433,6 +452,82 @@ class PITEarningsSnapshot:
             raise ValueError(
                 f"fact_hash {self.fact_hash!r} does not match SHA-256 of fact_json {expected_hash!r}"
             )
+
+        created = _normalize_aware_utc(self.created_at, "created_at")
+        object.__setattr__(self, "created_at", created)
+
+        if self.contract_version == 1:
+            if self.observation_status == ObservationStatus.NOT_APPLICABLE:
+                raise ValueError("NOT_APPLICABLE observation_status is forbidden in contract_version=1")
+            if self.observation_origin != "provider":
+                raise ValueError(f"observation_origin must be 'provider' for contract_version=1, got {self.observation_origin!r}")
+            if self.applicability_source is not None:
+                raise ValueError("applicability_source must be None for contract_version=1")
+            if not self.provider_call_attempted:
+                raise ValueError("provider_call_attempted must be True for contract_version=1")
+            if not self.provider or not isinstance(self.provider, str) or not self.provider.strip():
+                raise ValueError("provider must be a non-empty string for contract_version=1")
+            if self.request_started_at is None or self.response_received_at is None:
+                raise ValueError("request_started_at and response_received_at are required for contract_version=1")
+            started = _normalize_aware_utc(self.request_started_at, "request_started_at")
+            received = _normalize_aware_utc(self.response_received_at, "response_received_at")
+            if started > received:
+                raise ValueError("request_started_at must be <= response_received_at")
+            object.__setattr__(self, "request_started_at", started)
+            object.__setattr__(self, "response_received_at", received)
+            if self.provider_observed_at is not None:
+                prov_obs = _normalize_aware_utc(self.provider_observed_at, "provider_observed_at")
+                object.__setattr__(self, "provider_observed_at", prov_obs)
+
+        elif self.contract_version == 2:
+            if self.observation_origin not in ("provider", "manifest"):
+                raise ValueError(f"observation_origin must be 'provider' or 'manifest', got {self.observation_origin!r}")
+
+            if self.observation_origin == "manifest":
+                if self.observation_status != ObservationStatus.NOT_APPLICABLE:
+                    raise ValueError(f"manifest origin requires observation_status 'not_applicable', got {self.observation_status.value!r}")
+                if self.applicability_source != "manifest":
+                    raise ValueError(f"manifest origin requires applicability_source 'manifest', got {self.applicability_source!r}")
+                if self.provider_call_attempted:
+                    raise ValueError("provider_call_attempted must be False for manifest-origin observation")
+                if self.provider is not None:
+                    raise ValueError("provider must be None for manifest-origin observation")
+                if self.provider_observed_at is not None:
+                    raise ValueError("provider_observed_at must be None for manifest-origin observation")
+                if self.request_started_at is not None:
+                    raise ValueError("request_started_at must be None for manifest-origin observation")
+                if self.response_received_at is not None:
+                    raise ValueError("response_received_at must be None for manifest-origin observation")
+                if self.next_earnings_date is not None:
+                    raise ValueError("next_earnings_date must be None for manifest-origin observation")
+                if self.error_category is not None or self.error_message is not None:
+                    raise ValueError("error fields must be None for manifest-origin observation")
+                canonical_na_json = serialize_canonical_fact_json(build_not_applicable_earnings_fact_payload())
+                if self.fact_json != canonical_na_json:
+                    raise ValueError(
+                        f"fact_json does not match canonical not_applicable payload: {self.fact_json!r} != {canonical_na_json!r}"
+                    )
+
+            elif self.observation_origin == "provider":
+                if self.observation_status == ObservationStatus.NOT_APPLICABLE:
+                    raise ValueError("provider origin cannot have observation_status 'not_applicable'")
+                if self.applicability_source is not None:
+                    raise ValueError("applicability_source must be None for provider-origin observation")
+                if not self.provider_call_attempted:
+                    raise ValueError("provider_call_attempted must be True for provider-origin observation")
+                if not self.provider or not isinstance(self.provider, str) or not self.provider.strip():
+                    raise ValueError("provider must be a non-empty string for provider-origin observation")
+                if self.request_started_at is None or self.response_received_at is None:
+                    raise ValueError("request_started_at and response_received_at are required for provider-origin observation")
+                started = _normalize_aware_utc(self.request_started_at, "request_started_at")
+                received = _normalize_aware_utc(self.response_received_at, "response_received_at")
+                if started > received:
+                    raise ValueError("request_started_at must be <= response_received_at")
+                object.__setattr__(self, "request_started_at", started)
+                object.__setattr__(self, "response_received_at", received)
+                if self.provider_observed_at is not None:
+                    prov_obs = _normalize_aware_utc(self.provider_observed_at, "provider_observed_at")
+                    object.__setattr__(self, "provider_observed_at", prov_obs)
 
 
 @dataclass(frozen=True, slots=True)
@@ -457,12 +552,14 @@ class PITCaptureRun:
     status: CaptureRunStatus = CaptureRunStatus.STARTED
     created_at: datetime = datetime(1970, 1, 1, tzinfo=UTC)
     updated_at: datetime = datetime(1970, 1, 1, tzinfo=UTC)
-    contract_version: int = PIT_CAPTURE_CONTRACT_VERSION
+    contract_version: int = PIT_CAPTURE_WRITE_CONTRACT_VERSION
+    manifest_hash: str | None = None
+    not_applicable_n: int = 0
 
     def __post_init__(self) -> None:
-        if self.contract_version != PIT_CAPTURE_CONTRACT_VERSION:
+        if self.contract_version not in (1, 2):
             raise ValueError(
-                f"Invalid contract_version {self.contract_version}; must be {PIT_CAPTURE_CONTRACT_VERSION}"
+                f"Invalid contract_version {self.contract_version}; must be 1 or 2"
             )
         if not self.capture_run_id or not isinstance(self.capture_run_id, str):
             raise ValueError("capture_run_id must be a non-empty string")
@@ -497,23 +594,47 @@ class PITCaptureRun:
 
         if self.requested_n < 1:
             raise ValueError(f"requested_n must be >= 1, got {self.requested_n}")
-        if self.known_n < 0 or self.unavailable_n < 0 or self.error_n < 0:
+        if self.known_n < 0 or self.unavailable_n < 0 or self.error_n < 0 or self.not_applicable_n < 0:
             raise ValueError("counts must be non-negative")
 
-        if self.status != CaptureRunStatus.STARTED:
-            if self.completed_at is None:
-                raise ValueError("completed_at is required for terminal capture run statuses")
-            comp = _normalize_aware_utc(self.completed_at, "completed_at")
-            object.__setattr__(self, "completed_at", comp)
-            total_resolved = self.known_n + self.unavailable_n + self.error_n
-            if total_resolved != self.requested_n:
-                raise ValueError(
-                    f"Count mismatch: requested_n ({self.requested_n}) != known_n ({self.known_n}) + "
-                    f"unavailable_n ({self.unavailable_n}) + error_n ({self.error_n}) = {total_resolved}"
-                )
-        elif self.completed_at is not None:
-            comp = _normalize_aware_utc(self.completed_at, "completed_at")
-            object.__setattr__(self, "completed_at", comp)
+        if self.contract_version == 1:
+            if self.manifest_hash is not None:
+                raise ValueError("manifest_hash must be None for contract_version=1")
+            if self.not_applicable_n != 0:
+                raise ValueError("not_applicable_n must be 0 for contract_version=1")
+            if self.status != CaptureRunStatus.STARTED:
+                if self.completed_at is None:
+                    raise ValueError("completed_at is required for terminal capture run statuses")
+                comp = _normalize_aware_utc(self.completed_at, "completed_at")
+                object.__setattr__(self, "completed_at", comp)
+                total_resolved = self.known_n + self.unavailable_n + self.error_n
+                if total_resolved != self.requested_n:
+                    raise ValueError(
+                        f"Count mismatch: requested_n ({self.requested_n}) != known_n ({self.known_n}) + "
+                        f"unavailable_n ({self.unavailable_n}) + error_n ({self.error_n}) = {total_resolved}"
+                    )
+            elif self.completed_at is not None:
+                comp = _normalize_aware_utc(self.completed_at, "completed_at")
+                object.__setattr__(self, "completed_at", comp)
+
+        elif self.contract_version == 2:
+            if not self.manifest_hash or not isinstance(self.manifest_hash, str) or not self.manifest_hash.strip():
+                raise ValueError("manifest_hash is required and must be non-empty for contract_version=2")
+            if self.status != CaptureRunStatus.STARTED:
+                if self.completed_at is None:
+                    raise ValueError("completed_at is required for terminal capture run statuses")
+                comp = _normalize_aware_utc(self.completed_at, "completed_at")
+                object.__setattr__(self, "completed_at", comp)
+                total_resolved = self.known_n + self.not_applicable_n + self.unavailable_n + self.error_n
+                if total_resolved != self.requested_n:
+                    raise ValueError(
+                        f"Count mismatch: requested_n ({self.requested_n}) != known_n ({self.known_n}) + "
+                        f"not_applicable_n ({self.not_applicable_n}) + unavailable_n ({self.unavailable_n}) + "
+                        f"error_n ({self.error_n}) = {total_resolved}"
+                    )
+            elif self.completed_at is not None:
+                comp = _normalize_aware_utc(self.completed_at, "completed_at")
+                object.__setattr__(self, "completed_at", comp)
 
 
 @dataclass(frozen=True, slots=True)
@@ -555,12 +676,12 @@ class PITReferenceSnapshot:
     error_category: str | None
     error_message: str | None
     created_at: datetime
-    contract_version: int = PIT_CAPTURE_CONTRACT_VERSION
+    contract_version: int = PIT_CAPTURE_WRITE_CONTRACT_VERSION
 
     def __post_init__(self) -> None:
-        if self.contract_version != PIT_CAPTURE_CONTRACT_VERSION:
+        if self.contract_version not in (1, 2):
             raise ValueError(
-                f"Invalid contract_version {self.contract_version}; must be {PIT_CAPTURE_CONTRACT_VERSION}"
+                f"Invalid contract_version {self.contract_version}; must be 1 or 2"
             )
         if not self.snapshot_id or not isinstance(self.snapshot_id, str):
             raise ValueError("snapshot_id must be a non-empty string")
@@ -660,12 +781,13 @@ class PITReferenceCaptureRun:
     status: CaptureRunStatus = CaptureRunStatus.STARTED
     created_at: datetime = datetime(1970, 1, 1, tzinfo=UTC)
     updated_at: datetime = datetime(1970, 1, 1, tzinfo=UTC)
-    contract_version: int = PIT_CAPTURE_CONTRACT_VERSION
+    contract_version: int = PIT_CAPTURE_WRITE_CONTRACT_VERSION
+    manifest_hash: str | None = None
 
     def __post_init__(self) -> None:
-        if self.contract_version != PIT_CAPTURE_CONTRACT_VERSION:
+        if self.contract_version not in (1, 2):
             raise ValueError(
-                f"Invalid contract_version {self.contract_version}; must be {PIT_CAPTURE_CONTRACT_VERSION}"
+                f"Invalid contract_version {self.contract_version}; must be 1 or 2"
             )
         if not self.capture_run_id or not isinstance(self.capture_run_id, str):
             raise ValueError("capture_run_id must be a non-empty string")
@@ -705,6 +827,13 @@ class PITReferenceCaptureRun:
             or self.error_n < 0
         ):
             raise ValueError("counts must be non-negative")
+
+        if self.contract_version == 1:
+            if self.manifest_hash is not None:
+                raise ValueError("manifest_hash must be None for contract_version=1")
+        elif self.contract_version == 2:
+            if not self.manifest_hash or not isinstance(self.manifest_hash, str) or not self.manifest_hash.strip():
+                raise ValueError("manifest_hash is required and must be non-empty for contract_version=2")
 
         if self.status != CaptureRunStatus.STARTED:
             if self.completed_at is None:

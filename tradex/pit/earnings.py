@@ -23,6 +23,7 @@ from tradex.earnings.calendar import (
 from tradex.market.hours import MARKET_TIMEZONE
 from tradex.pit.models import (
     PIT_CAPTURE_CONTRACT_VERSION,
+    PIT_CAPTURE_WRITE_CONTRACT_VERSION,
     CaptureKind,
     CaptureRunStatus,
     CaptureSlot,
@@ -170,8 +171,9 @@ def capture_earnings_snapshot(
             f"{scheduled_for.isoformat()} for {slot.value} slot on {target_capture_date.isoformat()}."
         )
 
+    # Note: Capture write execution remains strictly pinned to contract v1 until PR B.
     fingerprint = compute_request_fingerprint(
-        contract_version=PIT_CAPTURE_CONTRACT_VERSION,
+        contract_version=PIT_CAPTURE_WRITE_CONTRACT_VERSION,
         capture_kind=CaptureKind.EARNINGS.value,
         capture_slot=slot.value,
         capture_date=target_capture_date.isoformat(),
@@ -237,7 +239,7 @@ def capture_earnings_snapshot(
         status=CaptureRunStatus.STARTED,
         created_at=current_dt,
         updated_at=current_dt,
-        contract_version=PIT_CAPTURE_CONTRACT_VERSION,
+        contract_version=PIT_CAPTURE_WRITE_CONTRACT_VERSION,
     )
 
     create_capture_run(started_run, db_path=target_path, settings=settings)
@@ -306,7 +308,7 @@ def capture_earnings_snapshot(
             error_category=error_cat,
             error_message=error_msg,
             created_at=req_end,
-            contract_version=PIT_CAPTURE_CONTRACT_VERSION,
+            contract_version=PIT_CAPTURE_WRITE_CONTRACT_VERSION,
         )
         # Persist observation immediately upon completion of provider lookup.
         insert_earnings_snapshots([snapshot], db_path=target_path, settings=settings)

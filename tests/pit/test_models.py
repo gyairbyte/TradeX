@@ -8,6 +8,7 @@ import pytest
 
 from tradex.pit.models import (
     PIT_CAPTURE_CONTRACT_VERSION,
+    PIT_CAPTURE_WRITE_CONTRACT_VERSION,
     CaptureKind,
     CaptureRunStatus,
     CaptureSlot,
@@ -34,8 +35,11 @@ def test_capture_enums() -> None:
     assert CaptureRunStatus.PARTIAL.value == "partial"
     assert CaptureRunStatus.FAILED.value == "failed"
     assert ObservationStatus.KNOWN.value == "known"
+    assert ObservationStatus.NOT_APPLICABLE.value == "not_applicable"
     assert ObservationStatus.UNAVAILABLE.value == "unavailable"
     assert ObservationStatus.ERROR.value == "error"
+    assert PIT_CAPTURE_CONTRACT_VERSION == 2
+    assert PIT_CAPTURE_WRITE_CONTRACT_VERSION == 1
 
 
 def test_symbol_normalization() -> None:
@@ -112,7 +116,7 @@ def test_pit_earnings_snapshot_invariants() -> None:
         created_at=now,
     )
     assert snap.symbol == "AAPL"
-    assert snap.contract_version == PIT_CAPTURE_CONTRACT_VERSION
+    assert snap.contract_version == PIT_CAPTURE_WRITE_CONTRACT_VERSION
 
     # Known observation missing next_earnings_date
     with pytest.raises(ValueError, match="next_earnings_date is required when observation_status is 'known'"):

@@ -6,7 +6,6 @@ from datetime import UTC, date, datetime
 import pytest
 
 from tradex.pit.models import (
-    PIT_CAPTURE_CONTRACT_VERSION,
     CaptureRunStatus,
     CaptureSlot,
     PITReferenceCaptureRun,
@@ -45,7 +44,7 @@ def _make_valid_snapshot(
     request_started_at: datetime = datetime(2026, 8, 30, 13, 0, 0, tzinfo=UTC),
     response_received_at: datetime = datetime(2026, 8, 30, 13, 0, 1, tzinfo=UTC),
     created_at: datetime = datetime(2026, 8, 30, 13, 0, 1, tzinfo=UTC),
-    contract_version: int = PIT_CAPTURE_CONTRACT_VERSION,
+    contract_version: int = 1,
 ) -> PITReferenceSnapshot:
     fact_payload = build_known_reference_fact_payload(
         active=provider_active,
@@ -104,9 +103,16 @@ def test_snapshot_valid_construction() -> None:
     assert snap.contract_version == 1
 
 
+def test_snapshot_accepts_contract_version_2() -> None:
+    snap = _make_valid_snapshot(contract_version=2)
+    assert snap.contract_version == 2
+
+
 def test_snapshot_rejects_invalid_contract_version() -> None:
     with pytest.raises(ValueError, match="Invalid contract_version"):
-        _make_valid_snapshot(contract_version=2)
+        _make_valid_snapshot(contract_version=0)
+    with pytest.raises(ValueError, match="Invalid contract_version"):
+        _make_valid_snapshot(contract_version=3)
 
 
 def test_snapshot_rejects_invalid_symbol() -> None:
