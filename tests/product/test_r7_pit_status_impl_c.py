@@ -181,3 +181,51 @@ def test_powershell_scheduler_asset_exists_and_validates() -> None:
         assert "[PASS] Host timezone: Eastern Standard Time" in result.stdout
         assert "[PASS] Manifest validated successfully via CLI." in result.stdout
         assert "Safe validation completed. No OS scheduled tasks were created or modified." in result.stdout
+
+        status_res = subprocess.run(
+            [
+                "powershell.exe",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(SCHEDULER_SCRIPT_PATH),
+                "-Action",
+                "Status",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert status_res.returncode == 0, f"Scheduler status check failed:\n{status_res.stdout}\n{status_res.stderr}"
+        assert "Owned Task Path: \\TradeX\\" in status_res.stdout
+        assert "Scheduler is INACTIVE" in status_res.stdout
+
+
+def test_powershell_scheduler_asset_ownership_and_rollback_contract() -> None:
+    """Verify manage_pit_scheduler.ps1 statically adheres to ownership and rollback safety invariants."""
+    assert SCHEDULER_SCRIPT_PATH.exists(), f"Missing scheduler script: {SCHEDULER_SCRIPT_PATH}"
+    script_content = SCHEDULER_SCRIPT_PATH.read_text(encoding="utf-8")
+
+    # 1. Dedicated owned TaskPath
+    assert '$TaskPath = "\\TradeX\\"' in script_content
+    assert "-TaskPath $TaskPath" in script_content
+
+    # 2. Stable ownership marker
+    assert '$OwnershipMarker = "Managed by scripts/manage_pit_scheduler.ps1"' in script_content
+
+    # 3. Absence of unsafe -Force in Register-ScheduledTask
+    assert "-Force" not in script_content
+
+    # 4. Owned-path queries in Status and Remove
+    assert "Get-ScheduledTask -TaskPath $TaskPath" in script_content
+    assert "Unregister-ScheduledTask -TaskPath $TaskPath" in script_content
+
+    # 5. Ownership verification function and conflict fail-closed behavior
+    assert "function Test-IsOwnedTask" in script_content
+    assert "Refusing to remove" in script_content
+    assert "Conflict:" in script_content
+
+    # 6. Atomic rollback logic on installation failure
+    assert "[ROLLBACK]" in script_content
+    assert "Unregister-ScheduledTask -TaskPath $TaskPath -TaskName $MorningTaskName" in script_content
+    assert "Unregister-ScheduledTask -TaskPath $TaskPath -TaskName $EveningTaskName" in script_content

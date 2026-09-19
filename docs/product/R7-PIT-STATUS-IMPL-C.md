@@ -78,15 +78,17 @@ Capacity estimation under Massive free-tier rate limiting (`DEFAULT_MASSIVE_MIN_
 ## 4. Windows Scheduler Management Asset
 
 Implemented in `scripts/manage_pit_scheduler.ps1`:
+- **Task Path:** Dedicated `\TradeX\` Task Scheduler folder to isolate TradeX tasks.
+- **Ownership Marker:** `Managed by scripts/manage_pit_scheduler.ps1` embedded in task description.
 - **Scheduled Jobs:**
-  - `TradeX PIT Morning`: 09:00 America/New_York (market open context)
+  - `TradeX PIT Morning`: 09:00 America/New_York (morning / pre-market decision context)
   - `TradeX PIT Evening`: 20:30 America/New_York (post-market close context)
 - **Execution Target:** `uv run python -m tradex.pit.ops run-slot --slot <morning|evening> --universe-file docs/product/manifests/pit-universe-2026-09-21-v1.json`
 - **Actions:**
   - `Validate`: Safe, non-mutating check of host timezone (`Eastern Standard Time`), project root, `uv` executable, and manifest validity.
-  - `Status`: Inspects registration and state of the two tasks via `Get-ScheduledTask`.
-  - `Install`: Registers the two tasks (requires human execution post-merge; not executed in this PR).
-  - `Remove`: Safely removes the two registered TradeX tasks without affecting unrelated tasks.
+  - `Status`: Inspects registration and state of the two tasks under `\TradeX\`.
+  - `Install`: Registers the two tasks in `\TradeX\` without `-Force`; fails closed on conflict; rolls back partially created tasks on failure. (Requires explicit Gary execution post-merge; not executed in this PR).
+  - `Remove`: Safely removes the two registered TradeX tasks under `\TradeX\` only after verifying the ownership marker. Refuses removal on conflict.
 - **Fail-Closed Timezone Check:** Fails if host timezone is not `Eastern Standard Time` to ensure 09:00 and 20:30 correspond exactly to America/New_York with proper DST handling.
 
 ---

@@ -11,6 +11,11 @@
 #   - No credentials, API keys, or tokens embedded in task specifications.
 #   - Execution uses 'uv run' in repo working directory so normal settings loader handles configuration.
 #   - Missed catch-up disabled (StartWhenAvailable = false) so missed slots surface truthfully in health.
+#   - Dedicated TaskPath: \TradeX\ to isolate TradeX tasks from root tasks.
+#   - Ownership marker: "Managed by scripts/manage_pit_scheduler.ps1" embedded in description.
+#   - Safe Install: No overwrite flags. Verifies pre-existing tasks and fails closed.
+#   - Atomic Install: Rolls back morning task if evening task fails during installation.
+#   - Safe Remove: Verifies TaskPath and ownership marker before unregistering; refuses on conflict.
 #   - Validate performs zero OS task mutations.
 
 [CmdletBinding()]
@@ -28,9 +33,11 @@ param (
 
 $ErrorActionPreference = "Stop"
 
+$TaskPath = "\TradeX\"
 $MorningTaskName = "TradeX PIT Morning"
 $EveningTaskName = "TradeX PIT Evening"
 $ExpectedTimezone = "Eastern Standard Time"
+$OwnershipMarker = "Managed by scripts/manage_pit_scheduler.ps1"
 $CanonicalManifestRelative = "docs\product\manifests\pit-universe-2026-09-21-v1.json"
 
 function Resolve-RepoRoot {
@@ -81,6 +88,28 @@ function Resolve-ManifestFile ($RootPath) {
     return (Resolve-Path $DefaultPath).Path
 }
 
+function Get-OwnedTask ($Name) {
+    try {
+        return (Get-ScheduledTask -TaskPath $TaskPath -TaskName $Name -ErrorAction Stop)
+    } catch {
+        return $null
+    }
+}
+
+function Test-IsOwnedTask ($Task) {
+    if (-not $Task) {
+        return $false
+    }
+    $normalizedTaskPath = "\" + ($Task.TaskPath.Trim('\')) + "\"
+    if ($normalizedTaskPath -ne $TaskPath) {
+        return $false
+    }
+    if (-not $Task.Description -or -not ($Task.Description -like "*$OwnershipMarker*")) {
+        return $false
+    }
+    return $true
+}
+
 function Invoke-Validate {
     Write-Host "=== Validating TradeX PIT Scheduler Configuration ===" -ForegroundColor Cyan
 
@@ -115,12 +144,16 @@ function Invoke-Validate {
 
     Write-Host ""
     Write-Host "Task Specifications for future activation:" -ForegroundColor Cyan
+    Write-Host "  Path:   $TaskPath"
+    Write-Host "  Marker: $OwnershipMarker"
     Write-Host "  Task 1: $MorningTaskName"
+    Write-Host "    Path:    $TaskPath"
     Write-Host "    Trigger: Daily at 09:00 ($ExpectedTimezone)"
     Write-Host "    Action:  $uv run python -m tradex.pit.ops run-slot --slot morning --universe-file $manifest"
     Write-Host "    Working Dir: $root"
     Write-Host "    Catch-up policy: Disabled (StartWhenAvailable = false)"
     Write-Host "  Task 2: $EveningTaskName"
+    Write-Host "    Path:    $TaskPath"
     Write-Host "    Trigger: Daily at 20:30 ($ExpectedTimezone)"
     Write-Host "    Action:  $uv run python -m tradex.pit.ops run-slot --slot evening --universe-file $manifest"
     Write-Host "    Working Dir: $root"
@@ -132,36 +165,45 @@ function Invoke-Validate {
 
 function Invoke-Status {
     Write-Host "=== TradeX PIT Scheduled Tasks Status ===" -ForegroundColor Cyan
+    Write-Host "Owned Task Path: $TaskPath" -ForegroundColor Cyan
 
-    $morning = Get-ScheduledTask -TaskName $MorningTaskName -ErrorAction SilentlyContinue
-    $evening = Get-ScheduledTask -TaskName $EveningTaskName -ErrorAction SilentlyContinue
+    $morning = Get-OwnedTask $MorningTaskName
+    $evening = Get-OwnedTask $EveningTaskName
 
     if (-not $morning -and -not $evening) {
-        Write-Host "Neither '$MorningTaskName' nor '$EveningTaskName' is currently registered." -ForegroundColor Yellow
+        Write-Host "Neither '$MorningTaskName' nor '$EveningTaskName' is currently registered under '$TaskPath'." -ForegroundColor Yellow
         Write-Host "Scheduler is INACTIVE (no OS tasks installed)." -ForegroundColor Yellow
         return $false
     }
 
     if ($morning) {
-        $info = Get-ScheduledTaskInfo -TaskName $MorningTaskName -ErrorAction SilentlyContinue
-        Write-Host "Task: $MorningTaskName" -ForegroundColor Green
+        $owned = Test-IsOwnedTask $morning
+        $info = try { Get-ScheduledTaskInfo -TaskPath $TaskPath -TaskName $MorningTaskName -ErrorAction Stop } catch { $null }
+        Write-Host "Task: $MorningTaskName (Path: $TaskPath)" -ForegroundColor Green
         Write-Host "  State:        $($morning.State)"
-        Write-Host "  Last Run:     $($info.LastRunTime)"
-        Write-Host "  Last Result:  $($info.LastTaskResult)"
-        Write-Host "  Next Run:     $($info.NextRunTime)"
+        Write-Host "  Owned:        $owned"
+        if ($info) {
+            Write-Host "  Last Run:     $($info.LastRunTime)"
+            Write-Host "  Last Result:  $($info.LastTaskResult)"
+            Write-Host "  Next Run:     $($info.NextRunTime)"
+        }
     } else {
-        Write-Host "Task: $MorningTaskName is NOT registered." -ForegroundColor Red
+        Write-Host "Task: $MorningTaskName is NOT registered under '$TaskPath'." -ForegroundColor Red
     }
 
     if ($evening) {
-        $info = Get-ScheduledTaskInfo -TaskName $EveningTaskName -ErrorAction SilentlyContinue
-        Write-Host "Task: $EveningTaskName" -ForegroundColor Green
+        $owned = Test-IsOwnedTask $evening
+        $info = try { Get-ScheduledTaskInfo -TaskPath $TaskPath -TaskName $EveningTaskName -ErrorAction Stop } catch { $null }
+        Write-Host "Task: $EveningTaskName (Path: $TaskPath)" -ForegroundColor Green
         Write-Host "  State:        $($evening.State)"
-        Write-Host "  Last Run:     $($info.LastRunTime)"
-        Write-Host "  Last Result:  $($info.LastTaskResult)"
-        Write-Host "  Next Run:     $($info.NextRunTime)"
+        Write-Host "  Owned:        $owned"
+        if ($info) {
+            Write-Host "  Last Run:     $($info.LastRunTime)"
+            Write-Host "  Last Result:  $($info.LastTaskResult)"
+            Write-Host "  Next Run:     $($info.NextRunTime)"
+        }
     } else {
-        Write-Host "Task: $EveningTaskName is NOT registered." -ForegroundColor Red
+        Write-Host "Task: $EveningTaskName is NOT registered under '$TaskPath'." -ForegroundColor Red
     }
 
     return $true
@@ -169,6 +211,7 @@ function Invoke-Status {
 
 function Invoke-Install {
     Write-Host "=== Installing TradeX PIT Scheduled Tasks ===" -ForegroundColor Cyan
+    Write-Host "Owned Task Path: $TaskPath" -ForegroundColor Cyan
 
     # Pre-flight validation
     Invoke-Validate | Out-Null
@@ -177,6 +220,23 @@ function Invoke-Install {
     $uv = Resolve-UvPath
     $manifest = Resolve-ManifestFile $root
 
+    # Check for pre-existing tasks under $TaskPath (fail closed if exists or unowned)
+    $existingMorning = Get-OwnedTask $MorningTaskName
+    if ($existingMorning) {
+        if (-not (Test-IsOwnedTask $existingMorning)) {
+            throw "Conflict: Task '$MorningTaskName' already exists under '$TaskPath' but is NOT owned by this script (missing ownership marker '$OwnershipMarker'). Refusing to overwrite."
+        }
+        throw "Task '$MorningTaskName' is already installed under '$TaskPath'. Remove existing task first before re-installing."
+    }
+
+    $existingEvening = Get-OwnedTask $EveningTaskName
+    if ($existingEvening) {
+        if (-not (Test-IsOwnedTask $existingEvening)) {
+            throw "Conflict: Task '$EveningTaskName' already exists under '$TaskPath' but is NOT owned by this script (missing ownership marker '$OwnershipMarker'). Refusing to overwrite."
+        }
+        throw "Task '$EveningTaskName' is already installed under '$TaskPath'. Remove existing task first before re-installing."
+    }
+
     # Common task settings: catch-up disabled, 1h execution time limit, allow start on battery
     $settings = New-ScheduledTaskSettingsSet `
         -AllowStartIfOnBatteries `
@@ -184,65 +244,96 @@ function Invoke-Install {
         -ExecutionTimeLimit (New-TimeSpan -Hours 1) `
         -MultipleInstances IgnoreNew
 
-    # 1. Morning Task (09:00 ET)
-    $morningAction = New-ScheduledTaskAction `
-        -Execute $uv `
-        -Argument "run python -m tradex.pit.ops run-slot --slot morning --universe-file `"$manifest`"" `
-        -WorkingDirectory $root
+    $createdMorning = $false
+    $createdEvening = $false
 
-    $morningTrigger = New-ScheduledTaskTrigger -Daily -At "09:00"
+    try {
+        # 1. Morning Task (09:00 ET)
+        $morningAction = New-ScheduledTaskAction `
+            -Execute $uv `
+            -Argument "run python -m tradex.pit.ops run-slot --slot morning --universe-file `"$manifest`"" `
+            -WorkingDirectory $root
 
-    Register-ScheduledTask `
-        -TaskName $MorningTaskName `
-        -Action $morningAction `
-        -Trigger $morningTrigger `
-        -Settings $settings `
-        -Description "TradeX prospective point-in-time slot capture (Morning: 09:00 America/New_York)" `
-        -Force | Out-Null
+        $morningTrigger = New-ScheduledTaskTrigger -Daily -At "09:00"
 
-    Write-Host "[SUCCESS] Registered '$MorningTaskName' (Daily at 09:00 ET)" -ForegroundColor Green
+        Register-ScheduledTask `
+            -TaskPath $TaskPath `
+            -TaskName $MorningTaskName `
+            -Action $morningAction `
+            -Trigger $morningTrigger `
+            -Settings $settings `
+            -Description "TradeX prospective point-in-time slot capture (Morning: 09:00 America/New_York). $OwnershipMarker." | Out-Null
 
-    # 2. Evening Task (20:30 ET)
-    $eveningAction = New-ScheduledTaskAction `
-        -Execute $uv `
-        -Argument "run python -m tradex.pit.ops run-slot --slot evening --universe-file `"$manifest`"" `
-        -WorkingDirectory $root
+        $createdMorning = $true
+        Write-Host "[SUCCESS] Registered '$MorningTaskName' under '$TaskPath' (Daily at 09:00 ET)" -ForegroundColor Green
 
-    $eveningTrigger = New-ScheduledTaskTrigger -Daily -At "20:30"
+        # 2. Evening Task (20:30 ET)
+        $eveningAction = New-ScheduledTaskAction `
+            -Execute $uv `
+            -Argument "run python -m tradex.pit.ops run-slot --slot evening --universe-file `"$manifest`"" `
+            -WorkingDirectory $root
 
-    Register-ScheduledTask `
-        -TaskName $EveningTaskName `
-        -Action $eveningAction `
-        -Trigger $eveningTrigger `
-        -Settings $settings `
-        -Description "TradeX prospective point-in-time slot capture (Evening: 20:30 America/New_York)" `
-        -Force | Out-Null
+        $eveningTrigger = New-ScheduledTaskTrigger -Daily -At "20:30"
 
-    Write-Host "[SUCCESS] Registered '$EveningTaskName' (Daily at 20:30 ET)" -ForegroundColor Green
-    Write-Host "Scheduled tasks installation complete." -ForegroundColor Green
+        Register-ScheduledTask `
+            -TaskPath $TaskPath `
+            -TaskName $EveningTaskName `
+            -Action $eveningAction `
+            -Trigger $eveningTrigger `
+            -Settings $settings `
+            -Description "TradeX prospective point-in-time slot capture (Evening: 20:30 America/New_York). $OwnershipMarker." | Out-Null
+
+        $createdEvening = $true
+        Write-Host "[SUCCESS] Registered '$EveningTaskName' under '$TaskPath' (Daily at 20:30 ET)" -ForegroundColor Green
+        Write-Host "Scheduled tasks installation complete." -ForegroundColor Green
+    }
+    catch {
+        Write-Warning "Installation failed: $($_.Exception.Message). Rolling back partially created task(s)..."
+        if ($createdMorning) {
+            try {
+                $task = Get-OwnedTask $MorningTaskName
+                if ($task -and (Test-IsOwnedTask $task)) {
+                    Unregister-ScheduledTask -TaskPath $TaskPath -TaskName $MorningTaskName -Confirm:$false
+                    Write-Host "[ROLLBACK] Successfully rolled back '$MorningTaskName'." -ForegroundColor Yellow
+                }
+            } catch {
+                Write-Error "Failed to roll back '$MorningTaskName': $($_.Exception.Message)"
+            }
+        }
+        if ($createdEvening) {
+            try {
+                $task = Get-OwnedTask $EveningTaskName
+                if ($task -and (Test-IsOwnedTask $task)) {
+                    Unregister-ScheduledTask -TaskPath $TaskPath -TaskName $EveningTaskName -Confirm:$false
+                    Write-Host "[ROLLBACK] Successfully rolled back '$EveningTaskName'." -ForegroundColor Yellow
+                }
+            } catch {
+                Write-Error "Failed to roll back '$EveningTaskName': $($_.Exception.Message)"
+            }
+        }
+        throw
+    }
 }
 
 function Invoke-Remove {
     Write-Host "=== Removing TradeX PIT Scheduled Tasks ===" -ForegroundColor Cyan
+    Write-Host "Owned Task Path: $TaskPath" -ForegroundColor Cyan
 
+    $tasksToRemove = @($MorningTaskName, $EveningTaskName)
     $removedCount = 0
 
-    $morning = Get-ScheduledTask -TaskName $MorningTaskName -ErrorAction SilentlyContinue
-    if ($morning) {
-        Unregister-ScheduledTask -TaskName $MorningTaskName -Confirm:$false
-        Write-Host "[SUCCESS] Unregistered '$MorningTaskName'." -ForegroundColor Green
-        $removedCount++
-    } else {
-        Write-Host "Task '$MorningTaskName' was not registered." -ForegroundColor Yellow
-    }
-
-    $evening = Get-ScheduledTask -TaskName $EveningTaskName -ErrorAction SilentlyContinue
-    if ($evening) {
-        Unregister-ScheduledTask -TaskName $EveningTaskName -Confirm:$false
-        Write-Host "[SUCCESS] Unregistered '$EveningTaskName'." -ForegroundColor Green
-        $removedCount++
-    } else {
-        Write-Host "Task '$EveningTaskName' was not registered." -ForegroundColor Yellow
+    foreach ($taskName in $tasksToRemove) {
+        $task = Get-OwnedTask $taskName
+        if ($task) {
+            if (-not (Test-IsOwnedTask $task)) {
+                throw "Refusing to remove '$taskName' under '$TaskPath': task does not contain required ownership marker '$OwnershipMarker'. Conflict detected."
+            }
+            Unregister-ScheduledTask -TaskPath $TaskPath -TaskName $taskName -Confirm:$false
+            Write-Host "[SUCCESS] Unregistered '$taskName' from '$TaskPath'." -ForegroundColor Green
+            $removedCount++
+        } else {
+            Write-Host "Task '$taskName' was not registered under '$TaskPath'." -ForegroundColor Yellow
+        }
     }
 
     Write-Host "Scheduler rollback complete. Removed $removedCount task(s)." -ForegroundColor Green

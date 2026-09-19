@@ -311,13 +311,15 @@ Introduced in `MVP-ARCH-001-R7-PIT-STATUS-IMPL-B` on branch `antigravity/mvp-arc
   - `manifest_hash`: `4eee8a5da39c74db499b6f644f6891d61f6a30b0f98d95b53445b12929c9dedb`
 
 ### 2. Intended Operational Schedule
-- **Morning Slot:** 09:00 America/New_York (market open capture)
+- **Morning Slot:** 09:00 America/New_York (morning / pre-market decision capture)
 - **Evening Slot:** 20:30 America/New_York (post-market capture)
 - **Windows Timezone Requirement:** `Eastern Standard Time` (handles New York DST transitions).
 - **Missed Slot Policy:** No automatic catch-up (`StartWhenAvailable = false`). Missed executions remain visible in health audit.
 
 ### 3. Windows Scheduler Management Commands
 Script: `scripts/manage_pit_scheduler.ps1`
+Dedicated Task Scheduler Path: `\TradeX\`
+Ownership Marker: `Managed by scripts/manage_pit_scheduler.ps1`
 
 - **Safe Configuration Validation (Non-mutating):**
   ```powershell
@@ -329,19 +331,19 @@ Script: `scripts/manage_pit_scheduler.ps1`
   ```powershell
   powershell -ExecutionPolicy Bypass -File scripts/manage_pit_scheduler.ps1 -Action Status
   ```
-  Inspects whether `TradeX PIT Morning` and `TradeX PIT Evening` tasks are registered.
+  Inspects whether `TradeX PIT Morning` and `TradeX PIT Evening` tasks are registered in the owned `\TradeX\` path.
 
 - **Future Installation (Explicit Gary Action Post-Merge):**
   ```powershell
   powershell -ExecutionPolicy Bypass -File scripts/manage_pit_scheduler.ps1 -Action Install
   ```
-  Registers the two scheduled tasks. (Do not execute until authorized post-merge).
+  Registers the two scheduled tasks in `\TradeX\`. Requires ownership validation, refuses unsafe overwrite (no `-Force`), and performs atomic rollback on failure. (Do not execute until authorized post-merge).
 
 - **Removal / Rollback:**
   ```powershell
   powershell -ExecutionPolicy Bypass -File scripts/manage_pit_scheduler.ps1 -Action Remove
   ```
-  Safely unregisters the two TradeX scheduled tasks without touching other system tasks.
+  Safely unregisters the two TradeX scheduled tasks only after verifying the `\TradeX\` path and ownership marker. Refuses removal on conflict.
 
 ### 4. Direct Operations Runner & Health Commands
 - **Manual Slot Execution:**
@@ -362,15 +364,29 @@ Script: `scripts/manage_pit_scheduler.ps1`
     --universe-file docs/product/manifests/pit-universe-2026-09-21-v1.json
   ```
 
-### 5. Exit Code Semantics
+### 5. Exit Code Semantics (Contract v2 / PR-B)
 - **`run-slot`**:
-  - `0`: `succeeded` or `not_due` (terminal success or outside trading window)
-  - `2`: `degraded` (at least one family partial or degraded)
-  - `1`: `failed` (both families failed, manifest drift, or fatal error)
-- **`health`**:
-  - `0`: `healthy` or `not_due`
-  - `2`: `degraded`, `missing`, or `incomplete`
-  - `1`: `universe_conflict`, audit corruption, or fatal error
+  - `0 = succeeded or not_due`
+  - `2 = degraded (STARTED / PARTIAL behavior)`
+  - `1 = failed`
+    - either required family terminally FAILED
+    - missing family/run
+    - universe or manifest conflict
+    - fatal/database failure
+    - total required-provider failure
+- **`health` (Contract v2)**:
+  - `0 = healthy or not_due`
+  - `2 = degraded`
+    - `run_in_progress`
+    - `partial_evidence`
+  - `1 = failed`
+    - `missing_due_family`
+    - `universe_conflict`
+    - `manifest_conflict`
+    - `capture_failed`
+    - internal/fatal health failure
+
+*(Note: Legacy Contract-v1 enum values `missing` and `incomplete` returning exit 2 remain strictly for v1 manifest compatibility; under Contract v2, missing due families and failures truthfully return exit 1).*
 
 ### 6. Operational Notes & Limitations
 - **Credentials:** Credentials (`MASSIVE_API_KEY`, etc.) remain in local `.env` or system environment; never embedded in scheduler commands or repository files.
