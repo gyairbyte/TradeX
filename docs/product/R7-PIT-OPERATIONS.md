@@ -392,3 +392,27 @@ Ownership Marker: `Managed by scripts/manage_pit_scheduler.ps1`
 - **Credentials:** Credentials (`MASSIVE_API_KEY`, etc.) remain in local `.env` or system environment; never embedded in scheduler commands or repository files.
 - **Stranded-STARTED Limitation:** If an unexpected process termination occurs during a run, the record remains in `STARTED` state and offline health reports `degraded` (`run_in_progress`). A subsequent successful retry provides evidence completeness but keeps operational health degraded until reconciled.
 - **Strategy Independence:** Production strategy registry remains empty (`APPROVED_PRODUCTION_STRATEGIES == ()`). Point-in-time capture is data infrastructure only.
+
+### 7. Current Activation State
+
+Scheduler activation status:
+```text
+ACTIVATED_WITH_LOGON_REQUIREMENT
+```
+
+- **Activated:** `2026-09-19`
+- **TaskPath:** `\TradeX\`
+- **Morning:** `09:00 ET` (`TradeX PIT Morning`)
+- **Evening:** `20:30 ET` (`TradeX PIT Evening`)
+- **Working directory:** `C:\Users\Gary\Projects\TradeX`
+- **PIT DB:** `C:\Users\Gary\.tradex\signals.db`
+- **Task Principal:** `UserId = Gary`, `LogonType = Interactive`, `RunLevel = Limited`
+
+#### Operational Limitations
+- Gary must remain signed into Windows (`LogonType = Interactive`).
+- Locking the workstation is acceptable; scheduled tasks will run while locked.
+- Signing out prevents execution (`can_run_while_signed_out = false`).
+- Machine must be awake (`machine_must_be_awake = true`).
+- `StartWhenAvailable = false`, therefore missed captures intentionally do not run late.
+
+*(Note: First scheduled captures have **not yet been observed**; they remain pending for the 2026-09-21 morning and evening slots).*
