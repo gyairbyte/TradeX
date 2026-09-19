@@ -229,3 +229,32 @@ def test_powershell_scheduler_asset_ownership_and_rollback_contract() -> None:
     assert "[ROLLBACK]" in script_content
     assert "Unregister-ScheduledTask -TaskPath $TaskPath -TaskName $MorningTaskName" in script_content
     assert "Unregister-ScheduledTask -TaskPath $TaskPath -TaskName $EveningTaskName" in script_content
+
+    # 7. Dedicated Task Scheduler folder creation support
+    assert "function Ensure-TradeXTaskFolder" in script_content
+    assert "Schedule.Service" in script_content
+    assert '.CreateFolder("TradeX")' in script_content
+
+    # 8. Install invokes Ensure-TradeXTaskFolder before task registration
+    install_idx = script_content.find("function Invoke-Install")
+    assert install_idx != -1
+    install_body = script_content[install_idx:]
+    ensure_folder_idx = install_body.find("Ensure-TradeXTaskFolder")
+    register_task_idx = install_body.find("Register-ScheduledTask")
+    assert ensure_folder_idx != -1, "Ensure-TradeXTaskFolder must be called in Invoke-Install"
+    assert register_task_idx != -1, "Register-ScheduledTask must be present in Invoke-Install"
+    assert ensure_folder_idx < register_task_idx, "Ensure-TradeXTaskFolder must be invoked before Register-ScheduledTask"
+
+    # 9. Validate and Status do not invoke folder creation
+    validate_idx = script_content.find("function Invoke-Validate")
+    status_idx = script_content.find("function Invoke-Status")
+    ensure_fn_idx = script_content.find("function Ensure-TradeXTaskFolder")
+    validate_body = script_content[validate_idx:status_idx]
+    status_body = script_content[status_idx:ensure_fn_idx]
+    assert "Ensure-TradeXTaskFolder" not in validate_body, "Invoke-Validate must not invoke folder creation"
+    assert "CreateFolder" not in validate_body, "Invoke-Validate must not invoke CreateFolder"
+    assert "Ensure-TradeXTaskFolder" not in status_body, "Invoke-Status must not invoke folder creation"
+    assert "CreateFolder" not in status_body, "Invoke-Status must not invoke CreateFolder"
+
+    # 10. Folder is never deleted during Remove or rollback
+    assert "DeleteFolder" not in script_content, "Task Scheduler folder must never be deleted on Remove or rollback"

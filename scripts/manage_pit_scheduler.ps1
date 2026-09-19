@@ -12,6 +12,7 @@
 #   - Execution uses 'uv run' in repo working directory so normal settings loader handles configuration.
 #   - Missed catch-up disabled (StartWhenAvailable = false) so missed slots surface truthfully in health.
 #   - Dedicated TaskPath: \TradeX\ to isolate TradeX tasks from root tasks.
+#   - Dedicated TaskFolder: Created via Schedule.Service during Install if not present; preserved on Remove/rollback.
 #   - Ownership marker: "Managed by scripts/manage_pit_scheduler.ps1" embedded in description.
 #   - Safe Install: No overwrite flags. Verifies pre-existing tasks and fails closed.
 #   - Atomic Install: Rolls back morning task if evening task fails during installation.
@@ -209,6 +210,30 @@ function Invoke-Status {
     return $true
 }
 
+function Ensure-TradeXTaskFolder {
+    try {
+        $service = New-Object -ComObject "Schedule.Service"
+        $service.Connect()
+        $rootFolder = $service.GetFolder("\")
+
+        $subfolders = $rootFolder.GetFolders(0)
+        $folderExists = ($subfolders | Where-Object { $_.Name -ieq "TradeX" }) -ne $null
+
+        if (-not $folderExists) {
+            Write-Host "Creating Task Scheduler folder '\TradeX\'..." -ForegroundColor Yellow
+            $created = $rootFolder.CreateFolder("TradeX")
+            if (-not $created) {
+                throw "Task Scheduler CreateFolder returned null or failed to create 'TradeX' folder."
+            }
+            Write-Host "[SUCCESS] Created Task Scheduler folder '\TradeX\'." -ForegroundColor Green
+        } else {
+            Write-Host "Task Scheduler folder '\TradeX\' already exists." -ForegroundColor Green
+        }
+    } catch {
+        throw "Failed to ensure Task Scheduler folder '\TradeX\': $($_.Exception.Message)"
+    }
+}
+
 function Invoke-Install {
     Write-Host "=== Installing TradeX PIT Scheduled Tasks ===" -ForegroundColor Cyan
     Write-Host "Owned Task Path: $TaskPath" -ForegroundColor Cyan
@@ -219,6 +244,9 @@ function Invoke-Install {
     $root = Resolve-RepoRoot
     $uv = Resolve-UvPath
     $manifest = Resolve-ManifestFile $root
+
+    # Ensure dedicated Task Scheduler folder exists before task registration
+    Ensure-TradeXTaskFolder
 
     # Check for pre-existing tasks under $TaskPath (fail closed if exists or unowned)
     $existingMorning = Get-OwnedTask $MorningTaskName
