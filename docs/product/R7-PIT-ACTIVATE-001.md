@@ -56,7 +56,7 @@ The scheduler was installed on the canonical workstation using `scripts/manage_p
 - **Persistent Database Path:** `C:\Users\Gary\.tradex\signals.db`
 - **Execution Limits:** `execution_time_limit = PT1H`, `multiple_instances = IgnoreNew`
 - **Catch-up Setting:** `StartWhenAvailable = false` (missed slots intentionally do not run late)
-- **Credential Gate:** Confirmed successful (`MASSIVE_API_KEY` configured in host environment)
+- **Credential Gate:** Confirmed successful (`MASSIVE_API_KEY` resolved by TradeX runtime settings from supported local configuration)
 
 ---
 
