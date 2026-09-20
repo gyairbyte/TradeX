@@ -42,7 +42,7 @@ If the icon doesn't refresh in Finder: `touch launchers/macos/TradeX.app`.
 ---
 
 ## Windows
-
+ 
 ### One-time setup (fresh clone)
 Open PowerShell in the repo root:
 ```powershell
@@ -62,25 +62,43 @@ New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.tradex" | Out-Null
 "TRADEX_HOME=$(Get-Location)" | Out-File -Encoding ascii "$env:USERPROFILE\.tradex\config"
 ```
 
-### Install the launcher
-1. Right-click `launchers\windows\TradeX.bat` → **Create shortcut**.
-2. Move the shortcut wherever you want it (Desktop, Start Menu).
-3. Right-click the shortcut → **Properties** → **Change Icon...** → browse to `launchers\windows\TradeX.ico`.
-4. Optional: right-click the shortcut → **Pin to taskbar**.
+### Install Desktop shortcuts (recommended)
+Run the automated shortcut installer from PowerShell:
+```powershell
+powershell -ExecutionPolicy Bypass -File launchers\windows\install_desktop_shortcuts.ps1
+```
+This automatically creates:
+- `Start TradeX.lnk` (points to `TradeX.bat`, with `TradeX.ico`)
+- `Stop TradeX.lnk` (points to `TradeX-Stop.bat`, with `TradeX-Stop.ico`)
+directly on your Windows Desktop.
+
+### Manual shortcut creation (alternative)
+1. Right-click `launchers\windows\TradeX.bat` → **Create shortcut** → move to Desktop as `Start TradeX.lnk`.
+2. Properties → **Change Icon...** → browse to `launchers\windows\TradeX.ico`.
+3. Right-click `launchers\windows\TradeX-Stop.bat` → **Create shortcut** → move to Desktop as `Stop TradeX.lnk`.
+4. Properties → **Change Icon...** → browse to `launchers\windows\TradeX-Stop.ico`.
+
+### Process identity and safety invariants
+- **Port 8501 is not identity**: Neither launcher treats port 8501 as proof of TradeX. The listener command line is inspected via `Get-CimInstance Win32_Process` and must match the canonical dashboard (`<repo>\tradex\ui\dashboard.py`).
+- **Start launcher**: Captures the spawned Streamlit PID (`Start-Process -PassThru`), verifies port 8501 ownership, and writes `%USERPROFILE%\.tradex\dashboard.pid`. Unrelated applications holding port 8501 are never killed; Start fails safely with a descriptive error.
+- **Stop launcher**: Employs defense in depth across the persisted PID file, port 8501 listeners, and `Win32_Process` process table. Only confirmed TradeX process trees are terminated. It verifies port 8501 is released, cleans up `dashboard.pid`, and reports confirmation. Unrelated applications on port 8501 are never terminated.
 
 ### Note on PowerShell execution policy
-`TradeX.bat` invokes PowerShell with `-ExecutionPolicy Bypass`, so the default Windows policy won't block it. No manual policy change required.
+`TradeX.bat` and `TradeX-Stop.bat` invoke PowerShell with `-ExecutionPolicy Bypass`, so the default Windows policy won't block them. No manual policy change required.
 
 ---
 
-## Regenerating the icon
+## Regenerating the icons
 
 ```bash
 .venv/bin/python launchers/make_icon.py        # macOS / Linux
 .venv\Scripts\python launchers\make_icon.py    # Windows
 ```
 
-Writes `TradeX.icns` (Mac) and `TradeX.ico` (Windows).
+Generates:
+- `TradeX.ico` & `tradex_icon.png`: TradeX slate-900 background, slate-200 TX wordmark, green rising-candle motif.
+- `TradeX-Stop.ico` & `tradex_stop_icon.png`: Same slate-900 background, slate-200 TX wordmark, red stop-themed motif.
+- `TradeX.icns` (macOS, if `iconutil` is available).
 
 ---
 

@@ -195,10 +195,15 @@ Alternative: set the `TRADEX_HOME` environment variable instead of writing the c
 3. The browser should open to `http://localhost:8501` within ~5 seconds.
 
 **Windows:**
-1. Right-click `launchers\windows\TradeX.bat` → **Create shortcut**.
-2. Move the shortcut to Desktop (or pin to Taskbar).
-3. Optional: right-click shortcut → **Properties** → **Change Icon...** → point at `launchers\windows\TradeX.ico`.
-4. Double-click the shortcut. Browser opens to `http://localhost:8501`.
+1. Run the desktop shortcut installer from PowerShell:
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File launchers\windows\install_desktop_shortcuts.ps1
+   ```
+   This creates `Start TradeX.lnk` and `Stop TradeX.lnk` directly on your Desktop with their corresponding Start (green) and Stop (red) icons.
+2. Double-click `Start TradeX` on your Desktop. It starts the Streamlit dashboard in the background and opens `http://localhost:8501`.
+3. To stop TradeX, double-click `Stop TradeX` on your Desktop. It cleanly shuts down the TradeX process tree, confirms port 8501 release, and clears runtime PID metadata.
+
+*(Alternative manual install: create shortcuts to `launchers\windows\TradeX.bat` and `launchers\windows\TradeX-Stop.bat` on your Desktop and set their icons to `TradeX.ico` and `TradeX-Stop.ico` respectively).*
 
 ### Option B — command line
 ```bash
