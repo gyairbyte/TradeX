@@ -224,8 +224,13 @@ if ($verifiedTradeXPids.Count -gt 0) {
         Remove-Item -Force $PidFile -ErrorAction SilentlyContinue
     }
 
-    Show-Message "TradeX dashboard has been stopped." "TradeX" "Information"
-    exit 0
+    if ($portReleased) {
+        Show-Message "TradeX dashboard has been stopped." "TradeX" "Information"
+        exit 0
+    }
+
+    Show-Message "TradeX shutdown could not be fully confirmed: port 8501 is still listening after the timeout." "TradeX Stop" "Warning"
+    exit 1
 }
 
 # --- 4. No verified TradeX process found ---

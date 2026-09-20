@@ -273,6 +273,8 @@ def test_script_content_invariants() -> None:
     assert "Test-IsTradeXProcess" in stop_ps1
     assert "unrelated application" in stop_ps1
     assert "dashboard.py" in stop_ps1
+    assert "could not be fully confirmed" in stop_ps1
+    assert "$portReleased" in stop_ps1
 
 
 @pytest.mark.skipif(shutil.which("powershell.exe") is None, reason="powershell.exe not available")
@@ -357,3 +359,86 @@ def test_unrelated_process_on_port_8501_rejected() -> None:
         server.terminate()
         server.wait(timeout=5)
 
+
+@pytest.mark.skipif(shutil.which("powershell.exe") is None, reason="powershell.exe not available")
+def test_stop_launcher_failure_path_when_port_not_released() -> None:
+    """Verify TradeX-Stop.ps1 exits non-zero and does not report success if port 8501 remains in use."""
+    import socket
+    import sys
+    import time
+
+    # Check if port 8501 is free
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        is_free = s.connect_ex(("127.0.0.1", 8501)) != 0
+
+    if not is_free:
+        pytest.skip("Port 8501 is already in use by an existing service")
+
+    # Start an unrelated listener on port 8501 to hold the port
+    unrelated_server = subprocess.Popen(
+        [sys.executable, "-m", "http.server", "8501"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    time.sleep(1.0)
+
+    stop_ps1 = WIN_LAUNCHERS_DIR / "TradeX-Stop.ps1"
+    log_dir = Path.home() / ".tradex"
+    pid_file = log_dir / "dashboard.pid"
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    # Spawn a dummy TradeX process via an isolated PowerShell process whose parent is not pytest
+    dashboard_py = str(REPO_ROOT / "tradex" / "ui" / "dashboard.py")
+    spawn_cmd = [
+        "powershell.exe",
+        "-NoProfile",
+        "-Command",
+        f"""
+        $arg = "-c `"import time; time.sleep(60) # {dashboard_py}`""
+        $p = Start-Process -FilePath '{sys.executable}' -ArgumentList $arg -WindowStyle Hidden -PassThru
+        Write-Output $p.Id
+        """,
+    ]
+    spawn_res = subprocess.run(spawn_cmd, capture_output=True, text=True, check=True)
+    dummy_pid = int(spawn_res.stdout.strip())
+
+    try:
+        # Register dummy PID
+        pid_file.write_text(str(dummy_pid), encoding="ascii")
+
+        # Execute Stop launcher
+        res = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(stop_ps1), "-Quiet"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        # 1. Must exit non-zero
+        assert res.returncode != 0, f"Expected non-zero exit code, got 0. Output:\n{res.stdout}\n{res.stderr}"
+
+        # 2. Must NOT report success
+        assert "TradeX dashboard has been stopped." not in res.stdout
+        assert "TradeX dashboard has been stopped." not in res.stderr
+
+        # 3. Must display clear warning/error that shutdown could not be confirmed
+        combined_out = (res.stdout + "\n" + res.stderr).lower()
+        assert "could not be fully confirmed" in combined_out or "still listening" in combined_out
+
+        # 4. Must preserve PID cleanup behavior
+        assert not pid_file.exists(), "Stale PID file should have been removed"
+
+        # 5. Must NOT kill the unrelated process holding port 8501
+        assert unrelated_server.poll() is None, "The unrelated process was terminated!"
+    finally:
+        subprocess.run(
+            ["powershell.exe", "-NoProfile", "-Command", f"Stop-Process -Id {dummy_pid} -Force -ErrorAction SilentlyContinue"],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if unrelated_server.poll() is None:
+            unrelated_server.terminate()
+            unrelated_server.wait(timeout=5)
+        if pid_file.exists():
+            pid_file.unlink(missing_ok=True)
