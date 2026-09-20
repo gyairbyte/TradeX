@@ -22,11 +22,32 @@ WIN_DIR = ROOT / "windows"
 SIZE = 1024
 
 
-def render(size: int) -> Image.Image:
+def get_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    """Discover a suitable bold font across Windows, macOS, and Linux."""
+    font_size = int(size * 0.22)
+    candidates = [
+        "arialbd.ttf",
+        "C:/Windows/Fonts/arialbd.ttf",
+        "C:/Windows/Fonts/arial.ttf",
+        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+        "/Library/Fonts/Arial Bold.ttf",
+        "Arial Bold.ttf",
+        "DejaVuSans-Bold.ttf",
+        "arial.ttf",
+    ]
+    for font_path in candidates:
+        try:
+            return ImageFont.truetype(font_path, font_size)
+        except OSError:
+            continue
+    return ImageFont.load_default()
+
+
+def render(size: int, motif: str = "start") -> Image.Image:
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
 
-    # Rounded-square background — dark slate with a green accent stripe.
+    # Rounded-square background — dark slate.
     radius = int(size * 0.22)
     draw.rounded_rectangle(
         [(0, 0), (size, size)],
@@ -34,35 +55,44 @@ def render(size: int) -> Image.Image:
         fill=(17, 24, 39, 255),  # slate-900
     )
 
-    # Green upward arrow / candle motif.
     pad = int(size * 0.18)
-    bar_w = int(size * 0.12)
-    gap = int(size * 0.06)
     base_y = size - pad
 
-    # Three rising bars.
-    heights = [0.30, 0.50, 0.72]
-    total_w = 3 * bar_w + 2 * gap
-    start_x = (size - total_w) // 2
-    for i, h in enumerate(heights):
-        x0 = start_x + i * (bar_w + gap)
-        y0 = base_y - int(size * h)
+    if motif == "start":
+        # Green upward candle / bar motif.
+        bar_w = int(size * 0.12)
+        gap = int(size * 0.06)
+        heights = [0.30, 0.50, 0.72]
+        total_w = 3 * bar_w + 2 * gap
+        start_x = (size - total_w) // 2
+        for i, h in enumerate(heights):
+            x0 = start_x + i * (bar_w + gap)
+            y0 = base_y - int(size * h)
+            draw.rounded_rectangle(
+                [(x0, y0), (x0 + bar_w, base_y)],
+                radius=int(bar_w * 0.25),
+                fill=(34, 197, 94, 255),  # green-500
+            )
+    elif motif == "stop":
+        # Red stop-themed motif — rounded stop block in the lower motif area.
+        stop_w = int(size * 0.38)
+        x0 = (size - stop_w) // 2
+        y0 = int(size * 0.44)
+        x1 = x0 + stop_w
+        y1 = y0 + stop_w
         draw.rounded_rectangle(
-            [(x0, y0), (x0 + bar_w, base_y)],
-            radius=int(bar_w * 0.25),
-            fill=(34, 197, 94, 255),  # green-500
+            [(x0, y0), (x1, y1)],
+            radius=int(stop_w * 0.22),
+            fill=(239, 68, 68, 255),  # red-500
         )
+    else:
+        raise ValueError(f"Unknown motif: {motif}")
 
     # "TX" wordmark across the top.
-    try:
-        font_path = "/System/Library/Fonts/Supplemental/Arial Bold.ttf"
-        font = ImageFont.truetype(font_path, int(size * 0.22))
-    except OSError:
-        font = ImageFont.load_default()
+    font = get_font(size)
     text = "TX"
     bbox = draw.textbbox((0, 0), text, font=font)
     tw = bbox[2] - bbox[0]
-    th = bbox[3] - bbox[1]
     draw.text(
         ((size - tw) / 2 - bbox[0], int(size * 0.14) - bbox[1]),
         text,
@@ -118,12 +148,16 @@ def main() -> None:
     MAC_RESOURCES.mkdir(parents=True, exist_ok=True)
     WIN_DIR.mkdir(parents=True, exist_ok=True)
 
-    base = render(SIZE)
-    # Keep a PNG for reference / re-export.
-    base.save(ROOT / "tradex_icon.png", format="PNG")
+    # Start icon assets
+    start_base = render(SIZE, motif="start")
+    start_base.save(ROOT / "tradex_icon.png", format="PNG")
+    build_icns(start_base, MAC_RESOURCES / "TradeX.icns")
+    build_ico(start_base, WIN_DIR / "TradeX.ico")
 
-    build_icns(base, MAC_RESOURCES / "TradeX.icns")
-    build_ico(base, WIN_DIR / "TradeX.ico")
+    # Stop icon assets
+    stop_base = render(SIZE, motif="stop")
+    stop_base.save(ROOT / "tradex_stop_icon.png", format="PNG")
+    build_ico(stop_base, WIN_DIR / "TradeX-Stop.ico")
 
 
 if __name__ == "__main__":
