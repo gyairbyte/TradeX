@@ -1,0 +1,593 @@
+{
+  "schema_version": "1.0",
+  "program_id": "LONG-002",
+  "task_id": "LONG-002C-DESIGN-001",
+  "design_version": 1,
+  "design_name": "LONG-002C-DESIGN-001: Outcome Census, Master Episodes, and Frozen Baselines Specification",
+  "status": "proposed_for_gary_review",
+  "classification": "research-governance-design-only",
+  "base_commit_sha": "afa9b40d039e08df1a5edb1be21fb53ee8e0d9aa",
+  "authorization": {
+    "design_work_authorized": true,
+    "design_work_authorization_source": "Gary Yang explicit authorization on 2026-09-20",
+    "long_002c_execution_authorized": false,
+    "dataset_construction_authorized": false,
+    "provider_calls_authorized": false,
+    "historical_outcome_analysis_authorized": false,
+    "validation_access_authorized": false,
+    "holdout_access_authorized": false,
+    "production_change_authorized": false,
+    "production_promotion_eligible": false,
+    "notes": "This design specification does not authorize LONG-002C execution, dataset construction, provider calls, outcome calculation, model fitting, or production changes. Execution requires a separate, explicit Gary authorization."
+  },
+  "upstream_spec_hashes": {
+    "docs/research/specs/LONG-002-v1.json": "f3df2845543500985c88568f9b855812576e9e4a10901f8a5f7a1834a319b3b5",
+    "docs/research/specs/LONG-002B-probe-v1.json": "002a0795096ba0f6f77ba1f2e673b5d3e6a2008730a57f7f87e71cf86b949a98",
+    "docs/research/specs/LONG-002B-data-contract-v1.json": "f8ad6655e482fe5c9e8847467643bf0b03949686ad914180599323758cbf555a",
+    "docs/research/specs/LONG-002B-AMEND-001-probe-v1.json": "38f550b3bf14bc58654ba5286213bbfe894577ccb1502b604f60076e6e239ce7",
+    "docs/research/specs/LONG-002B-DEC-001.json": "6d750f7b1c6981db648d647883e8d3d493498eed7d36d2b282d969ea4eec1633",
+    "docs/research/specs/LONG-002B-AMEND-002.json": "455457dab25d212857891499b80d316576392cbb2694950d6467b4034f304b80",
+    "docs/research/LONG-002.md": "ef5486dca601ff6cf8cfc552737c40024818e0dfefd19d66686293584406bb37",
+    "docs/research/LONG-002B-DATA-FEASIBILITY.md": "aa13e9361e9cb7e0a50d819076a6c590f9d2df4c566b0d881406d0fa42cd3b54",
+    "docs/research/LONG-002B-AMEND-001.md": "e2487b0471fdf7b9f8c37316241e2a39ae470cdc8dfed7319e96354c9b5d18d1",
+    "docs/research/LONG-002B-DEC-001.md": "6c2179ff5e73bbe655c101814fa98c66bc7c09c803e98f2afbaeda98c0b25026",
+    "docs/research/LONG-002B-AMEND-002.md": "9ff7f639bc0c2da5816684658f4bb2472f8a75e88453e0ad485c26fa6a07f3b3"
+  },
+  "historical_splits": {
+    "warmup": {
+      "start": "2015-01-01",
+      "end": "2015-12-31",
+      "role": "indicator and lookback inputs only; no candidate triggers evaluated"
+    },
+    "development": {
+      "start": "2016-01-01",
+      "end": "2020-12-31",
+      "role": "exclusive split for LONG-002C outcome census, episode construction, and baseline census"
+    },
+    "validation": {
+      "start": "2021-01-01",
+      "end": "2022-12-31",
+      "access_prohibited": true,
+      "role": "locked future candidate-system selection only; unread during LONG-002C"
+    },
+    "holdout": {
+      "start": "2023-01-01",
+      "end": "2025-12-31",
+      "access_prohibited": true,
+      "untouched": true,
+      "role": "locked final evaluation; unread during LONG-002C"
+    },
+    "shadow_replay": {
+      "start": "2026-01-01",
+      "access_prohibited": true,
+      "role": "prospective out-of-sample shadow evaluation; separate from holdout"
+    }
+  },
+  "split_boundary_guard": {
+    "fail_closed": true,
+    "max_entry_window_sessions": 5,
+    "max_outcome_horizon_sessions": 21,
+    "total_forward_sessions_required": 26,
+    "purge_policy": "Exchange calendar (XNYS) forward session walk. An observation is eligible for full outcome calculation only if its potential 5-session entry window and 21-session outcome window terminate on or before 2020-12-31. Observations whose forward window crosses into 2021-01-01 are purged from outcome evaluation and tagged split_boundary_purged.",
+    "zero_leakage_rule": "No code path during LONG-002C may read, load, parse, or count 2021-2025 records."
+  },
+  "decision_observation_contract": {
+    "timezone": "America/New_York",
+    "exchange_calendar": "XNYS",
+    "cutoffs": {
+      "evening": {
+        "time": "20:30",
+        "role": "primary evening research and discovery snapshot",
+        "entry_reference": "next regular-session open"
+      },
+      "morning": {
+        "time": "09:00",
+        "role": "pre-market reevaluation snapshot",
+        "entry_reference": "current-day regular-session open"
+      }
+    },
+    "availability_semantics": {
+      "point_in_time_rule": "Every feature and eligibility input joined to an observation must have an availability timestamp <= decision_timestamp_utc.",
+      "market_close": "Regular trading sessions close at 16:00 ET (or 13:00 ET for scheduled early closes). Official evening snapshot at 20:30 ET guarantees completed session data.",
+      "filing_acceptance": "SEC EDGAR filing acceptance timestamp controls fundamental and share availability. Filings accepted after cutoff are invisible at that decision point.",
+      "market_cap_hierarchy": [
+        "Reliable historical point-in-time market cap",
+        "Latest known point-in-time shares outstanding multiplied by actual historical close",
+        "Otherwise stock cannot qualify via non-index $3B eligibility pathway"
+      ],
+      "corporate_actions": {
+        "as_traded_series": "Used for dollar-volume, share-price eligibility ($5 floor), and executable entry fill reference.",
+        "split_normalized_dividend_unadjusted_series": "Used for return calculations, technical indicators (SMA, ATR, RSI, MACD), MFE/MAE paths, and barrier crossings. Dividends are unadjusted because LONG-002 studies rapid price moves, not total dividend reinvestment.",
+        "special_distributions": "If a spin-off or special distribution cannot be accurately reconstructed, affected forward windows are marked excluded rather than treating the price drop as market loss."
+      },
+      "no_backfill_rule": "Never substitute current or later security classification, sector, index membership, market cap, or shares outstanding as historical fact."
+    }
+  },
+  "warmup_availability_specification": {
+    "lookback_requirements": {
+      "established_cohort_sessions": 252,
+      "recent_ipo_cohort_min_sessions": 63,
+      "recent_ipo_cohort_max_sessions": 251,
+      "short_term_features_lookback_sessions": 60
+    },
+    "handling_policy": {
+      "provider_missing_vs_ipo": "Provider-missing pre-2016 daily history must never be confused with a genuine recent IPO. A security belongs to the recent-IPO cohort only when positive listing-date or SEC prospectus evidence confirms an IPO within 63 to 251 sessions.",
+      "feature_shortfall_null": "Any technical or liquidity feature requiring more lookback than historically available from the provider returns null. Missing lookback is never backfilled as zero.",
+      "observation_availability": "Observations become unavailable for candidate consideration only when mandatory eligibility criteria (e.g. 20-session dollar volume median or price history) cannot be computed. If an established stock lacks 252 sessions solely due to the 2015 provider coverage boundary, it is tagged unavailable_insufficient_lookback.",
+      "no_split_shift": "The development split date remains strictly locked at 2016-01-01. Future execution cannot shift the split to 2017 to bypass warm-up."
+    }
+  },
+  "dataset_manifest_architecture": {
+    "entities": [
+      {
+        "entity_id": "decision_observations",
+        "description": "Point-in-time snapshot evaluations for each (symbol, as_of_date, cutoff_time).",
+        "primary_key": ["symbol", "as_of_date", "cutoff_time"],
+        "ordering": ["as_of_date ASC", "symbol ASC", "cutoff_time ASC"],
+        "fields": {
+          "symbol": "string",
+          "as_of_date": "YYYY-MM-DD",
+          "cutoff_time": "20:30|09:00",
+          "decision_timestamp_utc": "ISO-8601 UTC timestamp",
+          "as_traded_close": "float",
+          "split_normalized_close": "float",
+          "volume": "int",
+          "dollar_volume_20d_median": "float|null",
+          "atr_14": "float|null",
+          "raw_outcome_eligible": "boolean",
+          "universe_eligible": "boolean",
+          "data_complete": "boolean",
+          "earnings_schedule_status": "known|unknown",
+          "actionability_status": "eligible|unavailable_earnings_unknown|unavailable_data_incomplete|excluded",
+          "split_boundary_purged": "boolean"
+        }
+      },
+      {
+        "entity_id": "data_eligibility",
+        "description": "Evaluation of universal filtering gates at decision time.",
+        "primary_key": ["symbol", "as_of_date", "cutoff_time"],
+        "fields": {
+          "price_gte_5": "boolean",
+          "dollar_volume_20d_gte_20m": "boolean",
+          "dollar_volume_60d_gte_10m": "boolean|null",
+          "market_cap_gte_3b": "boolean|null",
+          "index_membership_verified": "boolean",
+          "trading_history_sessions": "int",
+          "cohort_type": "established|recent_ipo|insufficient_history",
+          "eligibility_passed": "boolean",
+          "rejection_reason_codes": "list[string]"
+        }
+      },
+      {
+        "entity_id": "security_classification_status",
+        "description": "Point-in-time security classification and exclusion evaluation.",
+        "primary_key": ["symbol", "as_of_date"],
+        "fields": {
+          "provider_type_code": "string|null",
+          "inferred_classification": "common_stock|etf|etn|closed_end_fund|preferred|warrant|right|unit|pre_merger_spac|shell|otc|unknown",
+          "classification_status": "supported_common_stock|excluded_security_type|unknown_fail_closed",
+          "is_eligible_common_stock": "boolean",
+          "provenance_source": "string"
+        }
+      },
+      {
+        "entity_id": "earnings_schedule_status",
+        "description": "Point-in-time next earnings announcement schedule state.",
+        "primary_key": ["symbol", "as_of_date", "cutoff_time"],
+        "fields": {
+          "next_earnings_date": "YYYY-MM-DD|null",
+          "announcement_timing": "before_market_open|after_market_close|during_trading_hours|unspecified|null",
+          "sessions_to_earnings": "int|null",
+          "schedule_status": "known_point_in_time|unknown",
+          "provenance_source": "string"
+        }
+      },
+      {
+        "entity_id": "outcome_label_records",
+        "description": "Calculated outcome metrics across all nine target/horizon cells.",
+        "primary_key": ["symbol", "as_of_date", "cutoff_time", "target_pct", "horizon_sessions"],
+        "ordering": ["as_of_date ASC", "symbol ASC", "target_pct ASC", "horizon_sessions ASC"],
+        "fields": {
+          "reference_entry_price": "float",
+          "entry_friction_bps": "float",
+          "target_price": "float",
+          "adverse_barrier_price": "float",
+          "target_reached": "boolean",
+          "target_progress_ratio": "float",
+          "near_miss": "boolean",
+          "partial_move": "boolean",
+          "mae_pct": "float",
+          "mae_atr": "float",
+          "adverse_excursion": "boolean",
+          "clean_target_reached": "boolean",
+          "path_sequence_ambiguous": "boolean",
+          "end_of_horizon_return": "float",
+          "retention_ratio": "float",
+          "sustained_target": "boolean",
+          "time_to_target": "int|null",
+          "time_to_mae": "int|null"
+        }
+      },
+      {
+        "entity_id": "master_opportunity_episodes",
+        "description": "Independent master opportunity episodes anchored by first qualifying +10%/21 move.",
+        "primary_key": ["episode_id"],
+        "unique_constraints": [["anchor_symbol", "anchor_as_of_date", "anchor_cutoff_time"]],
+        "ordering": ["anchor_as_of_date ASC", "anchor_symbol ASC"],
+        "fields": {
+          "episode_id": "string (EP-SYMBOL-YYYYMMDD-CUTOFF)",
+          "anchor_symbol": "string",
+          "anchor_as_of_date": "YYYY-MM-DD",
+          "anchor_cutoff_time": "20:30|09:00",
+          "anchor_entry_price": "float",
+          "window_start_date": "YYYY-MM-DD",
+          "window_end_date": "YYYY-MM-DD",
+          "window_session_count": "int (always 21)",
+          "max_return_pct_21": "float",
+          "max_target_tier_reached": "10|20|30|none",
+          "clean_target_reached_10_21": "boolean",
+          "clean_target_reached_20_21": "boolean",
+          "clean_target_reached_30_21": "boolean",
+          "first_target_session_index": "int|null",
+          "constituent_observation_count": "int"
+        }
+      },
+      {
+        "entity_id": "episode_membership",
+        "description": "Mapping linking daily decision observations to their parent master episode.",
+        "primary_key": ["symbol", "as_of_date", "cutoff_time"],
+        "fields": {
+          "episode_id": "string",
+          "session_index_in_episode": "int (1..21)",
+          "constituent_tag": "pre_target|target_session|post_target"
+        }
+      },
+      {
+        "entity_id": "baseline_comparator_outputs",
+        "description": "Evaluation of locked baseline models on common observations.",
+        "primary_key": ["symbol", "as_of_date", "cutoff_time", "comparator_id"],
+        "fields": {
+          "comparator_id": "string",
+          "comparator_family": "universe_base_rate|simple_momentum|spy_relative|sector_relative|volatility_aware_momentum|legacy_tradex_scorer",
+          "raw_score_or_return": "float",
+          "cross_sectional_rank": "int",
+          "cross_sectional_percentile": "float",
+          "top_10_flag": "boolean",
+          "top_25_flag": "boolean"
+        }
+      },
+      {
+        "entity_id": "data_quality_coverage",
+        "description": "Per-security data completeness and integrity audit metrics.",
+        "primary_key": ["symbol", "split_name"],
+        "fields": {
+          "split_name": "string",
+          "expected_sessions": "int",
+          "observed_sessions": "int",
+          "completeness_pct": "float",
+          "unexplained_missing_sessions": "int",
+          "max_consecutive_missing_sessions": "int",
+          "duplicate_bar_count": "int (must be 0)",
+          "malformed_bar_count": "int (must be 0)",
+          "halt_sessions_count": "int"
+        }
+      },
+      {
+        "entity_id": "provenance_provider_records",
+        "description": "Audit trail for all market and reference data inputs.",
+        "primary_key": ["record_id"],
+        "fields": {
+          "record_id": "string",
+          "data_family": "daily_market_data|security_master|issuer_fundamentals|earnings_event_timing",
+          "provider_name": "string",
+          "provider_role": "primary|fallback",
+          "endpoint_url_pattern": "string",
+          "retrieval_timestamp_utc": "ISO-8601 UTC timestamp",
+          "request_fingerprint_sha256": "string",
+          "response_sha256": "string"
+        }
+      },
+      {
+        "entity_id": "exclusions_and_reason_codes",
+        "description": "Enumeration and accounting of all rejected or unavailable observations.",
+        "primary_key": ["symbol", "as_of_date", "cutoff_time", "reason_code"],
+        "fields": {
+          "reason_code": "string",
+          "reason_category": "security_type|liquidity|price|trading_history|lookback_unavailable|earnings_unknown|split_boundary",
+          "description": "string"
+        }
+      }
+    ]
+  },
+  "outcome_labeling_specification": {
+    "target_grid": [
+      {"target_pct": 10, "horizon_sessions": 5},
+      {"target_pct": 10, "horizon_sessions": 10},
+      {"target_pct": 10, "horizon_sessions": 21},
+      {"target_pct": 20, "horizon_sessions": 5},
+      {"target_pct": 20, "horizon_sessions": 10},
+      {"target_pct": 20, "horizon_sessions": 21},
+      {"target_pct": 30, "horizon_sessions": 5},
+      {"target_pct": 30, "horizon_sessions": 10},
+      {"target_pct": 30, "horizon_sessions": 21}
+    ],
+    "confirmatory_hierarchy": {
+      "primary": {
+        "target_pct": 10,
+        "horizon_sessions": 10,
+        "label": "clean +10% within 10 trading sessions"
+      },
+      "key_magnitude_secondary": {
+        "target_pct": 20,
+        "horizon_sessions": 21,
+        "label": "clean +20% within 21 sessions"
+      },
+      "speed_secondary": {
+        "target_pct": 10,
+        "horizon_sessions": 5,
+        "label": "clean +10% within 5 sessions"
+      },
+      "stretch": {
+        "target_pct": 30,
+        "horizon_sessions": 21,
+        "label": "clean +30% within 21 sessions"
+      },
+      "feasibility_fallback": {
+        "target_pct": 10,
+        "horizon_sessions": 21,
+        "label": "clean +10% within 21 sessions",
+        "invocation_rule": "The fallback may be invoked only by a label-only development census showing that the primary +10%/10 endpoint lacks the preregistered independent-event sample required for meaningful evaluation. It must occur before KPI/model discovery and may not depend on predictive model performance."
+      }
+    },
+    "entry_reference_policy": {
+      "evening": "actual next regular-session open + modeled entry friction",
+      "morning": "actual current regular-session open + modeled entry friction",
+      "no_hindsight_entry": true,
+      "friction_scenarios_bps_per_side": {
+        "primary": 10,
+        "sensitivity": [5, 25],
+        "stress": 50
+      }
+    },
+    "formulas": {
+      "target_price": "entry_price * (1.0 + target_pct / 100.0)",
+      "target_progress_ratio": "MFE / (entry_price * (target_pct / 100.0))",
+      "near_miss": "0.8 <= target_progress_ratio < 1.0",
+      "partial_move": "0.5 <= target_progress_ratio < 0.8",
+      "adverse_excursion_barrier": "max(0.05 * entry_price, 1.5 * pre_entry_atr)",
+      "clean_target_risk_cap": "min(0.5 * entry_price * (target_pct / 100.0), adverse_excursion_barrier)",
+      "clean_target_criteria": [
+        "valid executable entry fill",
+        "target reached during horizon",
+        "pre-target MAE <= clean_target_risk_cap",
+        "path_sequence_ambiguous == false"
+      ],
+      "same_bar_ambiguity": "If daily bar high >= target_price AND daily bar low <= adverse_barrier_price on the same session, set path_sequence_ambiguous = true. It may still count as gross target touch but cannot count as clean target reached.",
+      "sustained_target": "target_reached == true AND end_of_horizon_return >= 0.5 * (target_pct / 100.0)"
+    }
+  },
+  "master_episodes_specification": {
+    "anchor_rule": "Earliest currently unassigned observation for a stock that reaches at least +10% within 21 trading sessions from the next-open reference entry.",
+    "window_duration_sessions": 21,
+    "no_recursive_extension": true,
+    "same_stock_cooldown": "No new episode for the same stock may begin until the 21-session window terminates.",
+    "nested_targets": "Nested +10%, +20%, and +30% moves belong to the same parent episode.",
+    "official_metrics_reference": "All episode metrics are measured from the first anchor entry.",
+    "constituent_retention": "All constituent daily observations inside the 21-session window are retained.",
+    "constituent_tags": ["pre_target", "target_session", "post_target"],
+    "ex_post_labeling_rule": "The master anchor is an ex-post labeling construct and must never be treated as a model feature, trigger, or claimed detection event.",
+    "sort_tie_break": ["as_of_date ASC", "symbol ASC", "cutoff_time ASC"]
+  },
+  "natural_prevalence_census_and_controls": {
+    "preserve_natural_prevalence": true,
+    "no_winner_loser_balancing": true,
+    "reporting_breakdowns": [
+      "total observations, eligible observations, unavailable observations, excluded observations",
+      "target prevalence across all nine target/horizon combinations",
+      "clean-target prevalence across all nine cells",
+      "near-miss, partial-move, and adverse excursion prevalence",
+      "independent master opportunity episode counts",
+      "distinct tickers represented",
+      "concentration by year, sector, and market-cap cohort",
+      "coverage by security classification status (common stock, unknown, excluded)",
+      "coverage by earnings schedule status (known vs unknown)"
+    ],
+    "matched_controls": {
+      "role": "discovery and comparative evaluation only; not model training",
+      "structural_matching": ["exact decision date", "sector", "market-cap cohort"],
+      "capacity_matching": ["pre-signal volatility (ATR%)", "dollar volume liquidity"],
+      "prohibited_matching_variables": [
+        "momentum/relative strength",
+        "price structure",
+        "volume pattern",
+        "earnings surprise",
+        "news",
+        "guidance",
+        "fundamental acceleration"
+      ],
+      "exclusion_rules": [
+        "Control must not be inside an active positive master episode.",
+        "Do not reuse the exact same control observation.",
+        "Do not reuse one ticker within a rolling 21-session window for chart-review controls.",
+        "If an honest match does not exist, record an unmatched case rather than forcing an invalid match."
+      ]
+    }
+  },
+  "status_separation_contract": {
+    "dimensions": {
+      "raw_outcome_eligibility": "Price series availability sufficient to compute forward returns over the horizon.",
+      "universe_security_eligibility": "Passes market-cap, price ($5), dollar-volume, trading history, and common-stock classification gates.",
+      "data_completeness": "Required technical indicators and fundamental facts are non-null.",
+      "earnings_schedule_knowledge": "Next earnings announcement schedule is known point-in-time vs unknown.",
+      "actionability_eligibility": "Observation qualifies for potential Enter Now or Armed presentation under the locked fail-closed unknown policies."
+    },
+    "earnings_unknown_census_recommendation": {
+      "policy": "Decouple raw market-move prevalence from actionable policy prevalence.",
+      "raw_census_rule": "All universe-eligible common stocks participate in the raw outcome-label census regardless of earnings-schedule status. This measures the true natural prevalence of rapid upside moves across the liquid stock universe.",
+      "actionability_census_rule": "Observations with unknown earnings schedules are marked actionability_unavailable_earnings_unknown. They cannot qualify for Enter Now or Armed under ordinary policy. Actionability reporting evaluates only known-schedule observations.",
+      "dual_reporting": "Both metrics are reported concurrently to measure the exact selection effect and opportunity loss attributable to unavailable earnings schedules."
+    }
+  },
+  "frozen_baseline_census": {
+    "locked_comparator_families": [
+      {
+        "id": "universe_base_rate",
+        "description": "Natural prevalence of target/horizon outcomes across all eligible common stocks."
+      },
+      {
+        "id": "simple_momentum",
+        "lookbacks_sessions": [5, 10, 20, 60],
+        "description": "Unadjusted price return over trailing N sessions."
+      },
+      {
+        "id": "spy_relative_momentum",
+        "lookbacks_sessions": [5, 10, 20, 60],
+        "description": "Stock price return minus SPY return over trailing N sessions."
+      },
+      {
+        "id": "pit_sector_relative_momentum",
+        "lookbacks_sessions": [5, 10, 20, 60],
+        "description": "Stock price return minus point-in-time sector benchmark return where sector classification is genuinely valid."
+      },
+      {
+        "id": "volatility_aware_momentum",
+        "lookbacks_sessions": [5, 10, 20, 60],
+        "weighting": "fixed 50% cross-sectional momentum percentile + 50% cross-sectional ATR% percentile",
+        "optimization_rule": "Weights are fixed at 50/50; no optimization or tuning is permitted."
+      },
+      {
+        "id": "existing_tradex_long_term_scorer",
+        "description": "Run existing tradex.signals.long_term.score exactly as it exists.",
+        "configuration": "Fresh repository defaults (LongWeights()); no saved user weights from ~/.tradex/weights.json; no LONG-002 tuning."
+      }
+    ],
+    "selection_and_freeze_rule": "A development-only census will evaluate all permitted simple comparators on common observations, identical fills, and identical transaction costs. The strongest simple comparator for the primary endpoint will be selected and permanently frozen before candidate-system evaluation. No model fitting occurs in LONG-002C."
+  },
+  "endpoint_feasibility_procedure": {
+    "principle": "No numerical sample gates or i.i.d. binomial rules are locked in this design PR. Observations exhibit cross-sectional dependence, clustering, and episode grouping. Future LONG-002C execution will derive proposed gates from development-only evidence using a dependence-aware framework.",
+    "deterministic_steps": [
+      "1. Calculate complete development-only census (2016-01-01 through 2020-12-31) across all nine target/horizon combinations.",
+      "2. Group qualifying +10%/21 moves into independent master opportunity episodes using the locked non-recursive 21-session anchor rule.",
+      "3. Measure episode metrics: total master episodes, distinct tickers, annual episode counts (2016-2020), and sector distribution.",
+      "4. Measure cohort concentration: effective number of episodes (Herfindahl-Hirschman index across tickers and sectors).",
+      "5. Audit usable coverage under fail-closed unknown policies (security classification unknown rate, earnings schedule unknown rate).",
+      "6. Assess dependence structure: evaluate cross-sectional overlap (fraction of calendar sessions with active concurrent episodes).",
+      "7. Apply dependence-aware uncertainty methodology (primary 21-session / robustness 42-session time-block resampling) to derive statistical precision bounds.",
+      "8. Derive and propose numerical minimum evidence gates for independent episodes, actionable recommendations, and validation sample sizes.",
+      "9. Freeze the proposed numerical gates before any validation data access.",
+      "10. Evaluate primary endpoint (+10%/10 sessions) feasibility: if development independent episode sample supports meaningful evaluation under the frozen gate, retain +10%/10. If and only if the development census demonstrates that natural prevalence yields insufficient independent episodes, invoke the sole locked fallback (+10%/21 sessions). Fallback cannot be invoked due to model performance."
+    ]
+  },
+  "execution_artifacts_specification": {
+    "git_committed_summary_artifacts": [
+      "docs/research/artifacts/LONG-002C/dataset_manifest.json",
+      "docs/research/artifacts/LONG-002C/data_quality_report.json",
+      "docs/research/artifacts/LONG-002C/outcome_census_summary.json",
+      "docs/research/artifacts/LONG-002C/master_episodes_summary.json",
+      "docs/research/artifacts/LONG-002C/endpoint_feasibility_report.json",
+      "docs/research/artifacts/LONG-002C/baseline_census_summary.json",
+      "docs/research/artifacts/LONG-002C/exclusion_summary.json",
+      "docs/research/artifacts/LONG-002C/provenance_summary.json",
+      "docs/research/artifacts/LONG-002C/checksums.sha256",
+      "docs/research/artifacts/LONG-002C/execution_metadata.json"
+    ],
+    "external_row_level_data_artifacts": [
+      "data/research/long_002c/raw_daily_bars/",
+      "data/research/long_002c/decision_observations.parquet",
+      "data/research/long_002c/outcome_matrix.parquet",
+      "data/research/long_002c/master_episodes.parquet",
+      "data/research/long_002c/constituent_memberships.parquet"
+    ],
+    "storage_policy": "All raw market data and row-level tabular outputs must remain outside Git tracking. Every external data file must be recorded in dataset_manifest.json with its relative path, row count, byte count, and SHA-256 hash."
+  },
+  "integrity_test_suite_specification": {
+    "required_tests": [
+      "test_no_validation_or_holdout_access: verify file I/O hooks never open 2021-2025 paths during execution.",
+      "test_point_in_time_timestamp_joins: verify all joined feature timestamps are strictly <= observation cutoff timestamp.",
+      "test_no_future_information_in_features: verify lookahead tests on moving averages, ATR, and dollar volume.",
+      "test_no_current_backfill: verify current sector, shares, and classifications are not present in historical rows.",
+      "test_security_fail_closed_unknown: verify unresolved security classification rows fail closed to excluded.",
+      "test_earnings_fail_closed_unknown: verify unknown earnings rows are marked unavailable for Enter Now/Armed.",
+      "test_null_is_not_zero: verify missing feature lookbacks remain null and do not coerce to zero.",
+      "test_deduplication_and_uniqueness: verify primary keys are strictly unique across all tables.",
+      "test_missing_sessions_handling: verify unexplained missing trading sessions trigger data quality flags.",
+      "test_split_normalized_vs_as_traded: verify split adjustments apply to analytical series and not entry prices.",
+      "test_next_open_entry_reference: verify entry price is next regular session open plus modeled friction.",
+      "test_split_boundary_purge: verify observations whose 26-session forward window crosses into 2021 are purged.",
+      "test_all_nine_target_labels: verify all 9 combinations are calculated for every non-purged observation.",
+      "test_same_bar_ambiguity_flag: verify daily bars hitting target and adverse barrier set ambiguity flag and disqualify clean target.",
+      "test_master_episode_grouping: verify 21-session non-recursive windowing, anchor selection, and constituent tags.",
+      "test_baseline_reproducibility: verify baseline models produce deterministic identical scores given identical inputs.",
+      "test_user_weight_isolation: verify legacy long-term scorer uses fresh LongWeights() and ignores ~/.tradex/weights.json.",
+      "test_deterministic_ids_and_sorting: verify episode IDs and row sorting are fully deterministic across runs.",
+      "test_provider_provenance_recording: verify every datum records provider source, endpoint, and retrieval timestamp without silent fallback."
+    ]
+  },
+  "research_risks_assessment": [
+    {
+      "risk": "Lookahead bias",
+      "mitigation": "Strict cutoff timestamp enforcement (20:30 and 09:00 ET), SEC EDGAR acceptance timestamp gating, next-session open entry reference."
+    },
+    {
+      "risk": "Survivorship and delisting bias",
+      "mitigation": "Include delisted securities where historical data permits; document survivorship limitations and measure delisting attrition rates."
+    },
+    {
+      "risk": "Selection bias from fail-closed unknown security classification",
+      "mitigation": "Audit excluded unknown counts against known common stocks; report demographic distributions to verify whether exclusions concentrate in specific cohorts."
+    },
+    {
+      "risk": "Historical earnings-schedule coverage bias",
+      "mitigation": "Decouple raw outcome census from actionable census; report both natural market prevalence and earnings-known prevalence side-by-side."
+    },
+    {
+      "risk": "Feature and label leakage",
+      "mitigation": "Separate analytical split-normalized series from raw execution prices; verify forward return calculation starts strictly at next-session open."
+    },
+    {
+      "risk": "Split contamination and corporate actions",
+      "mitigation": "Apply split factors to technical indicators across split boundaries; preserve unadjusted cash dividends; mark unresolved special distributions as excluded."
+    },
+    {
+      "risk": "Same-bar execution ambiguity",
+      "mitigation": "Flag bars where high >= target and low <= adverse barrier as path_sequence_ambiguous; strictly disqualify them from clean_target_reached."
+    },
+    {
+      "risk": "Stale and missing data",
+      "mitigation": "Enforce 99% annual completeness, max 2 unexplained missing sessions per 252 days, max 1 consecutive missing session; reject unexplainable gaps."
+    },
+    {
+      "risk": "Timezone, market-session, and calendar errors",
+      "mitigation": "Explicit America/New_York timezone handling with DST transitions; canonical XNYS exchange calendar; account for half-day early closes at 13:00 ET."
+    },
+    {
+      "risk": "Provider inconsistency and revisions",
+      "mitigation": "Immutable raw snapshots with SHA-256 manifests; record request fingerprints; prohibit live unversioned provider calls during evaluation."
+    },
+    {
+      "risk": "Small sample sizes and low base rates",
+      "mitigation": "Measure natural prevalence across the full mid-/large-cap universe; evaluate independent episode counts before selecting candidate models."
+    },
+    {
+      "risk": "Regime dependence",
+      "mitigation": "Report census and baseline metrics partitioned across distinct market regimes (2016 recovery, 2017 low-volatility bull, 2018 correction, 2019 expansion, 2020 COVID shock)."
+    },
+    {
+      "risk": "Overlapping observations vs independent episodes",
+      "mitigation": "Group constituent observations into 21-session non-recursive master opportunity episodes; evaluate sample sufficiency on independent episodes rather than daily rows."
+    },
+    {
+      "risk": "Parameter and threshold fishing",
+      "mitigation": "Lock all 9 targets and horizons before data inspection; defer numerical gates to development feasibility; use locked 50/50 weights for volatility baseline."
+    },
+    {
+      "risk": "User configuration leakage",
+      "mitigation": "Construct fresh LongWeights() repository defaults; explicitly avoid loading ~/.tradex/weights.json; use pure settings_from_mapping for test runners."
+    },
+    {
+      "risk": "R7 prospective capture contamination",
+      "mitigation": "Strictly quarantine R7 2026 runtime capture infrastructure from 2016-2020 historical reconstruction."
+    }
+  ],
+  "canonical_markdown_path": "docs/research/LONG-002C-DESIGN.md"
+}
