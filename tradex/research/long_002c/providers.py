@@ -286,26 +286,36 @@ class MassiveRefClient:
             min_interval_seconds if min_interval_seconds is not None else self._MIN_INTERVAL_SECONDS
         )
         self.cache = cache
+        self.network_requests_count = 0
+        self.cache_hits_count = 0
+        self.retries_count = 0
+        self.rate_limit_429_count = 0
 
     def _fetch_once(self, url: str, max_retries: int = 3) -> tuple[bytes, int | None, str | None]:
         for attempt in range(max_retries + 1):
+            if attempt > 0:
+                self.retries_count += 1
             elapsed = time.monotonic() - self._last_request_time
             if elapsed < self._min_interval_seconds:
                 time.sleep(self._min_interval_seconds - elapsed)
             self._last_request_time = time.monotonic()
 
             if self._request_func:
+                self.network_requests_count += 1
                 return self._request_func(url), 200, None
 
             req = urllib.request.Request(url, headers={"Accept": "application/json"})
             try:
+                self.network_requests_count += 1
                 with urllib.request.urlopen(req, timeout=120) as response:
                     return response.read(), response.getcode(), None
             except urllib.error.HTTPError as exc:
                 body = exc.read() if hasattr(exc, "read") else b""
-                if exc.code == 429 and attempt < max_retries:
-                    time.sleep(15.0 * (attempt + 1))
-                    continue
+                if exc.code == 429:
+                    self.rate_limit_429_count += 1
+                    if attempt < max_retries:
+                        time.sleep(15.0 * (attempt + 1))
+                        continue
                 return body, exc.code, str(exc)
             except urllib.error.URLError as exc:
                 if attempt < max_retries:
@@ -327,6 +337,7 @@ class MassiveRefClient:
         if self.cache:
             cached_data, cached_sha, cached_ts = self.cache.get_json(sanitized, req_fp)
             if cached_data is not None and isinstance(cached_data, dict):
+                self.cache_hits_count += 1
                 return cached_data, 200, None, cached_sha or "", cached_ts or req_time
 
         self.budget.charge(1)
@@ -405,7 +416,11 @@ class MassiveRefClient:
             )
             response_hashes.append(resp_hash)
 
-            if error or not isinstance(data, dict):
+            if error:
+                raise RuntimeError(
+                    f"Massive reference snapshot failed for {pit_date} (active={active}, page={page}): {error}"
+                )
+            if not isinstance(data, dict):
                 break
 
             results = data.get("results", [])

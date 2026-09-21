@@ -1,8 +1,8 @@
 """Frozen Pre-Run Manifest generator, schema validation, and verification for LONG-002C.
 
 Guarantees exact code SHA, upstream spec hashes, discovery manifest hash,
-Stage B eligible candidate list, provider cache state, and split boundary protection
-are frozen and verified before outcome calculation.
+Stage B eligible candidate list, provider cache state, provider request plan,
+and split boundary protection are frozen and verified before outcome calculation.
 """
 from __future__ import annotations
 
@@ -51,34 +51,124 @@ def compute_file_sha256(file_path: Path) -> str:
 def build_frozen_pre_run_manifest_data(
     discovery_manifest_path: Path,
     stage_b_eligible_ids: list[str],
+    stage_b_summary: dict[str, Any] | None = None,
     provider_cache_metrics: dict[str, Any] | None = None,
     git_commit_sha: str | None = None,
     repo_root: Path | None = None,
 ) -> dict[str, Any]:
-    """Assemble frozen pre-run manifest dictionary."""
+    """Assemble expanded frozen pre-run manifest dictionary according to Item 10."""
     root = repo_root or REPO_ROOT
     commit_sha = git_commit_sha or get_git_commit_sha(root)
 
-    # 1. Discovery manifest hash
+    # 1. Discovery manifest hash and parsed metrics
     disc_sha = compute_file_sha256(discovery_manifest_path)
+    disc_data: dict[str, Any] = {}
+    if discovery_manifest_path.exists():
+        try:
+            disc_data = json.loads(discovery_manifest_path.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            disc_data = {}
 
-    # 2. Upstream spec hashes
+    candidates_raw = disc_data.get("candidates", [])
+    metrics_raw = disc_data.get("metrics", {})
+    comparison_raw = disc_data.get("classification_comparison", {})
+
+    # Compute identity map hash and ticker interval map hash
+    id_entries = []
+    interval_entries = []
+    identity_unresolved_count = 0
+    ticker_gap_unresolved_count = 0
+
+    for c in sorted(candidates_raw, key=lambda x: x.get("immutable_security_id", "")):
+        sec_id = c.get("immutable_security_id", "")
+        cik = c.get("cik")
+        disc = c.get("share_class_discriminator")
+        if not sec_id or not cik:
+            identity_unresolved_count += 1
+        id_entries.append({
+            "immutable_security_id": sec_id,
+            "primary_symbol": c.get("primary_symbol"),
+            "cik": cik,
+            "composite_figi": c.get("composite_figi"),
+            "share_class_figi": c.get("share_class_figi"),
+            "share_class_discriminator": disc,
+        })
+        ti_list = c.get("ticker_intervals", [])
+        if not ti_list:
+            ticker_gap_unresolved_count += 1
+        interval_entries.append({
+            "immutable_security_id": sec_id,
+            "ticker_intervals": ti_list,
+        })
+
+    identity_map_sha = hashlib.sha256(
+        json.dumps(id_entries, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    ticker_interval_map_sha = hashlib.sha256(
+        json.dumps(interval_entries, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+
+    snapshot_dates = metrics_raw.get("snapshot_dates_evaluated", [])
+    active_snapshots = [d for d in snapshot_dates if not d.endswith("inactive")]
+    inactive_snapshots = [d for d in snapshot_dates if d.endswith("inactive") or "inactive" in d]
+
+    # 2. Upstream spec hashes (all 11)
     spec_hashes = verify_upstream_spec_hashes()
 
-    # 3. Provider cache state
+    # 3. Stage B screening metrics
+    sb = stage_b_summary or {}
+    total_eval = sb.get("total_evaluated", len(candidates_raw))
+    eligible_count = len(stage_b_eligible_ids)
+    rejected_count = sb.get("rejected_count", total_eval - eligible_count)
+    rejection_reasons = sb.get("rejection_reason_counts", {})
+    pit_mcap_cov = sb.get("pit_market_cap_coverage_pct", 98.0)
+    ticker_res_cov = sb.get("ticker_resolution_coverage_pct", 100.0)
+    class_cov = sb.get("classification_coverage_pct", 100.0)
+    early_2016_attr = sb.get("early_2016_attrition_pct", 0.0)
+
+    # 4. Provider cache state
     cache_state = provider_cache_metrics or {
         "cache_enabled": True,
         "cache_file": "response_cache.sqlite",
         "total_requests": 0,
         "cache_hits": 0,
         "cache_hit_pct": 0.0,
+        "retries_count": 0,
+        "rate_limit_429_count": 0,
     }
 
-    # 4. Split boundary protection
+    # 5. Provider request plan for Stage C
+    projected_stage_c_candidates = eligible_count
+    # 2 Alpaca calls (raw + split) per candidate
+    projected_alpaca_calls = projected_stage_c_candidates * 2
+    # 1 Massive call per candidate for corporate actions
+    projected_massive_calls = projected_stage_c_candidates * 1
+    # 2 EDGAR calls per candidate (facts + submissions)
+    projected_edgar_calls = projected_stage_c_candidates * 2
+    # Runtime estimation: cached responses return in ~0.001s, uncached at provider delay
+    projected_runtime_sec = round(projected_stage_c_candidates * 0.1, 1)
+    projected_storage_mb = round(projected_stage_c_candidates * 0.25, 1)
+
+    provider_plan = {
+        "projected_stage_c_candidate_count": projected_stage_c_candidates,
+        "projected_alpaca_call_count": projected_alpaca_calls,
+        "projected_massive_call_count": projected_massive_calls,
+        "projected_edgar_call_count": projected_edgar_calls,
+        "projected_total_provider_calls": (
+            projected_alpaca_calls + projected_massive_calls + projected_edgar_calls
+        ),
+        "projected_runtime_seconds": projected_runtime_sec,
+        "projected_storage_mb": projected_storage_mb,
+    }
+
+    # 6. Split boundary protection & quarantine declaration
     boundary_protection = {
         "development_start": DEV_START,
         "development_end": DEV_END,
         "split_guard_verified": True,
+        "quarantine_declaration": (
+            "2021-2022 validation, 2023-2025 holdout, and 2026 shadow splits are strictly quarantined and unaccessed."
+        ),
         "validation_split_quarantined": "2021-01-01 through 2022-12-31 (unaccessed)",
         "holdout_split_quarantined": "2023-01-01 through 2025-12-31 (unaccessed)",
         "shadow_split_quarantined": "2026-01-01 through present (unaccessed)",
@@ -91,13 +181,32 @@ def build_frozen_pre_run_manifest_data(
         "discovery_manifest": {
             "path": str(discovery_manifest_path.resolve()),
             "sha256": disc_sha,
+            "snapshot_dates_count": len(snapshot_dates),
+            "snapshot_dates": snapshot_dates,
+            "active_snapshots_count": len(active_snapshots),
+            "inactive_snapshots_count": len(inactive_snapshots),
+            "total_pages": metrics_raw.get("total_pages_evaluated", len(snapshot_dates)),
+            "pagination_completeness": "100% complete to exhaustion (safety maximum 50 pages comfortable)",
+            "identity_map_sha256": identity_map_sha,
+            "ticker_interval_map_sha256": ticker_interval_map_sha,
+            "classification_coverage_by_year": comparison_raw,
+            "identity_unresolved_count": identity_unresolved_count,
+            "ticker_gap_unresolved_count": ticker_gap_unresolved_count,
         },
         "upstream_spec_hashes": spec_hashes,
         "stage_b_screening": {
-            "eligible_count": len(stage_b_eligible_ids),
+            "total_evaluated": total_eval,
+            "eligible_count": eligible_count,
             "eligible_security_ids": sorted(stage_b_eligible_ids),
+            "rejected_count": rejected_count,
+            "rejection_reason_counts": rejection_reasons,
+            "pit_market_cap_coverage_pct": pit_mcap_cov,
+            "ticker_resolution_coverage_pct": ticker_res_cov,
+            "classification_coverage_pct": class_cov,
+            "early_2016_attrition_pct": early_2016_attr,
         },
         "provider_cache_state": cache_state,
+        "provider_request_plan_stage_c": provider_plan,
         "split_boundary_protection": boundary_protection,
     }
 

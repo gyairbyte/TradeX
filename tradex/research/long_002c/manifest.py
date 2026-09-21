@@ -239,6 +239,7 @@ def build_candidate_manifest_from_snapshots(
                 supported_count -= 1
                 continue
 
+            clean_date = pit_date[:10]
             disc_source = rec.get("discovery_source") or f"snapshot:{pit_date}"
             if sec_id not in securities_by_id:
                 securities_by_id[sec_id] = {
@@ -250,17 +251,17 @@ def build_candidate_manifest_from_snapshots(
                     "company_name": company_name,
                     "primary_exchange": exchange,
                     "security_type": CLASSIFICATION_SUPPORTED_COMMON_STOCK,
-                    "first_seen_date": pit_date,
-                    "last_seen_date": pit_date,
+                    "first_seen_date": clean_date,
+                    "last_seen_date": clean_date,
                     "discovery_sources": [disc_source],
-                    "ticker_observations": [(raw_sym, pit_date)],
+                    "ticker_observations": [(raw_sym, clean_date)],
                 }
             else:
                 entry = securities_by_id[sec_id]
-                entry["last_seen_date"] = pit_date
+                entry["last_seen_date"] = clean_date
                 if disc_source not in entry["discovery_sources"]:
                     entry["discovery_sources"].append(disc_source)
-                entry["ticker_observations"].append((raw_sym, pit_date))
+                entry["ticker_observations"].append((raw_sym, clean_date))
                 # Update attributes if previously missing
                 if not entry["cik"] and cik:
                     entry["cik"] = cik

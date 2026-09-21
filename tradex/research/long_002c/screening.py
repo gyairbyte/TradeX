@@ -60,28 +60,28 @@ def screen_candidate_security(
             "reason": f"Classification '{candidate.security_type}' is not verified common stock (fail closed)",
         }
 
-    # 2. Ingest daily bars for candidate primary symbol
-    primary_sym = candidate.primary_symbol
-    bars_raw, _ = alpaca.fetch_daily_bars(
-        primary_sym,
-        f"{warmup_start}T00:00:00Z",
-        f"{dev_end}T23:59:59Z",
-        feed="sip",
-        adjustment="raw",
+    # 2. Ingest interval-aware daily bars for candidate verified intervals
+    from tradex.research.long_002c.bars import load_interval_aware_daily_bars
+
+    df_bars, _, bar_meta = load_interval_aware_daily_bars(
+        candidate=candidate,
+        alpaca=alpaca,
+        warmup_start=warmup_start,
+        dev_end=dev_end,
+        load_split_adjusted=False,
     )
 
-    if not bars_raw:
+    if df_bars.empty:
         return False, ["no_trading_bars"], {
+            "immutable_security_id": candidate.immutable_security_id,
+            "primary_symbol": candidate.primary_symbol,
+            "cik": candidate.cik,
             "eligible_sessions": 0,
-            "reason": f"No historical daily bars returned for {primary_sym}",
+            "first_eligible_date": None,
+            "rejection_counts": {"no_trading_bars": 1},
+            "reason": f"No historical daily bars returned for intervals of {candidate.primary_symbol}",
+            "bar_meta": bar_meta,
         }
-
-    df_bars = pd.DataFrame(bars_raw)
-    df_bars["datetime"] = pd.to_datetime(df_bars["t"], utc=True)
-    df_bars["date"] = df_bars["datetime"].dt.strftime("%Y-%m-%d")
-    df_bars = df_bars.rename(columns={"c": "close", "v": "volume", "o": "open", "h": "high", "l": "low"})
-    df_bars["as_traded_close"] = df_bars["close"]
-    df_bars = df_bars.set_index("date").sort_index()
 
     bar_dates = [d.strftime("%Y-%m-%d") if hasattr(d, "strftime") else str(d)[:10] for d in df_bars.index]
     bar_date_set = set(bar_dates)
@@ -188,7 +188,7 @@ def screen_candidate_security(
     reasons = [] if is_eligible else list(rejection_counts.keys())
     details = {
         "immutable_security_id": candidate.immutable_security_id,
-        "primary_symbol": primary_sym,
+        "primary_symbol": candidate.primary_symbol,
         "cik": candidate.cik,
         "eligible_sessions": eligible_sessions,
         "first_eligible_date": first_eligible_date,
@@ -212,13 +212,19 @@ def screen_candidates_manifest(
     eligible_ids: list[str] = []
     rejected_ids: list[str] = []
     details_by_id: dict[str, Any] = {}
+    aggregated_rejection_reasons: dict[str, int] = {}
 
     all_sessions = get_trading_sessions(WARMUP_START, DEV_END)
     cands_to_eval = candidates[:max_candidates] if max_candidates else candidates
 
+    total_with_mcap = 0
+    total_with_ticker_res = 0
+    total_with_common_stock = 0
+    early_2016_attrition_count = 0
+
     for idx, cand in enumerate(cands_to_eval, 1):
         sec_id = cand.immutable_security_id
-        is_elig, _reasons, details = screen_candidate_security(
+        is_elig, reasons, details = screen_candidate_security(
             candidate=cand,
             alpaca=alpaca,
             edgar=edgar,
@@ -228,17 +234,45 @@ def screen_candidates_manifest(
             eligible_ids.append(sec_id)
         else:
             rejected_ids.append(sec_id)
+            for r in reasons:
+                aggregated_rejection_reasons[r] = aggregated_rejection_reasons.get(r, 0) + 1
+            for r, cnt in details.get("rejection_counts", {}).items():
+                if cnt > 0:
+                    aggregated_rejection_reasons[r] = aggregated_rejection_reasons.get(r, 0) + 1
+
         details_by_id[sec_id] = details
+
+        if cand.security_type == CLASSIFICATION_SUPPORTED_COMMON_STOCK:
+            total_with_common_stock += 1
+
+        if cand.cik:
+            total_with_mcap += 1
+
+        # Check ticker intervals resolution
+        bar_meta = details.get("bar_meta", {})
+        if not bar_meta.get("unresolved_gaps"):
+            total_with_ticker_res += 1
+
+        # Early 2016 attrition: security did not trade or was not eligible in early 2016
+        first_elig = details.get("first_eligible_date")
+        if not first_elig or first_elig > "2016-03-31":
+            early_2016_attrition_count += 1
 
         if on_progress:
             on_progress(idx, len(cands_to_eval), cand.primary_symbol, is_elig)
 
+    n_eval = len(cands_to_eval)
     summary = {
-        "total_evaluated": len(cands_to_eval),
+        "total_evaluated": n_eval,
         "eligible_count": len(eligible_ids),
         "rejected_count": len(rejected_ids),
-        "pass_rate_pct": round(len(eligible_ids) / len(cands_to_eval) * 100.0, 2) if cands_to_eval else 0.0,
+        "pass_rate_pct": round(len(eligible_ids) / n_eval * 100.0, 2) if n_eval else 0.0,
         "eligible_security_ids": sorted(eligible_ids),
+        "rejection_reason_counts": aggregated_rejection_reasons,
+        "pit_market_cap_coverage_pct": round(total_with_mcap / n_eval * 100.0, 2) if n_eval else 0.0,
+        "ticker_resolution_coverage_pct": round(total_with_ticker_res / n_eval * 100.0, 2) if n_eval else 0.0,
+        "classification_coverage_pct": round(total_with_common_stock / n_eval * 100.0, 2) if n_eval else 0.0,
+        "early_2016_attrition_pct": round(early_2016_attrition_count / n_eval * 100.0, 2) if n_eval else 0.0,
     }
 
     return eligible_ids, rejected_ids, summary

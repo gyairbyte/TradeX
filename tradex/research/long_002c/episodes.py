@@ -18,20 +18,14 @@ from tradex.research.long_002c.models import (
 def cluster_master_episodes(
     observations_by_security: dict[str, list[dict[str, Any]]],
     outcomes_by_obs_key: dict[tuple[str, str, str], dict[tuple[float, int], OutcomeLabelRecord]],
+    anchor_cutoff_time: str | None = "20:30",
 ) -> tuple[list[MasterOpportunityEpisode], list[EpisodeMembership]]:
     """Cluster decision observations into independent master opportunity episodes.
 
-    observations_by_security: dict mapping immutable_security_id -> list of observation dicts,
-    each containing at least:
-      - immutable_security_id
-      - ticker_at_decision
-      - as_of_date
-      - cutoff_time
-      - as_traded_close
-      - raw_outcome_eligible
-      - universe_eligible
-      - split_boundary_purged
-    outcomes_by_obs_key: dict mapping (immutable_security_id, as_of_date, cutoff_time) -> {(target_pct, horizon): OutcomeLabelRecord}
+    observations_by_security: dict mapping immutable_security_id -> list of observation dicts.
+    outcomes_by_obs_key: dict mapping (immutable_security_id, as_of_date, cutoff_time) -> {(target_pct, horizon): OutcomeLabelRecord}.
+    anchor_cutoff_time: If set (default '20:30'), only observations at this cutoff time can anchor
+    master episodes, preventing 09:00 pre-market reevaluation rows from preempting primary 20:30 episodes.
     """
     episodes: list[MasterOpportunityEpisode] = []
     memberships: list[EpisodeMembership] = []
@@ -41,10 +35,13 @@ def cluster_master_episodes(
 
     for sec_id in sorted_sec_ids:
         obs_list = observations_by_security[sec_id]
-        # Sort observations deterministically: as_of_date ASC, cutoff_time ASC
+        # Sort observations deterministically: as_of_date ASC, with anchor_cutoff_time prioritized
         sorted_obs = sorted(
             obs_list,
-            key=lambda x: (x["as_of_date"], x.get("cutoff_time", "20:30")),
+            key=lambda x: (
+                x["as_of_date"],
+                0 if x.get("cutoff_time") == (anchor_cutoff_time or "20:30") else 1,
+            ),
         )
 
         active_episode_end_date: str | None = None
@@ -56,6 +53,10 @@ def cluster_master_episodes(
 
             # If inside an active episode window, this observation cannot anchor a new episode
             if active_episode_end_date is not None and as_of_date <= active_episode_end_date:
+                continue
+
+            # Only primary cutoff time observations can anchor if anchor_cutoff_time is specified
+            if anchor_cutoff_time and cutoff_time != anchor_cutoff_time:
                 continue
 
             # Must be eligible and not boundary-purged

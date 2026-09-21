@@ -43,19 +43,19 @@ def compute_outcome_cell(
 
     bars = forward_bars[:horizon_sessions]
 
-    analysis_entry_price = float(next_open_price)
-    entry_price = analysis_entry_price * (1.0 + entry_friction_bps / 10000.0)
+    # Primary friction: 10 bps all-in
+    # Analysis entry price on split-normalized scale includes friction:
+    analysis_entry_price = float(next_open_price) * (1.0 + entry_friction_bps / 10000.0)
 
-    # Reference execution entry price: raw as-traded open price at decision session T + entry friction ($0.01 + 5 bps)
+    # Reference execution entry price on as-traded scale includes friction (NO fixed $0.01 increment):
     if as_traded_entry_price is not None:
         raw_open = float(as_traded_entry_price)
-        entry_friction_amt = raw_open * (entry_friction_bps / 10000.0) + 0.01
-        reference_entry_price = raw_open + entry_friction_amt
+        reference_entry_price = raw_open * (1.0 + entry_friction_bps / 10000.0)
     else:
-        # Fallback to modeled friction on analysis_entry_price
-        reference_entry_price = entry_price
+        reference_entry_price = analysis_entry_price
 
-    target_price = entry_price * (1.0 + target_pct / 100.0)
+    # All target, barrier, and cap calculations use the SAME friction-adjusted analytical entry scale
+    target_price = analysis_entry_price * (1.0 + target_pct / 100.0)
 
     # Adverse barrier formulas: max(0.05, 1.5 * pre_entry_atr / analysis_entry_price)
     if pre_entry_atr > 0 and analysis_entry_price > 0:
@@ -225,3 +225,28 @@ def parse_special_distribution_dates(dividends: list[dict[str, Any]]) -> set[str
             if ex_date:
                 special_dates.add(str(ex_date)[:10])
     return special_dates
+
+
+def derive_affected_special_distribution_sessions(
+    special_distribution_dates: set[str],
+    all_sessions: list[str],
+    max_horizon_sessions: int = 26,
+) -> set[str]:
+    """Derive decision session dates whose forward outcome window intersects a special distribution date.
+
+    Any decision session T whose outcome horizon [T, T + max_horizon_sessions] covers a
+    special distribution date is affected and must be excluded.
+    """
+    if not special_distribution_dates or not all_sessions:
+        return set()
+
+    affected_sessions: set[str] = set()
+    n_sessions = len(all_sessions)
+
+    for idx, session in enumerate(all_sessions):
+        window_end_idx = min(n_sessions, idx + max_horizon_sessions + 1)
+        window = set(all_sessions[idx:window_end_idx])
+        if window & special_distribution_dates:
+            affected_sessions.add(session)
+
+    return affected_sessions

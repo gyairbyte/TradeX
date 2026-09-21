@@ -308,11 +308,13 @@ def evaluate_baselines_for_date(
 def select_winning_baseline(
     baseline_outputs: list[BaselineComparatorOutput],
     outcomes: list[OutcomeLabelRecord],
+    primary_cutoff_time: str | None = "20:30",
 ) -> dict[str, Any]:
     """Empirically select the strongest baseline comparator using the locked primary-endpoint decile lift rule.
 
     Locked evaluation criteria:
     - Evaluated on the common observation set across all candidate comparators.
+    - Primary population: 20:30 observations by default (primary_cutoff_time).
     - Primary endpoint: Clean +10% within 10 sessions (clean_target_reached on +10%/10).
     - Primary metric: Top-decile (top 10%) clean-target rate and lift vs universe base rate.
     - Secondary metric: Top-quartile (top 25%) clean-target rate and lift.
@@ -322,7 +324,9 @@ def select_winning_baseline(
     primary_outcomes: dict[tuple[str, str, str], bool] = {
         (o.immutable_security_id, o.as_of_date, o.cutoff_time): o.clean_target_reached
         for o in outcomes
-        if o.target_pct == 10.0 and o.horizon_sessions == 10
+        if o.target_pct == 10.0
+        and o.horizon_sessions == 10
+        and (primary_cutoff_time is None or o.cutoff_time == primary_cutoff_time)
     }
 
     if not primary_outcomes:

@@ -641,13 +641,16 @@ def test_feasibility_code_and_report_use_same_rule() -> None:
         resampling_42=resampling_pass,
     )
     assert report_pass["endpoint_disposition"] == "pending_gary_chatgpt_review"
-    assert report_pass["preliminary_disposition"] == "primary_retained"
-    assert report_pass["preliminary_endpoint"] == "clean_+10%_10_sessions"
+    assert report_pass["selected_endpoint"] == "pending_gary_chatgpt_review"
+    assert "preliminary_endpoint" not in report_pass
+    assert "preliminary_disposition" not in report_pass
     assert report_pass["proposed_evidence_gates_for_review"]["status"] == "proposed_for_review"
+    assert report_pass["proposed_evidence_gates_for_review"]["minimum_master_episodes_validation"] >= 30
+    assert report_pass["proposed_evidence_gates_for_review"]["minimum_clean_target_events_validation"] >= 15
 
-    # Fails if CI lower bound <= 0.005
+    # Any run locks disposition to pending_gary_chatgpt_review without arbitrary automatic promotion
     resampling_fail = {
-        "clean_target_10_10": {"ci_2_5": 0.002, "ci_97_5": 0.010, "mean": 0.005}  # <= 0.005
+        "clean_target_10_10": {"ci_2_5": 0.002, "ci_97_5": 0.010, "mean": 0.005}
     }
     report_fail = analyze_endpoint_feasibility(
         observations=[{"raw_outcome_eligible": True, "actionability_status": "unavailable_earnings_unknown"}],
@@ -657,8 +660,10 @@ def test_feasibility_code_and_report_use_same_rule() -> None:
         resampling_42=resampling_fail,
     )
     assert report_fail["endpoint_disposition"] == "pending_gary_chatgpt_review"
-    assert report_fail["preliminary_disposition"] == "fallback_invoked"
-    assert report_fail["preliminary_endpoint"] == "clean_+10%_21_sessions"
+    assert report_fail["selected_endpoint"] == "pending_gary_chatgpt_review"
+    assert "preliminary_endpoint" not in report_fail
+    assert "preliminary_disposition" not in report_fail
+    assert report_fail["proposed_evidence_gates_for_review"]["status"] == "proposed_for_review"
 
 
 # 18. Actionable observations are not raw eligible observations
@@ -1511,9 +1516,10 @@ def test_as_traded_entry_price_vs_normalized_analytical_path() -> None:
         as_traded_entry_price=200.0,  # raw as-traded open
     )
 
-    # Reference execution entry: 200.0 + (200.0 * 5/10000 + 0.01) = 200.0 + (0.10 + 0.01) = 200.11
-    assert rec.reference_entry_price == 200.11
-    assert rec.analysis_entry_price == 100.0
+    # Reference execution entry: 200.0 * (1 + 5/10000) = 200.10 (no arbitrary $0.01 increment)
+    assert rec.reference_entry_price == 200.10
+    # Analysis entry price: 100.0 * (1 + 5/10000) = 100.05
+    assert rec.analysis_entry_price == 100.05
 
     # Adverse barrier: max(0.05, 1.5 * 3.0 / 100.0) = max(0.05, 0.045) = 0.05
     assert rec.adverse_barrier_pct == 0.05
@@ -1758,4 +1764,194 @@ def test_stage_b_screening_manifest_and_candidate_logic() -> None:
     assert len(rej_ids) == 3
     assert summary["eligible_count"] == 1
     assert summary["rejected_count"] == 3
+
+
+# 42. Interval-aware historical daily bars loader handles renames and fails closed on unverified gaps
+def test_load_interval_aware_daily_bars_ticker_rename_and_gaps() -> None:
+    from tradex.research.long_002c.bars import load_interval_aware_daily_bars
+
+    cand = CandidateSecurity(
+        immutable_security_id="SEC_RENAME_TEST",
+        primary_symbol="NEW_SYM",
+        cik="0001234567",
+        company_name="Rename Test Corp",
+        primary_exchange="XNAS",
+        security_type=CLASSIFICATION_SUPPORTED_COMMON_STOCK,
+        first_seen_date="2016-01-01",
+        last_seen_date="2020-12-31",
+        ticker_intervals=[
+            TickerInterval(
+                symbol="OLD_SYM",
+                start_date="2016-01-01",
+                end_date="2018-05-31",
+                source="verified_ref",
+            ),
+            TickerInterval(
+                symbol="NEW_SYM",
+                start_date="2018-06-01",
+                end_date="2020-12-31",
+                source="verified_ref",
+            ),
+        ],
+    )
+
+    class MockAlpacaClient:
+        def __init__(self) -> None:
+            self.queried_symbols: list[str] = []
+
+        def fetch_daily_bars(
+            self,
+            symbol: str,
+            start_date: str,
+            end_date: str,
+            feed: str = "sip",
+            adjustment: str = "raw",
+        ) -> tuple[list[dict[str, Any]], list[ProvenanceProviderRecord]]:
+            self.queried_symbols.append(symbol)
+            bars = []
+            if symbol == "OLD_SYM":
+                bars = [
+                    {"t": "2016-01-04T05:00:00Z", "o": 50.0, "h": 52.0, "l": 49.0, "c": 51.0, "v": 1_000_000},
+                    {"t": "2018-05-31T05:00:00Z", "o": 60.0, "h": 62.0, "l": 59.0, "c": 61.0, "v": 1_200_000},
+                ]
+            elif symbol == "NEW_SYM":
+                bars = [
+                    {"t": "2018-06-01T05:00:00Z", "o": 62.0, "h": 65.0, "l": 61.0, "c": 64.0, "v": 1_500_000},
+                    {"t": "2020-12-31T05:00:00Z", "o": 80.0, "h": 82.0, "l": 79.0, "c": 81.0, "v": 2_000_000},
+                ]
+            prov = [
+                ProvenanceProviderRecord(
+                    record_id=f"prov_{symbol}",
+                    data_family="market_data_daily_bars",
+                    provider_name="alpaca",
+                    provider_role="primary_historical_bars",
+                    endpoint_url_pattern="/v2/stocks/{symbol}/bars",
+                    retrieval_timestamp_utc="2026-09-21T18:00:00Z",
+                    request_fingerprint_sha256="mock_req_sha",
+                    response_sha256="mock_resp_sha",
+                )
+            ]
+            return bars, prov
+
+    mock_alpaca = MockAlpacaClient()
+    df_bars, _prov_recs, _audit_meta = load_interval_aware_daily_bars(
+        candidate=cand,
+        alpaca=mock_alpaca,  # type: ignore[arg-type]
+        warmup_start="2016-01-01",
+        dev_end="2020-12-31",
+        load_split_adjusted=False,
+    )
+
+    # Verifies both symbols were queried across their respective intervals
+    assert "OLD_SYM" in mock_alpaca.queried_symbols
+    assert "NEW_SYM" in mock_alpaca.queried_symbols
+    assert len(df_bars) == 4
+
+    # Verifies ticker_at_decision preserves historical ticker per session
+    assert df_bars.loc["2016-01-04", "ticker_at_decision"] == "OLD_SYM"
+    assert df_bars.loc["2018-05-31", "ticker_at_decision"] == "OLD_SYM"
+    assert df_bars.loc["2018-06-01", "ticker_at_decision"] == "NEW_SYM"
+    assert df_bars.loc["2020-12-31", "ticker_at_decision"] == "NEW_SYM"
+
+    # All rows share the same immutable_security_id
+    assert (df_bars["immutable_security_id"] == "SEC_RENAME_TEST").all()
+
+    # Now verify unverified gap detection
+    cand_with_gap = CandidateSecurity(
+        immutable_security_id="SEC_GAP_TEST",
+        primary_symbol="GAP_SYM_2",
+        cik="0001234568",
+        company_name="Gap Test Corp",
+        primary_exchange="XNAS",
+        security_type=CLASSIFICATION_SUPPORTED_COMMON_STOCK,
+        first_seen_date="2016-01-01",
+        last_seen_date="2020-12-31",
+        ticker_intervals=[
+            TickerInterval(
+                symbol="GAP_SYM_1",
+                start_date="2016-01-01",
+                end_date="2017-06-30",
+                source="verified_ref",
+            ),
+            TickerInterval(
+                symbol="GAP_SYM_2",
+                start_date="2018-01-01",
+                end_date="2020-12-31",
+                source="verified_ref",
+            ),
+        ],
+    )
+    _df_gap, _, gap_meta = load_interval_aware_daily_bars(
+        candidate=cand_with_gap,
+        alpaca=mock_alpaca,  # type: ignore[arg-type]
+        warmup_start="2016-01-01",
+        dev_end="2020-12-31",
+        load_split_adjusted=False,
+    )
+    assert len(gap_meta["unresolved_gaps"]) == 1
+    assert gap_meta["unresolved_gaps"][0]["gap_start"] == "2017-06-30"
+    assert gap_meta["unresolved_gaps"][0]["gap_end"] == "2018-01-01"
+
+
+# 43. Special distributions exclude all forward outcome observation windows intersecting them
+def test_corporate_actions_special_distribution_sessions_derivation() -> None:
+    from tradex.research.long_002c.outcomes import derive_affected_special_distribution_sessions
+
+    sessions = [f"2016-01-{i:02d}" for i in range(1, 32)]
+    special_dates = {"2016-01-20"}
+
+    # Horizon = 5 sessions: sessions from 2016-01-15 to 2016-01-20 intersect the special distribution
+    affected = derive_affected_special_distribution_sessions(special_dates, sessions, max_horizon_sessions=5)
+    assert "2016-01-20" in affected
+    assert "2016-01-16" in affected
+    # Sessions far before the horizon do not intersect
+    assert "2016-01-05" not in affected
+
+
+# 44. cmd_build Stage C authorization gate enforcement
+def test_cmd_build_stage_c_authorization_gate(tmp_path: Path) -> None:
+    import argparse
+
+    from tradex.research.long_002c.cli import cmd_build
+
+    # Attempting Stage C without explicit --frozen-manifest and --expected-frozen-sha256 fails closed
+    args_no_manifest = argparse.Namespace(
+        smoke=True,
+        candidates_file=None,
+        run_id="test_gate",
+        max_candidates=None,
+        authorize_outcomes=True,
+        pre_run_only=False,
+        frozen_manifest=None,
+        expected_frozen_sha256=None,
+    )
+    assert cmd_build(args_no_manifest) == 1
+
+    # Attempting Stage C with --max-candidates fails closed
+    args_max_cands = argparse.Namespace(
+        smoke=True,
+        candidates_file=None,
+        run_id="test_gate",
+        max_candidates=10,
+        authorize_outcomes=True,
+        pre_run_only=False,
+        frozen_manifest="some_path.json",
+        expected_frozen_sha256="some_sha",
+    )
+    assert cmd_build(args_max_cands) == 1
+
+    # Attempting Stage C with wrong expected SHA fails closed
+    manifest_file = tmp_path / "frozen_test.json"
+    manifest_file.write_text(json.dumps({"test": "data"}), encoding="utf-8")
+    args_mismatch_sha = argparse.Namespace(
+        smoke=True,
+        candidates_file=None,
+        run_id="test_gate",
+        max_candidates=None,
+        authorize_outcomes=True,
+        pre_run_only=False,
+        frozen_manifest=str(manifest_file),
+        expected_frozen_sha256="wrong_sha_value",
+    )
+    assert cmd_build(args_mismatch_sha) == 1
 

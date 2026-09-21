@@ -161,30 +161,12 @@ def analyze_endpoint_feasibility(
         ep_sec_counts[ep.anchor_security_id] = ep_sec_counts.get(ep.anchor_security_id, 0) + 1
     hhi, eff_n = compute_hhi_and_effective_n(ep_sec_counts)
 
-    # Primary endpoint feasibility determination rule:
-    # Retain primary +10/10 if:
-    # 1. Total master episodes >= 100
-    # 2. Primary clean target occurrences >= 100
-    # 3. 21-session block bootstrap 95% CI lower bound > 0.005 (0.5%)
-    # 4. Effective number of securities in episodes N_eff >= 15.0
     ci_lower = resampling_21.get("clean_target_10_10", {}).get("ci_2_5", 0.0)
-
-    has_sufficient_episodes = n_episodes >= 100
-    has_sufficient_prevalence = clean_10_10_count >= 100 and ci_lower > 0.005
-    has_sufficient_effective_n = eff_n >= 15.0
-
-    if has_sufficient_episodes and has_sufficient_prevalence and has_sufficient_effective_n:
-        preliminary_endpoint = "clean_+10%_10_sessions"
-        preliminary_disposition = "primary_retained"
-    else:
-        preliminary_endpoint = "clean_+10%_21_sessions"
-        preliminary_disposition = "fallback_invoked"
 
     endpoint_disposition = "pending_gary_chatgpt_review"
     selected_endpoint = "pending_gary_chatgpt_review"
     rationale = (
         f"Endpoint disposition is pending Gary/ChatGPT review of the completed development census. "
-        f"Preliminary empirical evaluation: {preliminary_disposition} ({preliminary_endpoint}). "
         f"Development census observed {n_episodes} master episodes, {clean_10_10_count} primary clean target events "
         f"(prevalence {clean_10_10_prev:.4f}, 21-session block 95% CI lower bound {ci_lower:.4f}), "
         f"effective securities {eff_n:.1f}, and fallback +10%/21 clean events {clean_21_count} (prevalence {clean_21_prev:.4f})."
@@ -228,8 +210,6 @@ def analyze_endpoint_feasibility(
         "resampling_42_robustness": resampling_42,
         "selected_endpoint": selected_endpoint,
         "endpoint_disposition": endpoint_disposition,
-        "preliminary_endpoint": preliminary_endpoint,
-        "preliminary_disposition": preliminary_disposition,
         "rationale": rationale,
         "proposed_evidence_gates_for_review": proposed_gates,
         "proposed_frozen_evidence_gates": proposed_gates,

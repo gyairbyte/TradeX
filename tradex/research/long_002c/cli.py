@@ -24,6 +24,7 @@ from tradex.research.long_002c.artifacts import (
     write_external_parquet_tables,
 )
 from tradex.research.long_002c.audit import execute_bounded_universe_audit
+from tradex.research.long_002c.bars import load_interval_aware_daily_bars
 from tradex.research.long_002c.baselines import (
     evaluate_baselines_for_date,
     select_winning_baseline,
@@ -42,6 +43,8 @@ from tradex.research.long_002c.feasibility import (
 )
 from tradex.research.long_002c.frozen_manifest import (
     build_frozen_pre_run_manifest_data,
+    compute_file_sha256,
+    get_git_commit_sha,
     verify_frozen_pre_run_manifest,
     write_frozen_pre_run_manifest,
 )
@@ -70,7 +73,11 @@ from tradex.research.long_002c.models import (
     ProvenanceProviderRecord,
     SecurityClassificationStatus,
 )
-from tradex.research.long_002c.outcomes import compute_all_nine_outcomes
+from tradex.research.long_002c.outcomes import (
+    compute_all_nine_outcomes,
+    derive_affected_special_distribution_sessions,
+    parse_special_distribution_dates,
+)
 from tradex.research.long_002c.providers import (
     AlpacaDailyClient,
     EdgarClient,
@@ -117,7 +124,7 @@ def cmd_discover(args: argparse.Namespace) -> int:
         return 1
 
     cache = ResponseCache()
-    massive = MassiveRefClient(creds["massive_api_key"], cache=cache, min_interval_seconds=0.1)
+    massive = MassiveRefClient(creds["massive_api_key"], cache=cache)
 
     out_dir = Path(args.output_dir) if getattr(args, "output_dir", None) else REPO_ROOT / "data" / "research" / "long_002c"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -134,12 +141,14 @@ def cmd_discover(args: argparse.Namespace) -> int:
     else:
         print("Enumerating 72 monthly active reference snapshots + DEV_END inactive snapshot...")
 
+    start_disc_time = time.monotonic()
     candidates, metrics, comparison = build_full_development_discovery_manifest(
         massive=massive,
         custom_dates=custom_dates,
         include_inactive=include_inactive,
         on_progress=_on_progress,
     )
+    disc_elapsed = time.monotonic() - start_disc_time
 
     manifest_dict = {
         "discovery_version": "1.0",
@@ -160,6 +169,11 @@ def cmd_discover(args: argparse.Namespace) -> int:
     print("\nStage A Discovery Complete:")
     print(f"  - Output Manifest: {out_file} (SHA-256: {disc_sha})")
     print(f"  - Metrics Summary: {metrics_file}")
+    print(f"  - Runtime: {disc_elapsed:.1f}s")
+    print(f"  - Massive Network Requests: {massive.network_requests_count}")
+    print(f"  - Massive Cache Hits: {massive.cache_hits_count}")
+    print(f"  - Massive Retries: {massive.retries_count}")
+    print(f"  - Massive 429 Rate Limits: {massive.rate_limit_429_count}")
     print("  - Monthly Active Snapshots: 72 (2015-01 through 2020-12)")
     print("  - Inactive Snapshot: 1 (2020-12-31, active=False)")
     print(f"  - Total Raw Records: {metrics.total_raw_records_evaluated}")
@@ -253,6 +267,7 @@ def cmd_screen(args: argparse.Namespace) -> int:
     pre_run_data = build_frozen_pre_run_manifest_data(
         discovery_manifest_path=candidates_path,
         stage_b_eligible_ids=eligible_ids,
+        stage_b_summary=summary,
         repo_root=REPO_ROOT,
     )
     written_path, frozen_sha = write_frozen_pre_run_manifest(out_path, pre_run_data)
@@ -260,6 +275,11 @@ def cmd_screen(args: argparse.Namespace) -> int:
     print(f"  - Evaluated: {len(eval_cands)}")
     print(f"  - Eligible: {len(eligible_ids)} ({summary['pass_rate_pct']}%)")
     print(f"  - Rejected: {len(rejected_ids)}")
+    print(f"  - Rejection Reason Summary: {summary.get('rejection_reason_counts', {})}")
+    print(f"  - PIT Market Cap Coverage: {summary.get('pit_market_cap_coverage_pct', 0.0)}%")
+    print(f"  - Ticker Resolution Coverage: {summary.get('ticker_resolution_coverage_pct', 0.0)}%")
+    print(f"  - Classification Coverage: {summary.get('classification_coverage_pct', 0.0)}%")
+    print(f"  - Early-2016 Attrition: {summary.get('early_2016_attrition_pct', 0.0)}%")
     print(f"  - Frozen Pre-Run Manifest: {written_path}")
     print(f"  - Frozen Pre-Run SHA-256: {frozen_sha}")
     verified = verify_frozen_pre_run_manifest(written_path, frozen_sha)
@@ -462,7 +482,7 @@ def cmd_build(args: argparse.Namespace) -> int:
     cache = ResponseCache()
     alpaca = AlpacaDailyClient(creds["alpaca_api_key"], creds["alpaca_secret_key"], cache=cache)  # type: ignore[arg-type]
     massive = (
-        MassiveRefClient(creds["massive_api_key"], cache=cache, min_interval_seconds=0.1)
+        MassiveRefClient(creds["massive_api_key"], cache=cache)
         if creds.get("massive_api_key")
         else None
     )
@@ -471,48 +491,47 @@ def cmd_build(args: argparse.Namespace) -> int:
     sessions = get_trading_sessions("2015-01-01", DEV_END)
     dev_sessions = [s for s in sessions if DEV_START <= s <= DEV_END]
 
-    max_cands = getattr(args, "max_candidates", None)
-    eval_cands = manifest_candidates[:max_cands] if max_cands else manifest_candidates
-    # Stage B Screening: Screen manifest candidates against exact locked Stage B eligibility rules
-    print(f"\n[Stage B Screening] Screening {len(eval_cands)} candidates against locked Stage B criteria...")
-    eligible_ids, rejected_ids, _ = screen_candidates_manifest(
-        eval_cands,
-        alpaca=alpaca,
-        edgar=edgar,
-        max_candidates=max_cands,
-        on_progress=lambda cur, tot, sym, ok: print(f"      [{cur}/{tot}] {sym}: {'PASS' if ok else 'FAIL'}"),
-    )
-    print(f"      Stage B Screening: {len(eligible_ids)} passed, {len(rejected_ids)} rejected.")
-
-    # Write and verify frozen pre-run manifest
-    frozen_manifest_path = REPO_ROOT / "data" / "research" / "long_002c" / "frozen_pre_run_manifest.json"
-    disc_manifest_path = (
-        Path(args.candidates_file)
-        if args.candidates_file
-        else (REPO_ROOT / "data" / "research" / "long_002c" / "discovery_manifest.json")
-    )
-    if not disc_manifest_path.exists():
-        disc_manifest_path.parent.mkdir(parents=True, exist_ok=True)
-        disc_manifest_path.write_text(
-            json.dumps({"candidates": [c.to_dict() for c in manifest_candidates]}, indent=2),
-            encoding="utf-8",
-        )
-
-    pre_run_data = build_frozen_pre_run_manifest_data(
-        discovery_manifest_path=disc_manifest_path,
-        stage_b_eligible_ids=eligible_ids,
-        repo_root=REPO_ROOT,
-    )
-    _, frozen_sha = write_frozen_pre_run_manifest(frozen_manifest_path, pre_run_data)
-    print(f"      Frozen pre-run manifest written: {frozen_manifest_path}")
-    print(f"      Frozen pre-run SHA-256: {frozen_sha}")
-    if not verify_frozen_pre_run_manifest(frozen_manifest_path, frozen_sha):
-        print("ERROR: Frozen pre-run manifest failed hash verification!")
-        return 1
-    print("      Verification: Frozen pre-run manifest verified.")
-
     # Gate on Stage C outcome calculation
     if not getattr(args, "authorize_outcomes", False) or getattr(args, "pre_run_only", False):
+        max_cands = getattr(args, "max_candidates", None)
+        eval_cands = manifest_candidates[:max_cands] if max_cands else manifest_candidates
+        print(f"\n[Stage B Screening] Screening {len(eval_cands)} candidates against locked Stage B criteria...")
+        eligible_ids, rejected_ids, summary = screen_candidates_manifest(
+            eval_cands,
+            alpaca=alpaca,
+            edgar=edgar,
+            max_candidates=max_cands,
+            on_progress=lambda cur, tot, sym, ok: print(f"      [{cur}/{tot}] {sym}: {'PASS' if ok else 'FAIL'}"),
+        )
+        print(f"      Stage B Screening: {len(eligible_ids)} passed, {len(rejected_ids)} rejected.")
+
+        frozen_manifest_path = REPO_ROOT / "data" / "research" / "long_002c" / "frozen_pre_run_manifest.json"
+        disc_manifest_path = (
+            Path(args.candidates_file)
+            if args.candidates_file
+            else (REPO_ROOT / "data" / "research" / "long_002c" / "discovery_manifest.json")
+        )
+        if not disc_manifest_path.exists():
+            disc_manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            disc_manifest_path.write_text(
+                json.dumps({"candidates": [c.to_dict() for c in manifest_candidates]}, indent=2),
+                encoding="utf-8",
+            )
+
+        pre_run_data = build_frozen_pre_run_manifest_data(
+            discovery_manifest_path=disc_manifest_path,
+            stage_b_eligible_ids=eligible_ids,
+            stage_b_summary=summary,
+            repo_root=REPO_ROOT,
+        )
+        _, frozen_sha = write_frozen_pre_run_manifest(frozen_manifest_path, pre_run_data)
+        print(f"      Frozen pre-run manifest written: {frozen_manifest_path}")
+        print(f"      Frozen pre-run SHA-256: {frozen_sha}")
+        if not verify_frozen_pre_run_manifest(frozen_manifest_path, frozen_sha):
+            print("ERROR: Frozen pre-run manifest failed hash verification!")
+            return 1
+        print("      Verification: Frozen pre-run manifest verified.")
+
         print("\n" + "=" * 70)
         print("STAGE B SCREENING COMPLETE & FROZEN PRE-RUN MANIFEST LOCKED.")
         print(f"Stage B Eligible Candidates: {len(eligible_ids)}")
@@ -522,6 +541,62 @@ def cmd_build(args: argparse.Namespace) -> int:
         print("PR #85 remains draft and unmerged.")
         print("=" * 70)
         return 0
+
+    # STAGE C AUTHORIZATION BOUNDARY ENFORCEMENT (Item 6)
+    if getattr(args, "max_candidates", None):
+        print("ERROR: Stage C outcome execution strictly rejects --max-candidates truncation.")
+        return 1
+
+    frozen_arg_path = getattr(args, "frozen_manifest", None)
+    expected_frozen_sha = getattr(args, "expected_frozen_sha256", None)
+    if not (frozen_arg_path and expected_frozen_sha):
+        print("ERROR: Stage C outcome execution requires explicit --frozen-manifest <path> and --expected-frozen-sha256 <sha>.")
+        return 1
+
+    frozen_manifest_path = Path(frozen_arg_path)
+    if not frozen_manifest_path.exists():
+        print(f"ERROR: Specified frozen manifest not found: {frozen_manifest_path}")
+        return 1
+
+    with frozen_manifest_path.open("r", encoding="utf-8") as f:
+        frozen_manifest_data = json.load(f)
+
+    # Recompute SHA-256 and require exact match
+    clean_manifest = {k: v for k, v in frozen_manifest_data.items() if k != "frozen_pre_run_manifest_sha256"}
+    computed_sha = hashlib.sha256(json.dumps(clean_manifest, indent=2, sort_keys=True).encode("utf-8")).hexdigest()
+    if computed_sha != expected_frozen_sha:
+        print(f"ERROR: Frozen manifest SHA-256 mismatch! Computed: {computed_sha}, Expected: {expected_frozen_sha}")
+        return 1
+
+    # Require git commit SHA match
+    current_git_sha = get_git_commit_sha(REPO_ROOT)
+    recorded_git_sha = frozen_manifest_data.get("git_commit_sha")
+    if recorded_git_sha != current_git_sha:
+        print(f"ERROR: Frozen manifest git commit SHA mismatch! Recorded: {recorded_git_sha}, Current HEAD: {current_git_sha}")
+        return 1
+
+    # Require discovery manifest match
+    disc_meta = frozen_manifest_data.get("discovery_manifest", {})
+    disc_recorded_sha = disc_meta.get("sha256")
+    disc_file = Path(disc_meta.get("path", ""))
+    if not disc_file.exists():
+        disc_file = REPO_ROOT / "data" / "research" / "long_002c" / "discovery_manifest.json"
+    if not disc_file.exists():
+        print(f"ERROR: Discovery manifest missing: {disc_file}")
+        return 1
+    disc_computed_sha = compute_file_sha256(disc_file)
+    if disc_computed_sha != disc_recorded_sha:
+        print(f"ERROR: Discovery manifest SHA mismatch! Recorded: {disc_recorded_sha}, Computed: {disc_computed_sha}")
+        return 1
+
+    # Require Stage B eligible IDs match
+    frozen_eligible_ids = frozen_manifest_data.get("stage_b_screening", {}).get("eligible_security_ids", [])
+    if not frozen_eligible_ids:
+        print("ERROR: Frozen manifest contains 0 Stage B eligible securities.")
+        return 1
+
+    eligible_ids = frozen_eligible_ids
+    print(f"Stage C Authorization: VERIFIED against {frozen_manifest_path} (SHA: {computed_sha[:16]}...)")
 
     # Filter candidates to Stage B eligible securities for Stage C execution
     manifest_candidates = [c for c in manifest_candidates if c.immutable_security_id in eligible_ids]
@@ -575,55 +650,32 @@ def cmd_build(args: argparse.Namespace) -> int:
             print(f"      ERROR: Security {primary_sym} lacks CIK; symbol-only identity prohibited for official runs.")
             continue
 
-        # Effective historical ticker for warmup/dev query
-        effective_query_ticker = sec_master.resolve_historical_ticker(sec_id, DEV_START) or primary_sym
-        print(f"      Ingesting {effective_query_ticker} ({sec_id}, primary: {primary_sym})...")
-
-        # Fetch daily bars from Alpaca (2015 warmup + 2016-2020 development)
-        raw_bars, prov_bars = alpaca.fetch_daily_bars(
-            effective_query_ticker, f"{WARMUP_START}T00:00:00Z", f"{DEV_END}T23:59:59Z", feed="sip", adjustment="raw"
+        # Ingest daily bars using the shared interval-aware loader (Item 3)
+        df_final, prov_bars, _bar_meta = load_interval_aware_daily_bars(
+            candidate=cand,
+            alpaca=alpaca,
+            warmup_start=WARMUP_START,
+            dev_end=DEV_END,
+            load_split_adjusted=True,
         )
         all_provenance.extend(prov_bars)
 
-        # Split-adjusted bars for analytical technical indicators
-        adj_bars, prov_adj = alpaca.fetch_daily_bars(
-            effective_query_ticker, f"{WARMUP_START}T00:00:00Z", f"{DEV_END}T23:59:59Z", feed="sip", adjustment="split"
-        )
-        all_provenance.extend(prov_adj)
-
-        if massive:
-            _, _, prov_corp = massive.fetch_corporate_actions(effective_query_ticker)
-            all_provenance.extend(prov_corp)
-
-        if not raw_bars:
-            print(f"      WARNING: No bars returned for {effective_query_ticker}")
+        if df_final.empty:
+            print(f"      WARNING: No bars returned for {primary_sym}")
             continue
 
-        # Separate as-traded OHLCV and split-normalized OHLC
-        df_raw = pd.DataFrame(raw_bars)
-        df_raw["datetime"] = pd.to_datetime(df_raw["t"], utc=True)
-        df_raw["date"] = df_raw["datetime"].dt.strftime("%Y-%m-%d")
-        df_raw = df_raw.rename(columns={"o": "as_traded_open", "h": "as_traded_high", "l": "as_traded_low", "c": "as_traded_close", "v": "volume"})
-
-        if adj_bars:
-            df_adj = pd.DataFrame(adj_bars)
-            df_adj["datetime"] = pd.to_datetime(df_adj["t"], utc=True)
-            df_adj["date"] = df_adj["datetime"].dt.strftime("%Y-%m-%d")
-            df_adj = df_adj.rename(columns={"o": "open", "h": "high", "l": "low", "c": "close"})
-            merged = pd.merge(df_raw, df_adj[["date", "open", "high", "low", "close"]], on="date", how="left")
-            merged["open"] = merged["open"].fillna(merged["as_traded_open"])
-            merged["high"] = merged["high"].fillna(merged["as_traded_high"])
-            merged["low"] = merged["low"].fillna(merged["as_traded_low"])
-            merged["close"] = merged["close"].fillna(merged["as_traded_close"])
-            df_final = merged.set_index("date").sort_index()
-        else:
-            df_raw["open"] = df_raw["as_traded_open"]
-            df_raw["high"] = df_raw["as_traded_high"]
-            df_raw["low"] = df_raw["as_traded_low"]
-            df_raw["close"] = df_raw["as_traded_close"]
-            df_final = df_raw.set_index("date").sort_index()
-
         securities_history_df[sec_id] = df_final
+
+        # Ingest corporate actions, retain splits & divs, and parse special distributions (Item 4)
+        special_dist_dates: set[str] = set()
+        if massive:
+            _splits, divs, prov_corp = massive.fetch_corporate_actions(primary_sym)
+            all_provenance.extend(prov_corp)
+            special_dist_dates = parse_special_distribution_dates(divs)
+
+        affected_special_sessions = derive_affected_special_distribution_sessions(
+            special_dist_dates, sessions, max_horizon_sessions=26
+        )
 
         # Ingest SEC EDGAR company facts and submissions for PIT market cap
         facts_data = None
@@ -664,7 +716,7 @@ def cmd_build(args: argparse.Namespace) -> int:
         if not identity:
             identity = SecurityIdentity(
                 immutable_security_id=sec_id,
-                ticker_at_decision=effective_query_ticker,
+                ticker_at_decision=primary_sym,
                 effective_start=WARMUP_START,
                 effective_end=DEV_END,
                 cik=cik,
@@ -690,6 +742,7 @@ def cmd_build(args: argparse.Namespace) -> int:
                 dev_end=DEV_END,
                 market_caps=mcap_curr,
                 market_cap_reasons=reasons_curr,
+                special_distribution_dates=affected_special_sessions,
             )
             all_obs.extend(obs_sec)
             all_elig.extend(elig_sec)
@@ -714,15 +767,19 @@ def cmd_build(args: argparse.Namespace) -> int:
                     if len(forward_slice) < 21:
                         continue
                     next_open = float(forward_slice["open"].iloc[0])
+                    as_traded_open = float(forward_slice["as_traded_open"].iloc[0])
                 else:
                     # 20:30: session T+1 is entry session; forward bars start at session T+1 (21 sessions)
                     forward_slice = df_final.iloc[idx + 1 : idx + 22]
                     if len(forward_slice) < 21:
                         continue
                     next_open = float(forward_slice["open"].iloc[0])
+                    as_traded_open = float(forward_slice["as_traded_open"].iloc[0])
 
                 forward_bars = forward_slice[["open", "high", "low", "close"]].to_dict(orient="records")
                 atr_val = obs.atr_14 or 0.0
+
+                has_unresolved_dist = as_of_date in affected_special_sessions
 
                 nine_outcomes = compute_all_nine_outcomes(
                     immutable_security_id=sec_id,
@@ -733,6 +790,8 @@ def cmd_build(args: argparse.Namespace) -> int:
                     forward_bars=forward_bars,
                     pre_entry_atr=atr_val,
                     entry_friction_bps=PRIMARY_ENTRY_FRICTION_BPS,
+                    special_distribution_unresolved=has_unresolved_dist,
+                    as_traded_entry_price=as_traded_open,
                 )
                 all_outcomes.extend(nine_outcomes)
 
@@ -743,11 +802,12 @@ def cmd_build(args: argparse.Namespace) -> int:
 
     print(f"      Built {len(all_obs)} decision observations and {len(all_outcomes)} outcome label records.")
 
-    # Step 4: Cluster Master Opportunity Episodes
-    print("\n[2/6] Clustering Master Opportunity Episodes...")
+    # Step 4: Cluster Master Opportunity Episodes with 20:30 primary anchoring (Item 9)
+    print("\n[2/6] Clustering Master Opportunity Episodes (anchored on 20:30 primary census)...")
     episodes, memberships = cluster_master_episodes(
         observations_by_security=obs_by_sec,
         outcomes_by_obs_key=outcomes_by_obs_key,
+        anchor_cutoff_time="20:30",
     )
     print(f"      Constructed {len(episodes)} independent master episodes ({len(memberships)} constituent memberships).")
 
@@ -792,19 +852,24 @@ def cmd_build(args: argparse.Namespace) -> int:
 
     print(f"      Evaluated {len(all_baselines)} baseline comparator outputs.")
 
-    # Empirically select winning baseline
+    # Empirically select winning baseline on 20:30 primary population (Item 9)
     winning_baseline_selection = select_winning_baseline(
         baseline_outputs=all_baselines,
         outcomes=all_outcomes,
+        primary_cutoff_time="20:30",
     )
-    print(f"      Strongest simple baseline empirically selected: {winning_baseline_selection.get('winner_comparator_id')} "
+    print(f"      Strongest simple baseline empirically selected (20:30 primary): {winning_baseline_selection.get('winner_comparator_id')} "
           f"(Top-10 Lift: {winning_baseline_selection.get('winner_top_10_lift'):.2f}x vs base rate {winning_baseline_selection.get('universe_base_rate'):.4f})")
 
-    # Step 6: Dependence-aware Resampling & Endpoint Feasibility
-    print("\n[4/6] Running 21-session and 42-session block resampling...")
-    obs_dicts = [o.to_dict() for o in all_obs]
+    # Step 6: Dependence-aware Resampling & Endpoint Feasibility on 20:30 Primary Population (Item 8 & Item 9)
+    print("\n[4/6] Running 21-session and 42-session block resampling on 20:30 primary census...")
+    obs_dicts_2030 = [o.to_dict() for o in all_obs if o.cutoff_time == "20:30"]
+    obs_dicts_0900 = [o.to_dict() for o in all_obs if o.cutoff_time == "09:00"]
+    outcomes_2030 = [o for o in all_outcomes if o.cutoff_time == "20:30"]
+    outcomes_0900 = [o for o in all_outcomes if o.cutoff_time == "09:00"]
+
     resampling_21 = run_block_resampling(
-        observations=obs_dicts,
+        observations=obs_dicts_2030,
         outcomes_by_obs_key=outcomes_by_obs_key,
         sessions_ordered=dev_sessions,
         block_size_sessions=21,
@@ -812,7 +877,7 @@ def cmd_build(args: argparse.Namespace) -> int:
         seed=42,
     )
     resampling_42 = run_block_resampling(
-        observations=obs_dicts,
+        observations=obs_dicts_2030,
         outcomes_by_obs_key=outcomes_by_obs_key,
         sessions_ordered=dev_sessions,
         block_size_sessions=42,
@@ -821,12 +886,33 @@ def cmd_build(args: argparse.Namespace) -> int:
     )
 
     feasibility_report = analyze_endpoint_feasibility(
-        observations=obs_dicts,
+        observations=obs_dicts_2030,
         episodes=episodes,
-        outcomes=all_outcomes,
+        outcomes=outcomes_2030,
         resampling_21=resampling_21,
         resampling_42=resampling_42,
     )
+
+    # Separately reported 09:00 pre-market reevaluation diagnostic (Item 9)
+    resampling_21_0900 = run_block_resampling(
+        observations=obs_dicts_0900,
+        outcomes_by_obs_key=outcomes_by_obs_key,
+        sessions_ordered=dev_sessions,
+        block_size_sessions=21,
+        num_bootstraps=1000,
+        seed=42,
+    )
+    clean_10_10_0900 = sum(1 for o in outcomes_0900 if o.target_pct == 10.0 and o.horizon_sessions == 10 and o.clean_target_reached)
+    clean_10_21_0900 = sum(1 for o in outcomes_0900 if o.target_pct == 10.0 and o.horizon_sessions == 21 and o.clean_target_reached)
+    feasibility_report["reevaluation_0900_diagnostic"] = {
+        "observations_count": len(obs_dicts_0900),
+        "clean_target_10_10_events": clean_10_10_0900,
+        "clean_target_10_21_events": clean_10_21_0900,
+        "clean_target_10_10_prevalence": round(clean_10_10_0900 / len(outcomes_0900), 6) if outcomes_0900 else 0.0,
+        "clean_target_10_21_prevalence": round(clean_10_21_0900 / len(outcomes_0900), 6) if outcomes_0900 else 0.0,
+        "resampling_21": resampling_21_0900,
+    }
+
     print(f"      Endpoint Disposition: {feasibility_report.get('endpoint_disposition')}")
     print(f"      Selected Endpoint: {feasibility_report.get('selected_endpoint')}")
 
@@ -981,6 +1067,8 @@ def main() -> int:
     build_parser.add_argument("--max-candidates", type=int, default=None, help="Maximum number of candidates to screen")
     build_parser.add_argument("--authorize-outcomes", action="store_true", help="Explicit authorization to proceed past Stage B to Stage C")
     build_parser.add_argument("--pre-run-only", action="store_true", help="Stop after Stage B screening and frozen pre-run manifest generation")
+    build_parser.add_argument("--frozen-manifest", type=str, default=None, help="Path to frozen pre-run manifest JSON (required for Stage C)")
+    build_parser.add_argument("--expected-frozen-sha256", type=str, default=None, help="Expected SHA-256 of frozen pre-run manifest (required for Stage C)")
 
     subparsers.add_parser("evaluate", help="Offline deterministic evaluation from frozen Parquet dataset")
     subparsers.add_parser("verify", help="Verify artifact checksums")
