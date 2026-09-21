@@ -1,0 +1,16 @@
+{
+  "total_exclusions": 7403,
+  "by_category": {
+    "price": 1768,
+    "liquidity": 1235,
+    "trading_history": 3100,
+    "split_boundary": 1300
+  },
+  "by_reason_code": {
+    "price_below_5": 1768,
+    "dollar_volume_20d_below_20m": 1161,
+    "insufficient_trading_history": 3100,
+    "split_boundary_purged": 1300,
+    "dollar_volume_60d_below_10m": 74
+  }
+}

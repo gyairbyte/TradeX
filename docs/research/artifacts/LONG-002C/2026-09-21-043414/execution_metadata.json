@@ -1,0 +1,12 @@
+{
+  "task_id": "LONG-002C-EXEC-001",
+  "run_id": "2026-09-21-043414",
+  "runtime_seconds": 613.28,
+  "created_at_utc": "2026-09-21T04:44:27.417745Z",
+  "mode": "full",
+  "python_version": "3.11.15",
+  "endpoint_disposition": "primary_retained",
+  "selected_endpoint": "clean_+10%_10_sessions",
+  "total_observations": 62237,
+  "master_episodes_count": 887
+}
