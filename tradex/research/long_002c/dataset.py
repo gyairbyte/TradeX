@@ -15,7 +15,8 @@ from tradex.research.long_002c.calendar import (
     check_split_boundary_purge,
     get_decision_timestamp_utc,
 )
-from tradex.research.long_002c.identity import SecurityIdentity
+from tradex.research.long_002c.identity import SecurityIdentity, SecurityMaster
+from tradex.research.long_002c.manifest import CandidateSecurity
 from tradex.research.long_002c.models import (
     DataEligibility,
     DataQualityCoverage,
@@ -67,6 +68,8 @@ def build_decision_observations_for_security(
     market_cap_reasons: dict[str, str] | None = None,  # date -> reason code (e.g. missing_shares, unavailable_at_cutoff)
     index_memberships: dict[str, bool] | None = None,  # date -> bool
     special_distribution_dates: set[str] | None = None,
+    candidate: CandidateSecurity | None = None,
+    security_master: SecurityMaster | None = None,
 ) -> tuple[
     list[DecisionObservation],
     list[DataEligibility],
@@ -132,6 +135,26 @@ def build_decision_observations_for_security(
             continue
 
         idx = bar_dates.index(session_date)
+
+        # Resolve effective historical ticker at decision date
+        ticker_unresolved = False
+        if candidate is not None:
+            interval = candidate.resolve_interval(session_date)
+            if interval is not None:
+                ticker = interval.symbol
+            else:
+                ticker_unresolved = True
+                ticker = candidate.primary_symbol
+        elif security_master is not None:
+            resolved = security_master.resolve_ticker(sec_id, session_date)
+            if resolved is not None:
+                ticker = resolved
+            else:
+                ticker_unresolved = True
+                ticker = identity.ticker_at_decision
+        else:
+            ticker = identity.ticker_at_decision
+
         # Point-in-time history:
         # At 09:00 ET, session T has not opened. Features MUST use history strictly through session T-1 (prior completed session).
         # At 20:30 ET, session T has completed. Features include session T.
@@ -214,6 +237,20 @@ def build_decision_observations_for_security(
 
         # Eligibility evaluation
         rejection_reasons: list[str] = []
+        if ticker_unresolved:
+            rejection_reasons.append("ticker_unresolved_at_decision")
+            exclusions.append(
+                ExclusionReasonRecord(
+                    immutable_security_id=sec_id,
+                    as_of_date=session_date,
+                    cutoff_time=cutoff_time,
+                    reason_code="ticker_unresolved_at_decision",
+                    ticker_at_decision=ticker,
+                    reason_category="identity",
+                    description=f"No verified active ticker interval covers session {session_date} (fail closed)",
+                )
+            )
+
         if not is_common:
             rejection_reasons.append(f"excluded_classification_{identity.security_type}")
             exclusions.append(

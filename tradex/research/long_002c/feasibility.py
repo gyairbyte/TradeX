@@ -174,23 +174,21 @@ def analyze_endpoint_feasibility(
     has_sufficient_effective_n = eff_n >= 15.0
 
     if has_sufficient_episodes and has_sufficient_prevalence and has_sufficient_effective_n:
-        selected_endpoint = "clean_+10%_10_sessions"
-        endpoint_disposition = "primary_retained"
-        rationale = (
-            f"Primary endpoint +10%/10 retained: Development census provides {n_episodes} master episodes "
-            f"(threshold >= 100), {clean_10_10_count} clean target events (threshold >= 100), "
-            f"prevalence {clean_10_10_prev:.4f}, 21-session block 95% CI lower bound {ci_lower:.4f} (threshold > 0.0050), "
-            f"and effective number of securities {eff_n:.1f} (threshold >= 15.0)."
-        )
+        preliminary_endpoint = "clean_+10%_10_sessions"
+        preliminary_disposition = "primary_retained"
     else:
-        selected_endpoint = "clean_+10%_21_sessions"
-        endpoint_disposition = "fallback_invoked"
-        rationale = (
-            f"Sole feasibility fallback +10%/21 invoked: Development census shows primary +10%/10 does not meet "
-            f"all retention criteria (episodes: {n_episodes} [need >= 100], clean events: {clean_10_10_count} [need >= 100], "
-            f"CI lower bound: {ci_lower:.4f} [need > 0.0050], eff N: {eff_n:.1f} [need >= 15.0]). "
-            f"Fallback +10%/21 provides {clean_21_count} clean events (prevalence {clean_21_prev:.4f})."
-        )
+        preliminary_endpoint = "clean_+10%_21_sessions"
+        preliminary_disposition = "fallback_invoked"
+
+    endpoint_disposition = "pending_gary_chatgpt_review"
+    selected_endpoint = "pending_gary_chatgpt_review"
+    rationale = (
+        f"Endpoint disposition is pending Gary/ChatGPT review of the completed development census. "
+        f"Preliminary empirical evaluation: {preliminary_disposition} ({preliminary_endpoint}). "
+        f"Development census observed {n_episodes} master episodes, {clean_10_10_count} primary clean target events "
+        f"(prevalence {clean_10_10_prev:.4f}, 21-session block 95% CI lower bound {ci_lower:.4f}), "
+        f"effective securities {eff_n:.1f}, and fallback +10%/21 clean events {clean_21_count} (prevalence {clean_21_prev:.4f})."
+    )
 
     # Actionable observation accounting: if earnings schedule unknown, actionability is unavailable
     actionable_obs = [o for o in observations if o.get("actionability_status") == "eligible"]
@@ -230,6 +228,8 @@ def analyze_endpoint_feasibility(
         "resampling_42_robustness": resampling_42,
         "selected_endpoint": selected_endpoint,
         "endpoint_disposition": endpoint_disposition,
+        "preliminary_endpoint": preliminary_endpoint,
+        "preliminary_disposition": preliminary_disposition,
         "rationale": rationale,
         "proposed_evidence_gates_for_review": proposed_gates,
         "proposed_frozen_evidence_gates": proposed_gates,

@@ -30,6 +30,7 @@ from __future__ import annotations
 import json
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -51,6 +52,11 @@ from tradex.research.long_002c.dataset import (
 from tradex.research.long_002c.feasibility import (
     analyze_endpoint_feasibility,
 )
+from tradex.research.long_002c.frozen_manifest import (
+    build_frozen_pre_run_manifest_data,
+    verify_frozen_pre_run_manifest,
+    write_frozen_pre_run_manifest,
+)
 from tradex.research.long_002c.identity import (
     CLASSIFICATION_EXCLUDED_SECURITY_TYPE,
     CLASSIFICATION_SUPPORTED_COMMON_STOCK,
@@ -61,6 +67,7 @@ from tradex.research.long_002c.identity import (
     make_immutable_id,
 )
 from tradex.research.long_002c.manifest import (
+    CandidateSecurity,
     TickerInterval,
     build_candidate_manifest_from_snapshots,
     register_manifest_in_security_master,
@@ -77,9 +84,12 @@ from tradex.research.long_002c.models import (
     OutcomeLabelRecord,
     ProvenanceProviderRecord,
 )
-from tradex.research.long_002c.outcomes import compute_outcome_cell
+from tradex.research.long_002c.outcomes import (
+    compute_outcome_cell,
+    parse_special_distribution_dates,
+)
 from tradex.research.long_002c.providers import MassiveRefClient
-from tradex.research.long_002c.spec import verify_upstream_spec_hashes
+from tradex.research.long_002c.spec import REPO_ROOT, verify_upstream_spec_hashes
 
 
 # 1. No hardcoded survivor panel can be treated as full universe
@@ -630,8 +640,10 @@ def test_feasibility_code_and_report_use_same_rule() -> None:
         resampling_21=resampling_pass,
         resampling_42=resampling_pass,
     )
-    assert report_pass["endpoint_disposition"] == "primary_retained"
-    assert report_pass["selected_endpoint"] == "clean_+10%_10_sessions"
+    assert report_pass["endpoint_disposition"] == "pending_gary_chatgpt_review"
+    assert report_pass["preliminary_disposition"] == "primary_retained"
+    assert report_pass["preliminary_endpoint"] == "clean_+10%_10_sessions"
+    assert report_pass["proposed_evidence_gates_for_review"]["status"] == "proposed_for_review"
 
     # Fails if CI lower bound <= 0.005
     resampling_fail = {
@@ -644,8 +656,9 @@ def test_feasibility_code_and_report_use_same_rule() -> None:
         resampling_21=resampling_fail,
         resampling_42=resampling_fail,
     )
-    assert report_fail["endpoint_disposition"] == "fallback_invoked"
-    assert report_fail["selected_endpoint"] == "clean_+10%_21_sessions"
+    assert report_fail["endpoint_disposition"] == "pending_gary_chatgpt_review"
+    assert report_fail["preliminary_disposition"] == "fallback_invoked"
+    assert report_fail["preliminary_endpoint"] == "clean_+10%_21_sessions"
 
 
 # 18. Actionable observations are not raw eligible observations
@@ -1336,4 +1349,413 @@ def test_dual_snapshots_and_forward_outcome_entry() -> None:
     next_date = dates[idx + 1]
     assert entry_open_2030 == df.loc[next_date, "open"]
     assert entry_open_0900 != entry_open_2030
+
+
+# 35. Dual-class identity separation & fail-closed missing discriminator
+def test_dual_class_identity_separation_and_fail_closed_missing_discriminator() -> None:
+    """Verify distinct share classes cannot collide under generic _CS and missing discriminator fails closed."""
+    # With share_class_figi
+    id_googl = make_immutable_id("GOOGL", share_class_figi="BBG009S39JX6")
+    id_goog = make_immutable_id("GOOG", share_class_figi="BBG009S3NB39")
+    assert id_googl == "FIGI_BBG009S39JX6"
+    assert id_goog == "FIGI_BBG009S3NB39"
+    assert id_googl != id_goog
+
+    # With CIK and discriminator
+    cik = "0001652044"  # Alphabet Inc.
+    id_a = make_immutable_id("GOOGL", cik=cik, share_class_discriminator="CLASS_A")
+    id_c = make_immutable_id("GOOG", cik=cik, share_class_discriminator="CLASS_C")
+    assert id_a == "CIK_0001652044_CLASS_A"
+    assert id_c == "CIK_0001652044_CLASS_C"
+    assert id_a != id_c
+
+    # Generic CIK without discriminator or FIGI fails closed with unknown_security_identity
+    with pytest.raises(ValueError, match="unknown_security_identity"):
+        make_immutable_id("GOOGL", cik=cik)
+
+    with pytest.raises(ValueError, match="unknown_security_identity"):
+        make_immutable_id("GOOG", cik=cik, share_class_discriminator="CS")
+
+
+# 36. Exact locked Stage B eligibility thresholds
+def test_exact_locked_stage_b_eligibility_thresholds() -> None:
+    """Stage B requires exact locked thresholds: $5 close & 20d median, $20M 20d median vol, $10M 60d median vol, 252 bars established, mcap >= $3B."""
+    identity = SecurityIdentity(
+        immutable_security_id="CIK_0000320193_CLASS_A",
+        ticker_at_decision="AAPL",
+        cik="0000320193",
+        security_type="common_stock",
+    )
+    dates = get_trading_sessions("2016-01-04", "2016-02-15")
+    hist_dates = get_trading_sessions("2015-01-01", "2015-12-31") + dates
+    n_bars = len(hist_dates)
+
+    # 1. Test 20d dollar volume below $20M rejected (e.g. $19.5M)
+    # Price $100 * 195,000 shares = $19.5M
+    df_vol_fail = pd.DataFrame(
+        {
+            "open": [100.0] * n_bars,
+            "high": [102.0] * n_bars,
+            "low": [99.0] * n_bars,
+            "close": [100.0] * n_bars,
+            "as_traded_close": [100.0] * n_bars,
+            "volume": [195_000] * n_bars,
+        },
+        index=hist_dates,
+    )
+    _, elig_vol, _, _, _excl_vol, _ = build_decision_observations_for_security(
+        identity=identity,
+        bars_df=df_vol_fail,
+        trading_sessions=dates,
+        market_caps={d: 10_000_000_000.0 for d in dates},
+    )
+    assert elig_vol[-1].eligibility_passed is False
+    assert "dollar_volume_20d_below_20m" in elig_vol[-1].rejection_reason_codes
+
+    # 2. Test 20d dollar volume >= $20M passes
+    # Price $100 * 205,000 shares = $20.5M
+    df_vol_pass = pd.DataFrame(
+        {
+            "open": [100.0] * n_bars,
+            "high": [102.0] * n_bars,
+            "low": [99.0] * n_bars,
+            "close": [100.0] * n_bars,
+            "as_traded_close": [100.0] * n_bars,
+            "volume": [205_000] * n_bars,
+        },
+        index=hist_dates,
+    )
+    _, elig_pass, _, _, _, _ = build_decision_observations_for_security(
+        identity=identity,
+        bars_df=df_vol_pass,
+        trading_sessions=dates,
+        market_caps={d: 10_000_000_000.0 for d in dates},
+    )
+    assert elig_pass[-1].eligibility_passed is True
+
+
+# 37. Per-date ticker resolution and unverified date fail-closed
+def test_per_date_ticker_resolution_and_unverified_fail_closed() -> None:
+    """Security history across ticker changes resolves effective historical ticker and fails closed on unverified dates."""
+    sec_id = "FIGI_BBG000MM2P62"  # Meta Platforms
+    cand = CandidateSecurity(
+        immutable_security_id=sec_id,
+        primary_symbol="META",
+        cik="0001326801",
+        composite_figi="BBG000MM2P62",
+        company_name="Meta Platforms Inc.",
+        primary_exchange="XNAS",
+        security_type="common_stock",
+        first_seen_date="2016-01-04",
+        last_seen_date="2020-12-31",
+        ticker_intervals=[
+            TickerInterval(symbol="FB", start_date="2012-05-18", end_date="2022-06-08", confidence="authoritative_lifecycle"),
+            TickerInterval(symbol="META", start_date="2022-06-09", end_date="2030-12-31", confidence="authoritative_lifecycle"),
+        ],
+    )
+
+    # Resolution during development window resolves to FB
+    int_2016 = cand.resolve_interval("2016-01-04")
+    assert int_2016 is not None
+    assert int_2016.symbol == "FB"
+
+    int_2020 = cand.resolve_interval("2020-12-31")
+    assert int_2020 is not None
+    assert int_2020.symbol == "FB"
+
+    # Resolution post-rename resolves to META
+    int_2022 = cand.resolve_interval("2022-06-10")
+    assert int_2022 is not None
+    assert int_2022.symbol == "META"
+
+    # Discrete unbridged gaps fail closed (None)
+    cand_gaps = CandidateSecurity(
+        immutable_security_id="SEC_GAP",
+        primary_symbol="OLD",
+        company_name="Gap Corp",
+        primary_exchange="XNYS",
+        security_type="common_stock",
+        first_seen_date="2016-01-04",
+        last_seen_date="2016-06-01",
+        ticker_intervals=[
+            TickerInterval(symbol="OLD", start_date="2016-01-04", end_date="2016-01-04", confidence="discrete_observation"),
+            TickerInterval(symbol="NEW", start_date="2016-06-01", end_date="2016-06-01", confidence="discrete_observation"),
+        ],
+    )
+    # Date in between discrete snapshots has no verified ticker -> returns None (fail closed)
+    assert cand_gaps.resolve_interval("2016-03-15") is None
+
+
+# 38. As-traded entry price vs normalized analytical path & locked risk cap
+def test_as_traded_entry_price_vs_normalized_analytical_path() -> None:
+    """Outcome computation retains reference_entry_price on as-traded scale and computes barriers/caps on split-normalized scale."""
+    # 2-for-1 split scenario: raw as-traded open is $200.0, split-normalized open is $100.0
+    forward_bars = [
+        {"open": 100.0, "high": 105.0, "low": 98.0, "close": 104.0},
+        {"open": 104.0, "high": 112.0, "low": 103.0, "close": 111.0},
+        {"open": 111.0, "high": 115.0, "low": 110.0, "close": 114.0},
+    ]
+
+    # Pre-entry ATR = 3.0 on split-normalized scale
+    rec = compute_outcome_cell(
+        immutable_security_id="SEC_SPLIT_TEST",
+        ticker_at_decision="SPLT",
+        as_of_date="2016-01-04",
+        cutoff_time="20:30",
+        target_pct=10.0,
+        horizon_sessions=3,
+        next_open_price=100.0,  # split-normalized
+        forward_bars=forward_bars,
+        pre_entry_atr=3.0,
+        entry_friction_bps=5.0,
+        as_traded_entry_price=200.0,  # raw as-traded open
+    )
+
+    # Reference execution entry: 200.0 + (200.0 * 5/10000 + 0.01) = 200.0 + (0.10 + 0.01) = 200.11
+    assert rec.reference_entry_price == 200.11
+    assert rec.analysis_entry_price == 100.0
+
+    # Adverse barrier: max(0.05, 1.5 * 3.0 / 100.0) = max(0.05, 0.045) = 0.05
+    assert rec.adverse_barrier_pct == 0.05
+    # Clean risk cap: min(10% / 2, 0.05) = 0.05
+    assert rec.clean_risk_cap_pct == 0.05
+    assert rec.clean_target_reached is True
+
+
+# 39. Corporate actions special distribution exclusions
+def test_corporate_actions_special_distribution_exclusions() -> None:
+    """Special distributions exclude clean target outcomes while ordinary cash dividends do not."""
+    divs = [
+        {"dividend_type": "CD", "ex_dividend_date": "2016-03-15", "cash_amount": 0.50},  # Ordinary
+        {"dividend_type": "SC", "ex_dividend_date": "2016-05-10", "cash_amount": 5.00},  # Special cash
+        {"dividend_type": "SPINOFF", "ex_dividend_date": "2016-08-20", "cash_amount": 0.00},  # Spinoff
+    ]
+    spec_dates = parse_special_distribution_dates(divs)
+    assert "2016-05-10" in spec_dates
+    assert "2016-08-20" in spec_dates
+    assert "2016-03-15" not in spec_dates  # Ordinary cash dividend is NOT excluded
+
+    forward_bars = [
+        {"open": 100.0, "high": 115.0, "low": 99.0, "close": 112.0},
+    ]
+    # Without unresolved distribution: clean target reaches
+    rec_clean = compute_outcome_cell(
+        immutable_security_id="SEC_DIV",
+        ticker_at_decision="DIVS",
+        as_of_date="2016-01-04",
+        cutoff_time="20:30",
+        target_pct=10.0,
+        horizon_sessions=1,
+        next_open_price=100.0,
+        forward_bars=forward_bars,
+        pre_entry_atr=2.0,
+        special_distribution_unresolved=False,
+    )
+    assert rec_clean.clean_target_reached is True
+
+    # With unresolved distribution: clean target is strictly False
+    rec_excl = compute_outcome_cell(
+        immutable_security_id="SEC_DIV",
+        ticker_at_decision="DIVS",
+        as_of_date="2016-01-04",
+        cutoff_time="20:30",
+        target_pct=10.0,
+        horizon_sessions=1,
+        next_open_price=100.0,
+        forward_bars=forward_bars,
+        pre_entry_atr=2.0,
+        special_distribution_unresolved=True,
+    )
+    assert rec_excl.clean_target_reached is False
+    assert rec_excl.sustained_target is False
+
+
+# 40. Frozen pre-run manifest schema and hash verification
+def test_frozen_pre_run_manifest_schema_and_hash_verification() -> None:
+    """Frozen pre-run manifest contains exact commit SHA, upstream spec hashes, Stage B candidates, and verifies tamper detection."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+        disc_path = tmp_path / "discovery_manifest.json"
+        disc_path.write_text(json.dumps({"candidates": [{"immutable_security_id": "TEST_1"}]}), encoding="utf-8")
+
+        manifest_data = build_frozen_pre_run_manifest_data(
+            discovery_manifest_path=disc_path,
+            stage_b_eligible_ids=["FIGI_BBG000B9XRY4", "FIGI_BBG000BPH459"],
+            provider_cache_metrics={"total_requests": 10, "cache_hits": 8, "cache_hit_pct": 80.0},
+            git_commit_sha="409a3402966f7c9d052c344b536081da56c6e9ac",
+            repo_root=REPO_ROOT,
+        )
+        assert manifest_data["git_commit_sha"] == "409a3402966f7c9d052c344b536081da56c6e9ac"
+        assert len(manifest_data["upstream_spec_hashes"]) == 11
+        assert manifest_data["stage_b_screening"]["eligible_count"] == 2
+
+        out_path = tmp_path / "frozen_pre_run_manifest.json"
+        written_path, sha = write_frozen_pre_run_manifest(out_path, manifest_data)
+        assert written_path.exists()
+        assert len(sha) == 64
+
+        # Verification passes on unmodified manifest
+        assert verify_frozen_pre_run_manifest(out_path, sha) is True
+
+        # Tampering with manifest is detected
+        tampered = json.loads(out_path.read_text(encoding="utf-8"))
+        tampered["stage_b_screening"]["eligible_count"] = 999
+        out_path.write_text(json.dumps(tampered), encoding="utf-8")
+        assert verify_frozen_pre_run_manifest(out_path, sha) is False
+
+
+# 41. Stage B Screening manifest and candidate logic
+def test_stage_b_screening_manifest_and_candidate_logic() -> None:
+    """Stage B screening evaluates locked criteria (history, price >= $5, 20d vol >= $20M, 60d vol >= $10M, mcap >= $3B)."""
+    from tradex.research.long_002c.screening import (
+        screen_candidate_security,
+        screen_candidates_manifest,
+    )
+
+    # Synthetic bars for 300 sessions
+    sessions = get_trading_sessions("2015-01-01", "2016-04-01")
+    pass_bars = [
+        {"t": f"{s}T16:00:00Z", "o": 100.0, "h": 105.0, "l": 95.0, "c": 100.0, "v": 1_000_000}
+        for s in sessions
+    ]
+
+    class MockAlpaca:
+        def fetch_daily_bars(self, sym: str, *args: Any, **kwargs: Any) -> tuple[list[dict[str, Any]], list[Any]]:
+            if sym == "PASS":
+                return pass_bars, []
+            elif sym == "LOW_PRICE":
+                # Price below $5
+                low_p_bars = [
+                    {"t": f"{s}T16:00:00Z", "o": 3.0, "h": 3.5, "l": 2.5, "c": 3.0, "v": 10_000_000}
+                    for s in sessions
+                ]
+                return low_p_bars, []
+            elif sym == "LOW_VOL":
+                # Volume below $20M (100 price * 1,000 vol = $100k)
+                low_v_bars = [
+                    {"t": f"{s}T16:00:00Z", "o": 100.0, "h": 105.0, "l": 95.0, "c": 100.0, "v": 1_000}
+                    for s in sessions
+                ]
+                return low_v_bars, []
+            return [], []
+
+    class MockEdgar:
+        def fetch_company_facts(self, cik: str) -> tuple[dict[str, Any], list[Any]]:
+            if cik == "PASS_CIK":
+                return {
+                    "facts": {
+                        "dei": {
+                            "EntityCommonStockSharesOutstanding": {
+                                "units": {
+                                    "shares": [
+                                        {
+                                            "end": "2015-12-31",
+                                            "val": 100_000_000,
+                                            "filed": "2015-12-31",
+                                            "form": "10-K",
+                                            "accn": "0001-15-001",
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }, []
+            return {}, []
+
+    alpaca = MockAlpaca()  # type: ignore[assignment]
+    edgar = MockEdgar()  # type: ignore[assignment]
+
+    # Candidate 1: Passes all criteria
+    cand_pass = CandidateSecurity(
+        immutable_security_id="SEC_PASS",
+        primary_symbol="PASS",
+        cik="PASS_CIK",
+        company_name="Passing Corp",
+        primary_exchange="XNAS",
+        security_type=CLASSIFICATION_SUPPORTED_COMMON_STOCK,
+        first_seen_date="2015-01-01",
+        last_seen_date="2020-12-31",
+    )
+    ok_pass, _, det_pass = screen_candidate_security(
+        candidate=cand_pass,
+        alpaca=alpaca,  # type: ignore[arg-type]
+        edgar=edgar,  # type: ignore[arg-type]
+        dev_start="2016-01-01",
+        dev_end="2016-03-31",
+    )
+    assert ok_pass is True
+    assert det_pass["eligible_sessions"] > 0
+
+    # Candidate 2: Fails price floor
+    cand_low_p = CandidateSecurity(
+        immutable_security_id="SEC_LOW_P",
+        primary_symbol="LOW_PRICE",
+        cik="PASS_CIK",
+        company_name="Low Price Corp",
+        primary_exchange="XNAS",
+        security_type=CLASSIFICATION_SUPPORTED_COMMON_STOCK,
+        first_seen_date="2015-01-01",
+        last_seen_date="2020-12-31",
+    )
+    ok_p, _, det_p = screen_candidate_security(
+        candidate=cand_low_p,
+        alpaca=alpaca,  # type: ignore[arg-type]
+        edgar=edgar,  # type: ignore[arg-type]
+        dev_start="2016-01-01",
+        dev_end="2016-03-31",
+    )
+    assert ok_p is False
+    assert det_p["rejection_counts"].get("price_below_5", 0) > 0
+
+    # Candidate 3: Fails liquidity floor
+    cand_low_v = CandidateSecurity(
+        immutable_security_id="SEC_LOW_V",
+        primary_symbol="LOW_VOL",
+        cik="PASS_CIK",
+        company_name="Low Vol Corp",
+        primary_exchange="XNAS",
+        security_type=CLASSIFICATION_SUPPORTED_COMMON_STOCK,
+        first_seen_date="2015-01-01",
+        last_seen_date="2020-12-31",
+    )
+    ok_v, _, det_v = screen_candidate_security(
+        candidate=cand_low_v,
+        alpaca=alpaca,  # type: ignore[arg-type]
+        edgar=edgar,  # type: ignore[arg-type]
+        dev_start="2016-01-01",
+        dev_end="2016-03-31",
+    )
+    assert ok_v is False
+    assert det_v["rejection_counts"].get("dollar_volume_20d_below_20m", 0) > 0
+
+    # Candidate 4: Excluded classification (ETF)
+    cand_etf = CandidateSecurity(
+        immutable_security_id="SEC_ETF",
+        primary_symbol="ETF_SYM",
+        cik="PASS_CIK",
+        company_name="ETF Corp",
+        primary_exchange="XNAS",
+        security_type=CLASSIFICATION_EXCLUDED_SECURITY_TYPE,
+        first_seen_date="2015-01-01",
+        last_seen_date="2020-12-31",
+    )
+    ok_etf, reasons_etf, _ = screen_candidate_security(
+        candidate=cand_etf,
+        alpaca=alpaca,  # type: ignore[arg-type]
+        edgar=edgar,  # type: ignore[arg-type]
+    )
+    assert ok_etf is False
+    assert "excluded_classification_excluded_security_type" in reasons_etf
+
+    # Full manifest screening
+    elig_ids, rej_ids, summary = screen_candidates_manifest(
+        [cand_pass, cand_low_p, cand_low_v, cand_etf],
+        alpaca=alpaca,  # type: ignore[arg-type]
+        edgar=edgar,  # type: ignore[arg-type]
+    )
+    assert elig_ids == ["SEC_PASS"]
+    assert len(rej_ids) == 3
+    assert summary["eligible_count"] == 1
+    assert summary["rejected_count"] == 3
 

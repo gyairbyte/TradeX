@@ -16,8 +16,8 @@ class SecurityIdentity:
 
     immutable_security_id: str
     ticker_at_decision: str
-    effective_start: str
-    effective_end: str
+    effective_start: str = "2010-01-01"
+    effective_end: str = "2030-12-31"
     cik: str | None = None
     composite_figi: str | None = None
     share_class_figi: str | None = None
@@ -139,26 +139,69 @@ class SecurityMaster:
         return list(self._records)
 
 
+def extract_share_class_discriminator(record: dict[str, Any]) -> str | None:
+    """Extract verified stable share-class discriminator from security reference record."""
+    name = str(record.get("name") or "").upper()
+    ticker = str(record.get("ticker") or "").upper()
+
+    for cl in ["CLASS A", "CL A", "COM CL A", "CL. A", "CLASS. A"]:
+        if cl in name:
+            return "CLASS_A"
+    for cl in ["CLASS B", "CL B", "COM CL B", "CL. B", "CLASS. B"]:
+        if cl in name:
+            return "CLASS_B"
+    for cl in ["CLASS C", "CL C", "COM CL C", "CL. C", "CLASS. C"]:
+        if cl in name:
+            return "CLASS_C"
+
+    if ticker.endswith((".A", "/A")):
+        return "CLASS_A"
+    if ticker.endswith((".B", "/B")):
+        return "CLASS_B"
+    if ticker.endswith((".C", "/C")):
+        return "CLASS_C"
+
+    return None
+
+
 def make_immutable_id(
     symbol: str,
     cik: str | None = None,
     composite_figi: str | None = None,
-    share_class: str = "CS",
+    share_class_figi: str | None = None,
+    share_class_discriminator: str | None = None,
     allow_unverified: bool = False,
 ) -> str:
-    """Generate a stable, reproducible immutable security ID.
+    """Generate a stable, reproducible immutable security ID following the locked research hierarchy.
 
-    Requires CIK + share class or composite FIGI for official canonical identity.
-    Disallows symbol-only fallback unless explicitly flagged for unverified debugging (allow_unverified=True).
+    Hierarchy:
+    1. verified share_class_figi when available -> FIGI_{share_class_figi}
+    2. verified composite/security FIGI where it uniquely represents the historical share class -> FIGI_{composite_figi}
+    3. CIK + another verified stable share-class discriminator only when the discriminator
+       proves one unique security -> CIK_{padded_cik}_{discriminator}
+    4. otherwise fail closed with unknown_security_identity.
+    Generic CIK_<cik>_CS is strictly rejected when share-class discriminator is missing.
     """
-    if composite_figi and composite_figi.strip():
-        return f"FIGI_{composite_figi.strip().upper()}"
-    if cik and str(cik).strip():
-        padded_cik = str(cik).strip().zfill(10)
-        return f"CIK_{padded_cik}_{share_class.strip().upper()}"
-    if allow_unverified:
-        return f"US_EQ_{symbol.strip().upper()}_{share_class.strip().upper()}"
+    sc_figi = str(share_class_figi or "").strip().upper()
+    if sc_figi:
+        return f"FIGI_{sc_figi}"
+
+    comp_figi = str(composite_figi or "").strip().upper()
+    if comp_figi:
+        return f"FIGI_{comp_figi}"
+
+    clean_cik = str(cik or "").strip()
+    discrim = str(share_class_discriminator or "").strip().upper()
+    # Reject generic CIK fallback without specific share-class discriminator
+    if clean_cik and discrim and discrim not in {"CS", "COMMON", "UNKNOWN", "NONE", ""}:
+        padded_cik = clean_cik.zfill(10)
+        return f"CIK_{padded_cik}_{discrim}"
+
+    if allow_unverified and symbol and symbol.strip():
+        return f"US_EQ_{symbol.strip().upper()}_CS"
+
     raise ValueError(
-        f"Symbol-only identity '{symbol}' cannot qualify for official-run canonical identity. "
-        f"Verified CIK + share class or composite FIGI is required to prevent lookahead and survivor bias."
+        f"unknown_security_identity: Symbol-only identity '{symbol}' cannot qualify for official canonical identity without "
+        f"verified share_class_figi, composite_figi, or (CIK + verified stable share-class discriminator). "
+        f"Generic CIK without share-class discriminator is rejected to prevent dual-class collision."
     )

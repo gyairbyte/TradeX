@@ -121,6 +121,7 @@ class OutcomeLabelRecord:
     end_of_horizon_return: float
     retention_ratio: float
     sustained_target: bool
+    analysis_entry_price: float = 0.0
     special_distribution_unresolved: bool = False
     time_to_target: int | None = None
     time_to_mae: int | None = None

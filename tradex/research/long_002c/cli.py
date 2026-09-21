@@ -40,15 +40,22 @@ from tradex.research.long_002c.feasibility import (
     analyze_endpoint_feasibility,
     run_block_resampling,
 )
+from tradex.research.long_002c.frozen_manifest import (
+    build_frozen_pre_run_manifest_data,
+    verify_frozen_pre_run_manifest,
+    write_frozen_pre_run_manifest,
+)
 from tradex.research.long_002c.identity import (
     CLASSIFICATION_SUPPORTED_COMMON_STOCK,
     SecurityIdentity,
     SecurityMaster,
+    extract_share_class_discriminator,
     make_immutable_id,
 )
 from tradex.research.long_002c.manifest import (
     CandidateSecurity,
     TickerInterval,
+    build_full_development_discovery_manifest,
     register_manifest_in_security_master,
 )
 from tradex.research.long_002c.market_cap import compute_security_pit_market_caps
@@ -70,6 +77,9 @@ from tradex.research.long_002c.providers import (
     MassiveRefClient,
     resolve_credentials,
 )
+from tradex.research.long_002c.screening import (
+    screen_candidates_manifest,
+)
 from tradex.research.long_002c.spec import (
     DEV_END,
     DEV_START,
@@ -83,19 +93,178 @@ from tradex.research.long_002c.spec import (
 # Bounded smoke test panel for connectivity and integration tests only.
 # Synthetic or smoke panels must NEVER be described as the full development universe.
 SMOKE_CANDIDATES: list[dict[str, Any]] = [
-    {"ticker": "AAPL", "cik": "0000320193", "name": "Apple Inc.", "start": "1980-12-12", "type": "common_stock"},
-    {"ticker": "MSFT", "cik": "0000789019", "name": "Microsoft Corp.", "start": "1986-03-13", "type": "common_stock"},
-    {"ticker": "NVDA", "cik": "0001045810", "name": "NVIDIA Corp.", "start": "1999-01-22", "type": "common_stock"},
-    {"ticker": "AMZN", "cik": "0001018724", "name": "Amazon.com Inc.", "start": "1997-05-15", "type": "common_stock"},
-    {"ticker": "JNJ", "cik": "0000200406", "name": "Johnson & Johnson", "start": "1944-09-25", "type": "common_stock"},
+    {"ticker": "AAPL", "cik": "0000320193", "composite_figi": "BBG000B9XRY4", "name": "Apple Inc.", "start": "1980-12-12", "type": "common_stock"},
+    {"ticker": "MSFT", "cik": "0000789019", "composite_figi": "BBG000BPH459", "name": "Microsoft Corp.", "start": "1986-03-13", "type": "common_stock"},
+    {"ticker": "NVDA", "cik": "0001045810", "composite_figi": "BBG000BBJQV0", "name": "NVIDIA Corp.", "start": "1999-01-22", "type": "common_stock"},
+    {"ticker": "AMZN", "cik": "0001018724", "composite_figi": "BBG000BVPV84", "name": "Amazon.com Inc.", "start": "1997-05-15", "type": "common_stock"},
+    {"ticker": "JNJ", "cik": "0000200406", "composite_figi": "BBG000BMHYD1", "name": "Johnson & Johnson", "start": "1944-09-25", "type": "common_stock"},
     # Meta Platforms: effective historical ticker during 2016-2020 was FB (renamed to META in 2022)
-    {"ticker": "FB", "cik": "0001326801", "name": "Meta Platforms Inc.", "start": "2012-05-18", "type": "common_stock"},
+    {"ticker": "FB", "cik": "0001326801", "composite_figi": "BBG000MM2P62", "name": "Meta Platforms Inc.", "start": "2012-05-18", "type": "common_stock"},
 ]
 
 
 def run_universe_audit_preflight(creds: dict[str, str | None]) -> dict[str, Any]:
     """Execute evidence-backed historical universe construction and PIT eligibility audit."""
     return execute_bounded_universe_audit(creds)
+
+
+def cmd_discover(args: argparse.Namespace) -> int:
+    """Stage A: Build complete candidate discovery universe across 72 monthly snapshots + inactive snapshot."""
+    print("=== LONG-002C STAGE A: CANDIDATE DISCOVERY ===")
+    creds = resolve_credentials()
+    if not creds.get("massive_api_key"):
+        print("ERROR: Massive API key (MASSIVE_API_KEY) is required for candidate discovery.")
+        return 1
+
+    cache = ResponseCache()
+    massive = MassiveRefClient(creds["massive_api_key"], cache=cache, min_interval_seconds=0.1)
+
+    out_dir = Path(args.output_dir) if getattr(args, "output_dir", None) else REPO_ROOT / "data" / "research" / "long_002c"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_file = out_dir / "discovery_manifest.json"
+    metrics_file = out_dir / "discovery_manifest_metrics.json"
+
+    def _on_progress(kind: str, cur: int, tot: int, dt: str) -> None:
+        print(f"      [{kind} {cur}/{tot}] Fetching snapshot for {dt}...")
+
+    custom_dates = getattr(args, "dates", None)
+    include_inactive = not getattr(args, "skip_inactive", False)
+    if custom_dates:
+        print(f"Enumerating custom panel of {len(custom_dates)} reference snapshots...")
+    else:
+        print("Enumerating 72 monthly active reference snapshots + DEV_END inactive snapshot...")
+
+    candidates, metrics, comparison = build_full_development_discovery_manifest(
+        massive=massive,
+        custom_dates=custom_dates,
+        include_inactive=include_inactive,
+        on_progress=_on_progress,
+    )
+
+    manifest_dict = {
+        "discovery_version": "1.0",
+        "created_at_utc": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        "total_candidates": len(candidates),
+        "candidates": [c.to_dict() for c in candidates],
+        "metrics": metrics.to_dict(),
+        "classification_comparison": comparison,
+    }
+
+    out_file.write_text(json.dumps(manifest_dict, indent=2), encoding="utf-8")
+    metrics_file.write_text(json.dumps({"metrics": metrics.to_dict(), "comparison": comparison}, indent=2), encoding="utf-8")
+
+    disc_sha = hashlib.sha256(out_file.read_bytes()).hexdigest()
+    chk_file = out_file.with_suffix(".sha256")
+    chk_file.write_text(f"{disc_sha}  {out_file.name}\n", encoding="utf-8")
+
+    print("\nStage A Discovery Complete:")
+    print(f"  - Output Manifest: {out_file} (SHA-256: {disc_sha})")
+    print(f"  - Metrics Summary: {metrics_file}")
+    print("  - Monthly Active Snapshots: 72 (2015-01 through 2020-12)")
+    print("  - Inactive Snapshot: 1 (2020-12-31, active=False)")
+    print(f"  - Total Raw Records: {metrics.total_raw_records_evaluated}")
+    print(f"  - Unique Symbols Seen: {metrics.unique_symbols_seen}")
+    print(f"  - Unique Securities Discovered: {metrics.unique_securities_discovered}")
+    print(f"  - Supported Common Stock: {metrics.supported_common_stock_count}")
+    print(f"  - Excluded Types: {metrics.excluded_security_type_count}")
+    print(f"  - Unknown (Fail Closed): {metrics.unknown_fail_closed_count}")
+    print(f"  - CIK Coverage: {metrics.cik_coverage_pct}%")
+    print(f"  - FIGI Coverage: {metrics.figi_coverage_pct}%")
+    cov_16 = comparison["coverage_2016"]
+    cov_20 = comparison["coverage_2020"]
+    print(f"  - 2016 Coverage: Common {cov_16['common_stock_pct']}%, CIK {cov_16['cik_coverage_pct']}%, FIGI {cov_16['figi_coverage_pct']}%")
+    print(f"  - 2020 Coverage: Common {cov_20['common_stock_pct']}%, CIK {cov_20['cik_coverage_pct']}%, FIGI {cov_20['figi_coverage_pct']}%")
+    return 0
+
+
+def cmd_screen(args: argparse.Namespace) -> int:
+    """Stage B: Screen candidate securities and produce frozen pre-run manifest."""
+    print("=== LONG-002C STAGE B: CANDIDATE SCREENING ===")
+    creds = resolve_credentials()
+    if not (creds.get("alpaca_api_key") and creds.get("alpaca_secret_key")):
+        print("ERROR: Alpaca credentials (ALPACA_API_KEY, ALPACA_SECRET_KEY) are required for Stage B screening.")
+        return 1
+
+    cache = ResponseCache()
+    alpaca = AlpacaDailyClient(creds["alpaca_api_key"], creds["alpaca_secret_key"], cache=cache)  # type: ignore[arg-type]
+    edgar = EdgarClient(cache=cache)
+
+    candidates_path = (
+        Path(args.candidates_file)
+        if getattr(args, "candidates_file", None)
+        else (REPO_ROOT / "data" / "research" / "long_002c" / "discovery_manifest.json")
+    )
+    if not candidates_path.exists():
+        print(f"ERROR: Candidates manifest not found: {candidates_path}")
+        print("Run 'tradex-long-002c discover' first or specify --candidates-file.")
+        return 1
+
+    with candidates_path.open("r", encoding="utf-8") as f:
+        raw_data = json.load(f)
+    raw_list = raw_data.get("candidates", raw_data) if isinstance(raw_data, dict) else raw_data
+
+    candidates: list[CandidateSecurity] = []
+    for item in raw_list:
+        if isinstance(item, dict) and "immutable_security_id" in item:
+            candidates.append(CandidateSecurity.from_dict(item))
+        elif isinstance(item, dict):
+            sym = item["ticker"]
+            cik = item.get("cik")
+            if not cik:
+                continue
+            candidates.append(
+                CandidateSecurity(
+                    immutable_security_id=make_immutable_id(
+                        sym,
+                        cik=cik,
+                        composite_figi=item.get("composite_figi"),
+                        share_class_figi=item.get("share_class_figi"),
+                        share_class_discriminator=item.get("share_class_discriminator") or extract_share_class_discriminator(item),
+                        allow_unverified=False,
+                    ),
+                    primary_symbol=sym,
+                    cik=cik,
+                    composite_figi=item.get("composite_figi"),
+                    share_class_figi=item.get("share_class_figi"),
+                    company_name=item.get("name", ""),
+                    primary_exchange=item.get("primary_exchange", "XNAS"),
+                    security_type=CLASSIFICATION_SUPPORTED_COMMON_STOCK,
+                    first_seen_date=WARMUP_START,
+                    last_seen_date=DEV_END,
+                )
+            )
+
+    max_cands = getattr(args, "max_candidates", None)
+    eval_cands = candidates[:max_cands] if max_cands else candidates
+    print(f"Screening {len(eval_cands)} candidates against Stage B eligibility criteria...")
+    eligible_ids, rejected_ids, summary = screen_candidates_manifest(
+        eval_cands,
+        alpaca=alpaca,
+        edgar=edgar,
+        max_candidates=max_cands,
+        on_progress=lambda cur, tot, sym, ok: print(f"      [{cur}/{tot}] {sym}: {'PASS' if ok else 'FAIL'}"),
+    )
+
+    out_path = (
+        Path(args.output)
+        if getattr(args, "output", None)
+        else (REPO_ROOT / "data" / "research" / "long_002c" / "frozen_pre_run_manifest.json")
+    )
+    pre_run_data = build_frozen_pre_run_manifest_data(
+        discovery_manifest_path=candidates_path,
+        stage_b_eligible_ids=eligible_ids,
+        repo_root=REPO_ROOT,
+    )
+    written_path, frozen_sha = write_frozen_pre_run_manifest(out_path, pre_run_data)
+    print("\nStage B Screening Complete:")
+    print(f"  - Evaluated: {len(eval_cands)}")
+    print(f"  - Eligible: {len(eligible_ids)} ({summary['pass_rate_pct']}%)")
+    print(f"  - Rejected: {len(rejected_ids)}")
+    print(f"  - Frozen Pre-Run Manifest: {written_path}")
+    print(f"  - Frozen Pre-Run SHA-256: {frozen_sha}")
+    verified = verify_frozen_pre_run_manifest(written_path, frozen_sha)
+    print(f"  - Verification: {'PASS' if verified else 'FAIL'}")
+    return 0 if verified else 1
 
 
 def cmd_preflight(args: argparse.Namespace) -> int:
@@ -209,7 +378,15 @@ def cmd_build(args: argparse.Namespace) -> int:
                 cik = item.get("cik")
                 if not cik:
                     continue
-                sec_id = make_immutable_id(sym, cik=cik, share_class="CS")
+                disc = item.get("share_class_discriminator") or extract_share_class_discriminator(item)
+                sec_id = make_immutable_id(
+                    sym,
+                    cik=cik,
+                    composite_figi=item.get("composite_figi"),
+                    share_class_figi=item.get("share_class_figi"),
+                    share_class_discriminator=disc,
+                    allow_unverified=False,
+                )
                 cand = CandidateSecurity(
                     immutable_security_id=sec_id,
                     primary_symbol=sym,
@@ -236,13 +413,21 @@ def cmd_build(args: argparse.Namespace) -> int:
         for item in SMOKE_CANDIDATES:
             sym = item["ticker"]
             cik = item["cik"]
-            sec_id = make_immutable_id(sym, cik=cik, share_class="CS")
+            disc = item.get("share_class_discriminator") or extract_share_class_discriminator(item)
+            sec_id = make_immutable_id(
+                sym,
+                cik=cik,
+                composite_figi=item.get("composite_figi"),
+                share_class_figi=item.get("share_class_figi"),
+                share_class_discriminator=disc,
+                allow_unverified=False,
+            )
             cand = CandidateSecurity(
                 immutable_security_id=sec_id,
                 primary_symbol=sym,
                 cik=cik,
-                composite_figi=None,
-                share_class_figi=None,
+                composite_figi=item.get("composite_figi"),
+                share_class_figi=item.get("share_class_figi"),
                 company_name=item["name"],
                 primary_exchange="XNAS",
                 security_type=CLASSIFICATION_SUPPORTED_COMMON_STOCK,
@@ -285,6 +470,61 @@ def cmd_build(args: argparse.Namespace) -> int:
 
     sessions = get_trading_sessions("2015-01-01", DEV_END)
     dev_sessions = [s for s in sessions if DEV_START <= s <= DEV_END]
+
+    max_cands = getattr(args, "max_candidates", None)
+    eval_cands = manifest_candidates[:max_cands] if max_cands else manifest_candidates
+    # Stage B Screening: Screen manifest candidates against exact locked Stage B eligibility rules
+    print(f"\n[Stage B Screening] Screening {len(eval_cands)} candidates against locked Stage B criteria...")
+    eligible_ids, rejected_ids, _ = screen_candidates_manifest(
+        eval_cands,
+        alpaca=alpaca,
+        edgar=edgar,
+        max_candidates=max_cands,
+        on_progress=lambda cur, tot, sym, ok: print(f"      [{cur}/{tot}] {sym}: {'PASS' if ok else 'FAIL'}"),
+    )
+    print(f"      Stage B Screening: {len(eligible_ids)} passed, {len(rejected_ids)} rejected.")
+
+    # Write and verify frozen pre-run manifest
+    frozen_manifest_path = REPO_ROOT / "data" / "research" / "long_002c" / "frozen_pre_run_manifest.json"
+    disc_manifest_path = (
+        Path(args.candidates_file)
+        if args.candidates_file
+        else (REPO_ROOT / "data" / "research" / "long_002c" / "discovery_manifest.json")
+    )
+    if not disc_manifest_path.exists():
+        disc_manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        disc_manifest_path.write_text(
+            json.dumps({"candidates": [c.to_dict() for c in manifest_candidates]}, indent=2),
+            encoding="utf-8",
+        )
+
+    pre_run_data = build_frozen_pre_run_manifest_data(
+        discovery_manifest_path=disc_manifest_path,
+        stage_b_eligible_ids=eligible_ids,
+        repo_root=REPO_ROOT,
+    )
+    _, frozen_sha = write_frozen_pre_run_manifest(frozen_manifest_path, pre_run_data)
+    print(f"      Frozen pre-run manifest written: {frozen_manifest_path}")
+    print(f"      Frozen pre-run SHA-256: {frozen_sha}")
+    if not verify_frozen_pre_run_manifest(frozen_manifest_path, frozen_sha):
+        print("ERROR: Frozen pre-run manifest failed hash verification!")
+        return 1
+    print("      Verification: Frozen pre-run manifest verified.")
+
+    # Gate on Stage C outcome calculation
+    if not getattr(args, "authorize_outcomes", False) or getattr(args, "pre_run_only", False):
+        print("\n" + "=" * 70)
+        print("STAGE B SCREENING COMPLETE & FROZEN PRE-RUN MANIFEST LOCKED.")
+        print(f"Stage B Eligible Candidates: {len(eligible_ids)}")
+        print(f"Frozen Pre-Run Manifest: {frozen_manifest_path}")
+        print(f"Frozen Pre-Run SHA-256: {frozen_sha}")
+        print("Stage C outcome census is BLOCKED pending Gary & ChatGPT authorization.")
+        print("PR #85 remains draft and unmerged.")
+        print("=" * 70)
+        return 0
+
+    # Filter candidates to Stage B eligible securities for Stage C execution
+    manifest_candidates = [c for c in manifest_candidates if c.immutable_security_id in eligible_ids]
 
     all_obs: list[DecisionObservation] = []
     all_elig: list[DataEligibility] = []
@@ -724,10 +964,23 @@ def main() -> int:
     preflight_parser = subparsers.add_parser("preflight", help="Audit credentials, providers, hashes, and boundaries")
     preflight_parser.add_argument("--universe-audit", action="store_true", help="Audit historical universe coverage and provider call/runtime estimates")
 
+    discover_parser = subparsers.add_parser("discover", help="Stage A: Candidate discovery across 72 monthly snapshots + inactive snapshot")
+    discover_parser.add_argument("--output-dir", type=str, default=None, help="Output directory for discovery manifest")
+    discover_parser.add_argument("--dates", nargs="+", default=None, help="Custom list of snapshot dates (e.g. 2016-01-04 2018-01-02 2020-01-02)")
+    discover_parser.add_argument("--skip-inactive", action="store_true", help="Skip inactive snapshot query")
+
+    screen_parser = subparsers.add_parser("screen", help="Stage B: Screen candidate manifest against locked eligibility criteria")
+    screen_parser.add_argument("--candidates-file", type=str, default=None, help="Path to discovery manifest JSON")
+    screen_parser.add_argument("--output", type=str, default=None, help="Path to write frozen pre-run manifest JSON")
+    screen_parser.add_argument("--max-candidates", type=int, default=None, help="Maximum number of candidates to screen")
+
     build_parser = subparsers.add_parser("build", help="Build development dataset and run evaluation")
     build_parser.add_argument("--smoke", action="store_true", help="Run bounded smoke pull (smoke test panel only)")
     build_parser.add_argument("--candidates-file", type=str, default=None, help="Path to auditable candidate securities JSON manifest")
     build_parser.add_argument("--run-id", type=str, default=None, help="Custom run ID")
+    build_parser.add_argument("--max-candidates", type=int, default=None, help="Maximum number of candidates to screen")
+    build_parser.add_argument("--authorize-outcomes", action="store_true", help="Explicit authorization to proceed past Stage B to Stage C")
+    build_parser.add_argument("--pre-run-only", action="store_true", help="Stop after Stage B screening and frozen pre-run manifest generation")
 
     subparsers.add_parser("evaluate", help="Offline deterministic evaluation from frozen Parquet dataset")
     subparsers.add_parser("verify", help="Verify artifact checksums")
@@ -736,6 +989,10 @@ def main() -> int:
 
     if args.command == "preflight":
         return cmd_preflight(args)
+    elif args.command == "discover":
+        return cmd_discover(args)
+    elif args.command == "screen":
+        return cmd_screen(args)
     elif args.command == "build":
         return cmd_build(args)
     elif args.command == "evaluate":

@@ -21,8 +21,12 @@ def test_immutable_id_generation() -> None:
     id1 = make_immutable_id("AAPL", cik="0000320193", composite_figi="BBG000B9XRY4")
     assert id1 == "FIGI_BBG000B9XRY4"
 
-    id2 = make_immutable_id("AAPL", cik="0000320193")
-    assert id2 == "CIK_0000320193_CS"
+    id2 = make_immutable_id("AAPL", cik="0000320193", share_class_discriminator="CLASS_A")
+    assert id2 == "CIK_0000320193_CLASS_A"
+
+    # Generic CIK without discriminator fails closed to prevent dual-class collisions
+    with pytest.raises(ValueError, match="unknown_security_identity"):
+        make_immutable_id("AAPL", cik="0000320193")
 
     # Symbol-only identity cannot qualify for official canonical identity
     with pytest.raises(ValueError, match="Symbol-only identity"):

@@ -357,7 +357,7 @@ class MassiveRefClient:
         self,
         pit_date: str,
         active: bool = True,
-        safety_max_pages: int = 25,
+        safety_max_pages: int = 50,
     ) -> tuple[list[dict[str, Any]], list[ProvenanceProviderRecord], SnapshotPaginationMeta]:
         """Fetch active or inactive ticker reference snapshot, paginating until exhausted."""
         base_params = {

@@ -21,15 +21,19 @@ def compute_outcome_cell(
     cutoff_time: str,
     target_pct: float,
     horizon_sessions: int,
-    next_open_price: float,
+    next_open_price: float,  # split-normalized next regular session open
     forward_bars: list[dict[str, Any]],  # list of dicts with split-normalized {"open", "high", "low", "close"}
     pre_entry_atr: float,
     entry_friction_bps: float = PRIMARY_ENTRY_FRICTION_BPS,
     special_distribution_unresolved: bool = False,
+    as_traded_entry_price: float | None = None,
 ) -> OutcomeLabelRecord:
     """Compute outcome metrics for a single (target_pct, horizon_sessions) cell.
 
     forward_bars must contain at least horizon_sessions bars on a consistent split-normalized price basis.
+    Retains both reference_entry_price (raw as-traded open + $0.01 + 5 bps friction) and
+    analysis_entry_price (split-normalized open).
+    All forward barriers, ATR, returns, MFE, MAE, and clean risk cap paths operate on split-normalized scale.
     If special_distribution_unresolved is True, the outcome cannot be reliably calculated and is excluded from clean targets.
     """
     if len(forward_bars) < horizon_sessions:
@@ -39,26 +43,34 @@ def compute_outcome_cell(
 
     bars = forward_bars[:horizon_sessions]
 
-    # Entry reference: next regular session open + modeled entry friction
-    friction_mult = 1.0 + (entry_friction_bps / 10000.0)
-    entry_price = next_open_price * friction_mult
+    analysis_entry_price = float(next_open_price)
+    entry_price = analysis_entry_price * (1.0 + entry_friction_bps / 10000.0)
+
+    # Reference execution entry price: raw as-traded open price at decision session T + entry friction ($0.01 + 5 bps)
+    if as_traded_entry_price is not None:
+        raw_open = float(as_traded_entry_price)
+        entry_friction_amt = raw_open * (entry_friction_bps / 10000.0) + 0.01
+        reference_entry_price = raw_open + entry_friction_amt
+    else:
+        # Fallback to modeled friction on analysis_entry_price
+        reference_entry_price = entry_price
 
     target_price = entry_price * (1.0 + target_pct / 100.0)
 
-    # Adverse barrier formulas: max(0.05, 1.5 * pre_entry_atr / entry_price)
-    if pre_entry_atr > 0 and entry_price > 0:
-        adverse_barrier_pct = max(0.05, 1.5 * pre_entry_atr / entry_price)
+    # Adverse barrier formulas: max(0.05, 1.5 * pre_entry_atr / analysis_entry_price)
+    if pre_entry_atr > 0 and analysis_entry_price > 0:
+        adverse_barrier_pct = max(0.05, 1.5 * pre_entry_atr / analysis_entry_price)
     else:
         adverse_barrier_pct = 0.05
 
-    adverse_barrier_price = entry_price * (1.0 - adverse_barrier_pct)
+    adverse_barrier_price = analysis_entry_price * (1.0 - adverse_barrier_pct)
 
     # Clean risk cap formulas: min((target_pct / 100.0) / 2.0, adverse_barrier_pct)
     clean_risk_cap_pct = min((target_pct / 100.0) / 2.0, adverse_barrier_pct)
-    clean_risk_cap_amount = entry_price * clean_risk_cap_pct
-    clean_risk_cap_price = entry_price * (1.0 - clean_risk_cap_pct)
+    clean_risk_cap_amount = analysis_entry_price * clean_risk_cap_pct
+    clean_risk_cap_price = analysis_entry_price * (1.0 - clean_risk_cap_pct)
 
-    # Forward price path metrics
+    # Forward price path metrics on split-normalized scale
     highs = [float(b["high"]) for b in bars]
     lows = [float(b["low"]) for b in bars]
     closes = [float(b["close"]) for b in bars]
@@ -67,16 +79,16 @@ def compute_outcome_cell(
     min_forward_low = min(lows)
     close_at_horizon = closes[-1]
 
-    mfe_pct = max_forward_high / entry_price - 1.0
+    mfe_pct = max_forward_high / analysis_entry_price - 1.0
     target_progress_ratio = mfe_pct / (target_pct / 100.0)
     target_reached = max_forward_high >= target_price
 
     near_miss = 0.8 <= target_progress_ratio < 1.0
     partial_move = 0.5 <= target_progress_ratio < 0.8
 
-    mae_pct = max(0.0, (entry_price - min_forward_low) / entry_price)
+    mae_pct = max(0.0, (analysis_entry_price - min_forward_low) / analysis_entry_price)
     mae_atr = (
-        (entry_price - min_forward_low) / pre_entry_atr
+        (analysis_entry_price - min_forward_low) / pre_entry_atr
         if pre_entry_atr > 0
         else 0.0
     )
@@ -105,10 +117,9 @@ def compute_outcome_cell(
             path_sequence_ambiguous = True
 
         # Pre-target excursion check
-        # Bars prior to target session
         pre_target_lows = lows[: first_target_idx - 1]
-        pre_target_min_low = min(pre_target_lows) if pre_target_lows else entry_price
-        pre_target_mae_pct = max(0.0, (entry_price - pre_target_min_low) / entry_price)
+        pre_target_min_low = min(pre_target_lows) if pre_target_lows else analysis_entry_price
+        pre_target_mae_pct = max(0.0, (analysis_entry_price - pre_target_min_low) / analysis_entry_price)
 
         # On the target bar itself, check if low broke clean risk cap
         target_bar_broke_cap = tb_low <= clean_risk_cap_price
@@ -121,7 +132,7 @@ def compute_outcome_cell(
             clean_target_reached = True
 
     # Horizon return and retention metrics
-    end_of_horizon_return = close_at_horizon / entry_price - 1.0
+    end_of_horizon_return = close_at_horizon / analysis_entry_price - 1.0
     retention_ratio = (
         end_of_horizon_return / mfe_pct if mfe_pct > 0 else 0.0
     )
@@ -142,7 +153,7 @@ def compute_outcome_cell(
         target_pct=target_pct,
         horizon_sessions=horizon_sessions,
         ticker_at_decision=ticker_at_decision,
-        reference_entry_price=round(entry_price, 4),
+        reference_entry_price=round(reference_entry_price, 4),
         entry_friction_bps=entry_friction_bps,
         target_price=round(target_price, 4),
         adverse_barrier_pct=round(adverse_barrier_pct, 6),
@@ -161,6 +172,7 @@ def compute_outcome_cell(
         end_of_horizon_return=round(end_of_horizon_return, 6),
         retention_ratio=round(retention_ratio, 6),
         sustained_target=sustained_target,
+        analysis_entry_price=round(analysis_entry_price, 4),
         special_distribution_unresolved=special_distribution_unresolved,
         time_to_target=time_to_target,
         time_to_mae=time_to_mae,
@@ -177,6 +189,7 @@ def compute_all_nine_outcomes(
     pre_entry_atr: float,
     entry_friction_bps: float = PRIMARY_ENTRY_FRICTION_BPS,
     special_distribution_unresolved: bool = False,
+    as_traded_entry_price: float | None = None,
 ) -> list[OutcomeLabelRecord]:
     """Compute all nine target/horizon outcome combinations for an observation."""
     records: list[OutcomeLabelRecord] = []
@@ -193,6 +206,22 @@ def compute_all_nine_outcomes(
             pre_entry_atr=pre_entry_atr,
             entry_friction_bps=entry_friction_bps,
             special_distribution_unresolved=special_distribution_unresolved,
+            as_traded_entry_price=as_traded_entry_price,
         )
         records.append(record)
     return records
+
+
+def parse_special_distribution_dates(dividends: list[dict[str, Any]]) -> set[str]:
+    """Extract dates of unresolved material distributions (special cash, spinoffs, capital returns).
+
+    Ordinary regular cash dividends do NOT cause exclusion.
+    """
+    special_dates: set[str] = set()
+    for div in dividends:
+        div_type = str(div.get("dividend_type") or div.get("type") or "").upper()
+        if div_type in {"SC", "SPECIAL", "SPECIAL_CASH", "SPINOFF", "SPIN_OFF", "RETURN_OF_CAPITAL", "LIQUIDATION"}:
+            ex_date = div.get("ex_dividend_date") or div.get("execution_date") or div.get("record_date")
+            if ex_date:
+                special_dates.add(str(ex_date)[:10])
+    return special_dates
