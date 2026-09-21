@@ -27,6 +27,7 @@ Verifies:
 """
 from __future__ import annotations
 
+import json
 import tempfile
 from pathlib import Path
 
@@ -60,12 +61,14 @@ from tradex.research.long_002c.identity import (
     make_immutable_id,
 )
 from tradex.research.long_002c.manifest import (
+    TickerInterval,
     build_candidate_manifest_from_snapshots,
     register_manifest_in_security_master,
 )
 from tradex.research.long_002c.market_cap import (
     calculate_pit_market_cap,
     extract_pit_shares_fact,
+    is_sec_fact_available,
 )
 from tradex.research.long_002c.models import (
     BaselineComparatorOutput,
@@ -75,6 +78,7 @@ from tradex.research.long_002c.models import (
     ProvenanceProviderRecord,
 )
 from tradex.research.long_002c.outcomes import compute_outcome_cell
+from tradex.research.long_002c.providers import MassiveRefClient
 from tradex.research.long_002c.spec import verify_upstream_spec_hashes
 
 
@@ -1026,4 +1030,310 @@ def test_persistent_response_cache_determinism() -> None:
         assert cached_data == {"results": [{"ticker": "AAPL"}]}
         assert cached_sha == sha
         assert cached_ts is not None
+
+
+# 29. Reference snapshot pagination exhaustion
+def test_snapshot_pagination_exhaustion() -> None:
+    """Item 1: MassiveRefClient paginates until next_url is exhausted, records metadata, and flags completeness."""
+    # Mock responses across 3 pages
+    page_1 = json.dumps({
+        "results": [{"ticker": "A"}, {"ticker": "B"}, {"ticker": "C"}],
+        "next_url": "https://api.massive.com/v3/reference/tickers?cursor=p2",
+    }).encode("utf-8")
+    page_2 = json.dumps({
+        "results": [{"ticker": "D"}, {"ticker": "E"}, {"ticker": "F"}],
+        "next_url": "https://api.massive.com/v3/reference/tickers?cursor=p3",
+    }).encode("utf-8")
+    page_3 = json.dumps({
+        "results": [{"ticker": "G"}, {"ticker": "H"}, {"ticker": "I"}],
+        "next_url": None,
+    }).encode("utf-8")
+
+    def mock_fetch(url: str) -> bytes:
+        if "cursor=p2" in url:
+            return page_2
+        elif "cursor=p3" in url:
+            return page_3
+        return page_1
+
+    client = MassiveRefClient(api_key="test_key", request_func=mock_fetch, min_interval_seconds=0)
+
+    # 1. Exhausted normally within safety cap
+    results, _prov, meta = client.fetch_reference_snapshot("2016-01-04", active=True, safety_max_pages=10)
+    assert len(results) == 9
+    assert meta.pages_fetched == 3
+    assert meta.pagination_exhausted_normally is True
+    assert meta.safety_max_pages_hit is False
+    assert meta.is_complete is True
+    assert meta.first_ticker == "A"
+    assert meta.last_ticker == "I"
+
+    # 2. Safety max pages hit before exhaustion
+    results_capped, _prov_capped, meta_capped = client.fetch_reference_snapshot("2016-01-04", active=True, safety_max_pages=2)
+    assert len(results_capped) == 6
+    assert meta_capped.pages_fetched == 2
+    assert meta_capped.records_per_page == [3, 3]
+    assert meta_capped.safety_max_pages_hit is True
+    assert meta_capped.pagination_exhausted_normally is False
+    assert meta_capped.is_complete is False
+
+
+# 30. Inactive and delisted coverage semantics
+def test_inactive_and_delisted_coverage_semantics() -> None:
+    """Item 2: Proves Massive reference snapshots support historical PIT date with active=false.
+
+    SolarCity (SCTY) was active in Jan 2016, acquired by Tesla in Nov 2016,
+    and returns delisted_utc when queried as inactive.
+    """
+    # Active record
+    active_rec = {
+        "ticker": "SCTY",
+        "name": "SolarCity Corp",
+        "market": "stocks",
+        "locale": "us",
+        "primary_exchange": "XNAS",
+        "type": "CS",
+        "active": True,
+        "cik": "0001408356",
+        "composite_figi": "BBG000BH51N7",
+    }
+    # Delisted / inactive record with delisted_utc
+    delisted_rec = {
+        "ticker": "SCTY",
+        "name": "SolarCity Corp",
+        "market": "stocks",
+        "locale": "us",
+        "primary_exchange": "XNAS",
+        "type": "CS",
+        "active": False,
+        "cik": "0001408356",
+        "composite_figi": "BBG000BH51N7",
+        "delisted_utc": "2016-11-22T05:00:00Z",
+    }
+
+    assert classify_security(active_rec) == CLASSIFICATION_SUPPORTED_COMMON_STOCK
+    assert classify_security(delisted_rec) == CLASSIFICATION_SUPPORTED_COMMON_STOCK
+    assert delisted_rec["delisted_utc"] == "2016-11-22T05:00:00Z"
+
+
+# 31. Sparse snapshots do not invent rename transition dates
+def test_sparse_snapshots_do_not_invent_rename_date() -> None:
+    """Item 3: Sparse snapshots identify tickers belonging to an identity, but do NOT invent transition dates.
+
+    Unverified intermediate dates fail closed until authoritative lifecycle evidence is attached.
+    """
+    snapshots = {
+        "2016-01-04": [
+            {
+                "ticker": "FB",
+                "name": "Facebook, Inc. Class A Common Stock",
+                "market": "stocks",
+                "locale": "us",
+                "primary_exchange": "XNAS",
+                "type": "CS",
+                "cik": "0001326801",
+                "composite_figi": "BBG000MM2P62",
+            }
+        ],
+        "2022-06-15": [
+            {
+                "ticker": "META",
+                "name": "Meta Platforms, Inc. Class A Common Stock",
+                "market": "stocks",
+                "locale": "us",
+                "primary_exchange": "XNAS",
+                "type": "CS",
+                "cik": "0001326801",
+                "composite_figi": "BBG000MM2P62",
+            }
+        ],
+    }
+
+    candidates, _ = build_candidate_manifest_from_snapshots(snapshots)
+    cand = candidates[0]
+    master = register_manifest_in_security_master(candidates)
+
+    # Observed snapshot dates resolve
+    assert master.resolve_historical_ticker(cand.immutable_security_id, "2016-01-04") == "FB"
+    assert master.resolve_historical_ticker(cand.immutable_security_id, "2022-06-15") == "META"
+
+    # Intermediate unobserved date between disparate tickers FAILS CLOSED (does not invent transition date)
+    assert master.resolve_historical_ticker(cand.immutable_security_id, "2019-06-01") is None
+
+    # When authoritative lifecycle intervals are attached (e.g. from SEC EDGAR formerNames), intermediate dates resolve
+    cand.attach_authoritative_lifecycle(
+        intervals=[
+            TickerInterval(symbol="FB", start_date="2012-05-18", end_date="2022-06-08", source="sec_edgar_former_names", confidence="high"),
+            TickerInterval(symbol="META", start_date="2022-06-09", end_date="9999-12-31", source="sec_edgar_former_names", confidence="high"),
+        ],
+        provenance={"sec_edgar_cik": "0001326801", "former_names": [{"name": "Facebook Inc", "from": "2005-05-06", "to": "2021-10-27"}]},
+    )
+    master_authoritative = register_manifest_in_security_master([cand])
+    assert master_authoritative.resolve_historical_ticker(cand.immutable_security_id, "2019-06-01") == "FB"
+    assert master_authoritative.resolve_historical_ticker(cand.immutable_security_id, "2023-01-15") == "META"
+
+
+# 32. Weighted-average shares strictly rejected for PIT market cap
+def test_weighted_average_shares_strictly_rejected() -> None:
+    """Item 4: extract_pit_shares_fact rejects WeightedAverageNumberOfSharesOutstandingBasic."""
+    facts = {
+        "facts": {
+            "us-gaap": {
+                "WeightedAverageNumberOfSharesOutstandingBasic": {
+                    "units": {
+                        "shares": [
+                            {"filed": "2016-02-10", "end": "2015-12-31", "val": 2_800_000_000, "form": "10-K", "accn": "001"}
+                        ]
+                    }
+                }
+            }
+        }
+    }
+    fact = extract_pit_shares_fact(facts, session_date="2016-03-01")
+    assert fact is None, "WeightedAverageNumberOfSharesOutstandingBasic must be rejected as non-PIT shares concept"
+
+    mcap, reason = calculate_pit_market_cap(fact, as_traded_close=100.0)
+    assert mcap is None
+    assert reason == "missing_pit_shares_fact"
+
+
+# 33. SEC Fact Availability Timing Hierarchy for 09:00 vs 20:30
+def test_sec_fact_availability_timing_hierarchy() -> None:
+    """Item 5: Acceptance timestamp <= decision timestamp; date-only unavailable all filing day."""
+    dec_ts_0900 = "2018-05-01T13:00:00Z"
+    dec_ts_2030 = "2018-05-02T00:30:00Z"
+    session_date = "2018-05-01"
+
+    # Case A1: Filing accepted 08:00 EDT (12:00 UTC) => available at 09:00 EDT (13:00 UTC)
+    avail, _ts, src, conf = is_sec_fact_available(
+        filing_date="2018-05-01",
+        acceptance_timestamp_utc="2018-05-01T12:00:00Z",
+        decision_timestamp_utc=dec_ts_0900,
+        session_date=session_date,
+    )
+    assert avail is True
+    assert src == "exact_acceptance_timestamp"
+    assert conf == "high"
+
+    # Case A2: Filing accepted 10:00 EDT (14:00 UTC) => unavailable at 09:00 EDT, available at 20:30 EDT
+    avail_0900, _, _, _ = is_sec_fact_available(
+        filing_date="2018-05-01",
+        acceptance_timestamp_utc="2018-05-01T14:00:00Z",
+        decision_timestamp_utc=dec_ts_0900,
+        session_date=session_date,
+    )
+    assert avail_0900 is False
+
+    avail_2030, _, _, _ = is_sec_fact_available(
+        filing_date="2018-05-01",
+        acceptance_timestamp_utc="2018-05-01T14:00:00Z",
+        decision_timestamp_utc=dec_ts_2030,
+        session_date=session_date,
+    )
+    assert avail_2030 is True
+
+    # Case A3: Filing accepted 21:00 EDT (01:00 UTC next day) => unavailable at same-day 20:30 EDT (00:30 UTC next day)
+    avail_late, _, _, _ = is_sec_fact_available(
+        filing_date="2018-05-01",
+        acceptance_timestamp_utc="2018-05-02T01:00:00Z",
+        decision_timestamp_utc=dec_ts_2030,
+        session_date=session_date,
+    )
+    assert avail_late is False
+
+    # Case B: Date-only filing (acceptance timestamp None) => unavailable all filing day; available next session
+    avail_date_only_0900, _, src_d, conf_d = is_sec_fact_available(
+        filing_date="2018-05-01",
+        acceptance_timestamp_utc=None,
+        decision_timestamp_utc=dec_ts_0900,
+        session_date="2018-05-01",
+    )
+    assert avail_date_only_0900 is False
+    assert src_d == "date_only_next_session_conservative"
+    assert conf_d == "conservative"
+
+    avail_date_only_2030, _, _, _ = is_sec_fact_available(
+        filing_date="2018-05-01",
+        acceptance_timestamp_utc=None,
+        decision_timestamp_utc=dec_ts_2030,
+        session_date="2018-05-01",
+    )
+    assert avail_date_only_2030 is False
+
+    # Available next trading session 2018-05-02 at 09:00
+    avail_next_session, _, _, _ = is_sec_fact_available(
+        filing_date="2018-05-01",
+        acceptance_timestamp_utc=None,
+        decision_timestamp_utc="2018-05-02T13:00:00Z",
+        session_date="2018-05-02",
+    )
+    assert avail_next_session is True
+
+
+# 34. Dual 09:00 and 20:30 build path and forward outcome entry
+def test_dual_snapshots_and_forward_outcome_entry() -> None:
+    """Item 8: Build generates both 09:00 and 20:30 rows; 09:00 enters at session T open, 20:30 at session T+1 open."""
+    identity = SecurityIdentity(
+        immutable_security_id="CIK_0000320193_CS",
+        ticker_at_decision="AAPL",
+        effective_start="2016-01-01",
+        effective_end="2016-02-15",
+        cik="0000320193",
+        security_type="common_stock",
+    )
+
+    # Real trading sessions from exchange calendar
+    dates = get_trading_sessions("2016-01-04", "2016-03-01")[:35]
+    df = pd.DataFrame(
+        {
+            "open": [100.0 + i for i in range(len(dates))],
+            "high": [105.0 + i for i in range(len(dates))],
+            "low": [98.0 + i for i in range(len(dates))],
+            "close": [102.0 + i for i in range(len(dates))],
+            "as_traded_close": [102.0 + i for i in range(len(dates))],
+            "volume": [1_000_000 for _ in range(len(dates))],
+        },
+        index=dates,
+    )
+
+    # Build observations for 09:00 and 20:30
+    obs_0900, _, _, _, _, _ = build_decision_observations_for_security(
+        identity=identity,
+        bars_df=df,
+        trading_sessions=dates,
+        cutoff_time="09:00",
+        dev_start=dates[0],
+        dev_end=dates[10],
+        market_caps={d: 50_000_000_000.0 for d in dates},
+    )
+    obs_2030, _, _, _, _, _ = build_decision_observations_for_security(
+        identity=identity,
+        bars_df=df,
+        trading_sessions=dates,
+        cutoff_time="20:30",
+        dev_start=dates[0],
+        dev_end=dates[10],
+        market_caps={d: 50_000_000_000.0 for d in dates},
+    )
+
+    assert len(obs_0900) > 0
+    assert len(obs_2030) > 0
+    assert all(o.cutoff_time == "09:00" for o in obs_0900)
+    assert all(o.cutoff_time == "20:30" for o in obs_2030)
+
+    # Verify forward entry price calculation
+    t_date = dates[5]
+    idx = dates.index(t_date)
+
+    # For 09:00: execution session is session T; open price is session T open
+    fwd_0900 = df.iloc[idx : idx + 21]
+    entry_open_0900 = float(fwd_0900["open"].iloc[0])
+    assert entry_open_0900 == df.loc[t_date, "open"]
+
+    # For 20:30: execution session is session T+1; open price is session T+1 open
+    fwd_2030 = df.iloc[idx + 1 : idx + 22]
+    entry_open_2030 = float(fwd_2030["open"].iloc[0])
+    next_date = dates[idx + 1]
+    assert entry_open_2030 == df.loc[next_date, "open"]
+    assert entry_open_0900 != entry_open_2030
 

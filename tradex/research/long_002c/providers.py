@@ -12,6 +12,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -20,6 +21,38 @@ import requests
 from tradex.config import load_runtime_settings
 from tradex.research.long_002c.cache import ResponseCache, sanitize_url
 from tradex.research.long_002c.models import ProvenanceProviderRecord
+
+
+@dataclass(frozen=True)
+class SnapshotPaginationMeta:
+    """Detailed pagination and completeness audit metadata for a reference snapshot."""
+
+    pit_date: str
+    active: bool
+    pages_fetched: int
+    records_per_page: list[int]
+    total_records: int
+    pagination_exhausted_normally: bool
+    safety_max_pages_hit: bool
+    first_ticker: str | None
+    last_ticker: str | None
+    response_hashes: list[str]
+    is_complete: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "pit_date": self.pit_date,
+            "active": self.active,
+            "pages_fetched": self.pages_fetched,
+            "records_per_page": self.records_per_page,
+            "total_records": self.total_records,
+            "pagination_exhausted_normally": self.pagination_exhausted_normally,
+            "safety_max_pages_hit": self.safety_max_pages_hit,
+            "first_ticker": self.first_ticker,
+            "last_ticker": self.last_ticker,
+            "response_hashes": self.response_hashes,
+            "is_complete": self.is_complete,
+        }
 
 
 def _now_utc() -> str:
@@ -254,24 +287,32 @@ class MassiveRefClient:
         )
         self.cache = cache
 
-    def _fetch_once(self, url: str) -> tuple[bytes, int | None, str | None]:
-        elapsed = time.monotonic() - self._last_request_time
-        if elapsed < self._min_interval_seconds:
-            time.sleep(self._min_interval_seconds - elapsed)
-        self._last_request_time = time.monotonic()
+    def _fetch_once(self, url: str, max_retries: int = 3) -> tuple[bytes, int | None, str | None]:
+        for attempt in range(max_retries + 1):
+            elapsed = time.monotonic() - self._last_request_time
+            if elapsed < self._min_interval_seconds:
+                time.sleep(self._min_interval_seconds - elapsed)
+            self._last_request_time = time.monotonic()
 
-        if self._request_func:
-            return self._request_func(url), 200, None
+            if self._request_func:
+                return self._request_func(url), 200, None
 
-        req = urllib.request.Request(url, headers={"Accept": "application/json"})
-        try:
-            with urllib.request.urlopen(req, timeout=120) as response:
-                return response.read(), response.getcode(), None
-        except urllib.error.HTTPError as exc:
-            body = exc.read() if hasattr(exc, "read") else b""
-            return body, exc.code, str(exc)
-        except urllib.error.URLError as exc:
-            return b"", None, str(exc)
+            req = urllib.request.Request(url, headers={"Accept": "application/json"})
+            try:
+                with urllib.request.urlopen(req, timeout=120) as response:
+                    return response.read(), response.getcode(), None
+            except urllib.error.HTTPError as exc:
+                body = exc.read() if hasattr(exc, "read") else b""
+                if exc.code == 429 and attempt < max_retries:
+                    time.sleep(15.0 * (attempt + 1))
+                    continue
+                return body, exc.code, str(exc)
+            except urllib.error.URLError as exc:
+                if attempt < max_retries:
+                    time.sleep(2.0)
+                    continue
+                return b"", None, str(exc)
+        return b"", None, "Max retries exceeded"
 
     def _fetch_json(
         self,
@@ -316,9 +357,9 @@ class MassiveRefClient:
         self,
         pit_date: str,
         active: bool = True,
-        safety_max_pages: int = 15,
-    ) -> tuple[list[dict[str, Any]], list[ProvenanceProviderRecord]]:
-        """Fetch active or inactive ticker reference snapshot."""
+        safety_max_pages: int = 25,
+    ) -> tuple[list[dict[str, Any]], list[ProvenanceProviderRecord], SnapshotPaginationMeta]:
+        """Fetch active or inactive ticker reference snapshot, paginating until exhausted."""
         base_params = {
             "market": "stocks",
             "locale": "us",
@@ -330,8 +371,12 @@ class MassiveRefClient:
         }
         all_results: list[dict[str, Any]] = []
         provenance: list[ProvenanceProviderRecord] = []
+        records_per_page: list[int] = []
+        response_hashes: list[str] = []
         next_url: str | None = None
         page = 0
+        exhausted = False
+        hit_max = False
 
         while page < safety_max_pages:
             page += 1
@@ -358,18 +403,77 @@ class MassiveRefClient:
                     response_sha256=resp_hash,
                 )
             )
+            response_hashes.append(resp_hash)
 
             if error or not isinstance(data, dict):
                 break
 
             results = data.get("results", [])
+            records_per_page.append(len(results))
             all_results.extend(results)
+
             raw_next = data.get("next_url")
-            next_url = raw_next if isinstance(raw_next, str) else None
+            next_url = raw_next if isinstance(raw_next, str) and raw_next.strip() else None
             if not next_url:
+                exhausted = True
                 break
 
-        return all_results, provenance
+        if not exhausted and page >= safety_max_pages and next_url:
+            hit_max = True
+
+        first_sym = all_results[0].get("ticker") if all_results else None
+        last_sym = all_results[-1].get("ticker") if all_results else None
+
+        meta = SnapshotPaginationMeta(
+            pit_date=pit_date,
+            active=active,
+            pages_fetched=page,
+            records_per_page=records_per_page,
+            total_records=len(all_results),
+            pagination_exhausted_normally=exhausted,
+            safety_max_pages_hit=hit_max,
+            first_ticker=first_sym,
+            last_ticker=last_sym,
+            response_hashes=response_hashes,
+            is_complete=(exhausted and not hit_max),
+        )
+
+        return all_results, provenance, meta
+
+    def fetch_ticker_reference(
+        self,
+        ticker: str,
+        pit_date: str | None = None,
+        active: bool | None = None,
+    ) -> tuple[list[dict[str, Any]], list[ProvenanceProviderRecord]]:
+        """Fetch reference records for a specific ticker symbol, optionally bounded by PIT date and active status."""
+        params: dict[str, Any] = {"ticker": ticker.upper()}
+        if pit_date:
+            params["date"] = pit_date
+        if active is not None:
+            params["active"] = "true" if active else "false"
+
+        url = self._url("/v3/reference/tickers", params)
+        fp_obj = {"endpoint": "tickers", "ticker": ticker.upper(), "date": pit_date, "active": active}
+        data, _status, _error, resp_hash, req_time = self._fetch_json(
+            url,
+            endpoint_pattern="/v3/reference/tickers",
+            req_fp_obj=fp_obj,
+        )
+        provenance = [
+            ProvenanceProviderRecord(
+                record_id=f"prov_ref_{resp_hash[:16]}",
+                data_family="security_reference",
+                provider_name="massive",
+                provider_role="primary",
+                endpoint_url_pattern="/v3/reference/tickers",
+                retrieval_timestamp_utc=req_time,
+                request_fingerprint_sha256=_json_hash(fp_obj),
+                response_sha256=resp_hash,
+            )
+        ]
+        results = data.get("results", []) if isinstance(data, dict) else []
+        return results, provenance
 
     def fetch_corporate_actions(
         self, ticker: str
@@ -540,6 +644,42 @@ class EdgarClient:
             )
         ]
         return data, prov
+
+    @staticmethod
+    def get_accession_acceptance_map(submissions: dict[str, Any]) -> dict[str, str]:
+        """Extract accessionNumber -> acceptanceDateTime mapping from SEC submissions JSON."""
+        acc_map: dict[str, str] = {}
+        if not submissions or not isinstance(submissions, dict):
+            return acc_map
+        recent = submissions.get("filings", {}).get("recent", {})
+        if not isinstance(recent, dict):
+            return acc_map
+        accessions = recent.get("accessionNumber", [])
+        acceptance_times = recent.get("acceptanceDateTime", [])
+        if isinstance(accessions, list) and isinstance(acceptance_times, list):
+            for accn, dt in zip(accessions, acceptance_times):
+                if accn and dt:
+                    acc_map[str(accn)] = str(dt)
+        return acc_map
+
+    @staticmethod
+    def get_former_names_history(submissions: dict[str, Any]) -> list[dict[str, str]]:
+        """Extract former names and effective date ranges from SEC submissions JSON."""
+        if not submissions or not isinstance(submissions, dict):
+            return []
+        raw_names = submissions.get("formerNames", [])
+        history: list[dict[str, str]] = []
+        if isinstance(raw_names, list):
+            for item in raw_names:
+                if isinstance(item, dict) and item.get("name"):
+                    from_dt = str(item.get("from") or "")[:10]
+                    to_dt = str(item.get("to") or "")[:10]
+                    history.append({
+                        "name": str(item.get("name")),
+                        "from": from_dt,
+                        "to": to_dt,
+                    })
+        return history
 
 
 def resolve_credentials() -> dict[str, str | None]:

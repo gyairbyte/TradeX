@@ -28,6 +28,7 @@ from tradex.research.long_002c.baselines import (
     evaluate_baselines_for_date,
     select_winning_baseline,
 )
+from tradex.research.long_002c.cache import ResponseCache
 from tradex.research.long_002c.calendar import (
     get_trading_sessions,
 )
@@ -40,10 +41,17 @@ from tradex.research.long_002c.feasibility import (
     run_block_resampling,
 )
 from tradex.research.long_002c.identity import (
+    CLASSIFICATION_SUPPORTED_COMMON_STOCK,
     SecurityIdentity,
     SecurityMaster,
     make_immutable_id,
 )
+from tradex.research.long_002c.manifest import (
+    CandidateSecurity,
+    TickerInterval,
+    register_manifest_in_security_master,
+)
+from tradex.research.long_002c.market_cap import compute_security_pit_market_caps
 from tradex.research.long_002c.models import (
     BaselineComparatorOutput,
     DataEligibility,
@@ -180,17 +188,79 @@ def cmd_build(args: argparse.Namespace) -> int:
     run_id = args.run_id or datetime.now(UTC).strftime("%Y-%m-%d-%H%M%S")
 
     # Determine candidate panel
+    manifest_candidates: list[CandidateSecurity] = []
     if args.candidates_file:
         c_path = Path(args.candidates_file)
         if not c_path.exists():
             print(f"ERROR: Candidates file not found: {c_path}")
             return 1
         with c_path.open("r", encoding="utf-8") as f:
-            candidates: list[dict[str, Any]] = json.load(f)
-        mode_label = f"candidates_manifest ({len(candidates)} securities)"
+            raw_data = json.load(f)
+        raw_list = (
+            raw_data["candidates"]
+            if isinstance(raw_data, dict) and "candidates" in raw_data
+            else raw_data
+        )
+        for item in raw_list:
+            if isinstance(item, dict) and "immutable_security_id" in item:
+                cand = CandidateSecurity.from_dict(item)
+            else:
+                sym = item["ticker"]
+                cik = item.get("cik")
+                if not cik:
+                    continue
+                sec_id = make_immutable_id(sym, cik=cik, share_class="CS")
+                cand = CandidateSecurity(
+                    immutable_security_id=sec_id,
+                    primary_symbol=sym,
+                    cik=cik,
+                    composite_figi=item.get("composite_figi"),
+                    share_class_figi=item.get("share_class_figi"),
+                    company_name=item.get("name", ""),
+                    primary_exchange=item.get("primary_exchange", "XNAS"),
+                    security_type=item.get("security_type", CLASSIFICATION_SUPPORTED_COMMON_STOCK),
+                    first_seen_date=item.get("start", WARMUP_START),
+                    last_seen_date=DEV_END,
+                    ticker_intervals=[
+                        TickerInterval(
+                            symbol=sym,
+                            start_date=item.get("start", WARMUP_START),
+                            end_date=DEV_END,
+                            source="input_file",
+                        )
+                    ],
+                )
+            manifest_candidates.append(cand)
+        mode_label = f"candidates_manifest ({len(manifest_candidates)} securities)"
     elif args.smoke:
-        candidates = SMOKE_CANDIDATES
-        mode_label = f"smoke_test_panel ({len(candidates)} securities)"
+        for item in SMOKE_CANDIDATES:
+            sym = item["ticker"]
+            cik = item["cik"]
+            sec_id = make_immutable_id(sym, cik=cik, share_class="CS")
+            cand = CandidateSecurity(
+                immutable_security_id=sec_id,
+                primary_symbol=sym,
+                cik=cik,
+                composite_figi=None,
+                share_class_figi=None,
+                company_name=item["name"],
+                primary_exchange="XNAS",
+                security_type=CLASSIFICATION_SUPPORTED_COMMON_STOCK,
+                first_seen_date=WARMUP_START,
+                last_seen_date=DEV_END,
+                ticker_intervals=[
+                    TickerInterval(
+                        symbol=sym,
+                        start_date=WARMUP_START,
+                        end_date=DEV_END,
+                        source="smoke_panel",
+                        confidence="smoke_test",
+                    )
+                ],
+                listing_lifecycle_provenance={"source": "smoke_panel", "listing_date": item.get("start")},
+            )
+            manifest_candidates.append(cand)
+        mode_label = f"smoke_test_panel ({len(manifest_candidates)} securities)"
     else:
         print("ERROR: Full development dataset build requires an auditable candidate panel via --candidates-file.")
         print("      Hardcoded survivor panels are prohibited by locked research-correctness invariants.")
@@ -204,12 +274,14 @@ def cmd_build(args: argparse.Namespace) -> int:
         print("ERROR: Alpaca credentials (ALPACA_API_KEY, ALPACA_SECRET_KEY) are required to build historical daily bars.")
         return 1
 
-    alpaca = AlpacaDailyClient(creds["alpaca_api_key"], creds["alpaca_secret_key"])  # type: ignore[arg-type]
+    cache = ResponseCache()
+    alpaca = AlpacaDailyClient(creds["alpaca_api_key"], creds["alpaca_secret_key"], cache=cache)  # type: ignore[arg-type]
     massive = (
-        MassiveRefClient(creds["massive_api_key"], min_interval_seconds=0.1)
+        MassiveRefClient(creds["massive_api_key"], cache=cache, min_interval_seconds=0.1)
         if creds.get("massive_api_key")
         else None
     )
+    edgar = EdgarClient(cache=cache)
 
     sessions = get_trading_sessions("2015-01-01", DEV_END)
     dev_sessions = [s for s in sessions if DEV_START <= s <= DEV_END]
@@ -229,6 +301,7 @@ def cmd_build(args: argparse.Namespace) -> int:
     outcomes_by_obs_key: dict[tuple[str, str, str], dict[tuple[float, int], OutcomeLabelRecord]] = {}
 
     sec_master = SecurityMaster()
+    register_manifest_in_security_master(manifest_candidates, sec_master)
 
     # Step 0: Ingest SPY daily bars for SPY-relative momentum baseline
     print("\n[0/6] Ingesting SPY benchmark daily bars for SPY-relative baseline...")
@@ -246,54 +319,44 @@ def cmd_build(args: argparse.Namespace) -> int:
         df_spy = pd.DataFrame()
         print("      WARNING: No SPY bars returned; SPY-relative baselines will be unavailable.")
 
-    # Step 1: Ingest bars and corporate actions for candidate securities
-    print(f"\n[1/6] Ingesting historical daily bars and corporate actions for {len(candidates)} candidates...")
-    for item in candidates:
-        sym = item["ticker"]
-        cik = item.get("cik")
-        name = item.get("name")
-        sec_type = item.get("type", "common_stock")
-        listing_dt = item.get("start")
+    # Step 1: Ingest bars, corporate actions, and EDGAR facts for candidate securities
+    print(f"\n[1/6] Ingesting historical daily bars, EDGAR facts, and corporate actions for {len(manifest_candidates)} candidates...")
+    for cand in manifest_candidates:
+        sec_id = cand.immutable_security_id
+        primary_sym = cand.primary_symbol
+        cik = cand.cik
 
-        # Canonical immutable security ID anchored to CIK + share class
-        if not cik:
-            print(f"      ERROR: Security {sym} lacks CIK; symbol-only identity prohibited for official runs.")
+        # Strict classification gate: only verified supported common stock
+        if cand.security_type != CLASSIFICATION_SUPPORTED_COMMON_STOCK:
+            print(f"      SKIPPING {primary_sym} ({sec_id}): unverified or excluded classification '{cand.security_type}'")
             continue
 
-        sec_id = make_immutable_id(sym, cik=cik, share_class="CS")
-        identity = SecurityIdentity(
-            immutable_security_id=sec_id,
-            ticker_at_decision=sym,
-            effective_start=WARMUP_START,
-            effective_end=DEV_END,
-            cik=cik,
-            company_name=name,
-            security_type=sec_type,
-            listing_date=listing_dt,
-        )
-        sec_master.register_security(identity)
-        securities_identity[sec_id] = identity
+        if not cik:
+            print(f"      ERROR: Security {primary_sym} lacks CIK; symbol-only identity prohibited for official runs.")
+            continue
 
-        print(f"      Ingesting {sym} ({sec_id})...")
+        # Effective historical ticker for warmup/dev query
+        effective_query_ticker = sec_master.resolve_historical_ticker(sec_id, DEV_START) or primary_sym
+        print(f"      Ingesting {effective_query_ticker} ({sec_id}, primary: {primary_sym})...")
 
         # Fetch daily bars from Alpaca (2015 warmup + 2016-2020 development)
         raw_bars, prov_bars = alpaca.fetch_daily_bars(
-            sym, f"{WARMUP_START}T00:00:00Z", f"{DEV_END}T23:59:59Z", feed="sip", adjustment="raw"
+            effective_query_ticker, f"{WARMUP_START}T00:00:00Z", f"{DEV_END}T23:59:59Z", feed="sip", adjustment="raw"
         )
         all_provenance.extend(prov_bars)
 
         # Split-adjusted bars for analytical technical indicators
         adj_bars, prov_adj = alpaca.fetch_daily_bars(
-            sym, f"{WARMUP_START}T00:00:00Z", f"{DEV_END}T23:59:59Z", feed="sip", adjustment="split"
+            effective_query_ticker, f"{WARMUP_START}T00:00:00Z", f"{DEV_END}T23:59:59Z", feed="sip", adjustment="split"
         )
         all_provenance.extend(prov_adj)
 
         if massive:
-            _, _, prov_corp = massive.fetch_corporate_actions(sym)
+            _, _, prov_corp = massive.fetch_corporate_actions(effective_query_ticker)
             all_provenance.extend(prov_corp)
 
         if not raw_bars:
-            print(f"      WARNING: No bars returned for {sym}")
+            print(f"      WARNING: No bars returned for {effective_query_ticker}")
             continue
 
         # Separate as-traded OHLCV and split-normalized OHLC
@@ -322,57 +385,121 @@ def cmd_build(args: argparse.Namespace) -> int:
 
         securities_history_df[sec_id] = df_final
 
-        # Step 2: Build decision observations for this security
-        obs_sec, elig_sec, class_sec, earn_sec, excl_sec, qual_sec = build_decision_observations_for_security(
-            identity=identity,
-            bars_df=df_final,
-            trading_sessions=sessions,
-            cutoff_time="20:30",
-            dev_start=DEV_START,
-            dev_end=DEV_END,
+        # Ingest SEC EDGAR company facts and submissions for PIT market cap
+        facts_data = None
+        acceptance_map = None
+        try:
+            facts_data, prov_facts = edgar.fetch_company_facts(cik)
+            all_provenance.extend(prov_facts)
+            subs_data, prov_subs = edgar.fetch_submissions(cik)
+            all_provenance.extend(prov_subs)
+            if subs_data:
+                acceptance_map = EdgarClient.get_accession_acceptance_map(subs_data)
+        except Exception as e:  # noqa: BLE001
+            print(f"      WARNING: EDGAR retrieval failed for CIK {cik}: {e}")
+
+        # Build as-traded close prices for 09:00 (T-1 close) and 20:30 (T close)
+        as_traded_closes_2030 = {d: float(df_final.loc[d, "as_traded_close"]) for d in df_final.index}
+        as_traded_closes_0900 = {
+            df_final.index[i]: float(df_final.iloc[i - 1]["as_traded_close"])
+            for i in range(1, len(df_final))
+        }
+
+        mcap_0900, reasons_0900, _ = compute_security_pit_market_caps(
+            company_facts=facts_data,
+            session_dates=sessions,
+            as_traded_closes=as_traded_closes_0900,
+            cutoff_time="09:00",
+            accession_acceptance_map=acceptance_map,
         )
-        all_obs.extend(obs_sec)
-        all_elig.extend(elig_sec)
-        all_class.extend(class_sec)
-        all_earnings.extend(earn_sec)
-        all_exclusions.extend(excl_sec)
-        all_quality.append(qual_sec)
-        obs_by_sec[sec_id] = [o.to_dict() for o in obs_sec]
+        mcap_2030, reasons_2030, _ = compute_security_pit_market_caps(
+            company_facts=facts_data,
+            session_dates=sessions,
+            as_traded_closes=as_traded_closes_2030,
+            cutoff_time="20:30",
+            accession_acceptance_map=acceptance_map,
+        )
 
-        # Step 3: Compute outcomes across all nine cells using split-normalized forward bars
-        bar_dates = list(df_final.index)
-        for obs in obs_sec:
-            if obs.split_boundary_purged:
-                continue
-            as_of_date = obs.as_of_date
-            if as_of_date not in bar_dates:
-                continue
-            idx = bar_dates.index(as_of_date)
-            forward_slice = df_final.iloc[idx + 1 : idx + 22]  # up to 21 forward bars
-            if len(forward_slice) < 21:
-                continue
-
-            # Entry reference uses split-normalized open
-            next_open = float(forward_slice["open"].iloc[0])
-            forward_bars = forward_slice[["open", "high", "low", "close"]].to_dict(orient="records")
-            atr_val = obs.atr_14 or 0.0
-
-            nine_outcomes = compute_all_nine_outcomes(
+        identity = sec_master.get_security_by_id(sec_id)
+        if not identity:
+            identity = SecurityIdentity(
                 immutable_security_id=sec_id,
-                ticker_at_decision=sym,
-                as_of_date=as_of_date,
-                cutoff_time=obs.cutoff_time,
-                next_open_price=next_open,
-                forward_bars=forward_bars,
-                pre_entry_atr=atr_val,
-                entry_friction_bps=PRIMARY_ENTRY_FRICTION_BPS,
+                ticker_at_decision=effective_query_ticker,
+                effective_start=WARMUP_START,
+                effective_end=DEV_END,
+                cik=cik,
+                company_name=cand.company_name,
+                security_type=cand.security_type,
             )
-            all_outcomes.extend(nine_outcomes)
+        securities_identity[sec_id] = identity
 
-            key = (sec_id, as_of_date, obs.cutoff_time)
-            outcomes_by_obs_key[key] = {
-                (o.target_pct, o.horizon_sessions): o for o in nine_outcomes
-            }
+        # Step 2: Build decision observations for BOTH 09:00 and 20:30 cutoffs
+        bar_dates = list(df_final.index)
+        obs_by_sec[sec_id] = []
+
+        for cutoff_time in ["09:00", "20:30"]:
+            mcap_curr = mcap_0900 if cutoff_time == "09:00" else mcap_2030
+            reasons_curr = reasons_0900 if cutoff_time == "09:00" else reasons_2030
+
+            obs_sec, elig_sec, class_sec, earn_sec, excl_sec, qual_sec = build_decision_observations_for_security(
+                identity=identity,
+                bars_df=df_final,
+                trading_sessions=sessions,
+                cutoff_time=cutoff_time,
+                dev_start=DEV_START,
+                dev_end=DEV_END,
+                market_caps=mcap_curr,
+                market_cap_reasons=reasons_curr,
+            )
+            all_obs.extend(obs_sec)
+            all_elig.extend(elig_sec)
+            all_class.extend(class_sec)
+            all_earnings.extend(earn_sec)
+            all_exclusions.extend(excl_sec)
+            all_quality.append(qual_sec)
+            obs_by_sec[sec_id].extend([o.to_dict() for o in obs_sec])
+
+            # Step 3: Compute outcomes across all nine cells using forward bars
+            for obs in obs_sec:
+                if obs.split_boundary_purged:
+                    continue
+                as_of_date = obs.as_of_date
+                if as_of_date not in bar_dates:
+                    continue
+                idx = bar_dates.index(as_of_date)
+
+                if cutoff_time == "09:00":
+                    # 09:00: session T is entry session; forward bars start at session T (21 sessions)
+                    forward_slice = df_final.iloc[idx : idx + 21]
+                    if len(forward_slice) < 21:
+                        continue
+                    next_open = float(forward_slice["open"].iloc[0])
+                else:
+                    # 20:30: session T+1 is entry session; forward bars start at session T+1 (21 sessions)
+                    forward_slice = df_final.iloc[idx + 1 : idx + 22]
+                    if len(forward_slice) < 21:
+                        continue
+                    next_open = float(forward_slice["open"].iloc[0])
+
+                forward_bars = forward_slice[["open", "high", "low", "close"]].to_dict(orient="records")
+                atr_val = obs.atr_14 or 0.0
+
+                nine_outcomes = compute_all_nine_outcomes(
+                    immutable_security_id=sec_id,
+                    ticker_at_decision=obs.ticker_at_decision,
+                    as_of_date=as_of_date,
+                    cutoff_time=cutoff_time,
+                    next_open_price=next_open,
+                    forward_bars=forward_bars,
+                    pre_entry_atr=atr_val,
+                    entry_friction_bps=PRIMARY_ENTRY_FRICTION_BPS,
+                )
+                all_outcomes.extend(nine_outcomes)
+
+                key = (sec_id, as_of_date, cutoff_time)
+                outcomes_by_obs_key[key] = {
+                    (o.target_pct, o.horizon_sessions): o for o in nine_outcomes
+                }
 
     print(f"      Built {len(all_obs)} decision observations and {len(all_outcomes)} outcome label records.")
 
@@ -384,36 +511,44 @@ def cmd_build(args: argparse.Namespace) -> int:
     )
     print(f"      Constructed {len(episodes)} independent master episodes ({len(memberships)} constituent memberships).")
 
-    # Step 5: Evaluate Baselines with SPY benchmark
-    print("\n[3/6] Evaluating frozen baseline comparators on common observations...")
+    # Step 5: Evaluate Baselines with SPY benchmark for both 09:00 and 20:30
+    print("\n[3/6] Evaluating frozen baseline comparators on common observations (09:00 & 20:30)...")
     all_baselines: list[BaselineComparatorOutput] = []
 
     for d in dev_sessions:
-        date_sec_data: dict[str, dict[str, Any]] = {}
-        for sec_id, hdf in securities_history_df.items():
-            if d in hdf.index:
-                d_idx = list(hdf.index).index(d)
-                sub_df = hdf.iloc[: d_idx + 1]
-                matching_obs = next(
-                    (o for o in all_obs if o.immutable_security_id == sec_id and o.as_of_date == d),
-                    None,
+        for cutoff_time in ["09:00", "20:30"]:
+            date_sec_data: dict[str, dict[str, Any]] = {}
+            for sec_id, hdf in securities_history_df.items():
+                if d in hdf.index:
+                    d_idx = list(hdf.index).index(d)
+                    sub_df = hdf.iloc[:d_idx] if cutoff_time == "09:00" else hdf.iloc[:d_idx + 1]
+                    if sub_df.empty:
+                        continue
+                    matching_obs = next(
+                        (o for o in all_obs if o.immutable_security_id == sec_id and o.as_of_date == d and o.cutoff_time == cutoff_time),
+                        None,
+                    )
+                    date_sec_data[sec_id] = {
+                        "ticker": securities_identity[sec_id].ticker_at_decision,
+                        "history_df": sub_df,
+                        "atr_14": matching_obs.atr_14 if matching_obs else None,
+                        "sector": None,
+                        "universe_eligible": matching_obs.universe_eligible if matching_obs else True,
+                    }
+            if date_sec_data:
+                if not df_spy.empty and d in df_spy.index:
+                    spy_idx = list(df_spy.index).index(d)
+                    spy_sub_df = df_spy.iloc[:spy_idx] if cutoff_time == "09:00" else df_spy.iloc[:spy_idx + 1]
+                else:
+                    spy_sub_df = None
+
+                base_outputs = evaluate_baselines_for_date(
+                    as_of_date=d,
+                    cutoff_time=cutoff_time,
+                    securities_data=date_sec_data,
+                    spy_history_df=spy_sub_df,
                 )
-                date_sec_data[sec_id] = {
-                    "ticker": securities_identity[sec_id].ticker_at_decision,
-                    "history_df": sub_df,
-                    "atr_14": matching_obs.atr_14 if matching_obs else None,
-                    "sector": None,
-                    "universe_eligible": matching_obs.universe_eligible if matching_obs else True,
-                }
-        if date_sec_data:
-            spy_sub_df = df_spy.loc[:d] if not df_spy.empty and d in df_spy.index else None
-            base_outputs = evaluate_baselines_for_date(
-                as_of_date=d,
-                cutoff_time="20:30",
-                securities_data=date_sec_data,
-                spy_history_df=spy_sub_df,
-            )
-            all_baselines.extend(base_outputs)
+                all_baselines.extend(base_outputs)
 
     print(f"      Evaluated {len(all_baselines)} baseline comparator outputs.")
 

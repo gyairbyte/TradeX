@@ -26,15 +26,29 @@ class TickerInterval:
     """Effective-dated ticker interval for an immutable security."""
 
     symbol: str
-    start_date: str
-    end_date: str
+    start_date: str | None
+    end_date: str | None
+    source: str = "snapshot_observation"  # "authoritative_lifecycle" | "snapshot_observation"
+    confidence: str = "discrete_observation"  # "authoritative" | "discrete_observation"
 
-    def to_dict(self) -> dict[str, str]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "symbol": self.symbol,
             "start_date": self.start_date,
             "end_date": self.end_date,
+            "source": self.source,
+            "confidence": self.confidence,
         }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> TickerInterval:
+        return cls(
+            symbol=str(data["symbol"]),
+            start_date=data.get("start_date"),
+            end_date=data.get("end_date"),
+            source=data.get("source", "snapshot_observation"),
+            confidence=data.get("confidence", "discrete_observation"),
+        )
 
 
 @dataclass
@@ -52,6 +66,20 @@ class CandidateSecurity:
     first_seen_date: str
     last_seen_date: str
     ticker_intervals: list[TickerInterval] = field(default_factory=list)
+    ticker_observations: list[tuple[str, str]] = field(default_factory=list)
+    classification_provenance: dict[str, Any] = field(default_factory=dict)
+    listing_lifecycle_provenance: dict[str, Any] = field(default_factory=dict)
+    reference_source_provenance: dict[str, Any] = field(default_factory=dict)
+
+    def attach_authoritative_lifecycle(
+        self,
+        intervals: list[TickerInterval],
+        provenance: dict[str, Any] | None = None,
+    ) -> None:
+        """Attach authoritative lifecycle intervals (e.g. from EDGAR formerNames or corporate actions)."""
+        self.ticker_intervals = intervals
+        if provenance:
+            self.listing_lifecycle_provenance.update(provenance)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -66,7 +94,37 @@ class CandidateSecurity:
             "first_seen_date": self.first_seen_date,
             "last_seen_date": self.last_seen_date,
             "ticker_intervals": [ti.to_dict() for ti in self.ticker_intervals],
+            "ticker_observations": self.ticker_observations,
+            "classification_provenance": self.classification_provenance,
+            "listing_lifecycle_provenance": self.listing_lifecycle_provenance,
+            "reference_source_provenance": self.reference_source_provenance,
         }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> CandidateSecurity:
+        intervals = [
+            TickerInterval.from_dict(ti) if isinstance(ti, dict) else ti
+            for ti in data.get("ticker_intervals", [])
+        ]
+        raw_obs = data.get("ticker_observations", [])
+        obs = [tuple(o) for o in raw_obs] if raw_obs else []
+        return cls(
+            immutable_security_id=data["immutable_security_id"],
+            primary_symbol=data["primary_symbol"],
+            cik=data.get("cik"),
+            composite_figi=data.get("composite_figi"),
+            share_class_figi=data.get("share_class_figi"),
+            company_name=data.get("company_name", ""),
+            primary_exchange=data.get("primary_exchange", ""),
+            security_type=data.get("security_type", CLASSIFICATION_SUPPORTED_COMMON_STOCK),
+            first_seen_date=data.get("first_seen_date", ""),
+            last_seen_date=data.get("last_seen_date", ""),
+            ticker_intervals=intervals,
+            ticker_observations=obs,
+            classification_provenance=data.get("classification_provenance", {}),
+            listing_lifecycle_provenance=data.get("listing_lifecycle_provenance", {}),
+            reference_source_provenance=data.get("reference_source_provenance", {}),
+        )
 
 
 @dataclass
@@ -188,19 +246,51 @@ def build_candidate_manifest_from_snapshots(
 
         # Build ticker intervals from observations
         obs = data["ticker_observations"]
+        distinct_syms = {sym for sym, _ in obs}
         intervals: list[TickerInterval] = []
-        if obs:
+        if len(distinct_syms) > 1:
+            # Multi-ticker security across snapshots:
+            # Invariant: Sparse snapshots DO NOT prove actual ticker-change effective dates.
+            # Retain known discrete observations; do NOT bridge intermediate dates without authoritative lifecycle.
             curr_sym, first_date = obs[0]
             last_date = first_date
             for sym, d in obs[1:]:
                 if sym == curr_sym:
                     last_date = d
                 else:
-                    intervals.append(TickerInterval(symbol=curr_sym, start_date=first_date, end_date=last_date))
+                    intervals.append(
+                        TickerInterval(
+                            symbol=curr_sym,
+                            start_date=first_date,
+                            end_date=last_date,
+                            source="snapshot_observation",
+                            confidence="discrete_observation",
+                        )
+                    )
                     curr_sym = sym
                     first_date = d
                     last_date = d
-            intervals.append(TickerInterval(symbol=curr_sym, start_date=first_date, end_date=last_date))
+            intervals.append(
+                TickerInterval(
+                    symbol=curr_sym,
+                    start_date=first_date,
+                    end_date=last_date,
+                    source="snapshot_observation",
+                    confidence="discrete_observation",
+                )
+            )
+        elif obs:
+            curr_sym, first_date = obs[0]
+            last_date = obs[-1][1]
+            intervals.append(
+                TickerInterval(
+                    symbol=curr_sym,
+                    start_date=first_date,
+                    end_date=last_date,
+                    source="snapshot_observation",
+                    confidence="single_symbol_known",
+                )
+            )
 
         candidate = CandidateSecurity(
             immutable_security_id=sec_id,
@@ -214,6 +304,7 @@ def build_candidate_manifest_from_snapshots(
             first_seen_date=data["first_seen_date"],
             last_seen_date=data["last_seen_date"],
             ticker_intervals=intervals,
+            ticker_observations=obs,
         )
         candidates.append(candidate)
 
@@ -247,6 +338,8 @@ def register_manifest_in_security_master(
     for cand in manifest:
         if cand.ticker_intervals:
             for ti in cand.ticker_intervals:
+                if not (ti.start_date and ti.end_date):
+                    continue
                 identity = SecurityIdentity(
                     immutable_security_id=cand.immutable_security_id,
                     ticker_at_decision=ti.symbol,

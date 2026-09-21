@@ -64,6 +64,7 @@ def build_decision_observations_for_security(
     dev_end: str = DEV_END,
     earnings_schedules: dict[str, dict[str, Any]] | None = None,  # date -> earnings info
     market_caps: dict[str, float] | None = None,  # date -> market cap
+    market_cap_reasons: dict[str, str] | None = None,  # date -> reason code (e.g. missing_shares, unavailable_at_cutoff)
     index_memberships: dict[str, bool] | None = None,  # date -> bool
     special_distribution_dates: set[str] | None = None,
 ) -> tuple[
@@ -324,18 +325,28 @@ def build_decision_observations_for_security(
         mcap_gte_3b = (mcap_val >= 3_000_000_000.0) if mcap_val is not None else None
         index_verified = bool(index_memberships.get(session_date, False)) if index_memberships else False
 
+        if mcap_val is not None:
+            mcap_reason = "valid_ge_3b" if mcap_gte_3b else "valid_below_3b"
+        else:
+            mcap_reason = (
+                market_cap_reasons.get(session_date, "missing_shares")
+                if market_cap_reasons
+                else "missing_shares"
+            )
+
         # Fail closed: must have verified mcap >= $3B OR verified index membership point-in-time
         if not (mcap_gte_3b is True or index_verified is True):
             rejection_reasons.append("market_cap_or_index_unverified")
+            rejection_reasons.append(f"market_cap_{mcap_reason}")
             exclusions.append(
                 ExclusionReasonRecord(
                     immutable_security_id=sec_id,
                     as_of_date=session_date,
                     cutoff_time=cutoff_time,
-                    reason_code="market_cap_or_index_unverified",
+                    reason_code=f"market_cap_{mcap_reason}",
                     ticker_at_decision=ticker,
                     reason_category="market_cap",
-                    description="Neither point-in-time market cap >= $3B nor verified index membership available (fail closed)",
+                    description=f"Neither point-in-time market cap >= $3B ({mcap_reason}) nor verified index membership available (fail closed)",
                 )
             )
 
