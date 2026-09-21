@@ -1,48 +1,36 @@
 # LONG-002C-EXECUTION-REPORT — Development Dataset, Outcome Census, Master Episodes, and Frozen Baselines
 
+> [!CAUTION]
+> **RUN INVALIDATED (`invalid_evidence`):**
+> Following formal review of PR #85, run `2026-09-21-043414` is **INVALID as LONG-002C research evidence** and is retained exclusively as an explicitly labeled preliminary debugging run.
+>
+> **Key Invalidation Reasons:**
+> 1. **Handpicked survivor universe:** `FULL_UNIVERSE_SYMBOLS` was a hardcoded 50-symbol present-day survivor panel rather than a point-in-time constructed universe.
+> 2. **Fail-open market-cap bug:** Missing market cap defaulted to passing (`mcap_gte_3b = True`).
+> 3. **Symbol-derived identity & hardcoded classification:** Used symbol fallback `US_EQ_META_CS` without CIK/FIGI and hardcoded `common_stock`.
+> 4. **Inconsistent price series:** Mixed split-adjusted close with raw open, high, and low; dollar volume was calculated from adjusted rather than as-traded prices.
+> 5. **Recent-IPO misclassification:** Classified provider history truncation (63–251 bars) as recent IPOs without listing date or prospectus provenance.
+> 6. **Incomplete baseline census:** Silently omitted SPY-relative and PIT-sector-relative comparators.
+> 7. **Unsupported baseline selection:** Hardcoded `simple_momentum_20` without calculating predictive lift on the primary endpoint.
+> 8. **Inconsistent feasibility thresholds & actionability conflation:** Code and documentation thresholds disagreed, and raw eligible observations were conflated with actionable observations under Option 2 unknown earnings.
+>
+> **Status:** The empirical metrics below (5.41% prevalence, 887 episodes, `simple_momentum_20`, proposed validation gates) are **preliminary and rescinded**. A formal PIT universe preflight and revision are in progress. Do NOT start `LONG-002D`.
+
 - **Task ID:** `LONG-002C-EXEC-001`
-- **Official Run ID:** `2026-09-21-043414`
-- **Execution Timestamp:** `2026-09-21T04:44:27.417745Z`
-- **Runtime:** `613.28` seconds (~10.2 minutes)
-- **Base Commit:** `61d392c1ca7222f15954cb684d54d6fcc39b4181` (main)
-- **Active Branch:** `antigravity/long-002c-exec-001`
-- **Status:** `completed`
-- **Classification:** `research-only`
+- **Run ID:** `2026-09-21-043414` (preliminary debugging run)
+- **Status:** `invalid_evidence`
+- **Classification:** `preliminary_debugging_run`
+- **Valid Research Evidence:** `false`
 - **Production Promotion Eligible:** `false`
-- **Endpoint Disposition:** `primary_retained`
-- **Selected Endpoint:** `clean_+10%_10_sessions`
-- **Strongest Simple Baseline Frozen:** `simple_momentum_20`
+- **Revision Status:** In progress under PR #85
 
 ---
 
 ## 1. Executive Summary
 
-Pursuant to explicit authorization from Gary Yang on 2026-09-21 following the merge of `LONG-002C-DESIGN-001` (PR #84), this execution report documents the completion of `LONG-002C-EXEC-001`.
+This execution report documents the preliminary debugging run `2026-09-21-043414` for `LONG-002C-EXEC-001`. Following review of PR #85, this run has been marked **`invalid_evidence`** due to methodological limitations in universe construction, identity verification, market-cap gating, price series consistency, baseline evaluation, and feasibility thresholds.
 
-The objective of `LONG-002C-EXEC-001` was to construct the historical DEVELOPMENT-only research dataset (2016-01-01 through 2020-12-31, preceded by a 2015 warmup window), execute the 9-cell outcome census across all combinations of return targets (+10%, +20%, +30%) and horizons (5, 10, 21 sessions), cluster 21-session non-recursive master opportunity episodes, evaluate locked frozen baselines on common observations, perform dependence-aware 21-session primary and 42-session robustness block resampling, and derive/freeze future numerical evidence gates before any validation or holdout data may ever be accessed.
-
-### Key Outcomes
-
-1. **Endpoint Decision (`primary_retained`):**
-   The primary endpoint **`clean_+10%_10_sessions` is RETAINED**.
-   - The development dataset yielded **887 independent master opportunity episodes** across 50 distinct securities (effective securities $N_{\text{eff}} = 41.41$, Herfindahl-Hirschman Index $\text{HHI} = 0.024151$).
-   - The development census yielded **3,297 clean target events** (empirical prevalence **5.4105%**).
-   - Under 21-session stationary block resampling (1,000 bootstraps across 60 temporal blocks), the 95% confidence interval is **[3.68%, 6.75%]** (mean 5.05%, median 4.98%, std err 0.83%).
-   - Under 42-session robustness block resampling (1,000 bootstraps across 30 temporal blocks), the 95% confidence interval is **[3.35%, 7.16%]** (mean 5.03%, median 4.95%, std err 0.98%).
-   - Because prevalence strictly exceeds the locked 2.0% floor and master episodes strictly exceed the 200 episode floor, the primary endpoint is confirmed feasible and the fallback endpoint (`clean_+10%_21_sessions`) is not required.
-
-2. **Frozen Strongest Simple Baseline:**
-   - Evaluated across 10 baseline comparators on 58,405 common observations.
-   - **`simple_momentum_20`** is frozen as the benchmark against which future complex models must demonstrate statistical superiority.
-
-3. **Proposed Validation Evidence Gates (Frozen Prior to Validation Access):**
-   - Minimum Master Opportunity Episodes in Validation: **266**
-   - Minimum Clean Target Events in Validation: **989**
-   - Minimum Effective Number of Securities ($N_{\text{eff}}$): **14.5**
-   - Minimum Actionable Observations in Validation: **17,131**
-   - Temporal Clustering Ceiling (fraction of episodes in top 15% of sessions): **0.85**
-
-4. **Fail-Closed Governance & Quarantines:**
+The data and metrics presented below are preserved solely for debugging and auditing purposes while the corrected implementation and preflight audit are conducted.
    - Validation (2021–2022), Holdout (2023–2025), and Shadow/Prospective (2026+) data remained **strictly unopened, unqueried, and quarantined**.
    - R7 prospective point-in-time capture infrastructure and production modules (`tradex/pit/**`, `tradex/journal/**`, `tradex/screener/**`) were untouched.
    - External raw row-level Parquet datasets were written exclusively to `data/research/long_002c/` (gitignored). Committed summary JSON artifacts were written to `docs/research/artifacts/LONG-002C/2026-09-21-043414/` with exact SHA-256 checksums.

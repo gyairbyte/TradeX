@@ -45,10 +45,11 @@ class DataEligibility:
     price_gte_5: bool
     dollar_volume_20d_gte_20m: bool
     trading_history_sessions: int
-    cohort_type: str  # "established" | "recent_ipo" | "insufficient_history"
+    cohort_type: str  # "established" | "recent_ipo" | "insufficient_history" | "unverified_history_truncated"
     eligibility_passed: bool
     rejection_reason_codes: list[str] = field(default_factory=list)
     dollar_volume_60d_gte_10m: bool | None = None
+    market_cap: float | None = None
     market_cap_gte_3b: bool | None = None
     index_membership_verified: bool = False
 
@@ -120,6 +121,7 @@ class OutcomeLabelRecord:
     end_of_horizon_return: float
     retention_ratio: float
     sustained_target: bool
+    special_distribution_unresolved: bool = False
     time_to_target: int | None = None
     time_to_mae: int | None = None
 

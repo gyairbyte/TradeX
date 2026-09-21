@@ -5,8 +5,23 @@
   "created_at_utc": "2026-09-21T04:44:27.417745Z",
   "mode": "full",
   "python_version": "3.11.15",
-  "endpoint_disposition": "primary_retained",
-  "selected_endpoint": "clean_+10%_10_sessions",
-  "total_observations": 62237,
-  "master_episodes_count": 887
+  "status": "invalid_evidence",
+  "valid_research_evidence": false,
+  "classification": "preliminary_debugging_run",
+  "invalidation_reasons": [
+    "handpicked_current_survivor_50_security_universe",
+    "fail_open_market_cap_pathway_defaulting_to_true",
+    "symbol_derived_fallback_identity_and_hardcoded_common_stock_classification",
+    "incomplete_baseline_census_omitting_spy_relative_and_sector_relative_families",
+    "unsupported_strongest_baseline_selection_without_predictive_evaluation",
+    "inconsistent_feasibility_gate_logic_between_code_and_documentation",
+    "raw_and_actionable_gate_conflation_under_option_2_unknown_earnings",
+    "analytical_price_series_inconsistency_mixing_split_close_with_raw_high_low"
+  ],
+  "original_tentative_metrics": {
+    "endpoint_disposition": "primary_retained",
+    "selected_endpoint": "clean_+10%_10_sessions",
+    "total_observations": 62237,
+    "master_episodes_count": 887
+  }
 }

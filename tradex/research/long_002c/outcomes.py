@@ -22,13 +22,15 @@ def compute_outcome_cell(
     target_pct: float,
     horizon_sessions: int,
     next_open_price: float,
-    forward_bars: list[dict[str, Any]],  # list of dicts with {"open", "high", "low", "close"}
+    forward_bars: list[dict[str, Any]],  # list of dicts with split-normalized {"open", "high", "low", "close"}
     pre_entry_atr: float,
     entry_friction_bps: float = PRIMARY_ENTRY_FRICTION_BPS,
+    special_distribution_unresolved: bool = False,
 ) -> OutcomeLabelRecord:
     """Compute outcome metrics for a single (target_pct, horizon_sessions) cell.
 
-    forward_bars must contain at least horizon_sessions bars.
+    forward_bars must contain at least horizon_sessions bars on a consistent split-normalized price basis.
+    If special_distribution_unresolved is True, the outcome cannot be reliably calculated and is excluded from clean targets.
     """
     if len(forward_bars) < horizon_sessions:
         raise ValueError(
@@ -127,6 +129,12 @@ def compute_outcome_cell(
         end_of_horizon_return >= 0.5 * (target_pct / 100.0)
     )
 
+    if special_distribution_unresolved:
+        clean_target_reached = False
+        sustained_target = False
+        near_miss = False
+        partial_move = False
+
     return OutcomeLabelRecord(
         immutable_security_id=immutable_security_id,
         as_of_date=as_of_date,
@@ -153,6 +161,7 @@ def compute_outcome_cell(
         end_of_horizon_return=round(end_of_horizon_return, 6),
         retention_ratio=round(retention_ratio, 6),
         sustained_target=sustained_target,
+        special_distribution_unresolved=special_distribution_unresolved,
         time_to_target=time_to_target,
         time_to_mae=time_to_mae,
     )
@@ -164,9 +173,10 @@ def compute_all_nine_outcomes(
     as_of_date: str,
     cutoff_time: str,
     next_open_price: float,
-    forward_bars: list[dict[str, Any]],  # at least 21 bars
+    forward_bars: list[dict[str, Any]],  # at least 21 bars on consistent split-normalized basis
     pre_entry_atr: float,
     entry_friction_bps: float = PRIMARY_ENTRY_FRICTION_BPS,
+    special_distribution_unresolved: bool = False,
 ) -> list[OutcomeLabelRecord]:
     """Compute all nine target/horizon outcome combinations for an observation."""
     records: list[OutcomeLabelRecord] = []
@@ -182,6 +192,7 @@ def compute_all_nine_outcomes(
             forward_bars=forward_bars,
             pre_entry_atr=pre_entry_atr,
             entry_friction_bps=entry_friction_bps,
+            special_distribution_unresolved=special_distribution_unresolved,
         )
         records.append(record)
     return records

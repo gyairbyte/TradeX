@@ -5,6 +5,7 @@ and point-in-time decision observation generation.
 """
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 import numpy as np
@@ -31,7 +32,7 @@ from tradex.research.long_002c.spec import (
 
 
 def compute_atr(highs: list[float], lows: list[float], closes: list[float], period: int = 14) -> float | None:
-    """Calculate Average True Range (Wilder's ATR) over the specified period."""
+    """Calculate Average True Range (Wilder's ATR) over the specified period on split-normalized prices."""
     if len(closes) < period + 1:
         return None
     tr_list: list[float] = []
@@ -63,6 +64,8 @@ def build_decision_observations_for_security(
     dev_end: str = DEV_END,
     earnings_schedules: dict[str, dict[str, Any]] | None = None,  # date -> earnings info
     market_caps: dict[str, float] | None = None,  # date -> market cap
+    index_memberships: dict[str, bool] | None = None,  # date -> bool
+    special_distribution_dates: set[str] | None = None,
 ) -> tuple[
     list[DecisionObservation],
     list[DataEligibility],
@@ -128,7 +131,7 @@ def build_decision_observations_for_security(
             continue
 
         idx = bar_dates.index(session_date)
-        # History up to and including current session
+        # Point-in-time history up to and including current session
         hist_slice = bars_df.iloc[: idx + 1]
         n_hist = len(hist_slice)
 
@@ -140,19 +143,25 @@ def build_decision_observations_for_security(
         split_norm_close = float(hist_slice["close"].iloc[-1])
         vol = int(hist_slice["volume"].iloc[-1])
 
-        # Moving windows for eligibility
-        closes_20 = hist_slice["close"].iloc[-20:].tolist() if n_hist >= 20 else []
+        # As-traded dollar volume: strictly computed as as-traded close * volume
+        if "as_traded_close" in hist_slice.columns:
+            as_traded_closes_20 = hist_slice["as_traded_close"].iloc[-20:].tolist() if n_hist >= 20 else []
+            as_traded_closes_60 = hist_slice["as_traded_close"].iloc[-60:].tolist() if n_hist >= 60 else []
+        else:
+            as_traded_closes_20 = hist_slice["close"].iloc[-20:].tolist() if n_hist >= 20 else []
+            as_traded_closes_60 = hist_slice["close"].iloc[-60:].tolist() if n_hist >= 60 else []
+
         vols_20 = hist_slice["volume"].iloc[-20:].tolist() if n_hist >= 20 else []
-        dollar_vols_20 = [c * v for c, v in zip(closes_20, vols_20)]
+        vols_60 = hist_slice["volume"].iloc[-60:].tolist() if n_hist >= 60 else []
+
+        dollar_vols_20 = [c * v for c, v in zip(as_traded_closes_20, vols_20)]
         dvol_20_median = float(np.median(dollar_vols_20)) if len(dollar_vols_20) >= 20 else None
 
-        closes_60 = hist_slice["close"].iloc[-60:].tolist() if n_hist >= 60 else []
-        vols_60 = hist_slice["volume"].iloc[-60:].tolist() if n_hist >= 60 else []
-        dollar_vols_60 = [c * v for c, v in zip(closes_60, vols_60)]
+        dollar_vols_60 = [c * v for c, v in zip(as_traded_closes_60, vols_60)]
         dvol_60_median = float(np.median(dollar_vols_60)) if len(dollar_vols_60) >= 60 else None
 
-        # 20-session median close >= 5
-        med_close_20 = float(np.median(closes_20)) if len(closes_20) >= 20 else None
+        # Price floor: 20-session median as-traded close >= 5 and current as-traded close >= 5
+        med_close_20 = float(np.median(as_traded_closes_20)) if len(as_traded_closes_20) >= 20 else None
 
         # ATR 14 calculation on split-normalized series
         highs = hist_slice["high"].tolist()
@@ -160,7 +169,7 @@ def build_decision_observations_for_security(
         closes = hist_slice["close"].tolist()
         atr_14 = compute_atr(highs, lows, closes, 14)
 
-        # Classification gate
+        # Classification gate: fail closed on unknown or non-common stock
         is_common = identity.is_common_stock
         class_status = (
             "supported_common_stock"
@@ -196,7 +205,7 @@ def build_decision_observations_for_security(
                     reason_code=f"excluded_classification_{identity.security_type}",
                     ticker_at_decision=ticker,
                     reason_category="security_type",
-                    description=f"Security classified as {identity.security_type}, not common stock",
+                    description=f"Security classification '{identity.security_type}' is not verified common stock (fail closed)",
                 )
             )
 
@@ -211,7 +220,7 @@ def build_decision_observations_for_security(
                     reason_code="price_below_5",
                     ticker_at_decision=ticker,
                     reason_category="price",
-                    description=f"Price {as_traded_close:.2f} or 20d median below $5 floor",
+                    description=f"As-traded price {as_traded_close:.2f} or 20d median below $5 floor",
                 )
             )
 
@@ -226,7 +235,7 @@ def build_decision_observations_for_security(
                     reason_code="dollar_volume_20d_below_20m",
                     ticker_at_decision=ticker,
                     reason_category="liquidity",
-                    description="20-session median dollar volume below $20M",
+                    description="20-session median as-traded dollar volume below $20M",
                 )
             )
 
@@ -241,15 +250,42 @@ def build_decision_observations_for_security(
                     reason_code="dollar_volume_60d_below_10m",
                     ticker_at_decision=ticker,
                     reason_category="liquidity",
-                    description="60-session median dollar volume below $10M",
+                    description="60-session median as-traded dollar volume below $10M",
                 )
             )
 
-        # Cohort type determination
+        # Cohort type determination with listing provenance
         if n_hist >= 252:
             cohort_type = "established"
         elif 63 <= n_hist < 252:
-            cohort_type = "recent_ipo"
+            # Requires positive listing date / prospectus provenance to be classified as recent_ipo
+            has_listing_provenance = False
+            if identity.listing_date:
+                try:
+                    dt_listing = date.fromisoformat(identity.listing_date[:10])
+                    dt_session = date.fromisoformat(session_date[:10])
+                    calendar_days_since_listing = (dt_session - dt_listing).days
+                    if 0 <= calendar_days_since_listing <= 365:
+                        has_listing_provenance = True
+                except ValueError:
+                    has_listing_provenance = False
+
+            if has_listing_provenance:
+                cohort_type = "recent_ipo"
+            else:
+                cohort_type = "unverified_history_truncated"
+                rejection_reasons.append("unverified_history_truncated")
+                exclusions.append(
+                    ExclusionReasonRecord(
+                        immutable_security_id=sec_id,
+                        as_of_date=session_date,
+                        cutoff_time=cutoff_time,
+                        reason_code="unverified_history_truncated",
+                        ticker_at_decision=ticker,
+                        reason_category="trading_history",
+                        description=f"Provider history has {n_hist} sessions but lacks verified IPO listing provenance; cannot assume IPO",
+                    )
+                )
         else:
             cohort_type = "insufficient_history"
             rejection_reasons.append("insufficient_trading_history")
@@ -265,9 +301,25 @@ def build_decision_observations_for_security(
                 )
             )
 
-        # Market cap gate
+        # Market cap gate: fail-closed (missing is None and NEVER passes)
         mcap_val = market_caps.get(session_date) if market_caps else None
-        mcap_gte_3b = mcap_val >= 3_000_000_000.0 if mcap_val is not None else True  # default True if not explicitly provided
+        mcap_gte_3b = (mcap_val >= 3_000_000_000.0) if mcap_val is not None else None
+        index_verified = bool(index_memberships.get(session_date, False)) if index_memberships else False
+
+        # Fail closed: must have verified mcap >= $3B OR verified index membership point-in-time
+        if not (mcap_gte_3b is True or index_verified is True):
+            rejection_reasons.append("market_cap_or_index_unverified")
+            exclusions.append(
+                ExclusionReasonRecord(
+                    immutable_security_id=sec_id,
+                    as_of_date=session_date,
+                    cutoff_time=cutoff_time,
+                    reason_code="market_cap_or_index_unverified",
+                    ticker_at_decision=ticker,
+                    reason_category="market_cap",
+                    description="Neither point-in-time market cap >= $3B nor verified index membership available (fail closed)",
+                )
+            )
 
         eligibility_passed = len(rejection_reasons) == 0
 
@@ -284,8 +336,9 @@ def build_decision_observations_for_security(
                 eligibility_passed=eligibility_passed,
                 rejection_reason_codes=rejection_reasons,
                 dollar_volume_60d_gte_10m=dvol_60_gte_10m,
+                market_cap=mcap_val,
                 market_cap_gte_3b=mcap_gte_3b,
-                index_membership_verified=False,
+                index_membership_verified=index_verified,
             )
         )
 
@@ -331,7 +384,25 @@ def build_decision_observations_for_security(
                 )
             )
 
-        # Actionability status
+        # Special distribution exclusion check
+        has_unresolved_dist = (
+            special_distribution_dates is not None
+            and session_date in special_distribution_dates
+        )
+        if has_unresolved_dist:
+            exclusions.append(
+                ExclusionReasonRecord(
+                    immutable_security_id=sec_id,
+                    as_of_date=session_date,
+                    cutoff_time=cutoff_time,
+                    reason_code="special_distribution_unresolved",
+                    ticker_at_decision=ticker,
+                    reason_category="corporate_action",
+                    description="Unresolved special distribution or spin-off inside outcome horizon",
+                )
+            )
+
+        # Actionability status: if earnings schedule unknown, actionability is unavailable
         if not eligibility_passed:
             act_status = "excluded"
         elif atr_14 is None or dvol_20_median is None:
@@ -342,7 +413,7 @@ def build_decision_observations_for_security(
             act_status = "eligible"
 
         data_complete = (atr_14 is not None) and (dvol_20_median is not None)
-        raw_eligible = eligibility_passed and data_complete and not purged
+        raw_eligible = eligibility_passed and data_complete and not purged and not has_unresolved_dist
 
         dec_ts_utc = get_decision_timestamp_utc(session_date, cutoff_time)
 

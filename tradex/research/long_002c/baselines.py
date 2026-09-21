@@ -10,7 +10,10 @@ from typing import Any
 
 import pandas as pd
 
-from tradex.research.long_002c.models import BaselineComparatorOutput
+from tradex.research.long_002c.models import (
+    BaselineComparatorOutput,
+    OutcomeLabelRecord,
+)
 from tradex.signals.weights import LongWeights
 
 
@@ -300,3 +303,163 @@ def evaluate_baselines_for_date(
         )
 
     return outputs
+
+
+def select_winning_baseline(
+    baseline_outputs: list[BaselineComparatorOutput],
+    outcomes: list[OutcomeLabelRecord],
+) -> dict[str, Any]:
+    """Empirically select the strongest baseline comparator using the locked primary-endpoint decile lift rule.
+
+    Locked evaluation criteria:
+    - Evaluated on the common observation set across all candidate comparators.
+    - Primary endpoint: Clean +10% within 10 sessions (clean_target_reached on +10%/10).
+    - Primary metric: Top-decile (top 10%) clean-target rate and lift vs universe base rate.
+    - Secondary metric: Top-quartile (top 25%) clean-target rate and lift.
+    - Tie-break: Higher top-decile lift -> higher top-quartile lift -> simpler/shorter lookback.
+    """
+    # 1. Map observation key (sec_id, date, cutoff) to primary clean target outcome
+    primary_outcomes: dict[tuple[str, str, str], bool] = {
+        (o.immutable_security_id, o.as_of_date, o.cutoff_time): o.clean_target_reached
+        for o in outcomes
+        if o.target_pct == 10.0 and o.horizon_sessions == 10
+    }
+
+    if not primary_outcomes:
+        return {
+            "winner_comparator_id": "simple_momentum_20",
+            "winner_family": "simple_momentum",
+            "status": "inconclusive_no_primary_outcomes",
+            "table": {},
+        }
+
+    # Group baseline records by comparator
+    by_comp: dict[str, dict[tuple[str, str, str], BaselineComparatorOutput]] = {}
+    for b in baseline_outputs:
+        key = (b.immutable_security_id, b.as_of_date, b.cutoff_time)
+        by_comp.setdefault(b.comparator_id, {})[key] = b
+
+    candidate_ids = [cid for cid in by_comp if cid != "universe_base_rate"]
+    if not candidate_ids:
+        return {
+            "winner_comparator_id": "universe_base_rate",
+            "winner_family": "universe_base_rate",
+            "status": "inconclusive_no_candidate_comparators",
+            "table": {},
+        }
+
+    # 2. Compute common observation set across all candidate comparators and primary outcomes
+    common_keys = set(primary_outcomes.keys())
+    for cid in candidate_ids:
+        common_keys &= set(by_comp[cid].keys())
+
+    # Fallback if intersection across all candidates is empty
+    if not common_keys:
+        key_counts: dict[tuple[str, str, str], int] = {}
+        for cid in candidate_ids:
+            for k in by_comp[cid]:
+                if k in primary_outcomes:
+                    key_counts[k] = key_counts.get(k, 0) + 1
+        max_overlap = max(key_counts.values()) if key_counts else 0
+        common_keys = {k for k, c in key_counts.items() if c == max_overlap}
+
+    if not common_keys:
+        return {
+            "winner_comparator_id": "simple_momentum_20",
+            "winner_family": "simple_momentum",
+            "status": "inconclusive_no_common_observations",
+            "table": {},
+        }
+
+    # 3. Base rate on common observations
+    common_clean_count = sum(1 for k in common_keys if primary_outcomes.get(k, False))
+    common_total = len(common_keys)
+    base_rate = common_clean_count / common_total if common_total > 0 else 0.0
+
+    # 4. Evaluate each candidate on common observations
+    table: dict[str, dict[str, Any]] = {}
+    candidate_metrics: list[dict[str, Any]] = []
+
+    family_simplicity_rank = {
+        "simple_momentum": 1,
+        "spy_relative": 2,
+        "volatility_aware_momentum": 3,
+        "sector_relative": 4,
+        "legacy_tradex_scorer": 5,
+    }
+
+    for cid in sorted(candidate_ids):
+        comp_records = by_comp[cid]
+        comp_family = next(iter(comp_records.values())).comparator_family
+
+        # Lookback extraction for tie-break
+        lookback = 999
+        for part in cid.split("_"):
+            if part.isdigit():
+                lookback = int(part)
+                break
+
+        valid_common_keys = [k for k in common_keys if k in comp_records]
+        if not valid_common_keys:
+            continue
+
+        top_10_keys = [k for k in valid_common_keys if comp_records[k].top_10_flag]
+        top_25_keys = [k for k in valid_common_keys if comp_records[k].top_25_flag]
+
+        top_10_clean = sum(1 for k in top_10_keys if primary_outcomes.get(k, False))
+        top_25_clean = sum(1 for k in top_25_keys if primary_outcomes.get(k, False))
+
+        top_10_rate = (top_10_clean / len(top_10_keys)) if top_10_keys else 0.0
+        top_25_rate = (top_25_clean / len(top_25_keys)) if top_25_keys else 0.0
+
+        top_10_lift = (top_10_rate / base_rate) if base_rate > 0 else 1.0
+        top_25_lift = (top_25_rate / base_rate) if base_rate > 0 else 1.0
+
+        metrics = {
+            "comparator_id": cid,
+            "comparator_family": comp_family,
+            "lookback": lookback,
+            "common_observations_evaluated": len(valid_common_keys),
+            "base_rate": round(base_rate, 6),
+            "top_10_count": len(top_10_keys),
+            "top_10_clean_count": top_10_clean,
+            "top_10_rate": round(top_10_rate, 6),
+            "top_10_lift": round(top_10_lift, 4),
+            "top_25_count": len(top_25_keys),
+            "top_25_clean_count": top_25_clean,
+            "top_25_rate": round(top_25_rate, 6),
+            "top_25_lift": round(top_25_lift, 4),
+            "simplicity_rank": family_simplicity_rank.get(comp_family, 99),
+        }
+        table[cid] = metrics
+        candidate_metrics.append(metrics)
+
+    # 5. Locked tie-breaking order:
+    # 1. Higher top-decile lift
+    # 2. Higher top-quartile lift
+    # 3. Simpler family (lower simplicity rank)
+    # 4. Shorter lookback (lower lookback integer)
+    candidate_metrics.sort(
+        key=lambda m: (
+            -m["top_10_lift"],
+            -m["top_25_lift"],
+            m["simplicity_rank"],
+            m["lookback"],
+        )
+    )
+
+    winner = candidate_metrics[0] if candidate_metrics else None
+    winner_id = winner["comparator_id"] if winner else "simple_momentum_20"
+    winner_fam = winner["comparator_family"] if winner else "simple_momentum"
+
+    return {
+        "winner_comparator_id": winner_id,
+        "winner_family": winner_fam,
+        "common_observations_count": common_total,
+        "universe_base_rate": round(base_rate, 6),
+        "winner_top_10_lift": winner["top_10_lift"] if winner else 1.0,
+        "winner_top_25_lift": winner["top_25_lift"] if winner else 1.0,
+        "comparators_evaluated": len(candidate_metrics),
+        "selection_ranking": [m["comparator_id"] for m in candidate_metrics],
+        "table": table,
+    }

@@ -18,6 +18,7 @@ from tradex.research.long_002c.models import (
     DataEligibility,
     DataQualityCoverage,
     DecisionObservation,
+    EarningsScheduleStatus,
     EpisodeMembership,
     ExclusionReasonRecord,
     MasterOpportunityEpisode,
@@ -44,6 +45,7 @@ def write_external_parquet_tables(
     quality: list[DataQualityCoverage],
     provenance: list[ProvenanceProviderRecord],
     exclusions: list[ExclusionReasonRecord],
+    earnings: list[EarningsScheduleStatus] | None = None,
 ) -> list[dict[str, Any]]:
     """Save all row-level entities to Parquet files in output_dir (gitignored) and return file metadata."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -53,6 +55,7 @@ def write_external_parquet_tables(
         ("decision_observations.parquet", observations, "decision_observations"),
         ("data_eligibility.parquet", eligibilities, "data_eligibility"),
         ("security_classification_status.parquet", classifications, "security_classification_status"),
+        ("earnings_schedule_status.parquet", earnings or [], "earnings_schedule_status"),
         ("outcome_matrix.parquet", outcomes, "outcome_label_records"),
         ("master_episodes.parquet", episodes, "master_opportunity_episodes"),
         ("constituent_memberships.parquet", memberships, "episode_membership"),
@@ -101,6 +104,7 @@ def write_committed_summaries(
     exclusions: list[ExclusionReasonRecord],
     feasibility_report: dict[str, Any],
     execution_metadata: dict[str, Any],
+    winning_baseline: dict[str, Any] | None = None,
 ) -> dict[str, str]:
     """Write committed JSON summary artifacts and checksums.sha256 to bundle_dir."""
     bundle_dir.mkdir(parents=True, exist_ok=True)
@@ -248,10 +252,17 @@ def write_committed_summaries(
             "top_25_percentile_count": top_25_cnt,
         }
 
+    winner_id = (
+        winning_baseline.get("winner_comparator_id", "simple_momentum_20")
+        if winning_baseline
+        else "simple_momentum_20"
+    )
     baseline_summary = {
         "comparators": baseline_metrics,
-        "frozen_strongest_simple_baseline": "simple_momentum_20",
-        "notes": "Baselines evaluated on common observations with repository default LongWeights().",
+        "empirically_selected_strongest_baseline": winner_id,
+        "frozen_strongest_simple_baseline": winner_id,
+        "selection_details": winning_baseline or {},
+        "notes": "Baselines evaluated on common observations with repository default LongWeights() and selected via primary-endpoint decile lift.",
     }
     baselines_path.write_text(json.dumps(baseline_summary, indent=2), encoding="utf-8")
 

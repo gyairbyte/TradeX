@@ -359,13 +359,13 @@ This is the master backlog for TradeX engineering and research tasks, originatin
 - **Completed phase:** `LONG-002B` — core data feasibility and point-in-time dataset contract (merged in PR #49)
 - **Completed phase:** `LONG-002B-AMEND-002` — Gary-approved selection of Option 2 fail-closed unknown policy (merged in PR #52)
 - **Completed phase:** `LONG-002C-DESIGN-001` — outcome census, master episodes, endpoint feasibility, and baseline design specification (merged in PR #84 at commit `61d392c1ca7222f15954cb684d54d6fcc39b4181`)
-- **Current phase:** `LONG-002C-EXEC-001` — Build Development Dataset, Outcome Census, Episodes, and Frozen Baselines (authorized by Gary on 2026-09-21; branch `antigravity/long-002c-exec-001`; official run `2026-09-21-043414`; primary endpoint `clean_+10%_10_sessions` retained; strongest simple baseline frozen: `simple_momentum_20`; 887 master episodes; 3,297 clean events; validation/holdout remain strictly quarantined and unopened; production promotion unauthorized; PR in draft for Gary/ChatGPT review)
+- **Current phase:** `LONG-002C-EXEC-001` — Build Development Dataset, Outcome Census, Episodes, and Frozen Baselines (authorized by Gary on 2026-09-21; branch `antigravity/long-002c-exec-001`; preliminary run `2026-09-21-043414` invalidated as `invalid_evidence`; PR #85 draft under material research-correctness revision; universe construction, identity verification, market-cap gating, price series consistency, baseline evaluation, and feasibility logic undergoing required overhaul; full rerun paused pending checkpoint review; validation/holdout remain strictly quarantined; production promotion unauthorized)
 - **Research contract:** `docs/research/LONG-002.md`
 - **Locked machine-readable specification:** `docs/research/specs/LONG-002-v1.json`
 - **Design specification:** `docs/research/LONG-002C-DESIGN.md`
 - **Design specification (machine-readable):** `docs/research/specs/LONG-002C-design-v1.json`
 - **Execution report:** `docs/research/LONG-002C-EXECUTION-REPORT.md`
-- **Committed summary artifacts:** `docs/research/artifacts/LONG-002C/2026-09-21-043414/`
+- **Committed summary artifacts:** `docs/research/artifacts/LONG-002C/2026-09-21-043414/` (preliminary debugging run; `invalid_evidence`)
 - **Objective:** Research an explainable, long-only rapid-upside opportunity system for U.S.-listed mid-, large-, and mega-cap common stocks, estimating the probability and capturable potential of clean +10%, +20%, and +30% moves over 5, 10, and 21 trading sessions from an executable entry.
 - **Classification:** Research-only
 - **Production promotion:** Unauthorized (`production_promotion_eligible=false`); historical holdout support (`LONG-002I`) authorizes only `LONG-002J` prospective shadow, and a `prospectively_supported` shadow authorizes only consideration of a separate Gary-approved production decision-support PR
@@ -388,10 +388,10 @@ This is the master backlog for TradeX engineering and research tasks, originatin
   - Issuer fundamentals & shares: `supported_with_documented_limitations` (SEC EDGAR primary; CIK identity resolved for AAPL/GOOGL/FDX; filing acceptance-time control linked to the selected shares fact; PIT market-cap pathway demonstrated for AAPL with shares outstanding period end 2020-10-16, filed 2020-10-30, acceptance 2020-10-29, paired with the 2020-12-31 close)
   - Earnings event timing: `not_supported` (no live provider calls; preregistered candidates remain unverified; no historical known-at-time schedule source identified within bounded budget)
 - **Provider call budget:** 41 of 120 HTTP requests used; 0 retries; 1 provider switch (Massive/Polygon daily bars → Alpaca fallback)
-- **Recommended action:** Gary Yang explicitly authorized `LONG-002C-EXEC-001` execution on 2026-09-21 following the merge of `LONG-002C-DESIGN-001` (PR #84). Execution is completed on branch `antigravity/long-002c-exec-001` (run ID `2026-09-21-043414`). Next step is Gary Yang / ChatGPT review of the execution report and summary artifacts; `LONG-002D` requires separate authorization; validation and holdout splits remain strictly quarantined.
+- **Recommended action:** Gary Yang explicitly authorized `LONG-002C-EXEC-001` execution on 2026-09-21 following the merge of `LONG-002C-DESIGN-001` (PR #84). Following review of PR #85, preliminary run `2026-09-21-043414` was marked `invalid_evidence` due to survivor bias, fail-open market-cap gating, unverified identity, price series inconsistency, and incomplete baseline execution. Next step is Gary Yang / ChatGPT review of the PIT universe-construction checkpoint; full rerun paused pending checkpoint review; `LONG-002D` requires separate authorization; validation and holdout splits remain strictly quarantined.
 - **Testing requirements:** `tests/research/long_002c/`; `tests/research/long_002c_design/`; `tests/research/test_long_002_spec.py`; `uv run ruff check tradex/research/long_002c tests/research/long_002c`; `git diff --check`.
-- **Acceptance criteria:** Development dataset constructed across 50 panel securities; 9-cell outcome census completed; 887 master episodes clustered; 10 baseline comparators evaluated; `clean_+10%_10_sessions` retained as primary endpoint; `simple_momentum_20` frozen as strongest simple baseline; future validation evidence gates derived and locked; external row-level Parquet datasets saved to gitignored `data/research/long_002c/`; summary JSON artifacts and checksums committed to `docs/research/artifacts/LONG-002C/2026-09-21-043414/`; validation/holdout untouched; PR remains draft and unmerged.
-- **Intended pull request:** `antigravity/long-002c-exec-001` (draft)
+- **Acceptance criteria:** PIT universe-construction preflight implemented; identity, market-cap, IPO, price-series, and baseline bugs resolved; regression test suite passing; external row-level Parquet datasets saved to gitignored `data/research/long_002c/`; summary JSON artifacts and checksums committed to `docs/research/artifacts/LONG-002C/`; validation/holdout untouched; PR remains draft and unmerged.
+- **Intended pull request:** `antigravity/long-002c-exec-001` (draft PR #85)
 - **Affects trading behavior:** No — research-only execution; no production scorer, score, weight, threshold, ranking, eligibility, confluence, alert, or dashboard trading logic changes.
 - **Historical note:** `LONG-002B-AMEND-001` results are preserved as historical artifacts and are superseded by the later `LONG-002B-AMEND-002` Option 2 decision.
 - **Amendment results:** `docs/research/LONG-002B-AMEND-001.md`
@@ -407,13 +407,12 @@ This is the master backlog for TradeX engineering and research tasks, originatin
 - **Selection payload (machine-readable):** `docs/research/specs/LONG-002B-DEC-001.json` and `docs/research/specs/LONG-002B-AMEND-002.json`
 - **Decision status:** `gary_approved` (selected Option 2)
 - **Completed design phase:** `LONG-002C-DESIGN-001` (merged in PR #84 at commit `61d392c1ca7222f15954cb684d54d6fcc39b4181`)
-- **Completed execution phase:** `LONG-002C-EXEC-001` (official run `2026-09-21-043414`, branch `antigravity/long-002c-exec-001`)
+- **Execution phase under revision:** `LONG-002C-EXEC-001` (PR #85; preliminary run `2026-09-21-043414` invalidated as `invalid_evidence`; revision in progress)
 - **LONG-002C dataset construction authorized:** `true` (authorized by Gary on 2026-09-21)
-- **LONG-002C execution disposition:** `primary_retained` (`clean_+10%_10_sessions` retained; 887 master episodes; 3,297 clean events)
-- **Strongest simple baseline frozen:** `simple_momentum_20`
+- **LONG-002C preliminary run disposition:** `invalid_evidence` (empirical claims rescinded; full rerun paused pending checkpoint review)
 - **Validation/holdout data access authorized:** `false` (remains strictly quarantined)
 - **Production promotion eligible:** `false`
-- **Next phase:** Gary / ChatGPT review of `LONG-002C-EXEC-001` execution report; subsequent phase `LONG-002D` requires explicit Gary authorization.
+- **Next phase:** Gary / ChatGPT review of `LONG-002C` universe-construction checkpoint report; subsequent phase `LONG-002D` requires explicit Gary authorization.
 
 ### MVP-ARCH-001: TradeX product consolidation decision packet
 

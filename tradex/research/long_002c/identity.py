@@ -2,6 +2,7 @@
 
 Enforces canonical joins on immutable_security_id, prevents ticker-only joins,
 preserves ticker rename continuity, and isolates ticker reuse across distinct entities.
+Disallows symbol-only fallback for official canonical research identity.
 """
 from __future__ import annotations
 
@@ -21,7 +22,9 @@ class SecurityIdentity:
     share_class_figi: str | None = None
     company_name: str | None = None
     primary_exchange: str | None = None
-    security_type: str = "common_stock"  # "common_stock" | "unknown" | other exclusions
+    security_type: str = "unknown"  # "common_stock" | "unknown" | other exclusions; default unknown (fail closed)
+    listing_date: str | None = None
+    delisting_date: str | None = None
 
     @property
     def is_common_stock(self) -> bool:
@@ -61,6 +64,14 @@ class SecurityMaster:
             return None
         return matches[0]
 
+    def resolve_historical_ticker(self, immutable_security_id: str, as_of_date: str) -> str | None:
+        """Resolve the effective historical ticker for an immutable security ID on a given date."""
+        records = self._by_id.get(immutable_security_id, [])
+        for rec in records:
+            if rec.effective_start <= as_of_date <= rec.effective_end:
+                return rec.ticker_at_decision
+        return None
+
     def get_security_by_id(self, immutable_security_id: str, as_of_date: str | None = None) -> SecurityIdentity | None:
         """Retrieve security identity by immutable ID."""
         records = self._by_id.get(immutable_security_id, [])
@@ -82,12 +93,21 @@ def make_immutable_id(
     cik: str | None = None,
     composite_figi: str | None = None,
     share_class: str = "CS",
+    allow_unverified: bool = False,
 ) -> str:
-    """Generate a stable, reproducible immutable security ID."""
+    """Generate a stable, reproducible immutable security ID.
+
+    Requires CIK + share class or composite FIGI for official canonical identity.
+    Disallows symbol-only fallback unless explicitly flagged for unverified debugging (allow_unverified=True).
+    """
     if composite_figi and composite_figi.strip():
         return f"FIGI_{composite_figi.strip().upper()}"
-    if cik and cik.strip():
-        padded_cik = cik.strip().zfill(10)
+    if cik and str(cik).strip():
+        padded_cik = str(cik).strip().zfill(10)
         return f"CIK_{padded_cik}_{share_class.strip().upper()}"
-    # Fallback deterministic symbol-based key
-    return f"US_EQ_{symbol.strip().upper()}_{share_class.strip().upper()}"
+    if allow_unverified:
+        return f"US_EQ_{symbol.strip().upper()}_{share_class.strip().upper()}"
+    raise ValueError(
+        f"Symbol-only identity '{symbol}' cannot qualify for official-run canonical identity. "
+        f"Verified CIK + share class or composite FIGI is required to prevent lookahead and survivor bias."
+    )

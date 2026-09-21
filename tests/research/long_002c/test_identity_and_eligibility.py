@@ -15,14 +15,21 @@ from tradex.research.long_002c.identity import (
 
 
 def test_immutable_id_generation() -> None:
-    """Verify stable, canonical ID generation."""
+    """Verify stable, canonical ID generation and fail-closed symbol-only rejection."""
+    import pytest
+
     id1 = make_immutable_id("AAPL", cik="0000320193", composite_figi="BBG000B9XRY4")
     assert id1 == "FIGI_BBG000B9XRY4"
 
     id2 = make_immutable_id("AAPL", cik="0000320193")
     assert id2 == "CIK_0000320193_CS"
 
-    id3 = make_immutable_id("XYZ")
+    # Symbol-only identity cannot qualify for official canonical identity
+    with pytest.raises(ValueError, match="Symbol-only identity"):
+        make_immutable_id("XYZ")
+
+    # Only allowed when explicitly flagged as unverified
+    id3 = make_immutable_id("XYZ", allow_unverified=True)
     assert id3 == "US_EQ_XYZ_CS"
 
 

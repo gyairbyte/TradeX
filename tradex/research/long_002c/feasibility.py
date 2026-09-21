@@ -163,39 +163,54 @@ def analyze_endpoint_feasibility(
 
     # Primary endpoint feasibility determination rule:
     # Retain primary +10/10 if:
-    # 1. Total master episodes >= 50
-    # 2. Primary clean target prevalence CI lower bound > 0.001 (0.1%)
-    # 3. Clean target occurrences >= 25
+    # 1. Total master episodes >= 100
+    # 2. Primary clean target occurrences >= 100
+    # 3. 21-session block bootstrap 95% CI lower bound > 0.005 (0.5%)
+    # 4. Effective number of securities in episodes N_eff >= 15.0
     ci_lower = resampling_21.get("clean_target_10_10", {}).get("ci_2_5", 0.0)
 
-    has_sufficient_episodes = n_episodes >= 50
-    has_sufficient_prevalence = clean_10_10_count >= 25 and ci_lower > 0.0001
+    has_sufficient_episodes = n_episodes >= 100
+    has_sufficient_prevalence = clean_10_10_count >= 100 and ci_lower > 0.005
+    has_sufficient_effective_n = eff_n >= 15.0
 
-    if has_sufficient_episodes and has_sufficient_prevalence:
+    if has_sufficient_episodes and has_sufficient_prevalence and has_sufficient_effective_n:
         selected_endpoint = "clean_+10%_10_sessions"
         endpoint_disposition = "primary_retained"
         rationale = (
             f"Primary endpoint +10%/10 retained: Development census provides {n_episodes} master episodes "
-            f"and {clean_10_10_count} clean target events (prevalence {clean_10_10_prev:.4f}, "
-            f"21-session block 95% CI [{ci_lower:.4f}, {resampling_21.get('clean_target_10_10', {}).get('ci_97_5', 0.0):.4f}]). "
-            f"Effective number of securities = {eff_n}."
+            f"(threshold >= 100), {clean_10_10_count} clean target events (threshold >= 100), "
+            f"prevalence {clean_10_10_prev:.4f}, 21-session block 95% CI lower bound {ci_lower:.4f} (threshold > 0.0050), "
+            f"and effective number of securities {eff_n:.1f} (threshold >= 15.0)."
         )
     else:
         selected_endpoint = "clean_+10%_21_sessions"
         endpoint_disposition = "fallback_invoked"
         rationale = (
-            f"Sole feasibility fallback +10%/21 invoked: Development census shows primary +10%/10 has "
-            f"insufficient independent sample ({clean_10_10_count} clean events, CI lower {ci_lower:.4f}). "
+            f"Sole feasibility fallback +10%/21 invoked: Development census shows primary +10%/10 does not meet "
+            f"all retention criteria (episodes: {n_episodes} [need >= 100], clean events: {clean_10_10_count} [need >= 100], "
+            f"CI lower bound: {ci_lower:.4f} [need > 0.0050], eff N: {eff_n:.1f} [need >= 15.0]). "
             f"Fallback +10%/21 provides {clean_21_count} clean events (prevalence {clean_21_prev:.4f})."
         )
 
+    # Actionable observation accounting: if earnings schedule unknown, actionability is unavailable
+    actionable_obs = [o for o in observations if o.get("actionability_status") == "eligible"]
+    if actionable_obs:
+        act_status = "available_point_in_time"
+        min_act_val: int | None = max(50, int(0.30 * len(actionable_obs)))
+    else:
+        act_status = "unavailable_historical_earnings_unknown"
+        min_act_val = None
+
     # Proposed numerical minimum evidence gates for future validation split (2021-2022)
-    # Validation is 2 years vs 5 years dev (~40% duration)
+    # Labeled proposed_for_review; NOT frozen until explicitly approved by Gary/ChatGPT review
     proposed_gates = {
+        "status": "proposed_for_review",
+        "notes": "Proposed numerical evidence gates derived from development data for Gary/ChatGPT review; not locked.",
         "minimum_master_episodes_validation": max(30, int(0.30 * n_episodes)),
         "minimum_clean_target_events_validation": max(15, int(0.30 * clean_10_10_count)),
         "minimum_effective_securities_validation": max(10.0, round(0.35 * eff_n, 1)),
-        "minimum_actionable_observations_validation": max(50, int(0.30 * n_eligible)),
+        "actionable_observations_status": act_status,
+        "minimum_actionable_observations_validation": min_act_val,
         "clustering_session_fraction_ceiling": 0.85,
     }
 
@@ -216,5 +231,6 @@ def analyze_endpoint_feasibility(
         "selected_endpoint": selected_endpoint,
         "endpoint_disposition": endpoint_disposition,
         "rationale": rationale,
+        "proposed_evidence_gates_for_review": proposed_gates,
         "proposed_frozen_evidence_gates": proposed_gates,
     }
