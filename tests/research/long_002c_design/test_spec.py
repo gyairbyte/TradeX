@@ -258,3 +258,213 @@ def test_markdown_design_exists_and_contains_invariants(md_text: str) -> None:
     assert "clean +20%" in lower
     assert "clean +30%" in lower
     assert "5, 10, 21" in md_text
+
+
+def test_security_identity_contract_in_spec(spec: dict) -> None:
+    """Security identity contract specifies immutable security ID, CIK, and ticker handling."""
+    sec_contract = spec["security_identity_contract"]
+    assert "CIK" in sec_contract["issuer_identity"]
+    assert "immutable_security_id" in sec_contract["security_identity"]
+    assert "ticker_at_decision" in sec_contract["historical_ticker_treatment"]
+    assert "never the canonical primary key" in sec_contract["historical_ticker_treatment"].lower()
+
+    # Ticker rename continuity
+    rename_policy = sec_contract["ticker_rename_policy"].lower()
+    assert "contiguous" in rename_policy
+    assert "does not fragment" in rename_policy
+
+    # Ticker reuse isolation
+    reuse_policy = sec_contract["ticker_reuse_policy"].lower()
+    assert "distinct immutable_security_id" in reuse_policy
+    assert "never collide" in reuse_policy
+
+    # Fail closed on unresolvable identity
+    fail_closed = sec_contract["fail_closed_unresolved_identity"].lower()
+    assert "unknown_security_identity" in fail_closed
+    assert "fails closed" in fail_closed or "fail closed" in fail_closed
+
+
+def test_entity_schemas_use_immutable_security_id_and_ticker_at_decision(spec: dict) -> None:
+    """Entities are keyed by immutable_security_id and retain ticker_at_decision."""
+    entities = {e["entity_id"]: e for e in spec["dataset_manifest_architecture"]["entities"]}
+
+    # Core observation entity
+    obs = entities["decision_observations"]
+    assert obs["primary_key"] == ["immutable_security_id", "as_of_date", "cutoff_time"]
+    assert "immutable_security_id" in obs["fields"]
+    assert "ticker_at_decision" in obs["fields"]
+    assert "immutable_issuer_id" in obs["fields"]
+
+    # Data eligibility
+    elig = entities["data_eligibility"]
+    assert elig["primary_key"] == ["immutable_security_id", "as_of_date", "cutoff_time"]
+    assert "immutable_security_id" in elig["fields"]
+    assert "ticker_at_decision" in elig["fields"]
+
+    # Security classification
+    sec = entities["security_classification_status"]
+    assert sec["primary_key"] == ["immutable_security_id", "as_of_date"]
+    assert "immutable_security_id" in sec["fields"]
+    assert "ticker_at_decision" in sec["fields"]
+
+    # Earnings schedule status
+    earn = entities["earnings_schedule_status"]
+    assert earn["primary_key"] == ["immutable_security_id", "as_of_date", "cutoff_time"]
+    assert "immutable_security_id" in earn["fields"]
+    assert "ticker_at_decision" in earn["fields"]
+
+    # Outcome label records
+    outcomes = entities["outcome_label_records"]
+    assert outcomes["primary_key"] == ["immutable_security_id", "as_of_date", "cutoff_time", "target_pct", "horizon_sessions"]
+    assert "immutable_security_id" in outcomes["fields"]
+    assert "ticker_at_decision" in outcomes["fields"]
+    assert "adverse_barrier_pct" in outcomes["fields"]
+    assert "clean_risk_cap_pct" in outcomes["fields"]
+    assert "clean_risk_cap_amount" in outcomes["fields"]
+    assert "mfe_pct" in outcomes["fields"]
+
+    # Master episodes
+    ep = entities["master_opportunity_episodes"]
+    assert ep["primary_key"] == ["episode_id"]
+    assert "anchor_security_id" in ep["fields"]
+    assert "anchor_ticker" in ep["fields"]
+    assert ["anchor_security_id", "anchor_as_of_date", "anchor_cutoff_time"] in ep["unique_constraints"]
+
+    # Episode membership
+    mem = entities["episode_membership"]
+    assert mem["primary_key"] == ["immutable_security_id", "as_of_date", "cutoff_time"]
+    assert "immutable_security_id" in mem["fields"]
+    assert "ticker_at_decision" in mem["fields"]
+
+    # Baseline outputs
+    base = entities["baseline_comparator_outputs"]
+    assert base["primary_key"] == ["immutable_security_id", "as_of_date", "cutoff_time", "comparator_id"]
+    assert "immutable_security_id" in base["fields"]
+    assert "ticker_at_decision" in base["fields"]
+
+    # Exclusions
+    excl = entities["exclusions_and_reason_codes"]
+    assert excl["primary_key"] == ["immutable_security_id", "as_of_date", "cutoff_time", "reason_code"]
+    assert "immutable_security_id" in excl["fields"]
+    assert "ticker_at_decision" in excl["fields"]
+    assert "unknown_security_identity" in excl["fields"]["reason_category"]
+
+
+def test_security_identity_ticker_reuse_and_rename_logic() -> None:
+    """Deterministic simulation of ticker reuse and ticker rename behavior."""
+    # 1. Ticker reuse simulation: two distinct securities share ticker "XYZ" at different times
+    sec_1 = {
+        "immutable_security_id": "BBG000B9XRY4",
+        "ticker_at_decision": "XYZ",
+        "as_of_date": "2016-05-10",
+        "cutoff_time": "20:30",
+    }
+    sec_2 = {
+        "immutable_security_id": "BBG001S5N8V8",
+        "ticker_at_decision": "XYZ",
+        "as_of_date": "2019-11-15",
+        "cutoff_time": "20:30",
+    }
+
+    # Primary keys do not collide
+    pk_1 = (sec_1["immutable_security_id"], sec_1["as_of_date"], sec_1["cutoff_time"])
+    pk_2 = (sec_2["immutable_security_id"], sec_2["as_of_date"], sec_2["cutoff_time"])
+    assert pk_1 != pk_2
+
+    # Episode IDs do not collide
+    ep_id_1 = f"EP-{sec_1['immutable_security_id']}-20160510-2030"
+    ep_id_2 = f"EP-{sec_2['immutable_security_id']}-20191115-2030"
+    assert ep_id_1 != ep_id_2
+
+    # Grouping by anchor_security_id isolates them completely
+    episodes_by_security = {}
+    for sec in [sec_1, sec_2]:
+        episodes_by_security.setdefault(sec["immutable_security_id"], []).append(sec)
+    assert len(episodes_by_security) == 2
+    assert len(episodes_by_security["BBG000B9XRY4"]) == 1
+    assert len(episodes_by_security["BBG001S5N8V8"]) == 1
+
+    # 2. Ticker rename simulation: same security changes ticker from "OLDT" to "NEWT"
+    rename_obs_1 = {
+        "immutable_security_id": "BBG000BLNNH6",
+        "ticker_at_decision": "OLDT",
+        "as_of_date": "2016-07-01",
+        "cutoff_time": "20:30",
+    }
+    rename_obs_2 = {
+        "immutable_security_id": "BBG000BLNNH6",
+        "ticker_at_decision": "NEWT",
+        "as_of_date": "2018-03-15",
+        "cutoff_time": "20:30",
+    }
+
+    # Contiguous history under the same immutable_security_id
+    history_by_security = {}
+    for obs in [rename_obs_1, rename_obs_2]:
+        history_by_security.setdefault(obs["immutable_security_id"], []).append(obs)
+    assert len(history_by_security) == 1
+    assert len(history_by_security["BBG000BLNNH6"]) == 2
+    tickers = [o["ticker_at_decision"] for o in history_by_security["BBG000BLNNH6"]]
+    assert tickers == ["OLDT", "NEWT"]
+
+
+def test_adverse_barrier_and_clean_risk_cap_formulas_and_units(spec: dict) -> None:
+    """Formulas for adverse barrier, clean risk cap, and same-bar ambiguity use unambiguous units."""
+    formulas = spec["outcome_labeling_specification"]["formulas"]
+
+    assert formulas["adverse_barrier_pct"] == "max(0.05, 1.5 * pre_entry_atr / entry_price)"
+    assert formulas["adverse_barrier_price"] == "entry_price * (1.0 - adverse_barrier_pct)"
+    assert formulas["clean_risk_cap_pct"] == "min((target_pct / 100.0) / 2.0, adverse_barrier_pct)"
+    assert formulas["clean_risk_cap_amount"] == "entry_price * clean_risk_cap_pct"
+    assert formulas["mfe_pct"] == "max_forward_high / entry_price - 1.0"
+    assert formulas["target_progress_ratio"] == "mfe_pct / (target_pct / 100.0)"
+    assert formulas["same_bar_ambiguity"] == "high >= target_price AND low <= adverse_barrier_price"
+
+    # Numerical execution of formulas
+    # Case A: Low volatility (ATR = 2.0 on 100.0 price -> 1.5 * 2/100 = 3% < 5% floor)
+    entry_price = 100.0
+    pre_entry_atr = 2.0
+    target_pct = 10.0
+
+    adverse_barrier_pct = max(0.05, 1.5 * pre_entry_atr / entry_price)
+    assert adverse_barrier_pct == 0.05  # 5% floor triggered
+    adverse_barrier_price = entry_price * (1.0 - adverse_barrier_pct)
+    assert adverse_barrier_price == 95.0
+
+    clean_risk_cap_pct = min((target_pct / 100.0) / 2.0, adverse_barrier_pct)
+    assert clean_risk_cap_pct == 0.05  # min(5%, 5%)
+    clean_risk_cap_amount = entry_price * clean_risk_cap_pct
+    assert clean_risk_cap_amount == 5.0
+
+    # Case B: High volatility (ATR = 6.0 on 100.0 price -> 1.5 * 6/100 = 9% > 5%)
+    pre_entry_atr_high = 6.0
+    adverse_barrier_pct_high = max(0.05, 1.5 * pre_entry_atr_high / entry_price)
+    assert adverse_barrier_pct_high == 0.09  # 9% ATR-based barrier
+    adverse_barrier_price_high = entry_price * (1.0 - adverse_barrier_pct_high)
+    assert adverse_barrier_price_high == 91.0
+
+    clean_risk_cap_pct_high = min((target_pct / 100.0) / 2.0, adverse_barrier_pct_high)
+    assert clean_risk_cap_pct_high == 0.05  # min(5%, 9%) is still capped at 5% for +10% target
+    clean_risk_cap_amount_high = entry_price * clean_risk_cap_pct_high
+    assert clean_risk_cap_amount_high == 5.0
+
+    # Same-bar ambiguity test: bar touches target and adverse barrier simultaneously
+    target_price = entry_price * (1.0 + target_pct / 100.0)  # 110.0
+    bar_high = 110.5
+    bar_low = 94.0  # <= 95.0
+    same_bar_ambiguous = bar_high >= target_price and bar_low <= adverse_barrier_price
+    assert same_bar_ambiguous is True
+
+
+def test_markdown_design_reflects_review_corrections(md_text: str) -> None:
+    """Markdown document reflects all PR #84 review corrections and decisions."""
+    assert "Review Dispositions & Design Direction Approvals (2026-09-20)" in md_text
+    assert "Historical Security Identity Contract" in md_text
+    assert "immutable_security_id" in md_text
+    assert "ticker_at_decision" in md_text
+    assert "EP-{immutable_security_id}" in md_text
+    assert "distinct immutable securities" in md_text
+    assert "Adverse Barrier Pct" in md_text
+    assert "Clean Risk Cap Pct" in md_text
+    assert "path_sequence_ambiguous" in md_text
+    assert "unknown_security_identity" in md_text

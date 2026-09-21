@@ -10,6 +10,13 @@
   "authorization": {
     "design_work_authorized": true,
     "design_work_authorization_source": "Gary Yang explicit authorization on 2026-09-20",
+    "design_direction_review_disposition": {
+      "status": "design_direction_approved_by_gary_chatgpt_review",
+      "review_date": "2026-09-20",
+      "warmup_lookback": "accept_early_2016_attrition_no_new_provider_probe_in_design",
+      "raw_vs_actionable_census": "approved_design_direction_dual_reporting",
+      "endpoint_feasibility": "approved_design_direction_dependence_aware_block_resampling"
+    },
     "long_002c_execution_authorized": false,
     "dataset_construction_authorized": false,
     "provider_calls_authorized": false,
@@ -18,7 +25,7 @@
     "holdout_access_authorized": false,
     "production_change_authorized": false,
     "production_promotion_eligible": false,
-    "notes": "This design specification does not authorize LONG-002C execution, dataset construction, provider calls, outcome calculation, model fitting, or production changes. Execution requires a separate, explicit Gary authorization."
+    "notes": "Gary/ChatGPT review on 2026-09-20 approved the design direction. This design specification does NOT authorize LONG-002C execution, dataset construction, provider calls, outcome calculation, model fitting, or production changes. Execution requires a separate, explicit Gary authorization."
   },
   "upstream_spec_hashes": {
     "docs/research/specs/LONG-002-v1.json": "f3df2845543500985c88568f9b855812576e9e4a10901f8a5f7a1834a319b3b5",
@@ -32,6 +39,14 @@
     "docs/research/LONG-002B-AMEND-001.md": "e2487b0471fdf7b9f8c37316241e2a39ae470cdc8dfed7319e96354c9b5d18d1",
     "docs/research/LONG-002B-DEC-001.md": "6c2179ff5e73bbe655c101814fa98c66bc7c09c803e98f2afbaeda98c0b25026",
     "docs/research/LONG-002B-AMEND-002.md": "9ff7f639bc0c2da5816684658f4bb2472f8a75e88453e0ad485c26fa6a07f3b3"
+  },
+  "security_identity_contract": {
+    "issuer_identity": "CIK when available",
+    "security_identity": "immutable_security_id (stable security/share-class identity such as composite_figi or exchange|issuer|share_class key)",
+    "historical_ticker_treatment": "effective-dated historical attribute (ticker_at_decision), never the canonical primary key",
+    "ticker_rename_policy": "A security history remains contiguous across ticker/name changes through its unchanged immutable_security_id. Changing ticker_at_decision does not fragment the security history or create a new security entity.",
+    "ticker_reuse_policy": "Distinct securities that happen to use the same ticker symbol at different times have distinct immutable_security_id values. They must never collide, join, or share a master episode.",
+    "fail_closed_unresolved_identity": "If an observation cannot be linked to a verified immutable_security_id with defensible point-in-time provenance, it fails closed with reason code unknown_security_identity and is excluded from the eligible universe."
   },
   "historical_splits": {
     "warmup": {
@@ -114,6 +129,7 @@
       "provider_missing_vs_ipo": "Provider-missing pre-2016 daily history must never be confused with a genuine recent IPO. A security belongs to the recent-IPO cohort only when positive listing-date or SEC prospectus evidence confirms an IPO within 63 to 251 sessions.",
       "feature_shortfall_null": "Any technical or liquidity feature requiring more lookback than historically available from the provider returns null. Missing lookback is never backfilled as zero.",
       "observation_availability": "Observations become unavailable for candidate consideration only when mandatory eligibility criteria (e.g. 20-session dollar volume median or price history) cannot be computed. If an established stock lacks 252 sessions solely due to the 2015 provider coverage boundary, it is tagged unavailable_insufficient_lookback.",
+      "review_disposition": "Gary/ChatGPT review disposition accepts truthful early-2016 sample attrition for now; no new 2015 provider probe is authorized in this PR. If later execution shows attrition materially compromises evidence sufficiency, return for a separate bounded provider decision.",
       "no_split_shift": "The development split date remains strictly locked at 2016-01-01. Future execution cannot shift the split to 2017 to bypass warm-up."
     }
   },
@@ -121,11 +137,13 @@
     "entities": [
       {
         "entity_id": "decision_observations",
-        "description": "Point-in-time snapshot evaluations for each (symbol, as_of_date, cutoff_time).",
-        "primary_key": ["symbol", "as_of_date", "cutoff_time"],
-        "ordering": ["as_of_date ASC", "symbol ASC", "cutoff_time ASC"],
+        "description": "Point-in-time snapshot evaluations for each (immutable_security_id, as_of_date, cutoff_time).",
+        "primary_key": ["immutable_security_id", "as_of_date", "cutoff_time"],
+        "ordering": ["as_of_date ASC", "immutable_security_id ASC", "cutoff_time ASC"],
         "fields": {
-          "symbol": "string",
+          "immutable_security_id": "string",
+          "immutable_issuer_id": "string|null",
+          "ticker_at_decision": "string",
           "as_of_date": "YYYY-MM-DD",
           "cutoff_time": "20:30|09:00",
           "decision_timestamp_utc": "ISO-8601 UTC timestamp",
@@ -145,8 +163,10 @@
       {
         "entity_id": "data_eligibility",
         "description": "Evaluation of universal filtering gates at decision time.",
-        "primary_key": ["symbol", "as_of_date", "cutoff_time"],
+        "primary_key": ["immutable_security_id", "as_of_date", "cutoff_time"],
         "fields": {
+          "immutable_security_id": "string",
+          "ticker_at_decision": "string",
           "price_gte_5": "boolean",
           "dollar_volume_20d_gte_20m": "boolean",
           "dollar_volume_60d_gte_10m": "boolean|null",
@@ -161,8 +181,10 @@
       {
         "entity_id": "security_classification_status",
         "description": "Point-in-time security classification and exclusion evaluation.",
-        "primary_key": ["symbol", "as_of_date"],
+        "primary_key": ["immutable_security_id", "as_of_date"],
         "fields": {
+          "immutable_security_id": "string",
+          "ticker_at_decision": "string",
           "provider_type_code": "string|null",
           "inferred_classification": "common_stock|etf|etn|closed_end_fund|preferred|warrant|right|unit|pre_merger_spac|shell|otc|unknown",
           "classification_status": "supported_common_stock|excluded_security_type|unknown_fail_closed",
@@ -173,8 +195,10 @@
       {
         "entity_id": "earnings_schedule_status",
         "description": "Point-in-time next earnings announcement schedule state.",
-        "primary_key": ["symbol", "as_of_date", "cutoff_time"],
+        "primary_key": ["immutable_security_id", "as_of_date", "cutoff_time"],
         "fields": {
+          "immutable_security_id": "string",
+          "ticker_at_decision": "string",
           "next_earnings_date": "YYYY-MM-DD|null",
           "announcement_timing": "before_market_open|after_market_close|during_trading_hours|unspecified|null",
           "sessions_to_earnings": "int|null",
@@ -185,14 +209,19 @@
       {
         "entity_id": "outcome_label_records",
         "description": "Calculated outcome metrics across all nine target/horizon cells.",
-        "primary_key": ["symbol", "as_of_date", "cutoff_time", "target_pct", "horizon_sessions"],
-        "ordering": ["as_of_date ASC", "symbol ASC", "target_pct ASC", "horizon_sessions ASC"],
+        "primary_key": ["immutable_security_id", "as_of_date", "cutoff_time", "target_pct", "horizon_sessions"],
+        "ordering": ["as_of_date ASC", "immutable_security_id ASC", "target_pct ASC", "horizon_sessions ASC"],
         "fields": {
+          "immutable_security_id": "string",
+          "ticker_at_decision": "string",
           "reference_entry_price": "float",
           "entry_friction_bps": "float",
           "target_price": "float",
+          "adverse_barrier_pct": "float",
           "adverse_barrier_price": "float",
-          "target_reached": "boolean",
+          "clean_risk_cap_pct": "float",
+          "clean_risk_cap_amount": "float",
+          "mfe_pct": "float",
           "target_progress_ratio": "float",
           "near_miss": "boolean",
           "partial_move": "boolean",
@@ -212,11 +241,12 @@
         "entity_id": "master_opportunity_episodes",
         "description": "Independent master opportunity episodes anchored by first qualifying +10%/21 move.",
         "primary_key": ["episode_id"],
-        "unique_constraints": [["anchor_symbol", "anchor_as_of_date", "anchor_cutoff_time"]],
-        "ordering": ["anchor_as_of_date ASC", "anchor_symbol ASC"],
+        "unique_constraints": [["anchor_security_id", "anchor_as_of_date", "anchor_cutoff_time"]],
+        "ordering": ["anchor_as_of_date ASC", "anchor_security_id ASC"],
         "fields": {
-          "episode_id": "string (EP-SYMBOL-YYYYMMDD-CUTOFF)",
-          "anchor_symbol": "string",
+          "episode_id": "string (EP-{immutable_security_id}-{YYYYMMDD}-{cutoff})",
+          "anchor_security_id": "string",
+          "anchor_ticker": "string",
           "anchor_as_of_date": "YYYY-MM-DD",
           "anchor_cutoff_time": "20:30|09:00",
           "anchor_entry_price": "float",
@@ -235,8 +265,10 @@
       {
         "entity_id": "episode_membership",
         "description": "Mapping linking daily decision observations to their parent master episode.",
-        "primary_key": ["symbol", "as_of_date", "cutoff_time"],
+        "primary_key": ["immutable_security_id", "as_of_date", "cutoff_time"],
         "fields": {
+          "immutable_security_id": "string",
+          "ticker_at_decision": "string",
           "episode_id": "string",
           "session_index_in_episode": "int (1..21)",
           "constituent_tag": "pre_target|target_session|post_target"
@@ -245,8 +277,10 @@
       {
         "entity_id": "baseline_comparator_outputs",
         "description": "Evaluation of locked baseline models on common observations.",
-        "primary_key": ["symbol", "as_of_date", "cutoff_time", "comparator_id"],
+        "primary_key": ["immutable_security_id", "as_of_date", "cutoff_time", "comparator_id"],
         "fields": {
+          "immutable_security_id": "string",
+          "ticker_at_decision": "string",
           "comparator_id": "string",
           "comparator_family": "universe_base_rate|simple_momentum|spy_relative|sector_relative|volatility_aware_momentum|legacy_tradex_scorer",
           "raw_score_or_return": "float",
@@ -259,8 +293,9 @@
       {
         "entity_id": "data_quality_coverage",
         "description": "Per-security data completeness and integrity audit metrics.",
-        "primary_key": ["symbol", "split_name"],
+        "primary_key": ["immutable_security_id", "split_name"],
         "fields": {
+          "immutable_security_id": "string",
           "split_name": "string",
           "expected_sessions": "int",
           "observed_sessions": "int",
@@ -290,10 +325,12 @@
       {
         "entity_id": "exclusions_and_reason_codes",
         "description": "Enumeration and accounting of all rejected or unavailable observations.",
-        "primary_key": ["symbol", "as_of_date", "cutoff_time", "reason_code"],
+        "primary_key": ["immutable_security_id", "as_of_date", "cutoff_time", "reason_code"],
         "fields": {
+          "immutable_security_id": "string",
+          "ticker_at_decision": "string",
           "reason_code": "string",
-          "reason_category": "security_type|liquidity|price|trading_history|lookback_unavailable|earnings_unknown|split_boundary",
+          "reason_category": "security_type|liquidity|price|trading_history|lookback_unavailable|earnings_unknown|split_boundary|unknown_security_identity",
           "description": "string"
         }
       }
@@ -351,32 +388,38 @@
     },
     "formulas": {
       "target_price": "entry_price * (1.0 + target_pct / 100.0)",
-      "target_progress_ratio": "MFE / (entry_price * (target_pct / 100.0))",
+      "mfe_pct": "max_forward_high / entry_price - 1.0",
+      "target_progress_ratio": "mfe_pct / (target_pct / 100.0)",
       "near_miss": "0.8 <= target_progress_ratio < 1.0",
       "partial_move": "0.5 <= target_progress_ratio < 0.8",
-      "adverse_excursion_barrier": "max(0.05 * entry_price, 1.5 * pre_entry_atr)",
-      "clean_target_risk_cap": "min(0.5 * entry_price * (target_pct / 100.0), adverse_excursion_barrier)",
+      "adverse_barrier_pct": "max(0.05, 1.5 * pre_entry_atr / entry_price)",
+      "adverse_barrier_price": "entry_price * (1.0 - adverse_barrier_pct)",
+      "clean_risk_cap_pct": "min((target_pct / 100.0) / 2.0, adverse_barrier_pct)",
+      "clean_risk_cap_amount": "entry_price * clean_risk_cap_pct",
+      "mae_pct": "(entry_price - min_forward_low) / entry_price",
+      "mae_atr": "(entry_price - min_forward_low) / pre_entry_atr",
+      "adverse_excursion": "mae_pct >= adverse_barrier_pct",
       "clean_target_criteria": [
         "valid executable entry fill",
         "target reached during horizon",
-        "pre-target MAE <= clean_target_risk_cap",
+        "pre-target MAE pct <= clean_risk_cap_pct",
         "path_sequence_ambiguous == false"
       ],
-      "same_bar_ambiguity": "If daily bar high >= target_price AND daily bar low <= adverse_barrier_price on the same session, set path_sequence_ambiguous = true. It may still count as gross target touch but cannot count as clean target reached.",
+      "same_bar_ambiguity": "high >= target_price AND low <= adverse_barrier_price",
       "sustained_target": "target_reached == true AND end_of_horizon_return >= 0.5 * (target_pct / 100.0)"
     }
   },
   "master_episodes_specification": {
-    "anchor_rule": "Earliest currently unassigned observation for a stock that reaches at least +10% within 21 trading sessions from the next-open reference entry.",
+    "anchor_rule": "Earliest currently unassigned observation for an immutable_security_id that reaches at least +10% within 21 trading sessions from the next-open reference entry.",
     "window_duration_sessions": 21,
     "no_recursive_extension": true,
-    "same_stock_cooldown": "No new episode for the same stock may begin until the 21-session window terminates.",
+    "security_isolation": "No new episode for the same immutable_security_id may begin until the active 21-session window terminates.",
     "nested_targets": "Nested +10%, +20%, and +30% moves belong to the same parent episode.",
     "official_metrics_reference": "All episode metrics are measured from the first anchor entry.",
     "constituent_retention": "All constituent daily observations inside the 21-session window are retained.",
     "constituent_tags": ["pre_target", "target_session", "post_target"],
     "ex_post_labeling_rule": "The master anchor is an ex-post labeling construct and must never be treated as a model feature, trigger, or claimed detection event.",
-    "sort_tie_break": ["as_of_date ASC", "symbol ASC", "cutoff_time ASC"]
+    "sort_tie_break": ["as_of_date ASC", "immutable_security_id ASC", "cutoff_time ASC"]
   },
   "natural_prevalence_census_and_controls": {
     "preserve_natural_prevalence": true,
@@ -387,7 +430,7 @@
       "clean-target prevalence across all nine cells",
       "near-miss, partial-move, and adverse excursion prevalence",
       "independent master opportunity episode counts",
-      "distinct tickers represented",
+      "distinct immutable securities represented",
       "concentration by year, sector, and market-cap cohort",
       "coverage by security classification status (common stock, unknown, excluded)",
       "coverage by earnings schedule status (known vs unknown)"
@@ -408,7 +451,7 @@
       "exclusion_rules": [
         "Control must not be inside an active positive master episode.",
         "Do not reuse the exact same control observation.",
-        "Do not reuse one ticker within a rolling 21-session window for chart-review controls.",
+        "Do not reuse one immutable security within a rolling 21-session window for chart-review controls.",
         "If an honest match does not exist, record an unmatched case rather than forcing an invalid match."
       ]
     }
@@ -425,7 +468,8 @@
       "policy": "Decouple raw market-move prevalence from actionable policy prevalence.",
       "raw_census_rule": "All universe-eligible common stocks participate in the raw outcome-label census regardless of earnings-schedule status. This measures the true natural prevalence of rapid upside moves across the liquid stock universe.",
       "actionability_census_rule": "Observations with unknown earnings schedules are marked actionability_unavailable_earnings_unknown. They cannot qualify for Enter Now or Armed under ordinary policy. Actionability reporting evaluates only known-schedule observations.",
-      "dual_reporting": "Both metrics are reported concurrently to measure the exact selection effect and opportunity loss attributable to unavailable earnings schedules."
+      "dual_reporting": "Both metrics are reported concurrently to measure the exact selection effect and opportunity loss attributable to unavailable earnings schedules.",
+      "review_disposition": "Approved design direction by Gary/ChatGPT review on 2026-09-20."
     }
   },
   "frozen_baseline_census": {
@@ -465,11 +509,12 @@
   },
   "endpoint_feasibility_procedure": {
     "principle": "No numerical sample gates or i.i.d. binomial rules are locked in this design PR. Observations exhibit cross-sectional dependence, clustering, and episode grouping. Future LONG-002C execution will derive proposed gates from development-only evidence using a dependence-aware framework.",
+    "review_disposition": "Approved design direction by Gary/ChatGPT review on 2026-09-20. Use development-only, dependence-aware 21-session primary / 42-session robustness block resampling; derive/freeze numerical gates before validation; do not use validation or holdout counts.",
     "deterministic_steps": [
       "1. Calculate complete development-only census (2016-01-01 through 2020-12-31) across all nine target/horizon combinations.",
       "2. Group qualifying +10%/21 moves into independent master opportunity episodes using the locked non-recursive 21-session anchor rule.",
-      "3. Measure episode metrics: total master episodes, distinct tickers, annual episode counts (2016-2020), and sector distribution.",
-      "4. Measure cohort concentration: effective number of episodes (Herfindahl-Hirschman index across tickers and sectors).",
+      "3. Measure episode metrics: total master episodes, distinct immutable securities, annual episode counts (2016-2020), and sector distribution.",
+      "4. Measure cohort concentration: effective number of episodes (Herfindahl-Hirschman index across securities and sectors).",
       "5. Audit usable coverage under fail-closed unknown policies (security classification unknown rate, earnings schedule unknown rate).",
       "6. Assess dependence structure: evaluate cross-sectional overlap (fraction of calendar sessions with active concurrent episodes).",
       "7. Apply dependence-aware uncertainty methodology (primary 21-session / robustness 42-session time-block resampling) to derive statistical precision bounds.",
@@ -506,6 +551,7 @@
       "test_point_in_time_timestamp_joins: verify all joined feature timestamps are strictly <= observation cutoff timestamp.",
       "test_no_future_information_in_features: verify lookahead tests on moving averages, ATR, and dollar volume.",
       "test_no_current_backfill: verify current sector, shares, and classifications are not present in historical rows.",
+      "test_security_identity_immutability: verify ticker changes do not fragment history and ticker reuse across distinct securities does not collide.",
       "test_security_fail_closed_unknown: verify unresolved security classification rows fail closed to excluded.",
       "test_earnings_fail_closed_unknown: verify unknown earnings rows are marked unavailable for Enter Now/Armed.",
       "test_null_is_not_zero: verify missing feature lookbacks remain null and do not coerce to zero.",
@@ -513,6 +559,7 @@
       "test_missing_sessions_handling: verify unexplained missing trading sessions trigger data quality flags.",
       "test_split_normalized_vs_as_traded: verify split adjustments apply to analytical series and not entry prices.",
       "test_next_open_entry_reference: verify entry price is next regular session open plus modeled friction.",
+      "test_adverse_barrier_and_clean_risk_cap_units: verify adverse barrier and clean risk cap percent and price levels use consistent formulas.",
       "test_split_boundary_purge: verify observations whose 26-session forward window crosses into 2021 are purged.",
       "test_all_nine_target_labels: verify all 9 combinations are calculated for every non-purged observation.",
       "test_same_bar_ambiguity_flag: verify daily bars hitting target and adverse barrier set ambiguity flag and disqualify clean target.",
@@ -533,7 +580,7 @@
       "mitigation": "Include delisted securities where historical data permits; document survivorship limitations and measure delisting attrition rates."
     },
     {
-      "risk": "Selection bias from fail-closed unknown security classification",
+      "risk": "Security selection bias",
       "mitigation": "Audit excluded unknown counts against known common stocks; report demographic distributions to verify whether exclusions concentrate in specific cohorts."
     },
     {
@@ -553,8 +600,8 @@
       "mitigation": "Flag bars where high >= target and low <= adverse barrier as path_sequence_ambiguous; strictly disqualify them from clean_target_reached."
     },
     {
-      "risk": "Stale and missing data",
-      "mitigation": "Enforce 99% annual completeness, max 2 unexplained missing sessions per 252 days, max 1 consecutive missing session; reject unexplainable gaps."
+      "risk": "Data completeness",
+      "mitigation": "Enforce 99% annual completeness, max 2 missing sessions per 252 days, max 1 consecutive missing session; reject unexplainable gaps."
     },
     {
       "risk": "Timezone, market-session, and calendar errors",
@@ -562,11 +609,11 @@
     },
     {
       "risk": "Provider inconsistency and revisions",
-      "mitigation": "Immutable raw snapshots with SHA-256 manifests; record request fingerprints; prohibit live unversioned provider calls during evaluation."
+      "mitigation": "Immutable offline raw data snapshots hashed with SHA-256; record request fingerprints; prohibit live unversioned provider calls during evaluation."
     },
     {
       "risk": "Small sample sizes and low base rates",
-      "mitigation": "Measure natural prevalence across the full mid-/large-cap universe; evaluate independent episode counts before selecting candidate models."
+      "mitigation": "Measure natural prevalence across the full mid-/large-cap universe; evaluate independent episode counts before selecting candidate model architectures."
     },
     {
       "risk": "Regime dependence",

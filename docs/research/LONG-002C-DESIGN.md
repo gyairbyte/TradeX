@@ -21,6 +21,16 @@ This document defines the research-governance design and implementation contract
 3. **Endpoint and Base-Rate Feasibility:** Measuring empirical prevalence and statistical concentration on the development split (2016–2020) to derive future sample-count gates and evaluate the primary endpoint versus the sole locked fallback.
 4. **Frozen Baseline Census:** Evaluating the locked comparator families (universe base rate, simple momentum, SPY-relative momentum, valid PIT-sector relative momentum, volatility-aware momentum, and the existing TradeX long-term scorer) on common observations and freezing the strongest simple comparator.
 
+### Review Dispositions & Design Direction Approvals (2026-09-20)
+
+In review of PR #84, Gary and ChatGPT reviewed open design questions and approved three key design directions:
+1. **Warm-Up Lookback:** Accept truthful early-2016 sample attrition for now; do **not** authorize a new 2015 provider probe. If later execution shows attrition materially compromises evidence sufficiency, return for a separate bounded provider decision.
+2. **Raw vs. Actionable Census:** Approved dual-reporting design direction. Raw market prevalence is measured across all eligible common stocks regardless of earnings-schedule status; actionable setup density requires point-in-time known earnings schedules.
+3. **Endpoint Feasibility Framework:** Approved dependence-aware block resampling (21-session primary / 42-session robustness time blocks) on development data to derive precision bounds and proposed gates before any validation access; no validation or holdout counts.
+
+> [!IMPORTANT]
+> **Strict Governance Boundary:** These review dispositions approve **DESIGN DIRECTION ONLY**. They do **NOT** authorize `LONG-002C` execution, historical dataset construction, provider API calls, outcome calculations, validation access, holdout access, model fitting, or production changes.
+
 ### Strict Governance Invariants
 
 * **Design Only:** Gary explicitly authorized resuming `LONG-002C` design work on 2026-09-20. That authorization is strictly limited to specification and deterministic test development.
@@ -71,42 +81,42 @@ erDiagram
 ```
 
 1. **`decision_observations`**
-   - *Primary Key:* `(symbol, as_of_date, cutoff_time)`
-   - *Ordering:* `as_of_date ASC, symbol ASC, cutoff_time ASC`
-   - *Fields:* `symbol` (str), `as_of_date` (ISO date), `cutoff_time` (`20:30` | `09:00`), `decision_timestamp_utc` (ISO datetime), `as_traded_close` (float), `split_normalized_close` (float), `volume` (int), `dollar_volume_20d_median` (float | null), `atr_14` (float | null), `raw_outcome_eligible` (bool), `universe_eligible` (bool), `data_complete` (bool), `earnings_schedule_status` (`known` | `unknown`), `actionability_status` (`eligible` | `unavailable_earnings_unknown` | `unavailable_data_incomplete` | `excluded`), `split_boundary_purged` (bool).
+   - *Primary Key:* `(immutable_security_id, as_of_date, cutoff_time)`
+   - *Ordering:* `as_of_date ASC, immutable_security_id ASC, cutoff_time ASC`
+   - *Fields:* `immutable_security_id` (str), `immutable_issuer_id` (str | null), `ticker_at_decision` (str), `as_of_date` (ISO date), `cutoff_time` (`20:30` | `09:00`), `decision_timestamp_utc` (ISO datetime), `as_traded_close` (float), `split_normalized_close` (float), `volume` (int), `dollar_volume_20d_median` (float | null), `atr_14` (float | null), `raw_outcome_eligible` (bool), `universe_eligible` (bool), `data_complete` (bool), `earnings_schedule_status` (`known` | `unknown`), `actionability_status` (`eligible` | `unavailable_earnings_unknown` | `unavailable_data_incomplete` | `excluded`), `split_boundary_purged` (bool).
 2. **`data_eligibility`**
-   - *Primary Key:* `(symbol, as_of_date, cutoff_time)`
-   - *Fields:* `price_gte_5` (bool), `dollar_volume_20d_gte_20m` (bool), `dollar_volume_60d_gte_10m` (bool | null), `market_cap_gte_3b` (bool | null), `index_membership_verified` (bool), `trading_history_sessions` (int), `cohort_type` (`established` | `recent_ipo` | `insufficient_history`), `eligibility_passed` (bool), `rejection_reason_codes` (list[str]).
+   - *Primary Key:* `(immutable_security_id, as_of_date, cutoff_time)`
+   - *Fields:* `immutable_security_id` (str), `ticker_at_decision` (str), `price_gte_5` (bool), `dollar_volume_20d_gte_20m` (bool), `dollar_volume_60d_gte_10m` (bool | null), `market_cap_gte_3b` (bool | null), `index_membership_verified` (bool), `trading_history_sessions` (int), `cohort_type` (`established` | `recent_ipo` | `insufficient_history`), `eligibility_passed` (bool), `rejection_reason_codes` (list[str]).
 3. **`security_classification_status`**
-   - *Primary Key:* `(symbol, as_of_date)`
-   - *Fields:* `provider_type_code` (str | null), `inferred_classification` (`common_stock` | `etf` | `etn` | `closed_end_fund` | `preferred` | `warrant` | `right` | `unit` | `pre_merger_spac` | `shell` | `otc` | `unknown`), `classification_status` (`supported_common_stock` | `excluded_security_type` | `unknown_fail_closed`), `is_eligible_common_stock` (bool), `provenance_source` (str).
+   - *Primary Key:* `(immutable_security_id, as_of_date)`
+   - *Fields:* `immutable_security_id` (str), `ticker_at_decision` (str), `provider_type_code` (str | null), `inferred_classification` (`common_stock` | `etf` | `etn` | `closed_end_fund` | `preferred` | `warrant` | `right` | `unit` | `pre_merger_spac` | `shell` | `otc` | `unknown`), `classification_status` (`supported_common_stock` | `excluded_security_type` | `unknown_fail_closed`), `is_eligible_common_stock` (bool), `provenance_source` (str).
 4. **`earnings_schedule_status`**
-   - *Primary Key:* `(symbol, as_of_date, cutoff_time)`
-   - *Fields:* `next_earnings_date` (ISO date | null), `announcement_timing` (`before_market_open` | `after_market_close` | `during_trading_hours` | `unspecified` | null), `sessions_to_earnings` (int | null), `schedule_status` (`known_point_in_time` | `unknown`), `provenance_source` (str).
+   - *Primary Key:* `(immutable_security_id, as_of_date, cutoff_time)`
+   - *Fields:* `immutable_security_id` (str), `ticker_at_decision` (str), `next_earnings_date` (ISO date | null), `announcement_timing` (`before_market_open` | `after_market_close` | `during_trading_hours` | `unspecified` | null), `sessions_to_earnings` (int | null), `schedule_status` (`known_point_in_time` | `unknown`), `provenance_source` (str).
 5. **`outcome_label_records`**
-   - *Primary Key:* `(symbol, as_of_date, cutoff_time, target_pct, horizon_sessions)`
-   - *Ordering:* `as_of_date ASC, symbol ASC, target_pct ASC, horizon_sessions ASC`
-   - *Fields:* `reference_entry_price` (float), `entry_friction_bps` (float), `target_price` (float), `adverse_barrier_price` (float), `target_reached` (bool), `target_progress_ratio` (float), `near_miss` (bool), `partial_move` (bool), `mae_pct` (float), `mae_atr` (float), `adverse_excursion` (bool), `clean_target_reached` (bool), `path_sequence_ambiguous` (bool), `end_of_horizon_return` (float), `retention_ratio` (float), `sustained_target` (bool), `time_to_target` (int | null), `time_to_mae` (int | null).
+   - *Primary Key:* `(immutable_security_id, as_of_date, cutoff_time, target_pct, horizon_sessions)`
+   - *Ordering:* `as_of_date ASC, immutable_security_id ASC, target_pct ASC, horizon_sessions ASC`
+   - *Fields:* `immutable_security_id` (str), `ticker_at_decision` (str), `reference_entry_price` (float), `entry_friction_bps` (float), `target_price` (float), `adverse_barrier_pct` (float), `adverse_barrier_price` (float), `clean_risk_cap_pct` (float), `clean_risk_cap_amount` (float), `mfe_pct` (float), `target_progress_ratio` (float), `near_miss` (bool), `partial_move` (bool), `mae_pct` (float), `mae_atr` (float), `adverse_excursion` (bool), `clean_target_reached` (bool), `path_sequence_ambiguous` (bool), `end_of_horizon_return` (float), `retention_ratio` (float), `sustained_target` (bool), `time_to_target` (int | null), `time_to_mae` (int | null).
 6. **`master_opportunity_episodes`**
    - *Primary Key:* `episode_id`
-   - *Unique Constraint:* `(anchor_symbol, anchor_as_of_date, anchor_cutoff_time)`
-   - *Ordering:* `anchor_as_of_date ASC, anchor_symbol ASC`
-   - *Fields:* `episode_id` (str), `anchor_symbol` (str), `anchor_as_of_date` (ISO date), `anchor_cutoff_time` (str), `anchor_entry_price` (float), `window_start_date` (ISO date), `window_end_date` (ISO date), `window_session_count` (int, strictly 21), `max_return_pct_21` (float), `max_target_tier_reached` (`10` | `20` | `30` | `none`), `clean_target_reached_10_21` (bool), `clean_target_reached_20_21` (bool), `clean_target_reached_30_21` (bool), `first_target_session_index` (int | null), `constituent_observation_count` (int).
+   - *Unique Constraint:* `(anchor_security_id, anchor_as_of_date, anchor_cutoff_time)`
+   - *Ordering:* `anchor_as_of_date ASC, anchor_security_id ASC`
+   - *Fields:* `episode_id` (str, `EP-{immutable_security_id}-{YYYYMMDD}-{cutoff}`), `anchor_security_id` (str), `anchor_ticker` (str), `anchor_as_of_date` (ISO date), `anchor_cutoff_time` (`20:30` | `09:00`), `anchor_entry_price` (float), `window_start_date` (ISO date), `window_end_date` (ISO date), `window_session_count` (int, strictly 21), `max_return_pct_21` (float), `max_target_tier_reached` (`10` | `20` | `30` | `none`), `clean_target_reached_10_21` (bool), `clean_target_reached_20_21` (bool), `clean_target_reached_30_21` (bool), `first_target_session_index` (int | null), `constituent_observation_count` (int).
 7. **`episode_membership`**
-   - *Primary Key:* `(symbol, as_of_date, cutoff_time)`
-   - *Fields:* `episode_id` (str), `session_index_in_episode` (int, 1..21), `constituent_tag` (`pre_target` | `target_session` | `post_target`).
+   - *Primary Key:* `(immutable_security_id, as_of_date, cutoff_time)`
+   - *Fields:* `immutable_security_id` (str), `ticker_at_decision` (str), `episode_id` (str), `session_index_in_episode` (int, 1..21), `constituent_tag` (`pre_target` | `target_session` | `post_target`).
 8. **`baseline_comparator_outputs`**
-   - *Primary Key:* `(symbol, as_of_date, cutoff_time, comparator_id)`
-   - *Fields:* `comparator_id` (str), `comparator_family` (str), `raw_score_or_return` (float), `cross_sectional_rank` (int), `cross_sectional_percentile` (float), `top_10_flag` (bool), `top_25_flag` (bool).
+   - *Primary Key:* `(immutable_security_id, as_of_date, cutoff_time, comparator_id)`
+   - *Fields:* `immutable_security_id` (str), `ticker_at_decision` (str), `comparator_id` (str), `comparator_family` (str), `raw_score_or_return` (float), `cross_sectional_rank` (int), `cross_sectional_percentile` (float), `top_10_flag` (bool), `top_25_flag` (bool).
 9. **`data_quality_coverage`**
-   - *Primary Key:* `(symbol, split_name)`
-   - *Fields:* `split_name` (str), `expected_sessions` (int), `observed_sessions` (int), `completeness_pct` (float), `unexplained_missing_sessions` (int), `max_consecutive_missing_sessions` (int), `duplicate_bar_count` (int, strictly 0), `malformed_bar_count` (int, strictly 0), `halt_sessions_count` (int).
+   - *Primary Key:* `(immutable_security_id, split_name)`
+   - *Fields:* `immutable_security_id` (str), `split_name` (str), `expected_sessions` (int), `observed_sessions` (int), `completeness_pct` (float), `unexplained_missing_sessions` (int), `max_consecutive_missing_sessions` (int), `duplicate_bar_count` (int, strictly 0), `malformed_bar_count` (int, strictly 0), `halt_sessions_count` (int).
 10. **`provenance_provider_records`**
     - *Primary Key:* `record_id`
     - *Fields:* `record_id` (str), `data_family` (str), `provider_name` (str), `provider_role` (str), `endpoint_url_pattern` (str), `retrieval_timestamp_utc` (ISO datetime), `request_fingerprint_sha256` (str), `response_sha256` (str).
 11. **`exclusions_and_reason_codes`**
-    - *Primary Key:* `(symbol, as_of_date, cutoff_time, reason_code)`
-    - *Fields:* `reason_code` (str), `reason_category` (`security_type` | `liquidity` | `price` | `trading_history` | `lookback_unavailable` | `earnings_unknown` | `split_boundary`), `description` (str).
+    - *Primary Key:* `(immutable_security_id, as_of_date, cutoff_time, reason_code)`
+    - *Fields:* `immutable_security_id` (str), `ticker_at_decision` (str), `reason_code` (str), `reason_category` (`security_type` | `liquidity` | `price` | `trading_history` | `lookback_unavailable` | `earnings_unknown` | `split_boundary` | `unknown_security_identity`), `description` (str).
 
 ---
 
@@ -125,6 +135,14 @@ Every historical observation is constructed at an explicit, immutable decision c
    - **Market Capitalization:** Point-in-time market cap is computed strictly as:
      $$\text{Market Cap}_{\text{PIT}} = \text{Close}_{\text{as-traded}} \times \text{Shares Outstanding}_{\text{latest accepted PIT}}$$
    - **R7 Prospective Isolation:** The R7 2026 prospective capture infrastructure (`tradex/pit/**`) must never be used to simulate, backfill, or infer 2016–2020 historical data.
+
+3. **Historical Security Identity Contract:**
+   - **Issuer-Level Immutable Identity:** Issuer-level CIK when available.
+   - **Stable Security / Share-Class Identity:** `immutable_security_id` (e.g., Composite FIGI or `exchange|issuer|share_class` key) serves as the canonical primary key and entity join key across all observation, eligibility, classification, and outcome tables.
+   - **Historical Ticker as Effective-Dated Attribute:** Historical ticker symbol is recorded as `ticker_at_decision` reflecting the symbol in effect at the decision snapshot. Ticker symbols are **never** the canonical primary key.
+   - **Ticker Rename Continuity:** Corporate ticker or name changes for the same security maintain a single contiguous history under the same `immutable_security_id`. A rename does not fragment the security into separate entities or orphan past observations.
+   - **Ticker Reuse Isolation:** Distinct securities that use the same ticker symbol at different historical eras have distinct `immutable_security_id` values. They must never collide, join across entity tables, or share / collapse into the same master opportunity episode.
+   - **Fail-Closed Unresolved Identity:** If an observation cannot be linked to a verified `immutable_security_id` with defensible point-in-time provenance, it fails closed with reason code `unknown_security_identity` and is excluded from the eligible universe.
 
 ---
 
@@ -158,6 +176,7 @@ Any development observation whose required 21-session outcome window (or 26-sess
 2. **Feature Shortfall Handling:** Features requiring more lookback than available from the provider (e.g., 200-day SMA or 60-day volume medians in early 2016) return `null`. They are never filled with zero.
 3. **Observation Availability:** An observation becomes unavailable for candidate consideration only when mandatory eligibility criteria (e.g., 20-session dollar volume median or 5-day price history) cannot be calculated.
 4. **No Split Relocation:** The development split date remains fixed at `2016-01-01`. Future execution must not silently shift development to 2017 to bypass warm-up limitations.
+5. **Review Disposition on Warm-Up Coverage:** Gary/ChatGPT review on 2026-09-20 accepted truthful early-2016 sample attrition for now; no new 2015 provider probe is authorized in this PR. If later execution shows attrition materially compromises evidence sufficiency, return for a separate bounded provider decision.
 
 ---
 
@@ -183,19 +202,42 @@ $$\text{Targets} \in \{+10\%, +20\%, +30\%\} \times \text{Horizons} \in \{5, 10,
 
 ### Formulas & Ambiguity Resolution
 
-1. **Target Price:** $\text{Target Price} = \text{Entry Price} \times (1 + \text{Target Pct} / 100)$
-2. **Target Progress Ratio:** $\text{Target Progress} = \text{MFE} / (\text{Entry Price} \times (\text{Target Pct} / 100))$
-   - *Target Reached:* $\text{Target Progress} \ge 1.0$
-   - *Near Miss:* $0.8 \le \text{Target Progress} < 1.0$
-   - *Partial Move:* $0.5 \le \text{Target Progress} < 0.8$
-3. **Adverse Barrier:**
-   $$\text{Adverse Barrier} = \max\left(0.05 \times \text{Entry Price}, 1.5 \times \text{ATR}_{\text{pre-entry}}\right)$$
-4. **Clean-Target Risk Cap:**
-   $$\text{Clean Risk Cap} = \min\left(0.5 \times \text{Entry Price} \times \frac{\text{Target Pct}}{100}, \text{Adverse Barrier}\right)$$
-5. **Clean Target Reached:** Requires that target is reached, pre-target MAE does not exceed the clean risk cap, and no path ambiguity occurred:
-   $$\text{Clean Target} = \text{Target Reached} \land (\text{MAE}_{\text{pre-target}} \le \text{Clean Risk Cap}) \land (\neg \text{Path Ambiguous})$$
-6. **Same-Bar Path Ambiguity:** If a daily bar has $\text{High} \ge \text{Target Price}$ and $\text{Low} \le \text{Adverse Barrier Price}$, set $\text{path\_sequence\_ambiguous} = \text{true}$. This may count as a gross target touch but cannot count as a clean target.
-7. **Sustained Target:** $\text{Target Reached} \land (\text{Return}_{\text{end-of-horizon}} \ge 0.5 \times \text{Target Pct})$.
+1. **Target Price:**
+   $$\text{Target Price} = \text{Entry Price} \times \left(1.0 + \frac{\text{Target Pct}}{100.0}\right)$$
+2. **Maximum Favorable Excursion (Percentage):**
+   $$\text{MFE Pct} = \frac{\text{Max Forward High}}{\text{Entry Price}} - 1.0$$
+3. **Target Progress Ratio (Normalized):**
+   $$\text{Target Progress Ratio} = \frac{\text{MFE Pct}}{\text{Target Pct} / 100.0}$$
+   - *Target Reached:* $\text{Target Progress Ratio} \ge 1.0$ (equivalently $\text{Max Forward High} \ge \text{Target Price}$)
+   - *Near Miss:* $0.8 \le \text{Target Progress Ratio} < 1.0$
+   - *Partial Move:* $0.5 \le \text{Target Progress Ratio} < 0.8$
+4. **Adverse Barrier Percentage & Price Level:**
+   $$\text{Adverse Barrier Pct} = \max\left(0.05, 1.5 \times \frac{\text{ATR}_{\text{pre-entry}}}{\text{Entry Price}}\right)$$
+   $$\text{Adverse Barrier Price} = \text{Entry Price} \times (1.0 - \text{Adverse Barrier Pct})$$
+5. **Clean-Target Risk Cap Percentage & Dollar Amount:**
+   $$\text{Clean Risk Cap Pct} = \min\left(\frac{\text{Target Pct} / 100.0}{2.0}, \text{Adverse Barrier Pct}\right)$$
+   $$\text{Clean Risk Cap Amount} = \text{Entry Price} \times \text{Clean Risk Cap Pct}$$
+6. **Maximum Adverse Excursion (Percentage & ATR):**
+   $$\text{MAE Pct} = \frac{\text{Entry Price} - \text{Min Forward Low}}{\text{Entry Price}}$$
+   $$\text{MAE ATR} = \frac{\text{Entry Price} - \text{Min Forward Low}}{\text{ATR}_{\text{pre-entry}}}$$
+   - *Adverse Excursion:* $\text{MAE Pct} \ge \text{Adverse Barrier Pct}$ (equivalently $\text{Min Forward Low} \le \text{Adverse Barrier Price}$)
+7. **Same-Bar Path Ambiguity:**
+   - Condition evaluated on every forward daily bar:
+     $$\text{High} \ge \text{Target Price} \quad \land \quad \text{Low} \le \text{Adverse Barrier Price}$$
+   - When true, set $\text{path\_sequence\_ambiguous} = \text{true}$. A bar with same-bar ambiguity may count toward gross target touch but is disqualified from clean target attainment.
+8. **Clean Target Reached:**
+   $$\text{Clean Target Reached} \iff (\text{Executable Entry Fill}) \land (\text{Target Reached}) \land (\text{MAE Pct} \le \text{Clean Risk Cap Pct}) \land (\neg \text{path\_sequence\_ambiguous})$$
+   Pre-target drawdown must not exceed $\text{Clean Risk Cap Pct}$ (or $\text{Clean Risk Cap Amount}$ in dollar terms), and no same-bar ambiguity may occur on or before target attainment.
+9. **Sustained Target:**
+   $$\text{Sustained Target} \iff \text{Target Reached} \land \left(\text{Return}_{\text{end-of-horizon}} \ge 0.5 \times \frac{\text{Target Pct}}{100.0}\right)$$
+
+#### Explicit Note on Formula Units
+
+To eliminate all unit ambiguity between decimal ratios, dollar amounts, and percentage thresholds:
+* $\text{Target Pct}$ is expressed in whole percentage points ($10, 20, 30$).
+* $\text{MFE Pct}$, $\text{MAE Pct}$, $\text{Adverse Barrier Pct}$, and $\text{Clean Risk Cap Pct}$ are decimal fractions ($0.05 = 5\%$).
+* $\text{Target Price}$, $\text{Adverse Barrier Price}$, $\text{Clean Risk Cap Amount}$, and $\text{Reference Entry Price}$ are in U.S. dollar prices.
+* $\text{Target Progress Ratio}$ is a dimensionless normalized ratio where $1.0 = 100\%$ progress to target.
 
 ---
 
@@ -205,17 +247,18 @@ To eliminate the statistical distortion of counting overlapping daily signals on
 
 ```mermaid
 flowchart LR
-    A["Qualifying Observation (+10% in 21d)"] --> B{"Active Episode Exists for Ticker?"}
+    A["Qualifying Observation (+10% in 21d)"] --> B{"Active Episode Exists for Immutable Security?"}
     B -- Yes --> C["Assign as Constituent (pre/target/post)"]
     B -- No --> D["Anchor New Master Episode (Fixed 21 Sessions)"]
     D --> E["Constituents Grouped Inside Window"]
     E --> F["Window Terminates at Session 21 (No Extension)"]
 ```
 
-* **Anchor Definition:** The earliest currently unassigned qualifying observation for a stock that reaches at least $+10\%$ within 21 trading sessions from the next-open reference entry.
+* **Anchor Definition:** The earliest currently unassigned qualifying observation for an `immutable_security_id` that reaches at least $+10\%$ within 21 trading sessions from the next-open reference entry.
+* **Episode Identifier Format:** `EP-{immutable_security_id}-{YYYYMMDD}-{cutoff}`.
 * **Window Duration:** Strictly 21 trading sessions.
 * **Non-Recursive:** An active episode cannot be extended beyond 21 sessions, regardless of move magnitude.
-* **Ticker Isolation:** No new episode for the same stock can begin until the active 21-session window has completed.
+* **Security Isolation:** No new episode for the same `immutable_security_id` can begin until the active 21-session window has completed. Ticker renames do not fragment or split an ongoing episode under the unchanged `immutable_security_id`. Distinct securities sharing a ticker across different eras have distinct `immutable_security_id`s and can never merge into the same episode.
 * **Nested Targets:** All $+10\%$, $+20\%$, and $+30\%$ outcomes occurring within the window belong to the same parent episode.
 * **Constituent Tagging:**
   - `pre_target`: Daily sessions prior to the first $+10\%$ target attainment.
@@ -233,7 +276,7 @@ flowchart LR
   - Prevalence across all nine target/horizon combinations.
   - Clean-target prevalence across all nine cells.
   - Near-miss, partial-move, and adverse excursion frequencies.
-  - Independent master opportunity episode counts and distinct ticker counts.
+  - Independent master opportunity episode counts and distinct immutable securities represented.
   - Annual, sector, and market-cap cohort distributions.
   - Coverage by security classification status (common stock vs unknown vs excluded).
   - Coverage by earnings schedule status (known vs unknown).
@@ -269,6 +312,7 @@ A critical governance requirement is decoupling *market-level move prevalence* f
 4. **Earnings Schedule Status:** Next earnings announcement date is known point-in-time versus unknown.
 5. **Actionability Eligibility:** Qualifies for potential Enter Now or Armed presentation under the locked fail-closed unknown policy.
 6. **Dual Reporting:** Both raw market prevalence and actionable policy prevalence are reported side-by-side to quantify the exact opportunity loss and selection bias introduced by unavailable earnings schedules.
+7. **Review Disposition on Dual Reporting:** Approved design direction by Gary/ChatGPT review on 2026-09-20. Decoupling raw natural move prevalence from actionable policy eligibility ensures unbiased baseline discovery while enforcing strict risk controls.
 
 ---
 
@@ -299,14 +343,24 @@ The strongest simple comparator for the primary endpoint will be selected using 
 
 The locked contract explicitly defers numerical sample gates to development-only feasibility. This design does **NOT** invent arbitrary numerical gates or precommit to an i.i.d. Bernoulli / binomial sample-size rule.
 
-Observations exhibit market-wide cross-sectional dependence, clustering, and episode grouping. Therefore, future `LONG-002C` execution must apply a deterministic, dependence-aware gate-derivation procedure:
+Observations exhibit market-wide cross-sectional dependence, clustering, and episode grouping. Therefore, future `LONG-002C` execution must apply a deterministic, dependence-aware gate-derivation procedure.
+
+### Review Disposition on Feasibility Framework (2026-09-20)
+
+Gary and ChatGPT reviewed the feasibility design direction and approved:
+1. Using development-only, dependence-aware time-block resampling (primary: 21-session blocks; robustness check: 42-session blocks) to establish statistical precision bounds on natural prevalence.
+2. Deriving and freezing proposed numerical sample gates strictly before any validation data access.
+3. Completely isolating validation and holdout splits (no observation counts or data access).
+
+> [!IMPORTANT]
+> This review disposition approves the **DESIGN DIRECTION ONLY**. It does not authorize execution, dataset construction, provider calls, outcome analysis, or validation/holdout inspection.
 
 ### Step-by-Step Feasibility Procedure
 
 1. **Compute Development Census:** Calculate complete census across all 9 target/horizon cells for 2016–2020.
 2. **Construct Master Episodes:** Group qualifying moves into independent master opportunity episodes.
-3. **Measure Event Availability:** Count total independent master episodes, distinct tickers, annual episode distribution, and sector coverage.
-4. **Assess Concentration:** Compute concentration metrics (Herfindahl-Hirschman index across tickers and sectors) to identify whether upside moves are concentrated in narrow market segments.
+3. **Measure Event Availability:** Count total independent master episodes, distinct immutable securities, annual episode distribution, and sector coverage.
+4. **Assess Concentration:** Compute concentration metrics (Herfindahl-Hirschman index across securities and sectors) to identify whether upside moves are concentrated in narrow market segments.
 5. **Audit Usable Coverage:** Measure effective coverage under fail-closed unknown policies (security classification and earnings schedule).
 6. **Analyze Dependence Structure:** Measure cross-sectional overlap (fraction of sessions with active concurrent episodes).
 7. **Apply Dependence-Aware Resampling:** Apply 21-session primary and 42-session robustness time-block resampling to establish statistical precision bounds on endpoint prevalence.
@@ -354,21 +408,23 @@ Future execution must implement and pass deterministic tests proving:
 2. **Point-in-Time Joins:** Joined feature availability timestamps are strictly $\le \text{decision cutoff}$.
 3. **No Lookahead Leakage:** Features do not incorporate future bars or revisions.
 4. **No Backfill:** Historical observations do not contain modern sector or share counts.
-5. **Security Fail-Closed:** Unresolved classification rows fail closed to excluded.
-6. **Earnings Fail-Closed:** Unknown earnings rows cannot reach Enter Now or Armed.
-7. **Null Integrity:** Lookback shortfalls remain `null` and do not coerce to zero.
-8. **Uniqueness:** Primary keys are strictly unique across all tables.
-9. **Missing Bar Auditing:** Unexplained missing sessions trigger data quality flags.
-10. **Price Series Integrity:** Split adjustments apply to analytical series and not entry prices.
-11. **Next-Open Entry:** Reference entry is strictly next regular-session open plus friction.
-12. **Boundary Purge:** Observations whose 26-session forward window crosses into 2021 are purged.
-13. **All Nine Labels:** All 9 combinations are calculated for every non-purged observation.
-14. **Same-Bar Ambiguity:** Simultaneous target and adverse touches disqualify clean target status.
-15. **Episode Non-Recursion:** 21-session windows do not extend recursively.
-16. **Baseline Determinism:** Baseline models produce identical scores given identical inputs.
-17. **User Weight Isolation:** Scorer uses fresh `LongWeights()` and ignores `~/.tradex/weights.json`.
-18. **Deterministic IDs:** Episode IDs and row sort orders are 100% reproducible.
-19. **Provider Provenance:** Every datum records provider endpoint and retrieval timestamp.
+5. **Security Identity Immutability:** Ticker changes do not fragment history, and ticker reuse across distinct securities does not collide.
+6. **Security Fail-Closed:** Unresolved classification rows fail closed to excluded.
+7. **Earnings Fail-Closed:** Unknown earnings rows cannot reach Enter Now or Armed.
+8. **Null Integrity:** Lookback shortfalls remain `null` and do not coerce to zero.
+9. **Uniqueness:** Primary keys are strictly unique across all tables.
+10. **Missing Bar Auditing:** Unexplained missing sessions trigger data quality flags.
+11. **Price Series Integrity:** Split adjustments apply to analytical series and not entry prices.
+12. **Next-Open Entry:** Reference entry is strictly next regular-session open plus friction.
+13. **Adverse Barrier & Clean Risk Cap Units:** Adverse barrier and clean risk cap percent and price levels use consistent explicit unit formulas.
+14. **Boundary Purge:** Observations whose 26-session forward window crosses into 2021 are purged.
+15. **All Nine Labels:** All 9 combinations are calculated for every non-purged observation.
+16. **Same-Bar Ambiguity:** Simultaneous target and adverse touches set `path_sequence_ambiguous = true` and disqualify clean target status.
+17. **Episode Non-Recursion:** 21-session windows do not extend recursively.
+18. **Baseline Determinism:** Baseline models produce identical scores given identical inputs.
+19. **User Weight Isolation:** Scorer uses fresh `LongWeights()` and ignores `~/.tradex/weights.json`.
+20. **Deterministic IDs:** Episode IDs and row sort orders are 100% reproducible.
+21. **Provider Provenance:** Every datum records provider endpoint and retrieval timestamp.
 
 ---
 
@@ -378,7 +434,7 @@ Future execution must implement and pass deterministic tests proving:
 |---|---|---|
 | **Lookahead Bias** | Incorporating post-decision data into features or entries. | Strict 20:30 and 09:00 cutoffs; SEC acceptance timestamp controls; entry at next regular-session open. |
 | **Survivorship Bias** | Excluding delisted securities over the 2016–2020 period. | Include delisted tickers where data exists; document delisting attrition rates and limitations. |
-| **Security Selection Bias** | Fail-closed unknown policy excluding valid common stocks. | Report demographic distributions of excluded unknowns vs eligible stocks to audit for sector/cap distortion. |
+| **Security Selection Bias** | Fail-closed unknown policy excluding valid common stocks. | Report demographic distributions of excluded unknowns vs eligible stocks to audit for sector/cap distortion; fail closed with `unknown_security_identity`. |
 | **Earnings Coverage Bias** | Unavailable historical schedules distorting base rates. | Decouple raw market prevalence from actionable policy prevalence; report both side-by-side. |
 | **Split Contamination** | Inconsistent price adjustments corrupting technical indicators. | Maintain split-normalized analytical series alongside raw as-traded execution series; unadjusted cash dividends. |
 | **Same-Bar Ambiguity** | Daily bar touching target and stop with unknown intraday order. | Flag `path_sequence_ambiguous = true`; strictly disqualify from clean target attainment. |
