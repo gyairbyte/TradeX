@@ -131,17 +131,35 @@ def build_decision_observations_for_security(
             continue
 
         idx = bar_dates.index(session_date)
-        # Point-in-time history up to and including current session
-        hist_slice = bars_df.iloc[: idx + 1]
-        n_hist = len(hist_slice)
-
-        as_traded_close = float(
-            hist_slice["as_traded_close"].iloc[-1]
-            if "as_traded_close" in hist_slice.columns
-            else hist_slice["close"].iloc[-1]
-        )
-        split_norm_close = float(hist_slice["close"].iloc[-1])
-        vol = int(hist_slice["volume"].iloc[-1])
+        # Point-in-time history:
+        # At 09:00 ET, session T has not opened. Features MUST use history strictly through session T-1 (prior completed session).
+        # At 20:30 ET, session T has completed. Features include session T.
+        if cutoff_time == "09:00":
+            hist_slice = bars_df.iloc[:idx]
+            if len(hist_slice) == 0:
+                n_hist = 0
+                as_traded_close = 0.0
+                split_norm_close = 0.0
+                vol = 0
+            else:
+                n_hist = len(hist_slice)
+                as_traded_close = float(
+                    hist_slice["as_traded_close"].iloc[-1]
+                    if "as_traded_close" in hist_slice.columns
+                    else hist_slice["close"].iloc[-1]
+                )
+                split_norm_close = float(hist_slice["close"].iloc[-1])
+                vol = int(hist_slice["volume"].iloc[-1])
+        else:
+            hist_slice = bars_df.iloc[: idx + 1]
+            n_hist = len(hist_slice)
+            as_traded_close = float(
+                hist_slice["as_traded_close"].iloc[-1]
+                if "as_traded_close" in hist_slice.columns
+                else hist_slice["close"].iloc[-1]
+            )
+            split_norm_close = float(hist_slice["close"].iloc[-1])
+            vol = int(hist_slice["volume"].iloc[-1])
 
         # As-traded dollar volume: strictly computed as as-traded close * volume
         if "as_traded_close" in hist_slice.columns:

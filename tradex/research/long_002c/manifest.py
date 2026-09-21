@@ -1,0 +1,277 @@
+"""Candidate manifest builder and multi-ticker interval management for LONG-002C.
+
+Builds an auditable historical candidate manifest from point-in-time reference snapshots,
+classifies securities into supported common stock, excluded types, and fail-closed unknowns,
+groups multi-interval tickers under a single immutable_security_id, and records comprehensive
+audit provenance.
+"""
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass, field
+from typing import Any
+
+from tradex.research.long_002c.identity import (
+    CLASSIFICATION_EXCLUDED_SECURITY_TYPE,
+    CLASSIFICATION_SUPPORTED_COMMON_STOCK,
+    CLASSIFICATION_UNKNOWN_FAIL_CLOSED,
+    SecurityIdentity,
+    SecurityMaster,
+    classify_security,
+    make_immutable_id,
+)
+
+
+@dataclass
+class TickerInterval:
+    """Effective-dated ticker interval for an immutable security."""
+
+    symbol: str
+    start_date: str
+    end_date: str
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "symbol": self.symbol,
+            "start_date": self.start_date,
+            "end_date": self.end_date,
+        }
+
+
+@dataclass
+class CandidateSecurity:
+    """Auditable candidate security in the development manifest."""
+
+    immutable_security_id: str
+    primary_symbol: str
+    cik: str | None
+    composite_figi: str | None
+    share_class_figi: str | None
+    company_name: str
+    primary_exchange: str
+    security_type: str
+    first_seen_date: str
+    last_seen_date: str
+    ticker_intervals: list[TickerInterval] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "immutable_security_id": self.immutable_security_id,
+            "primary_symbol": self.primary_symbol,
+            "cik": self.cik,
+            "composite_figi": self.composite_figi,
+            "share_class_figi": self.share_class_figi,
+            "company_name": self.company_name,
+            "primary_exchange": self.primary_exchange,
+            "security_type": self.security_type,
+            "first_seen_date": self.first_seen_date,
+            "last_seen_date": self.last_seen_date,
+            "ticker_intervals": [ti.to_dict() for ti in self.ticker_intervals],
+        }
+
+
+@dataclass
+class ManifestAuditMetrics:
+    """Observed provenance and classification metrics from universe enumeration."""
+
+    snapshot_dates_evaluated: list[str]
+    total_raw_records_evaluated: int
+    unique_symbols_seen: int
+    unique_securities_discovered: int
+    supported_common_stock_count: int
+    excluded_security_type_count: int
+    unknown_fail_closed_count: int
+    with_cik_count: int
+    with_figi_count: int
+    cik_coverage_pct: float
+    figi_coverage_pct: float
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+def build_candidate_manifest_from_snapshots(
+    snapshot_data_by_date: dict[str, list[dict[str, Any]]],
+) -> tuple[list[CandidateSecurity], ManifestAuditMetrics]:
+    """Build candidate manifest from dated reference snapshots.
+
+    Discovers all unique securities active across any of the snapshot dates,
+    classifies securities strictly according to Item 5, and links historical
+    ticker intervals to a single immutable_security_id.
+    """
+    sorted_dates = sorted(snapshot_data_by_date.keys())
+    total_raw_records = 0
+    unique_symbols: set[str] = set()
+    supported_count = 0
+    excluded_count = 0
+    unknown_count = 0
+
+    # Intermediate storage by immutable_security_id
+    securities_by_id: dict[str, dict[str, Any]] = {}
+
+    for pit_date in sorted_dates:
+        records = snapshot_data_by_date[pit_date]
+        total_raw_records += len(records)
+
+        for rec in records:
+            raw_sym = str(rec.get("ticker") or "").strip().upper()
+            if raw_sym:
+                unique_symbols.add(raw_sym)
+
+            classification = classify_security(rec)
+            if classification == CLASSIFICATION_EXCLUDED_SECURITY_TYPE:
+                excluded_count += 1
+                continue
+            elif classification == CLASSIFICATION_UNKNOWN_FAIL_CLOSED:
+                unknown_count += 1
+                continue
+            elif classification == CLASSIFICATION_SUPPORTED_COMMON_STOCK:
+                supported_count += 1
+            else:
+                unknown_count += 1
+                continue
+
+            cik = str(rec.get("cik") or "").strip() or None
+            composite_figi = str(rec.get("composite_figi") or "").strip() or None
+            share_class_figi = str(rec.get("share_class_figi") or "").strip() or None
+            company_name = str(rec.get("name") or "").strip()
+            exchange = str(rec.get("primary_exchange") or "").strip().upper()
+
+            # Disallow symbol-only identity for official-run candidate manifest
+            try:
+                sec_id = make_immutable_id(
+                    symbol=raw_sym,
+                    cik=cik,
+                    composite_figi=composite_figi,
+                    allow_unverified=False,
+                )
+            except ValueError:
+                # If neither CIK nor FIGI is present, fail closed into unknown/unverified
+                unknown_count += 1
+                supported_count -= 1
+                continue
+
+            if sec_id not in securities_by_id:
+                securities_by_id[sec_id] = {
+                    "immutable_security_id": sec_id,
+                    "primary_symbol": raw_sym,
+                    "cik": cik,
+                    "composite_figi": composite_figi,
+                    "share_class_figi": share_class_figi,
+                    "company_name": company_name,
+                    "primary_exchange": exchange,
+                    "security_type": CLASSIFICATION_SUPPORTED_COMMON_STOCK,
+                    "first_seen_date": pit_date,
+                    "last_seen_date": pit_date,
+                    "ticker_observations": [(raw_sym, pit_date)],
+                }
+            else:
+                entry = securities_by_id[sec_id]
+                entry["last_seen_date"] = pit_date
+                entry["ticker_observations"].append((raw_sym, pit_date))
+                # Update attributes if previously missing
+                if not entry["cik"] and cik:
+                    entry["cik"] = cik
+                if not entry["composite_figi"] and composite_figi:
+                    entry["composite_figi"] = composite_figi
+                if not entry["company_name"] and company_name:
+                    entry["company_name"] = company_name
+
+    candidates: list[CandidateSecurity] = []
+    with_cik = 0
+    with_figi = 0
+
+    for sec_id, data in sorted(securities_by_id.items(), key=lambda x: x[1]["primary_symbol"]):
+        if data["cik"]:
+            with_cik += 1
+        if data["composite_figi"]:
+            with_figi += 1
+
+        # Build ticker intervals from observations
+        obs = data["ticker_observations"]
+        intervals: list[TickerInterval] = []
+        if obs:
+            curr_sym, first_date = obs[0]
+            last_date = first_date
+            for sym, d in obs[1:]:
+                if sym == curr_sym:
+                    last_date = d
+                else:
+                    intervals.append(TickerInterval(symbol=curr_sym, start_date=first_date, end_date=last_date))
+                    curr_sym = sym
+                    first_date = d
+                    last_date = d
+            intervals.append(TickerInterval(symbol=curr_sym, start_date=first_date, end_date=last_date))
+
+        candidate = CandidateSecurity(
+            immutable_security_id=sec_id,
+            primary_symbol=data["primary_symbol"],
+            cik=data["cik"],
+            composite_figi=data["composite_figi"],
+            share_class_figi=data["share_class_figi"],
+            company_name=data["company_name"],
+            primary_exchange=data["primary_exchange"],
+            security_type=data["security_type"],
+            first_seen_date=data["first_seen_date"],
+            last_seen_date=data["last_seen_date"],
+            ticker_intervals=intervals,
+        )
+        candidates.append(candidate)
+
+    total_candidates = len(candidates)
+    cik_cov = (with_cik / total_candidates * 100.0) if total_candidates > 0 else 0.0
+    figi_cov = (with_figi / total_candidates * 100.0) if total_candidates > 0 else 0.0
+
+    metrics = ManifestAuditMetrics(
+        snapshot_dates_evaluated=sorted_dates,
+        total_raw_records_evaluated=total_raw_records,
+        unique_symbols_seen=len(unique_symbols),
+        unique_securities_discovered=total_candidates,
+        supported_common_stock_count=supported_count,
+        excluded_security_type_count=excluded_count,
+        unknown_fail_closed_count=unknown_count,
+        with_cik_count=with_cik,
+        with_figi_count=with_figi,
+        cik_coverage_pct=round(cik_cov, 2),
+        figi_coverage_pct=round(figi_cov, 2),
+    )
+
+    return candidates, metrics
+
+
+def register_manifest_in_security_master(
+    manifest: list[CandidateSecurity],
+    master: SecurityMaster | None = None,
+) -> SecurityMaster:
+    """Register all candidate securities and their ticker intervals in a SecurityMaster."""
+    sec_master = master or SecurityMaster()
+    for cand in manifest:
+        if cand.ticker_intervals:
+            for ti in cand.ticker_intervals:
+                identity = SecurityIdentity(
+                    immutable_security_id=cand.immutable_security_id,
+                    ticker_at_decision=ti.symbol,
+                    effective_start=ti.start_date,
+                    effective_end=ti.end_date,
+                    cik=cand.cik,
+                    composite_figi=cand.composite_figi,
+                    share_class_figi=cand.share_class_figi,
+                    company_name=cand.company_name,
+                    primary_exchange=cand.primary_exchange,
+                    security_type=cand.security_type,
+                )
+                sec_master.register_security(identity)
+        else:
+            identity = SecurityIdentity(
+                immutable_security_id=cand.immutable_security_id,
+                ticker_at_decision=cand.primary_symbol,
+                effective_start=cand.first_seen_date,
+                effective_end=cand.last_seen_date,
+                cik=cand.cik,
+                composite_figi=cand.composite_figi,
+                share_class_figi=cand.share_class_figi,
+                company_name=cand.company_name,
+                primary_exchange=cand.primary_exchange,
+                security_type=cand.security_type,
+            )
+            sec_master.register_security(identity)
+    return sec_master

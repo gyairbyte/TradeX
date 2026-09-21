@@ -41,6 +41,7 @@ from tradex.research.long_002c.baselines import (
     evaluate_baselines_for_date,
     select_winning_baseline,
 )
+from tradex.research.long_002c.cache import ResponseCache, sanitize_url
 from tradex.research.long_002c.calendar import get_trading_sessions
 from tradex.research.long_002c.dataset import (
     build_decision_observations_for_security,
@@ -50,9 +51,21 @@ from tradex.research.long_002c.feasibility import (
     analyze_endpoint_feasibility,
 )
 from tradex.research.long_002c.identity import (
+    CLASSIFICATION_EXCLUDED_SECURITY_TYPE,
+    CLASSIFICATION_SUPPORTED_COMMON_STOCK,
+    CLASSIFICATION_UNKNOWN_FAIL_CLOSED,
     SecurityIdentity,
     SecurityMaster,
+    classify_security,
     make_immutable_id,
+)
+from tradex.research.long_002c.manifest import (
+    build_candidate_manifest_from_snapshots,
+    register_manifest_in_security_master,
+)
+from tradex.research.long_002c.market_cap import (
+    calculate_pit_market_cap,
+    extract_pit_shares_fact,
 )
 from tradex.research.long_002c.models import (
     BaselineComparatorOutput,
@@ -796,3 +809,221 @@ def test_dual_snapshots_obey_pit_availability() -> None:
     # 20:30 ET in winter converts to 01:30 UTC next day; 09:00 ET converts to 14:00 UTC same day
     assert "01:30:00Z" in obs_2030[0].decision_timestamp_utc
     assert "14:00:00Z" in obs_0900[0].decision_timestamp_utc
+
+
+# 24. 09:00 snapshot leakage protection: mutating session T bar does not affect 09:00 features
+def test_0900_snapshot_leakage_protection_session_t_mutation() -> None:
+    """Modifying session T daily bar has ZERO effect on 09:00 features for session T, but modifies 20:30 features."""
+    identity = SecurityIdentity(
+        immutable_security_id="CIK_0000320193_CS",
+        ticker_at_decision="AAPL",
+        effective_start="2016-01-01",
+        effective_end="2016-02-28",
+        cik="0000320193",
+        security_type="common_stock",
+    )
+    trading_days = get_trading_sessions("2016-01-01", "2016-03-01")[:25]
+    dates = trading_days
+    base_prices = [100.0 + i for i in range(25)]
+    df_clean = pd.DataFrame(
+        {
+            "open": base_prices,
+            "high": [p + 2.0 for p in base_prices],
+            "low": [p - 2.0 for p in base_prices],
+            "close": base_prices,
+            "as_traded_close": base_prices,
+            "volume": [1_000_000 for _ in range(25)],
+        },
+        index=dates,
+    )
+
+    target_session = dates[-1]
+
+    # Initial computations
+    obs_0900_clean, _, _, _, _, _ = build_decision_observations_for_security(
+        identity=identity,
+        bars_df=df_clean,
+        trading_sessions=dates,
+        cutoff_time="09:00",
+        dev_start=dates[0],
+        dev_end=dates[-1],
+    )
+    obs_2030_clean, _, _, _, _, _ = build_decision_observations_for_security(
+        identity=identity,
+        bars_df=df_clean,
+        trading_sessions=dates,
+        cutoff_time="20:30",
+        dev_start=dates[0],
+        dev_end=dates[-1],
+    )
+
+    # Target session T (last session)
+    t_obs_0900_clean = next(o for o in obs_0900_clean if o.as_of_date == target_session)
+    t_obs_2030_clean = next(o for o in obs_2030_clean if o.as_of_date == target_session)
+
+    # Mutate session T radically in a separate DataFrame
+    df_mutated = df_clean.copy()
+    df_mutated.loc[target_session, "close"] = 9999.0
+    df_mutated.loc[target_session, "as_traded_close"] = 9999.0
+    df_mutated.loc[target_session, "high"] = 10050.0
+    df_mutated.loc[target_session, "low"] = 5000.0
+    df_mutated.loc[target_session, "volume"] = 50_000_000
+
+    obs_0900_mut, _, _, _, _, _ = build_decision_observations_for_security(
+        identity=identity,
+        bars_df=df_mutated,
+        trading_sessions=dates,
+        cutoff_time="09:00",
+        dev_start=dates[0],
+        dev_end=dates[-1],
+    )
+    obs_2030_mut, _, _, _, _, _ = build_decision_observations_for_security(
+        identity=identity,
+        bars_df=df_mutated,
+        trading_sessions=dates,
+        cutoff_time="20:30",
+        dev_start=dates[0],
+        dev_end=dates[-1],
+    )
+
+    t_obs_0900_mut = next(o for o in obs_0900_mut if o.as_of_date == target_session)
+    t_obs_2030_mut = next(o for o in obs_2030_mut if o.as_of_date == target_session)
+
+    # Invariant: 09:00 features for session T are completely unaffected by session T bar
+    assert t_obs_0900_clean.atr_14 == t_obs_0900_mut.atr_14, (
+        "09:00 ATR must NOT be affected by session T bar; leakage detected!"
+    )
+    assert t_obs_0900_clean.dollar_volume_20d_median == t_obs_0900_mut.dollar_volume_20d_median, (
+        "09:00 dollar volume median must NOT be affected by session T bar; leakage detected!"
+    )
+    assert t_obs_0900_clean.as_traded_close == t_obs_0900_mut.as_traded_close, (
+        "09:00 as-traded close must remain session T-1 close; leakage detected!"
+    )
+
+    # In contrast, 20:30 features for session T MUST reflect session T bar
+    assert t_obs_2030_clean.atr_14 != t_obs_2030_mut.atr_14, (
+        "20:30 ATR must change when session T bar is mutated"
+    )
+    assert t_obs_2030_clean.as_traded_close != t_obs_2030_mut.as_traded_close, (
+        "20:30 as-traded close must change when session T bar is mutated"
+    )
+
+
+# 25. PIT market-cap pathway using SEC EDGAR facts
+def test_pit_market_cap_sec_edgar_facts() -> None:
+    """extract_pit_shares_fact enforces filed <= session_date and selects latest defensible fact."""
+    facts = {
+        "facts": {
+            "dei": {
+                "EntityCommonStockSharesOutstanding": {
+                    "units": {
+                        "shares": [
+                            {"filed": "2015-11-05", "end": "2015-10-31", "val": 1_000_000_000, "form": "10-K", "accn": "001"},
+                            {"filed": "2016-02-10", "end": "2016-01-31", "val": 2_000_000_000, "form": "10-Q", "accn": "002"},
+                        ]
+                    }
+                }
+            }
+        }
+    }
+
+    # As of 2016-01-15: only the 2015-11-05 filing is knowable (2016-02-10 is future lookahead)
+    fact_pit = extract_pit_shares_fact(facts, session_date="2016-01-15")
+    assert fact_pit is not None
+    assert fact_pit.shares_outstanding == 1_000_000_000
+    assert fact_pit.filing_date == "2015-11-05"
+
+    mcap, err = calculate_pit_market_cap(fact_pit, as_traded_close=50.0)
+    assert err is None
+    assert mcap == 50_000_000_000.0  # $50B
+
+    # As of 2015-10-01: neither filing has occurred yet -> fail closed
+    fact_early = extract_pit_shares_fact(facts, session_date="2015-10-01")
+    assert fact_early is None
+    mcap_early, err_early = calculate_pit_market_cap(fact_early, as_traded_close=50.0)
+    assert mcap_early is None
+    assert err_early == "missing_pit_shares_fact"
+
+    # As of 2016-03-01: both filings are knowable, latest defensible (2016-02-10) is selected
+    fact_late = extract_pit_shares_fact(facts, session_date="2016-03-01")
+    assert fact_late is not None
+    assert fact_late.shares_outstanding == 2_000_000_000
+    assert fact_late.filing_date == "2016-02-10"
+
+
+# 26. Security classification rules
+def test_security_classification_rules() -> None:
+    """Item 5: classify_security excludes ADRs, ETFs, warrants, preferreds, and unknown types."""
+    assert classify_security({"type": "CS", "locale": "us", "primary_exchange": "XNAS", "name": "Apple Inc."}) == CLASSIFICATION_SUPPORTED_COMMON_STOCK
+    assert classify_security({"type": "ADRC", "locale": "us", "primary_exchange": "XNAS", "name": "Alibaba Group"}) == CLASSIFICATION_EXCLUDED_SECURITY_TYPE
+    assert classify_security({"type": "ETF", "locale": "us", "primary_exchange": "XNAS", "name": "SPDR S&P 500"}) == CLASSIFICATION_EXCLUDED_SECURITY_TYPE
+    assert classify_security({"type": "WAR", "locale": "us", "primary_exchange": "XNAS", "name": "Acme Warrants"}) == CLASSIFICATION_EXCLUDED_SECURITY_TYPE
+    assert classify_security({"type": "CS", "locale": "us", "primary_exchange": "XNAS", "name": "Acme Corp Preferred Stock"}) == CLASSIFICATION_EXCLUDED_SECURITY_TYPE
+    assert classify_security({"type": "", "locale": "us", "primary_exchange": "XNAS", "name": "Unknown Corp"}) == CLASSIFICATION_UNKNOWN_FAIL_CLOSED
+
+
+# 27. Candidate manifest and multi-ticker intervals
+def test_candidate_manifest_and_multi_ticker_intervals() -> None:
+    """Item 6: Candidate manifest groups multi-dated ticker renames under one immutable ID."""
+    snapshots = {
+        "2016-01-04": [
+            {
+                "ticker": "FB",
+                "name": "Facebook, Inc. Class A Common Stock",
+                "market": "stocks",
+                "locale": "us",
+                "primary_exchange": "XNAS",
+                "type": "CS",
+                "cik": "0001326801",
+                "composite_figi": "BBG000MM2P62",
+            }
+        ],
+        "2022-06-15": [
+            {
+                "ticker": "META",
+                "name": "Meta Platforms, Inc. Class A Common Stock",
+                "market": "stocks",
+                "locale": "us",
+                "primary_exchange": "XNAS",
+                "type": "CS",
+                "cik": "0001326801",
+                "composite_figi": "BBG000MM2P62",
+            }
+        ],
+    }
+
+    candidates, _metrics = build_candidate_manifest_from_snapshots(snapshots)
+    assert len(candidates) == 1
+    cand = candidates[0]
+    assert cand.immutable_security_id == "FIGI_BBG000MM2P62"
+    assert cand.cik == "0001326801"
+    assert len(cand.ticker_intervals) == 2
+    assert cand.ticker_intervals[0].symbol == "FB"
+    assert cand.ticker_intervals[1].symbol == "META"
+
+    master = register_manifest_in_security_master(candidates)
+    assert master.resolve_historical_ticker(cand.immutable_security_id, "2016-01-04") == "FB"
+    assert master.resolve_historical_ticker(cand.immutable_security_id, "2022-06-15") == "META"
+
+
+# 28. Persistent response cache determinism and URL credential sanitization
+def test_persistent_response_cache_determinism() -> None:
+    """Item 8: ResponseCache redacts secrets, stores responses with SHA-256, and returns identical cached data."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cache = ResponseCache(cache_dir=Path(tmpdir))
+        url = "https://api.massive.com/v3/reference/tickers?date=2016-01-04&apiKey=secret_key_123"
+        sanitized = sanitize_url(url)
+        assert "secret_key_123" not in sanitized
+        assert "apiKey=[REDACTED]" in sanitized
+
+        req_fp = "test_fp_001"
+        payload = b'{"results": [{"ticker": "AAPL"}]}'
+
+        sha = cache.set(url, req_fp, payload, endpoint_pattern="/v3/reference/tickers")
+        assert cache.has(url, req_fp)
+
+        cached_data, cached_sha, cached_ts = cache.get_json(url, req_fp)
+        assert cached_data == {"results": [{"ticker": "AAPL"}]}
+        assert cached_sha == sha
+        assert cached_ts is not None
+

@@ -7,6 +7,7 @@ Disallows symbol-only fallback for official canonical research identity.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -28,7 +29,57 @@ class SecurityIdentity:
 
     @property
     def is_common_stock(self) -> bool:
-        return self.security_type == "common_stock"
+        return self.security_type in (CLASSIFICATION_SUPPORTED_COMMON_STOCK, "common_stock")
+
+
+CLASSIFICATION_SUPPORTED_COMMON_STOCK = "supported_common_stock"
+CLASSIFICATION_EXCLUDED_SECURITY_TYPE = "excluded_security_type"
+CLASSIFICATION_UNKNOWN_FAIL_CLOSED = "unknown_fail_closed"
+
+_EXCLUDED_KEYWORDS = (
+    "ADR", "ADS", "DEPOSITARY", "DEPOSITORY", "PREFERRED", "PFD",
+    "WARRANT", "WT", "RIGHT", "UNIT", "ETF", "ETN", "INDEX", "TRUST", "FUND",
+)
+
+_MAJOR_US_EXCHANGES = {"XNYS", "XNAS", "XASE", "NYSE", "NASDAQ", "AMEX", "BATS", "ARCA"}
+
+
+def classify_security(record: dict[str, Any]) -> str:
+    """Classify security into supported_common_stock, excluded_security_type, or unknown_fail_closed.
+
+    Strictly satisfies Item 5:
+    - Never claim SIC code proves common stock.
+    - Massive type must equal 'CS'.
+    - Exclude ADRs, ETFs, warrants, preferreds, units, funds by type and name inspection.
+    - Fail closed on ambiguous or missing classifications.
+    """
+    sec_type = str(record.get("type") or "").strip().upper()
+    market = str(record.get("market") or "").strip().lower()
+    locale = str(record.get("locale") or "").strip().lower()
+    exchange = str(record.get("primary_exchange") or "").strip().upper()
+    name = str(record.get("name") or "").strip().upper()
+
+    # If security type indicates non-common stock, explicitly exclude
+    if sec_type in {"ADRC", "ETF", "WAR", "PFD", "UNIT", "RIGHT", "FUND"}:
+        return CLASSIFICATION_EXCLUDED_SECURITY_TYPE
+
+    # Check name against exclusion keywords
+    for kw in _EXCLUDED_KEYWORDS:
+        if kw in name.split() or f" {kw}" in name or f"({kw})" in name or f"-{kw}" in name or f"/{kw}" in name:
+            return CLASSIFICATION_EXCLUDED_SECURITY_TYPE
+
+    if market and market != "stocks":
+        return CLASSIFICATION_EXCLUDED_SECURITY_TYPE
+    if locale and locale != "us":
+        return CLASSIFICATION_EXCLUDED_SECURITY_TYPE
+
+    # Common stock must have type 'CS'
+    if sec_type == "CS":
+        if exchange and exchange not in _MAJOR_US_EXCHANGES:
+            return CLASSIFICATION_EXCLUDED_SECURITY_TYPE
+        return CLASSIFICATION_SUPPORTED_COMMON_STOCK
+
+    return CLASSIFICATION_UNKNOWN_FAIL_CLOSED
 
 
 class SecurityMaster:

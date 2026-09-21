@@ -18,6 +18,7 @@ from typing import Any
 import requests
 
 from tradex.config import load_runtime_settings
+from tradex.research.long_002c.cache import ResponseCache, sanitize_url
 from tradex.research.long_002c.models import ProvenanceProviderRecord
 
 
@@ -61,6 +62,7 @@ class AlpacaDailyClient:
         request_func: Callable[..., requests.Response] | None = None,
         request_delay_seconds: float = 0.2,
         max_retries: int = 2,
+        cache: ResponseCache | None = None,
     ) -> None:
         if not api_key or not secret_key:
             raise ValueError("Alpaca API key and secret key are required")
@@ -70,6 +72,7 @@ class AlpacaDailyClient:
         self._request_func = request_func or requests.get
         self.request_delay_seconds = request_delay_seconds
         self.max_retries = max_retries
+        self.cache = cache
         self.host = "https://data.alpaca.markets"
 
     def _headers(self) -> dict[str, str]:
@@ -105,9 +108,35 @@ class AlpacaDailyClient:
 
         while page < 50:
             page += 1
-            self.budget.charge(1)
             req_time = _now_utc()
             req_fp = _json_hash({"url": url, "params": params, "feed": feed, "adjustment": adjustment})
+
+            if self.cache:
+                cached_data, cached_sha, cached_ts = self.cache.get_json(url, req_fp)
+                if cached_data is not None and isinstance(cached_data, dict):
+                    provenance_records.append(
+                        ProvenanceProviderRecord(
+                            record_id=f"prov_{req_fp[:16]}_{page}",
+                            data_family="daily_market_data",
+                            provider_name="alpaca",
+                            provider_role="fallback",
+                            endpoint_url_pattern="/v2/stocks/{symbol}/bars",
+                            retrieval_timestamp_utc=cached_ts or req_time,
+                            request_fingerprint_sha256=req_fp,
+                            response_sha256=cached_sha or "",
+                        )
+                    )
+                    bars = cached_data.get("bars", [])
+                    if isinstance(bars, dict):
+                        bars = bars.get(symbol.upper(), [])
+                    all_bars.extend(bars)
+                    next_token = cached_data.get("next_page_token")
+                    if not next_token:
+                        break
+                    params["page_token"] = next_token
+                    continue
+
+            self.budget.charge(1)
 
             attempt = 0
             resp: requests.Response | None = None
@@ -160,6 +189,15 @@ class AlpacaDailyClient:
                 break
 
             resp_hash = hashlib.sha256(resp.content).hexdigest()
+            if self.cache:
+                self.cache.set(
+                    url,
+                    req_fp,
+                    resp.content,
+                    endpoint_pattern="/v2/stocks/{symbol}/bars",
+                    retrieval_timestamp_utc=req_time,
+                )
+
             provenance_records.append(
                 ProvenanceProviderRecord(
                     record_id=f"prov_{req_fp[:16]}_{page}",
@@ -203,6 +241,7 @@ class MassiveRefClient:
         budget: RequestBudget | None = None,
         request_func: Callable[[str], bytes] | None = None,
         min_interval_seconds: float | None = None,
+        cache: ResponseCache | None = None,
     ) -> None:
         if not api_key:
             raise ValueError("Massive API key is required")
@@ -213,6 +252,7 @@ class MassiveRefClient:
         self._min_interval_seconds = (
             min_interval_seconds if min_interval_seconds is not None else self._MIN_INTERVAL_SECONDS
         )
+        self.cache = cache
 
     def _fetch_once(self, url: str) -> tuple[bytes, int | None, str | None]:
         elapsed = time.monotonic() - self._last_request_time
@@ -233,16 +273,39 @@ class MassiveRefClient:
         except urllib.error.URLError as exc:
             return b"", None, str(exc)
 
-    def _fetch_json(self, url: str) -> tuple[dict[str, Any] | None, int | None, str | None, str]:
+    def _fetch_json(
+        self,
+        url: str,
+        endpoint_pattern: str | None = None,
+        req_fp_obj: Any = None,
+    ) -> tuple[dict[str, Any] | None, int | None, str | None, str, str]:
+        sanitized = sanitize_url(url)
+        req_fp = _json_hash(req_fp_obj if req_fp_obj is not None else {"url": sanitized})
+        req_time = _now_utc()
+
+        if self.cache:
+            cached_data, cached_sha, cached_ts = self.cache.get_json(sanitized, req_fp)
+            if cached_data is not None and isinstance(cached_data, dict):
+                return cached_data, 200, None, cached_sha or "", cached_ts or req_time
+
         self.budget.charge(1)
         body, status, error = self._fetch_once(url)
         body_hash = hashlib.sha256(body).hexdigest()
         if error:
-            return None, status, error, body_hash
+            return None, status, error, body_hash, req_time
         try:
-            return json.loads(body.decode("utf-8")), status, None, body_hash
+            parsed = json.loads(body.decode("utf-8"))
+            if self.cache and isinstance(parsed, dict) and status == 200:
+                self.cache.set(
+                    sanitized,
+                    req_fp,
+                    body,
+                    endpoint_pattern=endpoint_pattern,
+                    retrieval_timestamp_utc=req_time,
+                )
+            return parsed, status, None, body_hash, req_time
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-            return None, status, f"JSON decode error: {exc}", body_hash
+            return None, status, f"JSON decode error: {exc}", body_hash, req_time
 
     def _url(self, path: str, params: dict[str, Any]) -> str:
         query = urllib.parse.urlencode({k: v for k, v in params.items() if v is not None})
@@ -277,9 +340,11 @@ class MassiveRefClient:
             else:
                 url = self._url("/v3/reference/tickers", base_params)
 
-            req_time = _now_utc()
-            req_fp = _json_hash({"url": url.split("&apiKey=")[0]})
-            data, _status, error, resp_hash = self._fetch_json(url)
+            data, _status, error, resp_hash, req_time = self._fetch_json(
+                url,
+                endpoint_pattern="/v3/reference/tickers",
+                req_fp_obj={"endpoint": "tickers", "date": pit_date, "active": active, "page": page},
+            )
 
             provenance.append(
                 ProvenanceProviderRecord(
@@ -289,7 +354,7 @@ class MassiveRefClient:
                     provider_role="primary",
                     endpoint_url_pattern="/v3/reference/tickers",
                     retrieval_timestamp_utc=req_time,
-                    request_fingerprint_sha256=req_fp,
+                    request_fingerprint_sha256=_json_hash({"endpoint": "tickers", "date": pit_date, "active": active, "page": page}),
                     response_sha256=resp_hash,
                 )
             )
@@ -314,8 +379,12 @@ class MassiveRefClient:
 
         # Splits
         split_url = self._url("/v3/reference/splits", {"ticker": ticker.upper(), "limit": 1000})
-        req_time = _now_utc()
-        data, _status, error, resp_hash = self._fetch_json(split_url)
+        split_fp = {"ticker": ticker.upper(), "event": "split"}
+        data, _status, error, resp_hash, req_time = self._fetch_json(
+            split_url,
+            endpoint_pattern="/v3/reference/splits",
+            req_fp_obj=split_fp,
+        )
         splits = data.get("results", []) if isinstance(data, dict) and not error else []
         provenance.append(
             ProvenanceProviderRecord(
@@ -325,15 +394,19 @@ class MassiveRefClient:
                 provider_role="primary",
                 endpoint_url_pattern="/v3/reference/splits",
                 retrieval_timestamp_utc=req_time,
-                request_fingerprint_sha256=_json_hash({"ticker": ticker.upper(), "event": "split"}),
+                request_fingerprint_sha256=_json_hash(split_fp),
                 response_sha256=resp_hash,
             )
         )
 
         # Dividends
         div_url = self._url("/v3/reference/dividends", {"ticker": ticker.upper(), "limit": 1000})
-        req_time = _now_utc()
-        data, _status, error, resp_hash = self._fetch_json(div_url)
+        div_fp = {"ticker": ticker.upper(), "event": "dividend"}
+        data, _status, error, resp_hash, req_time = self._fetch_json(
+            div_url,
+            endpoint_pattern="/v3/reference/dividends",
+            req_fp_obj=div_fp,
+        )
         dividends = data.get("results", []) if isinstance(data, dict) and not error else []
         provenance.append(
             ProvenanceProviderRecord(
@@ -343,7 +416,7 @@ class MassiveRefClient:
                 provider_role="primary",
                 endpoint_url_pattern="/v3/reference/dividends",
                 retrieval_timestamp_utc=req_time,
-                request_fingerprint_sha256=_json_hash({"ticker": ticker.upper(), "event": "dividend"}),
+                request_fingerprint_sha256=_json_hash(div_fp),
                 response_sha256=resp_hash,
             )
         )
@@ -361,34 +434,76 @@ class EdgarClient:
         self,
         budget: RequestBudget | None = None,
         request_func: Callable[[str], bytes] | None = None,
+        cache: ResponseCache | None = None,
     ) -> None:
         self.budget = budget or RequestBudget()
         self._request_func = request_func
+        self.cache = cache
 
-    def _fetch_json(self, url: str) -> tuple[dict[str, Any], str]:
+    def _fetch_json(
+        self,
+        url: str,
+        endpoint_pattern: str | None = None,
+        req_fp_obj: Any = None,
+    ) -> tuple[dict[str, Any], str, str]:
+        sanitized = sanitize_url(url)
+        req_fp = _json_hash(req_fp_obj if req_fp_obj is not None else {"url": sanitized})
+        req_time = _now_utc()
+
+        if self.cache:
+            cached_data, cached_sha, cached_ts = self.cache.get_json(sanitized, req_fp)
+            if cached_data is not None and isinstance(cached_data, dict):
+                return cached_data, cached_sha or "", cached_ts or req_time
+
         self.budget.charge(1)
         if self._request_func:
             try:
                 res = self._request_func(url)
             except Exception:  # noqa: BLE001
-                return {}, ""
+                return {}, "", req_time
             body = res[0] if isinstance(res, tuple) else res
             h = hashlib.sha256(body).hexdigest()
-            return json.loads(body.decode("utf-8")), h
+            try:
+                parsed = json.loads(body.decode("utf-8"))
+            except Exception:  # noqa: BLE001
+                return {}, h, req_time
+            if self.cache and isinstance(parsed, dict):
+                self.cache.set(
+                    sanitized,
+                    req_fp,
+                    body,
+                    endpoint_pattern=endpoint_pattern,
+                    retrieval_timestamp_utc=req_time,
+                )
+            return parsed, h, req_time
 
         req = urllib.request.Request(url, headers={"User-Agent": self._USER_AGENT, "Accept": "application/json"})
         try:
             with urllib.request.urlopen(req, timeout=60) as resp:
                 body = resp.read()
-                return json.loads(body.decode("utf-8")), hashlib.sha256(body).hexdigest()
+                h = hashlib.sha256(body).hexdigest()
+                parsed = json.loads(body.decode("utf-8"))
+                if self.cache and isinstance(parsed, dict):
+                    self.cache.set(
+                        sanitized,
+                        req_fp,
+                        body,
+                        endpoint_pattern=endpoint_pattern,
+                        retrieval_timestamp_utc=req_time,
+                    )
+                return parsed, h, req_time
         except Exception:  # noqa: BLE001
-            return {}, ""
+            return {}, "", req_time
 
     def fetch_submissions(self, cik: str) -> tuple[dict[str, Any], list[ProvenanceProviderRecord]]:
         padded = cik.zfill(10)
         url = f"{self._BASE}/submissions/CIK{padded}.json"
-        req_time = _now_utc()
-        data, h = self._fetch_json(url)
+        req_fp = _json_hash({"cik": padded, "endpoint": "submissions"})
+        data, h, retrieval_ts = self._fetch_json(
+            url,
+            endpoint_pattern="/submissions/CIK{cik}.json",
+            req_fp_obj={"cik": padded, "endpoint": "submissions"},
+        )
         prov = [
             ProvenanceProviderRecord(
                 record_id=f"prov_edgar_sub_{padded}",
@@ -396,8 +511,31 @@ class EdgarClient:
                 provider_name="sec_edgar",
                 provider_role="primary",
                 endpoint_url_pattern="/submissions/CIK{cik}.json",
-                retrieval_timestamp_utc=req_time,
-                request_fingerprint_sha256=_json_hash({"cik": padded}),
+                retrieval_timestamp_utc=retrieval_ts,
+                request_fingerprint_sha256=req_fp,
+                response_sha256=h,
+            )
+        ]
+        return data, prov
+
+    def fetch_company_facts(self, cik: str) -> tuple[dict[str, Any], list[ProvenanceProviderRecord]]:
+        padded = cik.zfill(10)
+        url = f"{self._BASE}/api/xbrl/companyfacts/CIK{padded}.json"
+        req_fp = _json_hash({"cik": padded, "endpoint": "companyfacts"})
+        data, h, retrieval_ts = self._fetch_json(
+            url,
+            endpoint_pattern="/api/xbrl/companyfacts/CIK{cik}.json",
+            req_fp_obj={"cik": padded, "endpoint": "companyfacts"},
+        )
+        prov = [
+            ProvenanceProviderRecord(
+                record_id=f"prov_edgar_facts_{padded}",
+                data_family="issuer_fundamentals",
+                provider_name="sec_edgar",
+                provider_role="primary",
+                endpoint_url_pattern="/api/xbrl/companyfacts/CIK{cik}.json",
+                retrieval_timestamp_utc=retrieval_ts,
+                request_fingerprint_sha256=req_fp,
                 response_sha256=h,
             )
         ]

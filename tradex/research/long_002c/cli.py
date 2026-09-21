@@ -23,6 +23,7 @@ from tradex.research.long_002c.artifacts import (
     write_committed_summaries,
     write_external_parquet_tables,
 )
+from tradex.research.long_002c.audit import execute_bounded_universe_audit
 from tradex.research.long_002c.baselines import (
     evaluate_baselines_for_date,
     select_winning_baseline,
@@ -85,77 +86,8 @@ SMOKE_CANDIDATES: list[dict[str, Any]] = [
 
 
 def run_universe_audit_preflight(creds: dict[str, str | None]) -> dict[str, Any]:
-    """Audit point-in-time universe construction feasibility, security counts by year, and provider requirements."""
-    print("\n--- Point-in-Time Universe Construction Audit ---")
-    audit_results: dict[str, Any] = {
-        "timestamp_utc": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-        "development_window": f"{DEV_START} to {DEV_END}",
-        "status": "ready_for_review",
-    }
-
-    # 1. Historical Candidate Population Estimates by Year
-    annual_population_estimates = {
-        "2016": {"us_common_stocks_active": 3600, "mcap_gte_3b_estimated": 850, "sp500_constituents": 505},
-        "2017": {"us_common_stocks_active": 3550, "mcap_gte_3b_estimated": 920, "sp500_constituents": 505},
-        "2018": {"us_common_stocks_active": 3500, "mcap_gte_3b_estimated": 980, "sp500_constituents": 505},
-        "2019": {"us_common_stocks_active": 3520, "mcap_gte_3b_estimated": 1050, "sp500_constituents": 505},
-        "2020": {"us_common_stocks_active": 3650, "mcap_gte_3b_estimated": 1150, "sp500_constituents": 505},
-    }
-    audit_results["annual_population_estimates"] = annual_population_estimates
-    total_unique_candidates_est = 1250  # estimated unique securities qualifying across 2016-2020
-
-    print(f"  Estimated unique eligible candidate securities across 2016-2020: ~{total_unique_candidates_est}")
-    for yr, data in annual_population_estimates.items():
-        print(f"    - {yr}: ~{data['us_common_stocks_active']} active common stocks, ~{data['mcap_gte_3b_estimated']} >= $3B mcap, {data['sp500_constituents']} S&P 500")
-
-    # 2. Identity and Classification Provenance Pathways
-    print("  Identity / Classification Provenance:")
-    print("    - Primary anchor: SEC EDGAR company submissions (CIK + verified share class). Coverage: >98% for US exchange-listed.")
-    print("    - Historical ticker resolution: SEC EDGAR forms 10-K / 8-K effective date tracking (e.g. FB -> META in 2022).")
-    print("    - Security classification: Verified 'common_stock' via exchange listing tier & EDGAR SIC/SIC description; fail closed on ETF/ADR/warrants.")
-
-    # 3. Provider Call & Runtime Budget Analysis
-    # Alpaca Daily Bars: 200 req/min. 1 request per symbol covers full 2015-2020 daily bars.
-    alpaca_reqs = total_unique_candidates_est + 1  # +1 for SPY benchmark
-    alpaca_est_minutes = round(alpaca_reqs / 180.0, 1)
-
-    # Massive Corporate Actions: Free tier / standard tier rate limit 5 req/min (12s interval).
-    massive_corp_reqs = total_unique_candidates_est
-    massive_corp_est_hours = round((massive_corp_reqs * 12.1) / 3600.0, 2)
-
-    # SEC EDGAR Submissions: 10 req/s rate limit.
-    edgar_reqs = total_unique_candidates_est
-    edgar_est_minutes = round(edgar_reqs / (10.0 * 60.0), 1)
-
-    provider_estimates = {
-        "alpaca_daily_bars": {
-            "estimated_requests": alpaca_reqs,
-            "rate_limit": "200 req/min",
-            "estimated_runtime_minutes": alpaca_est_minutes,
-        },
-        "massive_corporate_actions": {
-            "estimated_requests": massive_corp_reqs,
-            "rate_limit": "5 req/min (12.1s delay)",
-            "estimated_runtime_hours": massive_corp_est_hours,
-            "bottleneck_warning": (
-                "Massive corporate actions at 12.1s interval for 1,250 securities requires ~4.2 hours. "
-                "Can be chunked, cached locally, or populated via batched reference endpoints."
-            ),
-        },
-        "sec_edgar_submissions": {
-            "estimated_requests": edgar_reqs,
-            "rate_limit": "10 req/sec",
-            "estimated_runtime_minutes": edgar_est_minutes,
-        },
-    }
-    audit_results["provider_estimates"] = provider_estimates
-
-    print("  Provider Call & Runtime Feasibility:")
-    print(f"    - Alpaca Daily Bars: ~{alpaca_reqs} requests (~{alpaca_est_minutes} min)")
-    print(f"    - SEC EDGAR Submissions: ~{edgar_reqs} requests (~{edgar_est_minutes} min)")
-    print(f"    - Massive Corporate Actions: ~{massive_corp_reqs} requests (~{massive_corp_est_hours} hours at 12.1s/req)")
-
-    return audit_results
+    """Execute evidence-backed historical universe construction and PIT eligibility audit."""
+    return execute_bounded_universe_audit(creds)
 
 
 def cmd_preflight(args: argparse.Namespace) -> int:
