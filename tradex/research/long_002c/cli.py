@@ -259,6 +259,14 @@ def cmd_screen(args: argparse.Namespace) -> int:
         on_progress=lambda cur, tot, sym, ok: print(f"      [{cur}/{tot}] {sym}: {'PASS' if ok else 'FAIL'}"),
     )
 
+    if summary.get("unresolved_provider_failures_count", 0) > 0:
+        fail_cnt = summary["unresolved_provider_failures_count"]
+        print(f"\nERROR: Stage B screening halted with {fail_cnt} unresolved provider failures!")
+        print(f"  - Provider failure breakdown: {summary.get('provider_failure_reason_counts')}")
+        print(f"  - Affected security IDs: {summary.get('provider_failed_security_ids')}")
+        print("Official frozen pre-run manifest CANNOT be generated while unresolved provider failures exist.")
+        return 1
+
     out_path = (
         Path(args.output)
         if getattr(args, "output", None)
@@ -275,7 +283,10 @@ def cmd_screen(args: argparse.Namespace) -> int:
     print(f"  - Evaluated: {len(eval_cands)}")
     print(f"  - Eligible: {len(eligible_ids)} ({summary['pass_rate_pct']}%)")
     print(f"  - Rejected: {len(rejected_ids)}")
+    print(f"  - Genuine No-Bars: {summary.get('genuine_no_bars_count', 0)}")
+    print(f"  - Provider Failures: {summary.get('provider_failures_count', 0)}")
     print(f"  - Rejection Reason Summary: {summary.get('rejection_reason_counts', {})}")
+    print(f"  - Alpaca Audit Metrics: {summary.get('alpaca_audit_metrics', {})}")
     print(f"  - PIT Market Cap Coverage: {summary.get('pit_market_cap_coverage_pct', 0.0)}%")
     print(f"  - Ticker Resolution Coverage: {summary.get('ticker_resolution_coverage_pct', 0.0)}%")
     print(f"  - Classification Coverage: {summary.get('classification_coverage_pct', 0.0)}%")

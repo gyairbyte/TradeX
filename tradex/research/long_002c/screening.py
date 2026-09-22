@@ -71,15 +71,32 @@ def screen_candidate_security(
         load_split_adjusted=False,
     )
 
-    if df_bars.empty:
-        return False, ["no_trading_bars"], {
+    if bar_meta.get("provider_failure"):
+        fail_info = bar_meta["provider_failure"]
+        fail_type = fail_info.get("failure_type", "provider_request_failed")
+        return False, [fail_type], {
             "immutable_security_id": candidate.immutable_security_id,
             "primary_symbol": candidate.primary_symbol,
             "cik": candidate.cik,
             "eligible_sessions": 0,
             "first_eligible_date": None,
-            "rejection_counts": {"no_trading_bars": 1},
-            "reason": f"No historical daily bars returned for intervals of {candidate.primary_symbol}",
+            "is_provider_failure": True,
+            "provider_failure": fail_info,
+            "rejection_counts": {fail_type: 1},
+            "reason": f"Provider failure for {candidate.primary_symbol}: {fail_info.get('reason')}",
+            "bar_meta": bar_meta,
+        }
+
+    if df_bars.empty:
+        return False, ["true_no_trading_bars"], {
+            "immutable_security_id": candidate.immutable_security_id,
+            "primary_symbol": candidate.primary_symbol,
+            "cik": candidate.cik,
+            "eligible_sessions": 0,
+            "first_eligible_date": None,
+            "is_provider_failure": False,
+            "rejection_counts": {"true_no_trading_bars": 1},
+            "reason": f"Genuine empty bars returned for {candidate.primary_symbol} across verified intervals",
             "bar_meta": bar_meta,
         }
 
@@ -228,6 +245,10 @@ def screen_candidates_manifest(
     """
     eligible_ids: list[str] = []
     rejected_ids: list[str] = []
+    provider_failed_ids: list[str] = []
+    provider_failures: dict[str, Any] = {}
+    provider_failure_reason_counts: dict[str, int] = {}
+    genuine_no_bars_count = 0
     details_by_id: dict[str, Any] = {}
     aggregated_rejection_reasons: dict[str, int] = {}
 
@@ -249,14 +270,21 @@ def screen_candidates_manifest(
             edgar=edgar,
             trading_sessions=all_sessions,
         )
-        if is_elig:
+        if details.get("is_provider_failure"):
+            provider_failed_ids.append(sec_id)
+            provider_failures[sec_id] = details.get("provider_failure", {})
+            for r in reasons:
+                provider_failure_reason_counts[r] = provider_failure_reason_counts.get(r, 0) + 1
+        elif is_elig:
             eligible_ids.append(sec_id)
         else:
             rejected_ids.append(sec_id)
+            if "true_no_trading_bars" in reasons:
+                genuine_no_bars_count += 1
             for r in reasons:
                 aggregated_rejection_reasons[r] = aggregated_rejection_reasons.get(r, 0) + 1
             for r, cnt in details.get("rejection_counts", {}).items():
-                if cnt > 0:
+                if cnt > 0 and r not in reasons:
                     aggregated_rejection_reasons[r] = aggregated_rejection_reasons.get(r, 0) + 1
 
         details_by_id[sec_id] = details
@@ -285,12 +313,20 @@ def screen_candidates_manifest(
 
     n_eval = len(cands_to_eval)
     total_resolved_shares = total_exact_acceptance_shares + total_conservative_date_shares
+    alpaca_metrics = alpaca.get_audit_metrics() if hasattr(alpaca, "get_audit_metrics") else {}
     summary = {
         "total_evaluated": n_eval,
         "eligible_count": len(eligible_ids),
         "rejected_count": len(rejected_ids),
+        "provider_failures_count": len(provider_failed_ids),
+        "unresolved_provider_failures_count": len(provider_failed_ids),
+        "genuine_no_bars_count": genuine_no_bars_count,
         "pass_rate_pct": round(len(eligible_ids) / n_eval * 100.0, 2) if n_eval else 0.0,
         "eligible_security_ids": sorted(eligible_ids),
+        "rejected_security_ids": sorted(rejected_ids),
+        "provider_failed_security_ids": sorted(provider_failed_ids),
+        "provider_failures": provider_failures,
+        "provider_failure_reason_counts": provider_failure_reason_counts,
         "rejection_reason_counts": aggregated_rejection_reasons,
         "pit_market_cap_coverage_pct": round(total_with_mcap / n_eval * 100.0, 2) if n_eval else 0.0,
         "ticker_resolution_coverage_pct": round(total_with_ticker_res / n_eval * 100.0, 2) if n_eval else 0.0,
@@ -300,6 +336,7 @@ def screen_candidates_manifest(
         "conservative_date_only_shares_count": total_conservative_date_shares,
         "exact_acceptance_shares_pct": round(total_exact_acceptance_shares / total_resolved_shares * 100.0, 2) if total_resolved_shares else 0.0,
         "conservative_date_only_shares_pct": round(total_conservative_date_shares / total_resolved_shares * 100.0, 2) if total_resolved_shares else 0.0,
+        "alpaca_audit_metrics": alpaca_metrics,
     }
 
     return eligible_ids, rejected_ids, summary

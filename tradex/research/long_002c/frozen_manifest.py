@@ -117,6 +117,12 @@ def build_frozen_pre_run_manifest_data(
 
     # 3. Stage B screening metrics
     sb = stage_b_summary or {}
+    unresolved_failures = sb.get("unresolved_provider_failures_count", 0)
+    if unresolved_failures > 0:
+        raise ValueError(
+            f"Official frozen pre-run manifest cannot be generated: {unresolved_failures} unresolved provider "
+            f"failures remain. Provider failures: {sb.get('provider_failure_reason_counts')}"
+        )
     total_eval = sb.get("total_evaluated", len(candidates_raw))
     eligible_count = len(stage_b_eligible_ids)
     rejected_count = sb.get("rejected_count", total_eval - eligible_count)
@@ -238,6 +244,9 @@ def build_frozen_pre_run_manifest_data(
             "eligible_security_ids": sorted(stage_b_eligible_ids),
             "rejected_count": rejected_count,
             "rejection_reason_counts": rejection_reasons,
+            "genuine_no_bars_count": sb.get("genuine_no_bars_count", 0),
+            "provider_failures_count": sb.get("provider_failures_count", 0),
+            "unresolved_provider_failures_count": unresolved_failures,
             "pit_market_cap_coverage_pct": pit_mcap_cov,
             "ticker_resolution_coverage_pct": ticker_res_cov,
             "classification_coverage_pct": class_cov,
@@ -246,6 +255,7 @@ def build_frozen_pre_run_manifest_data(
             "conservative_date_only_shares_count": sb.get("conservative_date_only_shares_count", 0),
             "exact_acceptance_shares_pct": sb.get("exact_acceptance_shares_pct", 0.0),
             "conservative_date_only_shares_pct": sb.get("conservative_date_only_shares_pct", 0.0),
+            "alpaca_audit_metrics": sb.get("alpaca_audit_metrics", {}),
         },
         "provider_cache_state": cache_state,
         "provider_request_plan_stage_c": provider_plan,

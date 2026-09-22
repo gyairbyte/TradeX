@@ -13,6 +13,7 @@ from typing import Any
 
 import pandas as pd
 
+from tradex.research.long_002c.exceptions import ProviderDataUnavailable
 from tradex.research.long_002c.manifest import CandidateSecurity, TickerInterval
 from tradex.research.long_002c.models import ProvenanceProviderRecord
 from tradex.research.long_002c.providers import AlpacaDailyClient
@@ -102,25 +103,59 @@ def load_interval_aware_daily_bars(
     # 2. Query daily bars for each interval segment
     segment_data: list[tuple[str, list[dict[str, Any]], list[dict[str, Any]]]] = []
     for sym, seg_start, seg_end in clamped_intervals:
-        raw_bars, raw_prov = alpaca.fetch_daily_bars(
-            sym,
-            f"{seg_start}T00:00:00Z",
-            f"{seg_end}T23:59:59Z",
-            feed="sip",
-            adjustment="raw",
-        )
-        provenance_records.extend(raw_prov)
-
-        adj_bars: list[dict[str, Any]] = []
-        if load_split_adjusted:
-            adj_bars, adj_prov = alpaca.fetch_daily_bars(
+        try:
+            raw_bars, raw_prov = alpaca.fetch_daily_bars(
                 sym,
                 f"{seg_start}T00:00:00Z",
                 f"{seg_end}T23:59:59Z",
                 feed="sip",
-                adjustment="split",
+                adjustment="raw",
             )
-            provenance_records.extend(adj_prov)
+            provenance_records.extend(raw_prov)
+        except ProviderDataUnavailable as exc:
+            provenance_records.extend(exc.provenance_records)
+            return pd.DataFrame(), provenance_records, {
+                "error": exc.failure_type,
+                "provider_failure": {
+                    "failure_type": exc.failure_type,
+                    "symbol": sym,
+                    "reason": str(exc),
+                    "status_code": exc.status_code,
+                    "page": exc.page,
+                    "retry_count": exc.retry_count,
+                },
+                "intervals_queried": len(clamped_intervals),
+                "transition_dates_deduped": [],
+                "unresolved_gaps": unresolved_gaps,
+            }
+
+        adj_bars: list[dict[str, Any]] = []
+        if load_split_adjusted:
+            try:
+                adj_bars, adj_prov = alpaca.fetch_daily_bars(
+                    sym,
+                    f"{seg_start}T00:00:00Z",
+                    f"{seg_end}T23:59:59Z",
+                    feed="sip",
+                    adjustment="split",
+                )
+                provenance_records.extend(adj_prov)
+            except ProviderDataUnavailable as exc:
+                provenance_records.extend(exc.provenance_records)
+                return pd.DataFrame(), provenance_records, {
+                    "error": exc.failure_type,
+                    "provider_failure": {
+                        "failure_type": exc.failure_type,
+                        "symbol": sym,
+                        "reason": str(exc),
+                        "status_code": exc.status_code,
+                        "page": exc.page,
+                        "retry_count": exc.retry_count,
+                    },
+                    "intervals_queried": len(clamped_intervals),
+                    "transition_dates_deduped": [],
+                    "unresolved_gaps": unresolved_gaps,
+                }
 
         segment_data.append((sym, raw_bars, adj_bars))
 

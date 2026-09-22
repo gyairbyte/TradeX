@@ -20,7 +20,28 @@ import requests
 
 from tradex.config import load_runtime_settings
 from tradex.research.long_002c.cache import ResponseCache, sanitize_url
+from tradex.research.long_002c.exceptions import (
+    MalformedProviderResponse,
+    ProviderDataUnavailable,
+    ProviderPaginationIncomplete,
+    ProviderRateLimitedUnresolved,
+    ProviderRequestFailed,
+)
 from tradex.research.long_002c.models import ProvenanceProviderRecord
+
+__all__ = [
+    "AlpacaDailyClient",
+    "EdgarClient",
+    "MalformedProviderResponse",
+    "MassiveRefClient",
+    "ProviderDataUnavailable",
+    "ProviderPaginationIncomplete",
+    "ProviderRateLimitedUnresolved",
+    "ProviderRequestFailed",
+    "RequestBudget",
+    "SnapshotPaginationMeta",
+    "resolve_credentials",
+]
 
 
 @dataclass(frozen=True)
@@ -85,7 +106,7 @@ class RequestBudget:
 
 
 class AlpacaDailyClient:
-    """Daily market data client using Alpaca REST API."""
+    """Daily market data client using Alpaca REST API with auditable retry and rate-limit tracking."""
 
     def __init__(
         self,
@@ -93,8 +114,8 @@ class AlpacaDailyClient:
         secret_key: str,
         budget: RequestBudget | None = None,
         request_func: Callable[..., requests.Response] | None = None,
-        request_delay_seconds: float = 0.2,
-        max_retries: int = 2,
+        request_delay_seconds: float = 0.35,
+        max_retries: int = 3,
         cache: ResponseCache | None = None,
     ) -> None:
         if not api_key or not secret_key:
@@ -103,10 +124,52 @@ class AlpacaDailyClient:
         self.secret_key = secret_key
         self.budget = budget or RequestBudget()
         self._request_func = request_func or requests.get
-        self.request_delay_seconds = request_delay_seconds
+        self.request_delay_seconds = request_delay_seconds if request_delay_seconds is not None else 0.35
         self.max_retries = max_retries
         self.cache = cache
         self.host = "https://data.alpaca.markets"
+        self._last_request_time: float = 0.0
+
+        # Audit metrics
+        self.network_requests_count: int = 0
+        self.cache_hits_count: int = 0
+        self.retries_count: int = 0
+        self.rate_limit_429_count: int = 0
+        self.transport_failure_count: int = 0
+        self.exhausted_retry_count: int = 0
+        self.incomplete_pagination_count: int = 0
+
+    def get_audit_metrics(self) -> dict[str, int]:
+        """Return auditable request and rate-limit metrics."""
+        return {
+            "network_requests_count": self.network_requests_count,
+            "cache_hits_count": self.cache_hits_count,
+            "retries_count": self.retries_count,
+            "rate_limit_429_count": self.rate_limit_429_count,
+            "transport_failure_count": self.transport_failure_count,
+            "exhausted_retry_count": self.exhausted_retry_count,
+            "incomplete_pagination_count": self.incomplete_pagination_count,
+        }
+
+    def reset_audit_metrics(self) -> None:
+        """Reset auditable metrics counters."""
+        self.network_requests_count = 0
+        self.cache_hits_count = 0
+        self.retries_count = 0
+        self.rate_limit_429_count = 0
+        self.transport_failure_count = 0
+        self.exhausted_retry_count = 0
+        self.incomplete_pagination_count = 0
+
+    def _wait_for_pacing(self) -> None:
+        """Enforce rate-limit pacing between uncached network requests."""
+        if self.request_delay_seconds <= 0:
+            return
+        now = time.monotonic()
+        elapsed = now - self._last_request_time
+        if elapsed < self.request_delay_seconds:
+            time.sleep(self.request_delay_seconds - elapsed)
+        self._last_request_time = time.monotonic()
 
     def _headers(self) -> dict[str, str]:
         return {
@@ -124,7 +187,12 @@ class AlpacaDailyClient:
         feed: str = "sip",
         adjustment: str = "raw",
     ) -> tuple[list[dict[str, Any]], list[ProvenanceProviderRecord]]:
-        """Fetch daily bars for symbol between start_utc and end_utc, paginating if needed."""
+        """Fetch daily bars for symbol between start_utc and end_utc, paginating to completion.
+
+        Raises:
+            ProviderDataUnavailable (or subclass) on any transport, 429, 5xx, or pagination failure.
+            Never converts request failures into empty bars or partial history.
+        """
         url = f"{self.host}/v2/stocks/{symbol.upper()}/bars"
         params: dict[str, Any] = {
             "timeframe": "1Day",
@@ -147,6 +215,7 @@ class AlpacaDailyClient:
             if self.cache:
                 cached_data, cached_sha, cached_ts = self.cache.get_json(url, req_fp)
                 if cached_data is not None and isinstance(cached_data, dict):
+                    self.cache_hits_count += 1
                     provenance_records.append(
                         ProvenanceProviderRecord(
                             record_id=f"prov_{req_fp[:16]}_{page}",
@@ -171,9 +240,13 @@ class AlpacaDailyClient:
                     continue
 
             self.budget.charge(1)
+            self._wait_for_pacing()
+            self.network_requests_count += 1
 
             attempt = 0
             resp: requests.Response | None = None
+            last_exc: Exception | None = None
+
             while attempt <= self.max_retries:
                 attempt += 1
                 try:
@@ -184,30 +257,81 @@ class AlpacaDailyClient:
                         timeout=30,
                     )
                 except Exception as exc:  # noqa: BLE001
-                    if attempt > self.max_retries:
-                        provenance_records.append(
-                            ProvenanceProviderRecord(
-                                record_id=f"prov_{req_fp[:16]}_{page}",
-                                data_family="daily_market_data",
-                                provider_name="alpaca",
-                                provider_role="fallback",
-                                endpoint_url_pattern="/v2/stocks/{symbol}/bars",
-                                retrieval_timestamp_utc=req_time,
-                                request_fingerprint_sha256=req_fp,
-                                response_sha256=hashlib.sha256(str(exc).encode()).hexdigest(),
-                            )
-                        )
-                        return all_bars, provenance_records
-                    time.sleep(self.request_delay_seconds)
-                    continue
+                    last_exc = exc
+                    self.transport_failure_count += 1
+                    if attempt <= self.max_retries:
+                        self.retries_count += 1
+                        time.sleep(min(30.0, max(0.5, self.request_delay_seconds * (2 ** attempt))))
+                        continue
+                    break
 
-                if (resp.status_code == 429 or resp.status_code >= 500) and attempt <= self.max_retries:
-                    time.sleep(self.request_delay_seconds * 2)
-                    continue
+                if resp.status_code == 429:
+                    self.rate_limit_429_count += 1
+                    retry_after = resp.headers.get("Retry-After")
+                    reset_ts = resp.headers.get("X-Ratelimit-Reset")
+                    if retry_after and retry_after.strip().isdigit():
+                        wait_sec = float(retry_after.strip()) + 0.5
+                    elif reset_ts:
+                        try:
+                            wait_sec = max(1.0, min(60.0, float(reset_ts) - time.time() + 0.5))
+                        except (ValueError, TypeError):
+                            wait_sec = min(60.0, max(1.0, self.request_delay_seconds * (2 ** attempt)))
+                    else:
+                        wait_sec = min(60.0, max(1.0, self.request_delay_seconds * (2 ** attempt)))
+
+                    if attempt <= self.max_retries:
+                        self.retries_count += 1
+                        time.sleep(wait_sec)
+                        continue
+                    break
+
+                if resp.status_code >= 500:
+                    if attempt <= self.max_retries:
+                        self.retries_count += 1
+                        time.sleep(min(30.0, max(0.5, self.request_delay_seconds * (2 ** attempt))))
+                        continue
+                    break
+
+                # Success or non-retryable status
                 break
 
-            if resp is None or resp.status_code != 200:
-                resp_hash = hashlib.sha256(resp.content if resp else b"").hexdigest()
+            # Handle transport failure after retries
+            if resp is None:
+                self.exhausted_retry_count += 1
+                err_msg = str(last_exc) if last_exc else "Transport exception"
+                provenance_records.append(
+                    ProvenanceProviderRecord(
+                        record_id=f"prov_{req_fp[:16]}_{page}",
+                        data_family="daily_market_data",
+                        provider_name="alpaca",
+                        provider_role="fallback",
+                        endpoint_url_pattern="/v2/stocks/{symbol}/bars",
+                        retrieval_timestamp_utc=req_time,
+                        request_fingerprint_sha256=req_fp,
+                        response_sha256=hashlib.sha256(err_msg.encode()).hexdigest(),
+                    )
+                )
+                if page > 1:
+                    self.incomplete_pagination_count += 1
+                    raise ProviderPaginationIncomplete(
+                        f"Alpaca pagination incomplete for {symbol} on page {page}: transport error after {attempt} attempts: {err_msg}",
+                        symbol=symbol,
+                        page=page,
+                        retry_count=attempt,
+                        provenance_records=provenance_records,
+                    )
+                raise ProviderRequestFailed(
+                    f"Alpaca request failed for {symbol}: transport error after {attempt} attempts: {err_msg}",
+                    symbol=symbol,
+                    page=page,
+                    retry_count=attempt,
+                    provenance_records=provenance_records,
+                )
+
+            # Handle HTTP failure after retries
+            if resp.status_code != 200:
+                self.exhausted_retry_count += 1
+                resp_hash = hashlib.sha256(resp.content).hexdigest()
                 provenance_records.append(
                     ProvenanceProviderRecord(
                         record_id=f"prov_{req_fp[:16]}_{page}",
@@ -220,8 +344,35 @@ class AlpacaDailyClient:
                         response_sha256=resp_hash,
                     )
                 )
-                break
+                if page > 1:
+                    self.incomplete_pagination_count += 1
+                    raise ProviderPaginationIncomplete(
+                        f"Alpaca pagination incomplete for {symbol} on page {page}: HTTP {resp.status_code} after {attempt} attempts",
+                        symbol=symbol,
+                        page=page,
+                        status_code=resp.status_code,
+                        retry_count=attempt,
+                        provenance_records=provenance_records,
+                    )
+                if resp.status_code == 429:
+                    raise ProviderRateLimitedUnresolved(
+                        f"Alpaca rate limit 429 unresolved for {symbol} after {attempt} attempts",
+                        symbol=symbol,
+                        page=page,
+                        status_code=429,
+                        retry_count=attempt,
+                        provenance_records=provenance_records,
+                    )
+                raise ProviderRequestFailed(
+                    f"Alpaca HTTP {resp.status_code} for {symbol} after {attempt} attempts",
+                    symbol=symbol,
+                    page=page,
+                    status_code=resp.status_code,
+                    retry_count=attempt,
+                    provenance_records=provenance_records,
+                )
 
+            # Successful HTTP 200 response
             resp_hash = hashlib.sha256(resp.content).hexdigest()
             if self.cache:
                 self.cache.set(
@@ -247,17 +398,53 @@ class AlpacaDailyClient:
 
             try:
                 data = resp.json()
-            except Exception:  # noqa: BLE001
-                break
+            except Exception as exc:
+                if page > 1:
+                    self.incomplete_pagination_count += 1
+                    raise ProviderPaginationIncomplete(
+                        f"Alpaca pagination incomplete for {symbol} on page {page}: malformed JSON response",
+                        symbol=symbol,
+                        page=page,
+                        status_code=200,
+                        provenance_records=provenance_records,
+                    ) from exc
+                raise MalformedProviderResponse(
+                    f"Alpaca response for {symbol} could not be parsed as JSON: {exc}",
+                    symbol=symbol,
+                    page=page,
+                    status_code=200,
+                    provenance_records=provenance_records,
+                ) from exc
 
-            bars = data.get("bars") if isinstance(data, dict) else None
+            if not isinstance(data, dict):
+                if page > 1:
+                    self.incomplete_pagination_count += 1
+                    raise ProviderPaginationIncomplete(
+                        f"Alpaca pagination incomplete for {symbol} on page {page}: response is not a dict",
+                        symbol=symbol,
+                        page=page,
+                        status_code=200,
+                        provenance_records=provenance_records,
+                    )
+                raise MalformedProviderResponse(
+                    f"Alpaca response for {symbol} is not a dict: {type(data)}",
+                    symbol=symbol,
+                    page=page,
+                    status_code=200,
+                    provenance_records=provenance_records,
+                )
+
+            bars = data.get("bars")
             if isinstance(bars, dict):
                 bars = bars.get(symbol.upper())
+
+            # Genuine empty bars: bars is None or bars == []
             if bars:
                 all_bars.extend(bars)
 
-            next_token = data.get("next_page_token") if isinstance(data, dict) else None
+            next_token = data.get("next_page_token")
             if not next_token:
+                # Normal successful pagination exhaustion
                 break
             params["page_token"] = next_token
 
