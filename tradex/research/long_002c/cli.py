@@ -847,7 +847,8 @@ def cmd_build(args: argparse.Namespace) -> int:
             all_class.extend(class_sec)
             all_earnings.extend(earn_sec)
             all_exclusions.extend(excl_sec)
-            all_quality.append(qual_sec)
+            if cutoff_time == "20:30":
+                all_quality.append(qual_sec)
             # Step 3: Compute outcomes across all nine cells using forward bars ONLY for raw-outcome-eligible observations
             for obs in obs_sec:
                 if not obs.raw_outcome_eligible:
@@ -868,16 +869,18 @@ def cmd_build(args: argparse.Namespace) -> int:
                     forward_slice = df_final.iloc[idx + 1 : idx + 22]
 
                 if len(forward_slice) < 21:
-                    obs.raw_outcome_eligible = False
-                    obs.data_complete = False
-                    obs.actionability_status = "unavailable_data_incomplete"
+                    object.__setattr__(obs, "raw_outcome_eligible", False)
+                    object.__setattr__(obs, "data_complete", False)
+                    object.__setattr__(obs, "actionability_status", "unavailable_data_incomplete")
                     all_exclusions.append(
                         ExclusionReasonRecord(
                             immutable_security_id=sec_id,
-                            ticker_at_decision=obs.ticker_at_decision,
                             as_of_date=as_of_date,
                             cutoff_time=cutoff_time,
-                            exclusion_reason="forward_analytical_data_incomplete",
+                            reason_code="forward_analytical_data_incomplete",
+                            ticker_at_decision=obs.ticker_at_decision,
+                            reason_category="data_quality",
+                            description="Required forward split-normalized analytical path is incomplete",
                         )
                     )
                     continue
@@ -895,16 +898,18 @@ def cmd_build(args: argparse.Namespace) -> int:
                     has_invalid_ohlc = True
 
                 if has_invalid_ohlc:
-                    obs.raw_outcome_eligible = False
-                    obs.data_complete = False
-                    obs.actionability_status = "unavailable_data_incomplete"
+                    object.__setattr__(obs, "raw_outcome_eligible", False)
+                    object.__setattr__(obs, "data_complete", False)
+                    object.__setattr__(obs, "actionability_status", "unavailable_data_incomplete")
                     all_exclusions.append(
                         ExclusionReasonRecord(
                             immutable_security_id=sec_id,
-                            ticker_at_decision=obs.ticker_at_decision,
                             as_of_date=as_of_date,
                             cutoff_time=cutoff_time,
-                            exclusion_reason="forward_analytical_data_incomplete",
+                            reason_code="forward_analytical_data_incomplete",
+                            ticker_at_decision=obs.ticker_at_decision,
+                            reason_category="data_quality",
+                            description="Required forward split-normalized analytical path is incomplete",
                         )
                     )
                     continue
@@ -999,6 +1004,7 @@ def cmd_build(args: argparse.Namespace) -> int:
                         "atr_14": matching_obs.atr_14 if matching_obs else None,
                         "sector": None,
                         "universe_eligible": matching_obs.universe_eligible if matching_obs else True,
+                        "raw_outcome_eligible": matching_obs.raw_outcome_eligible if matching_obs else False,
                     }
             if date_sec_data:
                 if not df_spy.empty and d in df_spy.index:
@@ -1030,8 +1036,10 @@ def cmd_build(args: argparse.Namespace) -> int:
         print(f"      Strongest simple baseline empirically selected (20:30 primary): {winner_id} "
               f"(Top-10 Lift: {winner_lift:.2f}x vs base rate {base_rate:.4f})")
     else:
+        status_str = winning_baseline_selection.get("selection_status") or winning_baseline_selection.get("status")
+        reason_str = winning_baseline_selection.get("selection_reason") or winning_baseline_selection.get("status")
         print(f"      Strongest simple baseline empirically selected (20:30 primary): INCONCLUSIVE ({winner_id}) "
-              f"- Status: {winning_baseline_selection.get('selection_status')}, Reason: {winning_baseline_selection.get('selection_reason')}")
+              f"- Status: {status_str}, Reason: {reason_str}")
 
     # Step 6: Dependence-aware Resampling & Endpoint Feasibility on 20:30 Primary Population (Item 8 & Item 9)
     print("\n[4/6] Running 21-session and 42-session block resampling on 20:30 primary census...")
@@ -1097,6 +1105,12 @@ def cmd_build(args: argparse.Namespace) -> int:
 
     print(f"      Endpoint Disposition: {feasibility_report.get('endpoint_disposition')}")
     print(f"      Selected Endpoint: {feasibility_report.get('selected_endpoint')}")
+
+    # Ensure DataQualityCoverage primary key uniqueness: (immutable_security_id, split_name)
+    assert len({(q.immutable_security_id, q.split_name) for q in all_quality}) == len(all_quality), (
+        f"Duplicate DataQualityCoverage primary keys detected: {len(all_quality)} total records vs "
+        f"{len({(q.immutable_security_id, q.split_name) for q in all_quality})} unique keys"
+    )
 
     # Step 7: Save Parquet Tables (External, Gitignored)
     print("\n[5/6] Writing external row-level Parquet datasets...")

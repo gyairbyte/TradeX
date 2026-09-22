@@ -434,10 +434,10 @@ def test_outcome_artifact_observation_funnel_and_cell_denominators(tmp_path: Pat
 # 11-14: Baseline Population, Legacy Scorer Isolation & Inconclusive Winner
 # =====================================================================
 def test_baselines_ranking_excludes_ineligible_observations() -> None:
-    """evaluate_baselines_for_date does not score securities with universe_eligible == False."""
+    """evaluate_baselines_for_date does not score securities with raw_outcome_eligible == False."""
     sec_data = {
-        "SEC_A": {"ticker": "A", "history_df": pd.DataFrame({"close": [10.0] * 30}), "atr_14": 1.0, "universe_eligible": True},
-        "SEC_B": {"ticker": "B", "history_df": pd.DataFrame({"close": [10.0] * 30}), "atr_14": 1.0, "universe_eligible": False},
+        "SEC_A": {"ticker": "A", "history_df": pd.DataFrame({"close": [10.0] * 30}), "atr_14": 1.0, "universe_eligible": True, "raw_outcome_eligible": True},
+        "SEC_B": {"ticker": "B", "history_df": pd.DataFrame({"close": [10.0] * 30}), "atr_14": 1.0, "universe_eligible": False, "raw_outcome_eligible": False},
     }
     outputs = evaluate_baselines_for_date(
         as_of_date="2016-01-04",
@@ -631,3 +631,214 @@ def test_massive_500_retry_and_exhaustion() -> None:
 
     assert client.retries_count == 3
     assert "500" in str(exc_info.value)
+
+
+# =====================================================================
+# 18-22: Stage-C Execution Wiring Fix Regression Tests
+# =====================================================================
+def test_baselines_ranking_excludes_raw_outcome_ineligible_even_if_universe_eligible() -> None:
+    """When universe_eligible=True but raw_outcome_eligible=False, security receives ZERO baseline comparator outputs."""
+    sec_data = {
+        "SEC_ELIG": {
+            "ticker": "ELIG",
+            "history_df": pd.DataFrame({"close": [10.0] * 30}),
+            "atr_14": 1.0,
+            "universe_eligible": True,
+            "raw_outcome_eligible": True,
+        },
+        "SEC_INELIG": {
+            "ticker": "INELIG",
+            "history_df": pd.DataFrame({"close": [10.0] * 30}),
+            "atr_14": 1.0,
+            "universe_eligible": True,
+            "raw_outcome_eligible": False,
+        },
+    }
+    outputs = evaluate_baselines_for_date(
+        as_of_date="2016-01-04",
+        cutoff_time="20:30",
+        securities_data=sec_data,
+        spy_history_df=None,
+    )
+    elig_outs = [o for o in outputs if o.immutable_security_id == "SEC_ELIG"]
+    inelig_outs = [o for o in outputs if o.immutable_security_id == "SEC_INELIG"]
+    assert len(elig_outs) > 0
+    assert len(inelig_outs) == 0
+
+
+def test_forward_quality_exclusion_record_construction() -> None:
+    """Forward-quality failure path instantiates valid ExclusionReasonRecord without TypeError and yields raw_outcome_eligible=False."""
+    from tradex.research.long_002c.models import ExclusionReasonRecord
+
+    obs = _make_obs(sec_id="SEC_FWD_FAIL", raw_eligible=True, data_complete=True)
+    all_exclusions: list[ExclusionReasonRecord] = []
+
+    # Simulate forward path check where slice < 21
+    forward_slice = pd.DataFrame({"open": [100.0] * 10})
+    if len(forward_slice) < 21:
+        object.__setattr__(obs, "raw_outcome_eligible", False)
+        object.__setattr__(obs, "data_complete", False)
+        object.__setattr__(obs, "actionability_status", "unavailable_data_incomplete")
+        all_exclusions.append(
+            ExclusionReasonRecord(
+                immutable_security_id=obs.immutable_security_id,
+                as_of_date=obs.as_of_date,
+                cutoff_time=obs.cutoff_time,
+                reason_code="forward_analytical_data_incomplete",
+                ticker_at_decision=obs.ticker_at_decision,
+                reason_category="data_quality",
+                description="Required forward split-normalized analytical path is incomplete",
+            )
+        )
+
+    assert len(all_exclusions) == 1
+    excl = all_exclusions[0]
+    assert excl.reason_code == "forward_analytical_data_incomplete"
+    assert excl.reason_category == "data_quality"
+    assert excl.description == "Required forward split-normalized analytical path is incomplete"
+    assert excl.immutable_security_id == "SEC_FWD_FAIL"
+    assert obs.raw_outcome_eligible is False
+    assert obs.data_complete is False
+
+    # Simulate outcome computation check: raw_outcome_eligible=False must generate 0 outcomes
+    outcomes = []
+    if obs.raw_outcome_eligible:
+        outcomes = compute_all_nine_outcomes(
+            immutable_security_id=obs.immutable_security_id,
+            ticker_at_decision=obs.ticker_at_decision,
+            as_of_date=obs.as_of_date,
+            cutoff_time=obs.cutoff_time,
+            next_open_price=100.0,
+            forward_bars=[{"open": 100.0, "high": 105.0, "low": 98.0, "close": 102.0}] * 21,
+            pre_entry_atr=2.0,
+        )
+    assert len(outcomes) == 0
+
+
+def test_outcome_artifact_reports_separated_populations_and_agrees_with_feasibility(tmp_path: Path) -> None:
+    """outcome_census_summary.json reports primary_2030, reevaluation_0900, combined_diagnostic, and 20:30 agrees with feasibility."""
+    obs_2030 = [_make_obs(sec_id=f"SEC_{i}", cutoff="20:30") for i in range(10)]
+    obs_0900 = [_make_obs(sec_id=f"SEC_{i}", cutoff="09:00") for i in range(10)]
+    all_obs = obs_2030 + obs_0900
+
+    outcomes = []
+    for o in all_obs:
+        for t_pct, h in [(10.0, 10), (10.0, 21)]:
+            outcomes.append(
+                OutcomeLabelRecord(
+                    immutable_security_id=o.immutable_security_id,
+                    as_of_date=o.as_of_date,
+                    cutoff_time=o.cutoff_time,
+                    target_pct=t_pct,
+                    horizon_sessions=h,
+                    ticker_at_decision=o.ticker_at_decision,
+                    reference_entry_price=100.0,
+                    entry_friction_bps=10.0,
+                    target_price=110.0,
+                    adverse_barrier_pct=0.05,
+                    adverse_barrier_price=95.0,
+                    clean_risk_cap_pct=0.05,
+                    clean_risk_cap_amount=5.0,
+                    mfe_pct=0.15,
+                    target_progress_ratio=1.5,
+                    near_miss=False,
+                    partial_move=False,
+                    mae_pct=0.01,
+                    mae_atr=0.5,
+                    adverse_excursion=False,
+                    clean_target_reached=True,
+                    path_sequence_ambiguous=False,
+                    end_of_horizon_return=0.10,
+                    retention_ratio=0.8,
+                    sustained_target=True,
+                )
+            )
+
+    bundle_dir = tmp_path / "artifacts"
+    write_committed_summaries(
+        bundle_dir=bundle_dir,
+        run_id="test_split_census",
+        manifest_files=[],
+        observations=all_obs,
+        outcomes=outcomes,
+        episodes=[],
+        baselines=[],
+        quality=[],
+        provenance=[],
+        exclusions=[],
+        feasibility_report={},
+        execution_metadata={},
+    )
+
+    data = json.loads((bundle_dir / "outcome_census_summary.json").read_text(encoding="utf-8"))
+    assert "primary_2030" in data
+    assert "reevaluation_0900" in data
+    assert "combined_diagnostic" in data
+    assert data["primary_2030"]["nine_cells"]["+10%_10d"]["eligible_denominator"] == 10
+    assert data["reevaluation_0900"]["nine_cells"]["+10%_10d"]["eligible_denominator"] == 10
+    assert data["combined_diagnostic"]["nine_cells"]["+10%_10d"]["eligible_denominator"] == 20
+    # nine_cells must alias primary_2030, NOT combined
+    assert data["nine_cells"]["+10%_10d"]["eligible_denominator"] == 10
+
+    # Also verify feasibility agreement with 20:30 primary population
+    feas_report = analyze_endpoint_feasibility(
+        observations=[o.to_dict() for o in obs_2030],
+        episodes=[],
+        outcomes=[o for o in outcomes if o.cutoff_time == "20:30"],
+        resampling_21={},
+        resampling_42={},
+    )
+    assert feas_report["primary_10_10_denominator"] == data["primary_2030"]["nine_cells"]["+10%_10d"]["eligible_denominator"]
+    assert feas_report["fallback_10_21_denominator"] == data["primary_2030"]["nine_cells"]["+10%_21d"]["eligible_denominator"]
+
+
+def test_data_quality_coverage_primary_key_uniqueness() -> None:
+    """DataQualityCoverage has unique (immutable_security_id, split_name) and duplicate keys fail assertion."""
+    from tradex.research.long_002c.models import DataQualityCoverage
+
+    records = [
+        DataQualityCoverage(
+            immutable_security_id="SEC_1",
+            split_name="development",
+            expected_sessions=100,
+            observed_sessions=100,
+            completeness_pct=100.0,
+            unexplained_missing_sessions=0,
+            max_consecutive_missing_sessions=0,
+            duplicate_bar_count=0,
+            malformed_bar_count=0,
+            halt_sessions_count=0,
+        ),
+        DataQualityCoverage(
+            immutable_security_id="SEC_2",
+            split_name="development",
+            expected_sessions=100,
+            observed_sessions=100,
+            completeness_pct=100.0,
+            unexplained_missing_sessions=0,
+            max_consecutive_missing_sessions=0,
+            duplicate_bar_count=0,
+            malformed_bar_count=0,
+            halt_sessions_count=0,
+        ),
+    ]
+    # Unique check passes
+    assert len({(q.immutable_security_id, q.split_name) for q in records}) == len(records)
+
+    # Duplicating a record must fail the assertion
+    dup_records = records + [records[0]]
+    with pytest.raises(AssertionError):
+        assert len({(q.immutable_security_id, q.split_name) for q in dup_records}) == len(dup_records)
+
+
+def test_inconclusive_baseline_returns_status_and_reason() -> None:
+    """Inconclusive baseline selection returns valid non-None status, selection_status, and selection_reason."""
+    res = select_winning_baseline(
+        baseline_outputs=[],
+        outcomes=[],
+        primary_cutoff_time="20:30",
+    )
+    assert res["winner_comparator_id"] is None
+    assert res["status"] == "inconclusive_no_primary_outcomes"
+    assert res["selection_status"] == "inconclusive"
+    assert res["selection_reason"] == "inconclusive_no_primary_outcomes"

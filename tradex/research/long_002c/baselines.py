@@ -46,7 +46,8 @@ def evaluate_baselines_for_date(
     #   "history_df": pd.DataFrame (daily bars up to as_of_date),
     #   "atr_14": float | None,
     #   "sector": str | None,
-    #   "universe_eligible": bool
+    #   "universe_eligible": bool (retained for audit),
+    #   "raw_outcome_eligible": bool,
     # }
     spy_history_df: pd.DataFrame | None = None,
     sector_histories: dict[str, pd.DataFrame] | None = None,
@@ -54,12 +55,12 @@ def evaluate_baselines_for_date(
     """Evaluate all baseline comparators across common eligible observations on a single date."""
     outputs: list[BaselineComparatorOutput] = []
 
-    # Filter to eligible securities on this date
+    # Filter to eligible securities on this date (strictly requires raw_outcome_eligible is True)
     eligible_sec_ids = [
         sec_id
         for sec_id, d in securities_data.items()
         if (
-            (d.get("raw_outcome_eligible") if "raw_outcome_eligible" in d else d.get("universe_eligible", True))
+            d.get("raw_outcome_eligible", False) is True
             and not d.get("history_df").empty
         )
     ]
@@ -337,6 +338,8 @@ def select_winning_baseline(
             "winner_comparator_id": None,
             "winner_family": None,
             "status": "inconclusive_no_primary_outcomes",
+            "selection_status": "inconclusive",
+            "selection_reason": "inconclusive_no_primary_outcomes",
             "table": {},
         }
 
@@ -352,6 +355,8 @@ def select_winning_baseline(
             "winner_comparator_id": None,
             "winner_family": None,
             "status": "inconclusive_no_candidate_comparators",
+            "selection_status": "inconclusive",
+            "selection_reason": "inconclusive_no_candidate_comparators",
             "table": {},
         }
 
@@ -372,6 +377,8 @@ def select_winning_baseline(
             "winner_comparator_id": None,
             "winner_family": None,
             "status": "inconclusive_no_candidate_comparators",
+            "selection_status": "inconclusive",
+            "selection_reason": "inconclusive_no_candidate_comparators",
             "table": {},
         }
 
@@ -385,6 +392,8 @@ def select_winning_baseline(
             "winner_comparator_id": None,
             "winner_family": None,
             "status": "inconclusive_no_common_observations",
+            "selection_status": "inconclusive",
+            "selection_reason": "inconclusive_no_common_observations",
             "table": {},
         }
 
@@ -460,6 +469,8 @@ def select_winning_baseline(
             "winner_comparator_id": None,
             "winner_family": None,
             "status": "inconclusive_no_evaluated_metrics",
+            "selection_status": "inconclusive",
+            "selection_reason": "inconclusive_no_evaluated_metrics",
             "table": table,
         }
 
@@ -470,6 +481,8 @@ def select_winning_baseline(
             "winner_comparator_id": None,
             "winner_family": None,
             "status": "inconclusive_no_permitted_winner",
+            "selection_status": "inconclusive",
+            "selection_reason": "inconclusive_no_permitted_winner",
             "table": table,
         }
 
@@ -492,6 +505,8 @@ def select_winning_baseline(
         "winner_comparator_id": winner["comparator_id"],
         "winner_family": winner["comparator_family"],
         "status": "winner_selected",
+        "selection_status": "winner_selected",
+        "selection_reason": f"Selected {winner['comparator_id']} with top-10 lift {winner['top_10_lift']:.2f}x",
         "common_observations_count": common_total,
         "universe_base_rate": round(base_rate, 6),
         "winner_top_10_lift": winner["top_10_lift"],

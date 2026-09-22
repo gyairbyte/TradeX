@@ -74,6 +74,7 @@ def test_evaluate_baselines_cross_sectional_ranking() -> None:
             "atr_14": 2.5,
             "sector": "TECH",
             "universe_eligible": True,
+            "raw_outcome_eligible": True,
         },
         "SEC_B": {
             "ticker": "BBB",
@@ -81,6 +82,7 @@ def test_evaluate_baselines_cross_sectional_ranking() -> None:
             "atr_14": 1.5,
             "sector": "TECH",
             "universe_eligible": True,
+            "raw_outcome_eligible": True,
         },
     }
 

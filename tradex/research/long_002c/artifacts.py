@@ -135,30 +135,98 @@ def write_committed_summaries(
 
     # 3. outcome_census_summary.json
     outcome_path = bundle_dir / "outcome_census_summary.json"
-    eligible_obs_keys = {
+
+    def _build_cutoff_cells_and_funnel(
+        cutoff: str,
+    ) -> tuple[dict[str, dict[str, Any]], dict[str, int]]:
+        cutoff_obs = [o for o in observations if o.cutoff_time == cutoff]
+        eligible_obs_keys = {
+            (o.immutable_security_id, o.as_of_date, o.cutoff_time)
+            for o in cutoff_obs
+            if o.raw_outcome_eligible and not o.split_boundary_purged
+        }
+        cells_dict: dict[str, dict[str, Any]] = {}
+        for target_pct, horizon in [
+            (10.0, 5),
+            (10.0, 10),
+            (10.0, 21),
+            (20.0, 5),
+            (20.0, 10),
+            (20.0, 21),
+            (30.0, 5),
+            (30.0, 10),
+            (30.0, 21),
+        ]:
+            cell_key = f"+{int(target_pct)}%_{horizon}d"
+            cell_recs = [
+                o
+                for o in outcomes
+                if o.cutoff_time == cutoff
+                and o.target_pct == target_pct
+                and o.horizon_sessions == horizon
+                and (o.immutable_security_id, o.as_of_date, o.cutoff_time) in eligible_obs_keys
+            ]
+            n_tot = len(cell_recs)
+            clean_cnt = sum(1 for o in cell_recs if o.clean_target_reached)
+            gross_cnt = sum(1 for o in cell_recs if o.target_progress_ratio >= 1.0)
+            near_cnt = sum(1 for o in cell_recs if o.near_miss)
+            part_cnt = sum(1 for o in cell_recs if o.partial_move)
+            adv_cnt = sum(1 for o in cell_recs if o.adverse_excursion)
+            sust_cnt = sum(1 for o in cell_recs if o.sustained_target)
+
+            cells_dict[cell_key] = {
+                "target_pct": target_pct,
+                "horizon_sessions": horizon,
+                "eligible_denominator": n_tot,
+                "total_evaluated": n_tot,
+                "clean_target_reached_count": clean_cnt,
+                "clean_target_reached_rate": round(clean_cnt / n_tot, 6) if n_tot else 0.0,
+                "gross_target_reached_count": gross_cnt,
+                "gross_target_reached_rate": round(gross_cnt / n_tot, 6) if n_tot else 0.0,
+                "near_miss_count": near_cnt,
+                "near_miss_rate": round(near_cnt / n_tot, 6) if n_tot else 0.0,
+                "partial_move_count": part_cnt,
+                "partial_move_rate": round(part_cnt / n_tot, 6) if n_tot else 0.0,
+                "adverse_excursion_count": adv_cnt,
+                "adverse_excursion_rate": round(adv_cnt / n_tot, 6) if n_tot else 0.0,
+                "sustained_target_count": sust_cnt,
+                "sustained_target_rate": round(sust_cnt / n_tot, 6) if n_tot else 0.0,
+            }
+
+        known_e = [o for o in cutoff_obs if o.earnings_schedule_status == "known_point_in_time"]
+        unknown_e = [o for o in cutoff_obs if o.earnings_schedule_status == "unknown"]
+        funnel_dict = {
+            "total_decision_observations": len(cutoff_obs),
+            "universe_eligible": sum(1 for o in cutoff_obs if o.universe_eligible),
+            "data_complete": sum(1 for o in cutoff_obs if o.data_complete),
+            "raw_outcome_eligible": sum(1 for o in cutoff_obs if o.raw_outcome_eligible),
+            "earnings_known": len(known_e),
+            "earnings_unknown": len(unknown_e),
+            "actionable_eligible": sum(1 for o in cutoff_obs if o.actionability_status == "eligible"),
+        }
+        return cells_dict, funnel_dict
+
+    primary_2030_cells, primary_2030_funnel = _build_cutoff_cells_and_funnel("20:30")
+    reeval_0900_cells, reeval_0900_funnel = _build_cutoff_cells_and_funnel("09:00")
+
+    # Optional combined diagnostic explicitly noted
+    all_eligible_keys = {
         (o.immutable_security_id, o.as_of_date, o.cutoff_time)
         for o in observations
         if o.raw_outcome_eligible and not o.split_boundary_purged
     }
-    cells: dict[str, dict[str, Any]] = {}
+    comb_cells: dict[str, dict[str, Any]] = {}
     for target_pct, horizon in [
-        (10.0, 5),
-        (10.0, 10),
-        (10.0, 21),
-        (20.0, 5),
-        (20.0, 10),
-        (20.0, 21),
-        (30.0, 5),
-        (30.0, 10),
-        (30.0, 21),
+        (10.0, 5), (10.0, 10), (10.0, 21),
+        (20.0, 5), (20.0, 10), (20.0, 21),
+        (30.0, 5), (30.0, 10), (30.0, 21),
     ]:
         cell_key = f"+{int(target_pct)}%_{horizon}d"
         cell_recs = [
-            o
-            for o in outcomes
+            o for o in outcomes
             if o.target_pct == target_pct
             and o.horizon_sessions == horizon
-            and (o.immutable_security_id, o.as_of_date, o.cutoff_time) in eligible_obs_keys
+            and (o.immutable_security_id, o.as_of_date, o.cutoff_time) in all_eligible_keys
         ]
         n_tot = len(cell_recs)
         clean_cnt = sum(1 for o in cell_recs if o.clean_target_reached)
@@ -167,8 +235,7 @@ def write_committed_summaries(
         part_cnt = sum(1 for o in cell_recs if o.partial_move)
         adv_cnt = sum(1 for o in cell_recs if o.adverse_excursion)
         sust_cnt = sum(1 for o in cell_recs if o.sustained_target)
-
-        cells[cell_key] = {
+        comb_cells[cell_key] = {
             "target_pct": target_pct,
             "horizon_sessions": horizon,
             "eligible_denominator": n_tot,
@@ -187,36 +254,43 @@ def write_committed_summaries(
             "sustained_target_rate": round(sust_cnt / n_tot, 6) if n_tot else 0.0,
         }
 
-    # Observation funnel and dual reporting
-    known_e_obs = [
-        o for o in observations if o.earnings_schedule_status == "known_point_in_time"
-    ]
-    unknown_e_obs = [
-        o for o in observations if o.earnings_schedule_status == "unknown"
-    ]
-
-    observation_funnel = {
-        "total_decision_observations": len(observations),
-        "universe_eligible": sum(1 for o in observations if o.universe_eligible),
-        "data_complete": sum(1 for o in observations if o.data_complete),
-        "raw_outcome_eligible": sum(1 for o in observations if o.raw_outcome_eligible),
-        "earnings_known": len(known_e_obs),
-        "earnings_unknown": len(unknown_e_obs),
-        "actionable_eligible": sum(
-            1 for o in observations if o.actionability_status == "eligible"
-        ),
+    combined_diagnostic = {
+        "statement": "Diagnostic pooled across 09:00 and 20:30; NOT the primary prevalence population.",
+        "nine_cells": comb_cells,
+        "observation_funnel": {
+            "total_decision_observations": len(observations),
+            "universe_eligible": sum(1 for o in observations if o.universe_eligible),
+            "data_complete": sum(1 for o in observations if o.data_complete),
+            "raw_outcome_eligible": sum(1 for o in observations if o.raw_outcome_eligible),
+            "earnings_known": sum(1 for o in observations if o.earnings_schedule_status == "known_point_in_time"),
+            "earnings_unknown": sum(1 for o in observations if o.earnings_schedule_status == "unknown"),
+            "actionable_eligible": sum(1 for o in observations if o.actionability_status == "eligible"),
+        },
     }
 
     outcome_summary = {
-        "nine_cells": cells,
-        "observation_funnel": observation_funnel,
+        "primary_2030": {
+            "nine_cells": primary_2030_cells,
+            "observation_funnel": primary_2030_funnel,
+        },
+        "reevaluation_0900": {
+            "nine_cells": reeval_0900_cells,
+            "observation_funnel": reeval_0900_funnel,
+        },
+        "combined_diagnostic": combined_diagnostic,
+        "nine_cells": primary_2030_cells,
+        "observation_funnel": primary_2030_funnel,
         "dual_reporting": {
             "total_observations": len(observations),
             "raw_outcome_eligible_observations": sum(
                 1 for o in observations if o.raw_outcome_eligible
             ),
-            "earnings_schedule_known_count": len(known_e_obs),
-            "earnings_schedule_unknown_count": len(unknown_e_obs),
+            "earnings_schedule_known_count": sum(
+                1 for o in observations if o.earnings_schedule_status == "known_point_in_time"
+            ),
+            "earnings_schedule_unknown_count": sum(
+                1 for o in observations if o.earnings_schedule_status == "unknown"
+            ),
             "actionable_eligible_count": sum(
                 1 for o in observations if o.actionability_status == "eligible"
             ),

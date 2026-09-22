@@ -459,6 +459,7 @@ def test_spy_relative_baselines_execute() -> None:
             "history_df": df_sec,
             "atr_14": 0.5,
             "universe_eligible": True,
+            "raw_outcome_eligible": True,
         }
     }
     outputs = evaluate_baselines_for_date(
@@ -483,6 +484,7 @@ def test_sector_relative_family_explicitly_unavailable_when_unsupported() -> Non
             "history_df": df_sec,
             "atr_14": 0.5,
             "universe_eligible": True,
+            "raw_outcome_eligible": True,
             "sector": None,
         }
     }
