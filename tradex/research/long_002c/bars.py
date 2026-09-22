@@ -163,7 +163,7 @@ def load_interval_aware_daily_bars(
     # Dictionary mapping date -> bar record
     merged_by_date: dict[str, dict[str, Any]] = {}
     transition_deduped: list[str] = []
-    analytical_data_incomplete = False
+    analytical_incomplete_dates: set[str] = set()
 
     for sym, raw_bars, adj_bars in segment_data:
         if not raw_bars:
@@ -191,15 +191,22 @@ def load_interval_aware_daily_bars(
                 merged = pd.merge(
                     df_raw, df_adj[["date", "open", "high", "low", "close"]], on="date", how="left"
                 )
-                if merged["open"].isna().any() or merged["close"].isna().any():
-                    analytical_data_incomplete = True
+                missing_mask = (
+                    merged["open"].isna()
+                    | merged["high"].isna()
+                    | merged["low"].isna()
+                    | merged["close"].isna()
+                )
+                for d_miss in merged.loc[missing_mask, "date"]:
+                    analytical_incomplete_dates.add(str(d_miss))
             else:
                 merged = df_raw.copy()
                 merged["open"] = None
                 merged["high"] = None
                 merged["low"] = None
                 merged["close"] = None
-                analytical_data_incomplete = True
+                for d_miss in merged["date"]:
+                    analytical_incomplete_dates.add(str(d_miss))
         else:
             merged = df_raw.copy()
             merged["open"] = merged["as_traded_open"]
@@ -217,6 +224,9 @@ def load_interval_aware_daily_bars(
             high_val = float(row["high"]) if pd.notna(row["high"]) else None
             low_val = float(row["low"]) if pd.notna(row["low"]) else None
             close_val = float(row["close"]) if pd.notna(row["close"]) else None
+
+            if open_val is None or high_val is None or low_val is None or close_val is None:
+                analytical_incomplete_dates.add(d)
 
             rec = {
                 "date": d,
@@ -241,6 +251,9 @@ def load_interval_aware_daily_bars(
             else:
                 merged_by_date[d] = rec
 
+    incomplete_dates_list = sorted(analytical_incomplete_dates)
+    analytical_data_incomplete = len(incomplete_dates_list) > 0
+
     if not merged_by_date:
         return pd.DataFrame(), provenance_records, {
             "error": "no_bars_returned",
@@ -248,6 +261,7 @@ def load_interval_aware_daily_bars(
             "transition_dates_deduped": transition_deduped,
             "unresolved_gaps": unresolved_gaps,
             "analytical_data_incomplete": analytical_data_incomplete,
+            "analytical_incomplete_dates": incomplete_dates_list,
         }
 
     sorted_dates = sorted(merged_by_date.keys())
@@ -264,6 +278,7 @@ def load_interval_aware_daily_bars(
         "transition_dates_deduped": transition_deduped,
         "unresolved_gaps": unresolved_gaps,
         "analytical_data_incomplete": analytical_data_incomplete,
+        "analytical_incomplete_dates": incomplete_dates_list,
     }
 
     return df_result, provenance_records, audit_meta

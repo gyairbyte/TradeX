@@ -135,6 +135,11 @@ def write_committed_summaries(
 
     # 3. outcome_census_summary.json
     outcome_path = bundle_dir / "outcome_census_summary.json"
+    eligible_obs_keys = {
+        (o.immutable_security_id, o.as_of_date, o.cutoff_time)
+        for o in observations
+        if o.raw_outcome_eligible and not o.split_boundary_purged
+    }
     cells: dict[str, dict[str, Any]] = {}
     for target_pct, horizon in [
         (10.0, 5),
@@ -151,7 +156,9 @@ def write_committed_summaries(
         cell_recs = [
             o
             for o in outcomes
-            if o.target_pct == target_pct and o.horizon_sessions == horizon
+            if o.target_pct == target_pct
+            and o.horizon_sessions == horizon
+            and (o.immutable_security_id, o.as_of_date, o.cutoff_time) in eligible_obs_keys
         ]
         n_tot = len(cell_recs)
         clean_cnt = sum(1 for o in cell_recs if o.clean_target_reached)
@@ -164,23 +171,45 @@ def write_committed_summaries(
         cells[cell_key] = {
             "target_pct": target_pct,
             "horizon_sessions": horizon,
+            "eligible_denominator": n_tot,
             "total_evaluated": n_tot,
             "clean_target_reached_count": clean_cnt,
             "clean_target_reached_rate": round(clean_cnt / n_tot, 6) if n_tot else 0.0,
             "gross_target_reached_count": gross_cnt,
             "gross_target_reached_rate": round(gross_cnt / n_tot, 6) if n_tot else 0.0,
             "near_miss_count": near_cnt,
+            "near_miss_rate": round(near_cnt / n_tot, 6) if n_tot else 0.0,
             "partial_move_count": part_cnt,
+            "partial_move_rate": round(part_cnt / n_tot, 6) if n_tot else 0.0,
             "adverse_excursion_count": adv_cnt,
+            "adverse_excursion_rate": round(adv_cnt / n_tot, 6) if n_tot else 0.0,
             "sustained_target_count": sust_cnt,
+            "sustained_target_rate": round(sust_cnt / n_tot, 6) if n_tot else 0.0,
         }
 
-    # Dual reporting: raw vs actionable
-    known_e_obs = [o for o in observations if o.earnings_schedule_status == "known"]
-    unknown_e_obs = [o for o in observations if o.earnings_schedule_status == "unknown"]
+    # Observation funnel and dual reporting
+    known_e_obs = [
+        o for o in observations if o.earnings_schedule_status == "known_point_in_time"
+    ]
+    unknown_e_obs = [
+        o for o in observations if o.earnings_schedule_status == "unknown"
+    ]
+
+    observation_funnel = {
+        "total_decision_observations": len(observations),
+        "universe_eligible": sum(1 for o in observations if o.universe_eligible),
+        "data_complete": sum(1 for o in observations if o.data_complete),
+        "raw_outcome_eligible": sum(1 for o in observations if o.raw_outcome_eligible),
+        "earnings_known": len(known_e_obs),
+        "earnings_unknown": len(unknown_e_obs),
+        "actionable_eligible": sum(
+            1 for o in observations if o.actionability_status == "eligible"
+        ),
+    }
 
     outcome_summary = {
         "nine_cells": cells,
+        "observation_funnel": observation_funnel,
         "dual_reporting": {
             "total_observations": len(observations),
             "raw_outcome_eligible_observations": sum(
@@ -227,7 +256,7 @@ def write_committed_summaries(
     }
     episodes_path.write_text(json.dumps(episodes_summary, indent=2), encoding="utf-8")
 
-    # 5. endpoint_feasibility_report.json
+    # 6. endpoint_feasibility_report.json
     feasibility_path = bundle_dir / "endpoint_feasibility_report.json"
     feasibility_path.write_text(
         json.dumps(feasibility_report, indent=2), encoding="utf-8"
@@ -253,14 +282,15 @@ def write_committed_summaries(
         }
 
     winner_id = (
-        winning_baseline.get("winner_comparator_id", "simple_momentum_20")
-        if winning_baseline
-        else "simple_momentum_20"
+        winning_baseline.get("winner_comparator_id")
+        if winning_baseline and winning_baseline.get("winner_comparator_id")
+        else None
     )
     baseline_summary = {
         "comparators": baseline_metrics,
         "empirically_selected_strongest_baseline": winner_id,
         "frozen_strongest_simple_baseline": winner_id,
+        "status": winning_baseline.get("status", "inconclusive") if winning_baseline else "inconclusive",
         "selection_details": winning_baseline or {},
         "notes": "Baselines evaluated on common observations with repository default LongWeights() and selected via primary-endpoint decile lift.",
     }

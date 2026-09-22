@@ -83,6 +83,8 @@ def build_frozen_pre_run_manifest_data(
     unresolved_gap_security_ids = []
     internal_gap_count = 0
     internal_gap_trading_sessions = 0
+    disc_applicable_sessions = 0
+    disc_resolved_sessions = 0
 
     for c in sorted(candidates_raw, key=lambda x: x.get("immutable_security_id", "")):
         sec_id = c.get("immutable_security_id", "")
@@ -103,6 +105,22 @@ def build_frozen_pre_run_manifest_data(
             unresolved_gap_security_ids.append(sec_id)
         else:
             sorted_ti = sorted(ti_list, key=lambda x: x.get("start_date") or "")
+            s_dates = [ti.get("start_date") for ti in sorted_ti if ti.get("start_date")]
+            e_dates = [ti.get("end_date") for ti in sorted_ti if ti.get("end_date")]
+            if s_dates and e_dates:
+                min_s = min(s_dates)
+                max_e = max(e_dates)
+                cand_dev_sess = [s for s in dev_sessions if min_s <= s <= max_e]
+                disc_applicable_sessions += len(cand_dev_sess)
+                covered = set()
+                for ti in sorted_ti:
+                    s = ti.get("start_date") or ""
+                    e = ti.get("end_date") or ""
+                    for sess in cand_dev_sess:
+                        if s <= sess <= e:
+                            covered.add(sess)
+                disc_resolved_sessions += len(covered)
+
             sec_has_gap = False
             for i in range(len(sorted_ti) - 1):
                 prev_end = sorted_ti[i].get("end_date") or ""
@@ -120,6 +138,12 @@ def build_frozen_pre_run_manifest_data(
             "immutable_security_id": sec_id,
             "ticker_intervals": ti_list,
         })
+
+    disc_ticker_cov_pct = (
+        round(disc_resolved_sessions / disc_applicable_sessions * 100.0, 2)
+        if disc_applicable_sessions
+        else 0.0
+    )
 
     identity_map_sha = hashlib.sha256(
         json.dumps(id_entries, sort_keys=True).encode("utf-8")
@@ -150,8 +174,9 @@ def build_frozen_pre_run_manifest_data(
     eligible_count = len(stage_b_eligible_ids)
     rejected_count = sb.get("rejected_count", total_eval - eligible_count)
     rejection_reasons = sb.get("rejection_reason_counts", {})
-    pit_mcap_cov = sb.get("pit_market_cap_coverage_pct", 98.0)
-    ticker_res_cov = sb.get("ticker_resolution_coverage_pct", 100.0)
+    cand_mcap_cov = sb.get("candidate_pit_market_cap_coverage_pct", sb.get("pit_market_cap_coverage_pct", 98.0))
+    session_mcap_cov = sb.get("pit_market_cap_session_coverage_pct", 0.0)
+    cik_cov = sb.get("cik_coverage_pct", 100.0)
     class_cov = sb.get("classification_coverage_pct", 100.0)
     early_2016_attr = sb.get("early_2016_attrition_pct", 0.0)
 
@@ -167,14 +192,44 @@ def build_frozen_pre_run_manifest_data(
     }
 
     # 5. Provider request plan for Stage C (Item 2 & Clarification 3)
-    # Calculate historical ticker pairs for Stage-B eligible candidates
+    # Calculate historical ticker pairs and ticker resolution metrics for Stage-B eligible candidates
     eligible_sec_ids_set = set(stage_b_eligible_ids)
     eligible_candidates = [c for c in candidates_raw if c.get("immutable_security_id") in eligible_sec_ids_set]
     historical_ticker_pairs: set[tuple[str, str]] = set()
+    elig_applicable_sessions = 0
+    elig_resolved_sessions = 0
+    elig_gap_sessions = 0
+    elig_gap_sec_ids: list[str] = []
 
     for c in eligible_candidates:
         sec_id = c.get("immutable_security_id", "")
         ti_list = c.get("ticker_intervals", [])
+        if not ti_list:
+            elig_gap_sec_ids.append(sec_id)
+        else:
+            sorted_ti = sorted(ti_list, key=lambda x: x.get("start_date") or "")
+            s_dates = [ti.get("start_date") for ti in sorted_ti if ti.get("start_date")]
+            e_dates = [ti.get("end_date") for ti in sorted_ti if ti.get("end_date")]
+            if s_dates and e_dates:
+                min_s = min(s_dates)
+                max_e = max(e_dates)
+                cand_dev_sess = [s for s in dev_sessions if min_s <= s <= max_e]
+                elig_applicable_sessions += len(cand_dev_sess)
+                covered = set()
+                for ti in sorted_ti:
+                    s = ti.get("start_date") or ""
+                    e = ti.get("end_date") or ""
+                    for sess in cand_dev_sess:
+                        if s <= sess <= e:
+                            covered.add(sess)
+                elig_resolved_sessions += len(covered)
+                gaps = len(cand_dev_sess) - len(covered)
+                if gaps > 0:
+                    elig_gap_sec_ids.append(sec_id)
+                    elig_gap_sessions += gaps
+            else:
+                elig_gap_sec_ids.append(sec_id)
+
         added = False
         for ti in ti_list:
             s = ti.get("start_date") or ""
@@ -187,6 +242,12 @@ def build_frozen_pre_run_manifest_data(
             prim = c.get("primary_symbol") or ""
             if prim:
                 historical_ticker_pairs.add((sec_id, prim))
+
+    elig_ticker_cov_pct = (
+        round(elig_resolved_sessions / elig_applicable_sessions * 100.0, 2)
+        if elig_applicable_sessions
+        else 0.0
+    )
 
     historical_ticker_pair_count = len(historical_ticker_pairs)
     projected_stage_c_candidates = eligible_count
@@ -286,6 +347,13 @@ def build_frozen_pre_run_manifest_data(
             "internal_gap_count": internal_gap_count,
             "internal_gap_trading_sessions": internal_gap_trading_sessions,
             "unresolved_gap_security_ids": sorted(unresolved_gap_security_ids),
+            "discovered_applicable_lifecycle_sessions": disc_applicable_sessions,
+            "discovered_resolved_sessions": disc_resolved_sessions,
+            "discovered_internal_gap_sessions": internal_gap_trading_sessions,
+            "discovered_securities_with_internal_gaps": len(unresolved_gap_security_ids),
+            "discovered_ticker_session_coverage_pct": disc_ticker_cov_pct,
+            "discovered_ticker_session_resolved_numerator": disc_resolved_sessions,
+            "discovered_ticker_session_applicable_denominator": disc_applicable_sessions,
         },
         "upstream_spec_hashes": spec_hashes,
         "stage_b_screening": {
@@ -299,8 +367,25 @@ def build_frozen_pre_run_manifest_data(
             "unresolved_provider_failures_count": unresolved_failures,
             "unresolved_alpaca_provider_failures": unresolved_alpaca,
             "unresolved_edgar_provider_failures": unresolved_edgar,
-            "pit_market_cap_coverage_pct": pit_mcap_cov,
-            "ticker_resolution_coverage_pct": ticker_res_cov,
+            "cik_coverage_pct": cik_cov,
+            "candidates_with_valid_cik": sb.get("candidates_with_valid_cik", total_eval),
+            "candidate_pit_market_cap_coverage_pct": cand_mcap_cov,
+            "candidates_with_pit_market_cap": sb.get("candidates_with_pit_market_cap", 0),
+            "pit_market_cap_session_coverage_pct": session_mcap_cov,
+            "applicable_dev_sessions_total": sb.get("applicable_dev_sessions_total", 0),
+            "valid_market_cap_sessions_total": sb.get("valid_market_cap_sessions_total", 0),
+            "pit_market_cap_coverage_pct": cand_mcap_cov,
+            "missing_pit_shares_sessions": sb.get("missing_pit_shares_sessions", 0),
+            "unavailable_at_cutoff_sessions": sb.get("unavailable_at_cutoff_sessions", 0),
+            "ambiguous_shares_sessions": sb.get("ambiguous_shares_sessions", 0),
+            "valid_below_3b_sessions": sb.get("valid_below_3b_sessions", 0),
+            "valid_ge_3b_sessions": sb.get("valid_ge_3b_sessions", 0),
+            "ticker_resolution_coverage_pct": elig_ticker_cov_pct,
+            "eligible_ticker_session_coverage_pct": elig_ticker_cov_pct,
+            "eligible_ticker_session_resolved_numerator": elig_resolved_sessions,
+            "eligible_ticker_session_applicable_denominator": elig_applicable_sessions,
+            "eligible_internal_gap_sessions": elig_gap_sessions,
+            "eligible_securities_with_internal_gaps": len(elig_gap_sec_ids),
             "classification_coverage_pct": class_cov,
             "early_2016_attrition_pct": early_2016_attr,
             "exact_acceptance_shares_count": sb.get("exact_acceptance_shares_count", 0),

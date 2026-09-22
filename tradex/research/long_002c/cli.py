@@ -17,6 +17,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from tradex.research.long_002c.artifacts import (
@@ -847,10 +848,11 @@ def cmd_build(args: argparse.Namespace) -> int:
             all_earnings.extend(earn_sec)
             all_exclusions.extend(excl_sec)
             all_quality.append(qual_sec)
-            obs_by_sec[sec_id].extend([o.to_dict() for o in obs_sec])
-
-            # Step 3: Compute outcomes across all nine cells using forward bars
+            # Step 3: Compute outcomes across all nine cells using forward bars ONLY for raw-outcome-eligible observations
             for obs in obs_sec:
+                if not obs.raw_outcome_eligible:
+                    continue
+
                 if obs.split_boundary_purged:
                     continue
                 as_of_date = obs.as_of_date
@@ -861,18 +863,53 @@ def cmd_build(args: argparse.Namespace) -> int:
                 if cutoff_time == "09:00":
                     # 09:00: session T is entry session; forward bars start at session T (21 sessions)
                     forward_slice = df_final.iloc[idx : idx + 21]
-                    if len(forward_slice) < 21:
-                        continue
-                    next_open = float(forward_slice["open"].iloc[0])
-                    as_traded_open = float(forward_slice["as_traded_open"].iloc[0])
                 else:
                     # 20:30: session T+1 is entry session; forward bars start at session T+1 (21 sessions)
                     forward_slice = df_final.iloc[idx + 1 : idx + 22]
-                    if len(forward_slice) < 21:
-                        continue
-                    next_open = float(forward_slice["open"].iloc[0])
-                    as_traded_open = float(forward_slice["as_traded_open"].iloc[0])
 
+                if len(forward_slice) < 21:
+                    obs.raw_outcome_eligible = False
+                    obs.data_complete = False
+                    obs.actionability_status = "unavailable_data_incomplete"
+                    all_exclusions.append(
+                        ExclusionReasonRecord(
+                            immutable_security_id=sec_id,
+                            ticker_at_decision=obs.ticker_at_decision,
+                            as_of_date=as_of_date,
+                            cutoff_time=cutoff_time,
+                            exclusion_reason="forward_analytical_data_incomplete",
+                        )
+                    )
+                    continue
+
+                # Verify all 21 forward bars have finite, non-null open, high, low, close
+                has_invalid_ohlc = False
+                for col in ["open", "high", "low", "close"]:
+                    vals = forward_slice[col].to_numpy()
+                    if not np.all(np.isfinite(vals)):
+                        has_invalid_ohlc = True
+                        break
+
+                as_traded_open = float(forward_slice["as_traded_open"].iloc[0])
+                if not (np.isfinite(as_traded_open) and as_traded_open > 0):
+                    has_invalid_ohlc = True
+
+                if has_invalid_ohlc:
+                    obs.raw_outcome_eligible = False
+                    obs.data_complete = False
+                    obs.actionability_status = "unavailable_data_incomplete"
+                    all_exclusions.append(
+                        ExclusionReasonRecord(
+                            immutable_security_id=sec_id,
+                            ticker_at_decision=obs.ticker_at_decision,
+                            as_of_date=as_of_date,
+                            cutoff_time=cutoff_time,
+                            exclusion_reason="forward_analytical_data_incomplete",
+                        )
+                    )
+                    continue
+
+                next_open = float(forward_slice["open"].iloc[0])
                 forward_bars = forward_slice[["open", "high", "low", "close"]].to_dict(orient="records")
                 atr_val = obs.atr_14 or 0.0
 
@@ -897,7 +934,38 @@ def cmd_build(args: argparse.Namespace) -> int:
                     (o.target_pct, o.horizon_sessions): o for o in nine_outcomes
                 }
 
+            # Materialize observation dicts AFTER all forward-path mutations (Clarification 1)
+            obs_by_sec[sec_id].extend([o.to_dict() for o in obs_sec])
+
     print(f"      Built {len(all_obs)} decision observations and {len(all_outcomes)} outcome label records.")
+
+    # Invariant assertion before episode construction: dictionary state must match mutated object state (Clarification 1)
+    obs_obj_map = {
+        (o.immutable_security_id, o.as_of_date, o.cutoff_time): o
+        for o in all_obs
+    }
+    for sid, obs_list in obs_by_sec.items():
+        for od in obs_list:
+            matching_obs = obs_obj_map.get((sid, od["as_of_date"], od["cutoff_time"]))
+            assert matching_obs is not None, f"Observation {sid} {od['as_of_date']} missing from all_obs"
+            assert od["raw_outcome_eligible"] == matching_obs.raw_outcome_eligible, (
+                f"raw_outcome_eligible mismatch in obs_by_sec for {sid} {od['as_of_date']}: "
+                f"dict={od['raw_outcome_eligible']}, obj={matching_obs.raw_outcome_eligible}"
+            )
+            assert od["data_complete"] == matching_obs.data_complete, (
+                f"data_complete mismatch in obs_by_sec for {sid} {od['as_of_date']}: "
+                f"dict={od['data_complete']}, obj={matching_obs.data_complete}"
+            )
+
+    # Post-build outcome assertions (Item 1)
+    for key, oc_dict in outcomes_by_obs_key.items():
+        matching_o = obs_obj_map.get(key)
+        assert matching_o is not None, f"Outcome key {key} has no corresponding DecisionObservation"
+        assert matching_o.raw_outcome_eligible is True, f"Outcome generated for ineligible observation: {key}"
+        assert len(oc_dict) == 9, f"Observation {key} has {len(oc_dict)} outcomes instead of 9"
+    assert len(all_outcomes) == 9 * len(outcomes_by_obs_key), (
+        f"Outcome count mismatch: {len(all_outcomes)} != 9 * {len(outcomes_by_obs_key)}"
+    )
 
     # Step 4: Cluster Master Opportunity Episodes with 20:30 primary anchoring (Item 9)
     print("\n[2/6] Clustering Master Opportunity Episodes (anchored on 20:30 primary census)...")
@@ -955,8 +1023,15 @@ def cmd_build(args: argparse.Namespace) -> int:
         outcomes=all_outcomes,
         primary_cutoff_time="20:30",
     )
-    print(f"      Strongest simple baseline empirically selected (20:30 primary): {winning_baseline_selection.get('winner_comparator_id')} "
-          f"(Top-10 Lift: {winning_baseline_selection.get('winner_top_10_lift'):.2f}x vs base rate {winning_baseline_selection.get('universe_base_rate'):.4f})")
+    winner_id = winning_baseline_selection.get("winner_comparator_id")
+    winner_lift = winning_baseline_selection.get("winner_top_10_lift")
+    base_rate = winning_baseline_selection.get("universe_base_rate")
+    if winner_id and winner_lift is not None and base_rate is not None:
+        print(f"      Strongest simple baseline empirically selected (20:30 primary): {winner_id} "
+              f"(Top-10 Lift: {winner_lift:.2f}x vs base rate {base_rate:.4f})")
+    else:
+        print(f"      Strongest simple baseline empirically selected (20:30 primary): INCONCLUSIVE ({winner_id}) "
+              f"- Status: {winning_baseline_selection.get('selection_status')}, Reason: {winning_baseline_selection.get('selection_reason')}")
 
     # Step 6: Dependence-aware Resampling & Endpoint Feasibility on 20:30 Primary Population (Item 8 & Item 9)
     print("\n[4/6] Running 21-session and 42-session block resampling on 20:30 primary census...")
@@ -999,14 +1074,24 @@ def cmd_build(args: argparse.Namespace) -> int:
         num_bootstraps=1000,
         seed=42,
     )
-    clean_10_10_0900 = sum(1 for o in outcomes_0900 if o.target_pct == 10.0 and o.horizon_sessions == 10 and o.clean_target_reached)
-    clean_10_21_0900 = sum(1 for o in outcomes_0900 if o.target_pct == 10.0 and o.horizon_sessions == 21 and o.clean_target_reached)
+    valid_10_10_0900 = [o for o in outcomes_0900 if o.target_pct == 10.0 and o.horizon_sessions == 10]
+    valid_10_21_0900 = [o for o in outcomes_0900 if o.target_pct == 10.0 and o.horizon_sessions == 21]
+    clean_10_10_0900 = sum(1 for o in valid_10_10_0900 if o.clean_target_reached)
+    clean_10_21_0900 = sum(1 for o in valid_10_21_0900 if o.clean_target_reached)
+    denom_10_10_0900 = len(valid_10_10_0900)
+    denom_10_21_0900 = len(valid_10_21_0900)
+    raw_elig_0900_cnt = sum(1 for o in obs_dicts_0900 if o.get("raw_outcome_eligible"))
+
     feasibility_report["reevaluation_0900_diagnostic"] = {
         "observations_count": len(obs_dicts_0900),
+        "total_decision_observations": len(obs_dicts_0900),
+        "raw_outcome_eligible_observations": raw_elig_0900_cnt,
+        "valid_10_10_denominator": denom_10_10_0900,
+        "valid_10_21_denominator": denom_10_21_0900,
         "clean_target_10_10_events": clean_10_10_0900,
         "clean_target_10_21_events": clean_10_21_0900,
-        "clean_target_10_10_prevalence": round(clean_10_10_0900 / len(outcomes_0900), 6) if outcomes_0900 else 0.0,
-        "clean_target_10_21_prevalence": round(clean_10_21_0900 / len(outcomes_0900), 6) if outcomes_0900 else 0.0,
+        "clean_target_10_10_prevalence": round(clean_10_10_0900 / denom_10_10_0900, 6) if denom_10_10_0900 else 0.0,
+        "clean_target_10_21_prevalence": round(clean_10_21_0900 / denom_10_21_0900, 6) if denom_10_21_0900 else 0.0,
         "resampling_21": resampling_21_0900,
     }
 

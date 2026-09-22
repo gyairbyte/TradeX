@@ -241,6 +241,18 @@ def screen_candidate_security(
         1 for f in pit_shares_facts.values() if f.availability_source == "date_only_next_session_conservative"
     )
 
+    valid_mcap_sessions = len(market_caps)
+    mcap_session_counts = {
+        "valid_ge_3b": sum(1 for r in _market_cap_reasons.values() if r == "valid_ge_3b"),
+        "valid_below_3b": sum(1 for r in _market_cap_reasons.values() if r == "valid_below_3b"),
+        "missing_shares": sum(
+            1 for r in _market_cap_reasons.values() if r in ("missing_shares", "missing_pit_shares_fact")
+        ),
+        "unavailable_at_cutoff": sum(1 for r in _market_cap_reasons.values() if r == "unavailable_at_cutoff"),
+        "ambiguous_shares": sum(1 for r in _market_cap_reasons.values() if r == "ambiguous_shares"),
+    }
+    applicable_sessions = len([d for d in dev_sessions if d in bar_date_set])
+
     details = {
         "immutable_security_id": candidate.immutable_security_id,
         "primary_symbol": candidate.primary_symbol,
@@ -250,6 +262,9 @@ def screen_candidate_security(
         "rejection_counts": rejection_counts,
         "exact_acceptance_shares_count": exact_acc_count,
         "conservative_date_only_shares_count": conservative_date_count,
+        "valid_market_cap_sessions_count": valid_mcap_sessions,
+        "applicable_dev_sessions_count": applicable_sessions,
+        "market_cap_session_counts": mcap_session_counts,
     }
     return is_eligible, reasons, details
 
@@ -278,8 +293,6 @@ def screen_candidates_manifest(
     all_sessions = get_trading_sessions(WARMUP_START, DEV_END)
     cands_to_eval = candidates[:max_candidates] if max_candidates else candidates
 
-    total_with_mcap = 0
-    total_with_ticker_res = 0
     total_with_common_stock = 0
     early_2016_attrition_count = 0
     total_exact_acceptance_shares = 0
@@ -315,16 +328,8 @@ def screen_candidates_manifest(
         if cand.security_type == CLASSIFICATION_SUPPORTED_COMMON_STOCK:
             total_with_common_stock += 1
 
-        if cand.cik:
-            total_with_mcap += 1
-
         total_exact_acceptance_shares += details.get("exact_acceptance_shares_count", 0)
         total_conservative_date_shares += details.get("conservative_date_only_shares_count", 0)
-
-        # Check ticker intervals resolution
-        bar_meta = details.get("bar_meta", {})
-        if not bar_meta.get("unresolved_gaps"):
-            total_with_ticker_res += 1
 
         # Early 2016 attrition: security did not trade or was not eligible in early 2016
         first_elig = details.get("first_eligible_date")
@@ -340,6 +345,66 @@ def screen_candidates_manifest(
     edgar_metrics = edgar.get_audit_metrics() if hasattr(edgar, "get_audit_metrics") else {}
     alpaca_failures_count = sum(1 for p in provider_failures.values() if p.get("provider", "alpaca") == "alpaca")
     edgar_failures_count = sum(1 for p in provider_failures.values() if p.get("provider") == "sec_edgar")
+
+    total_valid_cik = sum(1 for c in cands_to_eval if c.cik and str(c.cik).strip())
+    total_with_pit_mcap = sum(1 for d in details_by_id.values() if d.get("valid_market_cap_sessions_count", 0) > 0)
+    total_applicable_sessions = sum(d.get("applicable_dev_sessions_count", 0) for d in details_by_id.values())
+    total_valid_mcap_sessions = sum(d.get("valid_market_cap_sessions_count", 0) for d in details_by_id.values())
+
+    agg_missing_shares = sum(
+        d.get("market_cap_session_counts", {}).get("missing_shares", 0) for d in details_by_id.values()
+    )
+    agg_unavailable_at_cutoff = sum(
+        d.get("market_cap_session_counts", {}).get("unavailable_at_cutoff", 0) for d in details_by_id.values()
+    )
+    agg_ambiguous_shares = sum(
+        d.get("market_cap_session_counts", {}).get("ambiguous_shares", 0) for d in details_by_id.values()
+    )
+    agg_valid_below_3b = sum(
+        d.get("market_cap_session_counts", {}).get("valid_below_3b", 0) for d in details_by_id.values()
+    )
+    agg_valid_ge_3b = sum(
+        d.get("market_cap_session_counts", {}).get("valid_ge_3b", 0) for d in details_by_id.values()
+    )
+
+    cik_cov_pct = round(total_valid_cik / n_eval * 100.0, 2) if n_eval else 0.0
+    cand_mcap_cov_pct = round(total_with_pit_mcap / n_eval * 100.0, 2) if n_eval else 0.0
+    session_mcap_cov_pct = (
+        round(total_valid_mcap_sessions / total_applicable_sessions * 100.0, 2)
+        if total_applicable_sessions
+        else 0.0
+    )
+
+    cand_applicable_sessions = 0
+    cand_resolved_sessions = 0
+    for cand in cands_to_eval:
+        ti_list = cand.ticker_intervals or []
+        s_dates = [
+            ti.get("start_date") if isinstance(ti, dict) else getattr(ti, "start_date", None)
+            for ti in ti_list
+        ]
+        s_dates = [d for d in s_dates if d]
+        e_dates = [
+            ti.get("end_date") if isinstance(ti, dict) else getattr(ti, "end_date", None)
+            for ti in ti_list
+        ]
+        e_dates = [d for d in e_dates if d]
+        if not s_dates or not e_dates:
+            continue
+        min_s = min(s_dates)
+        max_e = max(e_dates)
+        cand_dev_sess = [s for s in all_sessions if min_s <= s <= max_e]
+        cand_applicable_sessions += len(cand_dev_sess)
+        covered = set()
+        for ti in ti_list:
+            s = (ti.get("start_date") if isinstance(ti, dict) else getattr(ti, "start_date", None)) or ""
+            e = (ti.get("end_date") if isinstance(ti, dict) else getattr(ti, "end_date", None)) or ""
+            for sess in cand_dev_sess:
+                if s <= sess <= e:
+                    covered.add(sess)
+        cand_resolved_sessions += len(covered)
+    ticker_cov_pct = round(cand_resolved_sessions / cand_applicable_sessions * 100.0, 2) if cand_applicable_sessions else 0.0
+
     summary = {
         "total_evaluated": n_eval,
         "eligible_count": len(eligible_ids),
@@ -356,8 +421,22 @@ def screen_candidates_manifest(
         "provider_failures": provider_failures,
         "provider_failure_reason_counts": provider_failure_reason_counts,
         "rejection_reason_counts": aggregated_rejection_reasons,
-        "pit_market_cap_coverage_pct": round(total_with_mcap / n_eval * 100.0, 2) if n_eval else 0.0,
-        "ticker_resolution_coverage_pct": round(total_with_ticker_res / n_eval * 100.0, 2) if n_eval else 0.0,
+        "cik_coverage_pct": cik_cov_pct,
+        "candidates_with_valid_cik": total_valid_cik,
+        "candidate_pit_market_cap_coverage_pct": cand_mcap_cov_pct,
+        "candidates_with_pit_market_cap": total_with_pit_mcap,
+        "pit_market_cap_session_coverage_pct": session_mcap_cov_pct,
+        "applicable_dev_sessions_total": total_applicable_sessions,
+        "valid_market_cap_sessions_total": total_valid_mcap_sessions,
+        "pit_market_cap_coverage_pct": cand_mcap_cov_pct,
+        "missing_pit_shares_sessions": agg_missing_shares,
+        "unavailable_at_cutoff_sessions": agg_unavailable_at_cutoff,
+        "ambiguous_shares_sessions": agg_ambiguous_shares,
+        "valid_below_3b_sessions": agg_valid_below_3b,
+        "valid_ge_3b_sessions": agg_valid_ge_3b,
+        "ticker_resolution_coverage_pct": ticker_cov_pct,
+        "ticker_resolution_sessions_total": cand_applicable_sessions,
+        "ticker_resolution_sessions_resolved": cand_resolved_sessions,
         "classification_coverage_pct": round(total_with_common_stock / n_eval * 100.0, 2) if n_eval else 0.0,
         "early_2016_attrition_pct": round(early_2016_attrition_count / n_eval * 100.0, 2) if n_eval else 0.0,
         "exact_acceptance_shares_count": total_exact_acceptance_shares,

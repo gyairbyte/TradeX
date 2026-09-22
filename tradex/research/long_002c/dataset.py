@@ -545,7 +545,10 @@ def build_decision_observations_for_security(
         trailing_bar_dates = [s for s in expected_trailing_sessions if s in bar_date_set]
         trailing_malformed = 0
         trailing_analytical_incomplete = False
-        if bar_meta and bar_meta.get("analytical_data_incomplete"):
+        analytical_incomplete_dates = (
+            set(bar_meta.get("analytical_incomplete_dates", [])) if bar_meta else set()
+        )
+        if any(s in analytical_incomplete_dates for s in expected_trailing_sessions):
             trailing_analytical_incomplete = True
 
         for s in trailing_bar_dates:
@@ -637,7 +640,7 @@ def build_decision_observations_for_security(
                 raw_outcome_eligible=raw_eligible,
                 universe_eligible=eligibility_passed,
                 data_complete=data_complete,
-                earnings_schedule_status="known" if e_status == "known_point_in_time" else "unknown",
+                earnings_schedule_status="known_point_in_time" if e_status == "known_point_in_time" else "unknown",
                 actionability_status=act_status,
                 split_boundary_purged=purged,
             )

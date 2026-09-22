@@ -58,7 +58,10 @@ def evaluate_baselines_for_date(
     eligible_sec_ids = [
         sec_id
         for sec_id, d in securities_data.items()
-        if d.get("universe_eligible", True) and not d.get("history_df").empty
+        if (
+            (d.get("raw_outcome_eligible") if "raw_outcome_eligible" in d else d.get("universe_eligible", True))
+            and not d.get("history_df").empty
+        )
     ]
 
     if not eligible_sec_ids:
@@ -352,9 +355,29 @@ def select_winning_baseline(
             "table": {},
         }
 
-    # 2. Compute strict common observation set across all candidate comparators and primary outcomes
+    PERMITTED_WINNER_FAMILIES = {
+        "simple_momentum",
+        "spy_relative",
+        "sector_relative",
+        "volatility_aware_momentum",
+    }
+
+    # Intersect ONLY comparator families eligible to win (excluding legacy_tradex_scorer)
+    winner_candidate_ids = [
+        cid for cid in candidate_ids
+        if any(b.comparator_family in PERMITTED_WINNER_FAMILIES for b in by_comp[cid].values())
+    ]
+    if not winner_candidate_ids:
+        return {
+            "winner_comparator_id": None,
+            "winner_family": None,
+            "status": "inconclusive_no_candidate_comparators",
+            "table": {},
+        }
+
+    # 2. Compute strict common observation set across winner-eligible comparators and primary outcomes
     common_keys = set(primary_outcomes.keys())
-    for cid in candidate_ids:
+    for cid in winner_candidate_ids:
         common_keys &= set(by_comp[cid].keys())
 
     if not common_keys:
@@ -374,12 +397,6 @@ def select_winning_baseline(
     table: dict[str, dict[str, Any]] = {}
     candidate_metrics: list[dict[str, Any]] = []
 
-    PERMITTED_WINNER_FAMILIES = {
-        "simple_momentum",
-        "spy_relative",
-        "sector_relative",
-        "volatility_aware_momentum",
-    }
 
     family_simplicity_rank = {
         "simple_momentum": 1,

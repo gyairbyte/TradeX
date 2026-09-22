@@ -491,7 +491,26 @@ class MassiveRefClient:
 
             if self._request_func:
                 self.network_requests_count += 1
-                return self._request_func(url), 200, None
+                try:
+                    res = self._request_func(url)
+                    return res, 200, None
+                except urllib.error.HTTPError as exc:
+                    body = exc.read() if hasattr(exc, "read") else b""
+                    if exc.code == 429:
+                        self.rate_limit_429_count += 1
+                        if attempt < max_retries:
+                            time.sleep(15.0 * (attempt + 1))
+                            continue
+                    elif exc.code >= 500:
+                        if attempt < max_retries:
+                            time.sleep(2.0 * (attempt + 1))
+                            continue
+                    return body, exc.code, str(exc)
+                except urllib.error.URLError as exc:
+                    if attempt < max_retries:
+                        time.sleep(2.0)
+                        continue
+                    return b"", None, str(exc)
 
             req = urllib.request.Request(url, headers={"Accept": "application/json"})
             try:
@@ -504,6 +523,10 @@ class MassiveRefClient:
                     self.rate_limit_429_count += 1
                     if attempt < max_retries:
                         time.sleep(15.0 * (attempt + 1))
+                        continue
+                elif exc.code >= 500:
+                    if attempt < max_retries:
+                        time.sleep(2.0 * (attempt + 1))
                         continue
                 return body, exc.code, str(exc)
             except urllib.error.URLError as exc:

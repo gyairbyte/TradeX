@@ -141,19 +141,60 @@ def analyze_endpoint_feasibility(
         o for o in observations if o.get("raw_outcome_eligible") and not o.get("split_boundary_purged")
     ]
     purged_obs = [o for o in observations if o.get("split_boundary_purged")]
-
     n_eligible = len(eligible_obs)
     n_episodes = len(episodes)
+    has_keys = any(
+        (isinstance(o, dict) and "immutable_security_id" in o and "as_of_date" in o)
+        or (hasattr(o, "immutable_security_id") and hasattr(o, "as_of_date"))
+        for o in eligible_obs
+    )
+    if has_keys:
+        eligible_keys = {
+            (
+                o["immutable_security_id"] if isinstance(o, dict) else o.immutable_security_id,
+                o["as_of_date"] if isinstance(o, dict) else o.as_of_date,
+                o.get("cutoff_time", "20:30") if isinstance(o, dict) else getattr(o, "cutoff_time", "20:30"),
+            )
+            for o in eligible_obs
+            if (isinstance(o, dict) and "immutable_security_id" in o and "as_of_date" in o)
+            or (hasattr(o, "immutable_security_id") and hasattr(o, "as_of_date"))
+        }
+        # Clean target prevalence for primary (+10/10) and fallback (+10/21) on eligible population only
+        outcomes_10_10 = [
+            o for o in outcomes
+            if o.target_pct == 10.0 and o.horizon_sessions == 10
+            and (o.immutable_security_id, o.as_of_date, o.cutoff_time) in eligible_keys
+        ]
+        outcomes_10_21 = [
+            o for o in outcomes
+            if o.target_pct == 10.0 and o.horizon_sessions == 21
+            and (o.immutable_security_id, o.as_of_date, o.cutoff_time) in eligible_keys
+        ]
+        keys_10_10 = {(o.immutable_security_id, o.as_of_date, o.cutoff_time) for o in outcomes_10_10}
+        keys_10_21 = {(o.immutable_security_id, o.as_of_date, o.cutoff_time) for o in outcomes_10_21}
 
-    # Clean target prevalence for primary (+10/10) and fallback (+10/21)
-    outcomes_10_10 = [o for o in outcomes if o.target_pct == 10.0 and o.horizon_sessions == 10]
-    outcomes_10_21 = [o for o in outcomes if o.target_pct == 10.0 and o.horizon_sessions == 21]
+        assert len(outcomes_10_10) == len(keys_10_10), "Duplicate outcome keys in +10/10"
+        assert len(outcomes_10_21) == len(keys_10_21), "Duplicate outcome keys in +10/21"
+        assert keys_10_10 == eligible_keys, (
+            f"+10/10 outcome population ({len(keys_10_10)}) does not match eligible census population ({len(eligible_keys)})"
+        )
+        assert keys_10_21 == eligible_keys, (
+            f"+10/21 outcome population ({len(keys_10_21)}) does not match eligible census population ({len(eligible_keys)})"
+        )
+    else:
+        outcomes_10_10 = [o for o in outcomes if o.target_pct == 10.0 and o.horizon_sessions == 10]
+        outcomes_10_21 = [o for o in outcomes if o.target_pct == 10.0 and o.horizon_sessions == 21]
+        keys_10_10 = {(o.immutable_security_id, o.as_of_date, o.cutoff_time) for o in outcomes_10_10}
+        keys_10_21 = {(o.immutable_security_id, o.as_of_date, o.cutoff_time) for o in outcomes_10_21}
+
+    denom_10_10 = len(keys_10_10)
+    denom_10_21 = len(keys_10_21)
 
     clean_10_10_count = sum(1 for o in outcomes_10_10 if o.clean_target_reached)
     clean_21_count = sum(1 for o in outcomes_10_21 if o.clean_target_reached)
 
-    clean_10_10_prev = (clean_10_10_count / len(outcomes_10_10)) if outcomes_10_10 else 0.0
-    clean_21_prev = (clean_21_count / len(outcomes_10_21)) if outcomes_10_21 else 0.0
+    clean_10_10_prev = (clean_10_10_count / denom_10_10) if denom_10_10 else 0.0
+    clean_21_prev = (clean_21_count / denom_10_21) if denom_10_21 else 0.0
 
     # Effective securities in episodes
     ep_sec_counts: dict[str, int] = {}
@@ -168,8 +209,8 @@ def analyze_endpoint_feasibility(
     rationale = (
         f"Endpoint disposition is pending Gary/ChatGPT review of the completed development census. "
         f"Development census observed {n_episodes} master episodes, {clean_10_10_count} primary clean target events "
-        f"(prevalence {clean_10_10_prev:.4f}, 21-session block 95% CI lower bound {ci_lower:.4f}), "
-        f"effective securities {eff_n:.1f}, and fallback +10%/21 clean events {clean_21_count} (prevalence {clean_21_prev:.4f})."
+        f"(prevalence {clean_10_10_prev:.4f}, denominator {denom_10_10}, 21-session block 95% CI lower bound {ci_lower:.4f}), "
+        f"effective securities {eff_n:.1f}, and fallback +10%/21 clean events {clean_21_count} (prevalence {clean_21_prev:.4f}, denominator {denom_10_21})."
     )
 
     # Actionable observation accounting: if earnings schedule unknown, actionability is unavailable
@@ -204,8 +245,10 @@ def analyze_endpoint_feasibility(
         "herfindahl_hirschman_index": hhi,
         "primary_clean_10_10_prevalence": round(clean_10_10_prev, 6),
         "primary_clean_10_10_events": clean_10_10_count,
+        "primary_10_10_denominator": denom_10_10,
         "fallback_clean_10_21_prevalence": round(clean_21_prev, 6),
         "fallback_clean_10_21_events": clean_21_count,
+        "fallback_10_21_denominator": denom_10_21,
         "resampling_21_primary": resampling_21,
         "resampling_42_robustness": resampling_42,
         "selected_endpoint": selected_endpoint,
