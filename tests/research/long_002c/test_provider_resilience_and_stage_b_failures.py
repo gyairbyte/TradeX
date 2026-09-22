@@ -352,8 +352,11 @@ def test_cached_successful_empty_response_remains_legitimate_empty_data() -> Non
         assert client.cache_hits_count == 1
 
 
-def test_provider_failures_cannot_enter_frozen_manifest() -> None:
+def test_provider_failures_cannot_enter_frozen_manifest(tmp_path: Path) -> None:
     """A manifest containing any unresolved provider failures is rejected from freezing."""
+    dummy_disc = tmp_path / "discovery_manifest.json"
+    dummy_disc.write_text('{"candidates": []}', encoding="utf-8")
+
     summary_with_failure = {
         "total_evaluated": 10,
         "eligible_count": 5,
@@ -370,7 +373,7 @@ def test_provider_failures_cannot_enter_frozen_manifest() -> None:
 
     with pytest.raises(ValueError) as exc_info:
         build_frozen_pre_run_manifest_data(
-            discovery_manifest_path=Path("data/research/long_002c/discovery_manifest.json"),
+            discovery_manifest_path=dummy_disc,
             stage_b_eligible_ids=["SEC_1", "SEC_2", "SEC_3", "SEC_4", "SEC_5"],
             stage_b_summary=summary_with_failure,
         )
