@@ -74,6 +74,7 @@ from tradex.research.long_002c.manifest import (
 )
 from tradex.research.long_002c.market_cap import (
     calculate_pit_market_cap,
+    compute_security_pit_market_caps,
     extract_pit_shares_fact,
     is_sec_fact_available,
 )
@@ -1955,3 +1956,230 @@ def test_cmd_build_stage_c_authorization_gate(tmp_path: Path) -> None:
     )
     assert cmd_build(args_mismatch_sha) == 1
 
+
+# 45. Stage B and Stage C parity in SEC acceptance-time semantics
+def test_stage_b_and_stage_c_shares_timing_parity() -> None:
+    """Proves Stage B screening and Stage C outcomes resolve the exact same shares fact for:
+    - acceptance before 09:00
+    - acceptance between 09:00 and 20:30
+    - date-only fallback
+    """
+    # 1. Filing accepted before 09:00 on 2016-01-04 (e.g., 08:30 UTC = 03:30 ET)
+    # Decision cutoff 09:00 ET is 14:00 UTC (EST) -> 08:30 UTC <= 14:00 UTC -> available at 09:00 and 20:30
+    facts_before_0900 = {
+        "facts": {
+            "dei": {
+                "EntityCommonStockSharesOutstanding": {
+                    "units": {
+                        "shares": [
+                            {"val": 100_000_000, "filed": "2016-01-04", "accn": "0001-BEFORE-0900"}
+                        ]
+                    }
+                }
+            }
+        }
+    }
+    acc_map_before = {"0001-BEFORE-0900": "2016-01-04T08:30:00Z"}
+    closes = {"2016-01-04": 50.0}
+
+    # Stage B (evaluates at 20:30 cutoff)
+    mcap_b_1, _, facts_b_1 = compute_security_pit_market_caps(
+        company_facts=facts_before_0900,
+        session_dates=["2016-01-04"],
+        as_traded_closes=closes,
+        cutoff_time="20:30",
+        accession_acceptance_map=acc_map_before,
+    )
+    # Stage C (evaluates at 09:00 and 20:30 cutoffs)
+    mcap_c_0900_1, _, facts_c_0900_1 = compute_security_pit_market_caps(
+        company_facts=facts_before_0900,
+        session_dates=["2016-01-04"],
+        as_traded_closes=closes,
+        cutoff_time="09:00",
+        accession_acceptance_map=acc_map_before,
+    )
+    mcap_c_2030_1, _, facts_c_2030_1 = compute_security_pit_market_caps(
+        company_facts=facts_before_0900,
+        session_dates=["2016-01-04"],
+        as_traded_closes=closes,
+        cutoff_time="20:30",
+        accession_acceptance_map=acc_map_before,
+    )
+    assert mcap_b_1["2016-01-04"] == 5_000_000_000.0
+    assert mcap_c_2030_1["2016-01-04"] == 5_000_000_000.0
+    assert mcap_c_0900_1["2016-01-04"] == 5_000_000_000.0
+    assert facts_b_1["2016-01-04"].availability_source == "exact_acceptance_timestamp"
+    assert facts_c_0900_1["2016-01-04"].availability_source == "exact_acceptance_timestamp"
+    assert facts_c_2030_1["2016-01-04"].availability_source == "exact_acceptance_timestamp"
+
+    # 2. Filing accepted between 09:00 ET and 20:30 ET (e.g., 16:30 UTC = 11:30 ET)
+    # Available at 20:30 ET, but NOT at 09:00 ET
+    facts_between = {
+        "facts": {
+            "dei": {
+                "EntityCommonStockSharesOutstanding": {
+                    "units": {
+                        "shares": [
+                            {"val": 200_000_000, "filed": "2016-01-04", "accn": "0002-BETWEEN"}
+                        ]
+                    }
+                }
+            }
+        }
+    }
+    acc_map_between = {"0002-BETWEEN": "2016-01-04T16:30:00Z"}
+    mcap_b_2, _, facts_b_2 = compute_security_pit_market_caps(
+        company_facts=facts_between,
+        session_dates=["2016-01-04"],
+        as_traded_closes=closes,
+        cutoff_time="20:30",
+        accession_acceptance_map=acc_map_between,
+    )
+    mcap_c_0900_2, _, _ = compute_security_pit_market_caps(
+        company_facts=facts_between,
+        session_dates=["2016-01-04"],
+        as_traded_closes=closes,
+        cutoff_time="09:00",
+        accession_acceptance_map=acc_map_between,
+    )
+    mcap_c_2030_2, _, facts_c_2030_2 = compute_security_pit_market_caps(
+        company_facts=facts_between,
+        session_dates=["2016-01-04"],
+        as_traded_closes=closes,
+        cutoff_time="20:30",
+        accession_acceptance_map=acc_map_between,
+    )
+    # Stage B (20:30) and Stage C (20:30) both see the fact
+    assert mcap_b_2["2016-01-04"] == 10_000_000_000.0
+    assert mcap_c_2030_2["2016-01-04"] == 10_000_000_000.0
+    assert facts_b_2["2016-01-04"].availability_source == "exact_acceptance_timestamp"
+    assert facts_c_2030_2["2016-01-04"].availability_source == "exact_acceptance_timestamp"
+    # Stage C at 09:00 does NOT see the fact yet
+    assert "2016-01-04" not in mcap_c_0900_2
+
+    # 3. Date-only fallback: no acceptance timestamp
+    # On 2016-01-04 (filing date), both Stage B and Stage C reject it (session_date <= filing_date)
+    # On 2016-01-05 (next session), both Stage B and Stage C accept it as conservative fallback
+    facts_date_only = {
+        "facts": {
+            "dei": {
+                "EntityCommonStockSharesOutstanding": {
+                    "units": {
+                        "shares": [
+                            {"val": 80_000_000, "filed": "2016-01-04", "accn": "0003-DATE-ONLY"}
+                        ]
+                    }
+                }
+            }
+        }
+    }
+    closes_multi = {"2016-01-04": 50.0, "2016-01-05": 50.0}
+    mcap_b_3, _, facts_b_3 = compute_security_pit_market_caps(
+        company_facts=facts_date_only,
+        session_dates=["2016-01-04", "2016-01-05"],
+        as_traded_closes=closes_multi,
+        cutoff_time="20:30",
+        accession_acceptance_map=None,  # No acceptance timestamp
+    )
+    mcap_c_3, _, facts_c_3 = compute_security_pit_market_caps(
+        company_facts=facts_date_only,
+        session_dates=["2016-01-04", "2016-01-05"],
+        as_traded_closes=closes_multi,
+        cutoff_time="20:30",
+        accession_acceptance_map=None,
+    )
+    # 2016-01-04: Neither Stage B nor Stage C has it available
+    assert "2016-01-04" not in mcap_b_3
+    assert "2016-01-04" not in mcap_c_3
+    # 2016-01-05: Both Stage B and Stage C have it available via date_only_next_session_conservative
+    assert mcap_b_3["2016-01-05"] == 4_000_000_000.0
+    assert mcap_c_3["2016-01-05"] == 4_000_000_000.0
+    assert facts_b_3["2016-01-05"].availability_source == "date_only_next_session_conservative"
+    assert facts_c_3["2016-01-05"].availability_source == "date_only_next_session_conservative"
+
+
+# 46. Baseline winner selection returns null on inconclusive input
+def test_inconclusive_baselines_return_null_winner() -> None:
+    def _make_dummy_outcome(sid: str, d: str, c: str) -> OutcomeLabelRecord:
+        return OutcomeLabelRecord(
+            immutable_security_id=sid,
+            as_of_date=d,
+            cutoff_time=c,
+            target_pct=10.0,
+            horizon_sessions=10,
+            ticker_at_decision="DUMMY",
+            reference_entry_price=100.0,
+            entry_friction_bps=10.0,
+            target_price=110.0,
+            adverse_barrier_pct=0.05,
+            adverse_barrier_price=95.0,
+            clean_risk_cap_pct=0.05,
+            clean_risk_cap_amount=5.0,
+            mfe_pct=0.12,
+            target_progress_ratio=1.2,
+            near_miss=False,
+            partial_move=False,
+            mae_pct=0.01,
+            mae_atr=0.5,
+            adverse_excursion=False,
+            clean_target_reached=True,
+            path_sequence_ambiguous=False,
+            end_of_horizon_return=0.10,
+            retention_ratio=0.8,
+            sustained_target=True,
+        )
+
+    # 1. No primary outcomes
+    res_no_outcomes = select_winning_baseline(
+        baseline_outputs=[
+            BaselineComparatorOutput(
+                immutable_security_id="SEC_1",
+                as_of_date="2016-01-04",
+                cutoff_time="20:30",
+                comparator_id="simple_momentum_10",
+                ticker_at_decision="T1",
+                comparator_family="simple_momentum",
+                raw_score_or_return=5.0,
+                cross_sectional_rank=1,
+                cross_sectional_percentile=100.0,
+                top_10_flag=True,
+                top_25_flag=True,
+            )
+        ],
+        outcomes=[],
+    )
+    assert res_no_outcomes["winner_comparator_id"] is None
+    assert res_no_outcomes["winner_family"] is None
+    assert res_no_outcomes["status"] == "inconclusive_no_primary_outcomes"
+
+    # 2. No candidate comparators
+    res_no_candidates = select_winning_baseline(
+        baseline_outputs=[],
+        outcomes=[_make_dummy_outcome("SEC_1", "2016-01-04", "20:30")],
+    )
+    assert res_no_candidates["winner_comparator_id"] is None
+    assert res_no_candidates["winner_family"] is None
+    assert res_no_candidates["status"] == "inconclusive_no_candidate_comparators"
+
+    # 3. No common observations
+    res_no_common = select_winning_baseline(
+        baseline_outputs=[
+            BaselineComparatorOutput(
+                immutable_security_id="SEC_1",
+                as_of_date="2016-01-04",
+                cutoff_time="20:30",
+                comparator_id="simple_momentum_10",
+                ticker_at_decision="T1",
+                comparator_family="simple_momentum",
+                raw_score_or_return=5.0,
+                cross_sectional_rank=1,
+                cross_sectional_percentile=100.0,
+                top_10_flag=True,
+                top_25_flag=True,
+            )
+        ],
+        outcomes=[_make_dummy_outcome("SEC_OTHER", "2018-05-01", "20:30")],
+    )
+    assert res_no_common["winner_comparator_id"] is None
+    assert res_no_common["winner_family"] is None
+    assert res_no_common["status"] == "inconclusive_no_common_observations"

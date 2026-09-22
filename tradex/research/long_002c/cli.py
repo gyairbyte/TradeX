@@ -280,6 +280,8 @@ def cmd_screen(args: argparse.Namespace) -> int:
     print(f"  - Ticker Resolution Coverage: {summary.get('ticker_resolution_coverage_pct', 0.0)}%")
     print(f"  - Classification Coverage: {summary.get('classification_coverage_pct', 0.0)}%")
     print(f"  - Early-2016 Attrition: {summary.get('early_2016_attrition_pct', 0.0)}%")
+    print(f"  - Exact Acceptance Shares Coverage: {summary.get('exact_acceptance_shares_count', 0)} sessions ({summary.get('exact_acceptance_shares_pct', 0.0)}%)")
+    print(f"  - Conservative Date-Only Shares Coverage: {summary.get('conservative_date_only_shares_count', 0)} sessions ({summary.get('conservative_date_only_shares_pct', 0.0)}%)")
     print(f"  - Frozen Pre-Run Manifest: {written_path}")
     print(f"  - Frozen Pre-Run SHA-256: {frozen_sha}")
     verified = verify_frozen_pre_run_manifest(written_path, frozen_sha)

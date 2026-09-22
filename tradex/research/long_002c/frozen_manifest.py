@@ -137,27 +137,65 @@ def build_frozen_pre_run_manifest_data(
         "rate_limit_429_count": 0,
     }
 
-    # 5. Provider request plan for Stage C
+    # 5. Provider request plan for Stage C (Item 2)
     projected_stage_c_candidates = eligible_count
     # 2 Alpaca calls (raw + split) per candidate
     projected_alpaca_calls = projected_stage_c_candidates * 2
-    # 1 Massive call per candidate for corporate actions
-    projected_massive_calls = projected_stage_c_candidates * 1
-    # 2 EDGAR calls per candidate (facts + submissions)
-    projected_edgar_calls = projected_stage_c_candidates * 2
-    # Runtime estimation: cached responses return in ~0.001s, uncached at provider delay
-    projected_runtime_sec = round(projected_stage_c_candidates * 0.1, 1)
-    projected_storage_mb = round(projected_stage_c_candidates * 0.25, 1)
+    # 2 Massive calls per candidate (1 for splits, 1 for dividends)
+    projected_massive_splits = projected_stage_c_candidates * 1
+    projected_massive_dividends = projected_stage_c_candidates * 1
+    projected_massive_calls = projected_massive_splits + projected_massive_dividends
+    # 2 EDGAR calls per candidate (1 facts, 1 submissions)
+    projected_edgar_facts = projected_stage_c_candidates * 1
+    projected_edgar_subs = projected_stage_c_candidates * 1
+    projected_edgar_calls = projected_edgar_facts + projected_edgar_subs
+
+    # Provider pacing calculations:
+    # Massive uncached pacing is fixed at 12.1s per network call
+    massive_uncached_runtime_sec = round(projected_massive_calls * 12.1, 1)
+    # Alpaca estimated rate limit: ~200 req/min (~0.3s/call) - labeled estimate
+    alpaca_uncached_runtime_sec_est = round(projected_alpaca_calls * 0.3, 1)
+    # EDGAR rate limit: max 10 req/s (~0.1s/call) - labeled estimate
+    edgar_uncached_runtime_sec_est = round(projected_edgar_calls * 0.1, 1)
+    uncached_total_runtime_sec_est = round(
+        massive_uncached_runtime_sec + alpaca_uncached_runtime_sec_est + edgar_uncached_runtime_sec_est, 1
+    )
+    # Cached rerun runtime (disk I/O only, ~0.01s per candidate) - labeled estimate
+    cached_rerun_runtime_sec_est = round(projected_stage_c_candidates * 0.01, 2)
+    projected_storage_mb = round(projected_stage_c_candidates * 0.35, 1)
 
     provider_plan = {
         "projected_stage_c_candidate_count": projected_stage_c_candidates,
-        "projected_alpaca_call_count": projected_alpaca_calls,
-        "projected_massive_call_count": projected_massive_calls,
-        "projected_edgar_call_count": projected_edgar_calls,
+        "projected_alpaca_requests": projected_alpaca_calls,
+        "projected_massive_split_requests": projected_massive_splits,
+        "projected_massive_dividend_requests": projected_massive_dividends,
+        "projected_massive_total_requests": projected_massive_calls,
+        "projected_edgar_facts_requests": projected_edgar_facts,
+        "projected_edgar_submissions_requests": projected_edgar_subs,
+        "projected_edgar_total_requests": projected_edgar_calls,
         "projected_total_provider_calls": (
             projected_alpaca_calls + projected_massive_calls + projected_edgar_calls
         ),
-        "projected_runtime_seconds": projected_runtime_sec,
+        "expected_cache_hits": {
+            "description": "Shared cache entries in data/cache/long_002c return immediately from disk without provider network I/O or pacing delay.",
+            "edgar_facts_shared_with_stage_b": True,
+            "edgar_submissions_shared_with_stage_b": True,
+            "alpaca_raw_bars_shared_with_stage_b": True,
+        },
+        "runtime_projections": {
+            "massive_uncached_pacing_seconds_per_call": 12.1,
+            "massive_uncached_runtime_seconds": massive_uncached_runtime_sec,
+            "alpaca_uncached_runtime_seconds_estimate": alpaca_uncached_runtime_sec_est,
+            "edgar_uncached_runtime_seconds_estimate": edgar_uncached_runtime_sec_est,
+            "uncached_provider_paced_runtime_seconds_estimate": uncached_total_runtime_sec_est,
+            "cached_rerun_runtime_seconds_estimate": cached_rerun_runtime_sec_est,
+            "pacing_note": "Alpaca and EDGAR runtime figures are estimates; Massive pacing is fixed at 12.1s per uncached call.",
+        },
+        # Backwards-compatible fields
+        "projected_alpaca_call_count": projected_alpaca_calls,
+        "projected_massive_call_count": projected_massive_calls,
+        "projected_edgar_call_count": projected_edgar_calls,
+        "projected_runtime_seconds": uncached_total_runtime_sec_est,
         "projected_storage_mb": projected_storage_mb,
     }
 
@@ -204,6 +242,10 @@ def build_frozen_pre_run_manifest_data(
             "ticker_resolution_coverage_pct": ticker_res_cov,
             "classification_coverage_pct": class_cov,
             "early_2016_attrition_pct": early_2016_attr,
+            "exact_acceptance_shares_count": sb.get("exact_acceptance_shares_count", 0),
+            "conservative_date_only_shares_count": sb.get("conservative_date_only_shares_count", 0),
+            "exact_acceptance_shares_pct": sb.get("exact_acceptance_shares_pct", 0.0),
+            "conservative_date_only_shares_pct": sb.get("conservative_date_only_shares_pct", 0.0),
         },
         "provider_cache_state": cache_state,
         "provider_request_plan_stage_c": provider_plan,

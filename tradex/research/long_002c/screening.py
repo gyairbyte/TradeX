@@ -91,8 +91,15 @@ def screen_candidate_security(
 
     # 3. Market cap resolution via SEC EDGAR
     company_facts = None
+    acceptance_map = None
     if candidate.cik:
         company_facts, _ = edgar.fetch_company_facts(candidate.cik)
+        try:
+            subs_data, _ = edgar.fetch_submissions(candidate.cik)
+            if subs_data:
+                acceptance_map = EdgarClient.get_accession_acceptance_map(subs_data)
+        except Exception:  # noqa: BLE001
+            acceptance_map = None
 
     as_traded_closes_dict = {
         d: float(df_bars.loc[d, "as_traded_close"].iloc[-1])
@@ -102,11 +109,12 @@ def screen_candidate_security(
         if d in bar_date_set
     }
 
-    market_caps, _market_cap_reasons, _ = compute_security_pit_market_caps(
+    market_caps, _market_cap_reasons, pit_shares_facts = compute_security_pit_market_caps(
         company_facts=company_facts,
         session_dates=dev_sessions,
         as_traded_closes=as_traded_closes_dict,
         cutoff_time="20:30",
+        accession_acceptance_map=acceptance_map,
     )
 
     # 4. Check eligibility across development sessions
@@ -186,6 +194,13 @@ def screen_candidate_security(
 
     is_eligible = eligible_sessions > 0
     reasons = [] if is_eligible else list(rejection_counts.keys())
+    exact_acc_count = sum(
+        1 for f in pit_shares_facts.values() if f.availability_source == "exact_acceptance_timestamp"
+    )
+    conservative_date_count = sum(
+        1 for f in pit_shares_facts.values() if f.availability_source == "date_only_next_session_conservative"
+    )
+
     details = {
         "immutable_security_id": candidate.immutable_security_id,
         "primary_symbol": candidate.primary_symbol,
@@ -193,6 +208,8 @@ def screen_candidate_security(
         "eligible_sessions": eligible_sessions,
         "first_eligible_date": first_eligible_date,
         "rejection_counts": rejection_counts,
+        "exact_acceptance_shares_count": exact_acc_count,
+        "conservative_date_only_shares_count": conservative_date_count,
     }
     return is_eligible, reasons, details
 
@@ -221,6 +238,8 @@ def screen_candidates_manifest(
     total_with_ticker_res = 0
     total_with_common_stock = 0
     early_2016_attrition_count = 0
+    total_exact_acceptance_shares = 0
+    total_conservative_date_shares = 0
 
     for idx, cand in enumerate(cands_to_eval, 1):
         sec_id = cand.immutable_security_id
@@ -248,6 +267,9 @@ def screen_candidates_manifest(
         if cand.cik:
             total_with_mcap += 1
 
+        total_exact_acceptance_shares += details.get("exact_acceptance_shares_count", 0)
+        total_conservative_date_shares += details.get("conservative_date_only_shares_count", 0)
+
         # Check ticker intervals resolution
         bar_meta = details.get("bar_meta", {})
         if not bar_meta.get("unresolved_gaps"):
@@ -262,6 +284,7 @@ def screen_candidates_manifest(
             on_progress(idx, len(cands_to_eval), cand.primary_symbol, is_elig)
 
     n_eval = len(cands_to_eval)
+    total_resolved_shares = total_exact_acceptance_shares + total_conservative_date_shares
     summary = {
         "total_evaluated": n_eval,
         "eligible_count": len(eligible_ids),
@@ -273,6 +296,10 @@ def screen_candidates_manifest(
         "ticker_resolution_coverage_pct": round(total_with_ticker_res / n_eval * 100.0, 2) if n_eval else 0.0,
         "classification_coverage_pct": round(total_with_common_stock / n_eval * 100.0, 2) if n_eval else 0.0,
         "early_2016_attrition_pct": round(early_2016_attrition_count / n_eval * 100.0, 2) if n_eval else 0.0,
+        "exact_acceptance_shares_count": total_exact_acceptance_shares,
+        "conservative_date_only_shares_count": total_conservative_date_shares,
+        "exact_acceptance_shares_pct": round(total_exact_acceptance_shares / total_resolved_shares * 100.0, 2) if total_resolved_shares else 0.0,
+        "conservative_date_only_shares_pct": round(total_conservative_date_shares / total_resolved_shares * 100.0, 2) if total_resolved_shares else 0.0,
     }
 
     return eligible_ids, rejected_ids, summary

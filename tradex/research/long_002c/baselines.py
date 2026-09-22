@@ -331,8 +331,8 @@ def select_winning_baseline(
 
     if not primary_outcomes:
         return {
-            "winner_comparator_id": "simple_momentum_20",
-            "winner_family": "simple_momentum",
+            "winner_comparator_id": None,
+            "winner_family": None,
             "status": "inconclusive_no_primary_outcomes",
             "table": {},
         }
@@ -346,8 +346,8 @@ def select_winning_baseline(
     candidate_ids = [cid for cid in by_comp if cid != "universe_base_rate"]
     if not candidate_ids:
         return {
-            "winner_comparator_id": "universe_base_rate",
-            "winner_family": "universe_base_rate",
+            "winner_comparator_id": None,
+            "winner_family": None,
             "status": "inconclusive_no_candidate_comparators",
             "table": {},
         }
@@ -369,8 +369,8 @@ def select_winning_baseline(
 
     if not common_keys:
         return {
-            "winner_comparator_id": "simple_momentum_20",
-            "winner_family": "simple_momentum",
+            "winner_comparator_id": None,
+            "winner_family": None,
             "status": "inconclusive_no_common_observations",
             "table": {},
         }
@@ -452,17 +452,23 @@ def select_winning_baseline(
         )
     )
 
-    winner = candidate_metrics[0] if candidate_metrics else None
-    winner_id = winner["comparator_id"] if winner else "simple_momentum_20"
-    winner_fam = winner["comparator_family"] if winner else "simple_momentum"
+    if not candidate_metrics:
+        return {
+            "winner_comparator_id": None,
+            "winner_family": None,
+            "status": "inconclusive_no_evaluated_metrics",
+            "table": table,
+        }
 
+    winner = candidate_metrics[0]
     return {
-        "winner_comparator_id": winner_id,
-        "winner_family": winner_fam,
+        "winner_comparator_id": winner["comparator_id"],
+        "winner_family": winner["comparator_family"],
+        "status": "winner_selected",
         "common_observations_count": common_total,
         "universe_base_rate": round(base_rate, 6),
-        "winner_top_10_lift": winner["top_10_lift"] if winner else 1.0,
-        "winner_top_25_lift": winner["top_25_lift"] if winner else 1.0,
+        "winner_top_10_lift": winner["top_10_lift"],
+        "winner_top_25_lift": winner["top_25_lift"],
         "comparators_evaluated": len(candidate_metrics),
         "selection_ranking": [m["comparator_id"] for m in candidate_metrics],
         "table": table,

@@ -31,9 +31,9 @@ def compute_outcome_cell(
     """Compute outcome metrics for a single (target_pct, horizon_sessions) cell.
 
     forward_bars must contain at least horizon_sessions bars on a consistent split-normalized price basis.
-    Retains both reference_entry_price (raw as-traded open + $0.01 + 5 bps friction) and
-    analysis_entry_price (split-normalized open).
-    All forward barriers, ATR, returns, MFE, MAE, and clean risk cap paths operate on split-normalized scale.
+    Retains both reference_entry_price (as-traded open scaled by 10 bps all-in friction) and
+    analysis_entry_price (split-normalized open scaled by 10 bps all-in friction).
+    All forward barriers, ATR, returns, MFE, MAE, and clean risk cap paths operate on the split-normalized scale.
     If special_distribution_unresolved is True, the outcome cannot be reliably calculated and is excluded from clean targets.
     """
     if len(forward_bars) < horizon_sessions:
