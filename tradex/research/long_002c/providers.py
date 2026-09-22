@@ -249,10 +249,11 @@ class AlpacaDailyClient:
             except Exception:  # noqa: BLE001
                 break
 
-            bars = data.get("bars", []) if isinstance(data, dict) else []
+            bars = data.get("bars") if isinstance(data, dict) else None
             if isinstance(bars, dict):
-                bars = bars.get(symbol.upper(), [])
-            all_bars.extend(bars)
+                bars = bars.get(symbol.upper())
+            if bars:
+                all_bars.extend(bars)
 
             next_token = data.get("next_page_token") if isinstance(data, dict) else None
             if not next_token:

@@ -89,7 +89,7 @@ from tradex.research.long_002c.outcomes import (
     compute_outcome_cell,
     parse_special_distribution_dates,
 )
-from tradex.research.long_002c.providers import MassiveRefClient
+from tradex.research.long_002c.providers import AlpacaDailyClient, MassiveRefClient
 from tradex.research.long_002c.spec import REPO_ROOT, verify_upstream_spec_hashes
 
 
@@ -2183,3 +2183,24 @@ def test_inconclusive_baselines_return_null_winner() -> None:
     assert res_no_common["winner_comparator_id"] is None
     assert res_no_common["winner_family"] is None
     assert res_no_common["status"] == "inconclusive_no_common_observations"
+
+
+# 47. Alpaca null bars response safely handled
+def test_alpaca_null_bars_response_safely_handled() -> None:
+    """When Alpaca returns {"bars": null}, fetch_daily_bars returns empty list instead of raising TypeError."""
+    from unittest.mock import MagicMock
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.content = b'{"bars": null, "symbol": "AAIC", "next_page_token": null}'
+    mock_resp.json.return_value = {"bars": None, "symbol": "AAIC", "next_page_token": None}
+
+    client = AlpacaDailyClient(
+        api_key="TEST_KEY",
+        secret_key="TEST_SECRET",
+        request_func=lambda *args, **kwargs: mock_resp,
+        cache=None,
+    )
+    bars, prov = client.fetch_daily_bars("AAIC", "2015-01-01T00:00:00Z", "2020-12-31T23:59:59Z")
+    assert bars == []
+    assert len(prov) == 1
