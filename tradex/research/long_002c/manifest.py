@@ -7,7 +7,9 @@ audit provenance.
 """
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Any
 
 from tradex.research.long_002c.identity import (
@@ -505,3 +507,16 @@ def build_full_development_discovery_manifest(
     }
 
     return candidates, metrics, comparison_summary
+
+
+def load_candidate_manifest(file_path: Path) -> list[CandidateSecurity]:
+    """Load candidate securities from a JSON discovery manifest file."""
+    if not file_path.exists():
+        raise FileNotFoundError(f"Manifest file not found: {file_path}")
+    data = json.loads(file_path.read_text(encoding="utf-8"))
+    raw_list = data["candidates"] if isinstance(data, dict) and "candidates" in data else data
+    candidates: list[CandidateSecurity] = []
+    for item in raw_list:
+        if isinstance(item, dict) and "immutable_security_id" in item:
+            candidates.append(CandidateSecurity.from_dict(item))
+    return candidates

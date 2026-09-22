@@ -70,6 +70,7 @@ def build_decision_observations_for_security(
     special_distribution_dates: set[str] | None = None,
     candidate: CandidateSecurity | None = None,
     security_master: SecurityMaster | None = None,
+    bar_meta: dict[str, Any] | None = None,
 ) -> tuple[
     list[DecisionObservation],
     list[DataEligibility],
@@ -115,6 +116,23 @@ def build_decision_observations_for_security(
         else:
             curr_consec = 0
 
+    # Audit duplicate and malformed bars across the entire provided bars_df
+    dup_bar_count = int(bars_df.index.duplicated().sum())
+    total_malformed_count = 0
+    for _idx, row in bars_df.iterrows():
+        c = row.get("close")
+        v = row.get("volume")
+        h = row.get("high")
+        l = row.get("low")
+        ac = row.get("as_traded_close")
+        if (
+            (ac is not None and not pd.isna(ac) and float(ac) <= 0)
+            or (c is not None and not pd.isna(c) and float(c) <= 0)
+            or (v is not None and not pd.isna(v) and float(v) < 0)
+            or (h is not None and l is not None and not pd.isna(h) and not pd.isna(l) and float(h) < float(l))
+        ):
+            total_malformed_count += 1
+
     coverage = DataQualityCoverage(
         immutable_security_id=sec_id,
         split_name="development",
@@ -123,8 +141,8 @@ def build_decision_observations_for_security(
         completeness_pct=round(completeness_pct, 2),
         unexplained_missing_sessions=unexplained_missing,
         max_consecutive_missing_sessions=max_consec,
-        duplicate_bar_count=0,
-        malformed_bar_count=0,
+        duplicate_bar_count=dup_bar_count,
+        malformed_bar_count=total_malformed_count,
         halt_sessions_count=0,
     )
 
@@ -138,22 +156,33 @@ def build_decision_observations_for_security(
 
         # Resolve effective historical ticker at decision date
         ticker_unresolved = False
+        ticker = ""
         if candidate is not None:
             interval = candidate.resolve_interval(session_date)
             if interval is not None:
                 ticker = interval.symbol
             else:
                 ticker_unresolved = True
-                ticker = candidate.primary_symbol
+                ticker = ""
         elif security_master is not None:
             resolved = security_master.resolve_ticker(sec_id, session_date)
             if resolved is not None:
                 ticker = resolved
             else:
                 ticker_unresolved = True
-                ticker = identity.ticker_at_decision
+                ticker = ""
         else:
-            ticker = identity.ticker_at_decision
+            if "ticker_at_decision" in bars_df.columns and session_date in bar_date_set:
+                val = bars_df.loc[session_date, "ticker_at_decision"]
+                val_str = str(val.iloc[-1] if isinstance(val, pd.Series) else val)
+                if val_str and val_str != "nan":
+                    ticker = val_str
+                else:
+                    ticker = identity.ticker_at_decision or ""
+            else:
+                ticker = identity.ticker_at_decision or ""
+            if not ticker:
+                ticker_unresolved = True
 
         # Point-in-time history:
         # At 09:00 ET, session T has not opened. Features MUST use history strictly through session T-1 (prior completed session).
@@ -468,18 +497,127 @@ def build_decision_observations_for_security(
                 )
             )
 
+        # Trailing history quality evaluation (trailing 252 regular sessions or from listing date for IPOs)
+        session_to_idx = {s: i for i, s in enumerate(trading_sessions)}
+        s_idx = session_to_idx.get(session_date, -1)
+
+        listing_date_str = None
+        if candidate is not None and isinstance(candidate.listing_lifecycle_provenance, dict):
+            listing_date_str = candidate.listing_lifecycle_provenance.get("listing_date")
+        if not listing_date_str and identity.listing_date:
+            listing_date_str = identity.listing_date
+
+        is_recent_ipo_window = False
+        if listing_date_str:
+            try:
+                dt_listing = date.fromisoformat(listing_date_str[:10])
+                dt_session = date.fromisoformat(session_date[:10])
+                days_since_listing = (dt_session - dt_listing).days
+                if 0 <= days_since_listing <= 365:
+                    is_recent_ipo_window = True
+            except ValueError:
+                is_recent_ipo_window = False
+
+        if is_recent_ipo_window and listing_date_str:
+            expected_trailing_sessions = [
+                s for s in trading_sessions if listing_date_str[:10] <= s <= session_date
+            ]
+        else:
+            start_s_idx = max(0, s_idx - 251) if s_idx >= 0 else 0
+            expected_trailing_sessions = trading_sessions[start_s_idx : s_idx + 1] if s_idx >= 0 else []
+
+        exp_trailing_count = len(expected_trailing_sessions)
+        obs_trailing_sessions = [s for s in expected_trailing_sessions if s in bar_date_set]
+        obs_trailing_count = len(obs_trailing_sessions)
+        missing_trailing_count = exp_trailing_count - obs_trailing_count
+        trailing_completeness_pct = (obs_trailing_count / exp_trailing_count * 100.0) if exp_trailing_count > 0 else 0.0
+
+        max_consec_trailing = 0
+        curr_consec_trailing = 0
+        for s in expected_trailing_sessions:
+            if s not in bar_date_set:
+                curr_consec_trailing += 1
+                max_consec_trailing = max(max_consec_trailing, curr_consec_trailing)
+            else:
+                curr_consec_trailing = 0
+
+        # Check malformed bars and analytical completeness in trailing slice
+        trailing_bar_dates = [s for s in expected_trailing_sessions if s in bar_date_set]
+        trailing_malformed = 0
+        trailing_analytical_incomplete = False
+        if bar_meta and bar_meta.get("analytical_data_incomplete"):
+            trailing_analytical_incomplete = True
+
+        for s in trailing_bar_dates:
+            row_s = bars_df.loc[s]
+            if isinstance(row_s, pd.DataFrame):
+                row_s = row_s.iloc[-1]
+            c = row_s.get("close")
+            o = row_s.get("open")
+            h = row_s.get("high")
+            l = row_s.get("low")
+            v = row_s.get("volume")
+            ac = row_s.get("as_traded_close")
+            if (c is None or pd.isna(c) or o is None or pd.isna(o) or
+                h is None or pd.isna(h) or l is None or pd.isna(l)):
+                trailing_analytical_incomplete = True
+            if ((ac is not None and not pd.isna(ac) and float(ac) <= 0) or
+                (c is not None and not pd.isna(c) and float(c) <= 0) or
+                (v is not None and not pd.isna(v) and float(v) < 0) or
+                (h is not None and l is not None and not pd.isna(h) and not pd.isna(l) and float(h) < float(l))):
+                trailing_malformed += 1
+
+        data_quality_reasons: list[str] = []
+        if n_hist >= 63 and exp_trailing_count >= 63:
+            if trailing_completeness_pct < 99.0:
+                data_quality_reasons.append("data_quality_completeness_below_99")
+            if missing_trailing_count > 2:
+                data_quality_reasons.append("data_quality_missing_sessions_exceeded")
+            if max_consec_trailing > 1:
+                data_quality_reasons.append("data_quality_consecutive_missing_exceeded")
+        if dup_bar_count > 0:
+            data_quality_reasons.append("data_quality_duplicate_bars")
+        if trailing_malformed > 0:
+            data_quality_reasons.append("data_quality_malformed_bars")
+        if trailing_analytical_incomplete:
+            data_quality_reasons.append("analytical_data_incomplete")
+
+        data_quality_passed = len(data_quality_reasons) == 0
+        for r_code in data_quality_reasons:
+            exclusions.append(
+                ExclusionReasonRecord(
+                    immutable_security_id=sec_id,
+                    as_of_date=session_date,
+                    cutoff_time=cutoff_time,
+                    reason_code=r_code,
+                    ticker_at_decision=ticker,
+                    reason_category="data_quality",
+                    description=f"Data quality failure: {r_code}",
+                )
+            )
+
+        data_complete = (
+            (atr_14 is not None)
+            and (dvol_20_median is not None)
+            and data_quality_passed
+            and not trailing_analytical_incomplete
+        )
+        raw_eligible = (
+            eligibility_passed
+            and data_complete
+            and not purged
+            and not has_unresolved_dist
+        )
+
         # Actionability status: if earnings schedule unknown, actionability is unavailable
         if not eligibility_passed:
             act_status = "excluded"
-        elif atr_14 is None or dvol_20_median is None:
+        elif not data_complete:
             act_status = "unavailable_data_incomplete"
         elif e_status == "unknown":
             act_status = "unavailable_earnings_unknown"
         else:
             act_status = "eligible"
-
-        data_complete = (atr_14 is not None) and (dvol_20_median is not None)
-        raw_eligible = eligibility_passed and data_complete and not purged and not has_unresolved_dist
 
         dec_ts_utc = get_decision_timestamp_utc(session_date, cutoff_time)
 

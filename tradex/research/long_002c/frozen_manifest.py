@@ -13,10 +13,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from tradex.research.long_002c.calendar import get_trading_sessions
 from tradex.research.long_002c.spec import (
     DEV_END,
     DEV_START,
     REPO_ROOT,
+    WARMUP_START,
     verify_upstream_spec_hashes,
 )
 
@@ -73,11 +75,14 @@ def build_frozen_pre_run_manifest_data(
     metrics_raw = disc_data.get("metrics", {})
     comparison_raw = disc_data.get("classification_comparison", {})
 
-    # Compute identity map hash and ticker interval map hash
+    # Compute identity map hash, ticker interval map hash, and real internal ticker gap audit
+    dev_sessions = get_trading_sessions(DEV_START, DEV_END)
     id_entries = []
     interval_entries = []
     identity_unresolved_count = 0
-    ticker_gap_unresolved_count = 0
+    unresolved_gap_security_ids = []
+    internal_gap_count = 0
+    internal_gap_trading_sessions = 0
 
     for c in sorted(candidates_raw, key=lambda x: x.get("immutable_security_id", "")):
         sec_id = c.get("immutable_security_id", "")
@@ -95,7 +100,22 @@ def build_frozen_pre_run_manifest_data(
         })
         ti_list = c.get("ticker_intervals", [])
         if not ti_list:
-            ticker_gap_unresolved_count += 1
+            unresolved_gap_security_ids.append(sec_id)
+        else:
+            sorted_ti = sorted(ti_list, key=lambda x: x.get("start_date") or "")
+            sec_has_gap = False
+            for i in range(len(sorted_ti) - 1):
+                prev_end = sorted_ti[i].get("end_date") or ""
+                next_start = sorted_ti[i + 1].get("start_date") or ""
+                if prev_end and next_start and prev_end < next_start:
+                    gap_sess = [s for s in dev_sessions if prev_end < s < next_start]
+                    if gap_sess:
+                        sec_has_gap = True
+                        internal_gap_count += 1
+                        internal_gap_trading_sessions += len(gap_sess)
+            if sec_has_gap:
+                unresolved_gap_security_ids.append(sec_id)
+
         interval_entries.append({
             "immutable_security_id": sec_id,
             "ticker_intervals": ti_list,
@@ -118,10 +138,13 @@ def build_frozen_pre_run_manifest_data(
     # 3. Stage B screening metrics
     sb = stage_b_summary or {}
     unresolved_failures = sb.get("unresolved_provider_failures_count", 0)
-    if unresolved_failures > 0:
+    unresolved_alpaca = sb.get("unresolved_alpaca_provider_failures", 0)
+    unresolved_edgar = sb.get("unresolved_edgar_provider_failures", 0)
+    if unresolved_failures > 0 or unresolved_alpaca > 0 or unresolved_edgar > 0:
         raise ValueError(
             f"Official frozen pre-run manifest cannot be generated: {unresolved_failures} unresolved provider "
-            f"failures remain. Provider failures: {sb.get('provider_failure_reason_counts')}"
+            f"failures remain (Alpaca: {unresolved_alpaca}, EDGAR: {unresolved_edgar}). "
+            f"Provider failures: {sb.get('provider_failure_reason_counts')}"
         )
     total_eval = sb.get("total_evaluated", len(candidates_raw))
     eligible_count = len(stage_b_eligible_ids)
@@ -143,13 +166,35 @@ def build_frozen_pre_run_manifest_data(
         "rate_limit_429_count": 0,
     }
 
-    # 5. Provider request plan for Stage C (Item 2)
+    # 5. Provider request plan for Stage C (Item 2 & Clarification 3)
+    # Calculate historical ticker pairs for Stage-B eligible candidates
+    eligible_sec_ids_set = set(stage_b_eligible_ids)
+    eligible_candidates = [c for c in candidates_raw if c.get("immutable_security_id") in eligible_sec_ids_set]
+    historical_ticker_pairs: set[tuple[str, str]] = set()
+
+    for c in eligible_candidates:
+        sec_id = c.get("immutable_security_id", "")
+        ti_list = c.get("ticker_intervals", [])
+        added = False
+        for ti in ti_list:
+            s = ti.get("start_date") or ""
+            e = ti.get("end_date") or ""
+            sym = ti.get("symbol") or ""
+            if (not s or s <= DEV_END) and (not e or e >= WARMUP_START) and sym:
+                historical_ticker_pairs.add((sec_id, sym))
+                added = True
+        if not added:
+            prim = c.get("primary_symbol") or ""
+            if prim:
+                historical_ticker_pairs.add((sec_id, prim))
+
+    historical_ticker_pair_count = len(historical_ticker_pairs)
     projected_stage_c_candidates = eligible_count
     # 2 Alpaca calls (raw + split) per candidate
     projected_alpaca_calls = projected_stage_c_candidates * 2
-    # 2 Massive calls per candidate (1 for splits, 1 for dividends)
-    projected_massive_splits = projected_stage_c_candidates * 1
-    projected_massive_dividends = projected_stage_c_candidates * 1
+    # 2 Massive calls per historical ticker pair (1 for splits, 1 for dividends)
+    projected_massive_splits = historical_ticker_pair_count * 1
+    projected_massive_dividends = historical_ticker_pair_count * 1
     projected_massive_calls = projected_massive_splits + projected_massive_dividends
     # 2 EDGAR calls per candidate (1 facts, 1 submissions)
     projected_edgar_facts = projected_stage_c_candidates * 1
@@ -171,6 +216,7 @@ def build_frozen_pre_run_manifest_data(
     projected_storage_mb = round(projected_stage_c_candidates * 0.35, 1)
 
     provider_plan = {
+        "historical_ticker_pair_count": historical_ticker_pair_count,
         "projected_stage_c_candidate_count": projected_stage_c_candidates,
         "projected_alpaca_requests": projected_alpaca_calls,
         "projected_massive_split_requests": projected_massive_splits,
@@ -235,7 +281,11 @@ def build_frozen_pre_run_manifest_data(
             "ticker_interval_map_sha256": ticker_interval_map_sha,
             "classification_coverage_by_year": comparison_raw,
             "identity_unresolved_count": identity_unresolved_count,
-            "ticker_gap_unresolved_count": ticker_gap_unresolved_count,
+            "ticker_gap_unresolved_count": len(unresolved_gap_security_ids),
+            "securities_with_internal_ticker_gaps": len(unresolved_gap_security_ids),
+            "internal_gap_count": internal_gap_count,
+            "internal_gap_trading_sessions": internal_gap_trading_sessions,
+            "unresolved_gap_security_ids": sorted(unresolved_gap_security_ids),
         },
         "upstream_spec_hashes": spec_hashes,
         "stage_b_screening": {
@@ -247,6 +297,8 @@ def build_frozen_pre_run_manifest_data(
             "genuine_no_bars_count": sb.get("genuine_no_bars_count", 0),
             "provider_failures_count": sb.get("provider_failures_count", 0),
             "unresolved_provider_failures_count": unresolved_failures,
+            "unresolved_alpaca_provider_failures": unresolved_alpaca,
+            "unresolved_edgar_provider_failures": unresolved_edgar,
             "pit_market_cap_coverage_pct": pit_mcap_cov,
             "ticker_resolution_coverage_pct": ticker_res_cov,
             "classification_coverage_pct": class_cov,
@@ -256,6 +308,7 @@ def build_frozen_pre_run_manifest_data(
             "exact_acceptance_shares_pct": sb.get("exact_acceptance_shares_pct", 0.0),
             "conservative_date_only_shares_pct": sb.get("conservative_date_only_shares_pct", 0.0),
             "alpaca_audit_metrics": sb.get("alpaca_audit_metrics", {}),
+            "edgar_audit_metrics": sb.get("edgar_audit_metrics", {}),
         },
         "provider_cache_state": cache_state,
         "provider_request_plan_stage_c": provider_plan,

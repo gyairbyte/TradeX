@@ -33,7 +33,11 @@ from tradex.research.long_002c.calendar import get_trading_sessions
 from tradex.research.long_002c.identity import CLASSIFICATION_SUPPORTED_COMMON_STOCK
 from tradex.research.long_002c.manifest import CandidateSecurity
 from tradex.research.long_002c.market_cap import compute_security_pit_market_caps
-from tradex.research.long_002c.providers import AlpacaDailyClient, EdgarClient
+from tradex.research.long_002c.providers import (
+    AlpacaDailyClient,
+    EdgarClient,
+    ProviderDataUnavailable,
+)
 from tradex.research.long_002c.spec import DEV_END, DEV_START, WARMUP_START, enforce_split_guard
 
 
@@ -110,13 +114,32 @@ def screen_candidate_security(
     company_facts = None
     acceptance_map = None
     if candidate.cik:
-        company_facts, _ = edgar.fetch_company_facts(candidate.cik)
         try:
-            subs_data, _ = edgar.fetch_submissions(candidate.cik)
-            if subs_data:
-                acceptance_map = EdgarClient.get_accession_acceptance_map(subs_data)
-        except Exception:  # noqa: BLE001
-            acceptance_map = None
+            company_facts, _ = edgar.fetch_company_facts(candidate.cik)
+            if hasattr(edgar, "fetch_submissions"):
+                subs_data, _ = edgar.fetch_submissions(candidate.cik)
+                if subs_data:
+                    acceptance_map = EdgarClient.get_accession_acceptance_map(subs_data)
+        except ProviderDataUnavailable as exc:
+            fail_type = getattr(exc, "failure_type", "edgar_provider_failed")
+            return False, [fail_type], {
+                "immutable_security_id": candidate.immutable_security_id,
+                "primary_symbol": candidate.primary_symbol,
+                "cik": candidate.cik,
+                "eligible_sessions": 0,
+                "first_eligible_date": None,
+                "is_provider_failure": True,
+                "provider_failure": {
+                    "provider": "sec_edgar",
+                    "failure_type": fail_type,
+                    "reason": str(exc),
+                    "url": getattr(exc, "url", None),
+                    "status_code": getattr(exc, "status_code", None),
+                },
+                "rejection_counts": {fail_type: 1},
+                "reason": f"EDGAR provider failure for CIK {candidate.cik}: {exc}",
+                "bar_meta": bar_meta,
+            }
 
     as_traded_closes_dict = {
         d: float(df_bars.loc[d, "as_traded_close"].iloc[-1])
@@ -314,12 +337,17 @@ def screen_candidates_manifest(
     n_eval = len(cands_to_eval)
     total_resolved_shares = total_exact_acceptance_shares + total_conservative_date_shares
     alpaca_metrics = alpaca.get_audit_metrics() if hasattr(alpaca, "get_audit_metrics") else {}
+    edgar_metrics = edgar.get_audit_metrics() if hasattr(edgar, "get_audit_metrics") else {}
+    alpaca_failures_count = sum(1 for p in provider_failures.values() if p.get("provider", "alpaca") == "alpaca")
+    edgar_failures_count = sum(1 for p in provider_failures.values() if p.get("provider") == "sec_edgar")
     summary = {
         "total_evaluated": n_eval,
         "eligible_count": len(eligible_ids),
         "rejected_count": len(rejected_ids),
         "provider_failures_count": len(provider_failed_ids),
         "unresolved_provider_failures_count": len(provider_failed_ids),
+        "unresolved_alpaca_provider_failures": alpaca_failures_count,
+        "unresolved_edgar_provider_failures": edgar_failures_count,
         "genuine_no_bars_count": genuine_no_bars_count,
         "pass_rate_pct": round(len(eligible_ids) / n_eval * 100.0, 2) if n_eval else 0.0,
         "eligible_security_ids": sorted(eligible_ids),
@@ -337,6 +365,7 @@ def screen_candidates_manifest(
         "exact_acceptance_shares_pct": round(total_exact_acceptance_shares / total_resolved_shares * 100.0, 2) if total_resolved_shares else 0.0,
         "conservative_date_only_shares_pct": round(total_conservative_date_shares / total_resolved_shares * 100.0, 2) if total_resolved_shares else 0.0,
         "alpaca_audit_metrics": alpaca_metrics,
+        "edgar_audit_metrics": edgar_metrics,
     }
 
     return eligible_ids, rejected_ids, summary

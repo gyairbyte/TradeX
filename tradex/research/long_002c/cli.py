@@ -59,6 +59,7 @@ from tradex.research.long_002c.manifest import (
     CandidateSecurity,
     TickerInterval,
     build_full_development_discovery_manifest,
+    load_candidate_manifest,
     register_manifest_in_security_master,
 )
 from tradex.research.long_002c.market_cap import compute_security_pit_market_caps
@@ -82,6 +83,7 @@ from tradex.research.long_002c.providers import (
     AlpacaDailyClient,
     EdgarClient,
     MassiveRefClient,
+    ProviderDataUnavailable,
     resolve_credentials,
 )
 from tradex.research.long_002c.screening import (
@@ -602,17 +604,53 @@ def cmd_build(args: argparse.Namespace) -> int:
         print(f"ERROR: Discovery manifest SHA mismatch! Recorded: {disc_recorded_sha}, Computed: {disc_computed_sha}")
         return 1
 
+    # If --candidates-file is passed, require its resolved SHA-256 to equal the frozen discovery SHA-256
+    if getattr(args, "candidates_file", None):
+        cand_arg_path = Path(args.candidates_file)
+        if not cand_arg_path.exists():
+            print(f"ERROR: Specified --candidates-file does not exist: {cand_arg_path}")
+            return 1
+        cand_arg_sha = compute_file_sha256(cand_arg_path)
+        if cand_arg_sha != disc_recorded_sha:
+            print(
+                f"ERROR: Specified --candidates-file SHA ({cand_arg_sha}) does not match frozen discovery manifest SHA ({disc_recorded_sha})! "
+                f"Stage C strictly rejects independent or mismatched candidate files."
+            )
+            return 1
+
+    # Load candidate objects DIRECTLY from the verified discovery manifest
+    all_discovery_candidates = load_candidate_manifest(disc_file)
+
     # Require Stage B eligible IDs match
     frozen_eligible_ids = frozen_manifest_data.get("stage_b_screening", {}).get("eligible_security_ids", [])
     if not frozen_eligible_ids:
         print("ERROR: Frozen manifest contains 0 Stage B eligible securities.")
         return 1
 
+    frozen_eligible_set = set(frozen_eligible_ids)
+    stage_c_candidates = [c for c in all_discovery_candidates if c.immutable_security_id in frozen_eligible_set]
+    stage_c_ids = [c.immutable_security_id for c in stage_c_candidates]
+
+    # Pre-execution validation
+    if set(stage_c_ids) != frozen_eligible_set:
+        print(
+            f"ERROR: Candidate ID set mismatch between discovery manifest and frozen eligible IDs! "
+            f"Found {len(set(stage_c_ids))}, expected {len(frozen_eligible_set)}"
+        )
+        return 1
+    if len(stage_c_candidates) != len(frozen_eligible_ids):
+        print(
+            f"ERROR: Candidate count mismatch! Candidates: {len(stage_c_candidates)}, Frozen IDs: {len(frozen_eligible_ids)}"
+        )
+        return 1
+    if len(stage_c_ids) != len(set(stage_c_ids)):
+        print("ERROR: Duplicate immutable security IDs found in Stage C candidates!")
+        return 1
+
+    manifest_candidates = stage_c_candidates
     eligible_ids = frozen_eligible_ids
     print(f"Stage C Authorization: VERIFIED against {frozen_manifest_path} (SHA: {computed_sha[:16]}...)")
-
-    # Filter candidates to Stage B eligible securities for Stage C execution
-    manifest_candidates = [c for c in manifest_candidates if c.immutable_security_id in eligible_ids]
+    print(f"      Source of truth verified: {len(manifest_candidates)} candidates loaded directly from {disc_file.name}")
 
     all_obs: list[DecisionObservation] = []
     all_elig: list[DataEligibility] = []
@@ -633,19 +671,24 @@ def cmd_build(args: argparse.Namespace) -> int:
 
     # Step 0: Ingest SPY daily bars for SPY-relative momentum baseline
     print("\n[0/6] Ingesting SPY benchmark daily bars for SPY-relative baseline...")
-    spy_bars_raw, spy_prov = alpaca.fetch_daily_bars(
-        "SPY", f"{WARMUP_START}T00:00:00Z", f"{DEV_END}T23:59:59Z", feed="sip", adjustment="split"
-    )
+    try:
+        spy_bars_raw, spy_prov = alpaca.fetch_daily_bars(
+            "SPY", f"{WARMUP_START}T00:00:00Z", f"{DEV_END}T23:59:59Z", feed="sip", adjustment="split"
+        )
+    except ProviderDataUnavailable as exc:
+        print(f"ERROR: Failed to retrieve SPY benchmark daily bars: {exc}")
+        print("Official Stage C execution ABORTED due to benchmark data unavailability.")
+        return 1
     all_provenance.extend(spy_prov)
-    if spy_bars_raw:
-        df_spy = pd.DataFrame(spy_bars_raw)
-        df_spy["datetime"] = pd.to_datetime(df_spy["t"], utc=True)
-        df_spy["date"] = df_spy["datetime"].dt.strftime("%Y-%m-%d")
-        df_spy = df_spy.rename(columns={"c": "close"})
-        df_spy = df_spy.set_index("date").sort_index()
-    else:
-        df_spy = pd.DataFrame()
-        print("      WARNING: No SPY bars returned; SPY-relative baselines will be unavailable.")
+    if not spy_bars_raw:
+        print("ERROR: SPY benchmark daily bars are empty! Stage C outcome execution aborted.")
+        return 1
+
+    df_spy = pd.DataFrame(spy_bars_raw)
+    df_spy["datetime"] = pd.to_datetime(df_spy["t"], utc=True)
+    df_spy["date"] = df_spy["datetime"].dt.strftime("%Y-%m-%d")
+    df_spy = df_spy.rename(columns={"c": "close"})
+    df_spy = df_spy.set_index("date").sort_index()
 
     # Step 1: Ingest bars, corporate actions, and EDGAR facts for candidate securities
     print(f"\n[1/6] Ingesting historical daily bars, EDGAR facts, and corporate actions for {len(manifest_candidates)} candidates...")
@@ -664,7 +707,7 @@ def cmd_build(args: argparse.Namespace) -> int:
             continue
 
         # Ingest daily bars using the shared interval-aware loader (Item 3)
-        df_final, prov_bars, _bar_meta = load_interval_aware_daily_bars(
+        df_final, prov_bars, bar_meta = load_interval_aware_daily_bars(
             candidate=cand,
             alpaca=alpaca,
             warmup_start=WARMUP_START,
@@ -673,18 +716,54 @@ def cmd_build(args: argparse.Namespace) -> int:
         )
         all_provenance.extend(prov_bars)
 
+        if bar_meta.get("provider_failure"):
+            fail_info = bar_meta["provider_failure"]
+            print(f"ERROR: Alpaca provider failure for candidate {primary_sym} ({sec_id}): {fail_info}")
+            print("Official Stage C execution ABORTED due to unresolved provider failure.")
+            return 1
+
         if df_final.empty:
-            print(f"      WARNING: No bars returned for {primary_sym}")
-            continue
+            print(f"ERROR: Candidate {primary_sym} ({sec_id}) was verified eligible in Stage B, but returned empty bars in Stage C!")
+            print("Official Stage C execution ABORTED due to dataset integrity mismatch.")
+            return 1
 
         securities_history_df[sec_id] = df_final
 
-        # Ingest corporate actions, retain splits & divs, and parse special distributions (Item 4)
+        # Ingest corporate actions across all historical ticker intervals intersecting warmup/dev
         special_dist_dates: set[str] = set()
         if massive:
-            _splits, divs, prov_corp = massive.fetch_corporate_actions(primary_sym)
-            all_provenance.extend(prov_corp)
-            special_dist_dates = parse_special_distribution_dates(divs)
+            historical_symbols: set[str] = set()
+            for ti in cand.ticker_intervals:
+                s = ti.start_date or ""
+                e = ti.end_date or ""
+                if (not s or s <= DEV_END) and (not e or e >= WARMUP_START) and ti.symbol:
+                    historical_symbols.add(ti.symbol)
+            if not historical_symbols:
+                historical_symbols.add(primary_sym)
+
+            all_splits: list[dict[str, Any]] = []
+            all_divs: list[dict[str, Any]] = []
+            for sym in sorted(historical_symbols):
+                try:
+                    splits_sym, divs_sym, prov_corp = massive.fetch_corporate_actions(sym)
+                    all_provenance.extend(prov_corp)
+                    all_splits.extend(splits_sym)
+                    all_divs.extend(divs_sym)
+                except ProviderDataUnavailable as exc:
+                    print(f"ERROR: Massive provider failure fetching corporate actions for {sym} ({sec_id}): {exc}")
+                    print("Official Stage C execution ABORTED due to unresolved corporate action provider failure.")
+                    return 1
+
+            # Deduplicate dividends by (ex_date, cash_amount, dividend_type)
+            deduped_divs: list[dict[str, Any]] = []
+            seen_div_keys: set[tuple[Any, ...]] = set()
+            for div in all_divs:
+                div_key = (div.get("ex_date"), div.get("cash_amount"), div.get("dividend_type"))
+                if div_key not in seen_div_keys:
+                    seen_div_keys.add(div_key)
+                    deduped_divs.append(div)
+
+            special_dist_dates = parse_special_distribution_dates(deduped_divs)
 
         affected_special_sessions = derive_affected_special_distribution_sessions(
             special_dist_dates, sessions, max_horizon_sessions=26
@@ -700,8 +779,10 @@ def cmd_build(args: argparse.Namespace) -> int:
             all_provenance.extend(prov_subs)
             if subs_data:
                 acceptance_map = EdgarClient.get_accession_acceptance_map(subs_data)
-        except Exception as e:  # noqa: BLE001
-            print(f"      WARNING: EDGAR retrieval failed for CIK {cik}: {e}")
+        except ProviderDataUnavailable as exc:
+            print(f"ERROR: SEC EDGAR provider failure for CIK {cik} ({primary_sym}): {exc}")
+            print("Official Stage C execution ABORTED due to unresolved EDGAR provider failure.")
+            return 1
 
         # Build as-traded close prices for 09:00 (T-1 close) and 20:30 (T close)
         as_traded_closes_2030 = {d: float(df_final.loc[d, "as_traded_close"]) for d in df_final.index}
@@ -756,6 +837,9 @@ def cmd_build(args: argparse.Namespace) -> int:
                 market_caps=mcap_curr,
                 market_cap_reasons=reasons_curr,
                 special_distribution_dates=affected_special_sessions,
+                candidate=cand,
+                security_master=sec_master,
+                bar_meta=bar_meta,
             )
             all_obs.extend(obs_sec)
             all_elig.extend(elig_sec)
@@ -842,7 +926,7 @@ def cmd_build(args: argparse.Namespace) -> int:
                         None,
                     )
                     date_sec_data[sec_id] = {
-                        "ticker": securities_identity[sec_id].ticker_at_decision,
+                        "ticker": matching_obs.ticker_at_decision if matching_obs else securities_identity[sec_id].ticker_at_decision,
                         "history_df": sub_df,
                         "atr_14": matching_obs.atr_14 if matching_obs else None,
                         "sector": None,

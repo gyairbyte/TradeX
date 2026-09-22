@@ -682,58 +682,134 @@ class MassiveRefClient:
     def fetch_corporate_actions(
         self, ticker: str
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[ProvenanceProviderRecord]]:
-        """Fetch split and dividend events for ticker."""
+        """Fetch split and dividend events for ticker with full pagination, retries, and error handling."""
         provenance: list[ProvenanceProviderRecord] = []
 
-        # Splits
-        split_url = self._url("/v3/reference/splits", {"ticker": ticker.upper(), "limit": 1000})
-        split_fp = {"ticker": ticker.upper(), "event": "split"}
-        data, _status, error, resp_hash, req_time = self._fetch_json(
-            split_url,
-            endpoint_pattern="/v3/reference/splits",
-            req_fp_obj=split_fp,
-        )
-        splits = data.get("results", []) if isinstance(data, dict) and not error else []
-        provenance.append(
-            ProvenanceProviderRecord(
-                record_id=f"prov_split_{ticker.upper()}",
-                data_family="corporate_actions",
-                provider_name="massive",
-                provider_role="primary",
-                endpoint_url_pattern="/v3/reference/splits",
-                retrieval_timestamp_utc=req_time,
-                request_fingerprint_sha256=_json_hash(split_fp),
-                response_sha256=resp_hash,
+        # 1. Splits
+        all_splits: list[dict[str, Any]] = []
+        next_split_url: str | None = None
+        split_page = 0
+        while True:
+            split_page += 1
+            if next_split_url:
+                url = next_split_url if "apiKey=" in next_split_url else f"{next_split_url}&apiKey={self.api_key}"
+            else:
+                url = self._url("/v3/reference/splits", {"ticker": ticker.upper(), "limit": 1000})
+            split_fp = {"ticker": ticker.upper(), "event": "split", "page": split_page}
+            data, status, error, resp_hash, req_time = self._fetch_json(
+                url,
+                endpoint_pattern="/v3/reference/splits",
+                req_fp_obj=split_fp,
             )
-        )
-
-        # Dividends
-        div_url = self._url("/v3/reference/dividends", {"ticker": ticker.upper(), "limit": 1000})
-        div_fp = {"ticker": ticker.upper(), "event": "dividend"}
-        data, _status, error, resp_hash, req_time = self._fetch_json(
-            div_url,
-            endpoint_pattern="/v3/reference/dividends",
-            req_fp_obj=div_fp,
-        )
-        dividends = data.get("results", []) if isinstance(data, dict) and not error else []
-        provenance.append(
-            ProvenanceProviderRecord(
-                record_id=f"prov_div_{ticker.upper()}",
-                data_family="corporate_actions",
-                provider_name="massive",
-                provider_role="primary",
-                endpoint_url_pattern="/v3/reference/dividends",
-                retrieval_timestamp_utc=req_time,
-                request_fingerprint_sha256=_json_hash(div_fp),
-                response_sha256=resp_hash,
+            provenance.append(
+                ProvenanceProviderRecord(
+                    record_id=f"prov_split_{ticker.upper()}_{split_page}",
+                    data_family="corporate_actions",
+                    provider_name="massive",
+                    provider_role="primary",
+                    endpoint_url_pattern="/v3/reference/splits",
+                    retrieval_timestamp_utc=req_time,
+                    request_fingerprint_sha256=_json_hash(split_fp),
+                    response_sha256=resp_hash,
+                )
             )
-        )
+            if error or status != 200 or not isinstance(data, dict):
+                if split_page > 1:
+                    raise ProviderPaginationIncomplete(
+                        f"Massive splits pagination incomplete for {ticker} on page {split_page}: {error or status}",
+                        symbol=ticker,
+                        page=split_page,
+                        status_code=status,
+                        provenance_records=provenance,
+                    )
+                if status == 429:
+                    raise ProviderRateLimitedUnresolved(
+                        f"Massive splits rate limited for {ticker}: {error}",
+                        symbol=ticker,
+                        page=split_page,
+                        status_code=429,
+                        provenance_records=provenance,
+                    )
+                raise ProviderRequestFailed(
+                    f"Massive splits request failed for {ticker}: {error or status}",
+                    symbol=ticker,
+                    page=split_page,
+                    status_code=status,
+                    provenance_records=provenance,
+                )
+            results = data.get("results", [])
+            if isinstance(results, list):
+                all_splits.extend(results)
+            raw_next = data.get("next_url")
+            next_split_url = raw_next if isinstance(raw_next, str) and raw_next.strip() else None
+            if not next_split_url:
+                break
 
-        return splits, dividends, provenance
+        # 2. Dividends
+        all_dividends: list[dict[str, Any]] = []
+        next_div_url: str | None = None
+        div_page = 0
+        while True:
+            div_page += 1
+            if next_div_url:
+                url = next_div_url if "apiKey=" in next_div_url else f"{next_div_url}&apiKey={self.api_key}"
+            else:
+                url = self._url("/v3/reference/dividends", {"ticker": ticker.upper(), "limit": 1000})
+            div_fp = {"ticker": ticker.upper(), "event": "dividend", "page": div_page}
+            data, status, error, resp_hash, req_time = self._fetch_json(
+                url,
+                endpoint_pattern="/v3/reference/dividends",
+                req_fp_obj=div_fp,
+            )
+            provenance.append(
+                ProvenanceProviderRecord(
+                    record_id=f"prov_div_{ticker.upper()}_{div_page}",
+                    data_family="corporate_actions",
+                    provider_name="massive",
+                    provider_role="primary",
+                    endpoint_url_pattern="/v3/reference/dividends",
+                    retrieval_timestamp_utc=req_time,
+                    request_fingerprint_sha256=_json_hash(div_fp),
+                    response_sha256=resp_hash,
+                )
+            )
+            if error or status != 200 or not isinstance(data, dict):
+                if div_page > 1:
+                    raise ProviderPaginationIncomplete(
+                        f"Massive dividends pagination incomplete for {ticker} on page {div_page}: {error or status}",
+                        symbol=ticker,
+                        page=div_page,
+                        status_code=status,
+                        provenance_records=provenance,
+                    )
+                if status == 429:
+                    raise ProviderRateLimitedUnresolved(
+                        f"Massive dividends rate limited for {ticker}: {error}",
+                        symbol=ticker,
+                        page=div_page,
+                        status_code=429,
+                        provenance_records=provenance,
+                    )
+                raise ProviderRequestFailed(
+                    f"Massive dividends request failed for {ticker}: {error or status}",
+                    symbol=ticker,
+                    page=div_page,
+                    status_code=status,
+                    provenance_records=provenance,
+                )
+            results = data.get("results", [])
+            if isinstance(results, list):
+                all_dividends.extend(results)
+            raw_next = data.get("next_url")
+            next_div_url = raw_next if isinstance(raw_next, str) and raw_next.strip() else None
+            if not next_div_url:
+                break
+
+        return all_splits, all_dividends, provenance
 
 
 class EdgarClient:
-    """Minimal SEC EDGAR submissions and facts client."""
+    """Hardened SEC EDGAR submissions and facts client with auditable retry and rate-limit tracking."""
 
     _BASE = "https://data.sec.gov"
     _USER_AGENT = "TradeX Research (research@gyairbyte.com)"
@@ -741,18 +817,67 @@ class EdgarClient:
     def __init__(
         self,
         budget: RequestBudget | None = None,
-        request_func: Callable[[str], bytes] | None = None,
+        request_func: Callable[..., Any] | None = None,
         cache: ResponseCache | None = None,
+        max_retries: int = 3,
+        request_delay_seconds: float = 0.1,
     ) -> None:
         self.budget = budget or RequestBudget()
         self._request_func = request_func
         self.cache = cache
+        self.max_retries = max_retries
+        self.request_delay_seconds = request_delay_seconds if request_delay_seconds is not None else 0.1
+        self._last_request_time: float = 0.0
+
+        # Audit metrics
+        self.network_requests_count: int = 0
+        self.cache_hits_count: int = 0
+        self.retries_count: int = 0
+        self.rate_limit_429_count: int = 0
+        self.transport_failure_count: int = 0
+        self.malformed_response_count: int = 0
+        self.not_found_genuine_count: int = 0
+        self.unresolved_failure_count: int = 0
+
+    def get_audit_metrics(self) -> dict[str, int]:
+        """Return auditable request, rate-limit, and failure metrics."""
+        return {
+            "network_requests_count": self.network_requests_count,
+            "cache_hits_count": self.cache_hits_count,
+            "retries_count": self.retries_count,
+            "rate_limit_429_count": self.rate_limit_429_count,
+            "transport_failure_count": self.transport_failure_count,
+            "malformed_response_count": self.malformed_response_count,
+            "not_found_genuine_count": self.not_found_genuine_count,
+            "unresolved_failure_count": self.unresolved_failure_count,
+        }
+
+    def reset_audit_metrics(self) -> None:
+        """Reset auditable metrics counters."""
+        self.network_requests_count = 0
+        self.cache_hits_count = 0
+        self.retries_count = 0
+        self.rate_limit_429_count = 0
+        self.transport_failure_count = 0
+        self.malformed_response_count = 0
+        self.not_found_genuine_count = 0
+        self.unresolved_failure_count = 0
+
+    def _wait_for_pacing(self) -> None:
+        if self.request_delay_seconds <= 0:
+            return
+        now = time.monotonic()
+        elapsed = now - self._last_request_time
+        if elapsed < self.request_delay_seconds:
+            time.sleep(self.request_delay_seconds - elapsed)
+        self._last_request_time = time.monotonic()
 
     def _fetch_json(
         self,
         url: str,
         endpoint_pattern: str | None = None,
         req_fp_obj: Any = None,
+        cik: str | None = None,
     ) -> tuple[dict[str, Any], str, str]:
         sanitized = sanitize_url(url)
         req_fp = _json_hash(req_fp_obj if req_fp_obj is not None else {"url": sanitized})
@@ -761,21 +886,166 @@ class EdgarClient:
         if self.cache:
             cached_data, cached_sha, cached_ts = self.cache.get_json(sanitized, req_fp)
             if cached_data is not None and isinstance(cached_data, dict):
+                self.cache_hits_count += 1
                 return cached_data, cached_sha or "", cached_ts or req_time
 
-        self.budget.charge(1)
-        if self._request_func:
-            try:
-                res = self._request_func(url)
-            except Exception:  # noqa: BLE001
-                return {}, "", req_time
-            body = res[0] if isinstance(res, tuple) else res
-            h = hashlib.sha256(body).hexdigest()
+        headers = {"User-Agent": self._USER_AGENT, "Accept": "application/json"}
+        last_status: int | None = None
+        last_error: str | None = None
+
+        for attempt in range(self.max_retries + 1):
+            if attempt > 0:
+                self.retries_count += 1
+
+            self._wait_for_pacing()
+            self.budget.charge(1)
+            self.network_requests_count += 1
+
+            # Request execution
+            if self._request_func:
+                try:
+                    res = self._request_func(url)
+                except Exception as exc:
+                    self.transport_failure_count += 1
+                    last_error = str(exc)
+                    if attempt < self.max_retries:
+                        time.sleep(0.5 * (2**attempt))
+                        continue
+                    self.unresolved_failure_count += 1
+                    raise ProviderRequestFailed(
+                        f"SEC EDGAR transport failure for {url} after {attempt + 1} attempts: {exc}",
+                        symbol=cik,
+                        retry_count=attempt,
+                    ) from exc
+
+                # Parse mock/custom response
+                if isinstance(res, tuple):
+                    body = res[0]
+                    status_code = res[1] if len(res) > 1 else 200
+                    resp_headers = res[2] if len(res) > 2 else {}
+                elif hasattr(res, "status_code"):
+                    body = res.content
+                    status_code = res.status_code
+                    resp_headers = getattr(res, "headers", {})
+                else:
+                    body = res if isinstance(res, bytes) else str(res).encode("utf-8")
+                    status_code = 200
+                    resp_headers = {}
+            else:
+                try:
+                    req = urllib.request.Request(url, headers=headers)
+                    with urllib.request.urlopen(req, timeout=60) as resp:
+                        body = resp.read()
+                        status_code = resp.getcode()
+                        resp_headers = dict(resp.headers)
+                except urllib.error.HTTPError as exc:
+                    body = exc.read() if hasattr(exc, "read") else b""
+                    status_code = exc.code
+                    resp_headers = dict(exc.headers) if hasattr(exc, "headers") else {}
+                except Exception as exc:
+                    self.transport_failure_count += 1
+                    last_error = str(exc)
+                    if attempt < self.max_retries:
+                        time.sleep(0.5 * (2**attempt))
+                        continue
+                    self.unresolved_failure_count += 1
+                    raise ProviderRequestFailed(
+                        f"SEC EDGAR transport error for {url} after {attempt + 1} attempts: {exc}",
+                        symbol=cik,
+                        retry_count=attempt,
+                    ) from exc
+
+            last_status = status_code
+            resp_hash = hashlib.sha256(body).hexdigest()
+
+            # Handle status codes:
+            # 1. HTTP 404: Genuine provider-supported not-found condition
+            if status_code == 404:
+                self.not_found_genuine_count += 1
+                empty_data: dict[str, Any] = {"_is_not_found": True}
+                if self.cache:
+                    self.cache.set(
+                        sanitized,
+                        req_fp,
+                        json.dumps(empty_data).encode("utf-8"),
+                        endpoint_pattern=endpoint_pattern,
+                        retrieval_timestamp_utc=req_time,
+                    )
+                return empty_data, resp_hash, req_time
+
+            # 2. HTTP 429: Rate limited
+            if status_code == 429:
+                self.rate_limit_429_count += 1
+                if attempt < self.max_retries:
+                    retry_after = 1.0
+                    ra_hdr = resp_headers.get("Retry-After") or resp_headers.get("retry-after")
+                    if ra_hdr:
+                        try:
+                            retry_after = max(1.0, float(ra_hdr))
+                        except ValueError:
+                            retry_after = 1.0
+                    else:
+                        retry_after = 1.0 * (2**attempt)
+                    time.sleep(retry_after)
+                    continue
+                self.unresolved_failure_count += 1
+                raise ProviderRateLimitedUnresolved(
+                    f"SEC EDGAR rate limit (429) unresolved for {url} after {attempt + 1} attempts",
+                    symbol=cik,
+                    status_code=429,
+                    retry_count=attempt,
+                )
+
+            # 3. HTTP 5xx: Server error
+            if status_code >= 500:
+                if attempt < self.max_retries:
+                    time.sleep(0.5 * (2**attempt))
+                    continue
+                self.unresolved_failure_count += 1
+                raise ProviderRequestFailed(
+                    f"SEC EDGAR HTTP {status_code} server error for {url} after {attempt + 1} attempts",
+                    symbol=cik,
+                    status_code=status_code,
+                    retry_count=attempt,
+                )
+
+            # 4. Other non-200
+            if status_code != 200:
+                if attempt < self.max_retries:
+                    time.sleep(0.5 * (2**attempt))
+                    continue
+                self.unresolved_failure_count += 1
+                raise ProviderRequestFailed(
+                    f"SEC EDGAR HTTP {status_code} for {url} after {attempt + 1} attempts",
+                    symbol=cik,
+                    status_code=status_code,
+                    retry_count=attempt,
+                )
+
+            # 5. HTTP 200: Parse JSON
             try:
                 parsed = json.loads(body.decode("utf-8"))
-            except Exception:  # noqa: BLE001
-                return {}, h, req_time
-            if self.cache and isinstance(parsed, dict):
+            except Exception as exc:
+                self.malformed_response_count += 1
+                self.unresolved_failure_count += 1
+                raise MalformedProviderResponse(
+                    f"SEC EDGAR JSON decode error for {url}: {exc}",
+                    symbol=cik,
+                    status_code=200,
+                    retry_count=attempt,
+                ) from exc
+
+            if not isinstance(parsed, dict):
+                self.malformed_response_count += 1
+                self.unresolved_failure_count += 1
+                raise MalformedProviderResponse(
+                    f"SEC EDGAR response is not a dict for {url}: {type(parsed)}",
+                    symbol=cik,
+                    status_code=200,
+                    retry_count=attempt,
+                )
+
+            if self.cache:
                 self.cache.set(
                     sanitized,
                     req_fp,
@@ -783,25 +1053,15 @@ class EdgarClient:
                     endpoint_pattern=endpoint_pattern,
                     retrieval_timestamp_utc=req_time,
                 )
-            return parsed, h, req_time
+            return parsed, resp_hash, req_time
 
-        req = urllib.request.Request(url, headers={"User-Agent": self._USER_AGENT, "Accept": "application/json"})
-        try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                body = resp.read()
-                h = hashlib.sha256(body).hexdigest()
-                parsed = json.loads(body.decode("utf-8"))
-                if self.cache and isinstance(parsed, dict):
-                    self.cache.set(
-                        sanitized,
-                        req_fp,
-                        body,
-                        endpoint_pattern=endpoint_pattern,
-                        retrieval_timestamp_utc=req_time,
-                    )
-                return parsed, h, req_time
-        except Exception:  # noqa: BLE001
-            return {}, "", req_time
+        self.unresolved_failure_count += 1
+        raise ProviderRequestFailed(
+            f"SEC EDGAR retries exhausted for {url} (status: {last_status}, error: {last_error})",
+            symbol=cik,
+            status_code=last_status,
+            retry_count=self.max_retries,
+        )
 
     def fetch_submissions(self, cik: str) -> tuple[dict[str, Any], list[ProvenanceProviderRecord]]:
         padded = cik.zfill(10)
@@ -811,6 +1071,7 @@ class EdgarClient:
             url,
             endpoint_pattern="/submissions/CIK{cik}.json",
             req_fp_obj={"cik": padded, "endpoint": "submissions"},
+            cik=padded,
         )
         prov = [
             ProvenanceProviderRecord(
@@ -824,9 +1085,11 @@ class EdgarClient:
                 response_sha256=h,
             )
         ]
+        if data.get("_is_not_found"):
+            return None, prov
         return data, prov
 
-    def fetch_company_facts(self, cik: str) -> tuple[dict[str, Any], list[ProvenanceProviderRecord]]:
+    def fetch_company_facts(self, cik: str) -> tuple[dict[str, Any] | None, list[ProvenanceProviderRecord]]:
         padded = cik.zfill(10)
         url = f"{self._BASE}/api/xbrl/companyfacts/CIK{padded}.json"
         req_fp = _json_hash({"cik": padded, "endpoint": "companyfacts"})
@@ -834,6 +1097,7 @@ class EdgarClient:
             url,
             endpoint_pattern="/api/xbrl/companyfacts/CIK{cik}.json",
             req_fp_obj={"cik": padded, "endpoint": "companyfacts"},
+            cik=padded,
         )
         prov = [
             ProvenanceProviderRecord(
@@ -847,6 +1111,8 @@ class EdgarClient:
                 response_sha256=h,
             )
         ]
+        if data.get("_is_not_found"):
+            return None, prov
         return data, prov
 
     @staticmethod

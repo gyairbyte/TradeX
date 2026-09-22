@@ -352,20 +352,10 @@ def select_winning_baseline(
             "table": {},
         }
 
-    # 2. Compute common observation set across all candidate comparators and primary outcomes
+    # 2. Compute strict common observation set across all candidate comparators and primary outcomes
     common_keys = set(primary_outcomes.keys())
     for cid in candidate_ids:
         common_keys &= set(by_comp[cid].keys())
-
-    # Fallback if intersection across all candidates is empty
-    if not common_keys:
-        key_counts: dict[tuple[str, str, str], int] = {}
-        for cid in candidate_ids:
-            for k in by_comp[cid]:
-                if k in primary_outcomes:
-                    key_counts[k] = key_counts.get(k, 0) + 1
-        max_overlap = max(key_counts.values()) if key_counts else 0
-        common_keys = {k for k, c in key_counts.items() if c == max_overlap}
 
     if not common_keys:
         return {
@@ -383,6 +373,13 @@ def select_winning_baseline(
     # 4. Evaluate each candidate on common observations
     table: dict[str, dict[str, Any]] = {}
     candidate_metrics: list[dict[str, Any]] = []
+
+    PERMITTED_WINNER_FAMILIES = {
+        "simple_momentum",
+        "spy_relative",
+        "sector_relative",
+        "volatility_aware_momentum",
+    }
 
     family_simplicity_rank = {
         "simple_momentum": 1,
@@ -419,9 +416,12 @@ def select_winning_baseline(
         top_10_lift = (top_10_rate / base_rate) if base_rate > 0 else 1.0
         top_25_lift = (top_25_rate / base_rate) if base_rate > 0 else 1.0
 
+        is_winner_eligible = comp_family in PERMITTED_WINNER_FAMILIES
+
         metrics = {
             "comparator_id": cid,
             "comparator_family": comp_family,
+            "winner_eligible": is_winner_eligible,
             "lookback": lookback,
             "common_observations_evaluated": len(valid_common_keys),
             "base_rate": round(base_rate, 6),
@@ -438,20 +438,6 @@ def select_winning_baseline(
         table[cid] = metrics
         candidate_metrics.append(metrics)
 
-    # 5. Locked tie-breaking order:
-    # 1. Higher top-decile lift
-    # 2. Higher top-quartile lift
-    # 3. Simpler family (lower simplicity rank)
-    # 4. Shorter lookback (lower lookback integer)
-    candidate_metrics.sort(
-        key=lambda m: (
-            -m["top_10_lift"],
-            -m["top_25_lift"],
-            m["simplicity_rank"],
-            m["lookback"],
-        )
-    )
-
     if not candidate_metrics:
         return {
             "winner_comparator_id": None,
@@ -460,7 +446,31 @@ def select_winning_baseline(
             "table": table,
         }
 
-    winner = candidate_metrics[0]
+    # 5. Filter for permitted winner families (legacy_tradex_scorer is comparator only)
+    winner_eligible_metrics = [m for m in candidate_metrics if m["winner_eligible"]]
+    if not winner_eligible_metrics:
+        return {
+            "winner_comparator_id": None,
+            "winner_family": None,
+            "status": "inconclusive_no_permitted_winner",
+            "table": table,
+        }
+
+    # Locked tie-breaking order among eligible winner families:
+    # 1. Higher top-decile lift
+    # 2. Higher top-quartile lift
+    # 3. Simpler family (lower simplicity rank)
+    # 4. Shorter lookback (lower lookback integer)
+    winner_eligible_metrics.sort(
+        key=lambda m: (
+            -m["top_10_lift"],
+            -m["top_25_lift"],
+            m["simplicity_rank"],
+            m["lookback"],
+        )
+    )
+
+    winner = winner_eligible_metrics[0]
     return {
         "winner_comparator_id": winner["comparator_id"],
         "winner_family": winner["comparator_family"],
@@ -470,6 +480,6 @@ def select_winning_baseline(
         "winner_top_10_lift": winner["top_10_lift"],
         "winner_top_25_lift": winner["top_25_lift"],
         "comparators_evaluated": len(candidate_metrics),
-        "selection_ranking": [m["comparator_id"] for m in candidate_metrics],
+        "selection_ranking": [m["comparator_id"] for m in winner_eligible_metrics],
         "table": table,
     }
