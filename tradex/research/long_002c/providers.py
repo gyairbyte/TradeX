@@ -159,10 +159,11 @@ class AlpacaDailyClient:
                             response_sha256=cached_sha or "",
                         )
                     )
-                    bars = cached_data.get("bars", [])
+                    bars = cached_data.get("bars") if isinstance(cached_data, dict) else None
                     if isinstance(bars, dict):
-                        bars = bars.get(symbol.upper(), [])
-                    all_bars.extend(bars)
+                        bars = bars.get(symbol.upper())
+                    if bars:
+                        all_bars.extend(bars)
                     next_token = cached_data.get("next_page_token")
                     if not next_token:
                         break

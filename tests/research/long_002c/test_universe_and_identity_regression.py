@@ -2204,3 +2204,19 @@ def test_alpaca_null_bars_response_safely_handled() -> None:
     bars, prov = client.fetch_daily_bars("AAIC", "2015-01-01T00:00:00Z", "2020-12-31T23:59:59Z")
     assert bars == []
     assert len(prov) == 1
+
+    # Also test cached branch
+    with tempfile.TemporaryDirectory() as tmpdir:
+        c = ResponseCache(cache_dir=Path(tmpdir))
+        cached_client = AlpacaDailyClient(
+            api_key="TEST_KEY",
+            secret_key="TEST_SECRET",
+            request_func=lambda *args, **kwargs: mock_resp,
+            cache=c,
+        )
+        # First call populates cache
+        b1, _ = cached_client.fetch_daily_bars("AAIC", "2015-01-01T00:00:00Z", "2020-12-31T23:59:59Z")
+        assert b1 == []
+        # Second call reads from cache
+        b2, _ = cached_client.fetch_daily_bars("AAIC", "2015-01-01T00:00:00Z", "2020-12-31T23:59:59Z")
+        assert b2 == []
