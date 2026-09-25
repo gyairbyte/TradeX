@@ -97,7 +97,7 @@ Any future concrete day-trading setup proposed under `DAYTRADE-001` must formall
 4. **Information-Availability Timing:** Explicit statement of when each bar becomes available relative to clock time or tick arrival.
 5. **Entry Rule:** Direction (Long/Short), order type (Market, Limit, Stop), and price anchoring (e.g., next bar open, breakout level).
 6. **Invalidation / Stop Rule:** Exact stop-loss price calculation at time of entry.
-7. **Exit / Target / Time-Exit Rule:** Profit targets, trailing stops, and mandatory end-of-session liquidation time.
+7. **Exit Rule:** Explicit exit logic, including any target, trailing stop, time-based exit, session-end liquidation, or other exit condition that applies to the setup.
 8. **Transaction Cost & Slippage Assumptions:** Explicit round-trip commissions, exchange fees, and spread/slippage model (in basis points or cents).
 9. **Max Position Duration:** Maximum bars or elapsed time allowed before forced exit.
 10. **Overnight Holding Policy:** Explicit definition of whether overnight holding is permitted or prohibited (DAYTRADE-001A prescribes no default policy; each setup must define its policy explicitly).
