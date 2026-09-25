@@ -28,26 +28,28 @@ TradeX previously executed the `INTRA-001` research program (`INTRA-001A` throug
 
 ## 3. Intended Multi-Resolution Workflow
 
-Gary's intraday trading methodology relies on a hierarchical, multi-resolution funnel:
+The intended multi-resolution day-trading workflow consists of the following hierarchical funnel:
 
 ```
-Daily / Multi-Year Context (Macro Trend / Key S/R Levels)
+Daily / multi-year context
          ↓
-  133-Tick Context (Structural Momentum / Swings)
+  133-tick structure
          ↓
-  1-Minute Setup (Intraday Consolidation / Trigger Zone)
+1-minute setup context
          ↓
-   50-Tick Timing (Precision Entry / Microstructure Confirmation)
+  50-tick entry timing
          ↓
-Trigger → Entry Fill → Protective Stop / Invalidation → Target / Exit
+trigger / entry / invalidation / exit
 ```
 
-Each tier in this hierarchy serves a distinct role:
-1. **Daily Context (`DAILY`):** Establishes higher-timeframe trend, major multi-day support/resistance, prior-day levels, and daily volume profiles.
-2. **133-Tick Context (`TICK_133`):** Provides volatility-adaptive structural swing analysis, identifying market structure shifts without arbitrary time slicing.
-3. **1-Minute Setup (`MINUTE_1`):** Grounds the tactical pattern within standard calendar minutes (e.g., flag breaks, consolidations, session VWAP context).
-4. **50-Tick Timing (`TICK_50`):** Refines order entry timing, confirming micro-momentum or order-flow absorption before entering.
-5. **Trade Lifecycle:** Determines explicit trigger criteria, fill assumptions, stop-loss invalidation, profit targets, time-based liquidation, and cost models.
+The tiers serve the following roles in the research architecture:
+1. **Daily / Multi-Year Context (`DAILY`):** Higher-timeframe macro and historical daily context.
+2. **133-Tick Structure (`TICK_133`):** Intermediate tick-structure context.
+3. **1-Minute Setup Context (`MINUTE_1`):** Calendar-minute setup context.
+4. **50-Tick Entry Timing (`TICK_50`):** Fast tick-based entry timing.
+5. **Trigger / Entry / Invalidation / Exit:** Explicit trade lifecycle rules including trigger condition, order entry, protective stop/invalidation, and target/exit logic.
+
+DAYTRADE-001A models this multi-resolution structure purely as an architectural data and execution interface. It does not define, prescribe, or invent Gary's real strategy rules or any specific indicators or patterns.
 
 ---
 
@@ -98,7 +100,7 @@ Any future concrete day-trading setup proposed under `DAYTRADE-001` must formall
 7. **Exit / Target / Time-Exit Rule:** Profit targets, trailing stops, and mandatory end-of-session liquidation time.
 8. **Transaction Cost & Slippage Assumptions:** Explicit round-trip commissions, exchange fees, and spread/slippage model (in basis points or cents).
 9. **Max Position Duration:** Maximum bars or elapsed time allowed before forced exit.
-10. **Overnight Holding Policy:** Permitted or strictly prohibited (default: strictly prohibited for day trading).
+10. **Overnight Holding Policy:** Explicit definition of whether overnight holding is permitted or prohibited (DAYTRADE-001A prescribes no default policy; each setup must define its policy explicitly).
 
 ---
 
