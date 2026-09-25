@@ -1,0 +1,308 @@
+{
+  "schema_version": "1.0",
+  "task_id": "DAYTRADE-001B",
+  "spec_version": 1,
+  "study_name": "DAYTRADE-001B: Extreme Downside 1-Minute Reversal Research Specification",
+  "classification": "research_only_preregistration",
+  "status": "preregistered_not_executed",
+  "base_commit_sha": "089be61a8ad0c5b9e7b2909dd2f3e2f3e460b03b",
+  "hypothesis": "Among the fixed Dow 30 research universe, an unusually extreme negative completed 1-minute return is followed by a positive short-horizon reversal that exceeds comparable non-event intraday returns after realistic execution friction.",
+  "study_type": "event_study",
+  "study_notes": "Event-study methodology only; not an executable backtest. Overlapping events may occur and must be reported.",
+  "direction": "long_side_reversal_only",
+  "direction_notes": "Extreme negative 1-minute moves followed by possible positive reversal. Long-side reversal only. No symmetric upside/short hypothesis in v1.",
+  "universe": {
+    "name": "DOW30",
+    "preset_source": "tradex.watchlists.presets.DOW30",
+    "snapshot_vintage": "2026-05",
+    "reconstitution_policy": "frozen_static_snapshot_no_dynamic_refresh",
+    "symbol_count": 30,
+    "symbols": [
+      "MMM",
+      "AXP",
+      "AMGN",
+      "AMZN",
+      "AAPL",
+      "BA",
+      "CAT",
+      "CVX",
+      "CSCO",
+      "KO",
+      "DIS",
+      "GS",
+      "HD",
+      "HON",
+      "IBM",
+      "JNJ",
+      "JPM",
+      "MCD",
+      "MRK",
+      "MSFT",
+      "NKE",
+      "NVDA",
+      "PG",
+      "CRM",
+      "SHW",
+      "TRV",
+      "UNH",
+      "VZ",
+      "V",
+      "WMT"
+    ],
+    "survivorship_and_selection_limitations": [
+      "Preset snapshot is from 2026; using it to study 2025 introduces survivorship and constituent-selection limitations.",
+      "DAYTRADE-001B accepts that limitation for this first bounded exploratory study.",
+      "This study cannot receive an evidence-confidence label above limited_but_usable_evidence solely on the basis of this dataset.",
+      "No production promotion may result directly from this study.",
+      "Historical Dow constituent reconstruction is out of scope."
+    ]
+  },
+  "data_contract": {
+    "provider": "alpaca",
+    "provider_api": "Alpaca Market Data API",
+    "feed": "sip",
+    "timeframe": "1Min",
+    "adjustment": "split",
+    "session_calendar": "XNYS",
+    "timezone": "America/New_York",
+    "allow_provider_fallback": false,
+    "allow_feed_fallback": false,
+    "disallowed_fallbacks": [
+      "iex",
+      "yahoo",
+      "schwab",
+      "ibkr"
+    ],
+    "provider_failure_action": "stop_and_report_provider_or_entitlement_blocker",
+    "raw_market_data_git_storage": "prohibited",
+    "storage_location_policy": "outside_tracked_repo_root_e.g._~/.tradex/research/daytrade_001b/"
+  },
+  "dates_and_splits": {
+    "warmup": {
+      "start": "2024-12-02",
+      "end": "2025-01-01",
+      "purpose": "trailing_historical_window_only_no_signals_or_events",
+      "signal_origin_prohibited": true
+    },
+    "development": {
+      "start": "2025-01-02",
+      "end": "2025-06-30",
+      "purpose": "diagnostic_only_locked_parameters_cannot_change"
+    },
+    "validation": {
+      "start": "2025-07-01",
+      "end": "2025-09-30",
+      "purpose": "formal_validation_gate_evaluation"
+    },
+    "holdout": {
+      "start": "2025-10-01",
+      "end": "2025-12-31",
+      "purpose": "untouched_holdout_conditional_on_validation_supported",
+      "access_conditional": true,
+      "access_condition": "validation_must_earn_supported_disposition"
+    },
+    "split_boundary_enforcement": "forward_outcomes_must_not_cross_split_boundaries",
+    "holdout_access_rule": "Holdout must not be parsed or evaluated unless validation earns the locked supported disposition",
+    "locked_parameter_discipline": "Event threshold, horizons, costs, gates, universe, provider, and outcome definitions must not be changed after looking at development results without creating a new explicitly approved specification version."
+  },
+  "session_semantics": {
+    "calendar": "XNYS",
+    "regular_session_start": "09:30",
+    "regular_session_end": "16:00",
+    "regular_session_only": true,
+    "exclude_early_close_sessions": true,
+    "exclude_premarket": true,
+    "exclude_after_hours": true,
+    "bar_interpolation": "prohibited",
+    "timestamp_normalization": {
+      "bar_start_field": "bar_start",
+      "available_at_field": "available_at",
+      "completion_rule": "A 1-minute bar starting at T is not available until T+1 minute (at T+1 close)",
+      "signal_availability": "Signal is known only after the event minute is completed"
+    }
+  },
+  "event_definition": {
+    "per_ticker_independent": true,
+    "return_metric": "completed regular-session 1-minute close-to-close returns",
+    "trailing_window_sessions": 20,
+    "trailing_window_scope": "previous 20 completed regular sessions for that ticker",
+    "percentile_points": 0.1,
+    "quantile": 0.001,
+    "percentile_clarification": "0.1st percentile equals the bottom 1/10th of 1 percent (quantile 0.001), NOT the 10th percentile (quantile 0.10)",
+    "event_rule": "current_1m_return <= trailing_20_session_0.1_percentile",
+    "parameter_search_prohibited": true,
+    "alternatives_prohibited": [
+      "percentiles",
+      "z_score_cutoffs",
+      "absolute_percentage_thresholds",
+      "atr_thresholds",
+      "volatility_multipliers"
+    ],
+    "overlapping_events": "allowed_and_must_be_reported"
+  },
+  "eligibility_and_timing": {
+    "opening_minute_eligible": false,
+    "opening_minute_reason": "9:30 opening minute may embed overnight gap rather than pure within-session 1-minute move",
+    "earliest_event_bar_start": "09:31",
+    "earliest_event_bar_available_at": "09:32",
+    "latest_event_bar_start": "15:54",
+    "latest_event_bar_available_at": "15:55",
+    "latest_event_bar_rule": "Full 5-minute outcome horizon must remain inside regular session; cannot cross session close",
+    "entry_timing": "next executable 1-minute bar open (minute t+1 open)",
+    "same_bar_execution_prohibited": true,
+    "entry_at_event_close_prohibited": true
+  },
+  "outcomes": {
+    "primary_endpoint": {
+      "name": "1_minute_forward_return",
+      "horizon_minutes": 1,
+      "entry": "next 1-minute bar open after event detection (t+1 open)",
+      "exit": "entry bar close (t+1 close)",
+      "role": "primary_endpoint_determines_validation_and_holdout_disposition"
+    },
+    "secondary_endpoints": [
+      {
+        "name": "2_minute_forward_return",
+        "horizon_minutes": 2,
+        "entry": "next 1-minute bar open after event detection (t+1 open)",
+        "exit": "second forward bar close (t+2 close)",
+        "role": "descriptive_secondary_evidence"
+      },
+      {
+        "name": "5_minute_forward_return",
+        "horizon_minutes": 5,
+        "entry": "next 1-minute bar open after event detection (t+1 open)",
+        "exit": "fifth forward bar close (t+5 close)",
+        "role": "descriptive_secondary_evidence"
+      }
+    ],
+    "grid_search_prohibited": true
+  },
+  "execution_friction": {
+    "primary_cost_bps_per_side": 2.0,
+    "primary_cost_round_trip_bps": 4.0,
+    "sensitivity_scenarios_bps_per_side": [
+      0.0,
+      5.0
+    ],
+    "commissions_beyond_friction": 0.0,
+    "reporting_rule": "report gross and all locked net scenarios"
+  },
+  "baseline": {
+    "type": "same_ticker_same_minute_of_day_in_same_split",
+    "description": "For each ticker, compare event forward returns with non-event observations from the same ticker and same minute-of-day within the same dataset split.",
+    "event_observations_in_baseline": false,
+    "production_scores_or_weights_in_baseline": false,
+    "metrics_reported": [
+      "absolute_event_return",
+      "event_minus_baseline_difference"
+    ]
+  },
+  "required_metrics": [
+    "eligible_minute_count",
+    "event_count",
+    "represented_ticker_count",
+    "events_per_ticker",
+    "events_per_month",
+    "maximum_single_ticker_event_concentration",
+    "overlapping_event_count",
+    "overlapping_event_rate",
+    "mean_gross_forward_return_1m",
+    "mean_gross_forward_return_2m",
+    "mean_gross_forward_return_5m",
+    "median_gross_forward_return_1m",
+    "median_gross_forward_return_2m",
+    "median_gross_forward_return_5m",
+    "win_rate_1m",
+    "win_rate_2m",
+    "win_rate_5m",
+    "mean_net_forward_return_0bps",
+    "mean_net_forward_return_2bps",
+    "mean_net_forward_return_5bps",
+    "median_net_forward_return_0bps",
+    "median_net_forward_return_2bps",
+    "median_net_forward_return_5bps",
+    "same_ticker_time_of_day_baseline_mean",
+    "same_ticker_time_of_day_baseline_median",
+    "event_minus_baseline_difference_mean",
+    "event_minus_baseline_difference_median",
+    "per_ticker_primary_results",
+    "monthly_primary_results",
+    "data_quality_summary",
+    "provider_provenance_summary"
+  ],
+  "statistical_inference": {
+    "method": "cluster_bootstrap_by_ticker_session",
+    "description": "Deterministic cluster bootstrap by ticker-session so multiple events from the same ticker/session are not treated as independent observations.",
+    "bootstrap_resamples": 2000,
+    "random_seed": 20260925,
+    "confidence_level_pct": 95.0,
+    "confidence_interval_type": "two_sided",
+    "targets": [
+      "primary_mean_net_event_return",
+      "primary_mean_event_minus_baseline_difference"
+    ]
+  },
+  "validation_gates": {
+    "sample_gate": {
+      "min_eligible_events": 300,
+      "min_represented_tickers": 15
+    },
+    "concentration_gate": {
+      "max_single_ticker_event_pct": 15.0
+    },
+    "primary_net_effect_gate": {
+      "cost_basis_bps_per_side": 2.0,
+      "mean_net_return_gt_zero": true,
+      "ci_95_lower_bound_gt_zero": true
+    },
+    "baseline_uplift_gate": {
+      "mean_uplift_gt_zero": true,
+      "ci_95_lower_bound_gt_zero": true
+    },
+    "breadth_gate": {
+      "min_pct_represented_tickers_positive_mean_net": 60.0
+    }
+  },
+  "holdout_rule": {
+    "evaluation_condition": "validation_must_earn_supported_disposition",
+    "gates_identical_to_validation": true,
+    "parameter_or_method_changes_permitted": false,
+    "action_if_validation_not_supported": "leave_holdout_unread_and_report"
+  },
+  "dispositions": {
+    "supported": "All required validation/holdout gates pass.",
+    "rejected": "Data and methodology are valid and sufficiently sampled, but the primary hypothesis has non-positive primary net expectancy or non-positive uplift relative to baseline.",
+    "inconclusive": "Insufficient event sample (<300 events), insufficient ticker breadth (<15 tickers), concentration gate failure (>15%), effect direction positive but CI crosses zero, or usable data coverage too incomplete for a reliable conclusion.",
+    "invalid": "Lookahead bias, future-data leakage, holdout opened before validation support, timestamp/availability semantics materially wrong, split contamination, silent provider/feed substitution, corrupted or unverifiable data, or execution timing uses event close."
+  },
+  "data_quality_gates": {
+    "expected_regular_session_minutes": 390,
+    "synthetic_filling_or_interpolation": "prohibited",
+    "max_ticker_session_missing_bar_rate_pct": 5.0,
+    "max_ticker_session_duplicate_bar_rate_pct": 1.0,
+    "malformed_timestamps_action": "fail_closed_and_report",
+    "max_excluded_ticker_sessions_pct_per_split": 5.0,
+    "consequence_of_excess_excluded_sessions": "split_disposition_cannot_be_supported"
+  },
+  "future_execution_budget": {
+    "network_calls_authorized_in_daytrade_001b": 0,
+    "evaluation_data_span": "1 year (2025-01-02 through 2025-12-31)",
+    "warmup_data_span": "1 month (2024-12-02 through 2025-01-01)",
+    "universe_restriction": "DOW30 only",
+    "timeframe_restriction": "1Min only",
+    "tick_data_authorized": false,
+    "provider_feed": "Alpaca SIP only",
+    "max_retries_per_failed_http_page": 1,
+    "record_request_totals": true,
+    "hard_stop_policy": true
+  },
+  "governance": {
+    "maximum_evidence_confidence": "limited_but_usable_evidence",
+    "production_promotion_eligible": false,
+    "tick_resolution_acquisition_authorized": false,
+    "daytrade_multi_resolution_boundary": "Tests 1-minute statistical phenomenon only; 133-tick and 50-tick data are unauthorized in v1",
+    "approved_production_strategies_empty": true,
+    "execution_authorization_status": "unauthorized_pending_gary_and_chatgpt_review"
+  }
+}
