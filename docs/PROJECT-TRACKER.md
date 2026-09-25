@@ -458,12 +458,12 @@ This is the master backlog for TradeX engineering and research tasks, originatin
 - **Title:** Future real-time day-trading decision-support program
 - **Category:** Intraday trading
 - **Priority:** High
-- **Status:** Deferred
+- **Status:** In Progress (DAYTRADE-001A Completed; subsequent real strategy selection and provider acquisition pending)
 - **Description:** A separate future real-time day-trading decision-support program based on Gary's actual 3-year daily, 133-tick, 1-minute, and 50-tick workflow.
-- **Note:** Not equivalent to INTRA-001; not assumed to be VWAP-based.
-- **Sequencing:** After LONG-002 unless Gary explicitly reprioritizes.
+- **Note:** Explicitly separate from INTRA-001; not assumed to be VWAP-based; no production promotion eligible.
+- **Slice DAYTRADE-001A (Research MVP Foundation):** Completed on branch `antigravity/daytrade-001a-mvp-skeleton`. Research contract locked in `docs/research/DAYTRADE-001A.md`. Core multi-resolution data container and point-in-time access semantics implemented in `tradex/research/daytrade_mvp/`. Evaluator enforces strict point-in-time materialization (zero future-bar leakage) and fail-closed resolution validation. Architectural smoke setup `SYNTH-DAYTRADE-001` proves 4-tier multi-resolution evaluation on deterministic synthetic fixtures with zero provider calls. No real strategy hypothesis approved; no provider study authorized; `APPROVED_PRODUCTION_STRATEGIES == ()` preserved; zero interaction with parallel LONG-002 Stage C execution.
+- **Sequencing:** Initial research foundation completed; concrete strategy hypothesis selection (DAYTRADE-001B) and provider studies deferred pending explicit Gary prioritization.
 - **Affects trading behavior:** No
-- **Do not start DAYTRADE-001 work in this PR.**
 
 ---
 
@@ -1003,13 +1003,13 @@ The original engineering-foundation and UI-refactor backlog is substantially com
 **Remaining non-completed items:**
 1. **MVP-ARCH-001-R7-PIT-ACTIVATE-001-VERIFY** — First Scheduled Candidate C PIT Capture Verification (Future operational verification after the 2026-09-21 morning and evening slots; first capture has not yet been observed; no implementation changes in TradeX).
 2. **LONG-002C** — Design specification completed (`LONG-002C-DESIGN-001`); status `proposed_for_gary_review`; execution and dataset construction unauthorized.
-3. **DAYTRADE-001** — Future real-time day-trading decision-support program (deferred until after LONG-002).
+3. **DAYTRADE-001** — Future real-time day-trading decision-support program (`DAYTRADE-001A` research foundation completed; subsequent strategy selection deferred until after LONG-002 or Gary reprioritization).
 
 **Recommended next work order:**
 1. **MVP-ARCH-001-R7-PIT-ACTIVATE-001-VERIFY** — Verify the first naturally scheduled Candidate C PIT captures after the 2026-09-21 morning (09:00 ET) and evening (20:30 ET) slots. This is a future verification task only; do not implement in this PR.
 2. **Separate Gary/ChatGPT sequencing and approval decision for subsequent slices** — No next rollout implementation PR is currently authorized without separate Gary approval; strategy promotion remains unauthorized; R8 remains unauthorized.
 3. **LONG-002C review & authorization** — Gary / ChatGPT review of `LONG-002C-DESIGN-001`; dataset construction and execution require separate explicit Gary authorization.
-4. **DAYTRADE-001** — Deferred until `LONG-002` is complete or Gary reprioritizes.
+4. **DAYTRADE-001** — `DAYTRADE-001A` foundation completed; concrete strategy selection deferred until `LONG-002` is complete or Gary reprioritizes.
 
 **Recommended next pull request order:**
 1. **No next implementation PR is currently authorized** — Implementation PR A (`antigravity/mvp-arch-001-r7-pit-status-impl-a`) is merged (PR #79). Implementation PR B (`antigravity/mvp-arch-001-r7-pit-status-impl-b`) is merged in PR #80 at commit `618f91bfe2e9dc75b5d911f837b37cda5f38ff2f`. Implementation PR C (`MVP-ARCH-001-R7-PIT-STATUS-IMPL-C`, Operational Universe Selection & Verification) is merged in PR #81 at commit `e2f1e37a27e751fc9116c2893e226c83af025cb0`. Candidate C PIT scheduler operational activation is completed (`MVP-ARCH-001-R7-PIT-ACTIVATE-001`) with disposition `ACTIVATED_WITH_LOGON_REQUIREMENT`. The next operational step is verification of the first naturally scheduled capture on 2026-09-21 (`MVP-ARCH-001-R7-PIT-ACTIVATE-001-VERIFY`). No strategy is promoted; R8 is unauthorized; LONG-002C execution and dataset construction remain unauthorized pending Gary review of LONG-002C-DESIGN-001.
