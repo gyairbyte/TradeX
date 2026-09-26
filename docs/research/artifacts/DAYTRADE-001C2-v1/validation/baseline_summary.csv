@@ -1,0 +1,5 @@
+metric,value
+mean_baseline_net_2bps,-0.0004053872697678843
+median_baseline_net_2bps,-0.00039727874977123017
+mean_uplift_net_2bps,0.00015575372402749745
+median_uplift_net_2bps,0.00013145156667059948

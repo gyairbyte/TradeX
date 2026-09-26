@@ -186,25 +186,50 @@ When DAYTRADE-001C2 is separately authorized by Gary Yang, the execution sequenc
    ```powershell
    uv run python -m tradex.research.daytrade_reversal verify-spec
    ```
-2. **Build Private Dataset (outside repo):**
+2. **Build Private Dataset (preholdout partition outside repo):**
    ```powershell
-   uv run python -m tradex.research.daytrade_reversal build-dataset --dataset-root ~/.tradex/research/daytrade_001b/
+   uv run python -m tradex.research.daytrade_reversal build-dataset `
+     --dataset-root ~/.tradex/research/daytrade_001b/ `
+     --split preholdout `
+     --execute-provider
    ```
-3. **Freeze Evaluator Code:**
+3. **Freeze Evaluator Code (dataset-bound):**
    ```powershell
-   uv run python -m tradex.research.daytrade_reversal freeze --output ~/.tradex/research/daytrade_001b/freeze/
+   uv run python -m tradex.research.daytrade_reversal freeze `
+     --dataset-root ~/.tradex/research/daytrade_001b/ `
+     --output ~/.tradex/research/daytrade_001b/freeze/
    ```
 4. **Evaluate Development Split (diagnostic):**
    ```powershell
-   uv run python -m tradex.research.daytrade_reversal evaluate --split development --dataset-root ~/.tradex/research/daytrade_001b/ --output ~/.tradex/research/daytrade_001b/results/dev/
+   uv run python -m tradex.research.daytrade_reversal evaluate `
+     --split development `
+     --dataset-root ~/.tradex/research/daytrade_001b/ `
+     --freeze ~/.tradex/research/daytrade_001b/freeze/freeze.json `
+     --output ~/.tradex/research/daytrade_001b/results/dev/
    ```
-5. **Evaluate Validation Split (formal gate):**
+5. **Evaluate Validation Split (formal gate with freeze requirement):**
    ```powershell
-   uv run python -m tradex.research.daytrade_reversal evaluate --split validation --dataset-root ~/.tradex/research/daytrade_001b/ --output ~/.tradex/research/daytrade_001b/results/val/
+   uv run python -m tradex.research.daytrade_reversal evaluate `
+     --split validation `
+     --dataset-root ~/.tradex/research/daytrade_001b/ `
+     --freeze ~/.tradex/research/daytrade_001b/freeze/freeze.json `
+     --output ~/.tradex/research/daytrade_001b/results/val/
    ```
-6. **Conditional Holdout Evaluation (only if validation == supported):**
+6. **Conditional Holdout Acquisition (only if validation == supported):**
    ```powershell
-   uv run python -m tradex.research.daytrade_reversal evaluate --split holdout --dataset-root ~/.tradex/research/daytrade_001b/ --validation-artifact-dir ~/.tradex/research/daytrade_001b/results/val/ --output ~/.tradex/research/daytrade_001b/results/holdout/
+   uv run python -m tradex.research.daytrade_reversal build-dataset `
+     --dataset-root ~/.tradex/research/daytrade_001b/ `
+     --split holdout `
+     --execute-provider `
+     --validation-artifact-dir ~/.tradex/research/daytrade_001b/results/val/
+   ```
+7. **Guarded Holdout Evaluation (only if validation == supported):**
+   ```powershell
+   uv run python -m tradex.research.daytrade_reversal evaluate `
+     --split holdout `
+     --dataset-root ~/.tradex/research/daytrade_001b/ `
+     --validation-artifact-dir ~/.tradex/research/daytrade_001b/results/val/ `
+     --output ~/.tradex/research/daytrade_001b/results/holdout/
    ```
 
 ---

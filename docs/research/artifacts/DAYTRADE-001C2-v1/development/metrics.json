@@ -1,0 +1,3786 @@
+{
+  "data_quality_summary": {
+    "exceeds_split_gate": false,
+    "excluded_rate_pct": 4.53551912568306,
+    "excluded_ticker_sessions": 166,
+    "exclusion_breakdown": {
+      "missing": 166
+    },
+    "is_valid": true,
+    "split": "development",
+    "total_ticker_sessions": 3660
+  },
+  "eligible_minute_count": 1317083,
+  "event_count": 2046,
+  "event_minus_baseline_difference_mean": -0.00015027304622491845,
+  "event_minus_baseline_difference_median": -0.00013834748703907637,
+  "events_per_month": {
+    "2025-01": 330,
+    "2025-02": 292,
+    "2025-03": 305,
+    "2025-04": 743,
+    "2025-05": 118,
+    "2025-06": 258
+  },
+  "events_per_ticker": {
+    "AAPL": 77,
+    "AMGN": 75,
+    "AMZN": 74,
+    "AXP": 66,
+    "BA": 64,
+    "CAT": 57,
+    "CRM": 81,
+    "CSCO": 81,
+    "CVX": 69,
+    "DIS": 83,
+    "GS": 75,
+    "HD": 67,
+    "HON": 56,
+    "IBM": 78,
+    "JNJ": 65,
+    "JPM": 80,
+    "KO": 60,
+    "MCD": 61,
+    "MMM": 61,
+    "MRK": 65,
+    "MSFT": 73,
+    "NKE": 69,
+    "NVDA": 69,
+    "PG": 59,
+    "SHW": 34,
+    "TRV": 26,
+    "UNH": 72,
+    "V": 104,
+    "VZ": 71,
+    "WMT": 74
+  },
+  "maximum_single_ticker_event_concentration": 5.083088954056696,
+  "mean_gross_forward_return_1m": -0.00014513624301751367,
+  "mean_gross_forward_return_2m": -0.00031321951777657167,
+  "mean_gross_forward_return_5m": -0.0003640564500975805,
+  "mean_net_forward_return_0bps": -0.00014513624301751367,
+  "mean_net_forward_return_2bps": -0.0005451362430175138,
+  "mean_net_forward_return_5bps": -0.0011451362430175136,
+  "median_gross_forward_return_1m": -9.275799906109548e-05,
+  "median_gross_forward_return_2m": -0.00019338273050560016,
+  "median_gross_forward_return_5m": -5.3011026293420835e-05,
+  "median_net_forward_return_0bps": -9.275799906109548e-05,
+  "median_net_forward_return_2bps": -0.0004927579990610955,
+  "median_net_forward_return_5bps": -0.0010927579990610955,
+  "monthly_primary_results": {
+    "2025-01": {
+      "event_count": 330,
+      "mean_net_return_2bps": -0.00041142539035286075
+    },
+    "2025-02": {
+      "event_count": 292,
+      "mean_net_return_2bps": -0.0006109283292770133
+    },
+    "2025-03": {
+      "event_count": 305,
+      "mean_net_return_2bps": -0.00023963554885468818
+    },
+    "2025-04": {
+      "event_count": 743,
+      "mean_net_return_2bps": -0.0005954610242992874
+    },
+    "2025-05": {
+      "event_count": 118,
+      "mean_net_return_2bps": -0.00118221579002912
+    },
+    "2025-06": {
+      "event_count": 258,
+      "mean_net_return_2bps": -0.0005665482774031572
+    }
+  },
+  "overlapping_event_count": 1816,
+  "overlapping_event_rate": 0.8875855327468231,
+  "pct_positive_representation_tickers": 6.666666666666667,
+  "per_ticker_primary_results": {
+    "AAPL": {
+      "event_count": 77,
+      "mean_net_return_2bps": 0.0005826283844501361
+    },
+    "AMGN": {
+      "event_count": 75,
+      "mean_net_return_2bps": -0.0008268920346176513
+    },
+    "AMZN": {
+      "event_count": 74,
+      "mean_net_return_2bps": -0.0005957511650079391
+    },
+    "AXP": {
+      "event_count": 66,
+      "mean_net_return_2bps": -0.0007926419581811986
+    },
+    "BA": {
+      "event_count": 64,
+      "mean_net_return_2bps": -3.527683348523685e-05
+    },
+    "CAT": {
+      "event_count": 57,
+      "mean_net_return_2bps": -0.0007261984383833223
+    },
+    "CRM": {
+      "event_count": 81,
+      "mean_net_return_2bps": -0.001111836538653659
+    },
+    "CSCO": {
+      "event_count": 81,
+      "mean_net_return_2bps": -0.000350633022534246
+    },
+    "CVX": {
+      "event_count": 69,
+      "mean_net_return_2bps": -0.00040184224153480146
+    },
+    "DIS": {
+      "event_count": 83,
+      "mean_net_return_2bps": -0.0011462085343900952
+    },
+    "GS": {
+      "event_count": 75,
+      "mean_net_return_2bps": -0.0010785673018133901
+    },
+    "HD": {
+      "event_count": 67,
+      "mean_net_return_2bps": -0.0005178201854098635
+    },
+    "HON": {
+      "event_count": 56,
+      "mean_net_return_2bps": -0.0006966428030928787
+    },
+    "IBM": {
+      "event_count": 78,
+      "mean_net_return_2bps": -0.00039575985694213073
+    },
+    "JNJ": {
+      "event_count": 65,
+      "mean_net_return_2bps": -0.0006884510224239718
+    },
+    "JPM": {
+      "event_count": 80,
+      "mean_net_return_2bps": -0.0009684086424872789
+    },
+    "KO": {
+      "event_count": 60,
+      "mean_net_return_2bps": -0.0002437295691506381
+    },
+    "MCD": {
+      "event_count": 61,
+      "mean_net_return_2bps": -0.0005588288716977529
+    },
+    "MMM": {
+      "event_count": 61,
+      "mean_net_return_2bps": -0.0006447343661354684
+    },
+    "MRK": {
+      "event_count": 65,
+      "mean_net_return_2bps": -0.0004876845296687675
+    },
+    "MSFT": {
+      "event_count": 73,
+      "mean_net_return_2bps": -0.000795005791097617
+    },
+    "NKE": {
+      "event_count": 69,
+      "mean_net_return_2bps": 0.0007836037647193596
+    },
+    "NVDA": {
+      "event_count": 69,
+      "mean_net_return_2bps": -0.00014189487218313972
+    },
+    "PG": {
+      "event_count": 59,
+      "mean_net_return_2bps": -0.00030732117309053994
+    },
+    "SHW": {
+      "event_count": 34,
+      "mean_net_return_2bps": -0.0005324127018953623
+    },
+    "TRV": {
+      "event_count": 26,
+      "mean_net_return_2bps": -0.000847516768215805
+    },
+    "UNH": {
+      "event_count": 72,
+      "mean_net_return_2bps": -0.000957378386742552
+    },
+    "V": {
+      "event_count": 104,
+      "mean_net_return_2bps": -0.0008808615571083281
+    },
+    "VZ": {
+      "event_count": 71,
+      "mean_net_return_2bps": -0.00020066660743672788
+    },
+    "WMT": {
+      "event_count": 74,
+      "mean_net_return_2bps": -0.0005753418110666468
+    }
+  },
+  "provider_provenance_summary": {
+    "adjustment": "split",
+    "end_date": "2025-09-30",
+    "feed": "sip",
+    "pagination_complete": true,
+    "provider": "alpaca",
+    "session_calendar": "XNYS",
+    "start_date": "2024-12-02",
+    "symbols": {
+      "AAPL": {
+        "file_sha256": "d51a54a12da16ec24325c43dc40ce51c8e0343ab53d92001c28c1bb19eff851d",
+        "malformed_timestamps": 0,
+        "month_chunks": [
+          {
+            "attempts": 2,
+            "bar_count": 14381,
+            "end_utc": "2024-12-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2024-12",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2024-12-02T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 15848,
+            "end_utc": "2025-01-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-01",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-01-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 14085,
+            "end_utc": "2025-02-28T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-02",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-02-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 15496,
+            "end_utc": "2025-03-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-03",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-03-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 17614,
+            "end_utc": "2025-04-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-04",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-04-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 17053,
+            "end_utc": "2025-05-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-05",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-05-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 15957,
+            "end_utc": "2025-06-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-06",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-06-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 16635,
+            "end_utc": "2025-07-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-07",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-07-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 15480,
+            "end_utc": "2025-08-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-08",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-08-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 15891,
+            "end_utc": "2025-09-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-09",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-09-01T00:00:00+00:00"
+          }
+        ],
+        "source_file": "bars/AAPL.csv",
+        "total_bars": 158440
+      },
+      "AMGN": {
+        "file_sha256": "39a9b7141b31fbb56dada17a86f6bdf433b79b55d10b52c0fb3754f647e0dd0d",
+        "malformed_timestamps": 0,
+        "month_chunks": [
+          {
+            "attempts": 1,
+            "bar_count": 8341,
+            "end_utc": "2024-12-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2024-12",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2024-12-02T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 7969,
+            "end_utc": "2025-01-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-01",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-01-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 7630,
+            "end_utc": "2025-02-28T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-02",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-02-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8298,
+            "end_utc": "2025-03-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-03",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-03-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8444,
+            "end_utc": "2025-04-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-04",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-04-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8517,
+            "end_utc": "2025-05-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-05",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-05-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 7827,
+            "end_utc": "2025-06-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-06",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-06-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8117,
+            "end_utc": "2025-07-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-07",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-07-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 7971,
+            "end_utc": "2025-08-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-08",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-08-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8182,
+            "end_utc": "2025-09-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-09",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-09-01T00:00:00+00:00"
+          }
+        ],
+        "source_file": "bars/AMGN.csv",
+        "total_bars": 81296
+      },
+      "AMZN": {
+        "file_sha256": "deaccc02b265ad2974a6524936f5147e0e748ad49afbb5bb857a9c3a21106738",
+        "malformed_timestamps": 0,
+        "month_chunks": [
+          {
+            "attempts": 2,
+            "bar_count": 14945,
+            "end_utc": "2024-12-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2024-12",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2024-12-02T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 14679,
+            "end_utc": "2025-01-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-01",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-01-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 15042,
+            "end_utc": "2025-02-28T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-02",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-02-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 16539,
+            "end_utc": "2025-03-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-03",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-03-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 17548,
+            "end_utc": "2025-04-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-04",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-04-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 16616,
+            "end_utc": "2025-05-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-05",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-05-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 15042,
+            "end_utc": "2025-06-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-06",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-06-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 15963,
+            "end_utc": "2025-07-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-07",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-07-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 15320,
+            "end_utc": "2025-08-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-08",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-08-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 16200,
+            "end_utc": "2025-09-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-09",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-09-01T00:00:00+00:00"
+          }
+        ],
+        "source_file": "bars/AMZN.csv",
+        "total_bars": 157894
+      },
+      "AXP": {
+        "file_sha256": "191ab44a872310d4487d2ff95159def2a43f0a74b6a153ef0a01a503d4eb7082",
+        "malformed_timestamps": 0,
+        "month_chunks": [
+          {
+            "attempts": 1,
+            "bar_count": 8044,
+            "end_utc": "2024-12-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2024-12",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2024-12-02T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8341,
+            "end_utc": "2025-01-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-01",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-01-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 7534,
+            "end_utc": "2025-02-28T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-02",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-02-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8533,
+            "end_utc": "2025-03-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-03",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-03-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8875,
+            "end_utc": "2025-04-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-04",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-04-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8416,
+            "end_utc": "2025-05-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-05",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-05-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 7957,
+            "end_utc": "2025-06-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-06",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-06-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8736,
+            "end_utc": "2025-07-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-07",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-07-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8310,
+            "end_utc": "2025-08-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-08",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-08-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8250,
+            "end_utc": "2025-09-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-09",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-09-01T00:00:00+00:00"
+          }
+        ],
+        "source_file": "bars/AXP.csv",
+        "total_bars": 82996
+      },
+      "BA": {
+        "file_sha256": "6506942e1a759d5ed249832f5f8564bff2a8e421862850fe2b61c1f483464888",
+        "malformed_timestamps": 0,
+        "month_chunks": [
+          {
+            "attempts": 2,
+            "bar_count": 11496,
+            "end_utc": "2024-12-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2024-12",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2024-12-02T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 10613,
+            "end_utc": "2025-01-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-01",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-01-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9359,
+            "end_utc": "2025-02-28T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-02",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-02-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 10776,
+            "end_utc": "2025-03-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-03",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-03-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 12033,
+            "end_utc": "2025-04-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-04",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-04-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 11294,
+            "end_utc": "2025-05-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-05",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-05-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 10818,
+            "end_utc": "2025-06-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-06",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-06-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 11113,
+            "end_utc": "2025-07-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-07",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-07-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9932,
+            "end_utc": "2025-08-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-08",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-08-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 11010,
+            "end_utc": "2025-09-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-09",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-09-01T00:00:00+00:00"
+          }
+        ],
+        "source_file": "bars/BA.csv",
+        "total_bars": 108444
+      },
+      "CAT": {
+        "file_sha256": "71f5dae902748f28e28caf86b610d284340e02c6bcab22377aa66e174c4c1a42",
+        "malformed_timestamps": 0,
+        "month_chunks": [
+          {
+            "attempts": 1,
+            "bar_count": 7975,
+            "end_utc": "2024-12-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2024-12",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2024-12-02T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8175,
+            "end_utc": "2025-01-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-01",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-01-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 7690,
+            "end_utc": "2025-02-28T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-02",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-02-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8348,
+            "end_utc": "2025-03-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-03",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-03-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8754,
+            "end_utc": "2025-04-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-04",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-04-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8412,
+            "end_utc": "2025-05-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-05",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-05-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 7826,
+            "end_utc": "2025-06-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-06",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-06-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8566,
+            "end_utc": "2025-07-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-07",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-07-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8619,
+            "end_utc": "2025-08-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-08",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-08-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8245,
+            "end_utc": "2025-09-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-09",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-09-01T00:00:00+00:00"
+          }
+        ],
+        "source_file": "bars/CAT.csv",
+        "total_bars": 82610
+      },
+      "CRM": {
+        "file_sha256": "dd9900ef4bda049f3b4377e059ff547b4e6376169d72fe081e74dad923f40784",
+        "malformed_timestamps": 0,
+        "month_chunks": [
+          {
+            "attempts": 1,
+            "bar_count": 9778,
+            "end_utc": "2024-12-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2024-12",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2024-12-02T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9218,
+            "end_utc": "2025-01-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-01",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-01-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9111,
+            "end_utc": "2025-02-28T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-02",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-02-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8907,
+            "end_utc": "2025-03-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-03",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-03-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9411,
+            "end_utc": "2025-04-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-04",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-04-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9718,
+            "end_utc": "2025-05-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-05",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-05-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8952,
+            "end_utc": "2025-06-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-06",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-06-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9318,
+            "end_utc": "2025-07-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-07",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-07-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9674,
+            "end_utc": "2025-08-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-08",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-08-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 10289,
+            "end_utc": "2025-09-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-09",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-09-01T00:00:00+00:00"
+          }
+        ],
+        "source_file": "bars/CRM.csv",
+        "total_bars": 94376
+      },
+      "CSCO": {
+        "file_sha256": "9a5107c0eb4480fb28d3e39b79819b7d828a7a4e3418cba8f0e4a1528a9cef28",
+        "malformed_timestamps": 0,
+        "month_chunks": [
+          {
+            "attempts": 1,
+            "bar_count": 9047,
+            "end_utc": "2024-12-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2024-12",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2024-12-02T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9312,
+            "end_utc": "2025-01-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-01",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-01-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9257,
+            "end_utc": "2025-02-28T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-02",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-02-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9587,
+            "end_utc": "2025-03-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-03",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-03-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 10189,
+            "end_utc": "2025-04-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-04",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-04-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 10293,
+            "end_utc": "2025-05-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-05",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-05-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9267,
+            "end_utc": "2025-06-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-06",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-06-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9819,
+            "end_utc": "2025-07-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-07",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-07-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 10582,
+            "end_utc": "2025-08-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-08",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-08-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9501,
+            "end_utc": "2025-09-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-09",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-09-01T00:00:00+00:00"
+          }
+        ],
+        "source_file": "bars/CSCO.csv",
+        "total_bars": 96854
+      },
+      "CVX": {
+        "file_sha256": "1cf13c6792ef1e817c5209c6a658edea02cfe9181150c63f3cde05c06c7ef98d",
+        "malformed_timestamps": 0,
+        "month_chunks": [
+          {
+            "attempts": 1,
+            "bar_count": 8889,
+            "end_utc": "2024-12-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2024-12",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2024-12-02T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8971,
+            "end_utc": "2025-01-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-01",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-01-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8200,
+            "end_utc": "2025-02-28T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-02",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-02-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8990,
+            "end_utc": "2025-03-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-03",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-03-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9987,
+            "end_utc": "2025-04-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-04",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-04-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9876,
+            "end_utc": "2025-05-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-05",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-05-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9408,
+            "end_utc": "2025-06-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-06",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-06-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9636,
+            "end_utc": "2025-07-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-07",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-07-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8967,
+            "end_utc": "2025-08-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-08",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-08-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8911,
+            "end_utc": "2025-09-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-09",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-09-01T00:00:00+00:00"
+          }
+        ],
+        "source_file": "bars/CVX.csv",
+        "total_bars": 91835
+      },
+      "DIS": {
+        "file_sha256": "4d5fc8e7eb140d9f39bf3e09371978461e3d06b8a3afdf1e9cd10dd13fd109cf",
+        "malformed_timestamps": 0,
+        "month_chunks": [
+          {
+            "attempts": 1,
+            "bar_count": 9293,
+            "end_utc": "2024-12-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2024-12",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2024-12-02T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9338,
+            "end_utc": "2025-01-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-01",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-01-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9053,
+            "end_utc": "2025-02-28T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-02",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-02-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9531,
+            "end_utc": "2025-03-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-03",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-03-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 10385,
+            "end_utc": "2025-04-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-04",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-04-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 10177,
+            "end_utc": "2025-05-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-05",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-05-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8832,
+            "end_utc": "2025-06-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-06",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-06-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9298,
+            "end_utc": "2025-07-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-07",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-07-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9530,
+            "end_utc": "2025-08-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-08",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-08-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9343,
+            "end_utc": "2025-09-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-09",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-09-01T00:00:00+00:00"
+          }
+        ],
+        "source_file": "bars/DIS.csv",
+        "total_bars": 94780
+      },
+      "GS": {
+        "file_sha256": "38e7b83bb7c0ff9430e5e2d513954dc400f5c4ddd8037eb746ddf0772b47f3ac",
+        "malformed_timestamps": 0,
+        "month_chunks": [
+          {
+            "attempts": 1,
+            "bar_count": 8099,
+            "end_utc": "2024-12-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2024-12",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2024-12-02T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8479,
+            "end_utc": "2025-01-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-01",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-01-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 7773,
+            "end_utc": "2025-02-28T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-02",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-02-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8663,
+            "end_utc": "2025-03-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-03",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-03-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9201,
+            "end_utc": "2025-04-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-04",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-04-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8593,
+            "end_utc": "2025-05-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-05",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-05-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 7972,
+            "end_utc": "2025-06-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-06",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-06-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8570,
+            "end_utc": "2025-07-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-07",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-07-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 7751,
+            "end_utc": "2025-08-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-08",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-08-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 7846,
+            "end_utc": "2025-09-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-09",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-09-01T00:00:00+00:00"
+          }
+        ],
+        "source_file": "bars/GS.csv",
+        "total_bars": 82947
+      },
+      "HD": {
+        "file_sha256": "19178f647d34a2e8fee55c26e68cd2c4f28aa024a42da80eb1e8cfd52fec2029",
+        "malformed_timestamps": 0,
+        "month_chunks": [
+          {
+            "attempts": 1,
+            "bar_count": 8241,
+            "end_utc": "2024-12-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2024-12",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2024-12-02T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8205,
+            "end_utc": "2025-01-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-01",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-01-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 7978,
+            "end_utc": "2025-02-28T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-02",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-02-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8567,
+            "end_utc": "2025-03-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-03",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-03-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8674,
+            "end_utc": "2025-04-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-04",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-04-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8640,
+            "end_utc": "2025-05-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-05",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-05-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8115,
+            "end_utc": "2025-06-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-06",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-06-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8719,
+            "end_utc": "2025-07-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-07",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-07-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8700,
+            "end_utc": "2025-08-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-08",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-08-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8577,
+            "end_utc": "2025-09-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-09",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-09-01T00:00:00+00:00"
+          }
+        ],
+        "source_file": "bars/HD.csv",
+        "total_bars": 84416
+      },
+      "HON": {
+        "file_sha256": "a9a003ac7bffa7245f09319514a02c14be81887751c3a124ca2a93de20859722",
+        "malformed_timestamps": 0,
+        "month_chunks": [
+          {
+            "attempts": 1,
+            "bar_count": 8444,
+            "end_utc": "2024-12-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2024-12",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2024-12-02T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8078,
+            "end_utc": "2025-01-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-01",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-01-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 7969,
+            "end_utc": "2025-02-28T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-02",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-02-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8442,
+            "end_utc": "2025-03-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-03",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-03-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8634,
+            "end_utc": "2025-04-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-04",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-04-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8387,
+            "end_utc": "2025-05-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-05",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-05-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 7799,
+            "end_utc": "2025-06-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-06",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-06-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8793,
+            "end_utc": "2025-07-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-07",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-07-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8384,
+            "end_utc": "2025-08-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-08",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-08-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8592,
+            "end_utc": "2025-09-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-09",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-09-01T00:00:00+00:00"
+          }
+        ],
+        "source_file": "bars/HON.csv",
+        "total_bars": 83522
+      },
+      "IBM": {
+        "file_sha256": "acf8258e2dfacafde63be84508f7c76b55bdb7b8b071048127b51d506f5b49c6",
+        "malformed_timestamps": 0,
+        "month_chunks": [
+          {
+            "attempts": 1,
+            "bar_count": 8318,
+            "end_utc": "2024-12-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2024-12",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2024-12-02T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8610,
+            "end_utc": "2025-01-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-01",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-01-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8027,
+            "end_utc": "2025-02-28T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-02",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-02-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8698,
+            "end_utc": "2025-03-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-03",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-03-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9404,
+            "end_utc": "2025-04-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-04",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-04-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8690,
+            "end_utc": "2025-05-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-05",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-05-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8328,
+            "end_utc": "2025-06-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-06",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-06-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9426,
+            "end_utc": "2025-07-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-07",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-07-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8982,
+            "end_utc": "2025-08-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-08",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-08-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9106,
+            "end_utc": "2025-09-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-09",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-09-01T00:00:00+00:00"
+          }
+        ],
+        "source_file": "bars/IBM.csv",
+        "total_bars": 87589
+      },
+      "JNJ": {
+        "file_sha256": "9fd94487cb033957004cc6145460a6aeda49d2dec3c876831b6335d8aafeb528",
+        "malformed_timestamps": 0,
+        "month_chunks": [
+          {
+            "attempts": 1,
+            "bar_count": 8670,
+            "end_utc": "2024-12-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2024-12",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2024-12-02T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8795,
+            "end_utc": "2025-01-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-01",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-01-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 7987,
+            "end_utc": "2025-02-28T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-02",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-02-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8699,
+            "end_utc": "2025-03-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-03",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-03-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9308,
+            "end_utc": "2025-04-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-04",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-04-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8843,
+            "end_utc": "2025-05-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-05",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-05-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8168,
+            "end_utc": "2025-06-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-06",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-06-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9053,
+            "end_utc": "2025-07-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-07",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-07-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8646,
+            "end_utc": "2025-08-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-08",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-08-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8617,
+            "end_utc": "2025-09-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-09",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-09-01T00:00:00+00:00"
+          }
+        ],
+        "source_file": "bars/JNJ.csv",
+        "total_bars": 86786
+      },
+      "JPM": {
+        "file_sha256": "036439e5912ebac68eea02eb679ff1d23c33ea6200efb36ac8f446ed1f889959",
+        "malformed_timestamps": 0,
+        "month_chunks": [
+          {
+            "attempts": 1,
+            "bar_count": 8718,
+            "end_utc": "2024-12-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2024-12",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2024-12-02T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9308,
+            "end_utc": "2025-01-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-01",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-01-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8386,
+            "end_utc": "2025-02-28T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-02",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-02-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9692,
+            "end_utc": "2025-03-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-03",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-03-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 10372,
+            "end_utc": "2025-04-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-04",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-04-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9184,
+            "end_utc": "2025-05-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-05",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-05-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8632,
+            "end_utc": "2025-06-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-06",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-06-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9889,
+            "end_utc": "2025-07-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-07",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-07-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8912,
+            "end_utc": "2025-08-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-08",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-08-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9219,
+            "end_utc": "2025-09-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-09",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-09-01T00:00:00+00:00"
+          }
+        ],
+        "source_file": "bars/JPM.csv",
+        "total_bars": 92312
+      },
+      "KO": {
+        "file_sha256": "c6ed903948f151c4725cacaeec8b264d38d58da86fc7b5eed2cc03b3913d18be",
+        "malformed_timestamps": 0,
+        "month_chunks": [
+          {
+            "attempts": 2,
+            "bar_count": 10178,
+            "end_utc": "2024-12-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2024-12",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2024-12-02T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9827,
+            "end_utc": "2025-01-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-01",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-01-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9415,
+            "end_utc": "2025-02-28T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-02",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-02-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 10113,
+            "end_utc": "2025-03-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-03",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-03-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 10371,
+            "end_utc": "2025-04-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-04",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-04-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9920,
+            "end_utc": "2025-05-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-05",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-05-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9021,
+            "end_utc": "2025-06-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-06",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-06-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 10776,
+            "end_utc": "2025-07-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-07",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-07-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9749,
+            "end_utc": "2025-08-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-08",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-08-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 10861,
+            "end_utc": "2025-09-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-09",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-09-01T00:00:00+00:00"
+          }
+        ],
+        "source_file": "bars/KO.csv",
+        "total_bars": 100231
+      },
+      "MCD": {
+        "file_sha256": "51b307db078c8e959e2b51bf3b555fd4d3b951a396e1f151f627901b462f4735",
+        "malformed_timestamps": 0,
+        "month_chunks": [
+          {
+            "attempts": 1,
+            "bar_count": 8241,
+            "end_utc": "2024-12-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2024-12",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2024-12-02T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8126,
+            "end_utc": "2025-01-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-01",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-01-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 7817,
+            "end_utc": "2025-02-28T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-02",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-02-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8470,
+            "end_utc": "2025-03-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-03",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-03-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8667,
+            "end_utc": "2025-04-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-04",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-04-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8458,
+            "end_utc": "2025-05-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-05",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-05-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8267,
+            "end_utc": "2025-06-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-06",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-06-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8774,
+            "end_utc": "2025-07-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-07",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-07-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8515,
+            "end_utc": "2025-08-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-08",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-08-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8455,
+            "end_utc": "2025-09-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-09",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-09-01T00:00:00+00:00"
+          }
+        ],
+        "source_file": "bars/MCD.csv",
+        "total_bars": 83790
+      },
+      "MMM": {
+        "file_sha256": "57e66ffbdd7833aaaee3f0b11ea86aacd05ebd034514049c4271a5fb4e05fa19",
+        "malformed_timestamps": 0,
+        "month_chunks": [
+          {
+            "attempts": 1,
+            "bar_count": 8159,
+            "end_utc": "2024-12-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2024-12",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2024-12-02T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8350,
+            "end_utc": "2025-01-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-01",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-01-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 7694,
+            "end_utc": "2025-02-28T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-02",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-02-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8479,
+            "end_utc": "2025-03-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-03",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-03-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8693,
+            "end_utc": "2025-04-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-04",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-04-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8387,
+            "end_utc": "2025-05-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-05",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-05-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 7888,
+            "end_utc": "2025-06-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-06",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-06-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8798,
+            "end_utc": "2025-07-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-07",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-07-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8182,
+            "end_utc": "2025-08-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-08",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-08-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8196,
+            "end_utc": "2025-09-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-09",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-09-01T00:00:00+00:00"
+          }
+        ],
+        "source_file": "bars/MMM.csv",
+        "total_bars": 82826
+      },
+      "MRK": {
+        "file_sha256": "5a74a4dae6bcb3fe96c46578c90d6fd92149495136e8ff61942c183906a8c80a",
+        "malformed_timestamps": 0,
+        "month_chunks": [
+          {
+            "attempts": 1,
+            "bar_count": 8811,
+            "end_utc": "2024-12-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2024-12",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2024-12-02T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8613,
+            "end_utc": "2025-01-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-01",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-01-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9362,
+            "end_utc": "2025-02-28T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-02",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-02-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9016,
+            "end_utc": "2025-03-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-03",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-03-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9691,
+            "end_utc": "2025-04-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-04",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-04-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 10013,
+            "end_utc": "2025-05-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-05",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-05-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8879,
+            "end_utc": "2025-06-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-06",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-06-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9743,
+            "end_utc": "2025-07-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-07",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-07-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8941,
+            "end_utc": "2025-08-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-08",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-08-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9499,
+            "end_utc": "2025-09-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-09",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-09-01T00:00:00+00:00"
+          }
+        ],
+        "source_file": "bars/MRK.csv",
+        "total_bars": 92568
+      },
+      "MSFT": {
+        "file_sha256": "4de64b57b1d8d9559e257241281a98e441970fcfaf3988fe7043a55c62f504f3",
+        "malformed_timestamps": 0,
+        "month_chunks": [
+          {
+            "attempts": 2,
+            "bar_count": 12130,
+            "end_utc": "2024-12-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2024-12",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2024-12-02T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 13139,
+            "end_utc": "2025-01-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-01",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-01-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 12380,
+            "end_utc": "2025-02-28T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-02",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-02-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 12751,
+            "end_utc": "2025-03-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-03",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-03-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 13757,
+            "end_utc": "2025-04-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-04",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-04-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 12689,
+            "end_utc": "2025-05-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-05",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-05-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 11152,
+            "end_utc": "2025-06-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-06",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-06-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 12101,
+            "end_utc": "2025-07-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-07",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-07-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 12216,
+            "end_utc": "2025-08-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-08",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-08-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 12509,
+            "end_utc": "2025-09-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-09",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-09-01T00:00:00+00:00"
+          }
+        ],
+        "source_file": "bars/MSFT.csv",
+        "total_bars": 124824
+      },
+      "NKE": {
+        "file_sha256": "e4aee3aae3f4d490de3a327177f229543bc3b5915af553678cf904e8f6616ae1",
+        "malformed_timestamps": 0,
+        "month_chunks": [
+          {
+            "attempts": 2,
+            "bar_count": 11135,
+            "end_utc": "2024-12-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2024-12",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2024-12-02T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 10713,
+            "end_utc": "2025-01-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-01",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-01-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 10595,
+            "end_utc": "2025-02-28T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-02",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-02-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 11567,
+            "end_utc": "2025-03-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-03",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-03-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 14182,
+            "end_utc": "2025-04-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-04",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-04-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 12358,
+            "end_utc": "2025-05-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-05",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-05-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 11349,
+            "end_utc": "2025-06-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-06",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-06-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 11117,
+            "end_utc": "2025-07-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-07",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-07-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9318,
+            "end_utc": "2025-08-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-08",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-08-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 10794,
+            "end_utc": "2025-09-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-09",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-09-01T00:00:00+00:00"
+          }
+        ],
+        "source_file": "bars/NKE.csv",
+        "total_bars": 113128
+      },
+      "NVDA": {
+        "file_sha256": "26677794964bc2255961fe8828a6b5bc2dfbd7844c3e460e7d85292dcbca397d",
+        "malformed_timestamps": 0,
+        "month_chunks": [
+          {
+            "attempts": 2,
+            "bar_count": 19824,
+            "end_utc": "2024-12-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2024-12",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2024-12-02T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 19172,
+            "end_utc": "2025-01-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-01",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-01-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 18211,
+            "end_utc": "2025-02-28T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-02",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-02-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 3,
+            "bar_count": 20209,
+            "end_utc": "2025-03-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-03",
+            "pages": 3,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-03-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 3,
+            "bar_count": 20152,
+            "end_utc": "2025-04-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-04",
+            "pages": 3,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-04-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 3,
+            "bar_count": 20124,
+            "end_utc": "2025-05-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-05",
+            "pages": 3,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-05-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 19133,
+            "end_utc": "2025-06-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-06",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-06-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 3,
+            "bar_count": 20771,
+            "end_utc": "2025-07-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-07",
+            "pages": 3,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-07-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 19994,
+            "end_utc": "2025-08-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-08",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-08-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 3,
+            "bar_count": 20018,
+            "end_utc": "2025-09-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-09",
+            "pages": 3,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-09-01T00:00:00+00:00"
+          }
+        ],
+        "source_file": "bars/NVDA.csv",
+        "total_bars": 197608
+      },
+      "PG": {
+        "file_sha256": "d8d0ac60ded937b07628aa569a5f82eb9884327f01253d34673355517a65e1f6",
+        "malformed_timestamps": 0,
+        "month_chunks": [
+          {
+            "attempts": 1,
+            "bar_count": 8381,
+            "end_utc": "2024-12-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2024-12",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2024-12-02T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8503,
+            "end_utc": "2025-01-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-01",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-01-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 7962,
+            "end_utc": "2025-02-28T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-02",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-02-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8700,
+            "end_utc": "2025-03-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-03",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-03-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8937,
+            "end_utc": "2025-04-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-04",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-04-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8667,
+            "end_utc": "2025-05-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-05",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-05-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8256,
+            "end_utc": "2025-06-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-06",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-06-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9199,
+            "end_utc": "2025-07-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-07",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-07-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8622,
+            "end_utc": "2025-08-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-08",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-08-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8664,
+            "end_utc": "2025-09-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-09",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-09-01T00:00:00+00:00"
+          }
+        ],
+        "source_file": "bars/PG.csv",
+        "total_bars": 85891
+      },
+      "SHW": {
+        "file_sha256": "662dc4fb0acfb3b21657bff2756e8cb0936664520985375ee07aaacfab621db9",
+        "malformed_timestamps": 0,
+        "month_chunks": [
+          {
+            "attempts": 1,
+            "bar_count": 7500,
+            "end_utc": "2024-12-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2024-12",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2024-12-02T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 7515,
+            "end_utc": "2025-01-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-01",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-01-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 6997,
+            "end_utc": "2025-02-28T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-02",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-02-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8047,
+            "end_utc": "2025-03-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-03",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-03-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8039,
+            "end_utc": "2025-04-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-04",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-04-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 7417,
+            "end_utc": "2025-05-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-05",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-05-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 7184,
+            "end_utc": "2025-06-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-06",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-06-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8133,
+            "end_utc": "2025-07-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-07",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-07-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 7823,
+            "end_utc": "2025-08-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-08",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-08-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 7828,
+            "end_utc": "2025-09-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-09",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-09-01T00:00:00+00:00"
+          }
+        ],
+        "source_file": "bars/SHW.csv",
+        "total_bars": 76483
+      },
+      "TRV": {
+        "file_sha256": "1141b69ad2073c0294e8430a0224097d52f4660ac660b4aa4ecb874c2dd8a4b0",
+        "malformed_timestamps": 0,
+        "month_chunks": [
+          {
+            "attempts": 1,
+            "bar_count": 7054,
+            "end_utc": "2024-12-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2024-12",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2024-12-02T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 7529,
+            "end_utc": "2025-01-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-01",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-01-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 6780,
+            "end_utc": "2025-02-28T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-02",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-02-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 7848,
+            "end_utc": "2025-03-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-03",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-03-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 7853,
+            "end_utc": "2025-04-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-04",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-04-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 7128,
+            "end_utc": "2025-05-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-05",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-05-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 6815,
+            "end_utc": "2025-06-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-06",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-06-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 7893,
+            "end_utc": "2025-07-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-07",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-07-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 7429,
+            "end_utc": "2025-08-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-08",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-08-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 6845,
+            "end_utc": "2025-09-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-09",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-09-01T00:00:00+00:00"
+          }
+        ],
+        "source_file": "bars/TRV.csv",
+        "total_bars": 73174
+      },
+      "UNH": {
+        "file_sha256": "b537ca01281841eda2ad9683921e8d73b78d8beccfdcbb369e14a0704947a750",
+        "malformed_timestamps": 0,
+        "month_chunks": [
+          {
+            "attempts": 1,
+            "bar_count": 8943,
+            "end_utc": "2024-12-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2024-12",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2024-12-02T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8495,
+            "end_utc": "2025-01-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-01",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-01-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8152,
+            "end_utc": "2025-02-28T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-02",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-02-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8464,
+            "end_utc": "2025-03-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-03",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-03-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9915,
+            "end_utc": "2025-04-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-04",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-04-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 14949,
+            "end_utc": "2025-05-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-05",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-05-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 12470,
+            "end_utc": "2025-06-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-06",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-06-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 14390,
+            "end_utc": "2025-07-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-07",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-07-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 14927,
+            "end_utc": "2025-08-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-08",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-08-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 12922,
+            "end_utc": "2025-09-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-09",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-09-01T00:00:00+00:00"
+          }
+        ],
+        "source_file": "bars/UNH.csv",
+        "total_bars": 113627
+      },
+      "V": {
+        "file_sha256": "2ffad2c61b7451e32839053fab22ecf485b9cc99b14c70c5534f63234bcc16f6",
+        "malformed_timestamps": 0,
+        "month_chunks": [
+          {
+            "attempts": 1,
+            "bar_count": 8321,
+            "end_utc": "2024-12-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2024-12",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2024-12-02T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8344,
+            "end_utc": "2025-01-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-01",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-01-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 7832,
+            "end_utc": "2025-02-28T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-02",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-02-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8633,
+            "end_utc": "2025-03-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-03",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-03-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9119,
+            "end_utc": "2025-04-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-04",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-04-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8594,
+            "end_utc": "2025-05-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-05",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-05-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8601,
+            "end_utc": "2025-06-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-06",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-06-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9066,
+            "end_utc": "2025-07-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-07",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-07-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8529,
+            "end_utc": "2025-08-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-08",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-08-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 8627,
+            "end_utc": "2025-09-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-09",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-09-01T00:00:00+00:00"
+          }
+        ],
+        "source_file": "bars/V.csv",
+        "total_bars": 85666
+      },
+      "VZ": {
+        "file_sha256": "5b2c6dce7f556542f43e2c3665d90e1bc0aafcf89b0b3b85f019582752c4ae4d",
+        "malformed_timestamps": 0,
+        "month_chunks": [
+          {
+            "attempts": 1,
+            "bar_count": 9998,
+            "end_utc": "2024-12-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2024-12",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2024-12-02T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 10746,
+            "end_utc": "2025-01-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-01",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-01-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9331,
+            "end_utc": "2025-02-28T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-02",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-02-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 10469,
+            "end_utc": "2025-03-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-03",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-03-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 10971,
+            "end_utc": "2025-04-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-04",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-04-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9840,
+            "end_utc": "2025-05-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-05",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-05-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9512,
+            "end_utc": "2025-06-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-06",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-06-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 11234,
+            "end_utc": "2025-07-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-07",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-07-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9761,
+            "end_utc": "2025-08-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-08",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-08-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 10068,
+            "end_utc": "2025-09-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-09",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-09-01T00:00:00+00:00"
+          }
+        ],
+        "source_file": "bars/VZ.csv",
+        "total_bars": 101930
+      },
+      "WMT": {
+        "file_sha256": "dac14543e4b39c5daaced3f74ba75b12fdb15ba02f81e4d7c5a856b4c4b650f8",
+        "malformed_timestamps": 0,
+        "month_chunks": [
+          {
+            "attempts": 2,
+            "bar_count": 10805,
+            "end_utc": "2024-12-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2024-12",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2024-12-02T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 10027,
+            "end_utc": "2025-01-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-01",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-01-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 11298,
+            "end_utc": "2025-02-28T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-02",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-02-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 11676,
+            "end_utc": "2025-03-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-03",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-03-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 11763,
+            "end_utc": "2025-04-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-04",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-04-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 11435,
+            "end_utc": "2025-05-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-05",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-05-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 1,
+            "bar_count": 9919,
+            "end_utc": "2025-06-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-06",
+            "pages": 1,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-06-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 10405,
+            "end_utc": "2025-07-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-07",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-07-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 11059,
+            "end_utc": "2025-08-31T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-08",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-08-01T00:00:00+00:00"
+          },
+          {
+            "attempts": 2,
+            "bar_count": 10003,
+            "end_utc": "2025-09-30T23:59:59+00:00",
+            "malformed_timestamps": 0,
+            "month": "2025-09",
+            "pages": 2,
+            "pagination_complete": true,
+            "safe_error": "none",
+            "start_utc": "2025-09-01T00:00:00+00:00"
+          }
+        ],
+        "source_file": "bars/WMT.csv",
+        "total_bars": 108390
+      }
+    },
+    "timeframe": "1Min",
+    "timezone": "America/New_York",
+    "total_errors": 0,
+    "total_malformed_timestamps": 0,
+    "total_pages": 394,
+    "total_requests": 300,
+    "total_retries": 0,
+    "total_symbols": 30
+  },
+  "represented_ticker_count": 30,
+  "same_ticker_time_of_day_baseline_mean": -0.0003948631967925953,
+  "same_ticker_time_of_day_baseline_median": -0.0003926920652017595,
+  "win_rate_1m": 0.4731182795698925,
+  "win_rate_2m": 0.4735812133072407,
+  "win_rate_5m": 0.49437652811735944
+}

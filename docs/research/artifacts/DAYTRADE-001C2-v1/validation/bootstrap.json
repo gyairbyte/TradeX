@@ -1,0 +1,20 @@
+{
+  "event_minus_baseline_uplift": {
+    "ci_lower": null,
+    "ci_upper": null,
+    "error_reason": "replicate_202_empty_baseline_for_TRV_09:33",
+    "point_estimate": null,
+    "resamples": 2000,
+    "seed": 20260925,
+    "status": "non_computable"
+  },
+  "primary_net_return": {
+    "ci_lower": null,
+    "ci_upper": null,
+    "error_reason": "replicate_202_empty_baseline_for_TRV_09:33",
+    "point_estimate": null,
+    "resamples": 2000,
+    "seed": 20260925,
+    "status": "non_computable"
+  }
+}
