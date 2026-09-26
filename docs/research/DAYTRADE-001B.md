@@ -6,7 +6,7 @@ This document is the human-readable research contract and pre-registration speci
 * **Classification:** Research-only / pre-registration (zero production impact)
 * **Status:** `pre_registered_not_executed`
 * **Spec Version:** `1`
-* **JSON SHA-256:** `6977066c93e3f7b89f22fa2e7e9b00af808cc7cb2f5c00e1626672640b9a4ba5`
+* **JSON SHA-256:** `0651e075ff0641510788582a67827e065347f851e9363964f85a193a3d166620`
 * **Base Commit SHA:** `089be61a8ad0c5b9e7b2909dd2f3e2f3e460b03b`
 
 > [!IMPORTANT]
@@ -133,16 +133,24 @@ The study spans 13 calendar months partitioned into four non-overlapping chronol
 
 The extreme downside move definition is fixed and deterministic:
 
-### 8.1 Trailing Window and Percentile Specification
-For each ticker evaluated on trading day $D$:
-1. Calculate completed regular-session 1-minute close-to-close returns:
+### 8.1 Trailing Reference Population and Percentile Specification
+To eliminate overnight-gap contamination from the threshold calculation, the trailing quantile distribution is locked to the **same event-eligible minute-start window** used for candidate events:
+`09:31` through `15:54` ET inclusive.
+
+For each ticker evaluated on candidate session $D$:
+1. Select only the previous **20 completed regular sessions** for that ticker that are not excluded by locked data-quality rules.
+2. Form the trailing reference distribution from completed 1-minute close-to-close returns within each session:
    $$R_t = \frac{\text{close}_t - \text{close}_{t-1}}{\text{close}_{t-1}}$$
-2. Form the trailing reference distribution from the **previous 20 completed regular sessions** for that ticker.
-3. Determine the empirical **0.1st percentile** of those historical 1-minute returns:
+   * **Eligible Bar-Start Window:** `09:31` through `15:54` ET inclusive.
+   * **Opening Return Exclusion:** The `09:30` opening minute return is **strictly excluded** from the reference distribution (preventing overnight-gap mechanics from distorting intraday dislocation thresholds).
+   * **No Same-Session Data:** Observations from current session $D$ are strictly excluded from the calculation of session $D$'s threshold.
+3. Determine the empirical **0.1st percentile** of those historical eligible 1-minute returns:
    * **Percentile scale:** `percentile_points = 0.1`
    * **Quantile scale:** `quantile = 0.001` (one-tenth of one percent; NOT the 10th percentile / 0.10).
-4. Classify completed minute $t$ as an event when:
-   $$\text{return}_t \le \text{empirical\_quantile}(\text{trailing\_20\_sessions}, 0.001)$$
+4. Compute the session threshold:
+   $$\text{threshold}_D = \text{empirical\_quantile}(\text{trailing\_20\_sessions\_eligible\_returns}, 0.001)$$
+5. Classify completed eligible minute $t$ as an event when:
+   $$\text{return}_t \le \text{threshold}_D$$
 
 ### 8.2 Prohibition on Parameter Fishing
 No alternative cutoffs may be evaluated:
@@ -222,9 +230,24 @@ All net performance metrics must incorporate realistic execution friction:
 
 To determine whether the observed reversal is a genuine event effect or simply typical intraday behavior:
 
-* **Baseline Definition:** For each ticker, compare each event observation's forward return with all **non-event observations from the same ticker and the same minute-of-day within the same dataset split**.
-* **Exclusion of Events:** Event observations must be strictly excluded from the baseline reference set.
-* **No Unvalidated Proxies:** Production TradeX heuristic scores or user weights must not be used as the comparison benchmark.
+### 13.1 Eligible Baseline Observations
+For every event observation, eligible baseline observations must strictly satisfy:
+* **Same Ticker:** Drawn from the same security.
+* **Same Minute-of-Day:** Drawn from the identical minute interval within the session.
+* **Same Dataset Split:** Drawn from the identical chronological split partition.
+* **Non-Event Condition:** Must be non-events (event observations are strictly excluded from the baseline pool).
+* **Session Eligibility:** Must satisfy identical session eligibility rules (regular sessions, non-early-close).
+* **Data Quality:** Drawn only from ticker-sessions satisfying the locked data-quality gates.
+* **Forward Horizon Availability:** Must have complete forward bars available inside the regular session and split.
+* **Identical Entry Convention:** Fills occur at the `next executable 1-minute bar open` (minute $t+1$ open).
+* **Identical Exit Convention:** Exits occur at the matching horizon close (`next_bar_close` for 1m, $t+2$ close for 2m, $t+5$ close for 5m).
+* **Identical Friction Treatment:** Net return comparisons deduct the exact same friction assumption (e.g., 2 bps/side / 4 bps round-trip).
+
+### 13.2 Primary 1-Minute Mechanics
+For the primary 1-minute comparison, both event and baseline returns use:
+$$\text{Return} = \frac{\text{close}_{t+1} - \text{open}_{t+1}}{\text{open}_{t+1}}$$
+The **only intended difference** between event and baseline observations is whether the locked extreme-move event condition fired.
+
 * **Reported Metrics:**
   1. Absolute Event Net Return ($R_{\text{event}}$).
   2. Event-minus-Baseline Difference ($R_{\text{event}} - R_{\text{baseline}}$).
@@ -256,14 +279,25 @@ Future execution reports across development, validation, and holdout must presen
 
 ---
 
-## 15. Statistical Inference and Confidence Intervals
+## 15. Statistical Inference and Joint Bootstrap
 
-To account for clustering and intra-session correlation across events:
+To account for clustering and intra-session correlation across events, while fully incorporating sampling uncertainty from both event and baseline distributions:
 
-* **Method:** Cluster bootstrap resampling by **ticker-session**. All events occurring for the same ticker on the same trading session are treated as a cluster and sampled together.
+### 15.1 Joint Bootstrap Algorithm
+For each bootstrap replication $b = 1, \dots, 2000$:
+1. **Cluster Resampling:** Resample **ticker-session clusters** with replacement from the applicable split.
+2. **Observation Retention:** Retain all eligible event and eligible non-event observations contained within those sampled clusters.
+3. **Event Recomputation:** Recompute the primary mean event return ($R_{\text{event}, b}$).
+4. **Baseline Recomputation:** Recompute the matched same-ticker/same-minute baseline using the resampled observations ($R_{\text{baseline}, b}$).
+5. **Uplift Recomputation:** Recompute the event-minus-baseline uplift:
+   $$\Delta_b = R_{\text{event}, b} - R_{\text{baseline}, b}$$
+6. **Record Statistics:** Record both $R_{\text{event}, b}$ and $\Delta_b$.
+
+### 15.2 Inference Invariants
+* **Joint Uncertainty:** The 95% CI for uplift incorporates uncertainty from **both** the event and baseline samples. Holding the baseline fixed while resampling only events is strictly prohibited.
 * **Resample Count:** `2,000` bootstrap replications.
 * **Deterministic Random Seed:** `20260925`.
-* **Confidence Level:** Two-sided `95%` confidence interval (percentile bootstrap method).
+* **Confidence Level:** Two-sided `95%` percentile bootstrap confidence interval.
 * **Evaluated Quantities:**
   1. Mean primary 1-minute net return (under 2 bps/side friction).
   2. Mean primary 1-minute event-minus-baseline difference.
@@ -272,7 +306,7 @@ To account for clustering and intra-session correlation across events:
 
 ## 16. Validation Support Gates
 
-The validation split is classified as **`supported`** if and only if **all five** of the following gates pass simultaneously:
+The validation split evaluates five locked gates:
 
 | Gate | Criterion | Threshold |
 |---|---|---|
@@ -282,37 +316,52 @@ The validation split is classified as **`supported`** if and only if **all five*
 | **4. Baseline-Uplift Gate** | Mean 1m event-minus-baseline return | Mean $> 0$ **and** 95% Clustered CI lower bound $> 0$ |
 | **5. Ticker Breadth Gate** | Cross-sectional consistency | $\ge 60.0\%$ of represented tickers have positive mean net return |
 
-No gates may be relaxed or modified after inspecting validation data.
+---
+
+## 17. Deterministic Disposition Sequence & Precedence
+
+To eliminate ambiguity, study dispositions follow a strict 5-step decision sequence:
+
+### Step 1 — Invalidity
+Return **`invalid`** if any methodological or data-integrity defect occurs:
+* Lookahead bias or future-bar leakage;
+* Premature holdout unsealing or inspection;
+* Material timestamp or execution invalidity (e.g., fills at event close);
+* Split contamination (outcomes crossing split boundaries);
+* Silent provider or feed substitution;
+* Corrupt, missing provenance, or unverifiable inputs.
+
+### Step 2 — Evidence Sufficiency
+Return **`inconclusive`** if otherwise valid, but any evidence-sufficiency gate fails:
+* Fewer than 300 eligible events;
+* Fewer than 15 represented tickers;
+* Single-ticker event concentration $> 15.0\%$;
+* $> 5.0\%$ of ticker-sessions in the split excluded due to locked data-quality defects.
+* *Rule:* If evidence sufficiency fails, **do not inspect holdout**.
+
+### Step 3 — Directional Hypothesis Failure
+With valid and sufficient evidence, return **`rejected`** if any directional failure occurs:
+* Primary mean net 1-minute return at 2 bps/side $\le 0$;
+* Mean event-minus-baseline uplift $\le 0$;
+* Fewer than $60.0\%$ of represented tickers have positive primary mean net return.
+* *Rule:* The ticker-breadth gate failure yields an explicit **`rejected`** disposition when sample/data sufficiency is satisfied.
+
+### Step 4 — Statistical Uncertainty
+If the required means are positive and breadth passes ($\ge 60\%$), but either required 95% CI lower bound is $\le 0$, return:
+**`inconclusive`**
+(Specifically: primary net return 95% CI lower bound $\le 0$, OR event-minus-baseline uplift 95% CI lower bound $\le 0$).
+
+### Step 5 — Support
+Return **`supported`** if and only if all five locked gates pass simultaneously.
 
 ---
 
-## 17. Holdout Rule
+## 18. Holdout Rule
 
 * **Gated Evaluation:** The untouched holdout split (`2025-10-01` to `2025-12-31`) may only be unsealed and evaluated if the validation split achieves the disposition **`supported`**.
-* **Identical Criteria:** The holdout split must satisfy the exact same five gates without modification.
+* **Identical Precedence:** The holdout split evaluates the exact same 5-step disposition sequence and thresholds without modification.
 * **Zero Post-Hoc Tuning:** No parameter, threshold, universe, cost, or window adjustments are permitted between validation and holdout.
 * **Failure Policy:** If validation fails any gate, holdout data must remain unread, unparsed, and untouched, and the study terminates with disposition `rejected` or `inconclusive`.
-
----
-
-## 18. Study Dispositions
-
-The study report must conclude with one of four locked dispositions:
-
-* **`supported`:** All sample minimums and all five validation (and conditional holdout) gates pass.
-* **`rejected`:** Data and methodology are valid and sufficiently sampled, but the primary hypothesis yields non-positive net expectancy or non-positive uplift over the baseline.
-* **`inconclusive`:** The study cannot form a definitive conclusion due to:
-  * Fewer than 300 eligible events or fewer than 15 represented tickers.
-  * Ticker concentration exceeding 15%.
-  * Effect direction is positive but the 95% confidence interval crosses zero.
-  * Data coverage is usable but insufficient to meet validity thresholds.
-* **`invalid`:** The study execution violates methodological integrity, including:
-  * Lookahead bias or future-bar leakage.
-  * Holdout partition unsealed before validation was confirmed `supported`.
-  * Timestamp normalization errors or entry at the event-bar close.
-  * Split contamination (outcomes crossing split boundaries).
-  * Silent provider or feed substitution.
-  * Corrupted, unverified, or non-reproducible data.
 
 ---
 
@@ -322,7 +371,7 @@ Normal NYSE sessions must expect 390 completed regular-session 1-minute bars (09
 1. **Session Missing-Bar Limit:** If a ticker-session has a missing-bar rate $> 5.0\%$ ($> 19$ missing bars), exclude that ticker-session entirely.
 2. **Session Duplicate-Bar Limit:** If a ticker-session has a duplicate-bar rate $> 1.0\%$ ($> 3$ duplicate bars), exclude that ticker-session entirely.
 3. **Malformed Timestamps:** Timestamps failing strict parsing or timezone validation fail closed for affected rows and are recorded.
-4. **Split Data-Sufficiency Gate:** If $> 5.0\%$ of ticker-sessions in a split are excluded due to data-quality defects, the split disposition cannot be `supported` (it resolves to `inconclusive` or `invalid`).
+4. **Split Data-Sufficiency Gate:** If $> 5.0\%$ of ticker-sessions in a split are excluded due to data-quality defects, the split disposition cannot be `supported` (it resolves to `inconclusive` under Step 2).
 
 ---
 
@@ -334,6 +383,7 @@ This specification explicitly mitigates structural research risks:
 |---|---|
 | **Lookahead Bias** | Strict separation of signal bar (`available_at`) from execution bar (`open_{t+1}`). |
 | **Execution Price Bias** | Fills assume next-bar open; fills at signal-bar close are strictly prohibited. |
+| **Overnight Gap Distortion** | 09:30 opening return excluded from trailing reference quantile distribution and event eligibility. |
 | **Split Leakage** | Chronological partitions; outcomes never cross split boundaries. |
 | **Holdout Contamination** | Holdout sealed until validation achieves `supported`. |
 | **Survivorship / Selection Bias** | Fully disclosed; fixed 2026 snapshot accepted; evidence capped at `limited_but_usable_evidence`. |
@@ -342,6 +392,7 @@ This specification explicitly mitigates structural research risks:
 | **Calendar / DST Anomalies** | XNYS exchange calendar enforced; early closes excluded; timezone pinned to `America/New_York`. |
 | **Overlapping Events** | Explicitly audited, reported, and clustered in bootstrap inference. |
 | **Observation Dependence** | Ticker-session cluster bootstrap prevents overstating statistical significance. |
+| **Baseline Resampling Uncertainty** | Matched baseline recomputed jointly in each bootstrap replication alongside events. |
 | **Parameter P-Hacking** | Single locked percentile cutoff (0.1st percentile = quantile 0.001); no grid search. |
 | **Horizon Fishing** | Exactly one primary endpoint (1m); secondary endpoints (2m, 5m) descriptive only. |
 | **Execution Friction** | Primary 2 bps/side friction enforced; gross-only results cannot support hypothesis. |

@@ -123,13 +123,23 @@
   },
   "event_definition": {
     "per_ticker_independent": true,
-    "return_metric": "completed regular-session 1-minute close-to-close returns",
+    "return_metric": "completed regular-session 1-minute close-to-close returns within eligible window",
     "trailing_window_sessions": 20,
-    "trailing_window_scope": "previous 20 completed regular sessions for that ticker",
+    "trailing_window_scope": "previous 20 completed regular sessions for that ticker (excluding current session D)",
+    "trailing_reference_population": {
+      "eligible_minute_start_window": "09:31 through 15:54 ET inclusive",
+      "window_start": "09:31",
+      "window_end": "15:54",
+      "exclude_opening_minute_0930": true,
+      "exclude_current_session_d": true,
+      "require_non_excluded_sessions": true,
+      "rule": "For each ticker and candidate session D, use only the previous 20 completed regular sessions; use only valid 1-minute returns whose bar starts are 09:31 through 15:54 ET inclusive; exclude the 09:30 opening return entirely; use only ticker-sessions not excluded by locked data-quality rules; do not use data from current session D."
+    },
     "percentile_points": 0.1,
     "quantile": 0.001,
     "percentile_clarification": "0.1st percentile equals the bottom 1/10th of 1 percent (quantile 0.001), NOT the 10th percentile (quantile 0.10)",
-    "event_rule": "current_1m_return <= trailing_20_session_0.1_percentile",
+    "threshold_formula": "threshold_D = empirical_quantile(previous_20_sessions_eligible_returns, 0.001)",
+    "event_rule": "current_eligible_1m_return_t <= threshold_D",
     "parameter_search_prohibited": true,
     "alternatives_prohibited": [
       "percentiles",
@@ -190,9 +200,26 @@
   },
   "baseline": {
     "type": "same_ticker_same_minute_of_day_in_same_split",
-    "description": "For each ticker, compare event forward returns with non-event observations from the same ticker and same minute-of-day within the same dataset split.",
+    "description": "For each event observation, compare against eligible non-event observations from the same ticker and same minute-of-day within the same dataset split.",
     "event_observations_in_baseline": false,
     "production_scores_or_weights_in_baseline": false,
+    "eligibility_requirements": {
+      "same_ticker": true,
+      "same_minute_of_day": true,
+      "same_dataset_split": true,
+      "is_non_event": true,
+      "session_eligibility": "same_as_event",
+      "data_quality_rules": "same_as_event",
+      "complete_forward_horizon_required": true,
+      "entry_convention": "next executable 1-minute bar open (minute t+1 open)",
+      "exit_convention": "next_bar_close for 1m (t+1 close), t+2 close for 2m, t+5 close for 5m",
+      "friction_treatment": "same_friction_treatment_as_event"
+    },
+    "primary_1m_mechanics": {
+      "event_return": "next_bar_open -> next_bar_close",
+      "baseline_return": "next_bar_open -> next_bar_close",
+      "intended_difference": "Only intended difference between event and baseline observations is whether the locked extreme-move event condition fired."
+    },
     "metrics_reported": [
       "absolute_event_return",
       "event_minus_baseline_difference"
@@ -233,11 +260,21 @@
   ],
   "statistical_inference": {
     "method": "cluster_bootstrap_by_ticker_session",
-    "description": "Deterministic cluster bootstrap by ticker-session so multiple events from the same ticker/session are not treated as independent observations.",
+    "description": "Deterministic cluster bootstrap by ticker-session with simultaneous recomputation of event and matched baseline statistics.",
     "bootstrap_resamples": 2000,
     "random_seed": 20260925,
     "confidence_level_pct": 95.0,
-    "confidence_interval_type": "two_sided",
+    "confidence_interval_type": "two_sided_percentile",
+    "cluster_variable": "ticker_session",
+    "algorithm_steps": [
+      "1. Resample ticker-session clusters with replacement from the applicable split",
+      "2. Retain eligible event and eligible non-event observations contained in those sampled clusters",
+      "3. Recompute the primary event mean",
+      "4. Recompute the matched same-ticker/same-minute baseline using the resampled observations",
+      "5. Recompute event-minus-baseline uplift",
+      "6. Record both bootstrap statistics (primary event mean and event-minus-baseline uplift)"
+    ],
+    "joint_recomputation_rule": "The 95% CI for uplift must incorporate uncertainty from both event and baseline samples; baseline must NOT be held fixed while resampling events.",
     "targets": [
       "primary_mean_net_event_return",
       "primary_mean_event_minus_baseline_difference"
@@ -270,11 +307,34 @@
     "parameter_or_method_changes_permitted": false,
     "action_if_validation_not_supported": "leave_holdout_unread_and_report"
   },
+  "disposition_precedence": {
+    "step_1_invalidity": {
+      "disposition": "invalid",
+      "condition": "Methodological or data-integrity failures, including: lookahead or future leakage, premature holdout access, material timestamp or execution invalidity, split contamination (forward outcomes crossing split boundaries), silent provider or feed substitution, or corrupt/unverifiable inputs."
+    },
+    "step_2_evidence_sufficiency": {
+      "disposition": "inconclusive",
+      "condition": "Otherwise valid, but any evidence-sufficiency condition fails: fewer than 300 eligible events, fewer than 15 represented tickers, > 15% single-ticker event concentration, or > 5% excluded ticker-sessions due to data-quality defects. Holdout must not be inspected."
+    },
+    "step_3_directional_hypothesis_failure": {
+      "disposition": "rejected",
+      "condition": "Adequate and valid evidence, but any of the following directional failures occur: primary mean net 1-minute return at 2 bps/side <= 0; mean event-minus-baseline uplift <= 0; or fewer than 60% of represented tickers have positive primary mean net return (breadth gate failure)."
+    },
+    "step_4_statistical_uncertainty": {
+      "disposition": "inconclusive",
+      "condition": "Required means are positive and breadth passes (>= 60%), but either required 95% CI lower bound is <= 0 (primary net return CI lower bound <= 0 OR uplift CI lower bound <= 0)."
+    },
+    "step_5_support": {
+      "disposition": "supported",
+      "condition": "All five locked gates pass simultaneously on the evaluated split."
+    },
+    "holdout_application": "The exact same 5-step disposition sequence and precedence rules apply to conditional holdout evaluation."
+  },
   "dispositions": {
-    "supported": "All required validation/holdout gates pass.",
-    "rejected": "Data and methodology are valid and sufficiently sampled, but the primary hypothesis has non-positive primary net expectancy or non-positive uplift relative to baseline.",
-    "inconclusive": "Insufficient event sample (<300 events), insufficient ticker breadth (<15 tickers), concentration gate failure (>15%), effect direction positive but CI crosses zero, or usable data coverage too incomplete for a reliable conclusion.",
-    "invalid": "Lookahead bias, future-data leakage, holdout opened before validation support, timestamp/availability semantics materially wrong, split contamination, silent provider/feed substitution, corrupted or unverifiable data, or execution timing uses event close."
+    "supported": "All required validation/holdout gates pass (Step 5).",
+    "rejected": "Data and methodology are valid and sufficiently sampled, but directional failure occurs in Step 3: primary net return <= 0, baseline uplift <= 0, or < 60% positive-ticker breadth.",
+    "inconclusive": "Evidence sufficiency fails in Step 2 (<300 events, <15 tickers, >15% concentration, >5% excluded sessions), OR statistical uncertainty fails in Step 4 (CI lower bound <= 0 despite positive means and passing breadth).",
+    "invalid": "Methodological or data-integrity failure in Step 1: lookahead bias, future-data leakage, holdout opened before validation support, timestamp/availability semantics materially wrong, split contamination, silent provider/feed substitution, corrupted or unverifiable data, or execution timing uses event close."
   },
   "data_quality_gates": {
     "expected_regular_session_minutes": 390,

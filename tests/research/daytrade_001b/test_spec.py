@@ -157,6 +157,21 @@ def test_trailing_session_count(spec: dict) -> None:
     assert spec["event_definition"]["trailing_window_sessions"] == 20
 
 
+def test_trailing_reference_population_excludes_opening_gap_and_pins_window(spec: dict) -> None:
+    """Methodology Correction 1: Trailing quantile population excludes 09:30 and pins to 09:31..15:54."""
+    ref_pop = spec["event_definition"]["trailing_reference_population"]
+    assert ref_pop["window_start"] == "09:31"
+    assert ref_pop["window_end"] == "15:54"
+    assert ref_pop["exclude_opening_minute_0930"] is True
+    assert ref_pop["exclude_current_session_d"] is True
+    assert ref_pop["require_non_excluded_sessions"] is True
+
+    # Threshold and event formulas
+    assert "empirical_quantile" in spec["event_definition"]["threshold_formula"]
+    assert "0.001" in spec["event_definition"]["threshold_formula"]
+    assert "threshold_D" in spec["event_definition"]["event_rule"]
+
+
 def test_entry_timing_is_next_bar_open(spec: dict) -> None:
     """Requirement 12: Entry is next-bar open; same-bar and close fills prohibited."""
     timing = spec["eligibility_and_timing"]
@@ -202,7 +217,21 @@ def test_bootstrap_configuration(spec: dict) -> None:
     assert boot["bootstrap_resamples"] == 2000
     assert boot["random_seed"] == 20260925
     assert boot["confidence_level_pct"] == 95.0
-    assert boot["confidence_interval_type"] == "two_sided"
+    assert "two_sided" in boot["confidence_interval_type"]
+
+
+def test_bootstrap_joint_resampling_algorithm(spec: dict) -> None:
+    """Methodology Correction 3: Bootstrap recomputes event and baseline statistics together."""
+    boot = spec["statistical_inference"]
+    assert boot["cluster_variable"] == "ticker_session"
+    assert "both" in boot["joint_recomputation_rule"].lower()
+    assert "not be held fixed" in boot["joint_recomputation_rule"].lower()
+
+    steps = boot["algorithm_steps"]
+    assert len(steps) == 6
+    # Confirms baseline is recomputed in step 4 using resampled observations
+    assert any("recompute the matched same-ticker/same-minute baseline" in step.lower() for step in steps)
+    assert any("recompute event-minus-baseline uplift" in step.lower() for step in steps)
 
 
 def test_required_validation_gates_encoded(spec: dict) -> None:
@@ -227,6 +256,30 @@ def test_required_validation_gates_encoded(spec: dict) -> None:
 
     # Breadth gate: >=60% represented tickers positive mean net
     assert gates["breadth_gate"]["min_pct_represented_tickers_positive_mean_net"] == 60.0
+
+
+def test_deterministic_disposition_precedence_and_breadth_failure(spec: dict) -> None:
+    """Methodology Correction 4: Deterministic 5-step disposition sequence and explicit breadth rejection."""
+    prec = spec["disposition_precedence"]
+
+    # Step 1: Invalidity
+    assert prec["step_1_invalidity"]["disposition"] == "invalid"
+
+    # Step 2: Evidence Sufficiency
+    assert prec["step_2_evidence_sufficiency"]["disposition"] == "inconclusive"
+
+    # Step 3: Directional Hypothesis Failure (explicitly includes <60% breadth failure)
+    assert prec["step_3_directional_hypothesis_failure"]["disposition"] == "rejected"
+    assert "breadth gate failure" in prec["step_3_directional_hypothesis_failure"]["condition"].lower()
+
+    # Step 4: Statistical Uncertainty (means positive and breadth passes, but CI lower bound <= 0)
+    assert prec["step_4_statistical_uncertainty"]["disposition"] == "inconclusive"
+
+    # Step 5: Support
+    assert prec["step_5_support"]["disposition"] == "supported"
+
+    # Holdout application
+    assert "holdout" in prec["holdout_application"].lower()
 
 
 def test_maximum_evidence_confidence_is_limited_but_usable(spec: dict) -> None:
@@ -267,9 +320,24 @@ def test_data_quality_gates(spec: dict) -> None:
     assert dq["max_excluded_ticker_sessions_pct_per_split"] == 5.0
 
 
-def test_baseline_specification(spec: dict) -> None:
-    """Baseline compares against same-ticker, same-minute non-events in same split."""
+def test_baseline_specification_and_return_mechanics(spec: dict) -> None:
+    """Methodology Correction 2: Baseline eligibility requirements and return mechanics."""
     baseline = spec["baseline"]
     assert baseline["type"] == "same_ticker_same_minute_of_day_in_same_split"
     assert baseline["event_observations_in_baseline"] is False
     assert baseline["production_scores_or_weights_in_baseline"] is False
+
+    reqs = baseline["eligibility_requirements"]
+    assert reqs["same_ticker"] is True
+    assert reqs["same_minute_of_day"] is True
+    assert reqs["same_dataset_split"] is True
+    assert reqs["is_non_event"] is True
+    assert reqs["session_eligibility"] == "same_as_event"
+    assert reqs["data_quality_rules"] == "same_as_event"
+    assert reqs["complete_forward_horizon_required"] is True
+    assert "next executable 1-minute bar open" in reqs["entry_convention"]
+    assert reqs["friction_treatment"] == "same_friction_treatment_as_event"
+
+    mech = baseline["primary_1m_mechanics"]
+    assert mech["event_return"] == "next_bar_open -> next_bar_close"
+    assert mech["baseline_return"] == "next_bar_open -> next_bar_close"
