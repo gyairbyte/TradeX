@@ -174,20 +174,35 @@ def cmd_build_dataset(args: argparse.Namespace) -> int:
             print("ERROR: --validation-artifact-dir is required when acquiring holdout.", file=sys.stderr)
             return 1
         try:
-            verify_holdout_access_prerequisites(args.validation_artifact_dir, spec)
+            prereq = verify_holdout_access_prerequisites(args.validation_artifact_dir, spec)
         except HoldoutAccessDeniedError as e:
             print(f"HOLDOUT ACCESS BLOCKED: {e}", file=sys.stderr)
             return 2
 
-        # Verify preholdout manifest lineage
-        pre_file = Path(args.dataset_root) / "preholdout" / "manifest.lock.json"
+        # Verify preholdout manifest lineage and disk integrity
+        pre_dir = Path(args.dataset_root) / "preholdout"
+        pre_file = pre_dir / "manifest.lock.json"
         if not pre_file.is_file():
             print(f"ERROR: Preholdout manifest not found at {pre_file}", file=sys.stderr)
             return 1
-        val_freeze_file = Path(args.validation_artifact_dir) / "freeze.json"
-        if val_freeze_file.is_file():
-            v_freeze = json.loads(val_freeze_file.read_text(encoding="utf-8"))
-            evaluator_code_sha = v_freeze.get("evaluation_code_sha")
+        try:
+            pre_data = json.loads(pre_file.read_text(encoding="utf-8"))
+            pre_manifest = DaytradeDatasetManifest.from_dict(pre_data)
+            pre_manifest.validate_against_spec(spec)
+            if pre_manifest.manifest_sha256 != prereq["manifest_sha256"]:
+                print(
+                    f"ERROR: Preholdout manifest SHA '{pre_manifest.manifest_sha256}' mismatch with validation manifest '{prereq['manifest_sha256']}'",
+                    file=sys.stderr,
+                )
+                return 1
+            from .dataset import _check_unmanifested_files, _verify_manifest_source_files
+            _check_unmanifested_files(pre_dir, pre_manifest)
+            _verify_manifest_source_files(pre_dir, pre_manifest)
+        except (DatasetSecurityError, OSError, ValueError, json.JSONDecodeError) as e:
+            print(f"ERROR: Preholdout integrity check failed: {e}", file=sys.stderr)
+            return 1
+
+        evaluator_code_sha = prereq["evaluator_code_sha"]
 
     if not args.execute_provider and not args.dry_run:
         print(
@@ -272,8 +287,8 @@ def cmd_evaluate(args: argparse.Namespace) -> int:
             print("ERROR: --dataset-root is required when evaluating holdout.", file=sys.stderr)
             return 1
 
-        def holdout_loader() -> tuple[list[DaytradeSession], list[DataQualityReport], str | None]:
-            nonlocal manifest_data, manifest_sha256
+        def holdout_loader() -> tuple[list[DaytradeSession], list[DataQualityReport], str | None, dict[str, Any] | None]:
+            nonlocal manifest_data, manifest_sha256, dq_reports
             m_file = Path(args.dataset_root) / "holdout" / "manifest.lock.json"
             if m_file.is_file():
                 manifest_data = json.loads(m_file.read_text(encoding="utf-8"))
@@ -284,7 +299,8 @@ def cmd_evaluate(args: argparse.Namespace) -> int:
                 spec=spec,
                 validation_artifact_dir=args.validation_artifact_dir,
             )
-            return s, q, manifest_sha256
+            dq_reports = q
+            return s, q, manifest_sha256, manifest_data
 
         try:
             result = load_and_evaluate_holdout(
@@ -342,6 +358,7 @@ def cmd_evaluate(args: argparse.Namespace) -> int:
             data_quality_reports=dq_reports,
             freeze_record=freeze_record,
             manifest_sha256=manifest_sha256,
+            manifest_data=manifest_data,
         )
 
     out_dir = args.output

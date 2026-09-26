@@ -168,11 +168,13 @@ class StudyResult:
     data_quality: dict[str, Any] = field(default_factory=dict)
     provenance: dict[str, Any] = field(default_factory=dict)
     events: list[EventObservation] = field(default_factory=list)
+    data_quality_reports: list[DataQualityReport] = field(default_factory=list)
 
     def to_json_dict(self) -> dict[str, Any]:
         """Return a strictly JSON-safe dictionary representation."""
         raw = asdict(self)
         raw.pop("events", None)
+        raw.pop("data_quality_reports", None)
         prov = raw.get("provenance", {})
         for k, v in prov.items():
             if k not in raw:

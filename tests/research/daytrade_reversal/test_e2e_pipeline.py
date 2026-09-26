@@ -346,6 +346,12 @@ def test_e2e_synthetic_pipeline_flow(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert (holdout_out / "freeze.json").is_file()
     assert (holdout_out / "manifest.lock.json").is_file()
     assert (holdout_out / "spec.lock.json").is_file()
+    assert (holdout_out / "metrics.json").is_file()
+    assert (holdout_out / "events.csv").is_file()
+    assert (holdout_out / "data_quality.csv").is_file()
+    assert (holdout_out / "per_ticker.csv").is_file()
+    assert (holdout_out / "monthly.csv").is_file()
+    assert (holdout_out / "baseline_summary.csv").is_file()
     assert (holdout_out / "report.md").is_file()
 
     holdout_study = json.loads((holdout_out / "study.json").read_text(encoding="utf-8"))
@@ -353,5 +359,36 @@ def test_e2e_synthetic_pipeline_flow(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert holdout_study["task_id"] == "DAYTRADE-001B"
     assert holdout_study["provenance"]["evaluator_code_sha"] == supported_freeze.evaluation_code_sha
     assert holdout_study["provenance"]["manifest_sha256"] == holdout_man_data["manifest_sha256"]
+
     # Check that holdout evaluated events immediately (from September historical context)
-    assert holdout_study["metrics"]["event_count"] >= 1
+    metrics = holdout_study["metrics"]
+    assert metrics["event_count"] >= 1
+    assert metrics["eligible_minute_count"] > 0
+    assert "win_rate_1m" in metrics
+    assert "win_rate_2m" in metrics
+    assert "win_rate_5m" in metrics
+    assert "median_gross_forward_return_1m" in metrics
+    assert "median_net_forward_return_2bps" in metrics
+    assert "same_ticker_time_of_day_baseline_median" in metrics
+    assert "event_minus_baseline_difference_median" in metrics
+    assert "per_ticker_primary_results" in metrics
+    assert "monthly_primary_results" in metrics
+
+    # Check provider_provenance_summary came from holdout manifest acquisition_provenance
+    assert metrics["provider_provenance_summary"]["total_symbols"] == 30
+    assert metrics["provider_provenance_summary"]["pagination_complete"] is True
+
+    # Check events.csv is populated
+    events_lines = (holdout_out / "events.csv").read_text(encoding="utf-8").splitlines()
+    assert len(events_lines) >= 2  # header + event rows
+
+    # Check data_quality.csv is populated
+    dq_lines = (holdout_out / "data_quality.csv").read_text(encoding="utf-8").splitlines()
+    assert len(dq_lines) >= 2
+
+    # Check report.md is truthful
+    report_content = (holdout_out / "report.md").read_text(encoding="utf-8")
+    assert "zero live provider calls" not in report_content.lower()
+    assert "c2 real-data execution unauthorized" not in report_content.lower()
+    assert "DAYTRADE-001C2" not in report_content
+    assert "**Total Symbols:** 30" in report_content

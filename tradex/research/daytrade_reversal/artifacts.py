@@ -52,6 +52,7 @@ def generate_markdown_report(result: StudyResult) -> str:
         details_str = json.dumps(g_res.detail, sort_keys=True)
         lines.append(f"| `{g_name}` | **{status_icon}** | `{details_str}` |")
 
+    p = result.provenance
     m = result.metrics
     lines.extend([
         "",
@@ -63,21 +64,57 @@ def generate_markdown_report(result: StudyResult) -> str:
         f"- **Maximum Ticker Concentration:** {m.get('maximum_single_ticker_event_concentration', 0.0):.2f}%",
         f"- **Overlapping Events:** {m.get('overlapping_event_count', 0)} ({m.get('overlapping_event_rate', 0.0) * 100.0:.2f}%)",
         f"- **Mean Net Return (2 bps/side):** {m.get('mean_net_forward_return_2bps')}",
+        f"- **Median Net Return (2 bps/side):** {m.get('median_net_forward_return_2bps')}",
         f"- **Mean Baseline Net Return:** {m.get('same_ticker_time_of_day_baseline_mean')}",
+        f"- **Median Baseline Net Return:** {m.get('same_ticker_time_of_day_baseline_median')}",
         f"- **Mean Uplift:** {m.get('event_minus_baseline_difference_mean')}",
-        f"- **Win Rate (1m):** {m.get('win_rate_1m', 0.0) * 100.0:.2f}%",
+        f"- **Median Uplift:** {m.get('event_minus_baseline_difference_median')}",
+        f"- **Win Rate (1m gross):** {m.get('win_rate_1m', 0.0) * 100.0:.2f}%",
+        f"- **Win Rate (2m gross):** {m.get('win_rate_2m', 0.0) * 100.0:.2f}%",
+        f"- **Win Rate (5m gross):** {m.get('win_rate_5m', 0.0) * 100.0:.2f}%",
         "",
         "## Statistical Inference (Joint Cluster Bootstrap)",
         "",
         f"- **Primary Net Return CI:** `{json.dumps(result.bootstrap.get('primary_net_return', {}))}`",
         f"- **Event Uplift CI:** `{json.dumps(result.bootstrap.get('event_minus_baseline_uplift', {}))}`",
         "",
+        "## Provenance",
+        "",
+        f"- **Provider:** `{p.get('provider', 'alpaca')}`",
+        f"- **Feed:** `{p.get('feed', 'sip')}`",
+        f"- **Timeframe:** `{p.get('timeframe', '1Min')}`",
+        f"- **Adjustment:** `{p.get('adjustment', 'split')}`",
+        f"- **Calendar:** `{p.get('calendar', 'XNYS')}`",
+        f"- **Timezone:** `{p.get('timezone', 'America/New_York')}`",
+        f"- **Split:** `{result.split}`",
+        f"- **Spec SHA-256:** `{p.get('spec_sha256', '')}`",
+        f"- **Evaluator Code SHA:** `{p.get('evaluator_code_sha', '')}`",
+        f"- **Manifest SHA-256:** `{p.get('manifest_sha256', '')}`",
+        f"- **Evidence Confidence Cap:** `{p.get('evidence_confidence_cap', 'limited_but_usable_evidence')}`",
+        f"- **Production Promotion Eligible:** `{p.get('production_promotion_eligible', False)}`",
+    ])
+
+    prov_sum = m.get("provider_provenance_summary", {})
+    if isinstance(prov_sum, dict) and prov_sum.get("status") != "unavailable":
+        lines.extend([
+            "",
+            "## Acquisition Provenance",
+            "",
+            f"- **Total Symbols:** {prov_sum.get('total_symbols', 'N/A')}",
+            f"- **Total Requests:** {prov_sum.get('total_requests', 'N/A')}",
+            f"- **Total HTTP Pages:** {prov_sum.get('total_pages', 'N/A')}",
+            f"- **Total HTTP Retries:** {prov_sum.get('total_retries', 'N/A')}",
+            f"- **Total HTTP Errors:** {prov_sum.get('total_errors', 'N/A')}",
+            f"- **Total Malformed Timestamps:** {prov_sum.get('total_malformed_timestamps', 'N/A')}",
+            f"- **Pagination Complete:** {prov_sum.get('pagination_complete', 'N/A')}",
+        ])
+
+    lines.extend([
+        "",
         "## Limitations",
         "",
         "- Fixed 2026 Dow 30 snapshot applied to 2025 introduces survivorship and constituent selection limitations.",
-        "- Maximum future evidence confidence is strictly capped at `limited_but_usable_evidence`.",
-        "- Zero live provider calls were made in this study foundation.",
-        "- Real-data execution (`DAYTRADE-001C2`) remains unauthorized.",
+        "- Maximum evidence confidence is strictly capped at `limited_but_usable_evidence`.",
     ])
 
     return "\n".join(lines) + "\n"
@@ -95,6 +132,13 @@ def write_artifact_bundle(
     """Write the complete, safe artifact bundle and return file checksums dictionary."""
     out = Path(output_dir).expanduser().resolve()
     out.mkdir(parents=True, exist_ok=True)
+
+    events_to_write = events if events is not None else getattr(result, "events", [])
+    dq_reports_to_write = (
+        data_quality_reports
+        if data_quality_reports is not None
+        else getattr(result, "data_quality_reports", [])
+    )
 
     written_files: list[str] = []
 
@@ -154,7 +198,7 @@ def write_artifact_bundle(
             "excluded",
             "exclusion_reasons",
         ])
-        for r in data_quality_reports or []:
+        for r in dq_reports_to_write:
             writer.writerow([
                 r.ticker,
                 r.session_date.isoformat(),
@@ -188,7 +232,7 @@ def write_artifact_bundle(
             "matched_baseline_1m_2bps",
             "uplift_1m_2bps",
         ])
-        for e in events or []:
+        for e in events_to_write:
             net_ret = e.outcomes[1].net_return_2bps if 1 in e.outcomes else ""
             writer.writerow([
                 e.event_id,
@@ -222,7 +266,10 @@ def write_artifact_bundle(
         writer = csv.writer(f)
         writer.writerow(["ticker", "event_count", "mean_net_return_2bps"])
         for ticker, t_info in sorted(result.metrics.get("per_ticker_primary_results", {}).items()):
-            writer.writerow([ticker, t_info.get("event_count"), t_info.get("mean_net_return_2bps")])
+            if isinstance(t_info, dict):
+                writer.writerow([ticker, t_info.get("event_count"), t_info.get("mean_net_return_2bps")])
+            else:
+                writer.writerow([ticker, "", t_info])
     written_files.append("per_ticker.csv")
 
     # 11. monthly.csv
@@ -231,7 +278,10 @@ def write_artifact_bundle(
         writer = csv.writer(f)
         writer.writerow(["month", "event_count", "mean_net_return_2bps"])
         for m, m_info in sorted(result.metrics.get("monthly_primary_results", {}).items()):
-            writer.writerow([m, m_info.get("event_count"), m_info.get("mean_net_return_2bps")])
+            if isinstance(m_info, dict):
+                writer.writerow([m, m_info.get("event_count"), m_info.get("mean_net_return_2bps")])
+            else:
+                writer.writerow([m, "", m_info])
     written_files.append("monthly.csv")
 
     # 12. report.md

@@ -423,6 +423,16 @@ def load_private_dataset(
     target_quality_reports: list[DataQualityReport] = []
 
     if name == "holdout":
+        if not validation_artifact_dir:
+            raise DatasetSecurityError("Holdout evaluation requires validation_artifact_dir.")
+
+        from .study import verify_holdout_access_prerequisites
+        prereq = verify_holdout_access_prerequisites(validation_artifact_dir, spec)
+        val_bundle_sha = prereq["validation_bundle_sha256"]
+        val_evaluator_sha = prereq["evaluator_code_sha"]
+        val_manifest_sha = prereq["manifest_sha256"]
+        val_spec_sha = prereq["spec_sha256"]
+
         # 1. Preholdout partition (history source)
         pre_dir = root / "preholdout"
         pre_manifest_file = pre_dir / "manifest.lock.json"
@@ -433,6 +443,12 @@ def load_private_dataset(
         pre_manifest.validate_against_spec(spec)
         _check_unmanifested_files(pre_dir, pre_manifest)
         _verify_manifest_source_files(pre_dir, pre_manifest)
+
+        # Preholdout manifest must match validation manifest
+        if pre_manifest.manifest_sha256 != val_manifest_sha:
+            raise DatasetSecurityError(
+                f"Preholdout manifest SHA '{pre_manifest.manifest_sha256}' mismatch with validation manifest '{val_manifest_sha}'"
+            )
 
         # 2. Holdout partition (target observations)
         holdout_dir = root / "holdout"
@@ -445,22 +461,35 @@ def load_private_dataset(
         _check_unmanifested_files(holdout_dir, holdout_manifest)
         _verify_manifest_source_files(holdout_dir, holdout_manifest)
 
-        # 3. Lineage verification
-        if holdout_manifest.preholdout_manifest_sha256 != pre_manifest.manifest_sha256:
-            raise DatasetSecurityError(
-                f"Holdout manifest preholdout_manifest_sha256 '{holdout_manifest.preholdout_manifest_sha256}' "
-                f"mismatch with preholdout manifest '{pre_manifest.manifest_sha256}'"
-            )
-        if holdout_manifest.spec_sha256 != spec.sha256:
+        # 3. Three-way Lineage verification
+        # - Spec SHA
+        if holdout_manifest.spec_sha256 != spec.sha256 or holdout_manifest.spec_sha256 != val_spec_sha:
             raise DatasetSecurityError("Holdout manifest spec_sha256 mismatch with locked spec")
 
-        if validation_artifact_dir:
-            val_bundle_sha = compute_validation_bundle_sha256(validation_artifact_dir)
-            if holdout_manifest.validation_bundle_sha256 != val_bundle_sha:
-                raise DatasetSecurityError(
-                    f"Holdout manifest validation_bundle_sha256 '{holdout_manifest.validation_bundle_sha256}' "
-                    f"mismatch with validation bundle '{val_bundle_sha}'"
-                )
+        # - Preholdout Manifest SHA three-way match:
+        #   holdout_manifest.preholdout_manifest_sha256 == validation manifest_sha == current preholdout manifest_sha
+        if (
+            holdout_manifest.preholdout_manifest_sha256 != pre_manifest.manifest_sha256
+            or holdout_manifest.preholdout_manifest_sha256 != val_manifest_sha
+        ):
+            raise DatasetSecurityError(
+                f"Holdout manifest preholdout_manifest_sha256 '{holdout_manifest.preholdout_manifest_sha256}' "
+                f"mismatch with preholdout '{pre_manifest.manifest_sha256}' / validation '{val_manifest_sha}'"
+            )
+
+        # - Validation bundle SHA
+        if holdout_manifest.validation_bundle_sha256 != val_bundle_sha:
+            raise DatasetSecurityError(
+                f"Holdout manifest validation_bundle_sha256 '{holdout_manifest.validation_bundle_sha256}' "
+                f"mismatch with validation bundle '{val_bundle_sha}'"
+            )
+
+        # - Evaluator code SHA
+        if holdout_manifest.evaluator_code_sha != val_evaluator_sha:
+            raise DatasetSecurityError(
+                f"Holdout manifest evaluator_code_sha '{holdout_manifest.evaluator_code_sha}' "
+                f"mismatch with validation evaluator '{val_evaluator_sha}'"
+            )
 
         # 4. Load history from preholdout and target from holdout
         hist_start_d = date.fromisoformat(history_dates[0]) if history_dates else date.fromisoformat(target_dates.start)
@@ -618,18 +647,32 @@ def acquire_dataset_partition(
     else:  # holdout
         start_date = spec.holdout.start
         end_date = spec.holdout.end
-        pre_file = root / "preholdout" / "manifest.lock.json"
+        if not validation_bundle_dir:
+            raise DatasetSecurityError("Holdout acquisition requires validation_bundle_dir.")
+
+        from .study import verify_holdout_access_prerequisites
+        prereq = verify_holdout_access_prerequisites(validation_bundle_dir, spec)
+        validation_bundle_sha = prereq["validation_bundle_sha256"]
+        evaluator_code_sha = prereq["evaluator_code_sha"]
+
+        pre_dir = root / "preholdout"
+        pre_file = pre_dir / "manifest.lock.json"
         if not pre_file.is_file():
             raise DatasetSecurityError(
                 f"Preholdout manifest not found at {pre_file}; holdout acquisition requires preholdout lineage."
             )
         pre_data = json.loads(pre_file.read_text(encoding="utf-8"))
         preholdout_manifest = DaytradeDatasetManifest.from_dict(pre_data)
+        preholdout_manifest.validate_against_spec(spec)
         preholdout_manifest_sha = preholdout_manifest.manifest_sha256
 
-        if not validation_bundle_dir:
-            raise DatasetSecurityError("Holdout acquisition requires validation_bundle_dir.")
-        validation_bundle_sha = compute_validation_bundle_sha256(validation_bundle_dir)
+        if preholdout_manifest_sha != prereq["manifest_sha256"]:
+            raise DatasetSecurityError(
+                f"Preholdout manifest SHA '{preholdout_manifest_sha}' mismatch with validation manifest '{prereq['manifest_sha256']}'"
+            )
+
+        _check_unmanifested_files(pre_dir, preholdout_manifest)
+        _verify_manifest_source_files(pre_dir, preholdout_manifest)
 
     chunks = _get_monthly_chunks(start_date, end_date)
     source_files: dict[str, str] = {}

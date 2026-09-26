@@ -200,9 +200,17 @@ def load_and_evaluate_holdout(
     # Only reached if prerequisites pass!
     res = holdout_loader()
     holdout_manifest_sha: str | None = None
+    holdout_manifest_data: dict[str, Any] | None = None
     if isinstance(res, tuple):
-        if len(res) == 3:
-            holdout_sessions, holdout_dq, holdout_manifest_sha = res  # type: ignore[misc]
+        if len(res) == 4:
+            holdout_sessions, holdout_dq, holdout_manifest_sha, holdout_manifest_data = res  # type: ignore[misc]
+        elif len(res) == 3:
+            holdout_sessions, holdout_dq, third = res  # type: ignore[misc]
+            if isinstance(third, dict):
+                holdout_manifest_data = third
+                holdout_manifest_sha = third.get("manifest_sha256")
+            else:
+                holdout_manifest_sha = third
         else:
             holdout_sessions, holdout_dq = res
     else:
@@ -225,7 +233,8 @@ def load_and_evaluate_holdout(
         spec=spec,
         data_quality_reports=holdout_dq,
         freeze_record=freeze_record,
-        manifest_sha256=holdout_manifest_sha or prereq.get("manifest_sha256"),
+        manifest_sha256=holdout_manifest_sha or (holdout_manifest_data.get("manifest_sha256") if holdout_manifest_data else None) or prereq.get("manifest_sha256"),
+        manifest_data=holdout_manifest_data,
     )
 
 
@@ -237,6 +246,7 @@ def evaluate_split(
     integrity_error: str | None = None,
     freeze_record: EvaluationFreezeRecord | None = None,
     manifest_sha256: str | None = None,
+    manifest_data: dict[str, Any] | None = None,
 ) -> StudyResult:
     """Execute the locked DAYTRADE-001 reversal study on a prepared dataset split."""
     name = split_name.lower().strip()
@@ -254,6 +264,7 @@ def evaluate_split(
     all_events: list[EventObservation] = []
     all_qualifying_non_events: list[BaselineObservation] = []
     all_clusters: set[tuple[str, date]] = set()
+    total_eligible_minutes = 0
 
     for ticker, t_sessions in sessions_by_ticker.items():
         valid_prior_sessions: list[DaytradeSession] = []
@@ -282,6 +293,7 @@ def evaluate_split(
                             threshold=threshold,
                             split_name=split_name,
                         )
+                        total_eligible_minutes += len(evs) + len(non_evs)
 
                         # Compute forward outcomes for events
                         for ev in evs:
@@ -443,33 +455,78 @@ def evaluate_split(
         integrity_error=integrity_error,
     )
 
-    # Metrics bundle
+    # Construct complete per-ticker and monthly results
+    per_ticker_summary: dict[str, dict[str, Any]] = {}
+    for ticker in sorted(spec.universe):
+        per_ticker_summary[ticker] = {
+            "event_count": ticker_counts.get(ticker, 0),
+            "mean_net_return_2bps": per_ticker_net_means.get(ticker),
+        }
+
+    events_per_ticker_dict = {ticker: ticker_counts.get(ticker, 0) for ticker in spec.universe}
+    events_per_month_dict = {m_key: len(m_rets) for m_key, m_rets in sorted(monthly_events.items())}
+
+    # Provider provenance summary from verified manifest
+    if manifest_data and isinstance(manifest_data, dict) and "acquisition_provenance" in manifest_data:
+        provider_prov = manifest_data["acquisition_provenance"]
+    else:
+        provider_prov = {"status": "unavailable", "reason": "no_manifest_provided"}
+
+    # Matched baseline net return collection
+    baseline_net_rets = [e.matched_baseline_1m_net for e in all_events if e.matched_baseline_1m_net is not None]
+
+    # Metrics bundle matching all 31 locked required metrics in DAYTRADE-001B-v1.json
     metrics: dict[str, Any] = {
+        "eligible_minute_count": total_eligible_minutes,
         "event_count": event_count,
         "represented_ticker_count": represented_tickers,
+        "events_per_ticker": events_per_ticker_dict,
+        "events_per_month": events_per_month_dict,
         "maximum_single_ticker_event_concentration": max_concentration_pct,
         "overlapping_event_count": overlapping_count,
         "overlapping_event_rate": overlapping_rate,
-        "mean_net_forward_return_2bps": mean_primary_net,
-        "mean_net_forward_return_0bps": float(np.mean(net_0bps)) if net_0bps else None,
-        "mean_net_forward_return_5bps": float(np.mean(net_5bps)) if net_5bps else None,
         "mean_gross_forward_return_1m": float(np.mean(h1_gross)) if h1_gross else None,
         "mean_gross_forward_return_2m": float(np.mean(h2_gross)) if h2_gross else None,
         "mean_gross_forward_return_5m": float(np.mean(h5_gross)) if h5_gross else None,
-        "same_ticker_time_of_day_baseline_mean": (
-            float(np.mean([e.matched_baseline_1m_net for e in all_events if e.matched_baseline_1m_net is not None]))
-            if any(e.matched_baseline_1m_net is not None for e in all_events)
-            else None
-        ),
-        "event_minus_baseline_difference_mean": mean_uplift,
-        "pct_positive_representation_tickers": pct_positive_tickers,
+        "median_gross_forward_return_1m": float(np.median(h1_gross)) if h1_gross else None,
+        "median_gross_forward_return_2m": float(np.median(h2_gross)) if h2_gross else None,
+        "median_gross_forward_return_5m": float(np.median(h5_gross)) if h5_gross else None,
         "win_rate_1m": (
-            sum(1 for r in primary_net_returns if r > 0) / float(len(primary_net_returns))
-            if primary_net_returns
+            sum(1 for r in h1_gross if r > 0) / float(len(h1_gross))
+            if h1_gross
             else 0.0
         ),
+        "win_rate_2m": (
+            sum(1 for r in h2_gross if r > 0) / float(len(h2_gross))
+            if h2_gross
+            else 0.0
+        ),
+        "win_rate_5m": (
+            sum(1 for r in h5_gross if r > 0) / float(len(h5_gross))
+            if h5_gross
+            else 0.0
+        ),
+        "mean_net_forward_return_0bps": float(np.mean(net_0bps)) if net_0bps else None,
+        "mean_net_forward_return_2bps": mean_primary_net,
+        "mean_net_forward_return_5bps": float(np.mean(net_5bps)) if net_5bps else None,
+        "median_net_forward_return_0bps": float(np.median(net_0bps)) if net_0bps else None,
+        "median_net_forward_return_2bps": float(np.median(primary_net_returns)) if primary_net_returns else None,
+        "median_net_forward_return_5bps": float(np.median(net_5bps)) if net_5bps else None,
+        "same_ticker_time_of_day_baseline_mean": (
+            float(np.mean(baseline_net_rets)) if baseline_net_rets else None
+        ),
+        "same_ticker_time_of_day_baseline_median": (
+            float(np.median(baseline_net_rets)) if baseline_net_rets else None
+        ),
+        "event_minus_baseline_difference_mean": mean_uplift,
+        "event_minus_baseline_difference_median": (
+            float(np.median(uplift_returns)) if uplift_returns else None
+        ),
+        "per_ticker_primary_results": per_ticker_summary,
         "monthly_primary_results": monthly_summary,
         "data_quality_summary": asdict(split_quality),
+        "provider_provenance_summary": provider_prov,
+        "pct_positive_representation_tickers": pct_positive_tickers,
     }
 
     bootstrap_results: dict[str, Any] = {
@@ -503,4 +560,5 @@ def evaluate_split(
         data_quality=asdict(split_quality),
         provenance=provenance,
         events=all_events,
+        data_quality_reports=data_quality_reports or [],
     )
