@@ -83,8 +83,8 @@ class TestV2OpsCLI:
 
         with patch("tradex.pit.earnings.capture_earnings_snapshot") as mock_e, \
              patch("tradex.pit.reference.capture_reference_snapshot") as mock_r, \
-             patch("tradex.pit.ops._get_aware_utc_now", return_value=_dt()), \
-             patch("tradex.pit.ops.is_trading_day", return_value=True):
+             patch("tradex.pit.ops.is_trading_day", return_value=True), \
+             patch("tradex.pit.ops._get_aware_utc_now", return_value=_dt()):
 
             from tests.pit.test_ops_runner import (
                 _earnings_result_succeeded,
@@ -211,8 +211,8 @@ class TestV2OpsCLI:
 
         with patch("tradex.pit.earnings.capture_earnings_snapshot") as mock_e, \
              patch("tradex.pit.reference.capture_reference_snapshot") as mock_r, \
-             patch("tradex.pit.ops._get_aware_utc_now", return_value=_dt()), \
-             patch("tradex.pit.ops.is_trading_day", return_value=True):
+             patch("tradex.pit.ops.is_trading_day", return_value=True), \
+             patch("tradex.pit.ops._get_aware_utc_now", return_value=_dt()):
 
             from tests.pit.test_ops_runner import (
                 _earnings_result_succeeded,

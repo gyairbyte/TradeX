@@ -964,3 +964,109 @@ def test_decision_provenance_fields_not_conflated(plan, output_dir, monkeypatch)
     report = next(artifact_dir.glob("*/report.md")).read_text(encoding="utf-8")
     assert "**Live run head:** ee4b7b897f3768f6fa6608c2fdba28384b9a5d91" in report
     assert "**Bundle generation head:** 4c314f0149c6a851872fa0ec33fb9c99d51ab41f" in report
+
+
+def test_dataset_alpaca_client_max_pages_hard_stop():
+    """Verify that DatasetAlpacaClient strictly stops before request 101 when max_pages=100."""
+    request_count = 0
+
+    def fake_request_func(url: str, params: dict[str, Any], headers: dict[str, str], timeout: int):
+        nonlocal request_count
+        request_count += 1
+        data = {
+            "bars": {
+                "AAPL": [
+                    {
+                        "t": f"2025-01-02T14:{request_count % 60:02d}:00Z",
+                        "o": 150.0,
+                        "h": 151.0,
+                        "l": 149.0,
+                        "c": 150.5,
+                        "v": 1000,
+                    }
+                ]
+            },
+            "next_page_token": f"page_token_{request_count}",
+        }
+        resp = requests.Response()
+        resp.status_code = 200
+        resp._content = json.dumps(data).encode("utf-8")
+        return resp
+
+    client = DatasetAlpacaClient(
+        api_key="fake_key",
+        secret_key="fake_secret",
+        request_func=fake_request_func,
+        request_delay_seconds=0.0,
+        max_retries=1,
+    )
+
+    start_utc = datetime(2025, 1, 1, tzinfo=UTC)
+    end_utc = datetime(2025, 1, 31, tzinfo=UTC)
+
+    # 1. With max_pages=100
+    _, meta = client.get_bars(
+        symbols=["AAPL"],
+        start_utc=start_utc,
+        end_utc=end_utc,
+        feed="sip",
+        timeframe="1Min",
+        adjustment="split",
+        max_pages=100,
+    )
+
+    assert request_count == 100, f"Expected exactly 100 requests, got {request_count}"
+    assert meta["http_pages"] == 100
+    assert meta["safe_error_classification"] == "max_pages_exceeded"
+    assert meta["pagination_complete"] is False
+
+    # 2. Verify that DAYTRADE acquisition adapter rejects this incomplete chunk
+    from tradex.research.daytrade_reversal.dataset import (
+        DatasetPaginationLimitError,
+        DaytradeDatasetAcquisitionAdapter,
+    )
+    adapter = DaytradeDatasetAcquisitionAdapter(client)
+    with pytest.raises(DatasetPaginationLimitError, match="Pagination hard limit of 100 pages exceeded"):
+        request_count = 0
+        adapter.fetch_symbol_month_bars("AAPL", start_utc, end_utc)
+    assert request_count == 100
+
+    # 3. Retain test proving max_pages=None preserves existing behavior
+    request_count = 0
+
+    def fake_request_func_finite(url: str, params: dict[str, Any], headers: dict[str, str], timeout: int):
+        nonlocal request_count
+        request_count += 1
+        token = f"token_{request_count}" if request_count < 105 else None
+        data = {
+            "bars": {
+                "AAPL": [{"t": "2025-01-02T14:30:00Z", "o": 100, "h": 101, "l": 99, "c": 100, "v": 100}]
+            },
+            "next_page_token": token,
+        }
+        resp = requests.Response()
+        resp.status_code = 200
+        resp._content = json.dumps(data).encode("utf-8")
+        return resp
+
+    client_unlimited = DatasetAlpacaClient(
+        api_key="fake_key",
+        secret_key="fake_secret",
+        request_func=fake_request_func_finite,
+        request_delay_seconds=0.0,
+        max_retries=1,
+    )
+
+    _, meta_unlimited = client_unlimited.get_bars(
+        symbols=["AAPL"],
+        start_utc=start_utc,
+        end_utc=end_utc,
+        feed="sip",
+        timeframe="1Min",
+        adjustment="split",
+        max_pages=None,
+    )
+    assert request_count == 105
+    assert meta_unlimited["http_pages"] == 105
+    assert meta_unlimited["safe_error_classification"] == "none"
+    assert meta_unlimited["pagination_complete"] is True
