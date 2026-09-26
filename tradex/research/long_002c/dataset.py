@@ -56,6 +56,36 @@ def compute_atr(highs: list[float], lows: list[float], closes: list[float], peri
     return round(atr, 4)
 
 
+def compute_atr_series(
+    highs: list[float] | np.ndarray,
+    lows: list[float] | np.ndarray,
+    closes: list[float] | np.ndarray,
+    period: int = 14,
+) -> list[float | None]:
+    """Calculate Wilder's ATR series over all bars in a single O(N) pass.
+
+    The value at index i matches compute_atr(highs[:i+1], lows[:i+1], closes[:i+1], period).
+    """
+    n = len(closes)
+    atrs: list[float | None] = [None] * n
+    if n < period + 1:
+        return atrs
+    tr_list: list[float] = []
+    for i in range(1, n):
+        h = float(highs[i])
+        l = float(lows[i])
+        prev_c = float(closes[i - 1])
+        tr_list.append(max(h - l, abs(h - prev_c), abs(l - prev_c)))
+
+    curr_unrounded = sum(tr_list[:period]) / period
+    atrs[period] = round(curr_unrounded, 4)
+    for j in range(period, len(tr_list)):
+        curr_unrounded = (curr_unrounded * (period - 1) + tr_list[j]) / period
+        atrs[j + 1] = round(curr_unrounded, 4)
+
+    return atrs
+
+
 def build_decision_observations_for_security(
     identity: SecurityIdentity,
     bars_df: pd.DataFrame,  # columns: [open, high, low, close, volume, as_traded_close] sorted by date index
@@ -95,6 +125,8 @@ def build_decision_observations_for_security(
     # Reindex or align bars with expected trading sessions
     bar_dates = [d.strftime("%Y-%m-%d") if hasattr(d, "strftime") else str(d)[:10] for d in bars_df.index]
     bar_date_set = set(bar_dates)
+    bar_date_to_idx = {d: i for i, d in enumerate(bar_dates)}
+    n_bars = len(bars_df)
 
     # Data quality audit on development split
     dev_sessions = [s for s in trading_sessions if dev_start <= s <= dev_end]
@@ -116,22 +148,41 @@ def build_decision_observations_for_security(
         else:
             curr_consec = 0
 
+    # Extract NumPy arrays for O(1) vectorized metric computations
+    open_arr = bars_df["open"].to_numpy(dtype=float)
+    high_arr = bars_df["high"].to_numpy(dtype=float)
+    low_arr = bars_df["low"].to_numpy(dtype=float)
+    close_arr = bars_df["close"].to_numpy(dtype=float)
+    vol_arr = bars_df["volume"].to_numpy(dtype=float)
+    as_traded_close_arr = (
+        bars_df["as_traded_close"].to_numpy(dtype=float)
+        if "as_traded_close" in bars_df.columns
+        else close_arr
+    )
+    dollar_vol_arr = as_traded_close_arr * vol_arr
+
     # Audit duplicate and malformed bars across the entire provided bars_df
     dup_bar_count = int(bars_df.index.duplicated().sum())
-    total_malformed_count = 0
-    for _idx, row in bars_df.iterrows():
-        c = row.get("close")
-        v = row.get("volume")
-        h = row.get("high")
-        l = row.get("low")
-        ac = row.get("as_traded_close")
+    malformed_bar_flags = [False] * n_bars
+    analytical_incomplete_flags = [False] * n_bars
+    for i in range(n_bars):
+        ac = as_traded_close_arr[i]
+        c = close_arr[i]
+        o = open_arr[i]
+        h = high_arr[i]
+        l = low_arr[i]
+        v = vol_arr[i]
+        if np.isnan(c) or np.isnan(o) or np.isnan(h) or np.isnan(l):
+            analytical_incomplete_flags[i] = True
         if (
-            (ac is not None and not pd.isna(ac) and float(ac) <= 0)
-            or (c is not None and not pd.isna(c) and float(c) <= 0)
-            or (v is not None and not pd.isna(v) and float(v) < 0)
-            or (h is not None and l is not None and not pd.isna(h) and not pd.isna(l) and float(h) < float(l))
+            (not np.isnan(ac) and ac <= 0)
+            or (not np.isnan(c) and c <= 0)
+            or (not np.isnan(v) and v < 0)
+            or (not np.isnan(h) and not np.isnan(l) and h < l)
         ):
-            total_malformed_count += 1
+            malformed_bar_flags[i] = True
+
+    total_malformed_count = sum(malformed_bar_flags)
 
     coverage = DataQualityCoverage(
         immutable_security_id=sec_id,
@@ -146,13 +197,35 @@ def build_decision_observations_for_security(
         halt_sessions_count=0,
     )
 
+    # Precompute Wilder ATR series once for the entire bar history (Item 3)
+    atrs_14 = compute_atr_series(high_arr, low_arr, close_arr, 14)
+
+    # Precompute session to index map once outside the session loop (Item 1)
+    session_to_idx = {s: i for i, s in enumerate(trading_sessions)}
+
+    listing_date_str = None
+    if candidate is not None and isinstance(candidate.listing_lifecycle_provenance, dict):
+        listing_date_str = candidate.listing_lifecycle_provenance.get("listing_date")
+    if not listing_date_str and identity.listing_date:
+        listing_date_str = identity.listing_date
+    dt_listing = None
+    if listing_date_str:
+        try:
+            dt_listing = date.fromisoformat(listing_date_str[:10])
+        except ValueError:
+            dt_listing = None
+
+    analytical_incomplete_dates = (
+        set(bar_meta.get("analytical_incomplete_dates", [])) if bar_meta else set()
+    )
+
     # Process each trading session in the development window
     for session_date in dev_sessions:
         if session_date not in bar_date_set:
             # Session missing from provider history
             continue
 
-        idx = bar_dates.index(session_date)
+        idx = bar_date_to_idx[session_date]
 
         # Resolve effective historical ticker at decision date
         ticker_unresolved = False
@@ -187,58 +260,31 @@ def build_decision_observations_for_security(
         # Point-in-time history:
         # At 09:00 ET, session T has not opened. Features MUST use history strictly through session T-1 (prior completed session).
         # At 20:30 ET, session T has completed. Features include session T.
-        if cutoff_time == "09:00":
-            hist_slice = bars_df.iloc[:idx]
-            if len(hist_slice) == 0:
-                n_hist = 0
-                as_traded_close = 0.0
-                split_norm_close = 0.0
-                vol = 0
+        end = idx if cutoff_time == "09:00" else idx + 1
+        n_hist = end
+        if end == 0:
+            as_traded_close = 0.0
+            split_norm_close = 0.0
+            vol = 0
+            atr_14 = None
+            med_close_20 = None
+            dvol_20_median = None
+            dvol_60_median = None
+        else:
+            as_traded_close = float(as_traded_close_arr[end - 1])
+            split_norm_close = float(close_arr[end - 1])
+            vol = int(vol_arr[end - 1])
+            atr_14 = atrs_14[end - 1]
+            if end >= 20:
+                med_close_20 = float(np.median(as_traded_close_arr[end - 20 : end]))
+                dvol_20_median = float(np.median(dollar_vol_arr[end - 20 : end]))
             else:
-                n_hist = len(hist_slice)
-                as_traded_close = float(
-                    hist_slice["as_traded_close"].iloc[-1]
-                    if "as_traded_close" in hist_slice.columns
-                    else hist_slice["close"].iloc[-1]
-                )
-                split_norm_close = float(hist_slice["close"].iloc[-1])
-                vol = int(hist_slice["volume"].iloc[-1])
-        else:
-            hist_slice = bars_df.iloc[: idx + 1]
-            n_hist = len(hist_slice)
-            as_traded_close = float(
-                hist_slice["as_traded_close"].iloc[-1]
-                if "as_traded_close" in hist_slice.columns
-                else hist_slice["close"].iloc[-1]
-            )
-            split_norm_close = float(hist_slice["close"].iloc[-1])
-            vol = int(hist_slice["volume"].iloc[-1])
-
-        # As-traded dollar volume: strictly computed as as-traded close * volume
-        if "as_traded_close" in hist_slice.columns:
-            as_traded_closes_20 = hist_slice["as_traded_close"].iloc[-20:].tolist() if n_hist >= 20 else []
-            as_traded_closes_60 = hist_slice["as_traded_close"].iloc[-60:].tolist() if n_hist >= 60 else []
-        else:
-            as_traded_closes_20 = hist_slice["close"].iloc[-20:].tolist() if n_hist >= 20 else []
-            as_traded_closes_60 = hist_slice["close"].iloc[-60:].tolist() if n_hist >= 60 else []
-
-        vols_20 = hist_slice["volume"].iloc[-20:].tolist() if n_hist >= 20 else []
-        vols_60 = hist_slice["volume"].iloc[-60:].tolist() if n_hist >= 60 else []
-
-        dollar_vols_20 = [c * v for c, v in zip(as_traded_closes_20, vols_20)]
-        dvol_20_median = float(np.median(dollar_vols_20)) if len(dollar_vols_20) >= 20 else None
-
-        dollar_vols_60 = [c * v for c, v in zip(as_traded_closes_60, vols_60)]
-        dvol_60_median = float(np.median(dollar_vols_60)) if len(dollar_vols_60) >= 60 else None
-
-        # Price floor: 20-session median as-traded close >= 5 and current as-traded close >= 5
-        med_close_20 = float(np.median(as_traded_closes_20)) if len(as_traded_closes_20) >= 20 else None
-
-        # ATR 14 calculation on split-normalized series
-        highs = hist_slice["high"].tolist()
-        lows = hist_slice["low"].tolist()
-        closes = hist_slice["close"].tolist()
-        atr_14 = compute_atr(highs, lows, closes, 14)
+                med_close_20 = None
+                dvol_20_median = None
+            if end >= 60:
+                dvol_60_median = float(np.median(dollar_vol_arr[end - 60 : end]))
+            else:
+                dvol_60_median = None
 
         # Classification gate: fail closed on unknown or non-common stock
         is_common = identity.is_common_stock
@@ -388,7 +434,7 @@ def build_decision_observations_for_security(
 
         # Market cap gate: fail-closed (missing is None and NEVER passes)
         mcap_val = market_caps.get(session_date) if market_caps else None
-        mcap_gte_3b = (mcap_val >= 3_000_000_000.0) if mcap_val is not None else None
+        mcap_gte_3b = bool(mcap_val >= 3_000_000_000.0) if mcap_val is not None else None
         index_verified = bool(index_memberships.get(session_date, False)) if index_memberships else False
 
         if mcap_val is not None:
@@ -498,19 +544,11 @@ def build_decision_observations_for_security(
             )
 
         # Trailing history quality evaluation (trailing 252 regular sessions or from listing date for IPOs)
-        session_to_idx = {s: i for i, s in enumerate(trading_sessions)}
         s_idx = session_to_idx.get(session_date, -1)
 
-        listing_date_str = None
-        if candidate is not None and isinstance(candidate.listing_lifecycle_provenance, dict):
-            listing_date_str = candidate.listing_lifecycle_provenance.get("listing_date")
-        if not listing_date_str and identity.listing_date:
-            listing_date_str = identity.listing_date
-
         is_recent_ipo_window = False
-        if listing_date_str:
+        if dt_listing:
             try:
-                dt_listing = date.fromisoformat(listing_date_str[:10])
                 dt_session = date.fromisoformat(session_date[:10])
                 days_since_listing = (dt_session - dt_listing).days
                 if 0 <= days_since_listing <= 365:
@@ -541,34 +579,18 @@ def build_decision_observations_for_security(
             else:
                 curr_consec_trailing = 0
 
-        # Check malformed bars and analytical completeness in trailing slice
-        trailing_bar_dates = [s for s in expected_trailing_sessions if s in bar_date_set]
+        # Check malformed bars and analytical completeness in trailing slice via precomputed flags (Item 2)
         trailing_malformed = 0
         trailing_analytical_incomplete = False
-        analytical_incomplete_dates = (
-            set(bar_meta.get("analytical_incomplete_dates", [])) if bar_meta else set()
-        )
-        if any(s in analytical_incomplete_dates for s in expected_trailing_sessions):
+        if analytical_incomplete_dates and not analytical_incomplete_dates.isdisjoint(expected_trailing_sessions):
             trailing_analytical_incomplete = True
 
-        for s in trailing_bar_dates:
-            row_s = bars_df.loc[s]
-            if isinstance(row_s, pd.DataFrame):
-                row_s = row_s.iloc[-1]
-            c = row_s.get("close")
-            o = row_s.get("open")
-            h = row_s.get("high")
-            l = row_s.get("low")
-            v = row_s.get("volume")
-            ac = row_s.get("as_traded_close")
-            if (c is None or pd.isna(c) or o is None or pd.isna(o) or
-                h is None or pd.isna(h) or l is None or pd.isna(l)):
-                trailing_analytical_incomplete = True
-            if ((ac is not None and not pd.isna(ac) and float(ac) <= 0) or
-                (c is not None and not pd.isna(c) and float(c) <= 0) or
-                (v is not None and not pd.isna(v) and float(v) < 0) or
-                (h is not None and l is not None and not pd.isna(h) and not pd.isna(l) and float(h) < float(l))):
+        for s in obs_trailing_sessions:
+            b_idx = bar_date_to_idx[s]
+            if malformed_bar_flags[b_idx]:
                 trailing_malformed += 1
+            if analytical_incomplete_flags[b_idx]:
+                trailing_analytical_incomplete = True
 
         data_quality_reasons: list[str] = []
         if n_hist >= 63 and exp_trailing_count >= 63:

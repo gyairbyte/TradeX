@@ -785,12 +785,16 @@ def cmd_build(args: argparse.Namespace) -> int:
             print("Official Stage C execution ABORTED due to unresolved EDGAR provider failure.")
             return 1
 
-        # Build as-traded close prices for 09:00 (T-1 close) and 20:30 (T close)
-        as_traded_closes_2030 = {d: float(df_final.loc[d, "as_traded_close"]) for d in df_final.index}
-        as_traded_closes_0900 = {
-            df_final.index[i]: float(df_final.iloc[i - 1]["as_traded_close"])
-            for i in range(1, len(df_final))
-        }
+        # Build as-traded close prices for 09:00 (T-1 close) and 20:30 (T close) via vectorized arrays
+        as_traded_col = (
+            df_final["as_traded_close"]
+            if "as_traded_close" in df_final.columns
+            else df_final["close"]
+        )
+        as_traded_vals = as_traded_col.tolist()
+        date_index = list(df_final.index)
+        as_traded_closes_2030 = dict(zip(date_index, as_traded_vals))
+        as_traded_closes_0900 = dict(zip(date_index[1:], as_traded_vals[:-1]))
 
         mcap_0900, reasons_0900, _ = compute_security_pit_market_caps(
             company_facts=facts_data,
@@ -821,7 +825,18 @@ def cmd_build(args: argparse.Namespace) -> int:
         securities_identity[sec_id] = identity
 
         # Step 2: Build decision observations for BOTH 09:00 and 20:30 cutoffs
-        bar_dates = list(df_final.index)
+        bar_dates = date_index
+        bar_date_to_idx = {d: i for i, d in enumerate(bar_dates)}
+        n_final_bars = len(df_final)
+        open_arr = df_final["open"].to_numpy(dtype=float)
+        high_arr = df_final["high"].to_numpy(dtype=float)
+        low_arr = df_final["low"].to_numpy(dtype=float)
+        close_arr = df_final["close"].to_numpy(dtype=float)
+        as_traded_open_arr = (
+            df_final["as_traded_open"].to_numpy(dtype=float)
+            if "as_traded_open" in df_final.columns
+            else open_arr
+        )
         obs_by_sec[sec_id] = []
 
         for cutoff_time in ["09:00", "20:30"]:
@@ -857,18 +872,16 @@ def cmd_build(args: argparse.Namespace) -> int:
                 if obs.split_boundary_purged:
                     continue
                 as_of_date = obs.as_of_date
-                if as_of_date not in bar_dates:
+                idx = bar_date_to_idx.get(as_of_date)
+                if idx is None:
                     continue
-                idx = bar_dates.index(as_of_date)
 
-                if cutoff_time == "09:00":
-                    # 09:00: session T is entry session; forward bars start at session T (21 sessions)
-                    forward_slice = df_final.iloc[idx : idx + 21]
-                else:
-                    # 20:30: session T+1 is entry session; forward bars start at session T+1 (21 sessions)
-                    forward_slice = df_final.iloc[idx + 1 : idx + 22]
+                # 09:00: session T is entry session; forward bars start at session T (21 sessions)
+                # 20:30: session T+1 is entry session; forward bars start at session T+1 (21 sessions)
+                f_start = idx if cutoff_time == "09:00" else idx + 1
+                f_end = f_start + 21
 
-                if len(forward_slice) < 21:
+                if f_end > n_final_bars:
                     object.__setattr__(obs, "raw_outcome_eligible", False)
                     object.__setattr__(obs, "data_complete", False)
                     object.__setattr__(obs, "actionability_status", "unavailable_data_incomplete")
@@ -885,17 +898,21 @@ def cmd_build(args: argparse.Namespace) -> int:
                     )
                     continue
 
-                # Verify all 21 forward bars have finite, non-null open, high, low, close
-                has_invalid_ohlc = False
-                for col in ["open", "high", "low", "close"]:
-                    vals = forward_slice[col].to_numpy()
-                    if not np.all(np.isfinite(vals)):
-                        has_invalid_ohlc = True
-                        break
+                f_open = open_arr[f_start:f_end]
+                f_high = high_arr[f_start:f_end]
+                f_low = low_arr[f_start:f_end]
+                f_close = close_arr[f_start:f_end]
+                as_traded_open = float(as_traded_open_arr[f_start])
 
-                as_traded_open = float(forward_slice["as_traded_open"].iloc[0])
-                if not (np.isfinite(as_traded_open) and as_traded_open > 0):
-                    has_invalid_ohlc = True
+                # Verify all 21 forward bars have finite, non-null open, high, low, close
+                has_invalid_ohlc = not (
+                    np.all(np.isfinite(f_open))
+                    and np.all(np.isfinite(f_high))
+                    and np.all(np.isfinite(f_low))
+                    and np.all(np.isfinite(f_close))
+                    and np.isfinite(as_traded_open)
+                    and as_traded_open > 0
+                )
 
                 if has_invalid_ohlc:
                     object.__setattr__(obs, "raw_outcome_eligible", False)
@@ -914,8 +931,8 @@ def cmd_build(args: argparse.Namespace) -> int:
                     )
                     continue
 
-                next_open = float(forward_slice["open"].iloc[0])
-                forward_bars = forward_slice[["open", "high", "low", "close"]].to_dict(orient="records")
+                next_open = float(f_open[0])
+                forward_bars = (f_open, f_high, f_low, f_close)
                 atr_val = obs.atr_14 or 0.0
 
                 has_unresolved_dist = as_of_date in affected_special_sessions

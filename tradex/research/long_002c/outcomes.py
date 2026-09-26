@@ -36,12 +36,32 @@ def compute_outcome_cell(
     All forward barriers, ATR, returns, MFE, MAE, and clean risk cap paths operate on the split-normalized scale.
     If special_distribution_unresolved is True, the outcome cannot be reliably calculated and is excluded from clean targets.
     """
-    if len(forward_bars) < horizon_sessions:
-        raise ValueError(
-            f"Insufficient forward bars for horizon {horizon_sessions}: got {len(forward_bars)}"
-        )
-
-    bars = forward_bars[:horizon_sessions]
+    if isinstance(forward_bars, tuple) and len(forward_bars) >= 3:
+        if len(forward_bars) == 4:
+            _, f_highs, f_lows, f_closes = forward_bars
+        else:
+            f_highs, f_lows, f_closes = forward_bars[:3]
+        if len(f_highs) < horizon_sessions:
+            raise ValueError(
+                f"Insufficient forward bars for horizon {horizon_sessions}: got {len(f_highs)}"
+            )
+        if isinstance(f_highs, list):
+            highs = f_highs[:horizon_sessions]
+            lows = f_lows[:horizon_sessions]
+            closes = f_closes[:horizon_sessions]
+        else:
+            highs = [float(x) for x in f_highs[:horizon_sessions]]
+            lows = [float(x) for x in f_lows[:horizon_sessions]]
+            closes = [float(x) for x in f_closes[:horizon_sessions]]
+    else:
+        if len(forward_bars) < horizon_sessions:
+            raise ValueError(
+                f"Insufficient forward bars for horizon {horizon_sessions}: got {len(forward_bars)}"
+            )
+        bars = forward_bars[:horizon_sessions]
+        highs = [float(b["high"]) for b in bars]
+        lows = [float(b["low"]) for b in bars]
+        closes = [float(b["close"]) for b in bars]
 
     # Primary friction: 10 bps all-in
     # Analysis entry price on split-normalized scale includes friction:
@@ -71,10 +91,6 @@ def compute_outcome_cell(
     clean_risk_cap_price = analysis_entry_price * (1.0 - clean_risk_cap_pct)
 
     # Forward price path metrics on split-normalized scale
-    highs = [float(b["high"]) for b in bars]
-    lows = [float(b["low"]) for b in bars]
-    closes = [float(b["close"]) for b in bars]
-
     max_forward_high = max(highs)
     min_forward_low = min(lows)
     close_at_horizon = closes[-1]
@@ -109,9 +125,8 @@ def compute_outcome_cell(
     clean_target_reached = False
 
     if target_reached and first_target_idx is not None:
-        target_bar = bars[first_target_idx - 1]
-        tb_high = float(target_bar["high"])
-        tb_low = float(target_bar["low"])
+        tb_high = highs[first_target_idx - 1]
+        tb_low = lows[first_target_idx - 1]
 
         if tb_high >= target_price and tb_low <= adverse_barrier_price:
             path_sequence_ambiguous = True
@@ -185,13 +200,25 @@ def compute_all_nine_outcomes(
     as_of_date: str,
     cutoff_time: str,
     next_open_price: float,
-    forward_bars: list[dict[str, Any]],  # at least 21 bars on consistent split-normalized basis
+    forward_bars: list[dict[str, Any]] | tuple[Any, ...],  # at least 21 bars on consistent split-normalized basis
     pre_entry_atr: float,
     entry_friction_bps: float = PRIMARY_ENTRY_FRICTION_BPS,
     special_distribution_unresolved: bool = False,
     as_traded_entry_price: float | None = None,
 ) -> list[OutcomeLabelRecord]:
     """Compute all nine target/horizon outcome combinations for an observation."""
+    if isinstance(forward_bars, tuple) and len(forward_bars) >= 3:
+        if len(forward_bars) == 4:
+            _, f_h, f_l, f_c = forward_bars
+        else:
+            f_h, f_l, f_c = forward_bars[:3]
+        highs_21 = [float(x) for x in f_h[:21]]
+        lows_21 = [float(x) for x in f_l[:21]]
+        closes_21 = [float(x) for x in f_c[:21]]
+        pass_bars: Any = (highs_21, lows_21, closes_21)
+    else:
+        pass_bars = forward_bars
+
     records: list[OutcomeLabelRecord] = []
     for target_pct, horizon_sessions in TARGET_GRID:
         record = compute_outcome_cell(
@@ -202,7 +229,7 @@ def compute_all_nine_outcomes(
             target_pct=target_pct,
             horizon_sessions=horizon_sessions,
             next_open_price=next_open_price,
-            forward_bars=forward_bars,
+            forward_bars=pass_bars,
             pre_entry_atr=pre_entry_atr,
             entry_friction_bps=entry_friction_bps,
             special_distribution_unresolved=special_distribution_unresolved,
