@@ -172,6 +172,14 @@ def verify_holdout_access_prerequisites(
     if study_data.get("evidence_confidence_cap") != "limited_but_usable_evidence":
         raise HoldoutAccessDeniedError("study.json evidence_confidence_cap invalid")
 
+    val_bundle_sha256 = sha256_of_file(checksum_file)
+    return {
+        "validation_bundle_sha256": val_bundle_sha256,
+        "evaluator_code_sha": freeze_record.evaluation_code_sha,
+        "manifest_sha256": manifest.manifest_sha256,
+        "spec_sha256": spec.sha256,
+    }
+
 
 def load_and_evaluate_holdout(
     validation_artifact_dir: Path | str,
@@ -183,7 +191,7 @@ def load_and_evaluate_holdout(
 
     The holdout_loader function will NEVER be invoked if validation prerequisites fail.
     """
-    verify_holdout_access_prerequisites(
+    prereq = verify_holdout_access_prerequisites(
         validation_artifact_dir=validation_artifact_dir,
         spec=spec,
         repo_root=repo_root,
@@ -191,17 +199,33 @@ def load_and_evaluate_holdout(
 
     # Only reached if prerequisites pass!
     res = holdout_loader()
+    holdout_manifest_sha: str | None = None
     if isinstance(res, tuple):
-        holdout_sessions, holdout_dq = res
+        if len(res) == 3:
+            holdout_sessions, holdout_dq, holdout_manifest_sha = res  # type: ignore[misc]
+        else:
+            holdout_sessions, holdout_dq = res
     else:
         holdout_sessions = res
         holdout_dq = []
+
+    vdir = Path(validation_artifact_dir).expanduser().resolve()
+    freeze_record: EvaluationFreezeRecord | None = None
+    freeze_file = vdir / "freeze.json"
+    if freeze_file.is_file():
+        try:
+            f_data = json.loads(freeze_file.read_text(encoding="utf-8"))
+            freeze_record = EvaluationFreezeRecord.from_dict(f_data)
+        except (OSError, ValueError, json.JSONDecodeError):
+            freeze_record = None
 
     return evaluate_split(
         split_name="holdout",
         sessions=holdout_sessions,
         spec=spec,
         data_quality_reports=holdout_dq,
+        freeze_record=freeze_record,
+        manifest_sha256=holdout_manifest_sha or prereq.get("manifest_sha256"),
     )
 
 
@@ -478,4 +502,5 @@ def evaluate_split(
         bootstrap=bootstrap_results,
         data_quality=asdict(split_quality),
         provenance=provenance,
+        events=all_events,
     )

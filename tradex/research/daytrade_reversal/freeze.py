@@ -159,3 +159,22 @@ def verify_freeze_state(
                 f"Frozen evaluation file hash mismatch for {rel}: "
                 f"expected {expected_sha}, got {actual_sha}"
             )
+
+
+def verify_manifest_dataset_integrity(
+    manifest_data: dict[str, Any],
+    partition_dir: Path,
+) -> None:
+    """Verify that all source files declared in manifest exist and hashes match before freezing."""
+    source_files = manifest_data.get("source_files", {})
+    if not source_files:
+        raise FreezeError("Dataset manifest does not contain any source file records.")
+    for rel_path, expected_sha in source_files.items():
+        fp = partition_dir / rel_path
+        if not fp.is_file():
+            raise FreezeError(f"Frozen source file missing on disk: {rel_path} in {partition_dir}")
+        actual_sha = sha256_of_file(fp)
+        if actual_sha != expected_sha:
+            raise FreezeError(
+                f"Frozen source file hash mismatch for {rel_path}: expected {expected_sha}, got {actual_sha}"
+            )

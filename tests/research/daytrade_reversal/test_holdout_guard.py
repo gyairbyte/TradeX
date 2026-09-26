@@ -35,7 +35,7 @@ def _build_valid_validation_bundle(
         start_date=spec.warmup.start,
         end_date=spec.validation.end,
         universe=list(spec.universe),
-        source_files={"bars/AAPL.csv": "abc"},
+        source_files={f"bars/{t}.csv": "a" * 64 for t in spec.universe},
     )
     manifest_data = manifest.to_dict()
     manifest_sha = manifest_data["manifest_sha256"]

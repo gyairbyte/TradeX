@@ -535,7 +535,7 @@ def test_scenario_28_holdout_access_denied_when_validation_not_supported(tmp_pat
         start_date=locked_spec.warmup.start,
         end_date=locked_spec.validation.end,
         universe=list(locked_spec.universe),
-        source_files={"bars/AAPL.csv": "abc"},
+        source_files={f"bars/{t}.csv": "a" * 64 for t in locked_spec.universe},
     )
     manifest_dict = manifest.to_dict()
 
@@ -688,3 +688,78 @@ def test_scenario_34_freeze_cleanliness_checks_untracked_files(tmp_path: Path, m
 
     with pytest.raises(FreezeError, match="uncommitted modifications or untracked files"):
         freeze_evaluation_state(repo_root=tmp_path, spec_sha256="test", require_clean=True)
+
+
+# Scenario 35: Holdout threshold history immediately enables October 1 event evaluation
+def test_scenario_35_holdout_threshold_history_enables_immediate_october_events(locked_spec) -> None:
+    """September validation history enables the first October holdout session to evaluate events immediately."""
+    from datetime import date, timedelta
+
+    from tradex.research.daytrade_reversal.calendar import get_regular_trading_sessions
+    from tradex.research.daytrade_reversal.models import DaytradeBar, DaytradeSession
+    from tradex.research.daytrade_reversal.study import evaluate_split
+
+    ticker = "AAPL"
+    # Get last 20 regular sessions before Oct 1, 2025
+    sep_end = date(2025, 9, 30)
+    all_sessions_before = get_regular_trading_sessions(date(2025, 8, 1), sep_end, exclude_early_close=True)
+    assert len(all_sessions_before) >= 20
+    prior_20_dates = all_sessions_before[-20:]
+
+    history_sessions: list[DaytradeSession] = []
+    base_price = 150.0
+
+    for d in prior_20_dates:
+        bars: list[DaytradeBar] = []
+        for m in range(390):
+            b_start = datetime(d.year, d.month, d.day, 13, 30, tzinfo=UTC) + timedelta(minutes=m)
+            b = DaytradeBar(
+                ticker=ticker,
+                session_date=d,
+                bar_start=b_start,
+                available_at=b_start + timedelta(minutes=1),
+                open=base_price,
+                high=base_price + 0.10,
+                low=base_price - 0.10,
+                close=base_price + 0.01,
+                volume=1000.0,
+            )
+            bars.append(b)
+        history_sessions.append(DaytradeSession(ticker=ticker, session_date=d, bars=bars, is_valid=True))
+
+    # Oct 1 session (first holdout day) with an extreme downside drop at 10:00 AM (m=30)
+    oct_1_date = date(2025, 10, 1)
+    oct_bars: list[DaytradeBar] = []
+    for m in range(390):
+        b_start = datetime(oct_1_date.year, oct_1_date.month, oct_1_date.day, 13, 30, tzinfo=UTC) + timedelta(minutes=m)
+        if m == 30:
+            # Extreme drop: -5.0%
+            o_p, c_p = 150.0, 142.5
+        elif m > 30 and m <= 35:
+            # Rebound
+            o_p, c_p = 143.0, 145.0
+        else:
+            o_p, c_p = 150.0, 150.0
+
+        b = DaytradeBar(
+            ticker=ticker,
+            session_date=oct_1_date,
+            bar_start=b_start,
+            available_at=b_start + timedelta(minutes=1),
+            open=o_p,
+            high=max(o_p, c_p),
+            low=min(o_p, c_p),
+            close=c_p,
+            volume=1000.0,
+        )
+        oct_bars.append(b)
+
+    oct_session = DaytradeSession(ticker=ticker, session_date=oct_1_date, bars=oct_bars, is_valid=True)
+    all_sessions = history_sessions + [oct_session]
+
+    result = evaluate_split("holdout", all_sessions, locked_spec)
+
+    # 1. Event was detected on October 1 immediately
+    assert result.metrics["event_count"] >= 1
+    # 2. None of the September history sessions produced events
+    assert all(e.session_date >= oct_1_date for e in result.events)
