@@ -14,6 +14,7 @@ from tradex.research.long_002c.models import (
     BaselineComparatorOutput,
     OutcomeLabelRecord,
 )
+from tradex.signals.long_term import score
 from tradex.signals.weights import LongWeights
 
 
@@ -28,12 +29,10 @@ def compute_simple_momentum(closes: list[float], lookback: int) -> float | None:
     return curr_close / past_close - 1.0
 
 
-def compute_legacy_tradex_score(history_df: pd.DataFrame) -> float:
+def compute_legacy_tradex_score(history_df: pd.DataFrame, weights: LongWeights | None = None) -> float:
     """Run existing TradeX long-term scorer with fresh repository defaults (no saved weights)."""
-    from tradex.signals.long_term import score
-
-    fresh_weights = LongWeights()
-    result = score(history_df, weights=fresh_weights)
+    effective_weights = weights if weights is not None else LongWeights()
+    result = score(history_df, weights=effective_weights)
     return float(result.get("score", 0.0))
 
 
@@ -272,11 +271,12 @@ def evaluate_baselines_for_date(
 
     # 6. Legacy TradeX Long-term Scorer
     legacy_map: dict[str, float | None] = {}
+    local_weights = LongWeights()
     for sec_id in eligible_sec_ids:
         df = securities_data[sec_id]["history_df"]
         if len(df) >= 30:
             try:
-                legacy_map[sec_id] = compute_legacy_tradex_score(df)
+                legacy_map[sec_id] = compute_legacy_tradex_score(df, weights=local_weights)
             except Exception:  # noqa: BLE001
                 legacy_map[sec_id] = None
         else:

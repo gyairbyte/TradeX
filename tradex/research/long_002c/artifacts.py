@@ -136,36 +136,36 @@ def write_committed_summaries(
     # 3. outcome_census_summary.json
     outcome_path = bundle_dir / "outcome_census_summary.json"
 
+    # Pre-index eligible observations and partition observations by cutoff in a single pass
+    all_eligible_keys = set()
+    cutoff_obs_map: dict[str, list[DecisionObservation]] = {"20:30": [], "09:00": []}
+    for o in observations:
+        if o.raw_outcome_eligible and not o.split_boundary_purged:
+            all_eligible_keys.add((o.immutable_security_id, o.as_of_date, o.cutoff_time))
+        if o.cutoff_time in cutoff_obs_map:
+            cutoff_obs_map[o.cutoff_time].append(o)
+
+    # Bucket outcomes by (cutoff_time, target_pct, horizon_sessions) in a single pass
+    outcomes_by_cell: dict[tuple[str, float, int], list[OutcomeLabelRecord]] = {}
+    for o in outcomes:
+        key = (o.immutable_security_id, o.as_of_date, o.cutoff_time)
+        if key in all_eligible_keys:
+            outcomes_by_cell.setdefault((o.cutoff_time, o.target_pct, o.horizon_sessions), []).append(o)
+
+    CELL_SPECS = [
+        (10.0, 5), (10.0, 10), (10.0, 21),
+        (20.0, 5), (20.0, 10), (20.0, 21),
+        (30.0, 5), (30.0, 10), (30.0, 21),
+    ]
+
     def _build_cutoff_cells_and_funnel(
         cutoff: str,
     ) -> tuple[dict[str, dict[str, Any]], dict[str, int]]:
-        cutoff_obs = [o for o in observations if o.cutoff_time == cutoff]
-        eligible_obs_keys = {
-            (o.immutable_security_id, o.as_of_date, o.cutoff_time)
-            for o in cutoff_obs
-            if o.raw_outcome_eligible and not o.split_boundary_purged
-        }
+        cutoff_obs = cutoff_obs_map.get(cutoff, [])
         cells_dict: dict[str, dict[str, Any]] = {}
-        for target_pct, horizon in [
-            (10.0, 5),
-            (10.0, 10),
-            (10.0, 21),
-            (20.0, 5),
-            (20.0, 10),
-            (20.0, 21),
-            (30.0, 5),
-            (30.0, 10),
-            (30.0, 21),
-        ]:
+        for target_pct, horizon in CELL_SPECS:
             cell_key = f"+{int(target_pct)}%_{horizon}d"
-            cell_recs = [
-                o
-                for o in outcomes
-                if o.cutoff_time == cutoff
-                and o.target_pct == target_pct
-                and o.horizon_sessions == horizon
-                and (o.immutable_security_id, o.as_of_date, o.cutoff_time) in eligible_obs_keys
-            ]
+            cell_recs = outcomes_by_cell.get((cutoff, target_pct, horizon), [])
             n_tot = len(cell_recs)
             clean_cnt = sum(1 for o in cell_recs if o.clean_target_reached)
             gross_cnt = sum(1 for o in cell_recs if o.target_progress_ratio >= 1.0)
@@ -210,24 +210,12 @@ def write_committed_summaries(
     reeval_0900_cells, reeval_0900_funnel = _build_cutoff_cells_and_funnel("09:00")
 
     # Optional combined diagnostic explicitly noted
-    all_eligible_keys = {
-        (o.immutable_security_id, o.as_of_date, o.cutoff_time)
-        for o in observations
-        if o.raw_outcome_eligible and not o.split_boundary_purged
-    }
     comb_cells: dict[str, dict[str, Any]] = {}
-    for target_pct, horizon in [
-        (10.0, 5), (10.0, 10), (10.0, 21),
-        (20.0, 5), (20.0, 10), (20.0, 21),
-        (30.0, 5), (30.0, 10), (30.0, 21),
-    ]:
+    for target_pct, horizon in CELL_SPECS:
         cell_key = f"+{int(target_pct)}%_{horizon}d"
-        cell_recs = [
-            o for o in outcomes
-            if o.target_pct == target_pct
-            and o.horizon_sessions == horizon
-            and (o.immutable_security_id, o.as_of_date, o.cutoff_time) in all_eligible_keys
-        ]
+        cell_recs_2030 = outcomes_by_cell.get(("20:30", target_pct, horizon), [])
+        cell_recs_0900 = outcomes_by_cell.get(("09:00", target_pct, horizon), [])
+        cell_recs = cell_recs_2030 + cell_recs_0900
         n_tot = len(cell_recs)
         clean_cnt = sum(1 for o in cell_recs if o.clean_target_reached)
         gross_cnt = sum(1 for o in cell_recs if o.target_progress_ratio >= 1.0)

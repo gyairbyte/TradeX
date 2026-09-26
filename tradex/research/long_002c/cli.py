@@ -985,30 +985,35 @@ def cmd_build(args: argparse.Namespace) -> int:
     print("\n[3/6] Evaluating frozen baseline comparators on common observations (09:00 & 20:30)...")
     all_baselines: list[BaselineComparatorOutput] = []
 
+    # Precompute date position maps for O(1) historical DataFrame slicing (PERF-001)
+    sec_date_pos = {
+        sec_id: {date: i for i, date in enumerate(hdf.index)}
+        for sec_id, hdf in securities_history_df.items()
+    }
+    spy_date_pos = {date: i for i, date in enumerate(df_spy.index)} if not df_spy.empty else {}
+
     for d in dev_sessions:
         for cutoff_time in ["09:00", "20:30"]:
             date_sec_data: dict[str, dict[str, Any]] = {}
             for sec_id, hdf in securities_history_df.items():
-                if d in hdf.index:
-                    d_idx = list(hdf.index).index(d)
-                    sub_df = hdf.iloc[:d_idx] if cutoff_time == "09:00" else hdf.iloc[:d_idx + 1]
-                    if sub_df.empty:
-                        continue
-                    matching_obs = next(
-                        (o for o in all_obs if o.immutable_security_id == sec_id and o.as_of_date == d and o.cutoff_time == cutoff_time),
-                        None,
-                    )
-                    date_sec_data[sec_id] = {
-                        "ticker": matching_obs.ticker_at_decision if matching_obs else securities_identity[sec_id].ticker_at_decision,
-                        "history_df": sub_df,
-                        "atr_14": matching_obs.atr_14 if matching_obs else None,
-                        "sector": None,
-                        "universe_eligible": matching_obs.universe_eligible if matching_obs else True,
-                        "raw_outcome_eligible": matching_obs.raw_outcome_eligible if matching_obs else False,
-                    }
+                d_idx = sec_date_pos[sec_id].get(d)
+                if d_idx is None:
+                    continue
+                sub_df = hdf.iloc[:d_idx] if cutoff_time == "09:00" else hdf.iloc[:d_idx + 1]
+                if sub_df.empty:
+                    continue
+                matching_obs = obs_obj_map.get((sec_id, d, cutoff_time))
+                date_sec_data[sec_id] = {
+                    "ticker": matching_obs.ticker_at_decision if matching_obs else securities_identity[sec_id].ticker_at_decision,
+                    "history_df": sub_df,
+                    "atr_14": matching_obs.atr_14 if matching_obs else None,
+                    "sector": None,
+                    "universe_eligible": matching_obs.universe_eligible if matching_obs else True,
+                    "raw_outcome_eligible": matching_obs.raw_outcome_eligible if matching_obs else False,
+                }
             if date_sec_data:
-                if not df_spy.empty and d in df_spy.index:
-                    spy_idx = list(df_spy.index).index(d)
+                spy_idx = spy_date_pos.get(d)
+                if spy_idx is not None:
                     spy_sub_df = df_spy.iloc[:spy_idx] if cutoff_time == "09:00" else df_spy.iloc[:spy_idx + 1]
                 else:
                     spy_sub_df = None
@@ -1043,10 +1048,21 @@ def cmd_build(args: argparse.Namespace) -> int:
 
     # Step 6: Dependence-aware Resampling & Endpoint Feasibility on 20:30 Primary Population (Item 8 & Item 9)
     print("\n[4/6] Running 21-session and 42-session block resampling on 20:30 primary census...")
-    obs_dicts_2030 = [o.to_dict() for o in all_obs if o.cutoff_time == "20:30"]
-    obs_dicts_0900 = [o.to_dict() for o in all_obs if o.cutoff_time == "09:00"]
-    outcomes_2030 = [o for o in all_outcomes if o.cutoff_time == "20:30"]
-    outcomes_0900 = [o for o in all_outcomes if o.cutoff_time == "09:00"]
+    obs_dicts_2030: list[dict[str, Any]] = []
+    obs_dicts_0900: list[dict[str, Any]] = []
+    for o in all_obs:
+        if o.cutoff_time == "20:30":
+            obs_dicts_2030.append(o.to_dict())
+        elif o.cutoff_time == "09:00":
+            obs_dicts_0900.append(o.to_dict())
+
+    outcomes_2030: list[OutcomeLabelRecord] = []
+    outcomes_0900: list[OutcomeLabelRecord] = []
+    for o in all_outcomes:
+        if o.cutoff_time == "20:30":
+            outcomes_2030.append(o)
+        elif o.cutoff_time == "09:00":
+            outcomes_0900.append(o)
 
     resampling_21 = run_block_resampling(
         observations=obs_dicts_2030,

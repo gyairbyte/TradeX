@@ -54,61 +54,67 @@ def run_block_resampling(
     # Map session date to list of eligible observations
     obs_by_session: dict[str, list[dict[str, Any]]] = {}
     for obs in observations:
-        if obs.get("raw_outcome_eligible", False) and not obs.get("split_boundary_purged", False):
-            d = obs["as_of_date"]
+        is_dict = isinstance(obs, dict)
+        raw_elig = obs.get("raw_outcome_eligible", False) if is_dict else getattr(obs, "raw_outcome_eligible", False)
+        purged = obs.get("split_boundary_purged", False) if is_dict else getattr(obs, "split_boundary_purged", False)
+        if raw_elig and not purged:
+            d = obs["as_of_date"] if is_dict else obs.as_of_date
             obs_by_session.setdefault(d, []).append(obs)
 
     num_blocks = len(blocks)
 
-    # Bootstrap metrics tracking
-    bs_clean_10_10_rates: list[float] = []
-    bs_clean_10_21_rates: list[float] = []
-    bs_gross_10_10_rates: list[float] = []
-    bs_gross_10_21_rates: list[float] = []
+    # Preaggregate exact sufficient statistics per block once:
+    # [total_eligible_obs, clean_10_10_count, clean_10_21_count, gross_10_10_count, gross_10_21_count]
+    block_stats = np.zeros((num_blocks, 5), dtype=np.int64)
+    for b_idx, block_sessions in enumerate(blocks):
+        b_tot = 0
+        b_c10_10 = 0
+        b_c10_21 = 0
+        b_g10_10 = 0
+        b_g10_21 = 0
+        for s in block_sessions:
+            for o in obs_by_session.get(s, []):
+                is_d = isinstance(o, dict)
+                sec_id = o["immutable_security_id"] if is_d else o.immutable_security_id
+                as_of_date = o["as_of_date"] if is_d else o.as_of_date
+                cutoff_time = o.get("cutoff_time", "20:30") if is_d else getattr(o, "cutoff_time", "20:30")
+                key = (sec_id, as_of_date, cutoff_time)
+                cell_outcomes = outcomes_by_obs_key.get(key, {})
+                rec_10_10 = cell_outcomes.get((10.0, 10))
+                rec_10_21 = cell_outcomes.get((10.0, 21))
 
-    for _ in range(num_bootstraps):
-        sampled_block_indices = rng.integers(0, num_blocks, size=num_blocks)
-        tot_obs = 0
-        clean_10_10 = 0
-        clean_10_21 = 0
-        gross_10_10 = 0
-        gross_10_21 = 0
+                b_tot += 1
+                if rec_10_10:
+                    if rec_10_10.clean_target_reached:
+                        b_c10_10 += 1
+                    if rec_10_10.target_progress_ratio >= 1.0:
+                        b_g10_10 += 1
+                if rec_10_21:
+                    if rec_10_21.clean_target_reached:
+                        b_c10_21 += 1
+                    if rec_10_21.target_progress_ratio >= 1.0:
+                        b_g10_21 += 1
+        block_stats[b_idx] = [b_tot, b_c10_10, b_c10_21, b_g10_10, b_g10_21]
 
-        for b_idx in sampled_block_indices:
-            block_sessions = blocks[b_idx]
-            for s in block_sessions:
-                s_obs = obs_by_session.get(s, [])
-                for o in s_obs:
-                    key = (o["immutable_security_id"], o["as_of_date"], o.get("cutoff_time", "20:30"))
-                    cell_outcomes = outcomes_by_obs_key.get(key, {})
-                    rec_10_10 = cell_outcomes.get((10.0, 10))
-                    rec_10_21 = cell_outcomes.get((10.0, 21))
+    # Sample block indices preserving identical random sequence and seed
+    sampled_indices = rng.integers(0, num_blocks, size=(num_bootstraps, num_blocks))
+    boot_sums = block_stats[sampled_indices].sum(axis=1)
 
-                    tot_obs += 1
-                    if rec_10_10:
-                        if rec_10_10.clean_target_reached:
-                            clean_10_10 += 1
-                        if rec_10_10.target_progress_ratio >= 1.0:
-                            gross_10_10 += 1
-                    if rec_10_21:
-                        if rec_10_21.clean_target_reached:
-                            clean_10_21 += 1
-                        if rec_10_21.target_progress_ratio >= 1.0:
-                            gross_10_21 += 1
+    tot_obs = boot_sums[:, 0]
+    clean_10_10 = boot_sums[:, 1]
+    clean_10_21 = boot_sums[:, 2]
+    gross_10_10 = boot_sums[:, 3]
+    gross_10_21 = boot_sums[:, 4]
 
-        if tot_obs > 0:
-            bs_clean_10_10_rates.append(clean_10_10 / tot_obs)
-            bs_clean_10_21_rates.append(clean_10_21 / tot_obs)
-            bs_gross_10_10_rates.append(gross_10_10 / tot_obs)
-            bs_gross_10_21_rates.append(gross_10_21 / tot_obs)
-        else:
-            bs_clean_10_10_rates.append(0.0)
-            bs_clean_10_21_rates.append(0.0)
-            bs_gross_10_10_rates.append(0.0)
-            bs_gross_10_21_rates.append(0.0)
+    valid_mask = tot_obs > 0
+    safe_tot = np.where(valid_mask, tot_obs, 1)
 
-    def _summary_stats(arr: list[float]) -> dict[str, float]:
-        np_arr = np.array(arr)
+    bs_clean_10_10_rates = np.where(valid_mask, clean_10_10 / safe_tot, 0.0)
+    bs_clean_10_21_rates = np.where(valid_mask, clean_10_21 / safe_tot, 0.0)
+    bs_gross_10_10_rates = np.where(valid_mask, gross_10_10 / safe_tot, 0.0)
+    bs_gross_10_21_rates = np.where(valid_mask, gross_10_21 / safe_tot, 0.0)
+
+    def _summary_stats(np_arr: np.ndarray) -> dict[str, float]:
         return {
             "mean": float(np.mean(np_arr)),
             "std_err": float(np.std(np_arr)),
