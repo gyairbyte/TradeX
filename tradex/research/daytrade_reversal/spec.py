@@ -4,8 +4,10 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
+from datetime import UTC, date, datetime, time
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from tradex.watchlists.presets import DOW30
 
@@ -49,6 +51,39 @@ class DaytradeSpec:
     bootstrap_seed: int
     bootstrap_confidence_level_pct: float
     raw_dict: dict[str, Any]
+
+    def get_split_dates(self, split_name: str) -> SplitDates:
+        """Return the locked start and end dates for a supported evaluation split."""
+        name = split_name.lower().strip()
+        if name == "development":
+            return self.development
+        elif name == "validation":
+            return self.validation
+        elif name == "holdout":
+            return self.holdout
+        elif name == "warmup":
+            return self.warmup
+        raise ValueError(
+            f"Unsupported split name '{split_name}'. Must be 'development', 'validation', or 'holdout'."
+        )
+
+    def get_history_dates(self, split_name: str) -> tuple[str, str] | None:
+        """Return (history_start, history_end) for historical context preceding the split."""
+        name = split_name.lower().strip()
+        if name == "development":
+            return (self.warmup.start, self.warmup.end)
+        elif name == "validation":
+            return (self.development.start, self.development.end)
+        elif name == "holdout":
+            return (self.validation.start, self.validation.end)
+        return None
+
+    def get_split_end_datetime(self, split_name: str) -> datetime:
+        """Return the exact regular session close in UTC (16:00 ET) on the split end date."""
+        split_dates = self.get_split_dates(split_name)
+        end_d = date.fromisoformat(split_dates.end)
+        dt_local = datetime.combine(end_d, time(16, 0), tzinfo=ZoneInfo("America/New_York"))
+        return dt_local.astimezone(UTC)
 
 
 def default_spec_path() -> Path:

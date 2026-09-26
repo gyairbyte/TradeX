@@ -168,6 +168,7 @@ class DatasetAlpacaClient:
         sort: str = "asc",
         limit: int = 10000,
         sleeper: Callable[[float], None] | None = None,
+        max_pages: int | None = None,
     ) -> tuple[dict[str, pd.DataFrame], dict[str, Any]]:
         """Fetch multi-symbol bars, returning per-symbol DataFrames and pagination metadata.
 
@@ -305,6 +306,9 @@ class DatasetAlpacaClient:
             token = data.get("next_page_token")
             if token:
                 next_page_token_present = True
+                if max_pages is not None and page_count >= max_pages:
+                    safe_error = "max_pages_exceeded"
+                    break
                 if token in seen_tokens:
                     repeated_page_token = True
                     pagination_cycle_detected = True
@@ -333,7 +337,7 @@ class DatasetAlpacaClient:
             "http_429s": http_429s,
             "http_errors": http_errors,
             "next_page_token_present": next_page_token_present,
-            "pagination_complete": last_status == 200 and not repeated_page_token and safe_error != "invalid_response",
+            "pagination_complete": last_status == 200 and not repeated_page_token and safe_error == "none",
             "repeated_page_token": repeated_page_token,
             "pagination_cycle_detected": pagination_cycle_detected,
             "retry_after_seconds": retry_after,

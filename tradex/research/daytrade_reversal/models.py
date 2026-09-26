@@ -65,6 +65,7 @@ class DataQualityReport:
     malformed_timestamp_count: int
     excluded: bool
     exclusion_reasons: list[str]
+    malformed_ohlcv_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -77,6 +78,7 @@ class SplitDataQualitySummary:
     excluded_rate_pct: float
     exceeds_split_gate: bool  # True if excluded_rate_pct > 5.0%
     exclusion_breakdown: dict[str, int]
+    is_valid: bool = True
 
 
 @dataclass(frozen=True)
@@ -169,4 +171,8 @@ class StudyResult:
     def to_json_dict(self) -> dict[str, Any]:
         """Return a strictly JSON-safe dictionary representation."""
         raw = asdict(self)
+        prov = raw.get("provenance", {})
+        for k, v in prov.items():
+            if k not in raw:
+                raw[k] = v
         return sanitize_json_value(raw)

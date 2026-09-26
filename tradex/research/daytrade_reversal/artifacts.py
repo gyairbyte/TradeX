@@ -105,7 +105,13 @@ def write_artifact_bundle(
 
     # 2. spec.lock.json
     spec_lock_path = out / "spec.lock.json"
-    write_json_artifact(spec.raw_dict, spec_lock_path)
+    spec_lock_data = {
+        "task_id": spec.task_id,
+        "spec_version": spec.spec_version,
+        "spec_sha256": spec.sha256,
+        "spec": spec.raw_dict,
+    }
+    write_json_artifact(spec_lock_data, spec_lock_path)
     written_files.append("spec.lock.json")
 
     # 3. freeze.json
@@ -144,6 +150,7 @@ def write_artifact_bundle(
             "duplicate_bars",
             "duplicate_rate_pct",
             "malformed_timestamp_count",
+            "malformed_ohlcv_count",
             "excluded",
             "exclusion_reasons",
         ])
@@ -158,6 +165,7 @@ def write_artifact_bundle(
                 r.duplicate_bars,
                 f"{r.duplicate_rate_pct:.2f}",
                 r.malformed_timestamp_count,
+                r.malformed_ohlcv_count,
                 r.excluded,
                 ";".join(r.exclusion_reasons),
             ])

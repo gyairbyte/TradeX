@@ -249,10 +249,22 @@ def test_scenario_14_duplicate_bars(sample_trading_days) -> None:
 def test_scenario_15_malformed_timestamps(sample_trading_days) -> None:
     d = sample_trading_days[0]
     grid = build_regular_session_grid(d)
+    # 1 malformed timestamp is dropped, session remains usable (< 5% missing)
     raw = generate_synthetic_session_bars("AAPL", d, malformed_timestamps=["10:15"])
-    _s, rep = audit_ticker_session("AAPL", d, raw, grid)
-    assert rep.excluded is True
+    s, rep = audit_ticker_session("AAPL", d, raw, grid)
+    assert rep.excluded is False
     assert rep.malformed_timestamp_count == 1
+    assert rep.missing_bars == 1
+    assert s.is_valid is True
+
+    # 25 malformed timestamps causes missing rate > 5%, excluding the session
+    raw_bad = generate_synthetic_session_bars(
+        "AAPL", d, malformed_timestamps=[f"10:{i:02d}" for i in range(25)]
+    )
+    s_bad, rep_bad = audit_ticker_session("AAPL", d, raw_bad, grid)
+    assert rep_bad.excluded is True
+    assert rep_bad.malformed_timestamp_count == 25
+    assert s_bad.is_valid is False
 
 
 # Scenario 16: early-close exclusion
@@ -506,12 +518,62 @@ def test_scenario_27_invalid_path() -> None:
 
 
 # Scenario 28: holdout access denied when validation != supported
-def test_scenario_28_holdout_access_denied_when_validation_not_supported(tmp_path: Path, locked_spec) -> None:
+def test_scenario_28_holdout_access_denied_when_validation_not_supported(tmp_path: Path, locked_spec, monkeypatch) -> None:
+    from tradex.research.daytrade_reversal.artifacts import write_artifact_bundle
+    from tradex.research.daytrade_reversal.dataset import DaytradeDatasetManifest
+    from tradex.research.daytrade_reversal.freeze import EvaluationFreezeRecord
+    from tradex.research.daytrade_reversal.models import StudyResult
+
     val_dir = tmp_path / "val"
     val_dir.mkdir(parents=True, exist_ok=True)
-    (val_dir / "study.json").write_text(
-        json.dumps({"split": "validation", "disposition": "rejected"}), encoding="utf-8"
+    monkeypatch.setattr("tradex.research.daytrade_reversal.study.verify_freeze_state", lambda *a, **kw: None)
+
+    manifest = DaytradeDatasetManifest(
+        study_id="DAYTRADE-001B",
+        spec_sha256=locked_spec.sha256,
+        partition="preholdout",
+        start_date=locked_spec.warmup.start,
+        end_date=locked_spec.validation.end,
+        universe=list(locked_spec.universe),
+        source_files={"bars/AAPL.csv": "abc"},
     )
+    manifest_dict = manifest.to_dict()
+
+    freeze_rec = EvaluationFreezeRecord(
+        evaluation_code_sha="abc1234",
+        repository_clean=True,
+        frozen_at="2026-09-25T00:00:00Z",
+        spec_sha256=locked_spec.sha256,
+        manifest_sha256=manifest_dict["manifest_sha256"],
+        evaluation_files={},
+    )
+
+    prov = {
+        "evidence_confidence_cap": "limited_but_usable_evidence",
+        "production_promotion_eligible": False,
+        "evaluator_code_sha": "abc1234",
+        "spec_sha256": locked_spec.sha256,
+        "manifest_sha256": manifest_dict["manifest_sha256"],
+        "provider": "alpaca",
+        "feed": "sip",
+    }
+    study_res = StudyResult(
+        task_id="DAYTRADE-001B",
+        split="validation",
+        disposition="rejected",
+        disposition_step="step_3_directional_failure",
+        disposition_reason="Test rejection",
+        provenance=prov,
+    )
+
+    write_artifact_bundle(
+        output_dir=val_dir,
+        result=study_res,
+        spec=locked_spec,
+        freeze_record=freeze_rec,
+        manifest_data=manifest_dict,
+    )
+
     with pytest.raises(HoldoutAccessDeniedError, match="must be strictly 'supported'"):
         load_and_evaluate_holdout(val_dir, locked_spec, holdout_loader=MagicMock())
 
@@ -535,3 +597,94 @@ def test_scenario_30_locked_spec_hash_mismatch_failure(tmp_path: Path) -> None:
     bad_spec.write_text('{"bad": true}', encoding="utf-8")
     with pytest.raises(SpecError, match="SHA-256 mismatch"):
         load_and_verify_spec(bad_spec)
+
+
+# Scenario 31: split-aware historical context separation
+def test_scenario_31_split_aware_history_separation(locked_spec) -> None:
+    """Historical context sessions from warmup do not generate events or baselines in development."""
+    from tradex.research.daytrade_reversal.calendar import (
+        get_regular_trading_sessions,
+    )
+    from tradex.research.daytrade_reversal.study import evaluate_split
+    from tradex.research.daytrade_reversal.synthetic import generate_synthetic_session_bars
+
+    warmup_dates = get_regular_trading_sessions(date(2024, 12, 2), date(2024, 12, 31))[:20]
+    dev_date = date(2025, 1, 2)
+
+    sessions = []
+    for d in warmup_dates + [dev_date]:
+        grid = build_regular_session_grid(d)
+        df = generate_synthetic_session_bars("AAPL", d)
+        s, _ = audit_ticker_session("AAPL", d, df, grid)
+        sessions.append(s)
+
+    result = evaluate_split("development", sessions, locked_spec)
+    assert result.split == "development"
+    assert result.task_id == "DAYTRADE-001B"
+
+
+# Scenario 32: split end dt blocks crossing forward outcomes
+def test_scenario_32_split_end_dt_blocks_crossing_forward_returns() -> None:
+    """Outcomes cannot extend past the locked split end datetime."""
+    split_end_dt = datetime(2025, 6, 30, 20, 0, tzinfo=UTC)
+
+    bar = DaytradeBar(
+        ticker="AAPL",
+        session_date=date(2025, 6, 30),
+        bar_start=datetime(2025, 6, 30, 19, 59, tzinfo=UTC),
+        available_at=datetime(2025, 6, 30, 20, 0, tzinfo=UTC),
+        open=100.0, high=101.0, low=99.0, close=100.0, volume=1000.0,
+    )
+    outcomes = calculate_horizon_outcomes_for_bar(bar, [bar], split_end_dt=split_end_dt)
+    assert 2 not in outcomes
+    assert 5 not in outcomes
+
+
+# Scenario 33: excessive split quality exclusion fails Step 2
+def test_scenario_33_excessive_split_quality_exclusion_fails_step_2(locked_spec) -> None:
+    """When > 5% of ticker-sessions are excluded, Step 2 fails with inconclusive disposition."""
+    from tradex.research.daytrade_reversal.models import SplitDataQualitySummary
+
+    split_quality = SplitDataQualitySummary(
+        split="validation",
+        total_ticker_sessions=100,
+        excluded_ticker_sessions=6,
+        excluded_rate_pct=6.0,
+        exceeds_split_gate=True,
+        exclusion_breakdown={"missing_rate": 6},
+        is_valid=False,
+    )
+
+    ev_ci = BootstrapCI(0.0010, 0.0005, 0.0015, 2000, 20260925, "computable", None)
+    up_ci = BootstrapCI(0.0008, 0.0003, 0.0013, 2000, 20260925, "computable", None)
+
+    disp, step, _reason, gates = evaluate_gates_and_disposition(
+        event_count=450,
+        represented_tickers=20,
+        max_ticker_concentration_pct=10.0,
+        mean_primary_net_return_2bps=0.0025,
+        event_ci=ev_ci,
+        mean_uplift_2bps=0.0018,
+        uplift_ci=up_ci,
+        pct_positive_tickers=80.0,
+        per_ticker_net_means={"AAPL": 0.0025},
+        split_quality=split_quality,
+    )
+
+    assert not gates["data_quality_gate"].passed
+    assert disp == "inconclusive"
+    assert step == "step_2_evidence_sufficiency"
+
+
+# Scenario 34: freeze cleanliness catches untracked files
+def test_scenario_34_freeze_cleanliness_checks_untracked_files(tmp_path: Path, monkeypatch) -> None:
+    """Freeze fails closed when untracked files are present in repo."""
+    from tradex.research.daytrade_reversal.freeze import FreezeError, freeze_evaluation_state
+
+    monkeypatch.setattr(
+        "tradex.research.daytrade_reversal.freeze._git",
+        lambda *args, **kwargs: "?? untracked_script.py" if args[0] == "status" else "head123",
+    )
+
+    with pytest.raises(FreezeError, match="uncommitted modifications or untracked files"):
+        freeze_evaluation_state(repo_root=tmp_path, spec_sha256="test", require_clean=True)

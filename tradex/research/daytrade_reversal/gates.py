@@ -113,6 +113,16 @@ def evaluate_gates_and_disposition(
     # Data quality split check
     dq_excluded_pct = split_quality.excluded_rate_pct if split_quality else 0.0
     dq_gate_passed = dq_excluded_pct <= MAX_SPLIT_EXCLUDED_SESSIONS_PCT
+    gates["data_quality_gate"] = GateEvaluationResult(
+        gate_name="data_quality_gate",
+        passed=dq_gate_passed,
+        detail={
+            "excluded_rate_pct": dq_excluded_pct,
+            "max_allowed_pct": MAX_SPLIT_EXCLUDED_SESSIONS_PCT,
+            "total_ticker_sessions": split_quality.total_ticker_sessions if split_quality else 0,
+            "excluded_ticker_sessions": split_quality.excluded_ticker_sessions if split_quality else 0,
+        },
+    )
 
     # --- Locked 5-Step Precedence Resolution ---
 

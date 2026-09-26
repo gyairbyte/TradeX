@@ -43,9 +43,9 @@ def _git(*args: str, cwd: Path | None = None) -> str:
 
 
 def check_worktree_clean(repo_root: Path) -> bool:
-    """Return True if no tracked files have uncommitted modifications."""
+    """Return True if no tracked or untracked modifications exist in the worktree."""
     try:
-        status = _git("status", "--porcelain", "--untracked-files=no", cwd=repo_root)
+        status = _git("status", "--porcelain", cwd=repo_root)
         return status == ""
     except FreezeError:
         return False
@@ -99,11 +99,17 @@ def freeze_evaluation_state(
     spec_sha256: str = "",
     manifest_sha256: str | None = None,
     frozen_at: datetime | None = None,
+    require_clean: bool = True,
 ) -> EvaluationFreezeRecord:
     """Freeze current evaluation git HEAD, cleanliness, and source file hashes."""
     root = (repo_root or get_repo_root()).resolve()
-    head = get_git_head_sha(root)
     clean = check_worktree_clean(root)
+    if require_clean and not clean:
+        raise FreezeError(
+            "Cannot freeze evaluation code: repository has uncommitted modifications or untracked files."
+        )
+
+    head = get_git_head_sha(root)
     file_hashes = hash_evaluation_files(root)
     at_str = (frozen_at or datetime.now(UTC)).isoformat()
 
@@ -121,6 +127,7 @@ def verify_freeze_state(
     freeze_record: EvaluationFreezeRecord,
     repo_root: Path | None = None,
     require_clean: bool = True,
+    require_manifest: bool = False,
 ) -> None:
     """Verify that current code state matches the frozen record.
 
@@ -136,8 +143,11 @@ def verify_freeze_state(
 
     if require_clean and not check_worktree_clean(root):
         raise FreezeError(
-            "Evaluation code worktree is dirty (uncommitted tracked changes exist)."
+            "Evaluation code worktree is dirty (uncommitted modifications or untracked files exist)."
         )
+
+    if require_manifest and not freeze_record.manifest_sha256:
+        raise FreezeError("Evidence freeze record is missing required manifest_sha256.")
 
     for rel, expected_sha in freeze_record.evaluation_files.items():
         p = root / rel

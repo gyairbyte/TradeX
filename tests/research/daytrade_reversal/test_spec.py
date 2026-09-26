@@ -48,3 +48,24 @@ def test_universe_matches_frozen_dow30(locked_spec) -> None:
     assert "AAPL" in locked_spec.universe
     assert "MSFT" in locked_spec.universe
     assert "NVDA" in locked_spec.universe
+
+
+def test_split_dates_frozen(locked_spec) -> None:
+    """All four split boundaries must match the locked DAYTRADE-001B specification."""
+    assert locked_spec.warmup.start == "2024-12-02"
+    assert locked_spec.warmup.end == "2025-01-01"
+    assert locked_spec.development.start == "2025-01-02"
+    assert locked_spec.development.end == "2025-06-30"
+    assert locked_spec.validation.start == "2025-07-01"
+    assert locked_spec.validation.end == "2025-09-30"
+    assert locked_spec.holdout.start == "2025-10-01"
+    assert locked_spec.holdout.end == "2025-12-31"
+
+    # Test split helpers
+    assert locked_spec.get_history_dates("development") == ("2024-12-02", "2025-01-01")
+    assert locked_spec.get_history_dates("validation") == ("2025-01-02", "2025-06-30")
+    assert locked_spec.get_history_dates("holdout") == ("2025-07-01", "2025-09-30")
+    assert locked_spec.get_history_dates("warmup") is None
+
+    with pytest.raises(ValueError, match="Unsupported split name"):
+        locked_spec.get_split_dates("invalid_split")

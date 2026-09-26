@@ -3,12 +3,16 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
 from tradex.research.daytrade_reversal.cli import main
-from tradex.research.daytrade_reversal.dataset import get_repo_root
-from tradex.research.daytrade_reversal.spec import SpecError
+from tradex.research.daytrade_reversal.dataset import (
+    DaytradeDatasetManifest,
+    get_repo_root,
+)
+from tradex.research.daytrade_reversal.spec import SpecError, load_and_verify_spec
 
 
 def test_cli_verify_spec_success() -> None:
@@ -25,20 +29,72 @@ def test_cli_verify_spec_tampered_fails(tmp_path: Path) -> None:
         main(["verify-spec", "--spec", str(bad_spec)])
 
 
-def test_cli_freeze_writes_record(tmp_path: Path) -> None:
-    """CLI freeze writes freeze.json to output directory."""
+def test_cli_freeze_fails_closed_without_manifest(tmp_path: Path) -> None:
+    """CLI freeze without --manifest or --dataset-root fails closed."""
     out = tmp_path / "freeze_out"
     rc = main(["freeze", "--output", str(out)])
+    assert rc == 1
+
+
+def test_cli_freeze_fails_closed_in_repo_output(tmp_path: Path) -> None:
+    """CLI freeze rejects output directory inside git repository."""
+    in_repo = get_repo_root() / "tmp_freeze"
+    rc = main(["freeze", "--output", str(in_repo)])
+    assert rc == 1
+
+
+def test_cli_freeze_fails_closed_on_dirty_worktree(tmp_path: Path, monkeypatch) -> None:
+    """CLI freeze fails closed if worktree has uncommitted modifications or untracked files."""
+    spec = load_and_verify_spec()
+    manifest = DaytradeDatasetManifest(
+        study_id="DAYTRADE-001B",
+        spec_sha256=spec.sha256,
+        partition="preholdout",
+        universe=list(spec.universe),
+        source_files={"bars/AAPL.csv": "abc"},
+    )
+    man_file = tmp_path / "manifest.lock.json"
+    man_file.write_text(json.dumps(manifest.to_dict()), encoding="utf-8")
+
+    out = tmp_path / "freeze_out"
+    from tradex.research.daytrade_reversal.freeze import FreezeError
+
+    monkeypatch.setattr("tradex.research.daytrade_reversal.cli.freeze_evaluation_state", MagicMock(side_effect=FreezeError("dirty worktree")))
+    rc = main(["freeze", "--manifest", str(man_file), "--output", str(out)])
+    assert rc == 1
+
+
+def test_cli_freeze_writes_record_with_valid_manifest(tmp_path: Path, monkeypatch) -> None:
+    """CLI freeze writes freeze.json to external output directory when manifest is valid and repo is clean."""
+    spec = load_and_verify_spec()
+    manifest = DaytradeDatasetManifest(
+        study_id="DAYTRADE-001B",
+        spec_sha256=spec.sha256,
+        partition="preholdout",
+        start_date=spec.warmup.start,
+        end_date=spec.validation.end,
+        universe=list(spec.universe),
+        source_files={"bars/AAPL.csv": "abc"},
+    )
+    man_file = tmp_path / "manifest.lock.json"
+    man_file.write_text(json.dumps(manifest.to_dict()), encoding="utf-8")
+
+    # Mock clean worktree check to allow deterministic testing
+    monkeypatch.setattr("tradex.research.daytrade_reversal.freeze.check_worktree_clean", lambda repo: True)
+
+    out = tmp_path / "freeze_out"
+    rc = main(["freeze", "--manifest", str(man_file), "--output", str(out)])
     assert rc == 0
     freeze_json = out / "freeze.json"
     assert freeze_json.is_file()
     data = json.loads(freeze_json.read_text(encoding="utf-8"))
     assert "evaluation_code_sha" in data
     assert "evaluation_files" in data
+    assert data["manifest_sha256"] == manifest.to_dict()["manifest_sha256"]
 
 
 def test_cli_build_dataset_unauthorized_fails_closed(tmp_path: Path) -> None:
-    """CLI build-dataset fails closed without --dry-run."""
+    """CLI build-dataset fails closed without --dry-run or with provider execution in C1."""
     rc = main(["build-dataset", "--dataset-root", str(tmp_path)])
     assert rc == 1
 
@@ -77,6 +133,27 @@ def test_cli_evaluate_development_writes_all_artifacts(tmp_path: Path) -> None:
     ]
     for fn in expected_files:
         assert (out / fn).is_file(), f"Missing artifact: {fn}"
+
+
+def test_cli_evaluate_with_dataset_root(tmp_path: Path, monkeypatch) -> None:
+    """CLI evaluate --dataset-root loads dataset via load_private_dataset."""
+    out = tmp_path / "eval_out"
+    ds_root = tmp_path / "ext_ds"
+    ds_root.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(
+        "tradex.research.daytrade_reversal.cli.load_private_dataset",
+        lambda dataset_root, split_name, spec: ([], []),
+    )
+
+    rc = main([
+        "evaluate",
+        "--split", "development",
+        "--dataset-root", str(ds_root),
+        "--output", str(out),
+    ])
+    assert rc == 0
+    assert (out / "study.json").is_file()
 
 
 def test_cli_evaluate_holdout_requires_validation_dir(tmp_path: Path) -> None:
