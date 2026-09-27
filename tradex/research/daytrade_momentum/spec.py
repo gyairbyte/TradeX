@@ -81,16 +81,22 @@ class DaytradeSpec:
     get_evaluatable_split_dates = get_split_dates
 
     def get_history_dates(self, split_name: str) -> tuple[str, str] | None:
-        """Return (history_start, history_end) for historical context preceding the split."""
+        """Return (history_start, history_end) for historical context preceding the split.
+
+        The locked rule requires threshold(D) to be computed over exactly the previous 20
+        VALID completed regular sessions. History loading must provide enough earlier authorized
+        observations (walking back into earlier authorized splits as needed) to find 20 valid observations.
+        - Development: 2025-12-31 context anchor through 2026-01-30 warmup
+        - Validation: 2025-12-31 context anchor through 2026-04-30 development
+        - Holdout: 2025-12-31 context anchor through 2026-06-30 validation (entire preholdout)
+        """
         name = split_name.lower().strip()
         if name == "development":
-            return (self.warmup.start, self.warmup.end)
+            return (self.context_anchor_date, self.warmup.end)
         elif name == "validation":
-            # Preceding valid development sessions provide threshold history
-            return (self.development.start, self.development.end)
+            return (self.context_anchor_date, self.development.end)
         elif name == "holdout":
-            # Preceding valid validation/pre-holdout sessions provide threshold history
-            return (self.validation.start, self.validation.end)
+            return (self.context_anchor_date, self.validation.end)
         return None
 
     def get_split_end_datetime(self, split_name: str) -> datetime:

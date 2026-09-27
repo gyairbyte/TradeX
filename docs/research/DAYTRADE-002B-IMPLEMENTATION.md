@@ -163,12 +163,36 @@ $$\text{first\_half\_hour\_return}(i, D) = \frac{\text{close}(i, D, \text{09:59 
 
 ---
 
-## 5. Verification Results
+## 5. PR #91 Final Corrections Incorporated
+
+1. **Threshold History Walkback Across Earlier Authorized Splits:**
+   - Evaluator walks back across split boundaries to acquire exactly the previous 20 valid completed regular sessions:
+     - Development history walks back to include the `2025-12-31` context anchor date and 20 warmup sessions (`2025-12-01` to `2025-12-31`).
+     - Validation history walks back into development history (`2025-12-31` to validation end).
+     - Holdout history walks back into validation history (`2025-12-31` to holdout end).
+   - Prevents threshold distortion at split boundaries while maintaining strict temporal isolation.
+
+2. **Canonical Dataset Directory Layout:**
+   - Standardized to `preholdout/manifest.lock.json` and `holdout/manifest.lock.json` with sibling `bars/{ticker}.csv`.
+   - Prohibits placing dataset roots within the repository tree.
+
+3. **Strict Code Freeze Verification:**
+   - `verify_freeze_state()` cryptographically binds to manifest SHA-256, verifies git commit matches repository HEAD, enforces clean worktree status, and checks digests of 14 core evaluation files.
+   - CLI `cmd_freeze` requires explicit `--manifest` or `--dataset-root`.
+
+4. **Fail-Closed Dataset Acquisition & Normalization:**
+   - Enforces 100-page limit and max 1 retry for pagination.
+   - Discards unparseable timestamps fail-closed without fabricating artificial sessions.
+
+---
+
+## 6. Verification Results
 
 - **New Test Suite:** `uv run pytest tests/research/daytrade_momentum -q`
-  - **63 passed** in 86.16s
-- **Regression Suites:** `uv run pytest tests/research/daytrade_002a/test_spec.py tests/research/daytrade_001b/test_spec.py tests/research/daytrade_mvp tests/product/test_mvp_arch_001.py tests/research/intraday_dataset -q`
-  - **148 passed** in 286.14s
+  - **80 passed** in 234.29s (15 test modules)
+- **Regression Suites:** `uv run pytest tests/research/daytrade_002a/test_spec.py tests/research/daytrade_reversal tests/research/daytrade_001b/test_spec.py tests/research/daytrade_mvp tests/research/intraday_dataset tests/product/test_mvp_arch_001.py -q`
+  - **266 passed, 1 warning** in 406.37s
 - **Lint Check:** `uv run ruff check tests scripts tradex/research/daytrade_momentum tradex/research/intraday_dataset`
   - **All checks passed!** Zero errors.
 - **Git Diff:** `git diff --check` passed cleanly.
+

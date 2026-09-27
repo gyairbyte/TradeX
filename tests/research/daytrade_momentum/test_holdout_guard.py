@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+import tradex.research.daytrade_momentum.freeze as freeze_mod
 from tradex.research.daytrade_momentum.dataset import DaytradeDatasetManifest
 from tradex.research.daytrade_momentum.freeze import freeze_evaluation_state
 from tradex.research.daytrade_momentum.models import (
@@ -31,6 +32,12 @@ from tradex.research.daytrade_momentum.synthetic import (
     build_synthetic_session_from_bars,
     generate_synthetic_session_bars,
 )
+
+
+@pytest.fixture(autouse=True)
+def mock_clean_git(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mock clean worktree for unit tests."""
+    monkeypatch.setattr(freeze_mod, "check_worktree_clean", lambda root: True)
 
 
 def create_mock_supported_validation_bundle(
@@ -57,7 +64,7 @@ def create_mock_supported_validation_bundle(
         universe=LOCKED_FROZEN_UNIVERSE,
         start_date=spec.context_anchor_date,
         end_date=spec.validation.end,
-        source_files={"SPY.csv": "hash1"},
+        source_files={f"bars/{ticker}.csv": "a" * 64 for ticker in LOCKED_FROZEN_UNIVERSE},
     )
     manifest.manifest_sha256 = manifest.compute_sha256()
     (artifact_dir / "manifest.lock.json").write_text(

@@ -117,10 +117,7 @@ def freeze_evaluation_state(
     if require_clean and not is_clean:
         raise FreezeError("Worktree is dirty; evaluation state can only be frozen on a clean tree.")
 
-    try:
-        head_sha = get_git_head_sha(root)
-    except FreezeError:
-        head_sha = "unknown_synthetic_head"
+    head_sha = get_git_head_sha(root)
 
     locked_spec_sha = spec_sha256 or DAYTRADE_002A_SPEC_SHA256
     file_hashes = hash_evaluation_files(root)
@@ -140,8 +137,19 @@ def verify_freeze_state(
     repo_root: Path | None = None,
     spec: DaytradeSpec | None = None,
     manifest: DaytradeDatasetManifest | None = None,
+    require_clean: bool = True,
 ) -> None:
-    """Verify that current code state matches the frozen record."""
+    """Verify that current code state matches the frozen record.
+
+    Fails closed on:
+    - Spec SHA mismatch
+    - Missing manifest binding (formal freeze must be bound to manifest)
+    - Manifest SHA mismatch
+    - Dirty worktree when require_clean is True
+    - Git HEAD commit mismatch
+    - Missing evaluation file
+    - File SHA-256 digest mismatch
+    """
     root = (repo_root or get_repo_root()).resolve()
 
     if spec is not None and freeze.spec_sha256 != spec.sha256:
@@ -149,19 +157,22 @@ def verify_freeze_state(
             f"Freeze spec SHA mismatch: frozen {freeze.spec_sha256} vs spec {spec.sha256}"
         )
 
-    if manifest is not None and freeze.manifest_sha256 and freeze.manifest_sha256 != manifest.manifest_sha256:
+    if freeze.manifest_sha256 is None:
+        raise FreezeError("Formal evaluation freeze must be bound to a dataset manifest (manifest_sha256 is None).")
+
+    if manifest is not None and freeze.manifest_sha256 != manifest.manifest_sha256:
         raise FreezeError(
             f"Freeze manifest SHA mismatch: frozen {freeze.manifest_sha256} vs manifest {manifest.manifest_sha256}"
         )
 
-    try:
-        current_head = get_git_head_sha(root)
-        if freeze.evaluation_code_sha != "unknown_synthetic_head" and current_head != freeze.evaluation_code_sha:
-            raise FreezeError(
-                f"HEAD commit mismatch: frozen on {freeze.evaluation_code_sha}, current is {current_head}"
-            )
-    except FreezeError:
-        pass
+    if require_clean and not check_worktree_clean(root):
+        raise FreezeError("Worktree is dirty; evaluation state requires a clean worktree.")
+
+    current_head = get_git_head_sha(root)
+    if current_head != freeze.evaluation_code_sha:
+        raise FreezeError(
+            f"HEAD commit mismatch: frozen on {freeze.evaluation_code_sha}, current is {current_head}"
+        )
 
     # Verify every recorded file digest
     for rel_path, expected_sha in freeze.evaluation_files.items():

@@ -18,6 +18,7 @@ from .calendar import (
     get_regular_trading_sessions,
 )
 from .dataset import (
+    DaytradeDatasetManifest,
     load_private_dataset,
     sha256_of_file,
 )
@@ -26,10 +27,11 @@ from .events import (
     classify_session_observation,
     compute_ticker_threshold,
 )
-from .freeze import EvaluationFreezeRecord, verify_freeze_state
+from .freeze import EvaluationFreezeRecord, FreezeError, verify_freeze_state
 from .gates import evaluate_gates_and_disposition
 from .models import (
     BaselineObservation,
+    BootstrapCI,
     DataQualityReport,
     DaytradeSession,
     EventObservation,
@@ -40,7 +42,6 @@ from .outcomes import calculate_gross_win_rate
 from .quality import evaluate_split_quality
 from .spec import (
     DAYTRADE_002A_SPEC_SHA256,
-    LOCKED_FROZEN_UNIVERSE,
     DaytradeSpec,
 )
 
@@ -107,36 +108,31 @@ def verify_holdout_access_prerequisites(
             f"Spec hash mismatch in spec.lock.json: expected {DAYTRADE_002A_SPEC_SHA256}, got {rec_spec_sha}"
         )
 
-    # 3. Verify manifest.lock.json (manifest contract, provider, feed, timeframe, adjustment, calendar, timezone, universe)
+    # 3. Verify manifest.lock.json using authoritative manifest validator
     manifest_lock_file = vdir / "manifest.lock.json"
+    if not manifest_lock_file.is_file():
+        raise HoldoutAccessDeniedError(f"Missing manifest.lock.json in validation artifact dir: {vdir}")
     manifest_data = json.loads(manifest_lock_file.read_text(encoding="utf-8"))
-    if manifest_data.get("provider") != "alpaca":
-        raise HoldoutAccessDeniedError(f"Manifest provider mismatch: {manifest_data.get('provider')}")
-    if manifest_data.get("feed") != "sip":
-        raise HoldoutAccessDeniedError(f"Manifest feed mismatch: {manifest_data.get('feed')}")
-    if manifest_data.get("timeframe") != "1Min":
-        raise HoldoutAccessDeniedError(f"Manifest timeframe mismatch: {manifest_data.get('timeframe')}")
-    if manifest_data.get("adjustment") != "split":
-        raise HoldoutAccessDeniedError(f"Manifest adjustment mismatch: {manifest_data.get('adjustment')}")
-    if manifest_data.get("calendar") != "XNYS":
-        raise HoldoutAccessDeniedError(f"Manifest calendar mismatch: {manifest_data.get('calendar')}")
-    if manifest_data.get("timezone") != "America/New_York":
-        raise HoldoutAccessDeniedError(f"Manifest timezone mismatch: {manifest_data.get('timezone')}")
-    if tuple(manifest_data.get("universe", [])) != LOCKED_FROZEN_UNIVERSE:
-        raise HoldoutAccessDeniedError("Manifest universe mismatch with locked 15 ETFs")
-
-    manifest_sha = manifest_data.get("manifest_sha256")
+    manifest = DaytradeDatasetManifest.from_dict(manifest_data)
+    manifest.validate_against_spec(spec)
+    manifest_sha = manifest.manifest_sha256
 
     # 4. Verify freeze.json (evaluator code HEAD and file hashes match current state)
     freeze_file = vdir / "freeze.json"
+    if not freeze_file.is_file():
+        raise HoldoutAccessDeniedError(f"Missing freeze.json in validation artifact dir: {vdir}")
     freeze_data = json.loads(freeze_file.read_text(encoding="utf-8"))
     freeze_record = EvaluationFreezeRecord.from_dict(freeze_data)
     if freeze_record.spec_sha256 != DAYTRADE_002A_SPEC_SHA256:
         raise HoldoutAccessDeniedError("Freeze spec SHA mismatch with canonical DAYTRADE-002A")
-    if freeze_record.manifest_sha256 and freeze_record.manifest_sha256 != manifest_sha:
-        raise HoldoutAccessDeniedError("Freeze manifest SHA does not match validation manifest lineage")
+    if freeze_record.manifest_sha256 is None:
+        raise HoldoutAccessDeniedError("Validation freeze must be bound to a dataset manifest (manifest_sha256 is None)")
+    if freeze_record.manifest_sha256 != manifest_sha:
+        raise HoldoutAccessDeniedError(
+            f"Freeze manifest SHA mismatch with validation manifest: {freeze_record.manifest_sha256} vs {manifest_sha}"
+        )
 
-    verify_freeze_state(freeze_record, repo_root=repo_root, spec=spec)
+    verify_freeze_state(freeze_record, repo_root=repo_root, spec=spec, manifest=manifest)
 
     # 5. Verify study.json (split == validation, disposition == supported, provenance)
     study_file = vdir / "study.json"
@@ -192,8 +188,11 @@ def evaluate_split(
         raise ValueError(f"Unsupported split '{split}'. Must be 'development', 'validation', or 'holdout'.")
 
     # Guard validation freeze requirement
-    if split == "validation" and freeze is None:
-        raise ValueError("Validation split evaluation strictly requires a bound EvaluationFreezeRecord.")
+    if split == "validation":
+        if freeze is None:
+            raise ValueError("Validation split evaluation strictly requires a bound EvaluationFreezeRecord.")
+        if freeze.manifest_sha256 is None:
+            raise FreezeError("Validation split evaluation strictly requires freeze to be bound to a dataset manifest.")
 
     # Guard holdout prerequisites
     if split == "holdout":
@@ -212,6 +211,7 @@ def evaluate_split(
             split_name=split,
             include_history=True,
             repo_root=repo_root,
+            validation_artifact_dir=validation_artifact_dir,
         )
 
     # Determine split dates and target calendar sessions
@@ -231,21 +231,30 @@ def evaluate_split(
     events: list[EventObservation] = []
     non_events: list[BaselineObservation] = []
     eligible_ticker_sessions_count = 0
+    eligible_cluster_dates: set[date] = set()
+
+    context_anchor_d = date.fromisoformat(spec.context_anchor_date)
 
     # For each ticker, process sessions chronologically
     for sym in spec.universe:
         ticker_sessions = sessions_by_ticker.get(sym, [])
         ticker_sessions_sorted = sorted(ticker_sessions, key=lambda s: s.session_date)
 
-        # Map session_date -> session
+        # Map session_date -> session (includes context anchor so Jan 2 can reference Dec 31 15:59 close)
         session_map = {s.session_date: s for s in ticker_sessions_sorted}
 
         # Track history of valid signal returns for rolling threshold
-        # (Clarification 2: observation enters threshold history if session.is_valid and signal is computable)
+        # (Observation enters threshold history if session.is_valid and signal return is computable)
         valid_history_returns: list[float] = []
 
         for s in ticker_sessions_sorted:
             s_date = s.session_date
+
+            # Context anchor provides only previous close for the first warmup session;
+            # it never generates signals, thresholds, events, baselines, outcomes, or history entries.
+            if s_date == context_anchor_d:
+                continue
+
             is_target_split = s_date in target_sessions_set
 
             # Find the immediately preceding regular XNYS session
@@ -253,15 +262,36 @@ def evaluate_split(
             prev_session = session_map.get(prev_regular_date) if prev_regular_date else None
 
             # Calculate first-half-hour return
-            # (Clarification 2: requires only usable 15:59 close from previous regular session)
+            # (Requires usable 15:59 close from previous regular session and usable 09:59 close from current session)
             sig_ret = calculate_first_half_hour_return(s, prev_session)
 
             # Compute threshold using rolling 20 valid prior signal sessions
             thresh = compute_ticker_threshold(valid_history_returns)
 
-            # If this session is within target split and meets eligibility, classify
-            if is_target_split and s.is_valid and sig_ret is not None and thresh is not None:
+            # Explicit Target-Observation Eligibility (Requirements 3 & 9):
+            # A ticker-session is target-eligible if and only if:
+            # 1. current session is valid under DQ rules
+            # 2. immediate previous XNYS-session 15:59 close is usable
+            # 3. current 09:59 close is usable
+            # 4. 20-valid-session threshold exists
+            # 5. current 15:30 open is usable
+            # 6. current 15:59 close is usable
+            is_target_eligible = (
+                is_target_split
+                and s.is_valid
+                and prev_session is not None
+                and prev_session.get_15_59_close() is not None
+                and s.get_09_59_close() is not None
+                and thresh is not None
+                and s.get_15_30_open() is not None
+                and s.get_15_59_close() is not None
+                and sig_ret is not None
+            )
+
+            if is_target_eligible:
                 eligible_ticker_sessions_count += 1
+                eligible_cluster_dates.add(s_date)
+                assert sig_ret is not None and thresh is not None
                 ev, ne = classify_session_observation(s, sig_ret, thresh, split)
                 if ev is not None:
                     events.append(ev)
@@ -269,7 +299,7 @@ def evaluate_split(
                     non_events.append(ne)
 
             # Update threshold history AFTER evaluating current session
-            # (Clarification 2: session must be valid and sig_ret computable to enter threshold history)
+            # (Observation enters threshold history if completed regular session is valid and signal is computable)
             if s.is_valid and sig_ret is not None:
                 valid_history_returns.append(sig_ret)
 
@@ -277,18 +307,37 @@ def evaluate_split(
     baseline_pool = build_baseline_pool(non_events)
     match_event_baselines(events, baseline_pool, friction_bps=spec.primary_cost_bps_per_side)
 
-    # Run Session-Date Cluster Bootstrap (Clarification 3)
-    # Clusters are target-split session dates that contain eligible observations
-    cluster_dates = sorted(target_sessions_set)
-    primary_ci, uplift_ci = run_session_date_cluster_bootstrap(
-        events=events,
-        non_events=non_events,
-        eligible_session_dates=cluster_dates,
-        resamples=spec.bootstrap_resamples,
-        seed=spec.bootstrap_seed,
-        confidence_level_pct=spec.bootstrap_confidence_level_pct,
-        friction_bps=spec.primary_cost_bps_per_side,
-    )
+    # Run Session-Date Cluster Bootstrap (Requirement 3: sample eligible target-split session dates with replacement)
+    cluster_dates = sorted(eligible_cluster_dates)
+    if cluster_dates:
+        primary_ci, uplift_ci = run_session_date_cluster_bootstrap(
+            events=events,
+            non_events=non_events,
+            eligible_session_dates=cluster_dates,
+            resamples=spec.bootstrap_resamples,
+            seed=spec.bootstrap_seed,
+            confidence_level_pct=spec.bootstrap_confidence_level_pct,
+            friction_bps=spec.primary_cost_bps_per_side,
+        )
+    else:
+        primary_ci = BootstrapCI(
+            point_estimate=None,
+            ci_lower=None,
+            ci_upper=None,
+            resamples=spec.bootstrap_resamples,
+            seed=spec.bootstrap_seed,
+            status="non_computable",
+            error_reason="no_eligible_target_dates",
+        )
+        uplift_ci = BootstrapCI(
+            point_estimate=None,
+            ci_lower=None,
+            ci_upper=None,
+            resamples=spec.bootstrap_resamples,
+            seed=spec.bootstrap_seed,
+            status="non_computable",
+            error_reason="no_eligible_target_dates",
+        )
 
     # Compute Core Metrics
     event_count = len(events)

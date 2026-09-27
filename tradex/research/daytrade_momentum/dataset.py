@@ -1,9 +1,12 @@
 """Dataset manifest contract, security bounds, and bounded Alpaca acquisition adapter."""
 from __future__ import annotations
 
+import calendar
 import hashlib
 import json
+import os
 from dataclasses import asdict, dataclass, field
+from datetime import UTC, date, datetime, time
 from pathlib import Path
 from typing import Any
 
@@ -103,38 +106,137 @@ def sha256_of_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def sanitize_manifest_dict(d: Any) -> Any:
-    """Recursively strip any keys or values containing forbidden credential tokens."""
-    if isinstance(d, dict):
-        sanitized: dict[str, Any] = {}
-        for k, v in d.items():
-            k_lower = str(k).lower()
-            if any(p in k_lower for p in FORBIDDEN_KEY_PATTERNS) and k_lower not in SAFE_KEY_ALLOWLIST:
-                continue
-            sanitized[k] = sanitize_manifest_dict(v)
-        return sanitized
-    elif isinstance(d, (list, tuple)):
-        return [sanitize_manifest_dict(x) for x in d]
-    return d
+def _check_forbidden_key(k: str) -> None:
+    k_lower = str(k).lower()
+    if k in SAFE_KEY_ALLOWLIST or k_lower in SAFE_KEY_ALLOWLIST:
+        return
+    if "token" in k_lower and ("hash" in k_lower or "sequence" in k_lower):
+        return
+    for pattern in FORBIDDEN_KEY_PATTERNS:
+        if pattern in k_lower:
+            raise DatasetSecurityError(f"Prohibited key pattern '{pattern}' found in key '{k}'")
+
+
+def _check_forbidden_val(v: Any) -> None:
+    if isinstance(v, str):
+        v_lower = v.lower()
+        if v_lower.startswith(("bearer ", "basic ")):
+            raise DatasetSecurityError("Prohibited authorization token value found in manifest")
+        for env_var in ("ALPACA_API_KEY", "ALPACA_SECRET_KEY"):
+            secret_val = os.environ.get(env_var)
+            if secret_val and len(secret_val) >= 8 and secret_val in v:
+                raise DatasetSecurityError(f"Prohibited credential value from {env_var} found in manifest payload")
+
+
+def sanitize_manifest_data(data: Any) -> Any:
+    """Recursively validate that no API keys, secrets, tokens, or raw bodies exist.
+
+    Fails closed: raises DatasetSecurityError if any forbidden pattern is detected.
+    """
+    if isinstance(data, dict):
+        for k, v in data.items():
+            _check_forbidden_key(str(k))
+            sanitize_manifest_data(v)
+    elif isinstance(data, (list, tuple)):
+        for item in data:
+            sanitize_manifest_data(item)
+    else:
+        _check_forbidden_val(data)
+    return data
+
+
+def write_normalized_bars_csv(path: Path, df: pd.DataFrame) -> None:
+    """Write normalized bars to CSV following the locked DAYTRADE schema."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    cols = ["bar_start", "open", "high", "low", "close", "volume"]
+    export_df = df.copy()
+
+    # Handle DatetimeIndex or datetime/bar_start column
+    if "bar_start" not in export_df.columns:
+        if isinstance(export_df.index, pd.DatetimeIndex) or export_df.index.name in ("datetime", "bar_start"):
+            export_df = export_df.reset_index()
+            if "datetime" in export_df.columns:
+                export_df = export_df.rename(columns={"datetime": "bar_start"})
+            elif "index" in export_df.columns:
+                export_df = export_df.rename(columns={"index": "bar_start"})
+        elif "datetime" in export_df.columns:
+            export_df["bar_start"] = export_df["datetime"]
+        elif "timestamp" in export_df.columns:
+            export_df["bar_start"] = export_df["timestamp"]
+        else:
+            raise DatasetSecurityError(
+                f"Cannot extract 'bar_start' timestamp from DataFrame columns {list(export_df.columns)}"
+            )
+
+    def _to_iso_utc(ts: Any) -> str:
+        if isinstance(ts, (datetime, pd.Timestamp)):
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=UTC)
+            else:
+                ts = ts.astimezone(UTC)
+            return ts.strftime("%Y-%m-%dT%H:%M:%SZ")
+        elif isinstance(ts, str):
+            ts_dt = pd.to_datetime(ts, utc=True)
+            return ts_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        else:
+            ts_dt = pd.to_datetime(ts, utc=True)
+            return ts_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    if not export_df.empty:
+        export_df["bar_start"] = export_df["bar_start"].apply(_to_iso_utc)
+        export_df = export_df.sort_values(by="bar_start", ascending=True)
+        for c in ["open", "high", "low", "close", "volume"]:
+            if c not in export_df.columns:
+                export_df[c] = pd.NA
+        export_df = export_df[cols]
+    else:
+        export_df = pd.DataFrame(columns=cols)
+
+    export_df[cols].to_csv(path, index=False, columns=cols, encoding="utf-8")
+
+
+def read_normalized_bars_csv(path: Path) -> tuple[pd.DataFrame, int]:
+    """Read normalized bars CSV and return (df, malformed_unassigned_rows_count).
+
+    Safely parses timestamps. Any completely unparseable timestamp rows are dropped
+    and returned in malformed_unassigned_rows_count without fabricating session attribution.
+    """
+    if not path.is_file():
+        raise DatasetSecurityError(f"Bars file not found: {path}")
+    df = pd.read_csv(path, encoding="utf-8")
+    expected = ["bar_start", "open", "high", "low", "close", "volume"]
+    if list(df.columns) != expected:
+        raise DatasetSecurityError(
+            f"CSV columns in {path} mismatch locked schema: expected {expected}, got {list(df.columns)}"
+        )
+    # Parse bar_start safely with errors='coerce'
+    parsed_ts = pd.to_datetime(df["bar_start"], utc=True, errors="coerce")
+    malformed_mask = parsed_ts.isna()
+    malformed_count = int(malformed_mask.sum())
+    if malformed_count > 0:
+        df = df.loc[~malformed_mask].copy()
+        parsed_ts = parsed_ts.loc[~malformed_mask]
+    df["dt_parsed"] = parsed_ts
+    return df, malformed_count
 
 
 @dataclass
 class DaytradeDatasetManifest:
     """Cryptographic manifest documenting acquired partition data and provenance."""
 
-    task_id: str
-    spec_sha256: str
-    partition: str  # 'preholdout' or 'holdout'
-    provider: str
-    feed: str
-    timeframe: str
-    adjustment: str
-    calendar: str
-    timezone: str
-    universe: tuple[str, ...]
-    start_date: str
-    end_date: str
-    source_files: dict[str, str]  # rel_path -> sha256
+    task_id: str = "DAYTRADE-002A"
+    spec_sha256: str = DAYTRADE_002A_SPEC_SHA256
+    partition: str = "preholdout"  # 'preholdout' or 'holdout'
+    provider: str = LOCKED_PROVIDER
+    feed: str = LOCKED_FEED
+    timeframe: str = LOCKED_TIMEFRAME
+    adjustment: str = LOCKED_ADJUSTMENT
+    calendar: str = LOCKED_CALENDAR
+    timezone: str = LOCKED_TIMEZONE
+    universe: tuple[str, ...] = LOCKED_FROZEN_UNIVERSE
+    start_date: str = "2025-12-31"
+    end_date: str = "2026-06-30"
+    source_files: dict[str, str] = field(default_factory=dict)  # "bars/{ticker}.csv" -> sha256
     manifest_sha256: str = ""
     acquisition_provenance: dict[str, Any] = field(default_factory=dict)
     preholdout_manifest_sha256: str | None = None
@@ -143,87 +245,223 @@ class DaytradeDatasetManifest:
 
     def compute_sha256(self) -> str:
         """Compute deterministic manifest SHA-256 over all fields except manifest_sha256."""
-        payload = {
-            "task_id": self.task_id,
-            "spec_sha256": self.spec_sha256,
-            "partition": self.partition,
-            "provider": self.provider,
-            "feed": self.feed,
-            "timeframe": self.timeframe,
-            "adjustment": self.adjustment,
-            "calendar": self.calendar,
-            "timezone": self.timezone,
-            "universe": list(self.universe),
-            "start_date": self.start_date,
-            "end_date": self.end_date,
-            "source_files": dict(sorted(self.source_files.items())),
-            "acquisition_provenance": sanitize_manifest_dict(self.acquisition_provenance),
-            "preholdout_manifest_sha256": self.preholdout_manifest_sha256,
-            "validation_bundle_sha256": self.validation_bundle_sha256,
-            "evaluator_code_sha": self.evaluator_code_sha,
-        }
-        canonical_json = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-        return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
+        d = asdict(self)
+        d["universe"] = list(self.universe)
+        d.pop("manifest_sha256", None)
+        sanitized = sanitize_manifest_data(d)
+        serialized = json.dumps(sanitized, sort_keys=True, indent=2)
+        return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
     def to_dict(self) -> dict[str, Any]:
-        """Convert manifest to sanitized dictionary."""
+        """Convert manifest to sanitized dictionary and attach internal SHA-256."""
         d = asdict(self)
-        d["manifest_sha256"] = self.manifest_sha256 or self.compute_sha256()
-        return sanitize_manifest_dict(d)
+        d["universe"] = list(self.universe)
+        d.pop("manifest_sha256", None)
+        sanitized = sanitize_manifest_data(d)
+        serialized = json.dumps(sanitized, sort_keys=True, indent=2)
+        h = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+        sanitized["manifest_sha256"] = h
+        return sanitized
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> DaytradeDatasetManifest:
-        """Construct manifest from dictionary."""
-        d = dict(data)
-        d["universe"] = tuple(d.get("universe", []))
-        return cls(**d)
+        """Construct manifest from dictionary, strictly validating its internal SHA-256."""
+        sanitized = sanitize_manifest_data(dict(data))
+        m_sha = sanitized.get("manifest_sha256", "")
+        copy_d = dict(sanitized)
+        copy_d.pop("manifest_sha256", None)
+        computed = hashlib.sha256(json.dumps(copy_d, sort_keys=True, indent=2).encode("utf-8")).hexdigest()
+        if m_sha and m_sha != computed:
+            raise DatasetSecurityError(
+                f"Manifest SHA-256 mismatch: recorded {m_sha}, computed {computed}"
+            )
+        copy_d["manifest_sha256"] = computed
+        copy_d["universe"] = tuple(copy_d.get("universe", []))
+        return cls(**copy_d)
+
+    def validate_against_spec(self, spec: DaytradeSpec) -> None:
+        """Strictly validate manifest properties against the locked DaytradeSpec."""
+        if self.task_id not in ("DAYTRADE-002A", "DAYTRADE-002B"):
+            raise DatasetSecurityError(
+                f"Manifest task_id '{self.task_id}' invalid: must be 'DAYTRADE-002A' or 'DAYTRADE-002B'."
+            )
+        if self.spec_sha256 != spec.sha256:
+            raise DatasetSecurityError(
+                f"Manifest spec_sha256 mismatch: expected {spec.sha256}, got {self.spec_sha256}"
+            )
+        if self.provider != LOCKED_PROVIDER:
+            raise DatasetSecurityError(
+                f"Manifest provider '{self.provider}' mismatch: must be '{LOCKED_PROVIDER}'."
+            )
+        if self.feed != LOCKED_FEED:
+            raise DatasetSecurityError(
+                f"Manifest feed '{self.feed}' mismatch: must be '{LOCKED_FEED}'."
+            )
+        if self.timeframe != LOCKED_TIMEFRAME:
+            raise DatasetSecurityError(
+                f"Manifest timeframe '{self.timeframe}' mismatch: must be '{LOCKED_TIMEFRAME}'."
+            )
+        if self.adjustment != LOCKED_ADJUSTMENT:
+            raise DatasetSecurityError(
+                f"Manifest adjustment '{self.adjustment}' mismatch: must be '{LOCKED_ADJUSTMENT}'."
+            )
+        if self.calendar != LOCKED_CALENDAR:
+            raise DatasetSecurityError(
+                f"Manifest calendar '{self.calendar}' mismatch: must be '{LOCKED_CALENDAR}'."
+            )
+        if self.timezone != LOCKED_TIMEZONE:
+            raise DatasetSecurityError(
+                f"Manifest timezone '{self.timezone}' mismatch: must be '{LOCKED_TIMEZONE}'."
+            )
+        if tuple(self.universe) != spec.universe:
+            raise DatasetSecurityError(
+                f"Manifest universe mismatch: count {len(self.universe)} vs {len(spec.universe)}"
+            )
+        if not self.source_files:
+            raise DatasetSecurityError("Manifest must contain at least one source file record.")
+
+        # Strict source files validation: exactly "bars/{ticker}.csv"
+        expected_files = {f"bars/{ticker}.csv" for ticker in spec.universe}
+        for rel_path, digest in self.source_files.items():
+            p_rel = Path(rel_path)
+            if p_rel.is_absolute() or rel_path.startswith(("/", "\\")) or ":" in rel_path:
+                raise DatasetSecurityError(f"Absolute or malformed path in manifest: '{rel_path}'")
+            if ".." in p_rel.parts:
+                raise DatasetSecurityError(f"Path traversal detected in manifest source file: '{rel_path}'")
+            if len(digest) != 64 or not all(c in "0123456789abcdefABCDEF" for c in digest):
+                raise DatasetSecurityError(f"Malformed SHA-256 digest in manifest for '{rel_path}': '{digest}'")
+
+        manifest_files = set(self.source_files.keys())
+        missing_files = expected_files - manifest_files
+        if missing_files:
+            raise DatasetSecurityError(f"Missing expected ticker source files in manifest: {sorted(missing_files)}")
+        unexpected_files = manifest_files - expected_files
+        if unexpected_files:
+            raise DatasetSecurityError(f"Unexpected source files in manifest: {sorted(unexpected_files)}")
+
+        # Check partition dates and lineage
+        if self.partition == "preholdout":
+            if self.start_date != spec.context_anchor_date or self.end_date != spec.validation.end:
+                raise DatasetSecurityError(
+                    f"Preholdout partition dates [{self.start_date}, {self.end_date}] "
+                    f"must match [{spec.context_anchor_date}, {spec.validation.end}]."
+                )
+        elif self.partition == "holdout":
+            if self.start_date != spec.holdout.start or self.end_date != spec.holdout.end:
+                raise DatasetSecurityError(
+                    f"Holdout partition dates [{self.start_date}, {self.end_date}] "
+                    f"must match [{spec.holdout.start}, {spec.holdout.end}]."
+                )
+            if not self.preholdout_manifest_sha256:
+                raise DatasetSecurityError("Holdout manifest must record preholdout_manifest_sha256 lineage.")
+            if not self.validation_bundle_sha256:
+                raise DatasetSecurityError("Holdout manifest must record validation_bundle_sha256 lineage.")
+            if not self.evaluator_code_sha:
+                raise DatasetSecurityError("Holdout manifest must record evaluator_code_sha lineage.")
+        else:
+            raise DatasetSecurityError(f"Unsupported manifest partition: {self.partition}")
+
+
+def _verify_manifest_source_files(partition_dir: Path, manifest: DaytradeDatasetManifest) -> None:
+    """Verify all source files exist on disk and hashes match manifest."""
+    for rel_path, expected_sha in manifest.source_files.items():
+        fp = partition_dir / rel_path
+        if not fp.is_file():
+            raise DatasetSecurityError(f"Missing source file recorded in manifest: {rel_path}")
+        actual_sha = sha256_of_file(fp)
+        if actual_sha != expected_sha:
+            raise DatasetSecurityError(
+                f"Source file hash mismatch for {rel_path}: {actual_sha} vs {expected_sha}"
+            )
+
+
+def _check_unmanifested_files(partition_dir: Path, manifest: DaytradeDatasetManifest) -> None:
+    """Verify that no unmanifested CSV files exist on disk in partition/bars."""
+    bars_dir = partition_dir / "bars"
+    if bars_dir.is_dir():
+        manifest_files = set(manifest.source_files.keys())
+        for f in bars_dir.glob("*.csv"):
+            rel = f"bars/{f.name}"
+            if rel not in manifest_files:
+                raise DatasetSecurityError(
+                    f"Unmanifested OHLCV file found in partition {partition_dir}: {rel}"
+                )
 
 
 def verify_dataset_manifest(
     manifest: DaytradeDatasetManifest,
     spec: DaytradeSpec,
-    dataset_root: Path,
+    partition_dir: Path,
 ) -> None:
     """Verify that dataset manifest adheres to locked contract and files match digests."""
-    if manifest.task_id != "DAYTRADE-002B":
-        raise DatasetSecurityError(f"Unexpected task_id in manifest: {manifest.task_id}")
-    if manifest.spec_sha256 != DAYTRADE_002A_SPEC_SHA256:
-        raise DatasetSecurityError(
-            f"Manifest spec SHA mismatch: expected {DAYTRADE_002A_SPEC_SHA256}, got {manifest.spec_sha256}"
-        )
-    if manifest.provider != LOCKED_PROVIDER:
-        raise DatasetSecurityError(f"Provider mismatch: expected {LOCKED_PROVIDER}, got {manifest.provider}")
-    if manifest.feed != LOCKED_FEED:
-        raise DatasetSecurityError(f"Feed mismatch: expected {LOCKED_FEED}, got {manifest.feed}")
-    if manifest.timeframe != LOCKED_TIMEFRAME:
-        raise DatasetSecurityError(f"Timeframe mismatch: expected {LOCKED_TIMEFRAME}, got {manifest.timeframe}")
-    if manifest.adjustment != LOCKED_ADJUSTMENT:
-        raise DatasetSecurityError(f"Adjustment mismatch: expected {LOCKED_ADJUSTMENT}, got {manifest.adjustment}")
-    if manifest.calendar != LOCKED_CALENDAR:
-        raise DatasetSecurityError(f"Calendar mismatch: expected {LOCKED_CALENDAR}, got {manifest.calendar}")
-    if manifest.timezone != LOCKED_TIMEZONE:
-        raise DatasetSecurityError(f"Timezone mismatch: expected {LOCKED_TIMEZONE}, got {manifest.timezone}")
-    if manifest.universe != LOCKED_FROZEN_UNIVERSE:
-        raise DatasetSecurityError(
-            f"Manifest universe mismatch: expected {LOCKED_FROZEN_UNIVERSE}, got {manifest.universe}"
+    manifest.validate_against_spec(spec)
+    _verify_manifest_source_files(partition_dir, manifest)
+    _check_unmanifested_files(partition_dir, manifest)
+
+
+class DaytradeDatasetAcquisitionAdapter:
+    """Safe bounded adapter for Alpaca market data acquisition."""
+
+    def __init__(self, client: DatasetAlpacaClient) -> None:
+        if client.max_retries > MAX_RETRIES_PER_FAILED_PAGE:
+            raise DatasetSecurityError(
+                f"Client max_retries {client.max_retries} exceeds locked limit of {MAX_RETRIES_PER_FAILED_PAGE}"
+            )
+        self.client = client
+
+    def fetch_symbol_month_bars(
+        self,
+        symbol: str,
+        start_utc: datetime,
+        end_utc: datetime,
+    ) -> pd.DataFrame:
+        """Fetch bars for a single symbol over a month with hard 100-page limit."""
+        dfs, meta = self.client.get_bars(
+            symbols=[symbol],
+            start_utc=start_utc,
+            end_utc=end_utc,
+            feed=LOCKED_FEED,
+            timeframe=LOCKED_TIMEFRAME,
+            adjustment=LOCKED_ADJUSTMENT,
+            max_pages=MAX_PAGES_PER_CALENDAR_MONTH_CHUNK,
         )
 
-    # Verify per-file SHA-256
-    for rel_path, expected_hash in manifest.source_files.items():
-        fp = dataset_root / rel_path
-        if not fp.is_file():
-            raise DatasetSecurityError(f"Manifest source file not found: {fp}")
-        actual_hash = sha256_of_file(fp)
-        if actual_hash != expected_hash:
-            raise DatasetSecurityError(
-                f"File SHA-256 mismatch for {rel_path}: expected {expected_hash}, got {actual_hash}"
+        safe_err = meta.get("safe_error_classification", "none")
+        if safe_err == "max_pages_exceeded" or (
+            meta.get("next_page_token_present") and not meta.get("pagination_complete")
+        ):
+            raise DatasetPaginationLimitError(
+                f"Pagination hard limit of {MAX_PAGES_PER_CALENDAR_MONTH_CHUNK} pages exceeded for {symbol}"
             )
 
-    computed_sha = manifest.compute_sha256()
-    if manifest.manifest_sha256 and manifest.manifest_sha256 != computed_sha:
-        raise DatasetSecurityError(
-            f"Manifest internal SHA mismatch: recorded {manifest.manifest_sha256} vs computed {computed_sha}"
-        )
+        if not meta.get("pagination_complete", False):
+            raise DatasetSecurityError(f"Pagination failed for {symbol}: {safe_err}")
+
+        return dfs.get(symbol.upper(), pd.DataFrame())
+
+
+def _month_intervals(start_d: date, end_d: date) -> list[tuple[datetime, datetime]]:
+    """Generate (start_utc, end_utc) month intervals spanning start_d through end_d."""
+    intervals: list[tuple[datetime, datetime]] = []
+    curr_y, curr_m = start_d.year, start_d.month
+    end_y, end_m = end_d.year, end_d.month
+
+    while (curr_y, curr_m) <= (end_y, end_m):
+        _, last_day = calendar.monthrange(curr_y, curr_m)
+        chunk_start_d = max(start_d, date(curr_y, curr_m, 1))
+        chunk_end_d = min(end_d, date(curr_y, curr_m, last_day))
+
+        start_utc = datetime.combine(chunk_start_d, time.min, tzinfo=UTC)
+        end_utc = datetime.combine(chunk_end_d, time.max, tzinfo=UTC)
+        intervals.append((start_utc, end_utc))
+
+        if curr_m == 12:
+            curr_y += 1
+            curr_m = 1
+        else:
+            curr_m += 1
+
+    return intervals
 
 
 def acquire_dataset_partition(
@@ -241,16 +479,23 @@ def acquire_dataset_partition(
 ) -> DaytradeDatasetManifest:
     """Future authorized dataset acquisition path with strict authorization guards.
 
+    Canonical layout:
+        <dataset_root>/<partition>/manifest.lock.json
+        <dataset_root>/<partition>/bars/<ticker>.csv
+
     Locked guards:
     - Fails closed unless execute_provider is explicitly True;
     - Dataset root must reside outside the repository;
-    - If holdout partition: requires validation_bundle_sha, preholdout_manifest_sha, evaluator_code_sha (or valid validation_artifact_dir);
-    - Reuses DatasetAlpacaClient with monthly chunking and bounded pagination.
+    - If holdout partition: requires verified validation artifacts and preholdout lineage;
+    - Reuses DatasetAlpacaClient.get_bars(...) with monthly chunking and bounded 100-page limit.
     """
     valid_root = validate_dataset_root(dataset_root, repo_root=repo_root)
 
     if partition not in ("preholdout", "holdout"):
         raise ValueError(f"Partition must be 'preholdout' or 'holdout', got: {partition}")
+
+    partition_dir = valid_root / partition
+    bars_dir = partition_dir / "bars"
 
     if partition == "preholdout":
         start_date = spec.context_anchor_date  # 2025-12-31
@@ -260,16 +505,20 @@ def acquire_dataset_partition(
         end_date = spec.holdout.end             # 2026-08-31
         if validation_artifact_dir is not None:
             from .study import verify_holdout_access_prerequisites
-            verify_holdout_access_prerequisites(validation_artifact_dir, spec, repo_root=repo_root)
+
+            prereqs = verify_holdout_access_prerequisites(validation_artifact_dir, spec, repo_root=repo_root)
+            validation_bundle_sha = prereqs["validation_bundle_sha256"]
+            preholdout_manifest_sha = prereqs["manifest_sha256"]
+            evaluator_code_sha = prereqs["evaluator_code_sha"]
         elif not (validation_bundle_sha and preholdout_manifest_sha and evaluator_code_sha):
             raise HoldoutAccessDeniedError(
                 "Holdout acquisition strictly requires verified validation_bundle_sha, preholdout_manifest_sha, and evaluator_code_sha (or valid validation_artifact_dir)."
             )
 
     if not execute_provider:
-        # Dry-run or planning mode: zero network requests
+        # Dry-run or planning mode: zero network requests and zero credential access
         manifest = DaytradeDatasetManifest(
-            task_id="DAYTRADE-002B",
+            task_id="DAYTRADE-002A",
             spec_sha256=spec.sha256,
             partition=partition,
             provider=LOCKED_PROVIDER,
@@ -294,14 +543,24 @@ def acquire_dataset_partition(
             evaluator_code_sha=evaluator_code_sha,
         )
         manifest.manifest_sha256 = manifest.compute_sha256()
-        manifest_fp = valid_root / f"manifest_{partition}.json"
+        partition_dir.mkdir(parents=True, exist_ok=True)
+        manifest_fp = partition_dir / "manifest.lock.json"
         manifest_fp.write_text(json.dumps(manifest.to_dict(), indent=2), encoding="utf-8")
         return manifest
 
     # Authorized provider execution path (requires explicit client or credentials)
-    alpaca_client = client or DatasetAlpacaClient()
-    partition_dir = valid_root / partition
+    if client is not None:
+        alpaca_client = client
+    else:
+        api_key = os.environ.get("ALPACA_API_KEY")
+        secret_key = os.environ.get("ALPACA_SECRET_KEY")
+        if not api_key or not secret_key:
+            raise DatasetSecurityError("ALPACA_API_KEY and ALPACA_SECRET_KEY required when execute_provider=True")
+        alpaca_client = DatasetAlpacaClient(api_key=api_key, secret_key=secret_key, max_retries=1)
+
+    adapter = DaytradeDatasetAcquisitionAdapter(alpaca_client)
     partition_dir.mkdir(parents=True, exist_ok=True)
+    bars_dir.mkdir(parents=True, exist_ok=True)
 
     source_files: dict[str, str] = {}
     provenance_stats = {
@@ -310,31 +569,38 @@ def acquire_dataset_partition(
         "retries": 0,
         "errors": 0,
         "status": "authorized_provider_acquisition",
+        "malformed_timestamp_counts": 0,
     }
 
-    # Acquire each ETF's 1Min bars
+    start_d = date.fromisoformat(start_date)
+    end_d = date.fromisoformat(end_date)
+    intervals = _month_intervals(start_d, end_d)
+
+    # Acquire each ETF's 1Min bars in monthly chunks
     for sym in spec.universe:
-        rel_fn = f"{partition}/{sym}.csv"
-        out_fp = valid_root / rel_fn
+        all_month_dfs: list[pd.DataFrame] = []
+        for start_utc, end_utc in intervals:
+            month_df = adapter.fetch_symbol_month_bars(
+                symbol=sym,
+                start_utc=start_utc,
+                end_utc=end_utc,
+            )
+            provenance_stats["requests"] += 1
+            if not month_df.empty:
+                all_month_dfs.append(month_df)
 
-        # Bounded fetch using client
-        df = alpaca_client.fetch_bars(
-            symbol=sym,
-            timeframe=LOCKED_TIMEFRAME,
-            start=start_date,
-            end=end_date,
-            feed=LOCKED_FEED,
-            adjustment=LOCKED_ADJUSTMENT,
-        )
-        provenance_stats["requests"] += 1
-        provenance_stats["pages"] += getattr(alpaca_client, "last_page_count", 1)
+        if all_month_dfs:
+            combined_df = pd.concat(all_month_dfs, axis=0)
+        else:
+            combined_df = pd.DataFrame(columns=["bar_start", "open", "high", "low", "close", "volume"])
 
-        # Write CSV
-        df.to_csv(out_fp, index=False)
+        rel_fn = f"bars/{sym}.csv"
+        out_fp = partition_dir / rel_fn
+        write_normalized_bars_csv(out_fp, combined_df)
         source_files[rel_fn] = sha256_of_file(out_fp)
 
     manifest = DaytradeDatasetManifest(
-        task_id="DAYTRADE-002B",
+        task_id="DAYTRADE-002A",
         spec_sha256=spec.sha256,
         partition=partition,
         provider=LOCKED_PROVIDER,
@@ -354,7 +620,7 @@ def acquire_dataset_partition(
     )
     manifest.manifest_sha256 = manifest.compute_sha256()
 
-    manifest_fp = valid_root / f"manifest_{partition}.json"
+    manifest_fp = partition_dir / "manifest.lock.json"
     manifest_fp.write_text(json.dumps(manifest.to_dict(), indent=2), encoding="utf-8")
 
     return manifest
@@ -369,74 +635,186 @@ def load_private_dataset(
     split_name: str,
     include_history: bool = True,
     repo_root: Path | None = None,
+    validation_artifact_dir: Path | str | None = None,
 ) -> tuple[dict[str, list[DaytradeSession]], list[DataQualityReport]]:
     """Load and audit private dataset for a target evaluation split.
+
+    Canonical layout:
+        <dataset_root>/preholdout/manifest.lock.json
+        <dataset_root>/preholdout/bars/<ticker>.csv
+        <dataset_root>/holdout/manifest.lock.json
+        <dataset_root>/holdout/bars/<ticker>.csv
+
+    For development and validation:
+        Loaded from <dataset_root>/preholdout.
+    For holdout:
+        History loaded from <dataset_root>/preholdout (entire preholdout context).
+        Target observations loaded from <dataset_root>/holdout.
 
     Returns:
         (sessions_by_ticker, quality_reports)
     """
     valid_root = validate_dataset_root(dataset_root, repo_root=repo_root)
+    name = split_name.lower().strip()
 
-    # Determine date span to load
-    split_dates = spec.get_split_dates(split_name)
+    split_dates = spec.get_split_dates(name)
     target_start = split_dates.start
     target_end = split_dates.end
 
-    if include_history:
-        # Load preceding history sessions needed to build rolling thresholds
-        hist_dates = spec.get_history_dates(split_name)
-        if hist_dates:
-            load_start = hist_dates[0]
-        else:
-            load_start = spec.context_anchor_date
-    else:
-        load_start = target_start
-
-    # Determine which partition to look in
-    partition = "holdout" if split_name == "holdout" else "preholdout"
-    part_dir = valid_root / partition
-    if not part_dir.is_dir():
-        # Fall back to checking directly in valid_root if files are stored flat
-        part_dir = valid_root
+    target_sessions = get_regular_trading_sessions(target_start, target_end, exclude_early_closes=True)
+    target_sessions_set = set(target_sessions)
 
     sessions_by_ticker: dict[str, list[DaytradeSession]] = {}
     quality_reports: list[DataQualityReport] = []
 
-    # Get expected trading sessions in load range
-    expected_sessions = get_regular_trading_sessions(load_start, target_end, exclude_early_closes=True)
+    if name == "holdout":
+        # Dual-partition holdout loader
+        if not validation_artifact_dir:
+            raise HoldoutAccessDeniedError("Holdout evaluation requires --validation-artifact-dir.")
 
-    for sym in spec.universe:
-        csv_file = part_dir / f"{sym}.csv"
-        if not csv_file.is_file():
-            # Ticker missing entirely: record missing reports
+        from .study import verify_holdout_access_prerequisites
+
+        prereqs = verify_holdout_access_prerequisites(validation_artifact_dir, spec, repo_root=repo_root)
+        val_bundle_sha = prereqs["validation_bundle_sha256"]
+        val_evaluator_sha = prereqs["evaluator_code_sha"]
+        val_manifest_sha = prereqs["manifest_sha256"]
+        val_spec_sha = prereqs["spec_sha256"]
+
+        # 1. Preholdout partition (history source)
+        pre_dir = valid_root / "preholdout"
+        pre_manifest_file = pre_dir / "manifest.lock.json"
+        if not pre_manifest_file.is_file():
+            raise DatasetSecurityError(f"Preholdout manifest not found in {pre_dir}")
+        pre_data = json.loads(pre_manifest_file.read_text(encoding="utf-8"))
+        pre_manifest = DaytradeDatasetManifest.from_dict(pre_data)
+        verify_dataset_manifest(pre_manifest, spec, pre_dir)
+
+        if pre_manifest.manifest_sha256 != val_manifest_sha:
+            raise DatasetSecurityError(
+                f"Preholdout manifest SHA '{pre_manifest.manifest_sha256}' mismatch with validation manifest '{val_manifest_sha}'"
+            )
+
+        # 2. Holdout partition (target source)
+        holdout_dir = valid_root / "holdout"
+        holdout_manifest_file = holdout_dir / "manifest.lock.json"
+        if not holdout_manifest_file.is_file():
+            raise DatasetSecurityError(f"Holdout manifest not found in {holdout_dir}")
+        holdout_data = json.loads(holdout_manifest_file.read_text(encoding="utf-8"))
+        holdout_manifest = DaytradeDatasetManifest.from_dict(holdout_data)
+        verify_dataset_manifest(holdout_manifest, spec, holdout_dir)
+
+        # 3. Lineage verification
+        if holdout_manifest.preholdout_manifest_sha256 != pre_manifest.manifest_sha256:
+            raise DatasetSecurityError(
+                f"Holdout manifest preholdout_manifest_sha256 '{holdout_manifest.preholdout_manifest_sha256}' "
+                f"mismatch with preholdout manifest SHA '{pre_manifest.manifest_sha256}'"
+            )
+        if holdout_manifest.validation_bundle_sha256 != val_bundle_sha:
+            raise DatasetSecurityError(
+                f"Holdout manifest validation_bundle_sha256 '{holdout_manifest.validation_bundle_sha256}' "
+                f"mismatch with validation bundle SHA '{val_bundle_sha}'"
+            )
+        if holdout_manifest.evaluator_code_sha != val_evaluator_sha:
+            raise DatasetSecurityError(
+                f"Holdout manifest evaluator_code_sha '{holdout_manifest.evaluator_code_sha}' "
+                f"mismatch with validation evaluator code SHA '{val_evaluator_sha}'"
+            )
+        if holdout_manifest.spec_sha256 != val_spec_sha:
+            raise DatasetSecurityError(
+                f"Holdout manifest spec_sha256 '{holdout_manifest.spec_sha256}' mismatch with spec '{val_spec_sha}'"
+            )
+
+        # 4. Load history from preholdout and target from holdout
+        hist_dates = spec.get_history_dates("holdout")
+        hist_start = hist_dates[0] if hist_dates else spec.context_anchor_date
+        hist_end = hist_dates[1] if hist_dates else spec.validation.end
+
+        history_sessions = get_regular_trading_sessions(hist_start, hist_end, exclude_early_closes=True)
+
+        for sym in spec.universe:
             ticker_sessions: list[DaytradeSession] = []
-            for s_date in expected_sessions:
-                sess, rep = audit_missing_ticker_session(sym, s_date)
+
+            # History from preholdout
+            hist_csv = pre_dir / "bars" / f"{sym}.csv"
+            hist_df, _ = read_normalized_bars_csv(hist_csv)
+            hist_by_session = {
+                d: grp for d, grp in hist_df.groupby(hist_df["dt_parsed"].dt.tz_convert(LOCKED_TIMEZONE).dt.date)
+            }
+            for s_date in history_sessions:
+                grid = build_regular_session_grid(s_date)
+                sess_df = hist_by_session.get(s_date)
+                if sess_df is None or len(sess_df) == 0:
+                    sess, _ = audit_missing_ticker_session(sym, s_date)
+                else:
+                    sess, _ = audit_ticker_session(sym, s_date, sess_df, grid)
+                ticker_sessions.append(sess)
+
+            # Target from holdout
+            tgt_csv = holdout_dir / "bars" / f"{sym}.csv"
+            tgt_df, _ = read_normalized_bars_csv(tgt_csv)
+            tgt_by_session = {
+                d: grp for d, grp in tgt_df.groupby(tgt_df["dt_parsed"].dt.tz_convert(LOCKED_TIMEZONE).dt.date)
+            }
+            for s_date in target_sessions:
+                grid = build_regular_session_grid(s_date)
+                sess_df = tgt_by_session.get(s_date)
+                if sess_df is None or len(sess_df) == 0:
+                    sess, rep = audit_missing_ticker_session(sym, s_date)
+                else:
+                    sess, rep = audit_ticker_session(sym, s_date, sess_df, grid)
                 ticker_sessions.append(sess)
                 quality_reports.append(rep)
+
             sessions_by_ticker[sym] = ticker_sessions
-            continue
 
-        df = pd.read_csv(csv_file)
-        # Parse datetime column
-        ts_col = "datetime" if "datetime" in df.columns else ("timestamp" if "timestamp" in df.columns else "t")
-        df["dt_parsed"] = pd.to_datetime(df[ts_col], utc=True)
-        df["session_date"] = df["dt_parsed"].dt.tz_convert(LOCKED_TIMEZONE).dt.date
+    else:
+        # Development and Validation partitions: loaded from preholdout
+        part_dir = valid_root / "preholdout"
+        manifest_file = part_dir / "manifest.lock.json"
+        if not manifest_file.is_file():
+            raise DatasetSecurityError(f"Preholdout manifest not found in {part_dir}")
+        manifest_data = json.loads(manifest_file.read_text(encoding="utf-8"))
+        manifest = DaytradeDatasetManifest.from_dict(manifest_data)
+        verify_dataset_manifest(manifest, spec, part_dir)
 
-        # Group by session_date
-        by_session = {d: group for d, group in df.groupby("session_date")}
+        if include_history:
+            hist_dates = spec.get_history_dates(name)
+            load_start = hist_dates[0] if hist_dates else spec.context_anchor_date
+        else:
+            load_start = target_start
 
-        ticker_sessions = []
-        for s_date in expected_sessions:
-            grid = build_regular_session_grid(s_date)
-            sess_df = by_session.get(s_date)
-            if sess_df is None or len(sess_df) == 0:
-                sess, rep = audit_missing_ticker_session(sym, s_date)
-            else:
-                sess, rep = audit_ticker_session(sym, s_date, sess_df, grid)
-            ticker_sessions.append(sess)
-            quality_reports.append(rep)
+        expected_sessions = get_regular_trading_sessions(load_start, target_end, exclude_early_closes=True)
 
-        sessions_by_ticker[sym] = ticker_sessions
+        for sym in spec.universe:
+            csv_file = part_dir / "bars" / f"{sym}.csv"
+            if not csv_file.is_file():
+                ticker_sessions = []
+                for s_date in expected_sessions:
+                    sess, rep = audit_missing_ticker_session(sym, s_date)
+                    ticker_sessions.append(sess)
+                    if s_date in target_sessions_set:
+                        quality_reports.append(rep)
+                sessions_by_ticker[sym] = ticker_sessions
+                continue
+
+            df, _ = read_normalized_bars_csv(csv_file)
+            by_session = {
+                d: group
+                for d, group in df.groupby(df["dt_parsed"].dt.tz_convert(LOCKED_TIMEZONE).dt.date)
+            }
+
+            ticker_sessions = []
+            for s_date in expected_sessions:
+                grid = build_regular_session_grid(s_date)
+                sess_df = by_session.get(s_date)
+                if sess_df is None or len(sess_df) == 0:
+                    sess, rep = audit_missing_ticker_session(sym, s_date)
+                else:
+                    sess, rep = audit_ticker_session(sym, s_date, sess_df, grid)
+                ticker_sessions.append(sess)
+                if s_date in target_sessions_set:
+                    quality_reports.append(rep)
+
+            sessions_by_ticker[sym] = ticker_sessions
 
     return sessions_by_ticker, quality_reports

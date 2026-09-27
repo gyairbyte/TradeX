@@ -12,6 +12,8 @@ from .calendar import (
 )
 from .models import DaytradeSession
 
+_REGULAR_MIN_STRS = [f"{9 + (30 + i) // 60:02d}:{(30 + i) % 60:02d}" for i in range(390)]
+
 
 def generate_synthetic_session_bars(
     ticker: str,
@@ -43,9 +45,14 @@ def generate_synthetic_session_bars(
     rows: list[dict[str, Any]] = []
     current_close = base_price
 
-    for dt_utc in grid:
-        dt_local = to_market_time(dt_utc)
-        min_str = dt_local.strftime("%H:%M")
+    use_fast_min_strs = len(grid) == 390
+
+    for idx, dt_utc in enumerate(grid):
+        if use_fast_min_strs:
+            min_str = _REGULAR_MIN_STRS[idx]
+        else:
+            dt_local = to_market_time(dt_utc)
+            min_str = dt_local.strftime("%H:%M")
 
         # Determine target open/close for key reference bars
         open_px = current_close
@@ -69,6 +76,7 @@ def generate_synthetic_session_bars(
             continue
 
         row_data = {
+            "bar_start": dt_utc.isoformat(),
             "datetime": dt_utc.isoformat(),
             "open": open_px,
             "high": high_px,
@@ -78,6 +86,7 @@ def generate_synthetic_session_bars(
         }
 
         if min_str in bad_ts_set:
+            row_data["bar_start"] = "MALFORMED_TIMESTAMP"
             row_data["datetime"] = "MALFORMED_TIMESTAMP"
 
         if min_str in bad_ohlc_set:

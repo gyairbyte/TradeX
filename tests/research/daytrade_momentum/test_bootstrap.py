@@ -147,3 +147,64 @@ def test_clarification3_metric_specific_non_computability() -> None:
     assert uplift_ci.ci_lower is None
     assert uplift_ci.ci_upper is None
     assert uplift_ci.error_reason is not None
+
+
+def test_zero_event_replicate_makes_primary_ci_non_computable() -> None:
+    """Verify that if any replicate draws no events, primary CI fails closed as non_computable."""
+    d1 = date(2025, 1, 15)  # has event
+    d2 = date(2025, 1, 16)  # has only non-event (no events)
+
+    ev1 = EventObservation(
+        ticker="SPY", session_date=d1, direction="LONG", signal_return=0.02,
+        threshold=0.015, entry_time=d1, exit_time=d1, entry_price=100.0, exit_price=101.5,
+        gross_return=0.015, net_return_0bps=0.015, net_return_2bps=0.0146, net_return_5bps=0.014,
+        split="validation",
+    )
+    ne2 = BaselineObservation(
+        ticker="SPY", session_date=d2, direction="LONG", signal_return=0.005,
+        threshold=0.015, entry_price=100.0, exit_price=100.5,
+        gross_return=0.005, net_return_0bps=0.005, net_return_2bps=0.0046, net_return_5bps=0.004,
+        split="validation",
+    )
+
+    primary_ci, _uplift_ci = run_session_date_cluster_bootstrap(
+        events=[ev1],
+        non_events=[ne2],
+        eligible_session_dates=[d1, d2],
+        resamples=100,
+        seed=20260926,
+    )
+
+    # Some replicates will draw [d2, d2] which has 0 events -> primary CI must be non_computable!
+    assert primary_ci.status == "non_computable"
+    assert primary_ci.ci_lower is None
+    assert primary_ci.ci_upper is None
+    assert "replicates_with_no_events" in (primary_ci.error_reason or "")
+
+
+def test_zero_first_half_hour_return_in_threshold_and_classification() -> None:
+    """Verify session with exactly 0.0 first_half_hour_return participates in threshold history
+
+    but produces no directional event or baseline observation.
+    """
+    from tradex.research.daytrade_momentum.events import (
+        classify_session_observation,
+        compute_ticker_threshold,
+    )
+    from tradex.research.daytrade_momentum.models import DaytradeSession
+
+    # 1. Zero return enters threshold calculation (abs(0.0) = 0.0)
+    history = [0.0] * 20
+    thresh = compute_ticker_threshold(history)
+    assert thresh == 0.0
+
+    # 2. Session with 0.0 return has no direction, so classify_session_observation returns (None, None)
+    sess = DaytradeSession(
+        ticker="SPY",
+        session_date=date(2026, 2, 2),
+        bars=[],
+        is_valid=True,
+    )
+    ev, ne = classify_session_observation(sess, signal_return=0.0, threshold=0.01, split_name="development")
+    assert ev is None
+    assert ne is None

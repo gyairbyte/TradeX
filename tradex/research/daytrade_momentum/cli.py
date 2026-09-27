@@ -8,7 +8,10 @@ from pathlib import Path
 
 from .artifacts import sha256_of_file, write_artifact_bundle
 from .dataset import (
+    DatasetSecurityError,
+    DaytradeDatasetManifest,
     acquire_dataset_partition,
+    verify_dataset_manifest,
 )
 from .freeze import (
     EvaluationFreezeRecord,
@@ -94,17 +97,32 @@ def cmd_verify_spec(args: argparse.Namespace) -> int:
 
 
 def cmd_freeze(args: argparse.Namespace) -> int:
-    """Freeze evaluation code state."""
+    """Freeze evaluation code state and bind it to verified preholdout dataset manifest."""
     try:
         spec = load_and_verify_spec(args.spec)
-        manifest_sha: str | None = None
+        manifest_path: Path | None = None
+        partition_dir: Path | None = None
+
         if args.manifest is not None:
-            m_data = json.loads(args.manifest.read_text(encoding="utf-8"))
-            manifest_sha = m_data.get("manifest_sha256")
+            manifest_path = Path(args.manifest).expanduser().resolve()
+            partition_dir = manifest_path.parent
+        elif args.dataset_root is not None:
+            root = Path(args.dataset_root).expanduser().resolve()
+            partition_dir = root / "preholdout"
+            manifest_path = partition_dir / "manifest.lock.json"
+
+        if manifest_path is None or not manifest_path.is_file():
+            raise DatasetSecurityError(
+                "Formal freeze requires --manifest or --dataset-root pointing to valid preholdout manifest.lock.json."
+            )
+
+        m_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest = DaytradeDatasetManifest.from_dict(m_data)
+        verify_dataset_manifest(manifest, spec, partition_dir)
 
         freeze = freeze_evaluation_state(
             spec_sha256=spec.sha256,
-            manifest_sha256=manifest_sha,
+            manifest_sha256=manifest.manifest_sha256,
             require_clean=True,
         )
         out_dir = Path(args.output).expanduser().resolve()
@@ -112,6 +130,7 @@ def cmd_freeze(args: argparse.Namespace) -> int:
         freeze_fp = out_dir / "freeze.json"
         freeze_fp.write_text(json.dumps(freeze.to_dict(), indent=2), encoding="utf-8")
         print(f"PASS: Evaluation frozen at {freeze.frozen_at}. HEAD: {freeze.evaluation_code_sha}")
+        print(f"Bound manifest SHA-256: {freeze.manifest_sha256}")
         return 0
     except Exception as e:  # noqa: BLE001
         print(f"FAIL: Freeze error: {e}", file=sys.stderr)
@@ -123,10 +142,18 @@ def cmd_evaluate(args: argparse.Namespace) -> int:
     try:
         spec = load_and_verify_spec(args.spec)
         freeze_record: EvaluationFreezeRecord | None = None
+        val_manifest: DaytradeDatasetManifest | None = None
+
+        if args.dataset_root is not None:
+            part_dir = Path(args.dataset_root).expanduser().resolve() / "preholdout"
+            m_file = part_dir / "manifest.lock.json"
+            if m_file.is_file():
+                val_manifest = DaytradeDatasetManifest.from_dict(json.loads(m_file.read_text(encoding="utf-8")))
+
         if args.freeze is not None:
             f_data = json.loads(args.freeze.read_text(encoding="utf-8"))
             freeze_record = EvaluationFreezeRecord.from_dict(f_data)
-            verify_freeze_state(freeze_record, spec=spec)
+            verify_freeze_state(freeze_record, spec=spec, manifest=val_manifest)
 
         result = evaluate_split(
             split_name=args.split,
@@ -141,6 +168,7 @@ def cmd_evaluate(args: argparse.Namespace) -> int:
             result=result,
             spec=spec,
             freeze=freeze_record,
+            manifest=val_manifest,
         )
         print(f"PASS: {result.task_id} split={result.split} disposition={result.disposition} step={result.disposition_step}")
         print(f"Artifacts written to {args.output} ({len(checksums)} files).")
