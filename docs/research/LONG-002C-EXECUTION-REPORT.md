@@ -5,6 +5,9 @@
 - **Status:** `completed` / `valid_development_evidence`
 - **Classification:** `official_development_census`
 - **Valid Research Evidence:** `true` (development split census only)
+- **Review Disposition:** `primary_retained` (preregistered PRIMARY endpoint retained; fallback not invoked)
+- **Selected Primary Endpoint:** Clean +10% within 10 trading sessions
+- **Frozen Development Baseline Comparator:** `volatility_aware_momentum_5` (strongest development baseline frozen for future LONG-002 research; does not authorize production use or establish out-of-sample predictive validity)
 - **Production Promotion Eligible:** `false` (`APPROVED_PRODUCTION_STRATEGIES == ()` strictly preserved)
 - **Code HEAD SHA:** `d6a300e556c690c83ff8b9265833667c02dc94ec`
 - **Authorized Discovery Manifest SHA-256:** `d1bf16d6b475c93b5c47e81a47af5597fd514432880107030040a81fd61e9947`
@@ -19,7 +22,7 @@ This execution report documents the official Stage C development-only outcome ce
 
 The empirical run was executed following the approved performance enhancements (PERF-001, PERF-002, PERF-003) and passing the pre-launch memory-capacity gate (realistic working set projection 21.84 GB <= 24.89 GB 80% RAM ceiling; actual peak working set during evaluation 16.74 GB).
 
-### Key Empirical Findings:
+### Key Empirical Findings & Review Decisions:
 1. **Universe & Decision Observations:**
    - 1,291 point-in-time discovery candidates ingested from `discovery_manifest.json`.
    - 2,815,600 total decision observations constructed across 20:30 post-close primary and 09:00 pre-market reevaluation.
@@ -35,10 +38,10 @@ The empirical run was executed following the approved performance enhancements (
    - Herfindahl-Hirschman Index ($\text{HHI}$): **0.00111** (demonstrating extreme cross-sectional diversification, well below 0.15).
 4. **Frozen Baseline Comparators:**
    - 13 simple comparators evaluated on common observations ($N = 758,731$) against universe base rate (8.8644%).
-   - **Empirical Winner Selected:** `volatility_aware_momentum_5` achieved **1.7320x Top-10 Decile Lift** (15.3533% clean rate) and **1.4314x Top-25 Lift**, outperforming all simple momentum, SPY-relative, and legacy comparators.
-   - **Legacy TradeX Scorer Evaluation:** Produced **0.9151x Top-10 Lift** (8.1118% clean rate, below universe base rate), failing to exhibit positive predictive power and confirming the necessity of modern baseline comparators.
-5. **Endpoint Feasibility:**
-   - Formally designated `pending_gary_chatgpt_review`. Both primary (+10%/10d) and fallback (+10%/21d) endpoints exhibit massive statistical sample sizes and power.
+   - **Empirical Winner Selected:** `volatility_aware_momentum_5` (a fixed 50/50 composite of 5-session momentum percentile and 14-session ATR%-percentile, where higher ATR% receives the higher volatility percentile) achieved **1.7320x Top-10 Decile Lift** (15.3533% clean rate) and **1.4314x Top-25 Lift**, outperforming all simple momentum, SPY-relative, and legacy comparators.
+   - **Legacy TradeX Scorer Evaluation:** On the 2016–2020 development population for the clean +10%/10-session endpoint, the legacy TradeX scorer's top decile underperformed the universe base rate (0.9151x lift; 8.1118% clean rate). This development result does not establish its out-of-sample performance.
+5. **Endpoint Feasibility & Review Disposition:**
+   - The checksummed Stage C artifact bundle represents the immutable output at execution time and recorded `pending_gary_chatgpt_review`. Following formal Gary and ChatGPT review, the post-run review disposition is **`primary_retained`**: the preregistered PRIMARY endpoint (clean +10% within 10 trading sessions) is retained, and the fallback (+10%/21d) is not invoked.
 6. **Strict Governance & Quarantine:**
    - Validation split (2021–2022), Holdout split (2023–2025), and Shadow split (2026+) remain **strictly unread, unqueried, and quarantined**.
    - Zero live network requests occurred (100% provider cache hits).
@@ -141,7 +144,7 @@ A total of **13,657,194 outcome label records** were evaluated across non-purged
 | `+30%_10d` | +30% | 10 | 758,735 | 3,972 | 0.5235% | 4,361 | 0.5748% |
 | `+30%_21d` | +30% | 21 | 758,735 | 11,991 | 1.5804% | 14,381 | 1.8954% |
 
-**Cross-Cutoff Stability:** The primary clean +10%/10d rate at 20:30 (8.8644%) and 09:00 (8.8646%) differ by less than 0.0002 percentage points, demonstrating remarkable temporal consistency across overnight and pre-market information flows.
+**Cross-Cutoff Comparison:** The aggregate unconditional clean +10%/10-session prevalence is nearly identical across the 20:30 primary population and 09:00 diagnostic population. Because these populations are closely related and shifted in decision timing, this descriptive similarity should not be interpreted as evidence that overnight information is irrelevant or that the two decision snapshots have equivalent predictive value.
 
 ---
 
@@ -223,15 +226,31 @@ All baseline comparators were evaluated across **758,731 common observations** a
 
 ### Baseline Selection Analysis:
 1. **Strongest Simple Baseline Winner:**
-   `volatility_aware_momentum_5` (5-session return normalized by 14-session ATR percentage) achieved the highest Top-10 predictive lift (**1.7320x** over universe base rate). It is formally frozen as the benchmark comparator for all subsequent research phases.
-2. **Deficiency of Legacy TradeX Scorer:**
-   The legacy TradeX scorer produced a top-decile clean rate of 8.1118%, which is **lower than the baseline random universe rate of 8.8644%** (lift 0.9151x). Filtering by high legacy TradeX scores historically resulted in adverse selection for large multi-week breakout moves.
+   `volatility_aware_momentum_5` (a fixed 50/50 composite of 5-session momentum percentile and 14-session ATR%-percentile, where higher ATR% receives the higher volatility percentile) achieved the highest Top-10 predictive lift (**1.7320x** over universe base rate). It is formally frozen as the strongest development baseline comparator for future LONG-002 research. This does not authorize production use and does not establish out-of-sample predictive validity.
+2. **Legacy TradeX Scorer Evaluation:**
+   On the 2016–2020 development population for the clean +10%/10-session endpoint, the legacy TradeX scorer's top decile underperformed the universe base rate (0.9151x lift; 8.1118% clean rate). This development result does not establish its out-of-sample performance.
 
 ---
 
-## 9. Endpoint Feasibility Disposition
+## 9. Endpoint Feasibility & Post-Run Review Disposition
 
-- **Disposition:** `pending_gary_chatgpt_review`
+### Post-Run Review Disposition (Gary & ChatGPT Review)
+The checksummed Stage C artifact bundle represents the immutable output at execution time and records `endpoint_disposition: "pending_gary_chatgpt_review"`. To preserve checksum integrity and historical provenance, the immutable execution artifacts remain unchanged. Following formal review of the empirical development census, the post-run review disposition is approved:
+- **Research Review Disposition:** `primary_retained`
+- **Selected Endpoint:** `clean +10% within 10 trading sessions`
+- **Frozen Development Baseline Comparator:** `volatility_aware_momentum_5`
+- **Rationale:** Development evidence is far above the preregistered feasibility floor:
+  - 67,257 clean events
+  - 8.8644% prevalence
+  - 758,731 denominator
+  - 21-session bootstrap 95% CI lower bound ~6.72% (well above 2.0% floor)
+  - 16,139 independent master episodes (well above 200 episode floor)
+  - 1,205 represented securities
+  - Effective securities ~901 (well above 15.0 floor)
+  The +10%/21-session fallback endpoint is **NOT** invoked.
+
+### Empirical Endpoint Metrics
+
 - **Primary Endpoint (+10%/10 sessions):**
   - Observed clean target events: **67,257**
   - Prevalence: **8.8644%**
@@ -241,24 +260,23 @@ All baseline comparators were evaluated across **758,731 common observations** a
   - Observed clean target events: **135,603**
   - Prevalence: **17.8723%**
   - 21-session block bootstrap 95% CI: **[15.0285%, 20.8134%]**
-  - Statistical sufficiency: Confirmed.
-- **Recommendation:** Both endpoints are statistically robust and highly populated. Final selection between primary (+10%/10d) and fallback (+10%/21d) is reserved for Gary and ChatGPT review.
+  - Statistical sufficiency: Confirmed (not invoked; retained as fallback reference only).
 
 ---
 
-## 10. Proposed Validation Evidence Gates (Development-Only; For Review; Not Locked)
+## 10. Validation Evidence-Sufficiency Gates
 
-The following empirical evidence gates are proposed based on the development split census (scaling ratio: 2 years validation / 5 years development = 0.40):
+The following empirical evidence gates are derived from the development split census (scaling ratio: 2 years validation / 5 years development = 0.40):
 
-| Proposed Evidence Gate | Development Value | Scaling Formula | Proposed Validation Gate | Status |
+| Evidence Gate | Development Value | Scaling Formula | Approved Validation Gate | Status |
 |---|---|---|---|---|
-| Master Opportunity Episodes | 16,139 | $\times 0.40 \times 0.75$ | **$\ge$ 4,841** | Proposed for review |
-| Clean Target Events (+10%/10d) | 67,257 | $\times 0.40 \times 0.75$ | **$\ge$ 20,177** | Proposed for review |
-| Effective Securities ($N_{\text{eff}}$) | 901.15 | $\times 0.35$ cross-sectional floor | **$\ge$ 315.4** | Proposed for review |
-| Actionable Observations | 0 | Option 2 historical unknown | **None (N/A)** | Known limitation |
-| Clustering Session Fraction Ceiling | 0.85 | Max fraction in top 15% sessions | **$\le$ 0.85** | Proposed for review |
+| Master Opportunity Episodes | 16,139 | $\times 0.40 \times 0.75$ | **$\ge$ 4,841** | Approved research gate |
+| Clean Target Events (+10%/10d) | 67,257 | $\times 0.40 \times 0.75$ | **$\ge$ 20,177** | Approved research gate |
+| Effective Securities ($N_{\text{eff}}$) | 901.15 | $\times 0.35$ cross-sectional floor | **$\ge$ 315.4** | Approved research gate |
+| Actionable Observations | 0 | Option 2 historical unknown | **None (N/A)** | Documented limitation |
+| Clustering Session Fraction Ceiling | 0.85 | Max fraction in top 15% sessions | **$\le$ 0.85** | Approved research gate |
 
-*Note: In accordance with research governance, these gates are proposed recommendations derived from development data for Gary and ChatGPT review and are NOT permanently locked.*
+*Note: The proposed validation evidence-sufficiency gates are approved research gates for future use. They are sample/evidence sufficiency gates, NOT strategy-success or production-promotion criteria.*
 
 ---
 
@@ -352,11 +370,11 @@ Both official verification commands passed with exit code 0:
 
 ## 14. Governance Constraints & Next Steps
 
-1. **Research-Only Scope:**
-   `LONG-002C-EXEC-001` is strictly an offline research milestone. It does not authorize or perform any production code changes, scoring changes, or strategy registrations (`APPROVED_PRODUCTION_STRATEGIES == ()`).
+1. **Research-Only Scope & Completed Evidence:**
+   `LONG-002C-EXEC-001` empirical execution is **APPROVED as valid development evidence**. The preregistered PRIMARY endpoint (`clean +10% within 10 trading sessions`) is retained (`primary_retained`), and `volatility_aware_momentum_5` is frozen as the strongest development baseline comparator for future research. This does not authorize production use and does not establish out-of-sample predictive validity.
 2. **Strict Quarantine Maintained:**
-   Validation split (2021–2022) and Holdout split (2023–2025) remain unopened and strictly quarantined.
+   Validation split (2021–2022) and Holdout split (2023–2025) remain unopened, unqueried, and strictly quarantined. Shadow (2026+) remains untouched.
 3. **No Strategy Promotion:**
-   No trading strategy or model is promoted to production.
+   No trading strategy or model is promoted to production (`APPROVED_PRODUCTION_STRATEGIES == ()` strictly preserved).
 4. **Next Step:**
-   STOP and present this comprehensive evidence report for Gary and ChatGPT review. Progression to subsequent research or gate locking requires explicit user authorization.
+   STOP. Progression to subsequent research phase `LONG-002D` requires explicit Gary Yang and ChatGPT review and authorization.
