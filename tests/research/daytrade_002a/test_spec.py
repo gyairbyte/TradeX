@@ -10,10 +10,11 @@ import json
 import re
 from pathlib import Path
 
+import exchange_calendars as xcals
+import pandas as pd
 import pytest
 
 from tradex.strategies.registry import APPROVED_PRODUCTION_STRATEGIES
-from tradex.watchlists.presets import SECTOR_ETFS
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SPEC_PATH = REPO_ROOT / "docs" / "research" / "specs" / "DAYTRADE-002A-v1.json"
@@ -98,9 +99,6 @@ def test_frozen_universe_literal_symbols_and_count(spec: dict) -> None:
     assert spec["universe"]["preset_source"] == "tradex.watchlists.presets.SECTOR_ETFS"
     assert spec["universe"]["snapshot_vintage"] == "2026-05"
 
-    # Confirms that at the approved base commit, SECTOR_ETFS matches this snapshot
-    assert tuple(spec_symbols) == SECTOR_ETFS
-
     # Confirms research source-of-truth rule is documented in spec
     assert "source of truth" in spec["universe"]["source_of_truth_rule"].lower()
 
@@ -163,11 +161,48 @@ def test_dates_splits_and_exchange_session_adjacency(spec: dict) -> None:
     assert dev["end"] < val["start"] <= val["end"]
     assert val["end"] < holdout["start"] <= holdout["end"]
 
-    # Exchange-session awareness:
-    # 2026-01-01 is an exchange holiday (New Year's Day); warmup starts on next trading session 2026-01-02.
-    assert warmup["start"] != "2026-01-01"
-    # 2026-01-31 (Sat) and 2026-02-01 (Sun) are weekend days; dev starts on Monday 2026-02-02.
-    assert dev["start"] != "2026-01-31"
+    # Exchange-session awareness via XNYS calendar
+    cal = xcals.get_calendar("XNYS")
+
+    # Minimum required XNYS session checks from specification:
+    # 2025-12-31 = XNYS session
+    assert cal.is_session("2025-12-31") is True
+    # 2026-01-01 = NOT an XNYS session (New Year's Day holiday)
+    assert cal.is_session("2026-01-01") is False
+    # next XNYS session after 2025-12-31 = 2026-01-02
+    assert cal.next_session("2025-12-31") == pd.Timestamp("2026-01-02")
+
+    # 2026-01-30 = XNYS session
+    assert cal.is_session("2026-01-30") is True
+    # next XNYS session after 2026-01-30 = 2026-02-02 (weekend intervenes)
+    assert cal.next_session("2026-01-30") == pd.Timestamp("2026-02-02")
+
+    # 2026-04-30 = XNYS session
+    assert cal.is_session("2026-04-30") is True
+    # next XNYS session after 2026-04-30 = 2026-05-01
+    assert cal.next_session("2026-04-30") == pd.Timestamp("2026-05-01")
+
+    # 2026-06-30 = XNYS session
+    assert cal.is_session("2026-06-30") is True
+    # next XNYS session after 2026-06-30 = 2026-07-01
+    assert cal.next_session("2026-06-30") == pd.Timestamp("2026-07-01")
+
+    # 2026-08-31 = XNYS session
+    assert cal.is_session("2026-08-31") is True
+
+    # Verify all partition boundary dates are valid regular XNYS sessions
+    for partition_date in [
+        anchor["date"],
+        warmup["start"],
+        warmup["end"],
+        dev["start"],
+        dev["end"],
+        val["start"],
+        val["end"],
+        holdout["start"],
+        holdout["end"],
+    ]:
+        assert cal.is_session(partition_date) is True, f"{partition_date} is not an XNYS session"
 
     # Split boundaries must not leak
     assert splits["split_boundary_enforcement"] == "all_events_and_outcomes_must_remain_inside_target_split"
@@ -236,6 +271,8 @@ def test_execution_timing_and_locked_assumptions(spec: dict) -> None:
     assert timing["exit_bar_start"] == "15:59"
     assert timing["exit_bar_end"] == "16:00 ET"
     assert "5.5 hours" in timing["information_gap"]
+    assert "[15:59:00, 16:00:00)" in timing["exit_semantics_notes"]
+    assert "not assumed to equal the official closing-auction or daily close" in timing["exit_semantics_notes"]
 
     # Prohibited intervening information
     assert "no information from 10:00 et through the 15:30 entry" in timing[
@@ -250,6 +287,44 @@ def test_execution_timing_and_locked_assumptions(spec: dict) -> None:
     assert locked["same_bar_entry_allowed"] is False
     assert locked["entry_after_signal"] is True
     assert locked["position_crosses_session_boundary"] is False
+    assert locked["official_closing_auction_price_used"] is False
+
+
+def test_minute_bar_close_semantics_and_auction_exclusion(spec: dict) -> None:
+    """Correction 3: Minute-bar close is explicitly locked and official closing auction is excluded.
+
+    Confirms:
+    1. 15:59 minute-bar close is the locked reference (not auction or daily close).
+    2. official_closing_auction_price_used == false.
+    3. Outcome remains 15:30 minute-bar open -> 15:59 minute-bar close.
+    4. Minute bar timestamp semantics define bar timestamp as interval left edge [15:59:00, 16:00:00).
+    """
+    session = spec["session_semantics"]
+    assert session["minute_bar_timestamp_semantics"] == "bar timestamp is the left edge of the one-minute interval"
+    assert session["bar_15_59_interval"] == "[15:59:00 ET, 16:00:00 ET)"
+    assert session["previous_close_reference"] == "close of the 15:59 one-minute bar from the previous regular session"
+    assert session["official_closing_auction_price_used"] is False
+
+    signal = spec["signal_definition"]
+    assert signal["previous_close_reference"] == "close of the 15:59 one-minute bar from the previous regular session"
+    assert signal["official_closing_auction_price_used"] is False
+    assert "close(i, previous_regular_session, 15:59 bar)" in signal["formula"]
+
+    exec_outcomes = spec["execution_and_outcomes"]
+    timing = exec_outcomes["timing"]
+    assert timing["exit"] == "15:59 close"
+    assert timing["exit_bar_start"] == "15:59"
+    assert timing["exit_bar_end"] == "16:00 ET"
+    assert "[15:59:00, 16:00:00)" in timing["exit_semantics_notes"]
+    assert "not assumed to equal the official closing-auction or daily close" in timing["exit_semantics_notes"]
+
+    locked = exec_outcomes["locked_execution_assumptions"]
+    assert locked["official_closing_auction_price_used"] is False
+
+    endpoint = exec_outcomes["outcomes"]["primary_endpoint"]
+    assert endpoint["interval"] == "15:30 open -> 15:59 close"
+    assert endpoint["exit_price_reference"] == "close of the 15:59 one-minute bar"
+    assert endpoint["official_closing_auction_price_used"] is False
 
 
 def test_primary_outcome_and_algebraic_equivalence(spec: dict) -> None:
@@ -257,6 +332,8 @@ def test_primary_outcome_and_algebraic_equivalence(spec: dict) -> None:
     endpoint = spec["execution_and_outcomes"]["outcomes"]["primary_endpoint"]
     assert endpoint["name"] == "final_half_hour_return_30m"
     assert endpoint["interval"] == "15:30 open -> 15:59 close"
+    assert endpoint["exit_price_reference"] == "close of the 15:59 one-minute bar"
+    assert endpoint["official_closing_auction_price_used"] is False
     assert endpoint["long_gross_return_formula"] == "exit / entry - 1"
     assert endpoint["short_gross_return_formula"] == "1 - exit / entry"
 

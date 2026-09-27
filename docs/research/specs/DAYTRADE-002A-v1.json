@@ -124,10 +124,16 @@
     "exclude_premarket": true,
     "exclude_after_hours": true,
     "bar_interpolation": "prohibited",
-    "expected_regular_session_bars": 390
+    "expected_regular_session_bars": 390,
+    "minute_bar_timestamp_semantics": "bar timestamp is the left edge of the one-minute interval",
+    "bar_15_59_interval": "[15:59:00 ET, 16:00:00 ET)",
+    "previous_close_reference": "close of the 15:59 one-minute bar from the previous regular session",
+    "official_closing_auction_price_used": false
   },
   "signal_definition": {
     "formula": "first_half_hour_return(i, D) = (close(i, D, 09:59 bar) / close(i, previous_regular_session, 15:59 bar)) - 1",
+    "previous_close_reference": "close of the 15:59 one-minute bar from the previous regular session",
+    "official_closing_auction_price_used": false,
     "signal_bar_timestamp": "09:59",
     "signal_available_at": "10:00 ET",
     "prohibited_information": [
@@ -169,6 +175,7 @@
       "exit": "15:59 close",
       "exit_bar_start": "15:59",
       "exit_bar_end": "16:00 ET",
+      "exit_semantics_notes": "The 15:59 bar close is the closing price of the one-minute interval [15:59:00, 16:00:00); it is not assumed to equal the official closing-auction or daily close.",
       "information_gap": "5.5 hours (10:00 ET to 15:30 ET)",
       "prohibited_intervening_information_use": "no information from 10:00 ET through the 15:30 entry may be used to alter event eligibility, direction, entry eligibility, or sizing"
     },
@@ -178,12 +185,15 @@
       "intraday_position_only": true,
       "same_bar_entry_allowed": false,
       "entry_after_signal": true,
-      "position_crosses_session_boundary": false
+      "position_crosses_session_boundary": false,
+      "official_closing_auction_price_used": false
     },
     "outcomes": {
       "primary_endpoint": {
         "name": "final_half_hour_return_30m",
         "interval": "15:30 open -> 15:59 close",
+        "exit_price_reference": "close of the 15:59 one-minute bar",
+        "official_closing_auction_price_used": false,
         "long_gross_return_formula": "exit / entry - 1",
         "short_gross_return_formula": "1 - exit / entry",
         "algebraic_equivalence": "sign * (exit / entry - 1) where sign is +1 for LONG and -1 for SHORT",

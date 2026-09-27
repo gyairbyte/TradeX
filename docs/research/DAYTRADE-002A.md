@@ -6,7 +6,7 @@ This document is the human-readable research contract and preregistration specif
 * **Classification:** Research-only / preregistration (zero production impact)
 * **Status:** `preregistered_not_executed`
 * **Spec Version:** `1`
-* **JSON SHA-256:** `7f819d30c74c633a4b662e72f5496bcae3141aff3121fd6a63587a9313b244aa`
+* **JSON SHA-256:** `dfad19dc6c88a009e05ef4a42a8b7ad9c64838ca84cdfd64a830a7f70f127127`
 * **Base Commit SHA:** `0a0805fd918bb7a45bb46d29d8c3470ce0c6bf27`
 
 > [!IMPORTANT]
@@ -176,8 +176,8 @@ For ticker $i$ on regular session $D$:
 $$\text{first\_half\_hour\_return}(i, D) = \frac{\text{close}(i, D, \text{09:59 bar})}{\text{close}(i, \text{previous\_regular\_session}, \text{15:59 bar})} - 1$$
 
 ### Implementation Semantics
-1. **Previous Regular-Session Close:** Close of the 15:59 bar (representing the final regular-session auction price at 16:00 ET) from the immediately preceding valid regular session.
-2. **Current-Session 09:59 Bar:** Close of the 1-minute bar starting at 09:59:00 ET and ending at 10:00:00 ET.
+1. **Previous Regular-Session Close:** Close of the 15:59 one-minute bar (interval `[15:59:00, 16:00:00)` ET) from the immediately preceding valid regular session. It is the minute-bar close, not assumed to equal the official closing-auction or daily close.
+2. **Current-Session 09:59 Bar:** Close of the 1-minute bar starting at 09:59:00 ET and ending at 10:00:00 ET (`[09:59:00, 10:00:00)` ET).
 3. **Information Captured:** Incorporates overnight gap information, opening auction discovery, and the first 30 minutes of continuous trading, consistent with the literature-motivated signal.
 4. **Availability:** The signal is fully known at **10:00:00 ET**.
 5. **Prohibited Information:**
@@ -241,7 +241,7 @@ Strict point-in-time discipline governs the information timeline:
 2. **Intentional Information Gap:** A 5.5-hour gap elapses between signal detection and execution. The strategy specifically tests whether the early directional information persists into the final half-hour.
 3. **Prohibition on Intervening Information:** No price, volume, VWAP, volatility, or headline information between 10:00 ET and 15:30 ET may be used to alter event eligibility, direction, entry eligibility, or sizing.
 4. **Entry Timing:** Open of the 15:30 bar (15:30:00 ET).
-5. **Exit Timing:** Close of the 15:59 bar (16:00:00 ET).
+5. **Exit Timing:** Close of the 15:59 bar. The 15:59 bar close is the closing price of the one-minute interval `[15:59:00, 16:00:00)`; it is not assumed to equal the official closing-auction or daily close.
 6. **Locked Execution Assumptions:**
    * `stop_loss = none`
    * `take_profit = none`
@@ -249,6 +249,7 @@ Strict point-in-time discipline governs the information timeline:
    * `same_bar_entry_allowed = false`
    * `entry_after_signal = true`
    * `position_crosses_session_boundary = false`
+   * `official_closing_auction_price_used = false`
 
 ---
 
@@ -256,6 +257,8 @@ Strict point-in-time discipline governs the information timeline:
 
 The trading window spans the final 29 minutes of the regular session:
 $$\text{Interval: } 15:30\text{ open} \longrightarrow 15:59\text{ close}$$
+
+* **Minute-Bar Close Reference:** The 15:59 minute-bar close is the locked exit reference (`[15:59:00, 16:00:00)` ET). The official closing auction price is not used (`official_closing_auction_price_used = false`).
 
 ### Gross Signed Return
 * For **LONG** events:
