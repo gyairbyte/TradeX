@@ -1,0 +1,381 @@
+{
+  "schema_version": "1.0",
+  "task_id": "DAYTRADE-002A",
+  "spec_version": 1,
+  "study_name": "DAYTRADE-002A: Early-to-Late Intraday Momentum Research Specification",
+  "classification": "research_only_preregistration",
+  "status": "preregistered_not_executed",
+  "base_commit_sha": "0a0805fd918bb7a45bb46d29d8c3470ce0c6bf27",
+  "hypothesis": "Among a frozen universe of highly liquid U.S. market and sector ETFs, an unusually strong first-half-hour directional move predicts a same-direction return during the final half-hour of the same regular trading session that remains positive after realistic execution friction and exceeds comparable non-event sessions.",
+  "study_type": "event_study",
+  "study_notes": "Event-study methodology only; not an executable backtest. Simultaneous multi-ETF events on the same session date naturally occur and must be reported without suppression.",
+  "hypothesis_generation_disclosure": {
+    "conceived_after_daytrade_001": true,
+    "daytrade_001_reversal_status": "development rejected, validation inconclusive, holdout unread_not_acquired",
+    "distinct_hypothesis": true,
+    "differences_from_daytrade_001": [
+      "Signal horizon: 30-minute cumulative move (09:30-10:00 ET) vs 1-minute acute dislocation",
+      "Execution horizon: 15:30 open to 15:59 close vs next-minute open to next-minute close",
+      "Universe: 15 highly liquid market and sector ETFs vs 30 Dow single-stock equities",
+      "Timing: 10:00 ET signal availability with 5.5-hour information gap before 15:30 entry vs immediate next-minute entry",
+      "Mechanism: Information diffusion and end-of-day rebalancing continuation vs acute liquidity imbalance reversal",
+      "Holding period: 29 minutes (half-hour) vs 1 minute",
+      "Dataset period: Fresh 2026 data vs 2025 data"
+    ],
+    "no_reused_evidence_rule": "No 2025 observations from DAYTRADE-001 development, validation, or holdout may serve as confirmatory evidence for DAYTRADE-002.",
+    "fresh_confirmatory_period": "2026-01-02 through 2026-08-31"
+  },
+  "direction": "symmetric_directional",
+  "direction_notes": "One symmetric directional hypothesis: LONG if first_half_hour_return > 0, SHORT if first_half_hour_return < 0. Long and short sides are reported separately as diagnostics, but the preregistered primary endpoint uses all qualifying signed events. No separate long/short promotion gates.",
+  "universe": {
+    "name": "SECTOR_ETFS",
+    "preset_source": "tradex.watchlists.presets.SECTOR_ETFS",
+    "snapshot_vintage": "2026-05",
+    "reconstitution_policy": "frozen_static_snapshot_no_dynamic_refresh",
+    "symbol_count": 15,
+    "symbols": [
+      "XLK",
+      "XLV",
+      "XLF",
+      "XLY",
+      "XLP",
+      "XLE",
+      "XLI",
+      "XLB",
+      "XLU",
+      "XLRE",
+      "XLC",
+      "SPY",
+      "QQQ",
+      "IWM",
+      "DIA"
+    ],
+    "source_of_truth_rule": "The JSON symbol list is the research source of truth. The source preset is provenance only. Specification validity does not depend on future runtime preset values.",
+    "universe_rationale": "High-volume, highly liquid U.S. broad-market and SPDR sector ETFs with deep order books and minimal single-stock idiosyncratic risk."
+  },
+  "data_contract": {
+    "provider": "alpaca",
+    "provider_api": "Alpaca Market Data API",
+    "feed": "sip",
+    "timeframe": "1Min",
+    "adjustment": "split",
+    "session_calendar": "XNYS",
+    "timezone": "America/New_York",
+    "regular_sessions_only": true,
+    "exclude_early_close_sessions": true,
+    "exclude_premarket": true,
+    "exclude_after_hours": true,
+    "allow_provider_fallback": false,
+    "allow_feed_fallback": false,
+    "disallowed_fallbacks": [
+      "iex",
+      "yahoo",
+      "schwab",
+      "ibkr"
+    ],
+    "provider_failure_action": "stop_and_report_provider_or_entitlement_blocker",
+    "raw_market_data_git_storage": "prohibited",
+    "storage_location_policy": "outside_tracked_repo_root_e.g._~/.tradex/research/daytrade_002a/"
+  },
+  "dates_and_splits": {
+    "context_anchor": {
+      "date": "2025-12-31",
+      "purpose": "context_prior_close_only_no_signals_or_outcomes",
+      "signal_origin_prohibited": true,
+      "event_origin_prohibited": true,
+      "outcome_origin_prohibited": true
+    },
+    "warmup": {
+      "start": "2026-01-02",
+      "end": "2026-01-30",
+      "purpose": "threshold_history_only_no_events_or_outcomes",
+      "signal_origin_prohibited": true,
+      "event_origin_prohibited": true,
+      "outcome_origin_prohibited": true
+    },
+    "development": {
+      "start": "2026-02-02",
+      "end": "2026-04-30",
+      "purpose": "diagnostic_only_locked_parameters_cannot_change"
+    },
+    "validation": {
+      "start": "2026-05-01",
+      "end": "2026-06-30",
+      "purpose": "formal_preregistered_gate_evaluation"
+    },
+    "holdout": {
+      "start": "2026-07-01",
+      "end": "2026-08-31",
+      "purpose": "untouched_holdout_conditional_on_validation_supported",
+      "access_conditional": true,
+      "access_condition": "validation_must_earn_supported_disposition"
+    },
+    "split_boundary_enforcement": "all_events_and_outcomes_must_remain_inside_target_split",
+    "split_adjacency_notes": "Split boundaries are exchange-session aware under the XNYS calendar. Non-trading days (exchange holidays such as 2026-01-01 and calendar weekends) intervene between calendar dates without violating session adjacency.",
+    "holdout_access_rule": "Holdout must remain unread, unparsed, unacquired, and uninspected unless validation earns exactly supported",
+    "locked_parameter_discipline": "Parameters, percentiles, lookback windows, entry/exit rules, universes, costs, baseline definitions, and validation gates must not be modified after seeing development results."
+  },
+  "session_semantics": {
+    "calendar": "XNYS",
+    "regular_session_start": "09:30",
+    "regular_session_end": "16:00",
+    "regular_session_only": true,
+    "exclude_early_close_sessions": true,
+    "exclude_premarket": true,
+    "exclude_after_hours": true,
+    "bar_interpolation": "prohibited",
+    "expected_regular_session_bars": 390
+  },
+  "signal_definition": {
+    "formula": "first_half_hour_return(i, D) = (close(i, D, 09:59 bar) / close(i, previous_regular_session, 15:59 bar)) - 1",
+    "signal_bar_timestamp": "09:59",
+    "signal_available_at": "10:00 ET",
+    "prohibited_information": [
+      "bars at 10:00 ET or later",
+      "current-day future volume",
+      "current-day final-half-hour data",
+      "revised end-of-day information"
+    ],
+    "threshold_definition": {
+      "percentile": 80.0,
+      "quantile": 0.80,
+      "method": "linear",
+      "implementation": "numpy.quantile(history, q=0.80, method='linear')",
+      "history_scope": "previous 20 valid completed regular sessions for that ticker (excluding current session D)",
+      "metric": "abs(first_half_hour_return)",
+      "history_rules": [
+        "exactly previous 20 valid completed sessions",
+        "current session excluded",
+        "no future sessions",
+        "excluded/invalid sessions do not count toward the 20 valid sessions",
+        "calendar days cannot substitute for valid sessions"
+      ],
+      "parameter_search_prohibited": true
+    }
+  },
+  "event_definition": {
+    "condition": "abs(first_half_hour_return) >= abs_threshold and first_half_hour_return != 0",
+    "direction_assignment": {
+      "LONG": "first_half_hour_return > 0",
+      "SHORT": "first_half_hour_return < 0"
+    },
+    "simultaneous_events": "Cross-ETF simultaneous events on the same session date are naturally permitted and tracked without suppression."
+  },
+  "execution_and_outcomes": {
+    "timing": {
+      "signal_available_at": "10:00 ET",
+      "entry": "15:30 open",
+      "entry_bar_start": "15:30",
+      "exit": "15:59 close",
+      "exit_bar_start": "15:59",
+      "exit_bar_end": "16:00 ET",
+      "information_gap": "5.5 hours (10:00 ET to 15:30 ET)",
+      "prohibited_intervening_information_use": "no information from 10:00 ET through the 15:30 entry may be used to alter event eligibility, direction, entry eligibility, or sizing"
+    },
+    "locked_execution_assumptions": {
+      "stop_loss": "none",
+      "take_profit": "none",
+      "intraday_position_only": true,
+      "same_bar_entry_allowed": false,
+      "entry_after_signal": true,
+      "position_crosses_session_boundary": false
+    },
+    "outcomes": {
+      "primary_endpoint": {
+        "name": "final_half_hour_return_30m",
+        "interval": "15:30 open -> 15:59 close",
+        "long_gross_return_formula": "exit / entry - 1",
+        "short_gross_return_formula": "1 - exit / entry",
+        "algebraic_equivalence": "sign * (exit / entry - 1) where sign is +1 for LONG and -1 for SHORT",
+        "session_boundary_rule": "Fills must not cross 16:00 regular-session boundary"
+      }
+    }
+  },
+  "execution_friction": {
+    "primary_cost_bps_per_side": 2.0,
+    "primary_cost_round_trip_bps": 4.0,
+    "sensitivity_scenarios_bps_per_side": [
+      0.0,
+      5.0
+    ],
+    "round_trip_sensitivities_bps": [
+      0.0,
+      10.0
+    ],
+    "net_return_formula": "gross_signed_return - round_trip_friction",
+    "commissions_beyond_friction": 0.0
+  },
+  "matched_baseline": {
+    "type": "same_ticker_same_split_same_direction_non_event",
+    "description": "For each event observation, compare against qualifying non-event sessions for the same ticker, same split, and same first-half-hour direction.",
+    "eligibility_requirements": {
+      "same_ticker": true,
+      "same_dataset_split": true,
+      "same_first_half_hour_sign": true,
+      "is_non_event": true,
+      "non_event_rule": "abs(first_half_hour_return) < abs_threshold",
+      "valid_regular_session": true,
+      "complete_required_timestamps": true,
+      "same_execution_interval": "15:30 open -> 15:59 close",
+      "same_friction_treatment": true
+    },
+    "reference_return_formula": "arithmetic mean of all qualifying matched non-event signed net returns",
+    "uplift_formula": "event_net_return - baseline_reference_net_return",
+    "empty_baseline_rule": "If no qualifying baseline observations exist, baseline is non_computable, uplift is non_computable; never substitute zero."
+  },
+  "data_quality": {
+    "expected_bars_per_session": 390,
+    "max_missing_bar_rate_pct": 5.0,
+    "max_duplicate_bar_rate_pct": 1.0,
+    "synthetic_filling_or_interpolation": "prohibited",
+    "validity_rules": {
+      "timestamp_parseable": true,
+      "ohlc_finite_numeric_gt_zero": true,
+      "volume_finite_numeric_gte_zero": true
+    },
+    "required_timestamps": [
+      "previous_session_15:59_close",
+      "current_session_09:59_close",
+      "current_session_15:30_open",
+      "current_session_15:59_close"
+    ],
+    "missing_required_timestamp_action": "ticker_session_ineligible",
+    "split_data_quality_gate": {
+      "max_excluded_ticker_sessions_pct": 5.0,
+      "consequence_of_excess_excluded_sessions": "split_cannot_earn_supported"
+    }
+  },
+  "statistical_inference": {
+    "method": "cluster_bootstrap_by_session_date",
+    "cluster_variable": "session_date",
+    "rationale": "15 ETFs share common market shocks and multiple ETF signals on the same day are cross-sectionally dependent.",
+    "bootstrap_resamples": 2000,
+    "random_seed": 20260926,
+    "confidence_level_pct": 95.0,
+    "confidence_interval_type": "two_sided_percentile",
+    "algorithm_steps": [
+      "1. Sample eligible target-split session dates with replacement",
+      "2. Preserve all ticker observations from each sampled session",
+      "3. Preserve multiplicity when a date is sampled more than once",
+      "4. Recompute event mean",
+      "5. Recompute matched baseline using resampled observations",
+      "6. Recompute uplift"
+    ],
+    "joint_recomputation_rule": "Baseline is not held fixed; joint uncertainty is evaluated across both event and baseline distributions",
+    "non_computable_rule": "If a required replicate statistic is non-computable, entire relevant CI status = non_computable; do not drop replicate, do not substitute zero, do not reduce denominator."
+  },
+  "required_metrics": [
+    "eligible_ticker_session_count",
+    "event_count",
+    "represented_etf_count",
+    "event_session_count",
+    "events_per_etf",
+    "events_per_month",
+    "long_event_count",
+    "short_event_count",
+    "maximum_single_etf_event_concentration",
+    "multi_signal_session_count",
+    "multi_signal_session_rate",
+    "mean_gross_signed_return_30m",
+    "median_gross_signed_return_30m",
+    "win_rate_gross_30m",
+    "mean_net_signed_return_0bps",
+    "mean_net_signed_return_2bps",
+    "mean_net_signed_return_5bps",
+    "median_net_signed_return_0bps",
+    "median_net_signed_return_2bps",
+    "median_net_signed_return_5bps",
+    "matched_non_event_baseline_mean",
+    "matched_non_event_baseline_median",
+    "event_minus_baseline_mean",
+    "event_minus_baseline_median",
+    "per_etf_primary_results",
+    "per_month_primary_results",
+    "long_side_primary_results",
+    "short_side_primary_results",
+    "data_quality_summary",
+    "provider_provenance_summary"
+  ],
+  "validation_gates": {
+    "sample_gate": {
+      "min_eligible_events": 75,
+      "min_represented_etfs": 10,
+      "min_event_session_count": 20
+    },
+    "concentration_gate": {
+      "max_single_etf_event_pct": 15.0
+    },
+    "data_quality_gate": {
+      "max_excluded_ticker_sessions_pct": 5.0
+    },
+    "primary_net_effect_gate": {
+      "cost_basis_bps_per_side": 2.0,
+      "mean_net_return_gt_zero": true,
+      "ci_95_lower_bound_gt_zero": true
+    },
+    "baseline_uplift_gate": {
+      "mean_uplift_gt_zero": true,
+      "ci_95_lower_bound_gt_zero": true
+    },
+    "breadth_gate": {
+      "min_pct_represented_etfs_positive_mean_net": 60.0
+    }
+  },
+  "disposition_precedence": {
+    "step_1_invalidity": {
+      "disposition": "invalid",
+      "condition": "Methodological or data-integrity failures, including: lookahead or future leakage, premature holdout access, material timestamp or execution invalidity, split contamination, silent provider or feed substitution, or corrupt/unverifiable inputs."
+    },
+    "step_2_evidence_sufficiency": {
+      "disposition": "inconclusive",
+      "condition": "Otherwise valid, but any evidence-sufficiency condition fails: fewer than 75 eligible events, fewer than 10 represented ETFs, fewer than 20 distinct event session dates, single-ETF event concentration > 15.0%, or > 5.0% excluded ticker-sessions in split due to data-quality defects. Holdout must not be inspected."
+    },
+    "step_3_directional_hypothesis_failure": {
+      "disposition": "rejected",
+      "condition": "Adequate and valid evidence, but any of the following directional failures occur: primary mean net return at 2 bps/side <= 0; mean event-minus-baseline uplift <= 0; or fewer than 60.0% of represented ETFs have positive primary mean net return (breadth gate failure)."
+    },
+    "step_4_statistical_uncertainty": {
+      "disposition": "inconclusive",
+      "condition": "Required means are positive and breadth passes (>= 60%), but either required 95% CI lower bound is <= 0 (primary net return CI lower bound <= 0 OR uplift CI lower bound <= 0), or a required CI is non-computable."
+    },
+    "step_5_support": {
+      "disposition": "supported",
+      "condition": "All six locked gates pass simultaneously on the evaluated split."
+    },
+    "holdout_application": "The exact same 5-step disposition sequence and precedence rules apply to conditional holdout evaluation."
+  },
+  "governance": {
+    "maximum_evidence_confidence": "limited_but_usable_evidence",
+    "production_promotion_eligible": false,
+    "approved_production_strategies_empty": true,
+    "literature_references": [
+      {
+        "citation": "Gao, Han, Li & Zhou (2018), Market Intraday Momentum, Journal of Financial Economics",
+        "doi": "10.1016/j.jfineco.2018.05.009",
+        "role": "motivation_only_not_proof"
+      },
+      {
+        "citation": "Heston, Korajczyk & Sadka (2010), Intraday Patterns in the Cross-section of Stock Returns, Journal of Finance",
+        "doi": "10.1111/j.1540-6261.2010.01573.x",
+        "role": "motivation_only_not_proof"
+      },
+      {
+        "citation": "Rosa (2022), Understanding Intraday Momentum Strategies, Journal of Futures Markets",
+        "doi": "10.1002/fut.22375",
+        "role": "motivation_only_not_proof"
+      }
+    ],
+    "explicit_out_of_scope": [
+      "evaluator implementation",
+      "reusing or modifying the DAYTRADE-001 evaluator",
+      "data acquisition or download",
+      "real-data queries or inspection",
+      "backtest execution",
+      "alternative percentiles, lookback windows, or return definitions",
+      "midday or volume confirmation filters",
+      "volatility conditioning",
+      "tick data (133-tick, 50-tick)",
+      "production changes"
+    ]
+  }
+}
