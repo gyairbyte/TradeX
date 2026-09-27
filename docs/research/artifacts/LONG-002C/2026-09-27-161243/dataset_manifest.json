@@ -1,0 +1,84 @@
+{
+  "task_id": "LONG-002C-EXEC-001",
+  "run_id": "2026-09-27-161243",
+  "created_at_utc": "2026-09-27T18:12:25.750123Z",
+  "external_files": [
+    {
+      "relative_path": "data/research/long_002c/decision_observations.parquet",
+      "schema_name": "decision_observations",
+      "row_count": 2815600,
+      "byte_count": 40622094,
+      "sha256": "722bee866cabb697931dfb96abaf7f9250f1cd1240b405d2e308af0b6bbb48af"
+    },
+    {
+      "relative_path": "data/research/long_002c/data_eligibility.parquet",
+      "schema_name": "data_eligibility",
+      "row_count": 2815600,
+      "byte_count": 21858159,
+      "sha256": "16147606e629daf02e54db4b6b0127ede04aeb45608f27900a92f73805baa4d9"
+    },
+    {
+      "relative_path": "data/research/long_002c/security_classification_status.parquet",
+      "schema_name": "security_classification_status",
+      "row_count": 2815600,
+      "byte_count": 3087801,
+      "sha256": "65adc6170f2095371f3842153256b96c16042b88c6716d78c329f45ffb8d4d6d"
+    },
+    {
+      "relative_path": "data/research/long_002c/earnings_schedule_status.parquet",
+      "schema_name": "earnings_schedule_status",
+      "row_count": 2815600,
+      "byte_count": 3062791,
+      "sha256": "439b85a5c5c2ed618585007fe6e62ef213eb2600bb47ba222f35ff338557d05b"
+    },
+    {
+      "relative_path": "data/research/long_002c/outcome_matrix.parquet",
+      "schema_name": "outcome_label_records",
+      "row_count": 13657194,
+      "byte_count": 283336113,
+      "sha256": "b59a5f7f8a8a0498abdadb156299719f43ffa8854df5cad8e20a6cd4fbe237c3"
+    },
+    {
+      "relative_path": "data/research/long_002c/master_episodes.parquet",
+      "schema_name": "master_opportunity_episodes",
+      "row_count": 16139,
+      "byte_count": 502442,
+      "sha256": "1fe5b36f98919465007a720908c626203e5272b054a4ef76be772db279b3cc98"
+    },
+    {
+      "relative_path": "data/research/long_002c/constituent_memberships.parquet",
+      "schema_name": "episode_membership",
+      "row_count": 677736,
+      "byte_count": 624457,
+      "sha256": "53a8adc92f1210ef3a1b6d10c9eedd1f360dad2760897f97b5d293f473734b11"
+    },
+    {
+      "relative_path": "data/research/long_002c/baseline_comparator_outputs.parquet",
+      "schema_name": "baseline_comparator_outputs",
+      "row_count": 21244524,
+      "byte_count": 190588243,
+      "sha256": "faec26ddb26fd5a17feddf5ae09232a8aeb8ba24c3529abd88422682357e4734"
+    },
+    {
+      "relative_path": "data/research/long_002c/data_quality_coverage.parquet",
+      "schema_name": "data_quality_coverage",
+      "row_count": 1291,
+      "byte_count": 24845,
+      "sha256": "265973b7e88ce98f65c492836fd8a4949d72c5de7e28fc4e62442bc01993e9bb"
+    },
+    {
+      "relative_path": "data/research/long_002c/provenance_records.parquet",
+      "schema_name": "provenance_provider_records",
+      "row_count": 8211,
+      "byte_count": 1225777,
+      "sha256": "4ff93f7008310df2e115937ed6acbc2d435f58f06130a369f4b5b72615f4554f"
+    },
+    {
+      "relative_path": "data/research/long_002c/exclusions.parquet",
+      "schema_name": "exclusions_and_reason_codes",
+      "row_count": 3684007,
+      "byte_count": 5967704,
+      "sha256": "9624d11dd191d967d6a3160e2f877d02027d744dcd5b2d46a6b638837ba97da8"
+    }
+  ]
+}
