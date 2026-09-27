@@ -1,0 +1,2009 @@
+{
+  "total_requests": 200,
+  "providers_used": [
+    "alpaca",
+    "massive"
+  ],
+  "records": [
+    {
+      "record_id": "prov_f077e1b653752f52_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:14.249404Z",
+      "request_fingerprint_sha256": "f077e1b653752f52dc3283d6f7de698037505557971f97c36022f8b1f1da409b",
+      "response_sha256": "4869a79aafdccb309a3be9a9b3c2dd24af58f4df5e69c2b9c52f8611c6db1b7a"
+    },
+    {
+      "record_id": "prov_7261143d74e6e3e2_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:14.376822Z",
+      "request_fingerprint_sha256": "7261143d74e6e3e2e494748e356d1bc9c8c7c39edd79fbcbfcbbd1e85a651dd0",
+      "response_sha256": "e6344ba989f0a8baf9769daeb27d8eff7384c735ef53280dd60dfebad6cd5b87"
+    },
+    {
+      "record_id": "prov_split_AAPL",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:14.481208Z",
+      "request_fingerprint_sha256": "c6d39eee230b07d9ce1b2a948c522f94602905b143f58f613df5d23058ef9579",
+      "response_sha256": "3dd2e3fb9d4119c451ad7c6ca57c303aa0933c0b2da79c5fe744b079e32ca306"
+    },
+    {
+      "record_id": "prov_div_AAPL",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:14.545016Z",
+      "request_fingerprint_sha256": "7fd9b0d2c3b41ef1c9fc2e26d54651982d36237f8b0377596278b9285997b120",
+      "response_sha256": "efd1ea6991e97790f6282e10ffc59bf2472c9d06052beda7daf1d05bce0fd1f0"
+    },
+    {
+      "record_id": "prov_c64587fe7e5a8f41_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:15.762946Z",
+      "request_fingerprint_sha256": "c64587fe7e5a8f41bcd5ca64fc76dd713fb859dcf449c645295e9c85ce2a501a",
+      "response_sha256": "67143960ee0607903486167221694bfd65255d62564de9f8e3344ca0b61536ef"
+    },
+    {
+      "record_id": "prov_f540a77297b51e57_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:15.900398Z",
+      "request_fingerprint_sha256": "f540a77297b51e5706b59f66da04976f5adb593dee0d1dcb5542d033efa973f5",
+      "response_sha256": "67143960ee0607903486167221694bfd65255d62564de9f8e3344ca0b61536ef"
+    },
+    {
+      "record_id": "prov_split_MSFT",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:16.040239Z",
+      "request_fingerprint_sha256": "2465f0e53579ac1b78c5677b604318de2ba50bb129ffdb24ce55d691cb0d47f5",
+      "response_sha256": "bf77f3b5208db9eae072e3a7e8d5f22803ce74c5549db3e4bd2e8dfa0691728b"
+    },
+    {
+      "record_id": "prov_div_MSFT",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:16.110764Z",
+      "request_fingerprint_sha256": "7578e411cedeb5c6c102971dcee96910de2185176212fb6b83818cc5f2489660",
+      "response_sha256": "ad5e322492ea2763051bf518dcca39d93ce84eba68ee9a5b8e5043c85ad93950"
+    },
+    {
+      "record_id": "prov_f956afdc5075e603_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:17.495114Z",
+      "request_fingerprint_sha256": "f956afdc5075e6032ddd3313f181b537a523489066f382e3c35f2a7f0c1c3164",
+      "response_sha256": "c7194fe0c796628fa9f73b1ed8f20b8da7ec9709835b673818832d8846a93e27"
+    },
+    {
+      "record_id": "prov_1b7869baf42b1609_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:17.622719Z",
+      "request_fingerprint_sha256": "1b7869baf42b160956c34f1b77d296916080516fc767a0375c3983031db32fd7",
+      "response_sha256": "119b2e86f8da162c113a5f76d1f981ced84c4191da75c2a322d8e8c5065c724b"
+    },
+    {
+      "record_id": "prov_split_NVDA",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:17.717634Z",
+      "request_fingerprint_sha256": "15fa4028f1330053c182c3a5b5ee7c1b48cff98ae48f583a15f65681bc0bbf08",
+      "response_sha256": "fbdee5e33124c5037d00f8095679e1f5d1696a2011accdc36fcf50816bd0bfd5"
+    },
+    {
+      "record_id": "prov_div_NVDA",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:17.790342Z",
+      "request_fingerprint_sha256": "3ca1e75fe1ed165d3bce061678732d856c3ad53762d499e6e8db5ffb3eecc92c",
+      "response_sha256": "f4e7cf999fc8c3b64bf136e266dc71d077458e50a655c53d1ca2b27b77a39222"
+    },
+    {
+      "record_id": "prov_7901ec35f86a1a43_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:19.163133Z",
+      "request_fingerprint_sha256": "7901ec35f86a1a436199693c5bfafb4ee52cc648bf117b38bead3b6b384870e2",
+      "response_sha256": "7f5006032415c310399614ecca4cea4064aec70fdb5927cd5317a523489cd914"
+    },
+    {
+      "record_id": "prov_95b77d0fee85c729_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:19.268778Z",
+      "request_fingerprint_sha256": "95b77d0fee85c7291a703de8c435448f00c8cb6c1a61a2b401d79242b9d9edf7",
+      "response_sha256": "ed72a2a550d07de879b1d16c0e56c7cfc87f3cd30e7b3091f37fcf1a0f914e48"
+    },
+    {
+      "record_id": "prov_split_AMZN",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:19.385320Z",
+      "request_fingerprint_sha256": "92f1c0f21432b048d141d9e4b2e5bef366102b09ed03af2308eb2505d919419c",
+      "response_sha256": "45631b7097d43ed9ad3a748e2b66433a6e63400eceb18bdecb6b75fc4cebce63"
+    },
+    {
+      "record_id": "prov_div_AMZN",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:19.446318Z",
+      "request_fingerprint_sha256": "b3c2e29a1fb9a8cbe2df821abf629357fd298c3ac5160aa24edda29e733a1694",
+      "response_sha256": "bacc5918ca1c4a6438c28d10843ef633626c623ac96f66647336ac72d57bbd32"
+    },
+    {
+      "record_id": "prov_cd7a4faf6c4d7f41_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:20.913726Z",
+      "request_fingerprint_sha256": "cd7a4faf6c4d7f418efd427a16c0df95a6eb29781651ce34545dfb5628ede49b",
+      "response_sha256": "b8575b9af68219b201a34de12f9a9cf56367696e003389cb85576c1a6e122e8b"
+    },
+    {
+      "record_id": "prov_a08db2bfdf6d942f_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:21.015531Z",
+      "request_fingerprint_sha256": "a08db2bfdf6d942f90a527b7c5186bcfdb1e4648b07c98a98ec86d550a7f3f38",
+      "response_sha256": "2629e097e104a1fefbb8b3da3ee85067ab11da57fe14947a7c419ef28d4ac5d9"
+    },
+    {
+      "record_id": "prov_split_GOOGL",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:21.124610Z",
+      "request_fingerprint_sha256": "d05757c16ee792d96e13d8771cd456808ecf7945c58cc3bc3f501fae419d3ac6",
+      "response_sha256": "26eee58b63286adff20a5bf0a65f9b4c5704112029b4cffadc794e709bdfeaba"
+    },
+    {
+      "record_id": "prov_div_GOOGL",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:21.186101Z",
+      "request_fingerprint_sha256": "f39b2275bbfd9836ebf7adf45d6908093d21f9914fb47b169e54772b583750f7",
+      "response_sha256": "ed9c55d6b3548a21cf7a81daeb300089139d2d214b180af597e3f3f98282bb45"
+    },
+    {
+      "record_id": "prov_2f0d5dbc3f7e64b4_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:22.963583Z",
+      "request_fingerprint_sha256": "2f0d5dbc3f7e64b4bb34e16c8987acda85f331629104e9cba7988940c35be303",
+      "response_sha256": "e1888ca28c5f08eb695d8bca8970cf363051c3738a9e3e3f5722553aeebfdcb9"
+    },
+    {
+      "record_id": "prov_18cdd263cfe5d010_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:23.084254Z",
+      "request_fingerprint_sha256": "18cdd263cfe5d0103574f39dda6559e2de9b89f21c61b17df387b58e1f240b8b",
+      "response_sha256": "e1888ca28c5f08eb695d8bca8970cf363051c3738a9e3e3f5722553aeebfdcb9"
+    },
+    {
+      "record_id": "prov_split_META",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:23.233820Z",
+      "request_fingerprint_sha256": "e4ad83feff79e3c7e0e8306e4e278131476e4f752566a37d0995619f13b4a4b9",
+      "response_sha256": "57ac2e206d018d925838bca7ae1afdfed663717c846d690a42160ea5e25d0879"
+    },
+    {
+      "record_id": "prov_div_META",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:23.294315Z",
+      "request_fingerprint_sha256": "075be3756c8a0638054880e42159ef31e3ed556c489fc8caaf3e879ad33bc6ff",
+      "response_sha256": "98583c4bc4c1d0d3bc347e4d4faea6c5c988ee162b808f697d4355275b6f407d"
+    },
+    {
+      "record_id": "prov_a403bd86f4351ee2_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:24.898989Z",
+      "request_fingerprint_sha256": "a403bd86f4351ee22057f2ba83d3c0ee667353d33f5c281cb609b58d005bf602",
+      "response_sha256": "a5e41a2aa134ee5f2d4eef6bdbb04aac0cddb8bb21bc126532bb8b1155ebaee5"
+    },
+    {
+      "record_id": "prov_cccaa4964bb0af3e_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:25.010803Z",
+      "request_fingerprint_sha256": "cccaa4964bb0af3e736da2899675d286785b28a59e01c5ca16d66d4cb39a4cc1",
+      "response_sha256": "a5e41a2aa134ee5f2d4eef6bdbb04aac0cddb8bb21bc126532bb8b1155ebaee5"
+    },
+    {
+      "record_id": "prov_split_BRK.B",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:25.146919Z",
+      "request_fingerprint_sha256": "cc2f5c6f845903fc6447bdf4599180865021b8c04c7ccdceadaf4a296ed9b4a4",
+      "response_sha256": "87d56059330782f91f8033932ae129c4271dd585f7fb91db741629112541d48e"
+    },
+    {
+      "record_id": "prov_div_BRK.B",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:25.376766Z",
+      "request_fingerprint_sha256": "0f2eb31b844b232289c117dd745407ac080e2f7513e5d0ad382fd06f6129b8a3",
+      "response_sha256": "a395c4f25736fb4f7bbd9729d51eb4b3979da2f3eb8f2b794926dcf2d7f9c0d6"
+    },
+    {
+      "record_id": "prov_ae363f94792b685e_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:26.836581Z",
+      "request_fingerprint_sha256": "ae363f94792b685e4c84eec080ff571a51250f9ab9f31f2c36755837a03cb146",
+      "response_sha256": "90c03ca0a3a3114eff371d2c41dbb39faaa1a2f0070ec66e15f1320cdfa928f7"
+    },
+    {
+      "record_id": "prov_fa0a6f41ae2aee83_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:26.986993Z",
+      "request_fingerprint_sha256": "fa0a6f41ae2aee83f2d208343a4c9ded0c9b4ba6c0a22ce4a3738b353cd0e9eb",
+      "response_sha256": "90c03ca0a3a3114eff371d2c41dbb39faaa1a2f0070ec66e15f1320cdfa928f7"
+    },
+    {
+      "record_id": "prov_split_UNH",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:27.121160Z",
+      "request_fingerprint_sha256": "6075b8febebc4b35242a9808b88b2766044b54046727d7536d7e792b0887577b",
+      "response_sha256": "8f83b9889cc277df780abf5709ccde114ddb10f0634fced337321448d8230c32"
+    },
+    {
+      "record_id": "prov_div_UNH",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:27.177618Z",
+      "request_fingerprint_sha256": "e7598ded84694eaf43453f2eaa1fcef304ccdca58740b9a64493bb9101b8a956",
+      "response_sha256": "f8b91121b1d8c1e7f020e6e198539628c8e829a9ed4dd63c40183a2e1016cd4d"
+    },
+    {
+      "record_id": "prov_6d70698adfdc5c73_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:28.588624Z",
+      "request_fingerprint_sha256": "6d70698adfdc5c73f9dad641b2820ed9be513c93619caea4a66f17bf4edef7b1",
+      "response_sha256": "88138ead27029b463ab40f9dcd599c01f5e135463426eaa2c3e38519d760ecf3"
+    },
+    {
+      "record_id": "prov_91c1ffcfa72e7e73_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:28.729763Z",
+      "request_fingerprint_sha256": "91c1ffcfa72e7e73f2271681629ad30040a9a550441f444ee68970dd369735a3",
+      "response_sha256": "88138ead27029b463ab40f9dcd599c01f5e135463426eaa2c3e38519d760ecf3"
+    },
+    {
+      "record_id": "prov_split_JNJ",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:28.853451Z",
+      "request_fingerprint_sha256": "e3dde0e7d620e23fc92a732135653407acd5efcad3e569ac760810f0e8e432ed",
+      "response_sha256": "d75d164f08984da5c83288bbfa1171acbd42eab93f9a322c7e310b62f3dfb20c"
+    },
+    {
+      "record_id": "prov_div_JNJ",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:28.914182Z",
+      "request_fingerprint_sha256": "33b6f6a6d135870bb7f275c6fb1846b2537f427afbf9d55bc110cc7893d9ffa7",
+      "response_sha256": "30a74753892a0e7bb2a314e0b29a8744a889faf9a00b4b5d48e105f5a753e916"
+    },
+    {
+      "record_id": "prov_85228804f0cd7c4d_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:30.522747Z",
+      "request_fingerprint_sha256": "85228804f0cd7c4db6ce29b2550be86bd658bf1d0593660c5ffb099aa9a37ba9",
+      "response_sha256": "7f74753dfc07dc2dbb531af795950ed6adf81a4cf6f3e3549becbad6be5d29b0"
+    },
+    {
+      "record_id": "prov_d2d65f85e3efa9b8_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:30.643374Z",
+      "request_fingerprint_sha256": "d2d65f85e3efa9b8993cf573caedb5b0b12392c1dca37f6769b811ff8738e417",
+      "response_sha256": "7f74753dfc07dc2dbb531af795950ed6adf81a4cf6f3e3549becbad6be5d29b0"
+    },
+    {
+      "record_id": "prov_split_JPM",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:30.745575Z",
+      "request_fingerprint_sha256": "f786d7fd9ea3b1176e2ba7e12d4adc73ea0f23611a8b7ceb0a365f5163737853",
+      "response_sha256": "9498f7269e59b64145e19573c44da647896a0403264b6a7a73709f0bfe4d0f79"
+    },
+    {
+      "record_id": "prov_div_JPM",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:30.812197Z",
+      "request_fingerprint_sha256": "95cef35c97cc3bc82963d35b3da2402b1a66e96b3b2f75942117243f397bc430",
+      "response_sha256": "3182f54322b68e57bea2b6488a026c9160b1bf430efb2c638197d90495ed57a7"
+    },
+    {
+      "record_id": "prov_4de9880ec095b69e_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:32.349051Z",
+      "request_fingerprint_sha256": "4de9880ec095b69ef54ae271512451128e8a671f3d84488ed8cf150fa0f5a1f1",
+      "response_sha256": "d1e5b56250c57518c72368cf8445de127cd169e82d01e89b8d61f41a966abf4a"
+    },
+    {
+      "record_id": "prov_e89f89ad51029964_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:32.483011Z",
+      "request_fingerprint_sha256": "e89f89ad510299649b1033941a6aa8cb187dcb46c71dd34cafbea7e292a74427",
+      "response_sha256": "d1e5b56250c57518c72368cf8445de127cd169e82d01e89b8d61f41a966abf4a"
+    },
+    {
+      "record_id": "prov_split_V",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:32.591607Z",
+      "request_fingerprint_sha256": "7799b8e32faf7fd761c991fddc998c7aa267acb59efd97b796fafa8eb2a2d0c4",
+      "response_sha256": "2cc928af3e8c8c11d6418bd1c572c10692007d07d63101628d2dcc4ec9e4827f"
+    },
+    {
+      "record_id": "prov_div_V",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:32.643761Z",
+      "request_fingerprint_sha256": "ee3e457c49c83f16a9475d60aa9db0381afc3471200b7ac5d4b1c987c84c9a48",
+      "response_sha256": "e1bd03f94995872ce30974ad5a29bdd0e1a9283adcfc52dc285e37a7ba1eab1f"
+    },
+    {
+      "record_id": "prov_df871a1e5796dc3e_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:33.992573Z",
+      "request_fingerprint_sha256": "df871a1e5796dc3e73580dee4e51afe737bcd0ecbec6e1ef148dbc06406ca1b4",
+      "response_sha256": "f0111e133675583c49075b5f79b8769b0624d885f73aaf08dac349a1f3fbe91e"
+    },
+    {
+      "record_id": "prov_956f87697e95714d_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:34.102477Z",
+      "request_fingerprint_sha256": "956f87697e95714dba605751604ad02c17517851a9e336c580ddbf97e1ac5f1a",
+      "response_sha256": "f0111e133675583c49075b5f79b8769b0624d885f73aaf08dac349a1f3fbe91e"
+    },
+    {
+      "record_id": "prov_split_PG",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:34.219634Z",
+      "request_fingerprint_sha256": "1623c0afe25c43c733f102f69ef8a04e48a1c3bb3b523a8dcefa0b8e9b7bd23f",
+      "response_sha256": "80183b37de4395472c18cd946dcebaebbab127b3d2de2ef81588efbc8e3eb950"
+    },
+    {
+      "record_id": "prov_div_PG",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:34.277836Z",
+      "request_fingerprint_sha256": "bfbd2ccca1352fa3c5f1eb18481a9b5ba31bcc6ce1490f65c5477c48498b94e2",
+      "response_sha256": "1780a4c580da736c4f5010aad1888447ed7f32026d92bcdd0fbd2c092eeb8cc2"
+    },
+    {
+      "record_id": "prov_a4f15b6cf59ce6da_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:35.795241Z",
+      "request_fingerprint_sha256": "a4f15b6cf59ce6da03a04897be45bbb292e4b8a855d6bad25d7558c08a3c7c04",
+      "response_sha256": "6033b593e5900c5a376d8caea5ce11c76d6008756bb845bc6527d9c3d818e100"
+    },
+    {
+      "record_id": "prov_07399bca7995de40_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:35.927412Z",
+      "request_fingerprint_sha256": "07399bca7995de407d8e5729d694144fb437463ed20eb3ddf431920bde0411bc",
+      "response_sha256": "6033b593e5900c5a376d8caea5ce11c76d6008756bb845bc6527d9c3d818e100"
+    },
+    {
+      "record_id": "prov_split_XOM",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:36.037701Z",
+      "request_fingerprint_sha256": "537ab18c6e9bc981a904c527f79a5a5647512ab4ee51f69e6582d8001ac88af1",
+      "response_sha256": "69894fde854bdfc528b3cf6de72500881c99044ce5043c8842a1378efa16675f"
+    },
+    {
+      "record_id": "prov_div_XOM",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:36.096674Z",
+      "request_fingerprint_sha256": "4a3317d6a27b992fc9b0cd31100b5bb842c55891f0118163ab7f2dee1fea7b6e",
+      "response_sha256": "958497944ed5637d9de2a27deabc04108cbfe177898357825ec4d41cc762b5d4"
+    },
+    {
+      "record_id": "prov_b930cb4de8860a02_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:37.453297Z",
+      "request_fingerprint_sha256": "b930cb4de8860a029a64474715904be4d5502decba2e8f378e785ebd3d506855",
+      "response_sha256": "e5ae3b0347006c522083b1521ded4e7588c5dce8648332a7db7dfe3f9fd1a359"
+    },
+    {
+      "record_id": "prov_f65ac7f0fd88fd5b_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:37.569764Z",
+      "request_fingerprint_sha256": "f65ac7f0fd88fd5bb9b9d191853933fae46b60746e538712f397c299a30fc189",
+      "response_sha256": "e5ae3b0347006c522083b1521ded4e7588c5dce8648332a7db7dfe3f9fd1a359"
+    },
+    {
+      "record_id": "prov_split_HD",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:37.697848Z",
+      "request_fingerprint_sha256": "916ae803818bed465e88ebdae615921a0ca85ed0636da24db7b9625be94bf77d",
+      "response_sha256": "74790fedbe5de692dc693f942277aa0bcb463d4a489941bc885f4bcfdf46e16d"
+    },
+    {
+      "record_id": "prov_div_HD",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:37.752925Z",
+      "request_fingerprint_sha256": "11443fb49045ce23acdcacb9ce5d140cb86ad1165eff99c0b0d039c070aef7c2",
+      "response_sha256": "4993106c7beefdcc5a8fbef1cfe78cfba8ff733af71c93b24459606c9835455e"
+    },
+    {
+      "record_id": "prov_2b29840e8ef26d59_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:39.379741Z",
+      "request_fingerprint_sha256": "2b29840e8ef26d59a408b76129b7341101c0d5891aac075424e02b4d1cb29aec",
+      "response_sha256": "17fbb660dee63868be80c059f69b74ade902be14fb74615bd53e5dbece43ed3e"
+    },
+    {
+      "record_id": "prov_659696fc9633ac50_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:39.488385Z",
+      "request_fingerprint_sha256": "659696fc9633ac50a263e8020fdfdb8be74b128aa0630aef29234ee6be7ebdff",
+      "response_sha256": "17fbb660dee63868be80c059f69b74ade902be14fb74615bd53e5dbece43ed3e"
+    },
+    {
+      "record_id": "prov_split_MA",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:39.591422Z",
+      "request_fingerprint_sha256": "c5533c092f8dd750e1be779ea510a80f8e6304db09fdfadc81d21b2f7d479022",
+      "response_sha256": "246ef0bbbbf967376ef6551f00061b67d6e3004d97399ed766cfe3e429f74a98"
+    },
+    {
+      "record_id": "prov_div_MA",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:39.657841Z",
+      "request_fingerprint_sha256": "a69df50d2335de3a6f04b43042ac7ff44c69e9a3221107479ebdeb1698aa9eff",
+      "response_sha256": "f81b18de7a09c83f3bac3589e4e20053e450dc127f8aa05b8bb69755d5b56c0e"
+    },
+    {
+      "record_id": "prov_0f99d0d301921da5_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:41.033820Z",
+      "request_fingerprint_sha256": "0f99d0d301921da580854ac9044c5fbfb685abc0002162a6cfd729e130ac99b0",
+      "response_sha256": "dbed51cea1cc3aeb7ddc1fd07728a1d4a88b8719a70e6ca032aa7e94b34a40b6"
+    },
+    {
+      "record_id": "prov_5b57f8deb19433d8_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:41.154912Z",
+      "request_fingerprint_sha256": "5b57f8deb19433d80825a325e61648a879d40d393dafc7a33228139809219f84",
+      "response_sha256": "dbed51cea1cc3aeb7ddc1fd07728a1d4a88b8719a70e6ca032aa7e94b34a40b6"
+    },
+    {
+      "record_id": "prov_split_CVX",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:41.285682Z",
+      "request_fingerprint_sha256": "32bf17f98baabacc6f27ad3fdc603cd463c23b1ce2172dd2208995422924c56d",
+      "response_sha256": "c1b3fbcac32b67a84500d3cb8fe2c2f392f24d2a2195010f0aeb6664c54b151c"
+    },
+    {
+      "record_id": "prov_div_CVX",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:41.428792Z",
+      "request_fingerprint_sha256": "652500b5a9a7d9a521b50dc581734438f7b565d6353b6072f54b70f8728fef59",
+      "response_sha256": "f969077d43ad044a3424504b682244986192c458946ec5cc0b3f04666ad81d73"
+    },
+    {
+      "record_id": "prov_b4c800c88988e11a_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:43.042669Z",
+      "request_fingerprint_sha256": "b4c800c88988e11a4cdd3206b906c2049387713b8f4d60425b7058a27512e587",
+      "response_sha256": "4897f233dc78219cd06bdab946d7f164fd44fe104adeb79f25835fecf3bfb5f5"
+    },
+    {
+      "record_id": "prov_03330f997d17b0ae_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:43.145775Z",
+      "request_fingerprint_sha256": "03330f997d17b0ae54228f56d33795e48c5438c98edc38e5f3cead32294e5528",
+      "response_sha256": "4897f233dc78219cd06bdab946d7f164fd44fe104adeb79f25835fecf3bfb5f5"
+    },
+    {
+      "record_id": "prov_split_MRK",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:43.245178Z",
+      "request_fingerprint_sha256": "fb3f70b3a42f387e160eb05518d514c35ad3569b0b475c313457aacb1eba74a9",
+      "response_sha256": "7e08b13fd6ef32cb88dde3ac7d46e76d938450887ec988387add90245ca4e789"
+    },
+    {
+      "record_id": "prov_div_MRK",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:43.326716Z",
+      "request_fingerprint_sha256": "80b28b0367d4ca935eede838ac533749a5ede29d74f001fe984543a81096d65b",
+      "response_sha256": "d79c2e55ea4712380c2312bc9c4c63377fb59a8ae5a8d0300a8f3b08a09c31e6"
+    },
+    {
+      "record_id": "prov_45fe156a48ce6d51_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:44.749551Z",
+      "request_fingerprint_sha256": "45fe156a48ce6d518bbfddf8d701f662315e5fe0c3a329be0dd5e82a1d3b1b29",
+      "response_sha256": "bcd9cd978d9fd6cd68eebe80e43bd755abd2f2aa2d1a2883a228ec7779a166b2"
+    },
+    {
+      "record_id": "prov_7817353a0b192802_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:44.872206Z",
+      "request_fingerprint_sha256": "7817353a0b1928022a5d9fcf3ba32a34ded5a8cc9dafbdb83f255315466c5d60",
+      "response_sha256": "bcd9cd978d9fd6cd68eebe80e43bd755abd2f2aa2d1a2883a228ec7779a166b2"
+    },
+    {
+      "record_id": "prov_split_ABBV",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:44.991875Z",
+      "request_fingerprint_sha256": "a7fe8823631eb2645bf7ff6c99dc8890e01e20449316e026520c5fa585e8fa84",
+      "response_sha256": "1bf55fcc092e011b2230fd0def762f70af47ddc3265ab11fab1539f18dd3673f"
+    },
+    {
+      "record_id": "prov_div_ABBV",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:45.045871Z",
+      "request_fingerprint_sha256": "6a7dc899619653824fed3e616a4f516c9618022910771227a097e9fe63809f10",
+      "response_sha256": "8e32b94adf2419961d9c1d0157f2691e774dffb1902976033a5f9bdee4301631"
+    },
+    {
+      "record_id": "prov_5acb546f85122149_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:46.445108Z",
+      "request_fingerprint_sha256": "5acb546f85122149584302da951bafe65ade77b702a7164017c7b326c1d22468",
+      "response_sha256": "7848d1bd2b4cd6bd0291d48a4843d3ff6820c947181c963239247e47f1ed8d27"
+    },
+    {
+      "record_id": "prov_3ffd923ac587e673_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:46.547380Z",
+      "request_fingerprint_sha256": "3ffd923ac587e6730681632700fa33cf42e61528d94b521d7e5a64f65bfbe819",
+      "response_sha256": "7848d1bd2b4cd6bd0291d48a4843d3ff6820c947181c963239247e47f1ed8d27"
+    },
+    {
+      "record_id": "prov_split_PEP",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:46.658802Z",
+      "request_fingerprint_sha256": "0cc550ff5980a1710252d7a775a64a71d18ca04a6acc44438142635517e23e05",
+      "response_sha256": "d0d71241b5b4cc458ea34d620b061b45438f661879ac76cf3c51a218ae38c977"
+    },
+    {
+      "record_id": "prov_div_PEP",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:46.715061Z",
+      "request_fingerprint_sha256": "3e8308dd1c54c81e12cd31f1970655e9f57e8a54024ad50bceb027c01a7b96d5",
+      "response_sha256": "8c6160fa24889d80f42ef231c498726fbcbf914841d9f9f90311d87d8f811eb5"
+    },
+    {
+      "record_id": "prov_1f681da763d3ea01_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:48.384059Z",
+      "request_fingerprint_sha256": "1f681da763d3ea011c201f483078dea9f256f2a9dcc6727b0d9bc7abcad822ee",
+      "response_sha256": "6cc77ec773837cd67a842e33c6c13347da18e55852673bd77ee9870b8323fa90"
+    },
+    {
+      "record_id": "prov_06112c547c36c2d7_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:48.502615Z",
+      "request_fingerprint_sha256": "06112c547c36c2d72dfacd9a0627b3001bb3255021600b0551b6a3a4e85d46ac",
+      "response_sha256": "6cc77ec773837cd67a842e33c6c13347da18e55852673bd77ee9870b8323fa90"
+    },
+    {
+      "record_id": "prov_split_KO",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:48.641794Z",
+      "request_fingerprint_sha256": "0c77f4ed92a649c652fde81254febfefa64b8b04eec9b2c63028deff89ec67f2",
+      "response_sha256": "f370e901618d1b3e89ab07e315d6302164f89647118317c8335cfe9c50be5470"
+    },
+    {
+      "record_id": "prov_div_KO",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:48.693264Z",
+      "request_fingerprint_sha256": "2ce1348d3a623009ee5cef316841229e17ccbf4d5d6a862f3f11a7eff4b2bb3b",
+      "response_sha256": "33d604e6f1e0ed7e23f21577125eb170ddc7a28f9589e9530dad6b12b479b063"
+    },
+    {
+      "record_id": "prov_99972ec4bef4b2f9_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:50.078476Z",
+      "request_fingerprint_sha256": "99972ec4bef4b2f93a2cc9ace4ab81a652009228e836a26ec930bc2d1b851a7b",
+      "response_sha256": "bdc0cee846414bad2f271de0862e69813ab593c4931f42298cba41924f1413da"
+    },
+    {
+      "record_id": "prov_a8b4c283c53e6a35_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:50.197781Z",
+      "request_fingerprint_sha256": "a8b4c283c53e6a35179be8209b51eca173b31853fc5ad4f6023a5d178214a028",
+      "response_sha256": "bdc0cee846414bad2f271de0862e69813ab593c4931f42298cba41924f1413da"
+    },
+    {
+      "record_id": "prov_split_COST",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:50.317862Z",
+      "request_fingerprint_sha256": "0f6eecbc1be5dc4d4f908be29ae43202857421fb0a447e3813a5044a3c4644f7",
+      "response_sha256": "b9bd213cebcaf43362edce9dea202266aba6a6276d68f20c9ea6e670846b513c"
+    },
+    {
+      "record_id": "prov_div_COST",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:50.380604Z",
+      "request_fingerprint_sha256": "58d3e76ed8b58c0ce094103bdc9ff0a8311935913a3759efa2cb4612e2c53dc8",
+      "response_sha256": "42073aaf9e2a3b6267388c5fbf33cf56829562d54c22e243fe04182c13f00599"
+    },
+    {
+      "record_id": "prov_9e918ff1814f603e_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:51.766146Z",
+      "request_fingerprint_sha256": "9e918ff1814f603eab1638adc7f532469c5cee1cec8a152749ffa4363f824a33",
+      "response_sha256": "2f90d5874b434f00b59d12d805676f60c01a4832740d9499a588a1cb4a91efa4"
+    },
+    {
+      "record_id": "prov_eb906b03a6fb24ed_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:51.878583Z",
+      "request_fingerprint_sha256": "eb906b03a6fb24ed508ca6749cb8a6a04e7ca88ea0ca9a7050dc156da1655296",
+      "response_sha256": "2f90d5874b434f00b59d12d805676f60c01a4832740d9499a588a1cb4a91efa4"
+    },
+    {
+      "record_id": "prov_split_BAC",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:51.996114Z",
+      "request_fingerprint_sha256": "262f90e0c7416c488a8b6ec9560b4d621fbc63125fdaa0a5b4ac739b7682c913",
+      "response_sha256": "5e42aebfe6ea6577b30fd13b65a0939896928bf4792be98d41ec0a42608e2b19"
+    },
+    {
+      "record_id": "prov_div_BAC",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:52.070764Z",
+      "request_fingerprint_sha256": "e9f92054d5bb3481ced9c58a1decc0b3a6b87968d1811847d0806a12b584c7f0",
+      "response_sha256": "00968127f56db85a980ef35c8dab401e7ae5270d7801f4afa9de2418ccb2e08e"
+    },
+    {
+      "record_id": "prov_ab57b491d65f5929_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:53.671180Z",
+      "request_fingerprint_sha256": "ab57b491d65f59299cbb9b69b95c9ce6173e740dbb4ab7704378a083dbba8575",
+      "response_sha256": "dd40ba7b461cb565103934b3cc553bbf12505461ce213f7cb336f817d97b8a4f"
+    },
+    {
+      "record_id": "prov_94017284e216b1a6_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:53.778765Z",
+      "request_fingerprint_sha256": "94017284e216b1a67352fafe80e70ea5a06dd2726c489c4dda9ae872a133ee02",
+      "response_sha256": "dd40ba7b461cb565103934b3cc553bbf12505461ce213f7cb336f817d97b8a4f"
+    },
+    {
+      "record_id": "prov_split_TMO",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:53.891728Z",
+      "request_fingerprint_sha256": "ca26eacb22660b5a7fcf36ce2e4fb5198e2beedcee3d24d12749d338e5282ba9",
+      "response_sha256": "981fba4b123ba1641f15e1613e44c1159e4e9931feb6e542471c6eed5d22003b"
+    },
+    {
+      "record_id": "prov_div_TMO",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:53.954739Z",
+      "request_fingerprint_sha256": "e4df065449d3bc380e6ff7d3cf31d97ee4c1e7600139244722f314b2c928a08c",
+      "response_sha256": "56740cdae4387c44372e2f509175cfe4fbb61c189f3a1de8bfc00094192fbe3d"
+    },
+    {
+      "record_id": "prov_767d8273acff17a6_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:55.284293Z",
+      "request_fingerprint_sha256": "767d8273acff17a6a9b310ad9afc271cfdbe4216cc56b1272b937992bb7d7254",
+      "response_sha256": "07a8204c402dedbf9278647773c76663d9ed0dbfa5d72fd1109fbd791c375176"
+    },
+    {
+      "record_id": "prov_051b1630ab816d88_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:55.419469Z",
+      "request_fingerprint_sha256": "051b1630ab816d88a785f73b9556b665aefcd17c6fea5b14790ee9f0eac5d2a7",
+      "response_sha256": "e78c04dedfdeb0823d4097a84d902cb9795831829ff40369cbde79b9a9179fea"
+    },
+    {
+      "record_id": "prov_split_AVGO",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:55.538098Z",
+      "request_fingerprint_sha256": "e56b667387060119f7943d508f7a6a216dd72ec7e9837b495e70f6cb9868ad4d",
+      "response_sha256": "77372656e8dee130cab52a4f25cd5ba20d2752e10afaef1f3e5dd02d16d550fb"
+    },
+    {
+      "record_id": "prov_div_AVGO",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:55.590097Z",
+      "request_fingerprint_sha256": "6a93bcb2794af8750778228f2f25dea5e31203a2fafeac3709fcceb8fb8ecfdb",
+      "response_sha256": "adbfb5baccdaf462578f29810fe21e88bfdfadf65e019339eae05f5ffb228e29"
+    },
+    {
+      "record_id": "prov_a7e870f94c46c72c_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:56.959621Z",
+      "request_fingerprint_sha256": "a7e870f94c46c72ccaa697c65edeac6855bd0bd4aa42dbe5667c8cfdad568688",
+      "response_sha256": "198bad13a7e91ee4e7bf4a3ea7aa01a438000dee2f074d8146b0e7c75ee33ca9"
+    },
+    {
+      "record_id": "prov_7966aae38767409b_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:57.089403Z",
+      "request_fingerprint_sha256": "7966aae38767409bf49b7f1412813938d0f533f83c8f6aa0b0492ab423ff2553",
+      "response_sha256": "198bad13a7e91ee4e7bf4a3ea7aa01a438000dee2f074d8146b0e7c75ee33ca9"
+    },
+    {
+      "record_id": "prov_split_CSCO",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:57.193157Z",
+      "request_fingerprint_sha256": "8ee637e6ba078c87aefb1e223a5b98cc3c1eef653634ee045e503c609eafff33",
+      "response_sha256": "6810edece6d54bad0f7fd49ab18614cd53d0ef558e04f9c38ca67416bc46bc76"
+    },
+    {
+      "record_id": "prov_div_CSCO",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:57.273589Z",
+      "request_fingerprint_sha256": "d608b8dd99e4cf3748589cd756349de5729fee4c652c21240b60116262162183",
+      "response_sha256": "c2233b83ceef0bc7f5ccf0e8bf949de37dfc472228661d21951438ae9f629f2d"
+    },
+    {
+      "record_id": "prov_279e97959084b881_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:58.870266Z",
+      "request_fingerprint_sha256": "279e97959084b8819320e8e82cf2007fc4d49aece1382e9702c3043c8ad48241",
+      "response_sha256": "7be4b798824d6855f1228cab2b98d0666b36f3cca066d321c6566bcdb447e06c"
+    },
+    {
+      "record_id": "prov_c02a15bd6413097e_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:59.018229Z",
+      "request_fingerprint_sha256": "c02a15bd6413097e822ec2059ca06488d8cb545c0681cb3da0fdd28a522a9217",
+      "response_sha256": "7be4b798824d6855f1228cab2b98d0666b36f3cca066d321c6566bcdb447e06c"
+    },
+    {
+      "record_id": "prov_split_MCD",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:59.122076Z",
+      "request_fingerprint_sha256": "ba08c6148b0a7f18f72c010efe18beed8984ad5abb60c87a6088295ce5d026ac",
+      "response_sha256": "1be27f711838b6fd020ac1d0be8bf2429d25e90e1ad3a7c846a00ec1f307137c"
+    },
+    {
+      "record_id": "prov_div_MCD",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:34:59.177685Z",
+      "request_fingerprint_sha256": "cfe11251a19fb4ee943c9a21f7bbaf1620beb527ff661156c6990abc93797d92",
+      "response_sha256": "ce9ef10349ea55ea7bc0e4df48cb13b47f8f3604a8214983363c4920c1237572"
+    },
+    {
+      "record_id": "prov_9ee6a776d10890bd_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:00.624019Z",
+      "request_fingerprint_sha256": "9ee6a776d10890bdd39f149e6fd12bd31f500fbf220cf800469b00a257ee4226",
+      "response_sha256": "ab3d8fecbfd4437a33754f21098073b279725fe331fd11c55504acb0a3d21a2b"
+    },
+    {
+      "record_id": "prov_4351ffe16c82fa75_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:00.725033Z",
+      "request_fingerprint_sha256": "4351ffe16c82fa759cd26577ef1b2fcdb124b69faa5fef63d3e37eeef022baf2",
+      "response_sha256": "82894ba989786d89308c1635ee19c5c203e19269987fdd36c408f84533725b16"
+    },
+    {
+      "record_id": "prov_split_WMT",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:00.834188Z",
+      "request_fingerprint_sha256": "3d4b248d6dc30dc2562a2d3a80374ee1e3ca32fbdec6a3220f0e395e3eb2c85c",
+      "response_sha256": "f22184e1c149f2ae039eae278b37a0c3450d0171269ca180fb1b6b72c1635cb5"
+    },
+    {
+      "record_id": "prov_div_WMT",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:00.895764Z",
+      "request_fingerprint_sha256": "94030639b8de091ff527caed3b893c3b407b92ef13384174e50536d5b7db5eb1",
+      "response_sha256": "2f7eeef7dac832e6a2fec0b2ac111996c370b2b076d2e2e445f0b8801cf39cde"
+    },
+    {
+      "record_id": "prov_e892e1052e2c1896_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:02.332698Z",
+      "request_fingerprint_sha256": "e892e1052e2c18964d409b764dc1e743f932a5c96e94ae8841d9153db4258d10",
+      "response_sha256": "ae317d215bb7b6866e63bf4a34ca097c61a8dceaaca71aa37ca7ac5d75e4f7e9"
+    },
+    {
+      "record_id": "prov_e3442e17bd190426_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:02.429387Z",
+      "request_fingerprint_sha256": "e3442e17bd190426cae97fb05dccaa40ad07066e80bb67119637215192c00a7a",
+      "response_sha256": "ae317d215bb7b6866e63bf4a34ca097c61a8dceaaca71aa37ca7ac5d75e4f7e9"
+    },
+    {
+      "record_id": "prov_split_ABT",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:02.539393Z",
+      "request_fingerprint_sha256": "78df1ed27d4e3eb8c101ba07eb5ae661d3c328c46d2d6b24a9dd6bd7462349fb",
+      "response_sha256": "33135c84071316b18c4a61d2c6621ff6e9b1c70b805992464c9ebdb4d5caf493"
+    },
+    {
+      "record_id": "prov_div_ABT",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:02.615894Z",
+      "request_fingerprint_sha256": "1f4260326b9362dfa24f8e249421c62dc1de68f16494de1c39e77c5a31652156",
+      "response_sha256": "7af2eb11da7ab0206995e191f7a2106e8f3ec0bd251438d589ae1fe85be40126"
+    },
+    {
+      "record_id": "prov_4741d2023e546e50_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:03.981633Z",
+      "request_fingerprint_sha256": "4741d2023e546e50de745f3c51f3d63196dc84ac272b7eb819ca54b1c1ea264f",
+      "response_sha256": "f15b1c9aced83e7a18bad2ee7b9c951ab8a4da084f8a7d4b1709c60a4ac5eab6"
+    },
+    {
+      "record_id": "prov_c6f795aefbe00d39_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:04.100492Z",
+      "request_fingerprint_sha256": "c6f795aefbe00d399fcae73f8c8607683466c8da576445f0bd6369ceacb6cc9e",
+      "response_sha256": "8469c5ec42d2475126445430b6ec55756298a6266dd168251a3d7f6c074bc7cb"
+    },
+    {
+      "record_id": "prov_split_DHR",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:04.216766Z",
+      "request_fingerprint_sha256": "d671955c0ebfd171c1a63b383c33348de2af2b112bead440f0da309e7e053a8f",
+      "response_sha256": "112c6ceb366678d3c8fba11ab6ffac4db2484b45fca2af582e7599078b8a46b9"
+    },
+    {
+      "record_id": "prov_div_DHR",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:04.270924Z",
+      "request_fingerprint_sha256": "2e63883ddc1fc23ac98dbb5db95812eaeceddd00a502625287cb54cb10dc22f1",
+      "response_sha256": "c9e9d6a7bc37ae01a13ec67c33f10a3a2ff67eab26f788b5235a9bd839635acf"
+    },
+    {
+      "record_id": "prov_fb273d11b6ffe374_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:06.001298Z",
+      "request_fingerprint_sha256": "fb273d11b6ffe3744adecb70f988f119356eae43c341c385e26751da2e62d50b",
+      "response_sha256": "831b958ffa7fc9ab44ef7f10b053ccd210d03c7d2de7cd10fc55ebdaacb59b5d"
+    },
+    {
+      "record_id": "prov_99471b3df18991a5_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:06.116373Z",
+      "request_fingerprint_sha256": "99471b3df18991a5523540f44a01e518fca237d41afe688e1945179258021a8f",
+      "response_sha256": "831b958ffa7fc9ab44ef7f10b053ccd210d03c7d2de7cd10fc55ebdaacb59b5d"
+    },
+    {
+      "record_id": "prov_split_DIS",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:06.237326Z",
+      "request_fingerprint_sha256": "8d1e878033166e437faff19438889ca48b5facb002f231a12933ade41b3eb1ef",
+      "response_sha256": "7336abdba837ce35905c02ee58ddfa9e84f75e65cb179e226c7285225a6ad139"
+    },
+    {
+      "record_id": "prov_div_DIS",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:06.299327Z",
+      "request_fingerprint_sha256": "5af930794e9479f4a82626443571654d40b91d1006181287b6fc424d802579d4",
+      "response_sha256": "e9f6d629e5750ed9680534c3d02ad702acad8c708b7c311b69fc1f12649d416f"
+    },
+    {
+      "record_id": "prov_f708b1d5ae6aa551_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:07.775596Z",
+      "request_fingerprint_sha256": "f708b1d5ae6aa55109b184b807b36a35dd6f57210b305d12de1a65c9b52f0714",
+      "response_sha256": "8ed2377e0505e6099722c053d7a0edea524707074be91f1ab675ababed0d08bb"
+    },
+    {
+      "record_id": "prov_424f8286f23ce8b9_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:07.917904Z",
+      "request_fingerprint_sha256": "424f8286f23ce8b9761f9da75324e5d7079f6995bdced679801beb8dc0528202",
+      "response_sha256": "8ed2377e0505e6099722c053d7a0edea524707074be91f1ab675ababed0d08bb"
+    },
+    {
+      "record_id": "prov_split_PFE",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:08.032308Z",
+      "request_fingerprint_sha256": "7e044ef74b86ef5223fd3adc03a4fd92fae40cd4e0efa1bd12afa8cfc8453b7a",
+      "response_sha256": "5fd35571ad7f4ee1c50c85154e56fe2d494e9d228dad4349b9cdbc5506d0942a"
+    },
+    {
+      "record_id": "prov_div_PFE",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:08.085388Z",
+      "request_fingerprint_sha256": "e24b11a273148e0484ac491a649184b9efd59243a1b935c3ac837dd4b7752b74",
+      "response_sha256": "aceb302c4b05a4a07e6c453be6955925e4458f8ccbb46d5039d4307ca3ebac21"
+    },
+    {
+      "record_id": "prov_ddc9c6d500b355c2_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:09.541008Z",
+      "request_fingerprint_sha256": "ddc9c6d500b355c2a19d75b61bca2d32c0b04233f1204413947da69f797c29fc",
+      "response_sha256": "d874dc10f2c81ea61efbfb1efeeeb10fe616bc6e815120c2d156d8acb1651bd0"
+    },
+    {
+      "record_id": "prov_e587e685f3fbd4d4_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:09.656482Z",
+      "request_fingerprint_sha256": "e587e685f3fbd4d41d78579bd179c28b2b6ba1e99aa56cbf3d468c203a8978ad",
+      "response_sha256": "d874dc10f2c81ea61efbfb1efeeeb10fe616bc6e815120c2d156d8acb1651bd0"
+    },
+    {
+      "record_id": "prov_split_ADBE",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:09.773792Z",
+      "request_fingerprint_sha256": "34dd7872c468b2fb2a5a13bb6ee2c1df5660ef1157d1090d5c8de280d4b1bd62",
+      "response_sha256": "8106fea2c58081144772d5867337f69a080fc2ee209cc578dc0fa13d9af246cf"
+    },
+    {
+      "record_id": "prov_div_ADBE",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:09.860516Z",
+      "request_fingerprint_sha256": "457579682fb65570d985839e1ae99fbcc16f736ba3d4e46f4fa0f992a7792bfe",
+      "response_sha256": "0978f121c4cf62662b08f4adc9910e42fcec14ea6d653ea1d021c68c26a684c3"
+    },
+    {
+      "record_id": "prov_ad07d4c7e25dda71_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:11.214838Z",
+      "request_fingerprint_sha256": "ad07d4c7e25dda7129500e1f074f671c31b9094c42fa0ec14660f427e8c1b672",
+      "response_sha256": "726448f5c09f371ff4bb7ba2fec93d909174529333e25f8af9fa80b16e5ddee5"
+    },
+    {
+      "record_id": "prov_78c386a7dce61844_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:11.318605Z",
+      "request_fingerprint_sha256": "78c386a7dce61844b0223504a19ed363a034476d73ebba7dc25df5c260ddc6c3",
+      "response_sha256": "726448f5c09f371ff4bb7ba2fec93d909174529333e25f8af9fa80b16e5ddee5"
+    },
+    {
+      "record_id": "prov_split_LIN",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:11.433715Z",
+      "request_fingerprint_sha256": "7cd9988e4c1825873d7faadc02819e901a64e82a098819898468929b907d7f8a",
+      "response_sha256": "4ba90efa3128ec2c641655d88fbd6294e6f7e216a5aacfa942609aa764a3c810"
+    },
+    {
+      "record_id": "prov_div_LIN",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:11.492777Z",
+      "request_fingerprint_sha256": "3902d7f6f42502e01a6152a1c716cc03474aeded38af107e0e33901e9dbde79a",
+      "response_sha256": "fc418edd4cd433f0c6913ae3779fd1a339f9c696a8fddae3e74e23bb6b2b789c"
+    },
+    {
+      "record_id": "prov_62cadc84268b3241_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:12.486805Z",
+      "request_fingerprint_sha256": "62cadc84268b3241817f97c23c46aa306d5bdd51199d0f7445a5eb3c8e5393d6",
+      "response_sha256": "762b3bf574528846e912d237cad5e54b06df44a1c1657c2f41a4e758fd1d6ea9"
+    },
+    {
+      "record_id": "prov_5a0cfc22a6103930_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:12.591806Z",
+      "request_fingerprint_sha256": "5a0cfc22a610393007d51bdf873842abe9d90ac6c2fbf444f7925aa502795312",
+      "response_sha256": "762b3bf574528846e912d237cad5e54b06df44a1c1657c2f41a4e758fd1d6ea9"
+    },
+    {
+      "record_id": "prov_split_CRM",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:12.719466Z",
+      "request_fingerprint_sha256": "73a5d7e0899c642e286daf8955e4e05e74dc7f684d179705ca52bfd1368394a2",
+      "response_sha256": "450887ccfe361f4c4d797bdcf03721ea5f96c918d55b7cd43773a2382a6b8c4a"
+    },
+    {
+      "record_id": "prov_div_CRM",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:12.860937Z",
+      "request_fingerprint_sha256": "f51b7da6757762ba81cc9c787c5cb5ae830c23471138e03b373d27b9b0a8ce45",
+      "response_sha256": "0583f69d234f9fde1b91671ba9b57055b54652b95164ac97769e50f1677fe635"
+    },
+    {
+      "record_id": "prov_a78f17ce9b7b2525_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:14.308574Z",
+      "request_fingerprint_sha256": "a78f17ce9b7b252580535c96dde89a555a9dcdee89e8d306ee72293937dc0d49",
+      "response_sha256": "4571258b52f09b83ed947a5f7da7c1b3a5ed12bb5f2213d2397b1805a41e89d6"
+    },
+    {
+      "record_id": "prov_643c7140f1c8716c_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:14.417503Z",
+      "request_fingerprint_sha256": "643c7140f1c8716c01443a3390df0d7df18269354f0000cea5243b6ee2f87115",
+      "response_sha256": "4571258b52f09b83ed947a5f7da7c1b3a5ed12bb5f2213d2397b1805a41e89d6"
+    },
+    {
+      "record_id": "prov_split_NKE",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:14.560777Z",
+      "request_fingerprint_sha256": "af8b5116f866d2b91bf0af215dfdee4019dcc20609a39ebbb8ca7de02680f6c8",
+      "response_sha256": "72af68325ba67a16339adb42d58af0f68f8c10b68958ee37a74367990301c919"
+    },
+    {
+      "record_id": "prov_div_NKE",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:14.638867Z",
+      "request_fingerprint_sha256": "1d43f41b8e12e4239a56d1058ce7af368274432020cc6997f284ffa65235e7e0",
+      "response_sha256": "6af02ae3f0bb7e3aec1f8e3ffe794697442f02e1a9f4f37b5cba9471b2d078e4"
+    },
+    {
+      "record_id": "prov_8246713e697c7fc3_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:15.953356Z",
+      "request_fingerprint_sha256": "8246713e697c7fc3c159d52d8122394319fe8a5399ecd114fdc1ab6fa942dc90",
+      "response_sha256": "b19aee21a130f5bcadcd2bab869262758905320304b88b353f4488c330131b78"
+    },
+    {
+      "record_id": "prov_b6183dcda5719ad8_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:16.057545Z",
+      "request_fingerprint_sha256": "b6183dcda5719ad8b085efe5e9f0aa05e103402437dd1a023bd004266044e313",
+      "response_sha256": "b19aee21a130f5bcadcd2bab869262758905320304b88b353f4488c330131b78"
+    },
+    {
+      "record_id": "prov_split_TXN",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:16.182453Z",
+      "request_fingerprint_sha256": "a68bf553ccc1c2a3e9c042b6300c406a528427825606e8e2da1a5139ae4d0c1d",
+      "response_sha256": "862a5762cc46232bcc3a111fca4d0e3d0c959ce7e082fccaae9aa400dd300ddf"
+    },
+    {
+      "record_id": "prov_div_TXN",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:16.238838Z",
+      "request_fingerprint_sha256": "cd8f4069c4628fd6304a08d013a400ffa2e9df1a8b7bad8de69222a6c3c98f8e",
+      "response_sha256": "876fb53751b533ec741b6d8b0462331c9b981db7b30f457ecf2d4aa59ce7b79d"
+    },
+    {
+      "record_id": "prov_57caf9b9e10c349b_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:17.578423Z",
+      "request_fingerprint_sha256": "57caf9b9e10c349b2f3cab7b20e570ad89c88371c26a48db5ec307f85bc9456d",
+      "response_sha256": "b755eb73ac7a5824e23bf54090d2e083816cc26a5f9cec6248c572e077df7cde"
+    },
+    {
+      "record_id": "prov_c52ac9009adedc03_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:17.693146Z",
+      "request_fingerprint_sha256": "c52ac9009adedc0370d80845d843872ab119f6c65d9a27f7f1d831f0aea5cd5c",
+      "response_sha256": "013c670349279bb9bbe0c656bac51486a21696969d698b3cc3c4be51f3c139a2"
+    },
+    {
+      "record_id": "prov_split_NEE",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:17.795186Z",
+      "request_fingerprint_sha256": "5ab13bdf4bff6e19f5a0e3fead3d5f43e7ae9e2d22a2b9a68c7d1570c7204a93",
+      "response_sha256": "795609e87fdee4a897f14a0a7aa86e3fa5c3663d1e3a3ef3929f8306c50a1de5"
+    },
+    {
+      "record_id": "prov_div_NEE",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:17.878782Z",
+      "request_fingerprint_sha256": "c4fd9461003e5b64ed74fe00663b271ce890b02402ded5c8ebec736491cdebd3",
+      "response_sha256": "e56261869478c8061db28c880b3e259fa4b0c9dcbe0132066b5f5d2a96417303"
+    },
+    {
+      "record_id": "prov_a446d960a155b825_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:19.233302Z",
+      "request_fingerprint_sha256": "a446d960a155b82522efca3f89b20be4e4427dfccb7e70881d93cc3614b94a8d",
+      "response_sha256": "63ae87a925e87079d52e2aa9f7f3759594c26fab30bc0f3da56eb0944da0939b"
+    },
+    {
+      "record_id": "prov_a69381eb4b324972_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:19.361181Z",
+      "request_fingerprint_sha256": "a69381eb4b324972b624b7742f2f5901f2c3bb9fc290df2da54c0b2000d8288d",
+      "response_sha256": "63ae87a925e87079d52e2aa9f7f3759594c26fab30bc0f3da56eb0944da0939b"
+    },
+    {
+      "record_id": "prov_split_AMD",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:19.497613Z",
+      "request_fingerprint_sha256": "78ae02f019060f4deef6907e264e23c62a24142168b652e748086cef53577546",
+      "response_sha256": "0a88c16c231131b0a07b0e4a66a094bcb49be02ab518dc2099d4d49d5d772955"
+    },
+    {
+      "record_id": "prov_div_AMD",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:19.556617Z",
+      "request_fingerprint_sha256": "5485836beff7ddd206f3a32b5beab025b11b10f852165fbdf54e03f2389795db",
+      "response_sha256": "3ee4e2b89152f0f1c667d4a52184b1d3d1a4965932cd43c180e1c11c4781b491"
+    },
+    {
+      "record_id": "prov_4a621722671be215_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:21.497804Z",
+      "request_fingerprint_sha256": "4a621722671be2151542f5cf8d0f36d81b75074938cf8c65b51e64977e46a028",
+      "response_sha256": "a7279434f8bca623e9feba37112e79239805e38fca03fd4581615600ad346b0f"
+    },
+    {
+      "record_id": "prov_a3100cb791f8625c_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:21.606832Z",
+      "request_fingerprint_sha256": "a3100cb791f8625c09db123fa442a378d3f21d8cd5c81d0a37084bfdd983ccb4",
+      "response_sha256": "a7279434f8bca623e9feba37112e79239805e38fca03fd4581615600ad346b0f"
+    },
+    {
+      "record_id": "prov_split_PM",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:21.726046Z",
+      "request_fingerprint_sha256": "56c6b078d4f958d9caffc64b19bfca5c8a078d3f71c403da06de0fdc384459f8",
+      "response_sha256": "3bdf8b047993d7f77c74b6798843be39f421628137316453993154bea8048f76"
+    },
+    {
+      "record_id": "prov_div_PM",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:21.802909Z",
+      "request_fingerprint_sha256": "52e9330954819e9c368650847e39d6e627f2e1616cce230f47ae2f24ee4798ca",
+      "response_sha256": "1617994ff33bdef9266b8b80129af69d38f40ed6a8948d5d8c8e69c4d46cfa43"
+    },
+    {
+      "record_id": "prov_b2355489ef534726_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:23.438245Z",
+      "request_fingerprint_sha256": "b2355489ef534726f636a2e9661e059d3b79980ec61e1fd7303faa4bf50a6666",
+      "response_sha256": "65e61ec2717d9c5de642f69ac3640fe749802b4888f01dcd199a1f8476bcba63"
+    },
+    {
+      "record_id": "prov_881862b3d0ca8ef5_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:23.566330Z",
+      "request_fingerprint_sha256": "881862b3d0ca8ef594138932ffd50573701d36a1398ad2829d6e1a9dcf921d0e",
+      "response_sha256": "65e61ec2717d9c5de642f69ac3640fe749802b4888f01dcd199a1f8476bcba63"
+    },
+    {
+      "record_id": "prov_split_ORCL",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:23.675048Z",
+      "request_fingerprint_sha256": "48c7fd425e6a1b8cb5810932fda800ded48f1cfc0aac1b91059ba4399cd80cb0",
+      "response_sha256": "69d7b5f5487eecea6e9b471db3d1ccdb3f9822ad803a7a9d66675e4eee104d42"
+    },
+    {
+      "record_id": "prov_div_ORCL",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:23.728050Z",
+      "request_fingerprint_sha256": "70c671874b31986a07457db7d16c6deb36887ee01fdc3cfd1061143d220a4459",
+      "response_sha256": "a1971c5775c223e45510e67dc26b64d82114c1166325c8208950b03c5da5df0a"
+    },
+    {
+      "record_id": "prov_9726f8fe6d797d54_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:25.155378Z",
+      "request_fingerprint_sha256": "9726f8fe6d797d5481fe3e9bbc5f8dac695b245ce6af5fb809e6953378e8bcfd",
+      "response_sha256": "afa10fae5a99d6150ac4904c213c29dc1160d00869e3be18a9a2ba60fcb50dff"
+    },
+    {
+      "record_id": "prov_b5a99f38a5e74b3b_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:25.275140Z",
+      "request_fingerprint_sha256": "b5a99f38a5e74b3b75ed40cc7ff21ba7f1cc60332a94b866376b88e679a3dca3",
+      "response_sha256": "9b488c6eeb47fd1f438664d1da7cb4d46cf9f8b6fa298e67b0d431fde2d795a0"
+    },
+    {
+      "record_id": "prov_split_CMCSA",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:25.399750Z",
+      "request_fingerprint_sha256": "190e518c8cd56cc9fa2a4806300ecf47348e649eff992752a78e72b07a55146f",
+      "response_sha256": "fc2bc5daf8f790e792ab74d9512ef3d63ea56df978e01734780b51b57586551b"
+    },
+    {
+      "record_id": "prov_div_CMCSA",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:25.465737Z",
+      "request_fingerprint_sha256": "85734c4a2a145f3671b85594e0449029327cc6bff5bad825d93290b8261684db",
+      "response_sha256": "309441069531feae051b864a0f8dbaf04f6e34c100952ca9f143e3b35e0ef652"
+    },
+    {
+      "record_id": "prov_c90b26c9320dcfc5_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:26.991334Z",
+      "request_fingerprint_sha256": "c90b26c9320dcfc5ff73103916819f398504e9a8dd3913ba220aec278c034c06",
+      "response_sha256": "34d354467c4b468570a43a60563e5d38e0db49310509e15216d8f25a1b4b8a7b"
+    },
+    {
+      "record_id": "prov_2fd8061582400715_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:27.135389Z",
+      "request_fingerprint_sha256": "2fd80615824007154661e5b44bf5f47862b2b56cb6ac9fd93101dd8012c5aaaa",
+      "response_sha256": "aaedf2fca19a3c05351d1ad9d581bbc1f44a9e5dc5e56ce72cccd74b82846d01"
+    },
+    {
+      "record_id": "prov_split_HON",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:27.247766Z",
+      "request_fingerprint_sha256": "f808b0163c87da88c1f03d7821ebfa5a70665efd05e4f990d27e492797929e16",
+      "response_sha256": "b351c6354aa7c8641f04df7a5381d28301970671fa53fe2b788f8ab418ec775e"
+    },
+    {
+      "record_id": "prov_div_HON",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:27.327509Z",
+      "request_fingerprint_sha256": "b7e44d27e2df01d622666a498dadddd57db852ac8f8b9c7eef794d13feee2b5d",
+      "response_sha256": "c03989ae00d27b1f298f46907c3627532bce6de87a061c0b382586a5088cbd5c"
+    },
+    {
+      "record_id": "prov_4e4c9fda14386a03_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:28.736941Z",
+      "request_fingerprint_sha256": "4e4c9fda14386a0378736d0bae8d80804f8e9519b42107840428db5ba5e927d9",
+      "response_sha256": "f399da88a11f6848b7acdc702291da06db6548742e23e3ff83a09fe3e9eecbb1"
+    },
+    {
+      "record_id": "prov_85b4c982f9302c92_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:28.865268Z",
+      "request_fingerprint_sha256": "85b4c982f9302c92a6baef207d9d17e2da0594a46bcc38de93a521377e8c313c",
+      "response_sha256": "f399da88a11f6848b7acdc702291da06db6548742e23e3ff83a09fe3e9eecbb1"
+    },
+    {
+      "record_id": "prov_split_BMY",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:28.977305Z",
+      "request_fingerprint_sha256": "debff38eaacfaccc9735fc33d32f93504e68d257a1859dbf6767e0322776be20",
+      "response_sha256": "79d75615286d56b796708035f22675814b3d741fe471296667af08fee71cb22e"
+    },
+    {
+      "record_id": "prov_div_BMY",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:29.055763Z",
+      "request_fingerprint_sha256": "609d51ab7b58517b117d22e43c1f59942464bd4b88029dd2269d8fb91726c506",
+      "response_sha256": "d6dfa59c4347d91059c6526b5aa0f21e1768c92efe3ff02089468118e686d811"
+    },
+    {
+      "record_id": "prov_fc58e42941de87d4_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:31.010754Z",
+      "request_fingerprint_sha256": "fc58e42941de87d4dc58d0eca932fba042049a26b7815828376b81c30702f9d6",
+      "response_sha256": "71628762c6e22642136e49ecce77efaa705da9de2436a8add6a82941b9595455"
+    },
+    {
+      "record_id": "prov_bd1d5b3fe64683aa_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:31.126955Z",
+      "request_fingerprint_sha256": "bd1d5b3fe64683aa0e469e336155e8c023a367ed67e32a72b9ffcb63b9628a21",
+      "response_sha256": "71628762c6e22642136e49ecce77efaa705da9de2436a8add6a82941b9595455"
+    },
+    {
+      "record_id": "prov_split_COP",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:31.239442Z",
+      "request_fingerprint_sha256": "20b8f369fffea7bdfdbbaf385ab9a8aadfc0013e1fec060c9566c651c90b9ee1",
+      "response_sha256": "6a4cfac3ecb47ec80effa4f43d8dcb2f7454fbfad2265d7f0a8ec88c160cc38e"
+    },
+    {
+      "record_id": "prov_div_COP",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:31.293454Z",
+      "request_fingerprint_sha256": "72d9b3268f127d56a301eb106503645c4e9d7310465e939b737cd0d6fa8026a4",
+      "response_sha256": "5f94a9d39be8c13bae1133ced83a9b06e3847081f41188762f58dc15f85ca1aa"
+    },
+    {
+      "record_id": "prov_f1839d7d2896aa26_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:32.717333Z",
+      "request_fingerprint_sha256": "f1839d7d2896aa2614d38f93f64f95ca544951fb283afa7ae8fe0991e73aa305",
+      "response_sha256": "8dab072209ae7166de4960d4962adbb47cd21d55680f28d53511a5fd0bae8d23"
+    },
+    {
+      "record_id": "prov_1d8204504fd615e7_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:32.842882Z",
+      "request_fingerprint_sha256": "1d8204504fd615e76213b292d0e2afcb5459a0e806e5449ab175c32cc2c130e3",
+      "response_sha256": "060e516092a1c59f74a0bc930b0846d2267311658e79505aa5328a475d5da1c6"
+    },
+    {
+      "record_id": "prov_split_RTX",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:32.947899Z",
+      "request_fingerprint_sha256": "a9cfe20e509035bf29f8a298b0f8af2ddf914cf5fc736f82e8b19111c4d9c7e0",
+      "response_sha256": "e5844bfbfec6fde04757dbdc8807b18c0582bf9867c9ace6bfed78ed7dbb1b13"
+    },
+    {
+      "record_id": "prov_div_RTX",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:33.005905Z",
+      "request_fingerprint_sha256": "5b3ed08e3001c1b9acb76a9017e7306c8f6aa6ab39348d8159600ef8b2f75dc0",
+      "response_sha256": "78273e1a17d9de9ffc18554bf50566b7f5b00e1c98ebd6e1b42309ece7d7c0d3"
+    },
+    {
+      "record_id": "prov_c71ae1629bdfabd6_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:34.348213Z",
+      "request_fingerprint_sha256": "c71ae1629bdfabd681daf03f06bcb659ab92f7d16af90d1f79c6554578f77126",
+      "response_sha256": "9e567409448829eb2116aa5799d53150b7cb33afdb8729e3153b1636cafb5725"
+    },
+    {
+      "record_id": "prov_1a8a34d53886cd6c_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:34.469938Z",
+      "request_fingerprint_sha256": "1a8a34d53886cd6c247ddbd7606a5d43f0ced3e3c0f4243f187e05568334ef85",
+      "response_sha256": "9e567409448829eb2116aa5799d53150b7cb33afdb8729e3153b1636cafb5725"
+    },
+    {
+      "record_id": "prov_split_QCOM",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:34.616926Z",
+      "request_fingerprint_sha256": "41d8ddea5538c8241c2bb61015f09a17c66fdc1a016306f38ebc8be4cc921d64",
+      "response_sha256": "5548837b77340cd60167e6c1aa2d95368d828e300e20ed90a2dc7cd358bab953"
+    },
+    {
+      "record_id": "prov_div_QCOM",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:34.680085Z",
+      "request_fingerprint_sha256": "6e303b28794f05538c35754d6496d03a049f54be5ebea13fc1a5466da8c3e387",
+      "response_sha256": "17d3787e4583bc44986b6e678735360d5adab0fc26b8962f01537f5fb08cb81e"
+    },
+    {
+      "record_id": "prov_4097572861c60b55_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:36.068907Z",
+      "request_fingerprint_sha256": "4097572861c60b557cb7329622f3477dcb8f7f0de502ea57afab5ea7961846e2",
+      "response_sha256": "e33b851b2f9138e7ecb89bf703b2b709cd67552d9e050cabcfb615e4ced21fcc"
+    },
+    {
+      "record_id": "prov_1d2571c8b3020f9f_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:36.214547Z",
+      "request_fingerprint_sha256": "1d2571c8b3020f9fc03271a1a7fe5d810ddca6075bb2ab5b55fccf3f9f224852",
+      "response_sha256": "e33b851b2f9138e7ecb89bf703b2b709cd67552d9e050cabcfb615e4ced21fcc"
+    },
+    {
+      "record_id": "prov_split_UNP",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:36.340496Z",
+      "request_fingerprint_sha256": "f23208da6fa5527685e7156a87308064df1dfa7675557a757bb331509e27e558",
+      "response_sha256": "ad209da45fa91ab2c832fa40117c5deee9cfedafa9a85c4b12d546ca07112ce8"
+    },
+    {
+      "record_id": "prov_div_UNP",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:36.408759Z",
+      "request_fingerprint_sha256": "8fb91a83444975ca41a50acf158b75a5586635839eea4a73b6f4b99e76e742b6",
+      "response_sha256": "de203c339324092a282e160c2664519d8d4f4e3022a825997731a45efb43a1cb"
+    },
+    {
+      "record_id": "prov_69fc8552e94e3460_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:37.751365Z",
+      "request_fingerprint_sha256": "69fc8552e94e34606ce42644335f1af33751b093e36544449a53bebe256c4063",
+      "response_sha256": "1ce8c7594385ca56d7feba65d758fc1767622971dce5fe37330280506f2e90f0"
+    },
+    {
+      "record_id": "prov_c6553ea87f09436e_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:37.858832Z",
+      "request_fingerprint_sha256": "c6553ea87f09436e9c7d67bfd7527e89c71c1b358caa121d3d9c9f2f1697cfaa",
+      "response_sha256": "1ce8c7594385ca56d7feba65d758fc1767622971dce5fe37330280506f2e90f0"
+    },
+    {
+      "record_id": "prov_split_AMGN",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:37.970011Z",
+      "request_fingerprint_sha256": "047eff7dd06013ec06e08237dbd9347698798c71ef53dfc5c7b2b9e442632739",
+      "response_sha256": "31c23f4e01b00f609417ed64838ca9e592008bc7146ba81efae6e14bb62a5c44"
+    },
+    {
+      "record_id": "prov_div_AMGN",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:38.033014Z",
+      "request_fingerprint_sha256": "6ffc0e5801ce7139a647a26c4544175ba7c41b9121abf39731f3120f79f9a38d",
+      "response_sha256": "1cd85d018629fbd9c685c804002efda8dae8ddde8cd345acc52c45c549a56326"
+    },
+    {
+      "record_id": "prov_a2a5b0b8aa5fa194_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:39.412493Z",
+      "request_fingerprint_sha256": "a2a5b0b8aa5fa1949a760f955d6b4b85b2d6e2711501a63d8f64b81284d32fc8",
+      "response_sha256": "37ccea687cec028c4aa67add0bed126a2517e02678e02351a772b963e2564f41"
+    },
+    {
+      "record_id": "prov_605b67b7d75b08f0_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:39.524083Z",
+      "request_fingerprint_sha256": "605b67b7d75b08f048c1f356a81446fa3e6f0d32e8990a28b21752ff49a3ca66",
+      "response_sha256": "37ccea687cec028c4aa67add0bed126a2517e02678e02351a772b963e2564f41"
+    },
+    {
+      "record_id": "prov_split_IBM",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:39.629771Z",
+      "request_fingerprint_sha256": "68d339258e4f28f21f9a533397db1bd3bed78eba7ce79e9bf74323d49c4c252d",
+      "response_sha256": "2758a3023a39d9f21490e749d6c34b00cdf4cc877ff0eb333076bf2c29d18f80"
+    },
+    {
+      "record_id": "prov_div_IBM",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:39.687975Z",
+      "request_fingerprint_sha256": "88e98561c6a222b9f495d931bf4fb74f05d22fe6eb4ce291a0bb88520a5cd108",
+      "response_sha256": "d39d58dc02ac1e533fdcc96f71953250e3a165f9bff20b21edec89f5bf6f19d7"
+    },
+    {
+      "record_id": "prov_42126dbd9eef853c_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:41.727647Z",
+      "request_fingerprint_sha256": "42126dbd9eef853cdf7aa274dd05cc4c8d6dd465ae686831576cd19a1ff51cd6",
+      "response_sha256": "d16eed83d908cd53d7a5c30e2321e4aaa3ea09e2ffdbb8f191f917b40a700e50"
+    },
+    {
+      "record_id": "prov_ce02933c77ff9123_1",
+      "data_family": "daily_market_data",
+      "provider_name": "alpaca",
+      "provider_role": "fallback",
+      "endpoint_url_pattern": "/v2/stocks/{symbol}/bars",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:41.846094Z",
+      "request_fingerprint_sha256": "ce02933c77ff91232f0245cdf94d84726a6b788a66ed6946bd65f51b04c46e57",
+      "response_sha256": "d16eed83d908cd53d7a5c30e2321e4aaa3ea09e2ffdbb8f191f917b40a700e50"
+    },
+    {
+      "record_id": "prov_split_LOW",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/splits",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:41.946094Z",
+      "request_fingerprint_sha256": "40dd00fa10490b5501ac000316d385ebc7ccae9ef0bf2754b7c935d76d8c53c5",
+      "response_sha256": "0da95b94995688585c30f18b3e16abd495ab9f192bce67e25013b1228466e006"
+    },
+    {
+      "record_id": "prov_div_LOW",
+      "data_family": "corporate_actions",
+      "provider_name": "massive",
+      "provider_role": "primary",
+      "endpoint_url_pattern": "/v3/reference/dividends",
+      "retrieval_timestamp_utc": "2026-09-21T04:35:42.017278Z",
+      "request_fingerprint_sha256": "2cebf8b055576b2b61d34cdc23f04a58ce3e0359f7442c7e4d4e3ddbb5f8958a",
+      "response_sha256": "2dd81b1de56d14dbbaee347003096a7f206da261649cfb49fe295d1caa9a84b7"
+    }
+  ]
+}

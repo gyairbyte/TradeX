@@ -1,0 +1,89 @@
+{
+  "total_observations": 62237,
+  "eligible_observations": 57105,
+  "split_boundary_purged_observations": 1300,
+  "master_episodes_count": 887,
+  "distinct_immutable_securities_in_episodes": 50,
+  "effective_number_of_securities_in_episodes": 41.41,
+  "herfindahl_hirschman_index": 0.024151,
+  "primary_clean_10_10_prevalence": 0.054105,
+  "primary_clean_10_10_events": 3297,
+  "fallback_clean_10_21_prevalence": 0.134221,
+  "fallback_clean_10_21_events": 8179,
+  "resampling_21_primary": {
+    "block_size_sessions": 21,
+    "num_blocks": 60,
+    "num_bootstraps": 1000,
+    "clean_target_10_10": {
+      "mean": 0.050531192682536856,
+      "std_err": 0.008251158521833129,
+      "ci_2_5": 0.036783648470783976,
+      "median": 0.04983671559594886,
+      "ci_97_5": 0.06753853614752083
+    },
+    "clean_target_10_21": {
+      "mean": 0.12819489654910618,
+      "std_err": 0.011711889511336475,
+      "ci_2_5": 0.10617829115522914,
+      "median": 0.12803636395890966,
+      "ci_97_5": 0.15052881257417752
+    },
+    "gross_target_10_10": {
+      "mean": 0.058129130033707885,
+      "std_err": 0.011741481775620793,
+      "ci_2_5": 0.039715129457840254,
+      "median": 0.056627387704684645,
+      "ci_97_5": 0.08432537520645653
+    },
+    "gross_target_10_21": {
+      "mean": 0.15142433414296425,
+      "std_err": 0.017363158199543018,
+      "ci_2_5": 0.1202377492496875,
+      "median": 0.15078493785454433,
+      "ci_97_5": 0.1864877765283204
+    }
+  },
+  "resampling_42_robustness": {
+    "block_size_sessions": 42,
+    "num_blocks": 30,
+    "num_bootstraps": 1000,
+    "clean_target_10_10": {
+      "mean": 0.05027844289474861,
+      "std_err": 0.009795145867119106,
+      "ci_2_5": 0.03348276449765806,
+      "median": 0.04954267883152398,
+      "ci_97_5": 0.07159928274661528
+    },
+    "clean_target_10_21": {
+      "mean": 0.12812197830862235,
+      "std_err": 0.014413027952712452,
+      "ci_2_5": 0.1009551926094617,
+      "median": 0.12768700814627332,
+      "ci_97_5": 0.15732696488361989
+    },
+    "gross_target_10_10": {
+      "mean": 0.0577043343879868,
+      "std_err": 0.013274505834412456,
+      "ci_2_5": 0.036090967988512364,
+      "median": 0.056362442421540385,
+      "ci_97_5": 0.08743712655103934
+    },
+    "gross_target_10_21": {
+      "mean": 0.15099738155176187,
+      "std_err": 0.02109973269637364,
+      "ci_2_5": 0.11256875051580635,
+      "median": 0.15007840892157753,
+      "ci_97_5": 0.19581241606650857
+    }
+  },
+  "selected_endpoint": "clean_+10%_10_sessions",
+  "endpoint_disposition": "primary_retained",
+  "rationale": "Primary endpoint +10%/10 retained: Development census provides 887 master episodes and 3297 clean target events (prevalence 0.0541, 21-session block 95% CI [0.0368, 0.0675]). Effective number of securities = 41.41.",
+  "proposed_frozen_evidence_gates": {
+    "minimum_master_episodes_validation": 266,
+    "minimum_clean_target_events_validation": 989,
+    "minimum_effective_securities_validation": 14.5,
+    "minimum_actionable_observations_validation": 17131,
+    "clustering_session_fraction_ceiling": 0.85
+  }
+}

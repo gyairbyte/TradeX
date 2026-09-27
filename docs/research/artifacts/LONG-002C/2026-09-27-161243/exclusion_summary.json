@@ -1,0 +1,28 @@
+{
+  "total_exclusions": 3684007,
+  "by_category": {
+    "price": 103278,
+    "liquidity": 712632,
+    "trading_history": 649373,
+    "market_cap": 688786,
+    "data_quality": 1517288,
+    "split_boundary": 12542,
+    "corporate_action": 108
+  },
+  "by_reason_code": {
+    "price_below_5": 103278,
+    "dollar_volume_20d_below_20m": 570089,
+    "insufficient_trading_history": 161375,
+    "market_cap_non_positive_as_traded_close": 1143,
+    "unverified_history_truncated": 487998,
+    "data_quality_completeness_below_99": 494685,
+    "data_quality_missing_sessions_exceeded": 494685,
+    "data_quality_consecutive_missing_exceeded": 497291,
+    "split_boundary_purged": 12542,
+    "forward_analytical_data_incomplete": 30627,
+    "market_cap_unavailable_at_cutoff": 47861,
+    "market_cap_valid_below_3b": 639782,
+    "dollar_volume_60d_below_10m": 142543,
+    "special_distribution_unresolved": 108
+  }
+}

@@ -1,0 +1,148 @@
+{
+  "total_observations": 1407800,
+  "eligible_observations": 758731,
+  "split_boundary_purged_observations": 6271,
+  "master_episodes_count": 16139,
+  "distinct_immutable_securities_in_episodes": 1205,
+  "effective_number_of_securities_in_episodes": 901.15,
+  "herfindahl_hirschman_index": 0.00111,
+  "primary_clean_10_10_prevalence": 0.088644,
+  "primary_clean_10_10_events": 67257,
+  "primary_10_10_denominator": 758731,
+  "fallback_clean_10_21_prevalence": 0.178723,
+  "fallback_clean_10_21_events": 135603,
+  "fallback_10_21_denominator": 758731,
+  "resampling_21_primary": {
+    "block_size_sessions": 21,
+    "num_blocks": 60,
+    "num_bootstraps": 1000,
+    "clean_target_10_10": {
+      "mean": 0.08827009901251016,
+      "std_err": 0.011305722521853974,
+      "ci_2_5": 0.06719449048838683,
+      "median": 0.08772696599302696,
+      "ci_97_5": 0.11077220248861726
+    },
+    "clean_target_10_21": {
+      "mean": 0.17821409844353248,
+      "std_err": 0.014815050311193729,
+      "ci_2_5": 0.1502849182598374,
+      "median": 0.17794224255581192,
+      "ci_97_5": 0.20813443342494806
+    },
+    "gross_target_10_10": {
+      "mean": 0.10539519488985521,
+      "std_err": 0.016800197108757787,
+      "ci_2_5": 0.07581829710010037,
+      "median": 0.10425728824319512,
+      "ci_97_5": 0.14013679184072841
+    },
+    "gross_target_10_21": {
+      "mean": 0.22815714820056662,
+      "std_err": 0.02328796589114158,
+      "ci_2_5": 0.18351313837603936,
+      "median": 0.22739667967450025,
+      "ci_97_5": 0.274103296165895
+    }
+  },
+  "resampling_42_robustness": {
+    "block_size_sessions": 42,
+    "num_blocks": 30,
+    "num_bootstraps": 1000,
+    "clean_target_10_10": {
+      "mean": 0.08795628513931593,
+      "std_err": 0.013768591711139826,
+      "ci_2_5": 0.06372916965777962,
+      "median": 0.08692597619278791,
+      "ci_97_5": 0.11714637031156683
+    },
+    "clean_target_10_21": {
+      "mean": 0.17791894680212555,
+      "std_err": 0.015590974672804944,
+      "ci_2_5": 0.1498726384600943,
+      "median": 0.1772157718118068,
+      "ci_97_5": 0.21062530329552842
+    },
+    "gross_target_10_10": {
+      "mean": 0.10478883269044724,
+      "std_err": 0.02071044529839347,
+      "ci_2_5": 0.06928570306247757,
+      "median": 0.10281483762976422,
+      "ci_97_5": 0.15086390555781162
+    },
+    "gross_target_10_21": {
+      "mean": 0.22738646929620876,
+      "std_err": 0.028111223346432745,
+      "ci_2_5": 0.1765971247807123,
+      "median": 0.22629282998231331,
+      "ci_97_5": 0.28756676450036933
+    }
+  },
+  "selected_endpoint": "pending_gary_chatgpt_review",
+  "endpoint_disposition": "pending_gary_chatgpt_review",
+  "rationale": "Endpoint disposition is pending Gary/ChatGPT review of the completed development census. Development census observed 16139 master episodes, 67257 primary clean target events (prevalence 0.0886, denominator 758731, 21-session block 95% CI lower bound 0.0672), effective securities 901.1, and fallback +10%/21 clean events 135603 (prevalence 0.1787, denominator 758731).",
+  "proposed_evidence_gates_for_review": {
+    "status": "proposed_for_review",
+    "notes": "Proposed numerical evidence gates derived from development data for Gary/ChatGPT review; not locked.",
+    "minimum_master_episodes_validation": 4841,
+    "minimum_clean_target_events_validation": 20177,
+    "minimum_effective_securities_validation": 315.4,
+    "actionable_observations_status": "unavailable_historical_earnings_unknown",
+    "minimum_actionable_observations_validation": null,
+    "clustering_session_fraction_ceiling": 0.85
+  },
+  "proposed_frozen_evidence_gates": {
+    "status": "proposed_for_review",
+    "notes": "Proposed numerical evidence gates derived from development data for Gary/ChatGPT review; not locked.",
+    "minimum_master_episodes_validation": 4841,
+    "minimum_clean_target_events_validation": 20177,
+    "minimum_effective_securities_validation": 315.4,
+    "actionable_observations_status": "unavailable_historical_earnings_unknown",
+    "minimum_actionable_observations_validation": null,
+    "clustering_session_fraction_ceiling": 0.85
+  },
+  "reevaluation_0900_diagnostic": {
+    "observations_count": 1407800,
+    "total_decision_observations": 1407800,
+    "raw_outcome_eligible_observations": 758735,
+    "valid_10_10_denominator": 758735,
+    "valid_10_21_denominator": 758735,
+    "clean_target_10_10_events": 67259,
+    "clean_target_10_21_events": 135603,
+    "clean_target_10_10_prevalence": 0.088646,
+    "clean_target_10_21_prevalence": 0.178722,
+    "resampling_21": {
+      "block_size_sessions": 21,
+      "num_blocks": 60,
+      "num_bootstraps": 1000,
+      "clean_target_10_10": {
+        "mean": 0.08824563438862143,
+        "std_err": 0.011224808083520266,
+        "ci_2_5": 0.06749491569971851,
+        "median": 0.08744773125269995,
+        "ci_97_5": 0.11145157583911577
+      },
+      "clean_target_10_21": {
+        "mean": 0.1782355359909979,
+        "std_err": 0.014824505197629782,
+        "ci_2_5": 0.14996181058035815,
+        "median": 0.1776963415105951,
+        "ci_97_5": 0.20929784882631117
+      },
+      "gross_target_10_10": {
+        "mean": 0.10536892289816961,
+        "std_err": 0.01653076917595456,
+        "ci_2_5": 0.07625652586214181,
+        "median": 0.10426721251618468,
+        "ci_97_5": 0.13916395535414097
+      },
+      "gross_target_10_21": {
+        "mean": 0.22818712268941305,
+        "std_err": 0.02310875201577526,
+        "ci_2_5": 0.18420060989106923,
+        "median": 0.22762869625780635,
+        "ci_97_5": 0.27463749415899097
+      }
+    }
+  }
+}
