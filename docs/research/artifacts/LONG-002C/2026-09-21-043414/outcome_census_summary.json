@@ -1,0 +1,129 @@
+{
+  "nine_cells": {
+    "+10%_5d": {
+      "target_pct": 10.0,
+      "horizon_sessions": 5,
+      "total_evaluated": 60937,
+      "clean_target_reached_count": 1325,
+      "clean_target_reached_rate": 0.021744,
+      "gross_target_reached_count": 1456,
+      "gross_target_reached_rate": 0.023894,
+      "near_miss_count": 1076,
+      "partial_move_count": 4675,
+      "adverse_excursion_count": 5581,
+      "sustained_target_count": 1053
+    },
+    "+10%_10d": {
+      "target_pct": 10.0,
+      "horizon_sessions": 10,
+      "total_evaluated": 60937,
+      "clean_target_reached_count": 3297,
+      "clean_target_reached_rate": 0.054105,
+      "gross_target_reached_count": 3769,
+      "gross_target_reached_rate": 0.061851,
+      "near_miss_count": 2493,
+      "partial_move_count": 9165,
+      "adverse_excursion_count": 10268,
+      "sustained_target_count": 2560
+    },
+    "+10%_21d": {
+      "target_pct": 10.0,
+      "horizon_sessions": 21,
+      "total_evaluated": 60937,
+      "clean_target_reached_count": 8179,
+      "clean_target_reached_rate": 0.134221,
+      "gross_target_reached_count": 9723,
+      "gross_target_reached_rate": 0.159558,
+      "near_miss_count": 5096,
+      "partial_move_count": 13107,
+      "adverse_excursion_count": 16648,
+      "sustained_target_count": 6607
+    },
+    "+20%_5d": {
+      "target_pct": 20.0,
+      "horizon_sessions": 5,
+      "total_evaluated": 60937,
+      "clean_target_reached_count": 161,
+      "clean_target_reached_rate": 0.002642,
+      "gross_target_reached_count": 173,
+      "gross_target_reached_rate": 0.002839,
+      "near_miss_count": 180,
+      "partial_move_count": 1103,
+      "adverse_excursion_count": 5581,
+      "sustained_target_count": 143
+    },
+    "+20%_10d": {
+      "target_pct": 20.0,
+      "horizon_sessions": 10,
+      "total_evaluated": 60937,
+      "clean_target_reached_count": 518,
+      "clean_target_reached_rate": 0.008501,
+      "gross_target_reached_count": 566,
+      "gross_target_reached_rate": 0.009288,
+      "near_miss_count": 492,
+      "partial_move_count": 2711,
+      "adverse_excursion_count": 10268,
+      "sustained_target_count": 420
+    },
+    "+20%_21d": {
+      "target_pct": 20.0,
+      "horizon_sessions": 21,
+      "total_evaluated": 60937,
+      "clean_target_reached_count": 1527,
+      "clean_target_reached_rate": 0.025059,
+      "gross_target_reached_count": 1754,
+      "gross_target_reached_rate": 0.028784,
+      "near_miss_count": 1396,
+      "partial_move_count": 6573,
+      "adverse_excursion_count": 16648,
+      "sustained_target_count": 1320
+    },
+    "+30%_5d": {
+      "target_pct": 30.0,
+      "horizon_sessions": 5,
+      "total_evaluated": 60937,
+      "clean_target_reached_count": 34,
+      "clean_target_reached_rate": 0.000558,
+      "gross_target_reached_count": 35,
+      "gross_target_reached_rate": 0.000574,
+      "near_miss_count": 49,
+      "partial_move_count": 362,
+      "adverse_excursion_count": 5581,
+      "sustained_target_count": 32
+    },
+    "+30%_10d": {
+      "target_pct": 30.0,
+      "horizon_sessions": 10,
+      "total_evaluated": 60937,
+      "clean_target_reached_count": 134,
+      "clean_target_reached_rate": 0.002199,
+      "gross_target_reached_count": 140,
+      "gross_target_reached_rate": 0.002297,
+      "near_miss_count": 160,
+      "partial_move_count": 1018,
+      "adverse_excursion_count": 10268,
+      "sustained_target_count": 114
+    },
+    "+30%_21d": {
+      "target_pct": 30.0,
+      "horizon_sessions": 21,
+      "total_evaluated": 60937,
+      "clean_target_reached_count": 477,
+      "clean_target_reached_rate": 0.007828,
+      "gross_target_reached_count": 525,
+      "gross_target_reached_rate": 0.008615,
+      "near_miss_count": 543,
+      "partial_move_count": 2651,
+      "adverse_excursion_count": 16648,
+      "sustained_target_count": 406
+    }
+  },
+  "dual_reporting": {
+    "total_observations": 62237,
+    "raw_outcome_eligible_observations": 57105,
+    "earnings_schedule_known_count": 0,
+    "earnings_schedule_unknown_count": 62237,
+    "actionable_eligible_count": 0,
+    "unavailable_earnings_unknown_count": 58405
+  }
+}

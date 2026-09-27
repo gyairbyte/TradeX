@@ -27,4 +27,6 @@ build/
 
 # uv lockfile is not tracked in this repo
 uv.lock
+# Research external row-level datasets
+data/
 

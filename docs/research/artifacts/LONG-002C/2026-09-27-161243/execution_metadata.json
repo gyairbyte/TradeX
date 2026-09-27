@@ -1,0 +1,13 @@
+{
+  "task_id": "LONG-002C-EXEC-001",
+  "run_id": "2026-09-27-161243",
+  "runtime_seconds": 7182.53,
+  "created_at_utc": "2026-09-27T18:12:25.747143Z",
+  "mode": "full",
+  "python_version": "3.11.15",
+  "endpoint_disposition": "pending_gary_chatgpt_review",
+  "selected_endpoint": "pending_gary_chatgpt_review",
+  "total_observations": 2815600,
+  "master_episodes_count": 16139,
+  "strongest_baseline_winner": "volatility_aware_momentum_5"
+}

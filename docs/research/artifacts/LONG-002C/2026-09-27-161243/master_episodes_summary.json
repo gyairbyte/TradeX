@@ -1,0 +1,17 @@
+{
+  "total_episodes": 16139,
+  "unique_anchor_securities": 1205,
+  "annual_counts": {
+    "2016": 67,
+    "2017": 2159,
+    "2018": 3982,
+    "2019": 3957,
+    "2020": 5974
+  },
+  "max_target_tier_counts": {
+    "10": 14413,
+    "20": 1145,
+    "30": 581
+  },
+  "average_constituent_observations": 41.99
+}

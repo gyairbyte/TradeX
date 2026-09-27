@@ -1,0 +1,66 @@
+{
+  "comparators": {
+    "universe_base_rate": {
+      "comparator_family": "universe_base_rate",
+      "total_evaluations": 58405,
+      "top_10_percentile_count": 58405,
+      "top_25_percentile_count": 58405
+    },
+    "simple_momentum_5": {
+      "comparator_family": "simple_momentum",
+      "total_evaluations": 58405,
+      "top_10_percentile_count": 6274,
+      "top_25_percentile_count": 15495
+    },
+    "simple_momentum_10": {
+      "comparator_family": "simple_momentum",
+      "total_evaluations": 58405,
+      "top_10_percentile_count": 6274,
+      "top_25_percentile_count": 15495
+    },
+    "simple_momentum_20": {
+      "comparator_family": "simple_momentum",
+      "total_evaluations": 58405,
+      "top_10_percentile_count": 6274,
+      "top_25_percentile_count": 15495
+    },
+    "simple_momentum_60": {
+      "comparator_family": "simple_momentum",
+      "total_evaluations": 58405,
+      "top_10_percentile_count": 6274,
+      "top_25_percentile_count": 15495
+    },
+    "volatility_aware_momentum_5": {
+      "comparator_family": "volatility_aware_momentum",
+      "total_evaluations": 58405,
+      "top_10_percentile_count": 6274,
+      "top_25_percentile_count": 15495
+    },
+    "volatility_aware_momentum_10": {
+      "comparator_family": "volatility_aware_momentum",
+      "total_evaluations": 58405,
+      "top_10_percentile_count": 6274,
+      "top_25_percentile_count": 15495
+    },
+    "volatility_aware_momentum_20": {
+      "comparator_family": "volatility_aware_momentum",
+      "total_evaluations": 58405,
+      "top_10_percentile_count": 6274,
+      "top_25_percentile_count": 15495
+    },
+    "volatility_aware_momentum_60": {
+      "comparator_family": "volatility_aware_momentum",
+      "total_evaluations": 58405,
+      "top_10_percentile_count": 6274,
+      "top_25_percentile_count": 15495
+    },
+    "legacy_tradex_scorer": {
+      "comparator_family": "legacy_tradex_scorer",
+      "total_evaluations": 58405,
+      "top_10_percentile_count": 6274,
+      "top_25_percentile_count": 15495
+    }
+  },
+  "frozen_strongest_simple_baseline": "simple_momentum_20",
+  "notes": "Baselines evaluated on common observations with repository default LongWeights()."
+}

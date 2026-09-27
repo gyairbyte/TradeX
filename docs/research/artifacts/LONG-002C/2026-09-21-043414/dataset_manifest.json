@@ -1,0 +1,77 @@
+{
+  "task_id": "LONG-002C-EXEC-001",
+  "run_id": "2026-09-21-043414",
+  "created_at_utc": "2026-09-21T04:44:27.417745Z",
+  "external_files": [
+    {
+      "relative_path": "data/research/long_002c/decision_observations.parquet",
+      "schema_name": "decision_observations",
+      "row_count": 62237,
+      "byte_count": 1792534,
+      "sha256": "9e2dc702bd060ebf75f5e38335be4148e37ea7b26c424ab34540d7dd42cd1689"
+    },
+    {
+      "relative_path": "data/research/long_002c/data_eligibility.parquet",
+      "schema_name": "data_eligibility",
+      "row_count": 62237,
+      "byte_count": 196321,
+      "sha256": "6da4c6422227725f9668da2ad960f4b9bf136772550ec5200925c40f41a5ced2"
+    },
+    {
+      "relative_path": "data/research/long_002c/security_classification_status.parquet",
+      "schema_name": "security_classification_status",
+      "row_count": 62237,
+      "byte_count": 99205,
+      "sha256": "7542650d88103c37c7c7a50dd58051052e87e71e4c93131b182ac6cd4f152f3b"
+    },
+    {
+      "relative_path": "data/research/long_002c/outcome_matrix.parquet",
+      "schema_name": "outcome_label_records",
+      "row_count": 548433,
+      "byte_count": 14957703,
+      "sha256": "c123590d290540b273480636d8229cb502295439c42d6c68ca372526fb815ad5"
+    },
+    {
+      "relative_path": "data/research/long_002c/master_episodes.parquet",
+      "schema_name": "master_opportunity_episodes",
+      "row_count": 887,
+      "byte_count": 47064,
+      "sha256": "b65e6aaa1d19d279e855f10d0802ea5c423f99fd3440c9b49d56c53d9ae954a6"
+    },
+    {
+      "relative_path": "data/research/long_002c/constituent_memberships.parquet",
+      "schema_name": "episode_membership",
+      "row_count": 18627,
+      "byte_count": 47768,
+      "sha256": "e659b4703fa8dc78109796eb25a65b953920bb97b4818dca6a22500e2266a47e"
+    },
+    {
+      "relative_path": "data/research/long_002c/baseline_comparator_outputs.parquet",
+      "schema_name": "baseline_comparator_outputs",
+      "row_count": 584050,
+      "byte_count": 3090072,
+      "sha256": "ead14e24059cbb0076ba2886b13739c2756af473bf37848314bc37b9dced899e"
+    },
+    {
+      "relative_path": "data/research/long_002c/data_quality_coverage.parquet",
+      "schema_name": "data_quality_coverage",
+      "row_count": 50,
+      "byte_count": 7635,
+      "sha256": "1a21a29366f861bcb356d09005304976a60d35640756f18ec11280b628d8a76f"
+    },
+    {
+      "relative_path": "data/research/long_002c/provenance_records.parquet",
+      "schema_name": "provenance_provider_records",
+      "row_count": 200,
+      "byte_count": 36221,
+      "sha256": "5d7c7eb2110e1fa3046c64f68523f072b0f95f23a14c76e6a14caa3f8de0757b"
+    },
+    {
+      "relative_path": "data/research/long_002c/exclusions.parquet",
+      "schema_name": "exclusions_and_reason_codes",
+      "row_count": 7403,
+      "byte_count": 30575,
+      "sha256": "dad817e70dc88f4e7f71bebda5bef84f3b0e6b9ec7ff86dce76080f0f1e0fa3d"
+    }
+  ]
+}

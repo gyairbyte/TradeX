@@ -1,0 +1,1185 @@
+"""Auditable research provider clients for LONG-002C.
+
+Integrates Alpaca (daily bars fallback), Massive (reference / corporate actions), and SEC EDGAR (fundamentals/shares).
+All clients record provenance, enforce budgets, and never log secrets.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Any
+
+import requests
+
+from tradex.config import load_runtime_settings
+from tradex.research.long_002c.cache import ResponseCache, sanitize_url
+from tradex.research.long_002c.exceptions import (
+    MalformedProviderResponse,
+    ProviderDataUnavailable,
+    ProviderPaginationIncomplete,
+    ProviderRateLimitedUnresolved,
+    ProviderRequestFailed,
+)
+from tradex.research.long_002c.models import ProvenanceProviderRecord
+
+__all__ = [
+    "AlpacaDailyClient",
+    "EdgarClient",
+    "MalformedProviderResponse",
+    "MassiveRefClient",
+    "ProviderDataUnavailable",
+    "ProviderPaginationIncomplete",
+    "ProviderRateLimitedUnresolved",
+    "ProviderRequestFailed",
+    "RequestBudget",
+    "SnapshotPaginationMeta",
+    "resolve_credentials",
+]
+
+
+@dataclass(frozen=True)
+class SnapshotPaginationMeta:
+    """Detailed pagination and completeness audit metadata for a reference snapshot."""
+
+    pit_date: str
+    active: bool
+    pages_fetched: int
+    records_per_page: list[int]
+    total_records: int
+    pagination_exhausted_normally: bool
+    safety_max_pages_hit: bool
+    first_ticker: str | None
+    last_ticker: str | None
+    response_hashes: list[str]
+    is_complete: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "pit_date": self.pit_date,
+            "active": self.active,
+            "pages_fetched": self.pages_fetched,
+            "records_per_page": self.records_per_page,
+            "total_records": self.total_records,
+            "pagination_exhausted_normally": self.pagination_exhausted_normally,
+            "safety_max_pages_hit": self.safety_max_pages_hit,
+            "first_ticker": self.first_ticker,
+            "last_ticker": self.last_ticker,
+            "response_hashes": self.response_hashes,
+            "is_complete": self.is_complete,
+        }
+
+
+def _now_utc() -> str:
+    return datetime.now(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
+
+
+def _json_hash(obj: Any) -> str:
+    return hashlib.sha256(json.dumps(obj, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+
+
+class BudgetError(RuntimeError):
+    """Raised when the network budget is exhausted."""
+
+
+class RequestBudget:
+    """Shared budget counter for provider network requests."""
+
+    def __init__(self, max_requests: int = 50000) -> None:
+        self.max_requests = max_requests
+        self.used = 0
+        self.started_at = time.monotonic()
+
+    def charge(self, n: int = 1) -> None:
+        if self.used + n > self.max_requests:
+            raise BudgetError(f"Request budget exhausted: {self.used + n}/{self.max_requests}")
+        self.used += n
+
+    def elapsed_seconds(self) -> float:
+        return time.monotonic() - self.started_at
+
+
+class AlpacaDailyClient:
+    """Daily market data client using Alpaca REST API with auditable retry and rate-limit tracking."""
+
+    def __init__(
+        self,
+        api_key: str,
+        secret_key: str,
+        budget: RequestBudget | None = None,
+        request_func: Callable[..., requests.Response] | None = None,
+        request_delay_seconds: float = 0.35,
+        max_retries: int = 3,
+        cache: ResponseCache | None = None,
+    ) -> None:
+        if not api_key or not secret_key:
+            raise ValueError("Alpaca API key and secret key are required")
+        self.api_key = api_key
+        self.secret_key = secret_key
+        self.budget = budget or RequestBudget()
+        self._request_func = request_func or requests.get
+        self.request_delay_seconds = request_delay_seconds if request_delay_seconds is not None else 0.35
+        self.max_retries = max_retries
+        self.cache = cache
+        self.host = "https://data.alpaca.markets"
+        self._last_request_time: float = 0.0
+
+        # Audit metrics
+        self.network_requests_count: int = 0
+        self.cache_hits_count: int = 0
+        self.retries_count: int = 0
+        self.rate_limit_429_count: int = 0
+        self.transport_failure_count: int = 0
+        self.exhausted_retry_count: int = 0
+        self.incomplete_pagination_count: int = 0
+
+    def get_audit_metrics(self) -> dict[str, int]:
+        """Return auditable request and rate-limit metrics."""
+        return {
+            "network_requests_count": self.network_requests_count,
+            "cache_hits_count": self.cache_hits_count,
+            "retries_count": self.retries_count,
+            "rate_limit_429_count": self.rate_limit_429_count,
+            "transport_failure_count": self.transport_failure_count,
+            "exhausted_retry_count": self.exhausted_retry_count,
+            "incomplete_pagination_count": self.incomplete_pagination_count,
+        }
+
+    def reset_audit_metrics(self) -> None:
+        """Reset auditable metrics counters."""
+        self.network_requests_count = 0
+        self.cache_hits_count = 0
+        self.retries_count = 0
+        self.rate_limit_429_count = 0
+        self.transport_failure_count = 0
+        self.exhausted_retry_count = 0
+        self.incomplete_pagination_count = 0
+
+    def _wait_for_pacing(self) -> None:
+        """Enforce rate-limit pacing between uncached network requests."""
+        if self.request_delay_seconds <= 0:
+            return
+        now = time.monotonic()
+        elapsed = now - self._last_request_time
+        if elapsed < self.request_delay_seconds:
+            time.sleep(self.request_delay_seconds - elapsed)
+        self._last_request_time = time.monotonic()
+
+    def _headers(self) -> dict[str, str]:
+        return {
+            "APCA-API-KEY-ID": self.api_key,
+            "APCA-API-SECRET-KEY": self.secret_key,
+            "Accept": "application/json",
+        }
+
+    def fetch_daily_bars(
+        self,
+        symbol: str,
+        start_utc: str,
+        end_utc: str,
+        *,
+        feed: str = "sip",
+        adjustment: str = "raw",
+    ) -> tuple[list[dict[str, Any]], list[ProvenanceProviderRecord]]:
+        """Fetch daily bars for symbol between start_utc and end_utc, paginating to completion.
+
+        Raises:
+            ProviderDataUnavailable (or subclass) on any transport, 429, 5xx, or pagination failure.
+            Never converts request failures into empty bars or partial history.
+        """
+        url = f"{self.host}/v2/stocks/{symbol.upper()}/bars"
+        params: dict[str, Any] = {
+            "timeframe": "1Day",
+            "start": start_utc,
+            "end": end_utc,
+            "feed": feed,
+            "adjustment": adjustment,
+            "sort": "asc",
+            "limit": 10000,
+        }
+        all_bars: list[dict[str, Any]] = []
+        provenance_records: list[ProvenanceProviderRecord] = []
+        page = 0
+
+        while page < 50:
+            page += 1
+            req_time = _now_utc()
+            req_fp = _json_hash({"url": url, "params": params, "feed": feed, "adjustment": adjustment})
+
+            if self.cache:
+                cached_data, cached_sha, cached_ts = self.cache.get_json(url, req_fp)
+                if cached_data is not None and isinstance(cached_data, dict):
+                    self.cache_hits_count += 1
+                    provenance_records.append(
+                        ProvenanceProviderRecord(
+                            record_id=f"prov_{req_fp[:16]}_{page}",
+                            data_family="daily_market_data",
+                            provider_name="alpaca",
+                            provider_role="fallback",
+                            endpoint_url_pattern="/v2/stocks/{symbol}/bars",
+                            retrieval_timestamp_utc=cached_ts or req_time,
+                            request_fingerprint_sha256=req_fp,
+                            response_sha256=cached_sha or "",
+                        )
+                    )
+                    bars = cached_data.get("bars") if isinstance(cached_data, dict) else None
+                    if isinstance(bars, dict):
+                        bars = bars.get(symbol.upper())
+                    if bars:
+                        all_bars.extend(bars)
+                    next_token = cached_data.get("next_page_token")
+                    if not next_token:
+                        break
+                    params["page_token"] = next_token
+                    continue
+
+            self.budget.charge(1)
+            self._wait_for_pacing()
+            self.network_requests_count += 1
+
+            attempt = 0
+            resp: requests.Response | None = None
+            last_exc: Exception | None = None
+
+            while attempt <= self.max_retries:
+                attempt += 1
+                try:
+                    resp = self._request_func(
+                        url,
+                        params=params,
+                        headers=self._headers(),
+                        timeout=30,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    last_exc = exc
+                    self.transport_failure_count += 1
+                    if attempt <= self.max_retries:
+                        self.retries_count += 1
+                        time.sleep(min(30.0, max(0.5, self.request_delay_seconds * (2 ** attempt))))
+                        continue
+                    break
+
+                if resp.status_code == 429:
+                    self.rate_limit_429_count += 1
+                    retry_after = resp.headers.get("Retry-After")
+                    reset_ts = resp.headers.get("X-Ratelimit-Reset")
+                    if retry_after and retry_after.strip().isdigit():
+                        wait_sec = float(retry_after.strip()) + 0.5
+                    elif reset_ts:
+                        try:
+                            wait_sec = max(1.0, min(60.0, float(reset_ts) - time.time() + 0.5))
+                        except (ValueError, TypeError):
+                            wait_sec = min(60.0, max(1.0, self.request_delay_seconds * (2 ** attempt)))
+                    else:
+                        wait_sec = min(60.0, max(1.0, self.request_delay_seconds * (2 ** attempt)))
+
+                    if attempt <= self.max_retries:
+                        self.retries_count += 1
+                        time.sleep(wait_sec)
+                        continue
+                    break
+
+                if resp.status_code >= 500:
+                    if attempt <= self.max_retries:
+                        self.retries_count += 1
+                        time.sleep(min(30.0, max(0.5, self.request_delay_seconds * (2 ** attempt))))
+                        continue
+                    break
+
+                # Success or non-retryable status
+                break
+
+            # Handle transport failure after retries
+            if resp is None:
+                self.exhausted_retry_count += 1
+                err_msg = str(last_exc) if last_exc else "Transport exception"
+                provenance_records.append(
+                    ProvenanceProviderRecord(
+                        record_id=f"prov_{req_fp[:16]}_{page}",
+                        data_family="daily_market_data",
+                        provider_name="alpaca",
+                        provider_role="fallback",
+                        endpoint_url_pattern="/v2/stocks/{symbol}/bars",
+                        retrieval_timestamp_utc=req_time,
+                        request_fingerprint_sha256=req_fp,
+                        response_sha256=hashlib.sha256(err_msg.encode()).hexdigest(),
+                    )
+                )
+                if page > 1:
+                    self.incomplete_pagination_count += 1
+                    raise ProviderPaginationIncomplete(
+                        f"Alpaca pagination incomplete for {symbol} on page {page}: transport error after {attempt} attempts: {err_msg}",
+                        symbol=symbol,
+                        page=page,
+                        retry_count=attempt,
+                        provenance_records=provenance_records,
+                    )
+                raise ProviderRequestFailed(
+                    f"Alpaca request failed for {symbol}: transport error after {attempt} attempts: {err_msg}",
+                    symbol=symbol,
+                    page=page,
+                    retry_count=attempt,
+                    provenance_records=provenance_records,
+                )
+
+            # Handle HTTP failure after retries
+            if resp.status_code != 200:
+                self.exhausted_retry_count += 1
+                resp_hash = hashlib.sha256(resp.content).hexdigest()
+                provenance_records.append(
+                    ProvenanceProviderRecord(
+                        record_id=f"prov_{req_fp[:16]}_{page}",
+                        data_family="daily_market_data",
+                        provider_name="alpaca",
+                        provider_role="fallback",
+                        endpoint_url_pattern="/v2/stocks/{symbol}/bars",
+                        retrieval_timestamp_utc=req_time,
+                        request_fingerprint_sha256=req_fp,
+                        response_sha256=resp_hash,
+                    )
+                )
+                if page > 1:
+                    self.incomplete_pagination_count += 1
+                    raise ProviderPaginationIncomplete(
+                        f"Alpaca pagination incomplete for {symbol} on page {page}: HTTP {resp.status_code} after {attempt} attempts",
+                        symbol=symbol,
+                        page=page,
+                        status_code=resp.status_code,
+                        retry_count=attempt,
+                        provenance_records=provenance_records,
+                    )
+                if resp.status_code == 429:
+                    raise ProviderRateLimitedUnresolved(
+                        f"Alpaca rate limit 429 unresolved for {symbol} after {attempt} attempts",
+                        symbol=symbol,
+                        page=page,
+                        status_code=429,
+                        retry_count=attempt,
+                        provenance_records=provenance_records,
+                    )
+                raise ProviderRequestFailed(
+                    f"Alpaca HTTP {resp.status_code} for {symbol} after {attempt} attempts",
+                    symbol=symbol,
+                    page=page,
+                    status_code=resp.status_code,
+                    retry_count=attempt,
+                    provenance_records=provenance_records,
+                )
+
+            # Successful HTTP 200 response
+            resp_hash = hashlib.sha256(resp.content).hexdigest()
+            if self.cache:
+                self.cache.set(
+                    url,
+                    req_fp,
+                    resp.content,
+                    endpoint_pattern="/v2/stocks/{symbol}/bars",
+                    retrieval_timestamp_utc=req_time,
+                )
+
+            provenance_records.append(
+                ProvenanceProviderRecord(
+                    record_id=f"prov_{req_fp[:16]}_{page}",
+                    data_family="daily_market_data",
+                    provider_name="alpaca",
+                    provider_role="fallback",
+                    endpoint_url_pattern="/v2/stocks/{symbol}/bars",
+                    retrieval_timestamp_utc=req_time,
+                    request_fingerprint_sha256=req_fp,
+                    response_sha256=resp_hash,
+                )
+            )
+
+            try:
+                data = resp.json()
+            except Exception as exc:
+                if page > 1:
+                    self.incomplete_pagination_count += 1
+                    raise ProviderPaginationIncomplete(
+                        f"Alpaca pagination incomplete for {symbol} on page {page}: malformed JSON response",
+                        symbol=symbol,
+                        page=page,
+                        status_code=200,
+                        provenance_records=provenance_records,
+                    ) from exc
+                raise MalformedProviderResponse(
+                    f"Alpaca response for {symbol} could not be parsed as JSON: {exc}",
+                    symbol=symbol,
+                    page=page,
+                    status_code=200,
+                    provenance_records=provenance_records,
+                ) from exc
+
+            if not isinstance(data, dict):
+                if page > 1:
+                    self.incomplete_pagination_count += 1
+                    raise ProviderPaginationIncomplete(
+                        f"Alpaca pagination incomplete for {symbol} on page {page}: response is not a dict",
+                        symbol=symbol,
+                        page=page,
+                        status_code=200,
+                        provenance_records=provenance_records,
+                    )
+                raise MalformedProviderResponse(
+                    f"Alpaca response for {symbol} is not a dict: {type(data)}",
+                    symbol=symbol,
+                    page=page,
+                    status_code=200,
+                    provenance_records=provenance_records,
+                )
+
+            bars = data.get("bars")
+            if isinstance(bars, dict):
+                bars = bars.get(symbol.upper())
+
+            # Genuine empty bars: bars is None or bars == []
+            if bars:
+                all_bars.extend(bars)
+
+            next_token = data.get("next_page_token")
+            if not next_token:
+                # Normal successful pagination exhaustion
+                break
+            params["page_token"] = next_token
+
+        return all_bars, provenance_records
+
+
+class MassiveRefClient:
+    """Security master, corporate actions, and financial reference client."""
+
+    _BASE_URL = "https://api.massive.com"
+    _MIN_INTERVAL_SECONDS = 12.1
+
+    def __init__(
+        self,
+        api_key: str,
+        budget: RequestBudget | None = None,
+        request_func: Callable[[str], bytes] | None = None,
+        min_interval_seconds: float | None = None,
+        cache: ResponseCache | None = None,
+    ) -> None:
+        if not api_key:
+            raise ValueError("Massive API key is required")
+        self.api_key = api_key.strip()
+        self.budget = budget or RequestBudget()
+        self._last_request_time: float = 0.0
+        self._request_func = request_func
+        self._min_interval_seconds = (
+            min_interval_seconds if min_interval_seconds is not None else self._MIN_INTERVAL_SECONDS
+        )
+        self.cache = cache
+        self.network_requests_count = 0
+        self.cache_hits_count = 0
+        self.retries_count = 0
+        self.rate_limit_429_count = 0
+
+    def _fetch_once(self, url: str, max_retries: int = 3) -> tuple[bytes, int | None, str | None]:
+        for attempt in range(max_retries + 1):
+            if attempt > 0:
+                self.retries_count += 1
+            elapsed = time.monotonic() - self._last_request_time
+            if elapsed < self._min_interval_seconds:
+                time.sleep(self._min_interval_seconds - elapsed)
+            self._last_request_time = time.monotonic()
+
+            if self._request_func:
+                self.network_requests_count += 1
+                try:
+                    res = self._request_func(url)
+                    return res, 200, None
+                except urllib.error.HTTPError as exc:
+                    body = exc.read() if hasattr(exc, "read") else b""
+                    if exc.code == 429:
+                        self.rate_limit_429_count += 1
+                        if attempt < max_retries:
+                            time.sleep(15.0 * (attempt + 1))
+                            continue
+                    elif exc.code >= 500:
+                        if attempt < max_retries:
+                            time.sleep(2.0 * (attempt + 1))
+                            continue
+                    return body, exc.code, str(exc)
+                except urllib.error.URLError as exc:
+                    if attempt < max_retries:
+                        time.sleep(2.0)
+                        continue
+                    return b"", None, str(exc)
+
+            req = urllib.request.Request(url, headers={"Accept": "application/json"})
+            try:
+                self.network_requests_count += 1
+                with urllib.request.urlopen(req, timeout=120) as response:
+                    return response.read(), response.getcode(), None
+            except urllib.error.HTTPError as exc:
+                body = exc.read() if hasattr(exc, "read") else b""
+                if exc.code == 429:
+                    self.rate_limit_429_count += 1
+                    if attempt < max_retries:
+                        time.sleep(15.0 * (attempt + 1))
+                        continue
+                elif exc.code >= 500:
+                    if attempt < max_retries:
+                        time.sleep(2.0 * (attempt + 1))
+                        continue
+                return body, exc.code, str(exc)
+            except urllib.error.URLError as exc:
+                if attempt < max_retries:
+                    time.sleep(2.0)
+                    continue
+                return b"", None, str(exc)
+        return b"", None, "Max retries exceeded"
+
+    def _fetch_json(
+        self,
+        url: str,
+        endpoint_pattern: str | None = None,
+        req_fp_obj: Any = None,
+    ) -> tuple[dict[str, Any] | None, int | None, str | None, str, str]:
+        sanitized = sanitize_url(url)
+        req_fp = _json_hash(req_fp_obj if req_fp_obj is not None else {"url": sanitized})
+        req_time = _now_utc()
+
+        if self.cache:
+            cached_data, cached_sha, cached_ts = self.cache.get_json(sanitized, req_fp)
+            if cached_data is not None and isinstance(cached_data, dict):
+                self.cache_hits_count += 1
+                return cached_data, 200, None, cached_sha or "", cached_ts or req_time
+
+        self.budget.charge(1)
+        body, status, error = self._fetch_once(url)
+        body_hash = hashlib.sha256(body).hexdigest()
+        if error:
+            return None, status, error, body_hash, req_time
+        try:
+            parsed = json.loads(body.decode("utf-8"))
+            if self.cache and isinstance(parsed, dict) and status == 200:
+                self.cache.set(
+                    sanitized,
+                    req_fp,
+                    body,
+                    endpoint_pattern=endpoint_pattern,
+                    retrieval_timestamp_utc=req_time,
+                )
+            return parsed, status, None, body_hash, req_time
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            return None, status, f"JSON decode error: {exc}", body_hash, req_time
+
+    def _url(self, path: str, params: dict[str, Any]) -> str:
+        query = urllib.parse.urlencode({k: v for k, v in params.items() if v is not None})
+        sep = "&" if query else ""
+        return f"{self._BASE_URL}{path}?{query}{sep}apiKey={self.api_key}"
+
+    def fetch_reference_snapshot(
+        self,
+        pit_date: str,
+        active: bool = True,
+        safety_max_pages: int = 50,
+    ) -> tuple[list[dict[str, Any]], list[ProvenanceProviderRecord], SnapshotPaginationMeta]:
+        """Fetch active or inactive ticker reference snapshot, paginating until exhausted."""
+        base_params = {
+            "market": "stocks",
+            "locale": "us",
+            "date": pit_date,
+            "active": "true" if active else "false",
+            "sort": "ticker",
+            "order": "asc",
+            "limit": 1000,
+        }
+        all_results: list[dict[str, Any]] = []
+        provenance: list[ProvenanceProviderRecord] = []
+        records_per_page: list[int] = []
+        response_hashes: list[str] = []
+        next_url: str | None = None
+        page = 0
+        exhausted = False
+        hit_max = False
+
+        while page < safety_max_pages:
+            page += 1
+            if next_url:
+                url = next_url if "apiKey=" in next_url else f"{next_url}&apiKey={self.api_key}"
+            else:
+                url = self._url("/v3/reference/tickers", base_params)
+
+            data, _status, error, resp_hash, req_time = self._fetch_json(
+                url,
+                endpoint_pattern="/v3/reference/tickers",
+                req_fp_obj={"endpoint": "tickers", "date": pit_date, "active": active, "page": page},
+            )
+
+            provenance.append(
+                ProvenanceProviderRecord(
+                    record_id=f"prov_massive_tickers_{pit_date}_{page}",
+                    data_family="security_master",
+                    provider_name="massive",
+                    provider_role="primary",
+                    endpoint_url_pattern="/v3/reference/tickers",
+                    retrieval_timestamp_utc=req_time,
+                    request_fingerprint_sha256=_json_hash({"endpoint": "tickers", "date": pit_date, "active": active, "page": page}),
+                    response_sha256=resp_hash,
+                )
+            )
+            response_hashes.append(resp_hash)
+
+            if error:
+                raise RuntimeError(
+                    f"Massive reference snapshot failed for {pit_date} (active={active}, page={page}): {error}"
+                )
+            if not isinstance(data, dict):
+                break
+
+            results = data.get("results", [])
+            records_per_page.append(len(results))
+            all_results.extend(results)
+
+            raw_next = data.get("next_url")
+            next_url = raw_next if isinstance(raw_next, str) and raw_next.strip() else None
+            if not next_url:
+                exhausted = True
+                break
+
+        if not exhausted and page >= safety_max_pages and next_url:
+            hit_max = True
+
+        first_sym = all_results[0].get("ticker") if all_results else None
+        last_sym = all_results[-1].get("ticker") if all_results else None
+
+        meta = SnapshotPaginationMeta(
+            pit_date=pit_date,
+            active=active,
+            pages_fetched=page,
+            records_per_page=records_per_page,
+            total_records=len(all_results),
+            pagination_exhausted_normally=exhausted,
+            safety_max_pages_hit=hit_max,
+            first_ticker=first_sym,
+            last_ticker=last_sym,
+            response_hashes=response_hashes,
+            is_complete=(exhausted and not hit_max),
+        )
+
+        return all_results, provenance, meta
+
+    def fetch_ticker_reference(
+        self,
+        ticker: str,
+        pit_date: str | None = None,
+        active: bool | None = None,
+    ) -> tuple[list[dict[str, Any]], list[ProvenanceProviderRecord]]:
+        """Fetch reference records for a specific ticker symbol, optionally bounded by PIT date and active status."""
+        params: dict[str, Any] = {"ticker": ticker.upper()}
+        if pit_date:
+            params["date"] = pit_date
+        if active is not None:
+            params["active"] = "true" if active else "false"
+
+        url = self._url("/v3/reference/tickers", params)
+        fp_obj = {"endpoint": "tickers", "ticker": ticker.upper(), "date": pit_date, "active": active}
+        data, _status, _error, resp_hash, req_time = self._fetch_json(
+            url,
+            endpoint_pattern="/v3/reference/tickers",
+            req_fp_obj=fp_obj,
+        )
+        provenance = [
+            ProvenanceProviderRecord(
+                record_id=f"prov_ref_{resp_hash[:16]}",
+                data_family="security_reference",
+                provider_name="massive",
+                provider_role="primary",
+                endpoint_url_pattern="/v3/reference/tickers",
+                retrieval_timestamp_utc=req_time,
+                request_fingerprint_sha256=_json_hash(fp_obj),
+                response_sha256=resp_hash,
+            )
+        ]
+        results = data.get("results", []) if isinstance(data, dict) else []
+        return results, provenance
+
+    def fetch_corporate_actions(
+        self, ticker: str
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[ProvenanceProviderRecord]]:
+        """Fetch split and dividend events for ticker with full pagination, retries, and error handling."""
+        provenance: list[ProvenanceProviderRecord] = []
+
+        # 1. Splits
+        all_splits: list[dict[str, Any]] = []
+        next_split_url: str | None = None
+        split_page = 0
+        while True:
+            split_page += 1
+            if next_split_url:
+                url = next_split_url if "apiKey=" in next_split_url else f"{next_split_url}&apiKey={self.api_key}"
+            else:
+                url = self._url("/v3/reference/splits", {"ticker": ticker.upper(), "limit": 1000})
+            split_fp = {"ticker": ticker.upper(), "event": "split", "page": split_page}
+            data, status, error, resp_hash, req_time = self._fetch_json(
+                url,
+                endpoint_pattern="/v3/reference/splits",
+                req_fp_obj=split_fp,
+            )
+            provenance.append(
+                ProvenanceProviderRecord(
+                    record_id=f"prov_split_{ticker.upper()}_{split_page}",
+                    data_family="corporate_actions",
+                    provider_name="massive",
+                    provider_role="primary",
+                    endpoint_url_pattern="/v3/reference/splits",
+                    retrieval_timestamp_utc=req_time,
+                    request_fingerprint_sha256=_json_hash(split_fp),
+                    response_sha256=resp_hash,
+                )
+            )
+            if error or status != 200 or not isinstance(data, dict):
+                if split_page > 1:
+                    raise ProviderPaginationIncomplete(
+                        f"Massive splits pagination incomplete for {ticker} on page {split_page}: {error or status}",
+                        symbol=ticker,
+                        page=split_page,
+                        status_code=status,
+                        provenance_records=provenance,
+                    )
+                if status == 429:
+                    raise ProviderRateLimitedUnresolved(
+                        f"Massive splits rate limited for {ticker}: {error}",
+                        symbol=ticker,
+                        page=split_page,
+                        status_code=429,
+                        provenance_records=provenance,
+                    )
+                raise ProviderRequestFailed(
+                    f"Massive splits request failed for {ticker}: {error or status}",
+                    symbol=ticker,
+                    page=split_page,
+                    status_code=status,
+                    provenance_records=provenance,
+                )
+            results = data.get("results", [])
+            if isinstance(results, list):
+                all_splits.extend(results)
+            raw_next = data.get("next_url")
+            next_split_url = raw_next if isinstance(raw_next, str) and raw_next.strip() else None
+            if not next_split_url:
+                break
+
+        # 2. Dividends
+        all_dividends: list[dict[str, Any]] = []
+        next_div_url: str | None = None
+        div_page = 0
+        while True:
+            div_page += 1
+            if next_div_url:
+                url = next_div_url if "apiKey=" in next_div_url else f"{next_div_url}&apiKey={self.api_key}"
+            else:
+                url = self._url("/v3/reference/dividends", {"ticker": ticker.upper(), "limit": 1000})
+            div_fp = {"ticker": ticker.upper(), "event": "dividend", "page": div_page}
+            data, status, error, resp_hash, req_time = self._fetch_json(
+                url,
+                endpoint_pattern="/v3/reference/dividends",
+                req_fp_obj=div_fp,
+            )
+            provenance.append(
+                ProvenanceProviderRecord(
+                    record_id=f"prov_div_{ticker.upper()}_{div_page}",
+                    data_family="corporate_actions",
+                    provider_name="massive",
+                    provider_role="primary",
+                    endpoint_url_pattern="/v3/reference/dividends",
+                    retrieval_timestamp_utc=req_time,
+                    request_fingerprint_sha256=_json_hash(div_fp),
+                    response_sha256=resp_hash,
+                )
+            )
+            if error or status != 200 or not isinstance(data, dict):
+                if div_page > 1:
+                    raise ProviderPaginationIncomplete(
+                        f"Massive dividends pagination incomplete for {ticker} on page {div_page}: {error or status}",
+                        symbol=ticker,
+                        page=div_page,
+                        status_code=status,
+                        provenance_records=provenance,
+                    )
+                if status == 429:
+                    raise ProviderRateLimitedUnresolved(
+                        f"Massive dividends rate limited for {ticker}: {error}",
+                        symbol=ticker,
+                        page=div_page,
+                        status_code=429,
+                        provenance_records=provenance,
+                    )
+                raise ProviderRequestFailed(
+                    f"Massive dividends request failed for {ticker}: {error or status}",
+                    symbol=ticker,
+                    page=div_page,
+                    status_code=status,
+                    provenance_records=provenance,
+                )
+            results = data.get("results", [])
+            if isinstance(results, list):
+                all_dividends.extend(results)
+            raw_next = data.get("next_url")
+            next_div_url = raw_next if isinstance(raw_next, str) and raw_next.strip() else None
+            if not next_div_url:
+                break
+
+        return all_splits, all_dividends, provenance
+
+
+class EdgarClient:
+    """Hardened SEC EDGAR submissions and facts client with auditable retry and rate-limit tracking."""
+
+    _BASE = "https://data.sec.gov"
+    _USER_AGENT = "TradeX Research (research@gyairbyte.com)"
+
+    def __init__(
+        self,
+        budget: RequestBudget | None = None,
+        request_func: Callable[..., Any] | None = None,
+        cache: ResponseCache | None = None,
+        max_retries: int = 3,
+        request_delay_seconds: float = 0.1,
+    ) -> None:
+        self.budget = budget or RequestBudget()
+        self._request_func = request_func
+        self.cache = cache
+        self.max_retries = max_retries
+        self.request_delay_seconds = request_delay_seconds if request_delay_seconds is not None else 0.1
+        self._last_request_time: float = 0.0
+
+        # Audit metrics
+        self.network_requests_count: int = 0
+        self.cache_hits_count: int = 0
+        self.retries_count: int = 0
+        self.rate_limit_429_count: int = 0
+        self.transport_failure_count: int = 0
+        self.malformed_response_count: int = 0
+        self.not_found_genuine_count: int = 0
+        self.unresolved_failure_count: int = 0
+
+    def get_audit_metrics(self) -> dict[str, int]:
+        """Return auditable request, rate-limit, and failure metrics."""
+        return {
+            "network_requests_count": self.network_requests_count,
+            "cache_hits_count": self.cache_hits_count,
+            "retries_count": self.retries_count,
+            "rate_limit_429_count": self.rate_limit_429_count,
+            "transport_failure_count": self.transport_failure_count,
+            "malformed_response_count": self.malformed_response_count,
+            "not_found_genuine_count": self.not_found_genuine_count,
+            "unresolved_failure_count": self.unresolved_failure_count,
+        }
+
+    def reset_audit_metrics(self) -> None:
+        """Reset auditable metrics counters."""
+        self.network_requests_count = 0
+        self.cache_hits_count = 0
+        self.retries_count = 0
+        self.rate_limit_429_count = 0
+        self.transport_failure_count = 0
+        self.malformed_response_count = 0
+        self.not_found_genuine_count = 0
+        self.unresolved_failure_count = 0
+
+    def _wait_for_pacing(self) -> None:
+        if self.request_delay_seconds <= 0:
+            return
+        now = time.monotonic()
+        elapsed = now - self._last_request_time
+        if elapsed < self.request_delay_seconds:
+            time.sleep(self.request_delay_seconds - elapsed)
+        self._last_request_time = time.monotonic()
+
+    def _fetch_json(
+        self,
+        url: str,
+        endpoint_pattern: str | None = None,
+        req_fp_obj: Any = None,
+        cik: str | None = None,
+    ) -> tuple[dict[str, Any], str, str]:
+        sanitized = sanitize_url(url)
+        req_fp = _json_hash(req_fp_obj if req_fp_obj is not None else {"url": sanitized})
+        req_time = _now_utc()
+
+        if self.cache:
+            cached_data, cached_sha, cached_ts = self.cache.get_json(sanitized, req_fp)
+            if cached_data is not None and isinstance(cached_data, dict):
+                self.cache_hits_count += 1
+                return cached_data, cached_sha or "", cached_ts or req_time
+
+        headers = {"User-Agent": self._USER_AGENT, "Accept": "application/json"}
+        last_status: int | None = None
+        last_error: str | None = None
+
+        for attempt in range(self.max_retries + 1):
+            if attempt > 0:
+                self.retries_count += 1
+
+            self._wait_for_pacing()
+            self.budget.charge(1)
+            self.network_requests_count += 1
+
+            # Request execution
+            if self._request_func:
+                try:
+                    res = self._request_func(url)
+                except Exception as exc:
+                    self.transport_failure_count += 1
+                    last_error = str(exc)
+                    if attempt < self.max_retries:
+                        time.sleep(0.5 * (2**attempt))
+                        continue
+                    self.unresolved_failure_count += 1
+                    raise ProviderRequestFailed(
+                        f"SEC EDGAR transport failure for {url} after {attempt + 1} attempts: {exc}",
+                        symbol=cik,
+                        retry_count=attempt,
+                    ) from exc
+
+                # Parse mock/custom response
+                if isinstance(res, tuple):
+                    body = res[0]
+                    status_code = res[1] if len(res) > 1 else 200
+                    resp_headers = res[2] if len(res) > 2 else {}
+                elif hasattr(res, "status_code"):
+                    body = res.content
+                    status_code = res.status_code
+                    resp_headers = getattr(res, "headers", {})
+                else:
+                    body = res if isinstance(res, bytes) else str(res).encode("utf-8")
+                    status_code = 200
+                    resp_headers = {}
+            else:
+                try:
+                    req = urllib.request.Request(url, headers=headers)
+                    with urllib.request.urlopen(req, timeout=60) as resp:
+                        body = resp.read()
+                        status_code = resp.getcode()
+                        resp_headers = dict(resp.headers)
+                except urllib.error.HTTPError as exc:
+                    body = exc.read() if hasattr(exc, "read") else b""
+                    status_code = exc.code
+                    resp_headers = dict(exc.headers) if hasattr(exc, "headers") else {}
+                except Exception as exc:
+                    self.transport_failure_count += 1
+                    last_error = str(exc)
+                    if attempt < self.max_retries:
+                        time.sleep(0.5 * (2**attempt))
+                        continue
+                    self.unresolved_failure_count += 1
+                    raise ProviderRequestFailed(
+                        f"SEC EDGAR transport error for {url} after {attempt + 1} attempts: {exc}",
+                        symbol=cik,
+                        retry_count=attempt,
+                    ) from exc
+
+            last_status = status_code
+            resp_hash = hashlib.sha256(body).hexdigest()
+
+            # Handle status codes:
+            # 1. HTTP 404: Genuine provider-supported not-found condition
+            if status_code == 404:
+                self.not_found_genuine_count += 1
+                empty_data: dict[str, Any] = {"_is_not_found": True}
+                if self.cache:
+                    self.cache.set(
+                        sanitized,
+                        req_fp,
+                        json.dumps(empty_data).encode("utf-8"),
+                        endpoint_pattern=endpoint_pattern,
+                        retrieval_timestamp_utc=req_time,
+                    )
+                return empty_data, resp_hash, req_time
+
+            # 2. HTTP 429: Rate limited
+            if status_code == 429:
+                self.rate_limit_429_count += 1
+                if attempt < self.max_retries:
+                    retry_after = 1.0
+                    ra_hdr = resp_headers.get("Retry-After") or resp_headers.get("retry-after")
+                    if ra_hdr:
+                        try:
+                            retry_after = max(1.0, float(ra_hdr))
+                        except ValueError:
+                            retry_after = 1.0
+                    else:
+                        retry_after = 1.0 * (2**attempt)
+                    time.sleep(retry_after)
+                    continue
+                self.unresolved_failure_count += 1
+                raise ProviderRateLimitedUnresolved(
+                    f"SEC EDGAR rate limit (429) unresolved for {url} after {attempt + 1} attempts",
+                    symbol=cik,
+                    status_code=429,
+                    retry_count=attempt,
+                )
+
+            # 3. HTTP 5xx: Server error
+            if status_code >= 500:
+                if attempt < self.max_retries:
+                    time.sleep(0.5 * (2**attempt))
+                    continue
+                self.unresolved_failure_count += 1
+                raise ProviderRequestFailed(
+                    f"SEC EDGAR HTTP {status_code} server error for {url} after {attempt + 1} attempts",
+                    symbol=cik,
+                    status_code=status_code,
+                    retry_count=attempt,
+                )
+
+            # 4. Other non-200
+            if status_code != 200:
+                if attempt < self.max_retries:
+                    time.sleep(0.5 * (2**attempt))
+                    continue
+                self.unresolved_failure_count += 1
+                raise ProviderRequestFailed(
+                    f"SEC EDGAR HTTP {status_code} for {url} after {attempt + 1} attempts",
+                    symbol=cik,
+                    status_code=status_code,
+                    retry_count=attempt,
+                )
+
+            # 5. HTTP 200: Parse JSON
+            try:
+                parsed = json.loads(body.decode("utf-8"))
+            except Exception as exc:
+                self.malformed_response_count += 1
+                self.unresolved_failure_count += 1
+                raise MalformedProviderResponse(
+                    f"SEC EDGAR JSON decode error for {url}: {exc}",
+                    symbol=cik,
+                    status_code=200,
+                    retry_count=attempt,
+                ) from exc
+
+            if not isinstance(parsed, dict):
+                self.malformed_response_count += 1
+                self.unresolved_failure_count += 1
+                raise MalformedProviderResponse(
+                    f"SEC EDGAR response is not a dict for {url}: {type(parsed)}",
+                    symbol=cik,
+                    status_code=200,
+                    retry_count=attempt,
+                )
+
+            if self.cache:
+                self.cache.set(
+                    sanitized,
+                    req_fp,
+                    body,
+                    endpoint_pattern=endpoint_pattern,
+                    retrieval_timestamp_utc=req_time,
+                )
+            return parsed, resp_hash, req_time
+
+        self.unresolved_failure_count += 1
+        raise ProviderRequestFailed(
+            f"SEC EDGAR retries exhausted for {url} (status: {last_status}, error: {last_error})",
+            symbol=cik,
+            status_code=last_status,
+            retry_count=self.max_retries,
+        )
+
+    def fetch_submissions(self, cik: str) -> tuple[dict[str, Any], list[ProvenanceProviderRecord]]:
+        padded = cik.zfill(10)
+        url = f"{self._BASE}/submissions/CIK{padded}.json"
+        req_fp = _json_hash({"cik": padded, "endpoint": "submissions"})
+        data, h, retrieval_ts = self._fetch_json(
+            url,
+            endpoint_pattern="/submissions/CIK{cik}.json",
+            req_fp_obj={"cik": padded, "endpoint": "submissions"},
+            cik=padded,
+        )
+        prov = [
+            ProvenanceProviderRecord(
+                record_id=f"prov_edgar_sub_{padded}",
+                data_family="issuer_fundamentals",
+                provider_name="sec_edgar",
+                provider_role="primary",
+                endpoint_url_pattern="/submissions/CIK{cik}.json",
+                retrieval_timestamp_utc=retrieval_ts,
+                request_fingerprint_sha256=req_fp,
+                response_sha256=h,
+            )
+        ]
+        if data.get("_is_not_found"):
+            return None, prov
+        return data, prov
+
+    def fetch_company_facts(self, cik: str) -> tuple[dict[str, Any] | None, list[ProvenanceProviderRecord]]:
+        padded = cik.zfill(10)
+        url = f"{self._BASE}/api/xbrl/companyfacts/CIK{padded}.json"
+        req_fp = _json_hash({"cik": padded, "endpoint": "companyfacts"})
+        data, h, retrieval_ts = self._fetch_json(
+            url,
+            endpoint_pattern="/api/xbrl/companyfacts/CIK{cik}.json",
+            req_fp_obj={"cik": padded, "endpoint": "companyfacts"},
+            cik=padded,
+        )
+        prov = [
+            ProvenanceProviderRecord(
+                record_id=f"prov_edgar_facts_{padded}",
+                data_family="issuer_fundamentals",
+                provider_name="sec_edgar",
+                provider_role="primary",
+                endpoint_url_pattern="/api/xbrl/companyfacts/CIK{cik}.json",
+                retrieval_timestamp_utc=retrieval_ts,
+                request_fingerprint_sha256=req_fp,
+                response_sha256=h,
+            )
+        ]
+        if data.get("_is_not_found"):
+            return None, prov
+        return data, prov
+
+    @staticmethod
+    def get_accession_acceptance_map(submissions: dict[str, Any]) -> dict[str, str]:
+        """Extract accessionNumber -> acceptanceDateTime mapping from SEC submissions JSON."""
+        acc_map: dict[str, str] = {}
+        if not submissions or not isinstance(submissions, dict):
+            return acc_map
+        recent = submissions.get("filings", {}).get("recent", {})
+        if not isinstance(recent, dict):
+            return acc_map
+        accessions = recent.get("accessionNumber", [])
+        acceptance_times = recent.get("acceptanceDateTime", [])
+        if isinstance(accessions, list) and isinstance(acceptance_times, list):
+            for accn, dt in zip(accessions, acceptance_times):
+                if accn and dt:
+                    acc_map[str(accn)] = str(dt)
+        return acc_map
+
+    @staticmethod
+    def get_former_names_history(submissions: dict[str, Any]) -> list[dict[str, str]]:
+        """Extract former names and effective date ranges from SEC submissions JSON."""
+        if not submissions or not isinstance(submissions, dict):
+            return []
+        raw_names = submissions.get("formerNames", [])
+        history: list[dict[str, str]] = []
+        if isinstance(raw_names, list):
+            for item in raw_names:
+                if isinstance(item, dict) and item.get("name"):
+                    from_dt = str(item.get("from") or "")[:10]
+                    to_dt = str(item.get("to") or "")[:10]
+                    history.append({
+                        "name": str(item.get("name")),
+                        "from": from_dt,
+                        "to": to_dt,
+                    })
+        return history
+
+
+def resolve_credentials() -> dict[str, str | None]:
+    """Load runtime provider credentials safely without printing values."""
+    settings = load_runtime_settings()
+    return {
+        "massive_api_key": settings.data.massive_api_key,
+        "alpaca_api_key": settings.data.alpaca_api_key,
+        "alpaca_secret_key": settings.data.alpaca_secret_key,
+    }
