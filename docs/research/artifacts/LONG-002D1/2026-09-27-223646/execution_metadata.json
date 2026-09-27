@@ -1,0 +1,55 @@
+{
+  "benchmark_report": {
+    "benchmark_observations_count": 28728,
+    "benchmark_securities_count": 25,
+    "census_and_bootstrap_elapsed_seconds": 0.22,
+    "feature_construction_elapsed_seconds": 1.2,
+    "feature_construction_sec_per_sec": 0.048,
+    "gate_hard_pass": true,
+    "gate_preferred_pass": true,
+    "hotspot_analysis": "No bottleneck detected; vectorized feature construction and pre-aggregated bootstrap are within gates.",
+    "network_requests_attempted": 0,
+    "network_requests_blocked": 0,
+    "peak_working_set_mb": 334.54,
+    "projected_full_aggregation_seconds": 5.75,
+    "projected_full_feature_construction_seconds": 61.04,
+    "total_projected_runtime_seconds": 66.79
+  },
+  "clean_primary_base_rate": 0.08864406,
+  "clean_primary_events": 67257,
+  "created_at_utc": "2026-09-27T22:59:44.048613Z",
+  "execution_time_seconds": 1375.11,
+  "external_files": [
+    {
+      "byte_count": 136524010,
+      "relative_path": "data/research/long_002d1/feature_table.parquet",
+      "row_count": 758731,
+      "schema_name": "long_002d1_feature_table",
+      "sha256": "7dc09bdeed02c44eb48a0143884deb0ad7795466a08e25fd26c32640a0c813d8"
+    },
+    {
+      "byte_count": 16638,
+      "relative_path": "data/research/long_002d1/feature_decile_detail.parquet",
+      "row_count": 150,
+      "schema_name": "long_002d1_decile_detail",
+      "sha256": "68111ca55d7dadb2151688c875cd9e056903f486cbe8f2b2b2f4de861ea42754"
+    },
+    {
+      "byte_count": 284398,
+      "relative_path": "data/research/long_002d1/bootstrap_detail.parquet",
+      "row_count": 15000,
+      "schema_name": "long_002d1_bootstrap_detail",
+      "sha256": "7906d5bdeea3eee1fc0c9a556f4491234e1e1f815365891e31dbe5834fb8821b"
+    },
+    {
+      "byte_count": 12944,
+      "relative_path": "data/research/long_002d1/redundancy_matrix.parquet",
+      "row_count": 15,
+      "schema_name": "long_002d1_redundancy_matrix",
+      "sha256": "a11c360158307d20c9cb76fd582ca9f4d39a37b12db2e1d9160df86fa1dcc8c8"
+    }
+  ],
+  "run_id": "2026-09-27-223646",
+  "task_id": "LONG-002D1-CORE-KPI-CENSUS",
+  "total_observations": 758731
+}
