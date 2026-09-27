@@ -6,14 +6,17 @@ Evaluates comparators on identical common observations.
 """
 from __future__ import annotations
 
+import bisect
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from tradex.research.long_002c.models import (
     BaselineComparatorOutput,
     OutcomeLabelRecord,
 )
+from tradex.signals.indicators import add_indicators
 from tradex.signals.long_term import score
 from tradex.signals.weights import LongWeights
 
@@ -24,9 +27,36 @@ def compute_simple_momentum(closes: list[float], lookback: int) -> float | None:
         return None
     past_close = closes[-(lookback + 1)]
     curr_close = closes[-1]
-    if past_close <= 0:
+    if past_close <= 0 or not np.isfinite(past_close) or not np.isfinite(curr_close):
         return None
     return curr_close / past_close - 1.0
+
+
+def compute_simple_momentum_series(
+    closes: np.ndarray | list[float], lookback: int
+) -> list[float | None]:
+    """Compute price momentum return over lookback sessions for all historical prefixes.
+
+    Equivalent to calling compute_simple_momentum(closes[:k+1], lookback)
+    for all 0 <= k < len(closes). Prefixes of length < lookback + 1 evaluate to None.
+    """
+    arr = np.asarray(closes, dtype=float)
+    n = len(arr)
+    if n < lookback + 1:
+        return [None] * n
+
+    res: list[float | None] = [None] * lookback
+    curr = arr[lookback:]
+    past = arr[:-lookback]
+
+    valid = (past > 0) & np.isfinite(past) & np.isfinite(curr)
+    safe_past = np.where(valid, past, 1.0)
+    moms = curr / safe_past - 1.0
+
+    for val, is_v in zip(moms, valid):
+        res.append(float(val) if is_v else None)
+
+    return res
 
 
 def compute_legacy_tradex_score(history_df: pd.DataFrame, weights: LongWeights | None = None) -> float:
@@ -34,6 +64,70 @@ def compute_legacy_tradex_score(history_df: pd.DataFrame, weights: LongWeights |
     effective_weights = weights if weights is not None else LongWeights()
     result = score(history_df, weights=effective_weights)
     return float(result.get("score", 0.0))
+
+
+def compute_legacy_tradex_scores_series(
+    history_df: pd.DataFrame, weights: LongWeights | None = None
+) -> list[float | None]:
+    """Compute legacy TradeX score causally for each prefix of history_df.
+
+    Equivalent to calling compute_legacy_tradex_score(history_df.iloc[:k+1], weights)
+    for all 0 <= k < len(history_df). Prefixes of length < 30 evaluate to None.
+    Causal expanding Bollinger Band width percentile rank matches Pandas Series.rank(pct=True).iloc[-1].
+    """
+    if history_df is None or history_df.empty:
+        return []
+
+    n = len(history_df)
+    if n < 30:
+        return [None] * n
+
+    effective_weights = weights if weights is not None else LongWeights()
+
+    try:
+        df_ind = add_indicators(history_df)
+    except Exception:  # noqa: BLE001
+        return [None] * n
+
+    scores: list[float | None] = [None] * n
+
+    close_arr = df_ind["close"].to_numpy(dtype=float)
+    ema50_arr = df_ind["ema_50"].to_numpy(dtype=float)
+    rsi_arr = df_ind["rsi"].to_numpy(dtype=float)
+    macd_arr = df_ind["macd"].to_numpy(dtype=float)
+    macd_sig_arr = df_ind["macd_signal"].to_numpy(dtype=float)
+    bb_width_arr = df_ind["bb_width"].to_numpy(dtype=float)
+
+    vol_ratio_s = df_ind["volume_ratio"]
+    vol_ratio_mean8 = vol_ratio_s.rolling(8, min_periods=1).mean().to_numpy(dtype=float)
+
+    sorted_bb: list[float] = []
+
+    for i in range(n):
+        bw = bb_width_arr[i]
+        if not np.isnan(bw):
+            bisect.insort(sorted_bb, bw)
+            left = bisect.bisect_left(sorted_bb, bw)
+            right = bisect.bisect_right(sorted_bb, bw)
+            bb_pct = (left + right + 1) / (2.0 * len(sorted_bb))
+        else:
+            bb_pct = np.nan
+
+        if i >= 29:
+            sig = 0
+            if close_arr[i] > ema50_arr[i]:
+                sig += effective_weights.secular_uptrend
+            if 40.0 <= rsi_arr[i] <= 65.0:
+                sig += effective_weights.rsi_healthy
+            if vol_ratio_mean8[i] >= 1.15:
+                sig += effective_weights.volume_accumulation
+            if macd_arr[i] > macd_sig_arr[i]:
+                sig += effective_weights.macd_bullish
+            if bb_pct < 0.25:
+                sig += effective_weights.bb_coil
+            scores[i] = float(min(sig, 100))
+
+    return scores
 
 
 def evaluate_baselines_for_date(
@@ -47,9 +141,15 @@ def evaluate_baselines_for_date(
     #   "sector": str | None,
     #   "universe_eligible": bool (retained for audit),
     #   "raw_outcome_eligible": bool,
+    #   "has_history": bool (optional, PERF-003),
+    #   "precomputed_legacy_score": float | None (optional, PERF-003),
+    #   "precomputed_momentum": dict[int, float | None] (optional, PERF-003),
+    #   "precomputed_atr_pct": float | None (optional, PERF-003),
     # }
     spy_history_df: pd.DataFrame | None = None,
     sector_histories: dict[str, pd.DataFrame] | None = None,
+    *,
+    spy_momentum: dict[int, float | None] | None = None,
 ) -> list[BaselineComparatorOutput]:
     """Evaluate all baseline comparators across common eligible observations on a single date."""
     outputs: list[BaselineComparatorOutput] = []
@@ -60,7 +160,10 @@ def evaluate_baselines_for_date(
         for sec_id, d in securities_data.items()
         if (
             d.get("raw_outcome_eligible", False) is True
-            and not d.get("history_df").empty
+            and (
+                d.get("has_history", False)
+                or (d.get("history_df") is not None and not d.get("history_df").empty)
+            )
         )
     ]
 
@@ -88,7 +191,9 @@ def evaluate_baselines_for_date(
 
     # Compute SPY returns for each lookback if SPY is provided
     spy_mom: dict[int, float | None] = {}
-    if spy_history_df is not None and not spy_history_df.empty:
+    if spy_momentum is not None:
+        spy_mom = spy_momentum
+    elif spy_history_df is not None and not spy_history_df.empty:
         spy_closes = spy_history_df["close"].tolist()
         for lb in [5, 10, 20, 60]:
             spy_mom[lb] = compute_simple_momentum(spy_closes, lb)
@@ -100,17 +205,28 @@ def evaluate_baselines_for_date(
     atr_pct_values: dict[str, float | None] = {}
 
     for sec_id in eligible_sec_ids:
-        df = securities_data[sec_id]["history_df"]
-        closes = df["close"].tolist()
-        for lb in lookbacks:
-            mom_values[lb][sec_id] = compute_simple_momentum(closes, lb)
-
-        atr = securities_data[sec_id].get("atr_14")
-        last_close = closes[-1] if closes else 0.0
-        if atr is not None and last_close > 0:
-            atr_pct_values[sec_id] = atr / last_close
+        sec_d = securities_data[sec_id]
+        pre_mom = sec_d.get("precomputed_momentum")
+        if pre_mom is not None:
+            for lb in lookbacks:
+                mom_values[lb][sec_id] = pre_mom.get(lb)
         else:
-            atr_pct_values[sec_id] = None
+            df = sec_d.get("history_df")
+            closes = df["close"].tolist() if (df is not None and not df.empty) else []
+            for lb in lookbacks:
+                mom_values[lb][sec_id] = compute_simple_momentum(closes, lb)
+
+        if "precomputed_atr_pct" in sec_d:
+            atr_pct_values[sec_id] = sec_d["precomputed_atr_pct"]
+        else:
+            df = sec_d.get("history_df")
+            closes = df["close"].tolist() if (df is not None and not df.empty) else []
+            atr = sec_d.get("atr_14")
+            last_close = closes[-1] if closes else 0.0
+            if atr is not None and last_close > 0:
+                atr_pct_values[sec_id] = atr / last_close
+            else:
+                atr_pct_values[sec_id] = None
 
     # 2. Simple momentum for each lookback
     for lb in lookbacks:
@@ -273,14 +389,18 @@ def evaluate_baselines_for_date(
     legacy_map: dict[str, float | None] = {}
     local_weights = LongWeights()
     for sec_id in eligible_sec_ids:
-        df = securities_data[sec_id]["history_df"]
-        if len(df) >= 30:
-            try:
-                legacy_map[sec_id] = compute_legacy_tradex_score(df, weights=local_weights)
-            except Exception:  # noqa: BLE001
-                legacy_map[sec_id] = None
+        sec_d = securities_data[sec_id]
+        if "precomputed_legacy_score" in sec_d:
+            legacy_map[sec_id] = sec_d["precomputed_legacy_score"]
         else:
-            legacy_map[sec_id] = None
+            df = sec_d.get("history_df")
+            if df is not None and len(df) >= 30:
+                try:
+                    legacy_map[sec_id] = compute_legacy_tradex_score(df, weights=local_weights)
+                except Exception:  # noqa: BLE001
+                    legacy_map[sec_id] = None
+            else:
+                legacy_map[sec_id] = None
 
     valid_pairs = [(sec_id, val) for sec_id, val in legacy_map.items() if val is not None]
     valid_pairs.sort(key=lambda p: p[1], reverse=True)

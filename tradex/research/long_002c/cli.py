@@ -27,6 +27,8 @@ from tradex.research.long_002c.artifacts import (
 from tradex.research.long_002c.audit import execute_bounded_universe_audit
 from tradex.research.long_002c.bars import load_interval_aware_daily_bars
 from tradex.research.long_002c.baselines import (
+    compute_legacy_tradex_scores_series,
+    compute_simple_momentum_series,
     evaluate_baselines_for_date,
     select_winning_baseline,
 )
@@ -664,6 +666,9 @@ def cmd_build(args: argparse.Namespace) -> int:
 
     securities_history_df: dict[str, pd.DataFrame] = {}
     securities_identity: dict[str, SecurityIdentity] = {}
+    sec_legacy_scores: dict[str, list[float | None]] = {}
+    sec_momentum_series: dict[str, dict[int, list[float | None]]] = {}
+    sec_closes: dict[str, np.ndarray] = {}
     obs_by_sec: dict[str, list[dict[str, Any]]] = {}
     outcomes_by_obs_key: dict[tuple[str, str, str], dict[tuple[float, int], OutcomeLabelRecord]] = {}
 
@@ -690,6 +695,14 @@ def cmd_build(args: argparse.Namespace) -> int:
     df_spy["date"] = df_spy["datetime"].dt.strftime("%Y-%m-%d")
     df_spy = df_spy.rename(columns={"c": "close"})
     df_spy = df_spy.set_index("date").sort_index()
+
+    spy_lookbacks = [5, 10, 20, 60]
+    spy_close_arr = df_spy["close"].to_numpy(dtype=float) if not df_spy.empty else np.array([])
+    spy_mom_series = {
+        lb: compute_simple_momentum_series(spy_close_arr, lb)
+        for lb in spy_lookbacks
+    } if len(spy_close_arr) > 0 else {}
+    spy_date_pos = {date: i for i, date in enumerate(df_spy.index)} if not df_spy.empty else {}
 
     # Step 1: Ingest bars, corporate actions, and EDGAR facts for candidate securities
     print(f"\n[1/6] Ingesting historical daily bars, EDGAR facts, and corporate actions for {len(manifest_candidates)} candidates...")
@@ -832,6 +845,13 @@ def cmd_build(args: argparse.Namespace) -> int:
         high_arr = df_final["high"].to_numpy(dtype=float)
         low_arr = df_final["low"].to_numpy(dtype=float)
         close_arr = df_final["close"].to_numpy(dtype=float)
+        # PERF-003: Precompute baseline series causally for this candidate
+        sec_legacy_scores[sec_id] = compute_legacy_tradex_scores_series(df_final)
+        sec_momentum_series[sec_id] = {
+            lb: compute_simple_momentum_series(close_arr, lb)
+            for lb in [5, 10, 20, 60]
+        }
+        sec_closes[sec_id] = close_arr
         as_traded_open_arr = (
             df_final["as_traded_open"].to_numpy(dtype=float)
             if "as_traded_open" in df_final.columns
@@ -1002,44 +1022,58 @@ def cmd_build(args: argparse.Namespace) -> int:
     print("\n[3/6] Evaluating frozen baseline comparators on common observations (09:00 & 20:30)...")
     all_baselines: list[BaselineComparatorOutput] = []
 
-    # Precompute date position maps for O(1) historical DataFrame slicing (PERF-001)
+    # Precompute date position maps for O(1) historical index lookups
     sec_date_pos = {
         sec_id: {date: i for i, date in enumerate(hdf.index)}
         for sec_id, hdf in securities_history_df.items()
     }
-    spy_date_pos = {date: i for i, date in enumerate(df_spy.index)} if not df_spy.empty else {}
 
     for d in dev_sessions:
         for cutoff_time in ["09:00", "20:30"]:
+            spy_idx = spy_date_pos.get(d)
+            if spy_idx is not None:
+                spy_prefix_idx = spy_idx - 1 if cutoff_time == "09:00" else spy_idx
+                if spy_prefix_idx >= 0:
+                    curr_spy_mom = {lb: spy_mom_series[lb][spy_prefix_idx] for lb in spy_lookbacks}
+                else:
+                    curr_spy_mom = {lb: None for lb in spy_lookbacks}
+            else:
+                curr_spy_mom = {lb: None for lb in spy_lookbacks}
+
             date_sec_data: dict[str, dict[str, Any]] = {}
-            for sec_id, hdf in securities_history_df.items():
+            for sec_id in securities_history_df:
                 d_idx = sec_date_pos[sec_id].get(d)
                 if d_idx is None:
                     continue
-                sub_df = hdf.iloc[:d_idx] if cutoff_time == "09:00" else hdf.iloc[:d_idx + 1]
-                if sub_df.empty:
+                prefix_idx = d_idx - 1 if cutoff_time == "09:00" else d_idx
+                if prefix_idx < 0:
                     continue
                 matching_obs = obs_obj_map.get((sec_id, d, cutoff_time))
+                if matching_obs is None or not matching_obs.raw_outcome_eligible:
+                    continue
+
+                last_close = sec_closes[sec_id][prefix_idx]
+                atr_val = matching_obs.atr_14
+                atr_pct = (atr_val / last_close) if (atr_val is not None and last_close > 0) else None
+
                 date_sec_data[sec_id] = {
-                    "ticker": matching_obs.ticker_at_decision if matching_obs else securities_identity[sec_id].ticker_at_decision,
-                    "history_df": sub_df,
-                    "atr_14": matching_obs.atr_14 if matching_obs else None,
+                    "ticker": matching_obs.ticker_at_decision,
+                    "has_history": True,
+                    "history_df": None,
+                    "atr_14": atr_val,
                     "sector": None,
-                    "universe_eligible": matching_obs.universe_eligible if matching_obs else True,
-                    "raw_outcome_eligible": matching_obs.raw_outcome_eligible if matching_obs else False,
+                    "universe_eligible": matching_obs.universe_eligible,
+                    "raw_outcome_eligible": True,
+                    "precomputed_legacy_score": sec_legacy_scores[sec_id][prefix_idx],
+                    "precomputed_momentum": {lb: sec_momentum_series[sec_id][lb][prefix_idx] for lb in spy_lookbacks},
+                    "precomputed_atr_pct": atr_pct,
                 }
             if date_sec_data:
-                spy_idx = spy_date_pos.get(d)
-                if spy_idx is not None:
-                    spy_sub_df = df_spy.iloc[:spy_idx] if cutoff_time == "09:00" else df_spy.iloc[:spy_idx + 1]
-                else:
-                    spy_sub_df = None
-
                 base_outputs = evaluate_baselines_for_date(
                     as_of_date=d,
                     cutoff_time=cutoff_time,
                     securities_data=date_sec_data,
-                    spy_history_df=spy_sub_df,
+                    spy_momentum=curr_spy_mom,
                 )
                 all_baselines.extend(base_outputs)
 
