@@ -1008,13 +1008,13 @@ The original engineering-foundation and UI-refactor backlog is substantially com
 
 **Remaining non-completed items:**
 1. **MVP-ARCH-001-R7-PIT-ACTIVATE-001-VERIFY** — First Scheduled Candidate C PIT Capture Verification (Future operational verification after the 2026-09-21 morning and evening slots; first capture has not yet been observed; no implementation changes in TradeX).
-2. **LONG-002D** — Feature Engineering & Candidate Model Development (Future research phase; requires explicit Gary / ChatGPT authorization before starting; validation/holdout access unauthorized).
+2. **LONG-002C** — Build Development Dataset, Outcome Census, Episodes, and Frozen Baselines (execution completed and approved as valid development evidence; draft PR #85 pending Gary/ChatGPT closeout; validation/holdout access unauthorized; next phase LONG-002D requires separate authorization).
 3. **DAYTRADE-001** — Future real-time day-trading decision-support program (`DAYTRADE-001A` research foundation completed; `DAYTRADE-001B` research specification locked; `DAYTRADE-001C1` merged via PR #88; `DAYTRADE-001C2` real study completed with validation `inconclusive` and holdout `unread_not_acquired`; production promotion unauthorized).
 
 **Recommended next work order:**
 1. **MVP-ARCH-001-R7-PIT-ACTIVATE-001-VERIFY** — Verify the first naturally scheduled Candidate C PIT captures after the 2026-09-21 morning (09:00 ET) and evening (20:30 ET) slots. This is a future verification task only; do not implement in this PR.
 2. **Separate Gary/ChatGPT sequencing and approval decision for subsequent slices** — No next rollout implementation PR is currently authorized without separate Gary approval; strategy promotion remains unauthorized; R8 remains unauthorized.
-3. **LONG-002D authorization** — Explicit Gary / ChatGPT authorization required before starting `LONG-002D`; validation and holdout splits remain strictly quarantined.
+3. **LONG-002C closeout & authorization** — Gary / ChatGPT review of `LONG-002C-EXEC-001` completed and approved; complete PR #85 closeout; explicit authorization required before starting `LONG-002D`; validation and holdout splits remain strictly quarantined.
 4. **DAYTRADE-001** — `DAYTRADE-001A` foundation completed; `DAYTRADE-001B` specification locked; `DAYTRADE-001C1` merged; `DAYTRADE-001C2` real study completed (validation `inconclusive`, holdout `unread_not_acquired`); production promotion unauthorized.
 
 **Recommended next pull request order:**
