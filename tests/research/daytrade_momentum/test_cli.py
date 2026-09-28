@@ -138,3 +138,31 @@ def test_cli_build_dataset_holdout_blocks_without_validation_dir(temp_dataset_ro
         "--dry-run",
     ])
     assert code != 0
+
+
+def test_cli_build_dataset_holdout_with_valid_validation_dir(
+    locked_spec: DaytradeSpec, temp_output_dir: Path, temp_dataset_root: Path
+) -> None:
+    """Verify build-dataset --split holdout succeeds in dry-run with valid validation bundle."""
+    from tests.research.daytrade_momentum.test_holdout_guard import (
+        create_mock_supported_validation_bundle,
+    )
+
+    val_dir = temp_output_dir / "val_bundle"
+    create_mock_supported_validation_bundle(val_dir, locked_spec)
+
+    code = main([
+        "build-dataset",
+        "--dataset-root", str(temp_dataset_root),
+        "--split", "holdout",
+        "--validation-artifact-dir", str(val_dir),
+        "--dry-run",
+    ])
+    assert code == 0
+    dry_run_file = temp_dataset_root / "holdout" / "manifest.dry-run.json"
+    assert dry_run_file.is_file()
+    m = json.loads(dry_run_file.read_text(encoding="utf-8"))
+    assert m["partition"] == "holdout"
+    assert m["preholdout_manifest_sha256"] is not None
+    assert m["validation_bundle_sha256"] is not None
+    assert m["evaluator_code_sha"] is not None

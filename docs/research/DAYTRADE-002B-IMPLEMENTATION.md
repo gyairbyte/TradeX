@@ -241,14 +241,20 @@ All 8 merge-blocking issues and 4 approved clarifications have been fully resolv
 10. **Dynamic Freeze File Hashing:**
     - `hash_evaluation_files()` dynamically discovers and cryptographically digests all Python source modules in `tradex/research/daytrade_momentum/`.
 
+11. **Holdout Acquisition Guard & Typed Proof Boundary:**
+    - `acquire_dataset_partition()` strictly requires an authenticated `HoldoutAccessProof` (via `holdout_access_proof` parameter or `validation_artifact_dir`) for `partition == "holdout"`.
+    - Raw lineage SHA arguments (`validation_bundle_sha`, `preholdout_manifest_sha`, `evaluator_code_sha`) have been removed from the API, preventing arbitrary string bypass.
+    - Credentials (`ALPACA_API_KEY` and `ALPACA_SECRET_KEY`) are read strictly inside the authorized provider branch of `acquire_dataset_partition()` only after proof establishment and dataset root validation, and never inside `fetch_symbol_month_bars()`.
+    - CLI `cmd_build_dataset()` obtains `HoldoutAccessProof` via `verify_holdout_access_prerequisites()` and passes it directly to `acquire_dataset_partition(holdout_access_proof=...)`.
+
 ---
 
 ## 6. Verification Results
 
 - **Daytrade Momentum Test Suite:** `uv run pytest tests/research/daytrade_momentum -q`
-  - **123 passed** in 208.91s (15 test modules)
+  - **128 passed** (15 test modules)
 - **Regression Suites:** `uv run pytest tests/research/daytrade_002a/test_spec.py tests/research/daytrade_reversal tests/research/daytrade_001b/test_spec.py tests/research/daytrade_mvp tests/research/intraday_dataset tests/product/test_mvp_arch_001.py -q`
-  - All passed cleanly
+  - All passed cleanly (266 passed, 1 warning)
 - **Lint Check:** `uv run ruff check tests scripts tradex/research/daytrade_momentum tradex/research/intraday_dataset`
   - All checks passed! Zero errors.
 - **Git Diff Check:** `git diff --check` passed cleanly.

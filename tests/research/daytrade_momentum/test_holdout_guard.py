@@ -10,8 +10,10 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
+import os
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -20,6 +22,7 @@ import tradex.research.daytrade_momentum.freeze as freeze_mod
 from tradex.research.daytrade_momentum.calendar import get_regular_trading_sessions
 from tradex.research.daytrade_momentum.dataset import (
     DaytradeDatasetManifest,
+    acquire_dataset_partition,
     write_normalized_bars_csv,
 )
 from tradex.research.daytrade_momentum.freeze import (
@@ -487,3 +490,172 @@ def test_real_dual_partition_holdout_pipeline_on_disk(
     for ne in res.non_events:
         assert ne.split == "holdout"
         assert ne.session_date >= date(2026, 7, 1)
+
+
+def test_holdout_acquisition_raw_lineage_cannot_authorize_holdout(
+    locked_spec: DaytradeSpec, tmp_path: Path
+) -> None:
+    """Raw lineage string arguments must not exist in API or authorize holdout."""
+    dataset_root = tmp_path / "dataset"
+    with pytest.raises((TypeError, HoldoutAccessDeniedError)):
+        acquire_dataset_partition(  # type: ignore[call-arg]
+            dataset_root=dataset_root,
+            partition="holdout",
+            spec=locked_spec,
+            validation_bundle_sha="fake",
+            preholdout_manifest_sha="fake",
+            evaluator_code_sha="fake",
+            execute_provider=True,
+        )
+
+
+def test_holdout_acquisition_missing_proof_fails_closed_zero_credential_reads_and_zero_calls(
+    locked_spec: DaytradeSpec, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Missing proof fails closed before any credentials are read or provider client constructed."""
+    dataset_root = tmp_path / "dataset"
+
+    cred_reads: list[str] = []
+    orig_env_get = os.environ.get
+
+    def tracked_env_get(key: str, default: Any = None) -> Any:
+        if "ALPACA" in key:
+            cred_reads.append(key)
+        return orig_env_get(key, default)
+
+    monkeypatch.setattr(os.environ, "get", tracked_env_get)
+
+    client_init_count = 0
+    import tradex.research.daytrade_momentum.dataset as dataset_mod
+
+    orig_client_init = dataset_mod.DatasetAlpacaClient.__init__
+
+    def tracked_client_init(self: Any, *args: Any, **kwargs: Any) -> None:
+        nonlocal client_init_count
+        client_init_count += 1
+        orig_client_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(dataset_mod.DatasetAlpacaClient, "__init__", tracked_client_init)
+
+    with pytest.raises(HoldoutAccessDeniedError) as exc_info:
+        acquire_dataset_partition(
+            dataset_root=dataset_root,
+            partition="holdout",
+            spec=locked_spec,
+            validation_artifact_dir=None,
+            holdout_access_proof=None,
+            execute_provider=True,
+        )
+
+    assert "strictly requires verified HoldoutAccessProof" in str(exc_info.value)
+    assert len(cred_reads) == 0, f"Unexpected credential reads: {cred_reads}"
+    assert client_init_count == 0, "Provider client must not be constructed"
+
+
+def test_holdout_acquisition_valid_typed_proof_authorizes_acquisition(
+    locked_spec: DaytradeSpec, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Synthetic verified HoldoutAccessProof allows acquisition path to proceed to fake client."""
+    dataset_root = tmp_path / "dataset"
+    proof = HoldoutAccessProof(
+        spec_sha256=locked_spec.sha256,
+        manifest_sha256="test_manifest_sha256",
+        evaluator_code_sha="test_eval_code_sha",
+        validation_bundle_sha256="test_bundle_sha256",
+    )
+
+    class FakeAlpacaClient:
+        max_retries = 1
+        call_count = 0
+
+        def get_bars(
+            self, symbols: list[str], start_utc: Any, end_utc: Any, **kwargs: Any
+        ) -> tuple[dict[str, pd.DataFrame], dict[str, Any]]:
+            self.call_count += 1
+            sym = symbols[0]
+            df = pd.DataFrame([{
+                "datetime": pd.Timestamp("2026-07-01 13:30:00", tz="UTC"),
+                "open": 100.0,
+                "high": 101.0,
+                "low": 99.0,
+                "close": 100.5,
+                "volume": 1000,
+                "trade_count": 50,
+                "vwap": 100.2,
+                "symbol": sym,
+            }])
+            meta = {
+                "pagination_complete": True,
+                "next_page_token_present": False,
+                "safe_error_classification": "none",
+                "logical_calls": 1,
+                "http_pages": 1,
+                "http_attempts": 1,
+                "retries": 0,
+                "http_429s": 0,
+                "http_errors": 0,
+                "malformed_timestamp_counts": {sym: 0},
+            }
+            return {sym: df}, meta
+
+    fake_client = FakeAlpacaClient()
+    cred_reads: list[str] = []
+    orig_env_get = os.environ.get
+
+    def tracked_env_get(key: str, default: Any = None) -> Any:
+        if "ALPACA" in key:
+            cred_reads.append(key)
+        return orig_env_get(key, default)
+
+    monkeypatch.setattr(os.environ, "get", tracked_env_get)
+
+    manifest = acquire_dataset_partition(
+        dataset_root=dataset_root,
+        partition="holdout",
+        spec=locked_spec,
+        client=fake_client,
+        execute_provider=True,
+        holdout_access_proof=proof,
+    )
+
+    assert isinstance(manifest, DaytradeDatasetManifest)
+    assert manifest.partition == "holdout"
+    assert manifest.preholdout_manifest_sha256 == proof.manifest_sha256
+    assert manifest.validation_bundle_sha256 == proof.validation_bundle_sha256
+    assert manifest.evaluator_code_sha == proof.evaluator_code_sha
+    assert len(cred_reads) == 0, "No credentials should be read when client is injected"
+    assert fake_client.call_count > 0, "Provider client should have been called"
+
+
+def test_holdout_acquisition_forged_ordinary_dict_rejected(
+    locked_spec: DaytradeSpec, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A dictionary containing equivalent string fields must not be accepted as a proof."""
+    dataset_root = tmp_path / "dataset"
+    pseudo_proof = {
+        "spec_sha256": locked_spec.sha256,
+        "manifest_sha256": "fake_manifest",
+        "evaluator_code_sha": "fake_code",
+        "validation_bundle_sha256": "fake_bundle",
+    }
+    cred_reads: list[str] = []
+    orig_env_get = os.environ.get
+
+    def tracked_env_get(key: str, default: Any = None) -> Any:
+        if "ALPACA" in key:
+            cred_reads.append(key)
+        return orig_env_get(key, default)
+
+    monkeypatch.setattr(os.environ, "get", tracked_env_get)
+
+    with pytest.raises(HoldoutAccessDeniedError) as exc_info:
+        acquire_dataset_partition(
+            dataset_root=dataset_root,
+            partition="holdout",
+            spec=locked_spec,
+            holdout_access_proof=pseudo_proof,  # type: ignore[arg-type]
+            execute_provider=True,
+        )
+
+    assert "must be an instance of HoldoutAccessProof" in str(exc_info.value)
+    assert len(cred_reads) == 0

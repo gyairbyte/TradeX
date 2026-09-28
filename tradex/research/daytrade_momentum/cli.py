@@ -184,27 +184,20 @@ def cmd_build_dataset(args: argparse.Namespace) -> int:
         spec = load_and_verify_spec(args.spec)
         execute_provider = getattr(args, "execute_provider", False) and not getattr(args, "dry_run", False)
 
-        validation_bundle_sha = None
-        preholdout_manifest_sha = None
-        evaluator_code_sha = None
-
+        holdout_proof = None
         if args.split == "holdout":
             if not args.validation_artifact_dir:
                 print("FAIL: Holdout acquisition requires --validation-artifact-dir.", file=sys.stderr)
                 return 1
-            proof = verify_holdout_access_prerequisites(args.validation_artifact_dir, spec)
-            validation_bundle_sha = proof.validation_bundle_sha256
-            preholdout_manifest_sha = proof.manifest_sha256
-            evaluator_code_sha = proof.evaluator_code_sha
+            holdout_proof = verify_holdout_access_prerequisites(args.validation_artifact_dir, spec)
 
         manifest = acquire_dataset_partition(
             dataset_root=args.dataset_root,
             partition=args.split,
             spec=spec,
             execute_provider=execute_provider,
-            validation_bundle_sha=validation_bundle_sha,
-            preholdout_manifest_sha=preholdout_manifest_sha,
-            evaluator_code_sha=evaluator_code_sha,
+            validation_artifact_dir=args.validation_artifact_dir if args.split == "holdout" else None,
+            holdout_access_proof=holdout_proof,
         )
         mode_str = "PROVIDER ACQUISITION" if execute_provider else "DRY-RUN (NO NETWORK CALLS)"
         print(f"PASS: Dataset partition '{args.split}' completed in {mode_str} mode.")

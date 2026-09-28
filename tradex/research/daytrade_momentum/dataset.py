@@ -18,7 +18,12 @@ from .calendar import (
     build_regular_session_grid,
     get_regular_trading_sessions,
 )
-from .models import DataQualityReport, DaytradeSession, HoldoutAccessDeniedError
+from .models import (
+    DataQualityReport,
+    DaytradeSession,
+    HoldoutAccessDeniedError,
+    HoldoutAccessProof,
+)
 from .quality import audit_missing_ticker_session, audit_ticker_session
 from .spec import DAYTRADE_002A_SPEC_SHA256, LOCKED_FROZEN_UNIVERSE, DaytradeSpec
 
@@ -523,10 +528,8 @@ def acquire_dataset_partition(
     client: Any = None,
     execute_provider: bool = False,
     repo_root: Path | None = None,
-    validation_bundle_sha: str | None = None,
-    preholdout_manifest_sha: str | None = None,
-    evaluator_code_sha: str | None = None,
     validation_artifact_dir: Path | str | None = None,
+    holdout_access_proof: HoldoutAccessProof | None = None,
 ) -> DaytradeDatasetManifest:
     """Future authorized dataset acquisition path with strict authorization guards.
 
@@ -537,7 +540,7 @@ def acquire_dataset_partition(
     Locked guards:
     - Fails closed unless execute_provider is explicitly True;
     - Dataset root must reside outside the repository;
-    - If holdout partition: requires verified validation artifacts and preholdout lineage;
+    - If holdout partition: requires verified HoldoutAccessProof (from validation_artifact_dir or trusted caller);
     - Reuses DatasetAlpacaClient.get_bars(...) with monthly chunking and bounded 100-page limit.
     """
     valid_root = validate_dataset_root(dataset_root, repo_root=repo_root)
@@ -548,23 +551,36 @@ def acquire_dataset_partition(
     partition_dir = valid_root / partition
     bars_dir = partition_dir / "bars"
 
+    preholdout_manifest_sha: str | None = None
+    validation_bundle_sha: str | None = None
+    evaluator_code_sha: str | None = None
+
     if partition == "preholdout":
         start_date = spec.context_anchor_date  # 2025-12-31
         end_date = spec.validation.end          # 2026-06-30
     else:
         start_date = spec.holdout.start         # 2026-07-01
         end_date = spec.holdout.end             # 2026-08-31
-        if validation_artifact_dir is not None:
+
+        proof: HoldoutAccessProof | None = None
+        if holdout_access_proof is not None:
+            if not isinstance(holdout_access_proof, HoldoutAccessProof):
+                raise HoldoutAccessDeniedError(
+                    f"holdout_access_proof must be an instance of HoldoutAccessProof, got {type(holdout_access_proof).__name__}"
+                )
+            proof = holdout_access_proof
+        elif validation_artifact_dir is not None:
             from .study import verify_holdout_access_prerequisites
 
             proof = verify_holdout_access_prerequisites(validation_artifact_dir, spec, repo_root=repo_root)
-            validation_bundle_sha = proof.validation_bundle_sha256
-            preholdout_manifest_sha = proof.manifest_sha256
-            evaluator_code_sha = proof.evaluator_code_sha
-        elif not (validation_bundle_sha and preholdout_manifest_sha and evaluator_code_sha):
+        else:
             raise HoldoutAccessDeniedError(
-                "Holdout acquisition strictly requires verified validation_bundle_sha, preholdout_manifest_sha, and evaluator_code_sha (or valid validation_artifact_dir)."
+                "Holdout acquisition strictly requires verified HoldoutAccessProof or valid validation_artifact_dir."
             )
+
+        preholdout_manifest_sha = proof.manifest_sha256
+        validation_bundle_sha = proof.validation_bundle_sha256
+        evaluator_code_sha = proof.evaluator_code_sha
 
     if not execute_provider:
         # Dry-run or planning mode: zero network requests and zero credential access
