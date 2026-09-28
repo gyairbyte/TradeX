@@ -28,6 +28,16 @@ class HoldoutAccessDeniedError(PermissionError):
     """Raised when holdout data access is requested without satisfying all validation prerequisites."""
 
 
+@dataclass(frozen=True, slots=True)
+class HoldoutAccessProof:
+    """Cryptographic proof of verified validation prerequisites for holdout access."""
+
+    spec_sha256: str
+    manifest_sha256: str
+    evaluator_code_sha: str
+    validation_bundle_sha256: str
+
+
 @dataclass(frozen=True)
 class DaytradeBar:
     """A normalized 1-minute regular-session bar."""

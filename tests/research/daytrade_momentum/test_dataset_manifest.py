@@ -16,6 +16,7 @@ from tradex.research.daytrade_momentum.dataset import (
     read_normalized_bars_csv,
     sanitize_manifest_data,
     validate_dataset_root,
+    verify_dataset_manifest,
 )
 from tradex.research.daytrade_momentum.spec import DaytradeSpec
 
@@ -202,14 +203,97 @@ def test_dry_run_adapter_zero_provider_calls(locked_spec: DaytradeSpec, temp_dat
 
     assert manifest.acquisition_provenance["execution_mode"] == "dry_run"
     assert manifest.acquisition_provenance["execute_provider"] is False
-    assert manifest.acquisition_provenance["pages_retrieved"] == 0
-    assert manifest.acquisition_provenance["rows_retrieved"] == 0
+    assert manifest.acquisition_provenance["logical_calls"] == 0
+    assert manifest.acquisition_provenance["http_pages"] == 0
+    assert manifest.acquisition_provenance["http_attempts"] == 0
+    assert manifest.acquisition_provenance["retries"] == 0
+    assert manifest.acquisition_provenance["http_429s"] == 0
+    assert manifest.acquisition_provenance["http_errors"] == 0
     assert manifest.compute_sha256() == manifest.manifest_sha256
 
-    # Verify canonical file layout
-    expected_manifest = temp_dataset_root / "preholdout" / "manifest.lock.json"
-    assert expected_manifest.is_file()
+    # Verify canonical file layout: dry-run writes manifest.dry-run.json and NOT manifest.lock.json
+    dry_run_file = temp_dataset_root / "preholdout" / "manifest.dry-run.json"
+    formal_file = temp_dataset_root / "preholdout" / "manifest.lock.json"
+    assert dry_run_file.is_file()
+    assert not formal_file.is_file()
     assert manifest.source_files == {}
+
+
+def test_dry_run_preserves_existing_manifest_lock(locked_spec: DaytradeSpec, temp_dataset_root: Path) -> None:
+    """Verify dry-run does NOT overwrite an existing formal manifest.lock.json."""
+    pre_dir = temp_dataset_root / "preholdout"
+    pre_dir.mkdir(parents=True, exist_ok=True)
+    formal_lock = pre_dir / "manifest.lock.json"
+    formal_lock.write_text("{\"original\": true}", encoding="utf-8")
+
+    acquire_partition_data(
+        partition="preholdout",
+        spec=locked_spec,
+        dataset_root=temp_dataset_root,
+        execute_provider=False,
+    )
+
+    assert formal_lock.is_file()
+    assert formal_lock.read_text(encoding="utf-8") == "{\"original\": true}"
+    dry_run_file = pre_dir / "manifest.dry-run.json"
+    assert dry_run_file.is_file()
+
+
+def test_verify_dataset_manifest_rejects_dry_run(locked_spec: DaytradeSpec, temp_dataset_root: Path) -> None:
+    """Verify verify_dataset_manifest fails closed on a dry-run manifest."""
+    manifest = acquire_partition_data(
+        partition="preholdout",
+        spec=locked_spec,
+        dataset_root=temp_dataset_root,
+        execute_provider=False,
+    )
+    with pytest.raises(DatasetSecurityError, match="dry-run cannot be verified"):
+        verify_dataset_manifest(manifest, spec=locked_spec, partition_dir=temp_dataset_root / "preholdout")
+
+
+def test_zero_os_environ_read_on_non_provider_paths(
+    locked_spec: DaytradeSpec, temp_dataset_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify neither ALPACA_API_KEY nor ALPACA_SECRET_KEY is accessed on dry-run or manifest sanitization."""
+    import os
+
+    accessed_keys: list[str] = []
+    original_getitem = os.environ.__getitem__
+    original_get = os.environ.get
+
+    def forbidden_get(key: str, default: object = None) -> object:
+        if "ALPACA" in key.upper():
+            accessed_keys.append(key)
+            raise AssertionError(f"FORBIDDEN ENV ACCESS: Attempted to read '{key}' on non-provider code path!")
+        return original_get(key, default)
+
+    def forbidden_getitem(key: str) -> str:
+        if "ALPACA" in key.upper():
+            accessed_keys.append(key)
+            raise AssertionError(f"FORBIDDEN ENV ACCESS: Attempted to read '{key}' on non-provider code path!")
+        return original_getitem(key)
+
+    monkeypatch.setattr(os.environ, "get", forbidden_get)
+    monkeypatch.setattr(os.environ, "__getitem__", forbidden_getitem)
+
+    # 1. Dry run acquisition
+    manifest = acquire_partition_data(
+        partition="preholdout",
+        spec=locked_spec,
+        dataset_root=temp_dataset_root,
+        execute_provider=False,
+    )
+
+    # 2. Manifest sanitization
+    sanitized = sanitize_manifest_data(manifest.to_dict())
+    assert "alpaca_api_key" not in str(sanitized).lower()
+
+    # 3. Serialization and hashing
+    _ = manifest.to_dict()
+    _ = manifest.compute_sha256()
+
+    # Verify no credential env keys were accessed
+    assert len(accessed_keys) == 0
 
 
 def test_acquire_holdout_guard_without_validation(locked_spec: DaytradeSpec, temp_dataset_root: Path) -> None:
@@ -227,7 +311,7 @@ def test_acquire_holdout_guard_without_validation(locked_spec: DaytradeSpec, tem
 
 
 def test_acquisition_adapter_mock_client_pagination_and_chunks() -> None:
-    """Verify acquisition adapter calls client.get_bars with SIP/1Min/split and enforces 100-page limit."""
+    """Verify acquisition adapter calls client.get_bars with SIP/1Min/split and returns (df, safe_metadata)."""
     from datetime import UTC, datetime
 
     mock_client = MagicMock()
@@ -239,9 +323,20 @@ def test_acquisition_adapter_mock_client_pagination_and_chunks() -> None:
 
     start_utc = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
     end_utc = datetime(2026, 1, 31, 23, 59, tzinfo=UTC)
-    res_df = adapter.fetch_symbol_month_bars("SPY", start_utc, end_utc)
+    res_df, safe_meta = adapter.fetch_symbol_month_bars("SPY", start_utc, end_utc)
 
     assert isinstance(res_df, pd.DataFrame)
+    assert safe_meta["symbol"] == "SPY"
+    assert safe_meta["logical_calls"] == 1
+    assert safe_meta["http_pages"] == 0
+    assert safe_meta["http_attempts"] == 0
+    assert safe_meta["retries"] == 0
+    assert safe_meta["http_429s"] == 0
+    assert safe_meta["http_errors"] == 0
+    assert safe_meta["malformed_timestamp_count"] == 0
+    assert safe_meta["pagination_complete"] is True
+    assert safe_meta["safe_error_classification"] == "none"
+
     mock_client.get_bars.assert_called_once_with(
         symbols=["SPY"],
         start_utc=start_utc,
@@ -251,6 +346,57 @@ def test_acquisition_adapter_mock_client_pagination_and_chunks() -> None:
         adjustment="split",
         max_pages=100,
     )
+
+
+def test_acquisition_adapter_aggregates_provenance_across_months() -> None:
+    """Verify adapter safe metadata aggregates correctly across multiple chunks."""
+    from datetime import UTC, datetime
+
+    mock_client = MagicMock()
+    mock_client.max_retries = 1
+    chunk_df = pd.DataFrame([
+        {"timestamp": "2026-01-02T14:30:00Z", "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5, "volume": 1000.0}
+    ])
+    mock_client.get_bars.side_effect = [
+        ({"SPY": chunk_df}, {"pagination_complete": True, "pages_retrieved": 2, "attempts": 2, "retries": 1, "rate_limits_hit": 1, "network_errors": 0}),
+        ({"SPY": chunk_df}, {"pagination_complete": True, "pages_retrieved": 3, "attempts": 3, "retries": 0, "rate_limits_hit": 0, "network_errors": 1}),
+    ]
+
+    adapter = DaytradeDatasetAcquisitionAdapter(client=mock_client)
+
+    dt1_start = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
+    dt1_end = datetime(2026, 1, 31, 23, 59, tzinfo=UTC)
+    dt2_start = datetime(2026, 2, 1, 0, 0, tzinfo=UTC)
+    dt2_end = datetime(2026, 2, 28, 23, 59, tzinfo=UTC)
+
+    _, meta1 = adapter.fetch_symbol_month_bars("SPY", dt1_start, dt1_end)
+    _, meta2 = adapter.fetch_symbol_month_bars("SPY", dt2_start, dt2_end)
+
+    total_pages = meta1["http_pages"] + meta2["http_pages"]
+    total_retries = meta1["retries"] + meta2["retries"]
+    total_429s = meta1["http_429s"] + meta2["http_429s"]
+    total_errors = meta1["http_errors"] + meta2["http_errors"]
+
+    assert total_pages == 5
+    assert total_retries == 1
+    assert total_429s == 1
+    assert total_errors == 1
+
+
+def test_acquisition_adapter_rejects_unexpected_response_symbol() -> None:
+    """Verify acquisition adapter raises DatasetSecurityError if response symbol doesn't match requested."""
+    from datetime import UTC, datetime
+
+    mock_client = MagicMock()
+    mock_client.max_retries = 1
+    mock_client.get_bars.return_value = ({"QQQ": pd.DataFrame()}, {"pagination_complete": True})
+
+    adapter = DaytradeDatasetAcquisitionAdapter(client=mock_client)
+
+    start_utc = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
+    end_utc = datetime(2026, 1, 31, 23, 59, tzinfo=UTC)
+    with pytest.raises(DatasetSecurityError, match="missing from client response"):
+        adapter.fetch_symbol_month_bars("SPY", start_utc, end_utc)
 
 
 def test_acquisition_adapter_page_limit_exceeded() -> None:

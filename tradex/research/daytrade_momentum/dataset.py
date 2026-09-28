@@ -43,6 +43,8 @@ FORBIDDEN_KEY_PATTERNS = (
     "error_body",
     "raw_response",
     "raw_error",
+    "page_token",
+    "next_page_token",
 )
 
 SAFE_KEY_ALLOWLIST = {
@@ -119,13 +121,11 @@ def _check_forbidden_key(k: str) -> None:
 
 def _check_forbidden_val(v: Any) -> None:
     if isinstance(v, str):
-        v_lower = v.lower()
+        v_lower = v.strip().lower()
         if v_lower.startswith(("bearer ", "basic ")):
             raise DatasetSecurityError("Prohibited authorization token value found in manifest")
-        for env_var in ("ALPACA_API_KEY", "ALPACA_SECRET_KEY"):
-            secret_val = os.environ.get(env_var)
-            if secret_val and len(secret_val) >= 8 and secret_val in v:
-                raise DatasetSecurityError(f"Prohibited credential value from {env_var} found in manifest payload")
+        if v_lower.startswith(("token ", "secret ")):
+            raise DatasetSecurityError("Prohibited credential value found in manifest")
 
 
 def sanitize_manifest_data(data: Any) -> Any:
@@ -394,6 +394,16 @@ def verify_dataset_manifest(
     partition_dir: Path,
 ) -> None:
     """Verify that dataset manifest adheres to locked contract and files match digests."""
+    prov = manifest.acquisition_provenance or {}
+    if prov.get("status") == "dry_run_no_provider_calls":
+        raise DatasetSecurityError(
+            "Manifest is a dry-run artifact (dry_run_no_provider_calls); "
+            "dry-run cannot be verified as a formal acquired dataset."
+        )
+    if not manifest.source_files or len(manifest.source_files) != len(spec.universe):
+        raise DatasetSecurityError(
+            f"Manifest source_files incomplete: expected {len(spec.universe)} files, got {len(manifest.source_files)}"
+        )
     manifest.validate_against_spec(spec)
     _verify_manifest_source_files(partition_dir, manifest)
     _check_unmanifested_files(partition_dir, manifest)
@@ -414,8 +424,8 @@ class DaytradeDatasetAcquisitionAdapter:
         symbol: str,
         start_utc: datetime,
         end_utc: datetime,
-    ) -> pd.DataFrame:
-        """Fetch bars for a single symbol over a month with hard 100-page limit."""
+    ) -> tuple[pd.DataFrame, dict[str, Any]]:
+        """Fetch bars for a single symbol over a month with hard 100-page limit and safe metadata."""
         dfs, meta = self.client.get_bars(
             symbols=[symbol],
             start_utc=start_utc,
@@ -437,7 +447,48 @@ class DaytradeDatasetAcquisitionAdapter:
         if not meta.get("pagination_complete", False):
             raise DatasetSecurityError(f"Pagination failed for {symbol}: {safe_err}")
 
-        return dfs.get(symbol.upper(), pd.DataFrame())
+        if safe_err != "none":
+            raise DatasetSecurityError(f"Provider returned error classification '{safe_err}' for {symbol}")
+
+        # Response-symbol identity check: reject unexpected extra response symbols or missing symbol
+        resp_syms = {s.upper() for s in meta.get("response_symbols", [])}
+        if not resp_syms and dfs:
+            resp_syms = {s.upper() for s in dfs}
+        if symbol.upper() not in resp_syms:
+            raise DatasetSecurityError(
+                f"Requested symbol {symbol} missing from client response: {sorted(resp_syms)}"
+            )
+        unexpected = resp_syms - {symbol.upper()}
+        if unexpected:
+            raise DatasetSecurityError(
+                f"Unexpected response symbols {sorted(unexpected)} returned for single-symbol request {symbol}"
+            )
+
+        logical_calls = meta.get("logical_calls", 1)
+        http_attempts = meta.get("http_attempts", meta.get("attempts", 0))
+        http_pages = meta.get("http_pages", meta.get("pages_retrieved", meta.get("page_count", 0)))
+        retries = meta.get("retries", max(0, http_attempts - logical_calls))
+        http_429s = meta.get("http_429s", meta.get("rate_limits_hit", 0))
+        http_errors = meta.get("http_errors", meta.get("network_errors", 0))
+        malformed_ts_count = meta.get("malformed_timestamp_counts", {}).get(symbol.upper(), 0) if isinstance(meta.get("malformed_timestamp_counts"), dict) else meta.get("malformed_timestamp_count", 0)
+
+        safe_meta = {
+            "symbol": symbol.upper(),
+            "logical_calls": logical_calls,
+            "http_pages": http_pages,
+            "http_attempts": http_attempts,
+            "retries": retries,
+            "http_429s": http_429s,
+            "http_errors": http_errors,
+            "malformed_timestamp_counts": malformed_ts_count,
+            "malformed_timestamp_count": malformed_ts_count,
+            "pagination_complete": meta.get("pagination_complete", True),
+            "safe_error_classification": safe_err,
+            "page_count": http_pages,
+        }
+
+        df = dfs.get(symbol.upper(), pd.DataFrame())
+        return df, safe_meta
 
 
 def _month_intervals(start_d: date, end_d: date) -> list[tuple[datetime, datetime]]:
@@ -506,10 +557,10 @@ def acquire_dataset_partition(
         if validation_artifact_dir is not None:
             from .study import verify_holdout_access_prerequisites
 
-            prereqs = verify_holdout_access_prerequisites(validation_artifact_dir, spec, repo_root=repo_root)
-            validation_bundle_sha = prereqs["validation_bundle_sha256"]
-            preholdout_manifest_sha = prereqs["manifest_sha256"]
-            evaluator_code_sha = prereqs["evaluator_code_sha"]
+            proof = verify_holdout_access_prerequisites(validation_artifact_dir, spec, repo_root=repo_root)
+            validation_bundle_sha = proof.validation_bundle_sha256
+            preholdout_manifest_sha = proof.manifest_sha256
+            evaluator_code_sha = proof.evaluator_code_sha
         elif not (validation_bundle_sha and preholdout_manifest_sha and evaluator_code_sha):
             raise HoldoutAccessDeniedError(
                 "Holdout acquisition strictly requires verified validation_bundle_sha, preholdout_manifest_sha, and evaluator_code_sha (or valid validation_artifact_dir)."
@@ -535,8 +586,16 @@ def acquire_dataset_partition(
                 "status": "dry_run_no_provider_calls",
                 "execution_mode": "dry_run",
                 "execute_provider": False,
-                "pages_retrieved": 0,
-                "rows_retrieved": 0,
+                "logical_calls": 0,
+                "http_pages": 0,
+                "http_attempts": 0,
+                "retries": 0,
+                "http_429s": 0,
+                "http_errors": 0,
+                "malformed_timestamp_counts": {s: 0 for s in spec.universe},
+                "total_malformed_timestamps": 0,
+                "pagination_complete": True,
+                "safe_error_classification": "none",
             },
             preholdout_manifest_sha256=preholdout_manifest_sha,
             validation_bundle_sha256=validation_bundle_sha,
@@ -544,8 +603,8 @@ def acquire_dataset_partition(
         )
         manifest.manifest_sha256 = manifest.compute_sha256()
         partition_dir.mkdir(parents=True, exist_ok=True)
-        manifest_fp = partition_dir / "manifest.lock.json"
-        manifest_fp.write_text(json.dumps(manifest.to_dict(), indent=2), encoding="utf-8")
+        dry_run_fp = partition_dir / "manifest.dry-run.json"
+        dry_run_fp.write_text(json.dumps(manifest.to_dict(), indent=2), encoding="utf-8")
         return manifest
 
     # Authorized provider execution path (requires explicit client or credentials)
@@ -563,14 +622,13 @@ def acquire_dataset_partition(
     bars_dir.mkdir(parents=True, exist_ok=True)
 
     source_files: dict[str, str] = {}
-    provenance_stats = {
-        "requests": 0,
-        "pages": 0,
-        "retries": 0,
-        "errors": 0,
-        "status": "authorized_provider_acquisition",
-        "malformed_timestamp_counts": 0,
-    }
+    total_logical_calls = 0
+    total_http_pages = 0
+    total_http_attempts = 0
+    total_retries = 0
+    total_http_429s = 0
+    total_http_errors = 0
+    malformed_by_ticker: dict[str, int] = {s: 0 for s in spec.universe}
 
     start_d = date.fromisoformat(start_date)
     end_d = date.fromisoformat(end_date)
@@ -580,12 +638,18 @@ def acquire_dataset_partition(
     for sym in spec.universe:
         all_month_dfs: list[pd.DataFrame] = []
         for start_utc, end_utc in intervals:
-            month_df = adapter.fetch_symbol_month_bars(
+            month_df, safe_meta = adapter.fetch_symbol_month_bars(
                 symbol=sym,
                 start_utc=start_utc,
                 end_utc=end_utc,
             )
-            provenance_stats["requests"] += 1
+            total_logical_calls += safe_meta["logical_calls"]
+            total_http_pages += safe_meta["http_pages"]
+            total_http_attempts += safe_meta["http_attempts"]
+            total_retries += safe_meta["retries"]
+            total_http_429s += safe_meta["http_429s"]
+            total_http_errors += safe_meta["http_errors"]
+            malformed_by_ticker[sym] += safe_meta["malformed_timestamp_counts"]
             if not month_df.empty:
                 all_month_dfs.append(month_df)
 
@@ -598,6 +662,22 @@ def acquire_dataset_partition(
         out_fp = partition_dir / rel_fn
         write_normalized_bars_csv(out_fp, combined_df)
         source_files[rel_fn] = sha256_of_file(out_fp)
+
+    provenance_stats = {
+        "status": "authorized_provider_acquisition",
+        "execution_mode": "provider_execution",
+        "execute_provider": True,
+        "logical_calls": total_logical_calls,
+        "http_pages": total_http_pages,
+        "http_attempts": total_http_attempts,
+        "retries": total_retries,
+        "http_429s": total_http_429s,
+        "http_errors": total_http_errors,
+        "malformed_timestamp_counts": malformed_by_ticker,
+        "total_malformed_timestamps": sum(malformed_by_ticker.values()),
+        "pagination_complete": True,
+        "safe_error_classification": "none",
+    }
 
     manifest = DaytradeDatasetManifest(
         task_id="DAYTRADE-002A",
@@ -674,11 +754,11 @@ def load_private_dataset(
 
         from .study import verify_holdout_access_prerequisites
 
-        prereqs = verify_holdout_access_prerequisites(validation_artifact_dir, spec, repo_root=repo_root)
-        val_bundle_sha = prereqs["validation_bundle_sha256"]
-        val_evaluator_sha = prereqs["evaluator_code_sha"]
-        val_manifest_sha = prereqs["manifest_sha256"]
-        val_spec_sha = prereqs["spec_sha256"]
+        proof = verify_holdout_access_prerequisites(validation_artifact_dir, spec, repo_root=repo_root)
+        val_bundle_sha = proof.validation_bundle_sha256
+        val_evaluator_sha = proof.evaluator_code_sha
+        val_manifest_sha = proof.manifest_sha256
+        val_spec_sha = proof.spec_sha256
 
         # 1. Preholdout partition (history source)
         pre_dir = valid_root / "preholdout"

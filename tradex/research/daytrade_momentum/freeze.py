@@ -109,6 +109,7 @@ def freeze_evaluation_state(
     repo_root: Path | None = None,
     spec_sha256: str = "",
     manifest_sha256: str | None = None,
+    manifest: DaytradeDatasetManifest | None = None,
     require_clean: bool = True,
 ) -> EvaluationFreezeRecord:
     """Snapshot the current evaluation code state, verifying worktree cleanliness."""
@@ -118,6 +119,14 @@ def freeze_evaluation_state(
         raise FreezeError("Worktree is dirty; evaluation state can only be frozen on a clean tree.")
 
     head_sha = get_git_head_sha(root)
+
+    if manifest is not None:
+        prov = manifest.acquisition_provenance or {}
+        if prov.get("status") == "dry_run_no_provider_calls":
+            raise FreezeError("Cannot freeze evaluation state against a dry-run dataset manifest.")
+        if not manifest.source_files or len(manifest.source_files) < 15:
+            raise FreezeError("Cannot freeze evaluation state against an incomplete dataset manifest.")
+        manifest_sha256 = manifest.manifest_sha256
 
     locked_spec_sha = spec_sha256 or DAYTRADE_002A_SPEC_SHA256
     file_hashes = hash_evaluation_files(root)
@@ -145,6 +154,7 @@ def verify_freeze_state(
     - Spec SHA mismatch
     - Missing manifest binding (formal freeze must be bound to manifest)
     - Manifest SHA mismatch
+    - Binding to dry-run or incomplete manifest
     - Dirty worktree when require_clean is True
     - Git HEAD commit mismatch
     - Missing evaluation file
@@ -160,10 +170,16 @@ def verify_freeze_state(
     if freeze.manifest_sha256 is None:
         raise FreezeError("Formal evaluation freeze must be bound to a dataset manifest (manifest_sha256 is None).")
 
-    if manifest is not None and freeze.manifest_sha256 != manifest.manifest_sha256:
-        raise FreezeError(
-            f"Freeze manifest SHA mismatch: frozen {freeze.manifest_sha256} vs manifest {manifest.manifest_sha256}"
-        )
+    if manifest is not None:
+        prov = manifest.acquisition_provenance or {}
+        if prov.get("status") == "dry_run_no_provider_calls":
+            raise FreezeError("Cannot bind or verify evaluation freeze against a dry-run dataset manifest.")
+        if not manifest.source_files or len(manifest.source_files) < 15:
+            raise FreezeError("Cannot bind or verify evaluation freeze against an incomplete dataset manifest.")
+        if freeze.manifest_sha256 != manifest.manifest_sha256:
+            raise FreezeError(
+                f"Freeze manifest SHA mismatch: frozen {freeze.manifest_sha256} vs manifest {manifest.manifest_sha256}"
+            )
 
     if require_clean and not check_worktree_clean(root):
         raise FreezeError("Worktree is dirty; evaluation state requires a clean worktree.")

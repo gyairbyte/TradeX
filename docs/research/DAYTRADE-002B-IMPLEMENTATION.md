@@ -44,28 +44,42 @@ The implementation strictly validates this hash at runtime via `load_and_verify_
 4. **Clarification 4 (Complete 23-Point Holdout Access Guard):**
    - Strictly enforced before any holdout data loading or provider client instantiation:
      1. `validation_artifact_dir` exists and is a directory.
-     2. `study.json` present.
-     3. `spec.lock.json` present.
-     4. `freeze.json` present.
-     5. `manifest.lock.json` present.
-     6. `bootstrap.json` present.
-     7. `metrics.json` present.
-     8. `data_quality.csv` present.
-     9. `report.md` present.
-     10. `checksums.sha256` present.
-     11. Checksums match current file digests.
-     12. Spec SHA matches canonical `DAYTRADE_002A_SPEC_SHA256`.
-     13. Manifest provider == `"alpaca"`.
-     14. Manifest feed == `"sip"`.
-     15. Manifest timeframe == `"1Min"`.
-     16. Manifest adjustment == `"split"`.
-     17. Manifest calendar == `"XNYS"`.
-     18. Manifest timezone == `"America/New_York"`.
-     19. Manifest universe matches frozen 15 ETFs in exact order.
-     20. Freeze record matches current git commit and file digests.
-     21. Validation split achieved exactly `"supported"` disposition.
-     22. Validation provenance matches spec hash, code freeze hash, and manifest lineage.
+     2. All 13 formal validation artifacts exist:
+        - `study.json`
+        - `spec.lock.json`
+        - `freeze.json`
+        - `manifest.lock.json`
+        - `bootstrap.json`
+        - `metrics.json`
+        - `data_quality.csv`
+        - `events.csv`
+        - `baseline_summary.csv`
+        - `per_etf.csv`
+        - `monthly.csv`
+        - `direction.csv`
+        - `report.md`
+     3. `checksums.sha256` exists and covers all 13 artifacts.
+     4. Cryptographic checksums match exact file digests for every single artifact.
+     5. Spec SHA in `spec.lock.json` matches canonical `DAYTRADE_002A_SPEC_SHA256`.
+     6. Manifest provider == `"alpaca"`.
+     7. Manifest feed == `"sip"`.
+     8. Manifest timeframe == `"1Min"`.
+     9. Manifest adjustment == `"split"`.
+     10. Manifest calendar == `"XNYS"`.
+     11. Manifest timezone == `"America/New_York"`.
+     12. Manifest universe matches frozen 15 ETFs in exact locked order.
+     13. Manifest dates and source files verified fail-closed against canonical dataset validator.
+     14. Freeze record matches current git commit and all module file digests.
+     15. Freeze manifest SHA matches preholdout manifest SHA.
+     16. Validation split achieved exactly `"supported"` disposition.
+     17. Disposition step is `"step_5_support"`.
+     18. Validation provenance matches spec hash.
+     19. Validation provenance matches evaluator code freeze hash.
+     20. Validation provenance matches preholdout manifest SHA.
+     21. Evidence confidence cap is `"limited_but_usable_evidence"`.
+     22. `production_promotion_eligible` is explicitly present and `False`.
      23. `APPROVED_PRODUCTION_STRATEGIES == ()`.
+   - Returns typed, immutable `HoldoutAccessProof` with deterministic `validation_bundle_sha256 = sha256(checksums.sha256)`.
 
 ---
 
@@ -154,7 +168,27 @@ $$\text{first\_half\_hour\_return}(i, D) = \frac{\text{close}(i, D, \text{09:59 
 - Baseline recomputed inside each replicate.
 - Metric-specific non-computability per Clarification 3.
 
-### 4.7 5-Step Disposition Precedence Hierarchy
+### 4.7 All 6 Validation Gates & 5-Step Disposition Precedence Hierarchy
+
+The 6 validation gates enforced for hypothesis support:
+1. **Sample Sufficiency Gate:**
+   - Total event count $\ge 75$
+   - Represented universe ETFs $\ge 10$
+   - Event session count $\ge 20$
+2. **Concentration Gate:**
+   - Single ETF event share $\le 15.0\%$ of total events
+3. **Data Quality Gate:**
+   - Excluded ticker-sessions $\le 5.0\%$ of total expected sessions
+4. **Primary Return Direction & Significance Gate:**
+   - Mean net signed return (2 bps/side) $> 0.0$
+   - 95% session-date clustered bootstrap CI lower bound $> 0.0$
+5. **Uplift Direction & Significance Gate:**
+   - Mean event-minus-baseline uplift (2 bps/side) $> 0.0$
+   - 95% session-date clustered bootstrap CI lower bound $> 0.0$
+6. **Cross-Sectional Breadth Gate:**
+   - Represented ETFs with positive mean net signed return $\ge 60.0\%$
+
+The 5-step disposition precedence hierarchy:
 - **Step 1 (Invalidity):** Integrity defect $\rightarrow$ `"invalid"`
 - **Step 2 (Evidence Sufficiency):** Sample gate, concentration gate, or DQ gate fails $\rightarrow$ `"inconclusive"`
 - **Step 3 (Directional Hypothesis Failure):** Primary net mean $\le 0$, mean uplift $\le 0$, or breadth $< 60\%$ $\rightarrow$ `"rejected"`
@@ -163,36 +197,60 @@ $$\text{first\_half\_hour\_return}(i, D) = \frac{\text{close}(i, D, \text{09:59 
 
 ---
 
-## 5. PR #91 Final Corrections Incorporated
+## 5. PR #91 Final Corrections & Merge Blockers Resolved
 
-1. **Threshold History Walkback Across Earlier Authorized Splits:**
+All 8 merge-blocking issues and 4 approved clarifications have been fully resolved:
+
+1. **BLOCKER 1 — Manifest Sanitization Quarantines Credentials:**
+   - `_check_forbidden_val()` and manifest sanitization inspect keys and patterns directly without accessing `os.environ`.
+   - `ALPACA_API_KEY` and `ALPACA_SECRET_KEY` are read strictly inside authorized provider execution paths.
+   - Verified by zero-environ-access monkeypatched test.
+
+2. **BLOCKER 2 — Bounded Acquisition Adapter & Provenance Aggregation:**
+   - `DaytradeDatasetAcquisitionAdapter.fetch_symbol_month_bars()` returns `(df, safe_metadata)`.
+   - Enforces symbol identity against client response.
+   - Aggregates safe provenance metrics (`logical_calls`, `http_pages`, `http_attempts`, `retries`, `http_429s`, `http_errors`, `malformed_timestamp_counts`) across all tickers and monthly chunks.
+
+3. **BLOCKER 3 — Orchestrator-Level Validation Freeze & Manifest Verification:**
+   - `evaluate_split("validation")` independently verifies that `preholdout/manifest.lock.json` exists, verifies it against the spec, matches `freeze.manifest_sha256`, and enforces `verify_freeze_state()` directly inside the evaluation orchestrator.
+
+4. **BLOCKER 4 — Typed `HoldoutAccessProof` & Deterministic Bundle SHA:**
+   - `verify_holdout_access_prerequisites()` returns typed immutable `HoldoutAccessProof(spec_sha256, manifest_sha256, evaluator_code_sha, validation_bundle_sha256)`.
+   - `validation_bundle_sha256` is deterministically computed as the exact SHA-256 of `checksums.sha256` after all 13 artifacts verify.
+
+5. **BLOCKER 5 — Mandatory Validation Provenance Lineage:**
+   - `study.json` provenance strictly requires: `spec_sha256`, `evaluator_code_sha`, `manifest_sha256`, `evidence_confidence_cap`, and `production_promotion_eligible == False`.
+
+6. **BLOCKER 6 — True On-Disk Dual-Partition Synthetic Holdout Test:**
+   - `test_real_dual_partition_holdout_pipeline_on_disk()` creates real on-disk files under `preholdout/` and `holdout/`, generates manifests, verifies validation bundle, and executes `evaluate_split("holdout")` without `custom_sessions` injection.
+
+7. **BLOCKER 7 — Dry-Run Preservation of Formal Manifest Lock:**
+   - Dry-run writes `manifest.dry-run.json` and never creates or overwrites `manifest.lock.json`.
+   - `verify_dataset_manifest()` and `freeze_evaluation_state()` reject dry-run manifests fail-closed.
+
+8. **BLOCKER 8 — Complete 13-Artifact Validation Bundle Contract:**
+   - Verifies all 13 formal artifacts (`study.json`, `spec.lock.json`, `freeze.json`, `manifest.lock.json`, `bootstrap.json`, `metrics.json`, `data_quality.csv`, `events.csv`, `baseline_summary.csv`, `per_etf.csv`, `monthly.csv`, `direction.csv`, `report.md`) against `checksums.sha256`.
+   - Full parametrized deletion and tampering tests across all 13 artifacts.
+
+9. **Threshold History Walkback Across Earlier Authorized Splits:**
    - Evaluator walks back across split boundaries to acquire exactly the previous 20 valid completed regular sessions:
-     - Development history walks back to include the `2025-12-31` context anchor date and 20 warmup sessions (`2025-12-01` to `2025-12-31`).
-     - Validation history walks back into development history (`2025-12-31` to validation end).
-     - Holdout history walks back into validation history (`2025-12-31` to holdout end).
-   - Prevents threshold distortion at split boundaries while maintaining strict temporal isolation.
+     - Development history walks back to include the `2025-12-31` context anchor date and 20 warmup sessions (`2026-01-02` to `2026-01-30`).
+     - Validation history walks back across earlier authorized splits (`2025-12-31` to validation end).
+     - Holdout history walks back across earlier authorized splits (`2025-12-31` to holdout end).
 
-2. **Canonical Dataset Directory Layout:**
-   - Standardized to `preholdout/manifest.lock.json` and `holdout/manifest.lock.json` with sibling `bars/{ticker}.csv`.
-   - Prohibits placing dataset roots within the repository tree.
-
-3. **Strict Code Freeze Verification:**
-   - `verify_freeze_state()` cryptographically binds to manifest SHA-256, verifies git commit matches repository HEAD, enforces clean worktree status, and checks digests of 14 core evaluation files.
-   - CLI `cmd_freeze` requires explicit `--manifest` or `--dataset-root`.
-
-4. **Fail-Closed Dataset Acquisition & Normalization:**
-   - Enforces 100-page limit and max 1 retry for pagination.
-   - Discards unparseable timestamps fail-closed without fabricating artificial sessions.
+10. **Dynamic Freeze File Hashing:**
+    - `hash_evaluation_files()` dynamically discovers and cryptographically digests all Python source modules in `tradex/research/daytrade_momentum/`.
 
 ---
 
 ## 6. Verification Results
 
-- **New Test Suite:** `uv run pytest tests/research/daytrade_momentum -q`
-  - **80 passed** in 234.29s (15 test modules)
+- **Daytrade Momentum Test Suite:** `uv run pytest tests/research/daytrade_momentum -q`
+  - **123 passed** in 208.91s (15 test modules)
 - **Regression Suites:** `uv run pytest tests/research/daytrade_002a/test_spec.py tests/research/daytrade_reversal tests/research/daytrade_001b/test_spec.py tests/research/daytrade_mvp tests/research/intraday_dataset tests/product/test_mvp_arch_001.py -q`
-  - **266 passed, 1 warning** in 406.37s
+  - All passed cleanly
 - **Lint Check:** `uv run ruff check tests scripts tradex/research/daytrade_momentum tradex/research/intraday_dataset`
-  - **All checks passed!** Zero errors.
-- **Git Diff:** `git diff --check` passed cleanly.
+  - All checks passed! Zero errors.
+- **Git Diff Check:** `git diff --check` passed cleanly.
+- **Specification Immutability:** `git diff origin/main...HEAD -- docs/research/specs/DAYTRADE-002A-v1.json` is completely empty.
 

@@ -18,9 +18,11 @@ from .calendar import (
     get_regular_trading_sessions,
 )
 from .dataset import (
+    DatasetSecurityError,
     DaytradeDatasetManifest,
     load_private_dataset,
     sha256_of_file,
+    verify_dataset_manifest,
 )
 from .events import (
     calculate_first_half_hour_return,
@@ -36,6 +38,7 @@ from .models import (
     DaytradeSession,
     EventObservation,
     HoldoutAccessDeniedError,
+    HoldoutAccessProof,
     StudyResult,
 )
 from .outcomes import calculate_gross_win_rate
@@ -50,7 +53,7 @@ def verify_holdout_access_prerequisites(
     validation_artifact_dir: Path | str,
     spec: DaytradeSpec,
     repo_root: Path | None = None,
-) -> None:
+) -> HoldoutAccessProof:
     """Verify that validation achieved 'supported' disposition and satisfies all 23 locked checks.
 
     Clarification 4:
@@ -84,6 +87,11 @@ def verify_holdout_access_prerequisites(
         "bootstrap.json",
         "metrics.json",
         "data_quality.csv",
+        "events.csv",
+        "baseline_summary.csv",
+        "per_etf.csv",
+        "monthly.csv",
+        "direction.csv",
         "report.md",
     ]
 
@@ -98,6 +106,10 @@ def verify_holdout_access_prerequisites(
             raise HoldoutAccessDeniedError(
                 f"Checksum mismatch for {req_fn}: expected {recorded_checksums[req_fn]}, got {actual_sha}"
             )
+
+    # Deterministic bundle SHA: SHA-256 of the exact bytes of checksums.sha256
+    # Valid only after complete artifact set verified
+    validation_bundle_sha256 = sha256_of_file(checksum_file)
 
     # 2. Verify spec.lock.json (spec SHA match)
     spec_lock_file = vdir / "spec.lock.json"
@@ -146,20 +158,27 @@ def verify_holdout_access_prerequisites(
         )
 
     study_prov = study_data.get("provenance", {})
-    if study_prov.get("spec_sha256") != DAYTRADE_002A_SPEC_SHA256:
-        raise HoldoutAccessDeniedError("Study provenance spec SHA mismatch")
-    if study_prov.get("evaluator_code_sha") != freeze_record.evaluation_code_sha:
-        raise HoldoutAccessDeniedError("Study evaluator SHA mismatch with freeze")
-    if study_prov.get("manifest_sha256") and study_prov.get("manifest_sha256") != manifest_sha:
-        raise HoldoutAccessDeniedError("Study manifest SHA mismatch with manifest.lock")
+    if not study_prov.get("spec_sha256") or study_prov.get("spec_sha256") != DAYTRADE_002A_SPEC_SHA256:
+        raise HoldoutAccessDeniedError("Study provenance spec_sha256 missing or mismatch")
+    if not study_prov.get("evaluator_code_sha") or study_prov.get("evaluator_code_sha") != freeze_record.evaluation_code_sha:
+        raise HoldoutAccessDeniedError("Study provenance evaluator_code_sha missing or mismatch with freeze")
+    if not study_prov.get("manifest_sha256") or study_prov.get("manifest_sha256") != manifest_sha:
+        raise HoldoutAccessDeniedError("Study provenance manifest_sha256 missing or mismatch with manifest.lock")
     if study_prov.get("evidence_confidence_cap") != "limited_but_usable_evidence":
-        raise HoldoutAccessDeniedError("Evidence confidence cap mismatch")
-    if study_prov.get("production_promotion_eligible") is not False:
-        raise HoldoutAccessDeniedError("Production promotion eligible must be False")
+        raise HoldoutAccessDeniedError("Evidence confidence cap missing or mismatch")
+    if "production_promotion_eligible" not in study_prov or study_prov.get("production_promotion_eligible") is not False:
+        raise HoldoutAccessDeniedError("Production promotion eligible must be explicitly present and False")
 
     # 6. Verify strategy-registry invariant remains empty
     if APPROVED_PRODUCTION_STRATEGIES != ():
         raise HoldoutAccessDeniedError("Strategy registry is not empty: APPROVED_PRODUCTION_STRATEGIES != ()")
+
+    return HoldoutAccessProof(
+        spec_sha256=DAYTRADE_002A_SPEC_SHA256,
+        manifest_sha256=manifest_sha,
+        evaluator_code_sha=freeze_record.evaluation_code_sha,
+        validation_bundle_sha256=validation_bundle_sha256,
+    )
 
 
 def evaluate_split(
@@ -177,7 +196,7 @@ def evaluate_split(
 
     Locked guard rules:
     - Warmup is not an evaluatable performance split;
-    - Validation requires a valid EvaluationFreezeRecord;
+    - Validation requires a valid EvaluationFreezeRecord bound to preholdout manifest and verified code state;
     - Holdout strictly requires passing verify_holdout_access_prerequisites;
     - Preholdout observations provide threshold history only and NEVER enter holdout metrics/baselines.
     """
@@ -194,11 +213,32 @@ def evaluate_split(
         if freeze.manifest_sha256 is None:
             raise FreezeError("Validation split evaluation strictly requires freeze to be bound to a dataset manifest.")
 
+        if not dataset_root:
+            raise DatasetSecurityError("Validation split evaluation requires dataset_root pointing to canonical preholdout partition.")
+
+        valid_root = Path(dataset_root).expanduser().resolve()
+        pre_dir = valid_root / "preholdout"
+        pre_manifest_file = pre_dir / "manifest.lock.json"
+        if not pre_manifest_file.is_file():
+            raise DatasetSecurityError(f"Validation evaluation requires preholdout manifest.lock.json in {pre_dir}")
+
+        pre_manifest_data = json.loads(pre_manifest_file.read_text(encoding="utf-8"))
+        pre_manifest = DaytradeDatasetManifest.from_dict(pre_manifest_data)
+        verify_dataset_manifest(pre_manifest, spec, pre_dir)
+
+        if freeze.manifest_sha256 != pre_manifest.manifest_sha256:
+            raise FreezeError(
+                f"Freeze manifest SHA '{freeze.manifest_sha256}' mismatch with preholdout manifest '{pre_manifest.manifest_sha256}'"
+            )
+
+        verify_freeze_state(freeze, repo_root=repo_root, spec=spec, manifest=pre_manifest)
+
+    holdout_proof: HoldoutAccessProof | None = None
     # Guard holdout prerequisites
     if split == "holdout":
         if validation_artifact_dir is None:
             raise HoldoutAccessDeniedError("Holdout evaluation requires --validation-artifact-dir pointing to supported validation evidence.")
-        verify_holdout_access_prerequisites(validation_artifact_dir, spec, repo_root=repo_root)
+        holdout_proof = verify_holdout_access_prerequisites(validation_artifact_dir, spec, repo_root=repo_root)
 
     # Load private dataset or use custom injected synthetic data
     if custom_sessions is not None and custom_reports is not None:
@@ -519,11 +559,14 @@ def evaluate_split(
         integrity_error=None,
     )
 
+    eval_sha = freeze.evaluation_code_sha if freeze else (holdout_proof.evaluator_code_sha if holdout_proof else "unfrozen_synthetic")
+    man_sha = freeze.manifest_sha256 if freeze and freeze.manifest_sha256 else (holdout_proof.manifest_sha256 if holdout_proof else "")
+
     provenance = {
         "task_id": "DAYTRADE-002B",
         "spec_sha256": spec.sha256,
-        "evaluator_code_sha": freeze.evaluation_code_sha if freeze else "unfrozen_synthetic",
-        "manifest_sha256": freeze.manifest_sha256 if freeze and freeze.manifest_sha256 else "",
+        "evaluator_code_sha": eval_sha,
+        "manifest_sha256": man_sha,
         "provider": "alpaca",
         "feed": "sip",
         "timeframe": "1Min",
@@ -533,6 +576,8 @@ def evaluate_split(
         "evidence_confidence_cap": "limited_but_usable_evidence",
         "production_promotion_eligible": False,
     }
+    if holdout_proof is not None:
+        provenance["validation_bundle_sha256"] = holdout_proof.validation_bundle_sha256
 
     return StudyResult(
         task_id="DAYTRADE-002B",

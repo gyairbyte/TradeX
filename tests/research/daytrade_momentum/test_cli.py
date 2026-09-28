@@ -120,9 +120,11 @@ def test_cli_build_dataset_dry_run(temp_dataset_root: Path) -> None:
         "--dry-run",
     ])
     assert code == 0
-    manifest_file = temp_dataset_root / "preholdout" / "manifest.lock.json"
-    assert manifest_file.is_file()
-    m = json.loads(manifest_file.read_text(encoding="utf-8"))
+    dry_run_file = temp_dataset_root / "preholdout" / "manifest.dry-run.json"
+    formal_file = temp_dataset_root / "preholdout" / "manifest.lock.json"
+    assert dry_run_file.is_file()
+    assert not formal_file.is_file()
+    m = json.loads(dry_run_file.read_text(encoding="utf-8"))
     assert m["partition"] == "preholdout"
     assert m["acquisition_provenance"]["execute_provider"] is False
 

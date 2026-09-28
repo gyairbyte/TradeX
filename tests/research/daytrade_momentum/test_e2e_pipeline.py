@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import dataclasses
+import hashlib
+import json
 from datetime import date
 from pathlib import Path
 
@@ -139,6 +141,15 @@ def test_e2e_validation_split_pipeline(
     """Verify complete end-to-end evaluation on validation split with required freeze binding."""
     fast_spec = dataclasses.replace(locked_spec, bootstrap_resamples=50)
 
+    pre_dir = temp_dataset_root / "preholdout"
+    bars_dir = pre_dir / "bars"
+    bars_dir.mkdir(parents=True, exist_ok=True)
+    source_files = {}
+    for ticker in locked_spec.universe:
+        bf = bars_dir / f"{ticker}.csv"
+        bf.write_text("bar_start,open,high,low,close,volume\n", encoding="utf-8")
+        source_files[f"bars/{ticker}.csv"] = hashlib.sha256(bf.read_bytes()).hexdigest()
+
     manifest = DaytradeDatasetManifest(
         task_id="DAYTRADE-002B",
         spec_sha256=locked_spec.sha256,
@@ -152,14 +163,15 @@ def test_e2e_validation_split_pipeline(
         universe=locked_spec.universe,
         start_date=locked_spec.context_anchor_date,
         end_date=locked_spec.validation.end,
-        source_files={f"bars/{ticker}.csv": "a" * 64 for ticker in locked_spec.universe},
+        source_files=source_files,
     )
-    manifest_sha = manifest.compute_sha256()
+    manifest.manifest_sha256 = manifest.compute_sha256()
+    (pre_dir / "manifest.lock.json").write_text(json.dumps(manifest.to_dict(), indent=2), encoding="utf-8")
 
     # Freeze evaluation code bound to manifest
     freeze = freeze_evaluation_state(
         spec_sha256=locked_spec.sha256,
-        manifest_sha256=manifest_sha,
+        manifest_sha256=manifest.manifest_sha256,
         require_clean=False,
     )
 
@@ -295,10 +307,37 @@ def test_validation_walkback_across_invalid_late_dev_sessions(
         locked_spec.validation.start, locked_spec.validation.end, exclude_early_closes=True
     )[:2]
 
+    pre_dir = temp_dataset_root / "preholdout"
+    bars_dir = pre_dir / "bars"
+    bars_dir.mkdir(parents=True, exist_ok=True)
+    source_files = {}
+    for ticker in locked_spec.universe:
+        bf = bars_dir / f"{ticker}.csv"
+        bf.write_text("bar_start,open,high,low,close,volume\n", encoding="utf-8")
+        source_files[f"bars/{ticker}.csv"] = hashlib.sha256(bf.read_bytes()).hexdigest()
+
+    manifest = DaytradeDatasetManifest(
+        task_id="DAYTRADE-002B",
+        spec_sha256=locked_spec.sha256,
+        partition="preholdout",
+        provider="alpaca",
+        feed="sip",
+        timeframe="1Min",
+        adjustment="split",
+        calendar="XNYS",
+        timezone="America/New_York",
+        universe=locked_spec.universe,
+        start_date=locked_spec.context_anchor_date,
+        end_date=locked_spec.validation.end,
+        source_files=source_files,
+    )
+    manifest.manifest_sha256 = manifest.compute_sha256()
+    (pre_dir / "manifest.lock.json").write_text(json.dumps(manifest.to_dict(), indent=2), encoding="utf-8")
+
     # Freeze
     freeze = freeze_evaluation_state(
         spec_sha256=locked_spec.sha256,
-        manifest_sha256="val_manifest_sha_123",
+        manifest_sha256=manifest.manifest_sha256,
         require_clean=False,
     )
 

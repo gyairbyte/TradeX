@@ -6,7 +6,7 @@ import json
 import sys
 from pathlib import Path
 
-from .artifacts import sha256_of_file, write_artifact_bundle
+from .artifacts import write_artifact_bundle
 from .dataset import (
     DatasetSecurityError,
     DaytradeDatasetManifest,
@@ -192,14 +192,10 @@ def cmd_build_dataset(args: argparse.Namespace) -> int:
             if not args.validation_artifact_dir:
                 print("FAIL: Holdout acquisition requires --validation-artifact-dir.", file=sys.stderr)
                 return 1
-            verify_holdout_access_prerequisites(args.validation_artifact_dir, spec)
-            val_cs = Path(args.validation_artifact_dir) / "checksums.sha256"
-            validation_bundle_sha = sha256_of_file(val_cs)
-            # Read preholdout manifest sha and freeze sha
-            val_m = json.loads((Path(args.validation_artifact_dir) / "manifest.lock.json").read_text(encoding="utf-8"))
-            preholdout_manifest_sha = val_m.get("manifest_sha256")
-            val_f = json.loads((Path(args.validation_artifact_dir) / "freeze.json").read_text(encoding="utf-8"))
-            evaluator_code_sha = val_f.get("evaluation_code_sha")
+            proof = verify_holdout_access_prerequisites(args.validation_artifact_dir, spec)
+            validation_bundle_sha = proof.validation_bundle_sha256
+            preholdout_manifest_sha = proof.manifest_sha256
+            evaluator_code_sha = proof.evaluator_code_sha
 
         manifest = acquire_dataset_partition(
             dataset_root=args.dataset_root,
