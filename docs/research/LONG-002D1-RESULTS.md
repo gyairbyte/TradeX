@@ -63,7 +63,7 @@ Stock-level features were ranked cross-sectionally within each 20:30 `as_of_date
 ### 1. `atr_pct_14` Showed the Strongest Univariate Development Association
 - `atr_pct_14` (normalized Wilder ATR-14) showed the strongest univariate development association among the evaluated reference and candidate features: **2.2816x** favorable decile lift (Clean Rate: **20.22%** vs base rate 8.86%), with a 21-session block bootstrap 95% CI of `[1.94, 2.70]` and positive descriptive lift in **5 out of 5 development years**.
 - The decile progression is strictly monotonic across all 10 deciles (Decile 1: 2.40% clean rate, 0.27x lift $\to$ Decile 10: 20.24% clean rate, 2.28x lift).
-- Notably, univariate `atr_pct_14` alone achieved higher top-decile lift (2.2816x) than the composite multi-factor Stage C baseline comparator `volatility_aware_momentum_5` (1.7320x), confirming that baseline volatility capacity is an essential conditioning factor for clean rapid upside.
+- Notably, univariate `atr_pct_14` alone achieved higher top-decile lift (2.2816x) than the composite multi-factor Stage C baseline comparator `volatility_aware_momentum_5` (1.7320x), supporting carrying `atr_pct_14` forward as a reference/conditioning feature for further research and downstream review. As a descriptive D1 census, this development association does not establish necessity, causality, validation, or production utility.
 
 ### 2. Verification of Locked Ranking Semantics (Clarification 1)
 - `stock_minus_spy_20` produced identical cross-sectional decile assignments, clean event counts, clean rates (10.75%), favorable lifts (1.2122x), and bootstrap confidence intervals as `return_20`.
@@ -97,13 +97,20 @@ Stock-level features were ranked cross-sectionally within each 20:30 `as_of_date
 ## 5. Pairwise Redundancy & Correlation Analysis
 
 Pairwise Spearman rank correlations were computed on the common non-null sample across all 758,731 observations:
-- **High-Redundancy Pairs ($|\rho| \ge 0.95$):** **0 pairs** exceeded the threshold.
-- No candidate features were flagged as `high_redundancy_candidate`.
-- Notable pairwise correlation clusters:
+- **Mechanical High-Redundancy Threshold ($|\rho| \ge 0.95$):** **0 pairs** exceeded the preregistered threshold, so no features were mechanically excluded under the pre-specified rule.
+- **Substantial Shared Information:** While no pair crossed $0.95$, several features exhibit strong collinearity and must not be treated as independent candidate signals. In particular, the largest pooled absolute Spearman correlation in the census is between 20-day momentum and the 5-day slope of the 20-day SMA:
+  - `return_20` $\leftrightarrow$ `sma20_slope_5`: $\rho = +0.9190$
+- Notable pairwise correlation clusters (in descending order of $|\rho|$):
+  - `return_20` $\leftrightarrow$ `sma20_slope_5`: $\rho = +0.9190$
+  - `return_20` $\leftrightarrow$ `stock_minus_spy_20`: $\rho = +0.8402$
   - `close_vs_sma20` $\leftrightarrow$ `proximity_high20`: $\rho = +0.8286$
   - `close_vs_sma20` $\leftrightarrow$ `return_20`: $\rho = +0.8228$
   - `close_vs_sma60` $\leftrightarrow$ `return_60`: $\rho = +0.8218$
+  - `close_vs_sma60` $\leftrightarrow$ `proximity_high60`: $\rho = +0.8085$
   - `close_vs_sma60` $\leftrightarrow$ `sma20_slope_5`: $\rho = +0.7732$
+  - `sma20_slope_5` $\leftrightarrow$ `stock_minus_spy_20`: $\rho = +0.7728$
+  - `proximity_high20` $\leftrightarrow$ `proximity_high60`: $\rho = +0.7716$
+  - `close_vs_sma60` $\leftrightarrow$ `return_20`: $\rho = +0.7698$
   - `atr_pct_14` $\leftrightarrow$ `proximity_high60`: $\rho = -0.5654$ (high-volatility stocks tend to trade further below 60-day highs)
   - `atr_pct_14` $\leftrightarrow$ `return_20`: $\rho = -0.1293$ (volatility is largely orthogonal to 20-day momentum)
 
@@ -143,7 +150,7 @@ The frozen Stage C benchmark comparator was re-verified against the exact same 2
 In `docs/research/specs/LONG-002D1-v1.json`, the specification text refers to Decile 10 as top decile for all features, but for LOWER hypothesized directions (`true_range_compression_5_20`), lowest numerical values are favorable. The runtime implementation strictly mapped favorable observations ($\ge 90$th percentile under the respective sort direction: ascending for LOWER, descending for HIGHER) to Decile 10 (favorable) consistently, ensuring that across all candidate features Decile 10 uniformly represents the preregistered favorable hypothesis.
 
 ### B. Bootstrap Terminology
-The locked spec mentions "stationary block bootstrap" in prose, but specifies deterministic non-overlapping blocks of calendar sessions (21 and 42 trading sessions). The implementation strictly executed non-overlapping block bootstrap (Politis & Romano 1994 style block resampling without random geometric block lengths) with fixed seed `20260927` to guarantee exact determinism and reproducibility.
+The locked spec mentions "stationary block bootstrap" in prose, but specifies deterministic non-overlapping blocks of calendar sessions (21 and 42 trading sessions). The implementation strictly partitions sessions into sequential, non-overlapping calendar blocks of 21 and 42 trading sessions and resamples those blocks with replacement. It is a fixed, non-overlapping calendar-block bootstrap, not a formal stationary bootstrap (which requires random geometric block lengths). Fixed non-overlapping calendar blocks were evaluated with fixed seed `20260927` to guarantee exact determinism and audit reproducibility.
 
 ---
 

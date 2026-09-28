@@ -1,4 +1,4 @@
-"""Dependence-aware stationary calendar block bootstrap for LONG-002D1."""
+"""Fixed/non-overlapping calendar-block bootstrap for LONG-002D1."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -38,7 +38,7 @@ def run_feature_block_bootstrap(
     num_bootstraps: int = 1000,
     seed: int = 20260927,
 ) -> tuple[dict[int, BootstrapMetricSummary], dict[int, np.ndarray]]:
-    """Run dependence-aware time-block bootstrap for a feature's favorable decile lift.
+    """Run fixed non-overlapping calendar-block bootstrap for a feature's favorable decile lift.
 
     Parameters:
         dates: array of as_of_date strings for all observations.
