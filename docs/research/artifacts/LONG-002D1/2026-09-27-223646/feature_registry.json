@@ -1,0 +1,154 @@
+{
+  "features": [
+    {
+      "diagnostic_type": null,
+      "feature_id": "return_5",
+      "formula": "close_t / close_t-5 - 1",
+      "hypothesized_direction": "NONE",
+      "min_lookback_sessions": 5,
+      "price_series": "split_normalized_close",
+      "role": "reference",
+      "status": "reference"
+    },
+    {
+      "diagnostic_type": null,
+      "feature_id": "return_20",
+      "formula": "close_t / close_t-20 - 1",
+      "hypothesized_direction": "NONE",
+      "min_lookback_sessions": 20,
+      "price_series": "split_normalized_close",
+      "role": "reference",
+      "status": "reference"
+    },
+    {
+      "diagnostic_type": null,
+      "feature_id": "return_60",
+      "formula": "close_t / close_t-60 - 1",
+      "hypothesized_direction": "NONE",
+      "min_lookback_sessions": 60,
+      "price_series": "split_normalized_close",
+      "role": "reference",
+      "status": "reference"
+    },
+    {
+      "diagnostic_type": null,
+      "feature_id": "atr_pct_14",
+      "formula": "Wilder_ATR14_t / close_t",
+      "hypothesized_direction": "NONE",
+      "min_lookback_sessions": 14,
+      "price_series": "split_normalized_close",
+      "role": "reference",
+      "status": "reference"
+    },
+    {
+      "diagnostic_type": null,
+      "feature_id": "close_vs_sma20",
+      "formula": "close_t / SMA20_t - 1",
+      "hypothesized_direction": "HIGHER",
+      "min_lookback_sessions": 20,
+      "price_series": "split_normalized_close",
+      "role": "candidate",
+      "status": "review_pending"
+    },
+    {
+      "diagnostic_type": null,
+      "feature_id": "close_vs_sma60",
+      "formula": "close_t / SMA60_t - 1",
+      "hypothesized_direction": "HIGHER",
+      "min_lookback_sessions": 60,
+      "price_series": "split_normalized_close",
+      "role": "candidate",
+      "status": "review_pending"
+    },
+    {
+      "diagnostic_type": null,
+      "feature_id": "sma20_slope_5",
+      "formula": "SMA20_t / SMA20_t-5 - 1",
+      "hypothesized_direction": "HIGHER",
+      "min_lookback_sessions": 25,
+      "price_series": "split_normalized_close",
+      "role": "candidate",
+      "status": "review_pending"
+    },
+    {
+      "diagnostic_type": null,
+      "feature_id": "proximity_high20",
+      "formula": "close_t / rolling_max_close_20_t - 1",
+      "hypothesized_direction": "HIGHER",
+      "min_lookback_sessions": 20,
+      "price_series": "split_normalized_close",
+      "role": "candidate",
+      "status": "review_pending"
+    },
+    {
+      "diagnostic_type": null,
+      "feature_id": "proximity_high60",
+      "formula": "close_t / rolling_max_close_60_t - 1",
+      "hypothesized_direction": "HIGHER",
+      "min_lookback_sessions": 60,
+      "price_series": "split_normalized_close",
+      "role": "candidate",
+      "status": "review_pending"
+    },
+    {
+      "diagnostic_type": null,
+      "feature_id": "true_range_compression_5_20",
+      "formula": "median(true_range over latest 5 sessions) / median(true_range over latest 20 sessions)",
+      "hypothesized_direction": "LOWER",
+      "min_lookback_sessions": 20,
+      "price_series": "split_normalized_close",
+      "role": "candidate",
+      "status": "review_pending"
+    },
+    {
+      "diagnostic_type": null,
+      "feature_id": "relative_volume_20",
+      "formula": "volume_t / median(volume over PRIOR 20 completed sessions, excluding t)",
+      "hypothesized_direction": "HIGHER",
+      "min_lookback_sessions": 21,
+      "price_series": "volume",
+      "role": "candidate",
+      "status": "review_pending"
+    },
+    {
+      "diagnostic_type": null,
+      "feature_id": "dollar_volume_trend_20_60",
+      "formula": "median(as_traded_close * volume over latest 20 sessions) / median(as_traded_close * volume over latest 60 sessions) - 1",
+      "hypothesized_direction": "HIGHER",
+      "min_lookback_sessions": 60,
+      "price_series": "as_traded_dollar_volume",
+      "role": "candidate",
+      "status": "review_pending"
+    },
+    {
+      "diagnostic_type": null,
+      "feature_id": "up_volume_share_20",
+      "formula": "sum(volume for sessions in latest 20 where close_t > close_t-1) / sum(volume over latest 20)",
+      "hypothesized_direction": "HIGHER",
+      "min_lookback_sessions": 20,
+      "price_series": "split_normalized_close_and_volume",
+      "role": "candidate",
+      "status": "review_pending"
+    },
+    {
+      "diagnostic_type": "market_regime_date_level",
+      "feature_id": "spy_return_20",
+      "formula": "SPY close_t / SPY close_t-20 - 1",
+      "hypothesized_direction": "HIGHER",
+      "min_lookback_sessions": 20,
+      "price_series": "split_normalized_close (SPY)",
+      "role": "candidate_diagnostic",
+      "status": "review_pending"
+    },
+    {
+      "diagnostic_type": "cross_sectional_redundancy_diagnostic",
+      "feature_id": "stock_minus_spy_20",
+      "formula": "return_20 - spy_return_20",
+      "hypothesized_direction": "NONE",
+      "min_lookback_sessions": 20,
+      "price_series": "split_normalized_close",
+      "role": "reference",
+      "status": "reference"
+    }
+  ]
+}

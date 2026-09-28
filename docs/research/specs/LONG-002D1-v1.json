@@ -1,0 +1,253 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "task_id": "LONG-002D1-CORE-KPI-CENSUS",
+  "spec_version": "v1",
+  "program": "LONG-002",
+  "phase": "LONG-002D1",
+  "title": "Development-Only Core Technical and Market-Context KPI Census Preregistration",
+  "classification": "research_only",
+  "production_promotion_eligible": false,
+  "approved_production_strategies": [],
+  "upstream_stage_c_reference": {
+    "run_id": "2026-09-27-161243",
+    "execution_code_sha": "d6a300e556c690c83ff8b9265833667c02dc94ec",
+    "authorized_discovery_manifest_sha256": "d1bf16d6b475c93b5c47e81a47af5597fd514432880107030040a81fd61e9947",
+    "authorized_frozen_pre_run_manifest_sha256": "5bb2f90a2a3e572e8be1d2b8b13fbb207d7bb9d459e096f19e177f9250cfdb37",
+    "authorized_universe_candidates": 1291,
+    "external_parquet_digests": {
+      "decision_observations.parquet": "722bee866cabb697931dfb96abaf7f9250f1cd1240b405d2e308af0b6bbb48af",
+      "data_eligibility.parquet": "16147606e629daf02e54db4b6b0127ede04aeb45608f27900a92f73805baa4d9",
+      "security_classification_status.parquet": "65adc6170f2095371f3842153256b96c16042b88c6716d78c329f45ffb8d4d6d",
+      "earnings_schedule_status.parquet": "439b85a5c5c2ed618585007fe6e62ef213eb2600bb47ba222f35ff338557d05b",
+      "outcome_matrix.parquet": "b59a5f7f8a8a0498abdadb156299719f43ffa8854df5cad8e20a6cd4fbe237c3",
+      "master_episodes.parquet": "1fe5b36f98919465007a720908c626203e5272b054a4ef76be772db279b3cc98",
+      "constituent_memberships.parquet": "53a8adc92f1210ef3a1b6d10c9eedd1f360dad2760897f97b5d293f473734b11",
+      "baseline_comparator_outputs.parquet": "faec26ddb26fd5a17feddf5ae09232a8aeb8ba24c3529abd88422682357e4734",
+      "data_quality_coverage.parquet": "265973b7e88ce98f65c492836fd8a4949d72c5de7e28fc4e62442bc01993e9bb",
+      "provenance_records.parquet": "4ff93f7008310df2e115937ed6acbc2d435f58f06130a369f4b5b72615f4554f",
+      "exclusions.parquet": "9624d11dd191d967d6a3160e2f877d02027d744dcd5b2d46a6b638837ba97da8"
+    }
+  },
+  "study_population": {
+    "split": "development",
+    "start_date": "2016-01-01",
+    "end_date": "2020-12-31",
+    "cutoff_time": "20:30",
+    "raw_outcome_eligible_required": true,
+    "split_boundary_purged_allowed": false,
+    "expected_denominator": 758731,
+    "quarantined_splits": [
+      "validation (2021-01-01 to 2022-12-31)",
+      "holdout (2023-01-01 to 2025-12-31)",
+      "shadow (2026-01-01 onward)"
+    ],
+    "out_of_scope_cutoffs": ["09:00"]
+  },
+  "primary_endpoint": {
+    "target_pct": 10.0,
+    "horizon_sessions": 10,
+    "label_column": "clean_target_reached",
+    "expected_clean_events": 67257,
+    "expected_base_rate": 0.088644
+  },
+  "frozen_development_baseline": {
+    "comparator_id": "volatility_aware_momentum_5",
+    "formula": "0.5 * cross_sectional_momentum_5_pct + 0.5 * cross_sectional_atr_pct_14_pct",
+    "top_10_count": 76407,
+    "top_10_clean_count": 11731,
+    "top_10_clean_rate": 0.153533,
+    "top_10_lift": 1.7320,
+    "top_25_count": 190288,
+    "top_25_clean_count": 24144,
+    "top_25_clean_rate": 0.126881,
+    "top_25_lift": 1.4314
+  },
+  "feature_registry": [
+    {
+      "feature_id": "return_5",
+      "role": "reference",
+      "formula": "close_t / close_t-5 - 1",
+      "price_series": "split_normalized_close",
+      "min_lookback_sessions": 5,
+      "hypothesized_direction": "NONE",
+      "status": "reference"
+    },
+    {
+      "feature_id": "return_20",
+      "role": "reference",
+      "formula": "close_t / close_t-20 - 1",
+      "price_series": "split_normalized_close",
+      "min_lookback_sessions": 20,
+      "hypothesized_direction": "NONE",
+      "status": "reference"
+    },
+    {
+      "feature_id": "return_60",
+      "role": "reference",
+      "formula": "close_t / close_t-60 - 1",
+      "price_series": "split_normalized_close",
+      "min_lookback_sessions": 60,
+      "hypothesized_direction": "NONE",
+      "status": "reference"
+    },
+    {
+      "feature_id": "atr_pct_14",
+      "role": "reference",
+      "formula": "Wilder_ATR14_t / close_t",
+      "price_series": "split_normalized_close",
+      "min_lookback_sessions": 14,
+      "hypothesized_direction": "NONE",
+      "status": "reference"
+    },
+    {
+      "feature_id": "close_vs_sma20",
+      "role": "candidate",
+      "formula": "close_t / SMA20_t - 1",
+      "price_series": "split_normalized_close",
+      "min_lookback_sessions": 20,
+      "hypothesized_direction": "HIGHER",
+      "status": "review_pending"
+    },
+    {
+      "feature_id": "close_vs_sma60",
+      "role": "candidate",
+      "formula": "close_t / SMA60_t - 1",
+      "price_series": "split_normalized_close",
+      "min_lookback_sessions": 60,
+      "hypothesized_direction": "HIGHER",
+      "status": "review_pending"
+    },
+    {
+      "feature_id": "sma20_slope_5",
+      "role": "candidate",
+      "formula": "SMA20_t / SMA20_t-5 - 1",
+      "price_series": "split_normalized_close",
+      "min_lookback_sessions": 25,
+      "hypothesized_direction": "HIGHER",
+      "status": "review_pending"
+    },
+    {
+      "feature_id": "proximity_high20",
+      "role": "candidate",
+      "formula": "close_t / rolling_max_close_20_t - 1",
+      "price_series": "split_normalized_close",
+      "min_lookback_sessions": 20,
+      "hypothesized_direction": "HIGHER",
+      "status": "review_pending"
+    },
+    {
+      "feature_id": "proximity_high60",
+      "role": "candidate",
+      "formula": "close_t / rolling_max_close_60_t - 1",
+      "price_series": "split_normalized_close",
+      "min_lookback_sessions": 60,
+      "hypothesized_direction": "HIGHER",
+      "status": "review_pending"
+    },
+    {
+      "feature_id": "true_range_compression_5_20",
+      "role": "candidate",
+      "formula": "median(true_range over latest 5 sessions) / median(true_range over latest 20 sessions)",
+      "price_series": "split_normalized_close",
+      "min_lookback_sessions": 20,
+      "hypothesized_direction": "LOWER",
+      "status": "review_pending"
+    },
+    {
+      "feature_id": "relative_volume_20",
+      "role": "candidate",
+      "formula": "volume_t / median(volume over PRIOR 20 completed sessions, excluding t)",
+      "price_series": "volume",
+      "min_lookback_sessions": 21,
+      "hypothesized_direction": "HIGHER",
+      "status": "review_pending"
+    },
+    {
+      "feature_id": "dollar_volume_trend_20_60",
+      "role": "candidate",
+      "formula": "median(as_traded_close * volume over latest 20 sessions) / median(as_traded_close * volume over latest 60 sessions) - 1",
+      "price_series": "as_traded_dollar_volume",
+      "min_lookback_sessions": 60,
+      "hypothesized_direction": "HIGHER",
+      "status": "review_pending"
+    },
+    {
+      "feature_id": "up_volume_share_20",
+      "role": "candidate",
+      "formula": "sum(volume for sessions in latest 20 where close_t > close_t-1) / sum(volume over latest 20)",
+      "price_series": "split_normalized_close_and_volume",
+      "min_lookback_sessions": 20,
+      "hypothesized_direction": "HIGHER",
+      "status": "review_pending"
+    },
+    {
+      "feature_id": "spy_return_20",
+      "role": "candidate_diagnostic",
+      "formula": "SPY close_t / SPY close_t-20 - 1",
+      "price_series": "split_normalized_close (SPY)",
+      "min_lookback_sessions": 20,
+      "hypothesized_direction": "HIGHER",
+      "diagnostic_type": "market_regime_date_level",
+      "status": "review_pending"
+    },
+    {
+      "feature_id": "stock_minus_spy_20",
+      "role": "reference",
+      "formula": "return_20 - spy_return_20",
+      "price_series": "split_normalized_close",
+      "min_lookback_sessions": 20,
+      "hypothesized_direction": "NONE",
+      "diagnostic_type": "cross_sectional_redundancy_diagnostic",
+      "status": "reference"
+    }
+  ],
+  "ranking_semantics": {
+    "stock_features": {
+      "grouping": "cross_sectional_by_as_of_date_at_2030",
+      "population": "raw_outcome_eligible == true and feature_val is not null",
+      "sorting_higher": "descending by feature_val, immutable_security_id ASC tie-break",
+      "sorting_lower": "ascending by feature_val, immutable_security_id ASC tie-break",
+      "percentile_convention": "100.0 * (n_valid - rank_idx) / n_valid",
+      "favorable_decile_definition": "percentile >= 90.0 (Decile 10 for HIGHER, Decile 1 for LOWER)",
+      "top_quartile_definition": "percentile >= 75.0 (Top 25% for HIGHER, Bottom 25% for LOWER)",
+      "redundancy_invariant": "stock_minus_spy_20 must reproduce identical same-date ranking as return_20 for identical non-null sets"
+    },
+    "market_regime_features": {
+      "feature_id": "spy_return_20",
+      "grouping": "date_level_over_unique_development_sessions",
+      "sorting": "descending by spy_return_20, as_of_date ASC tie-break",
+      "percentile_convention": "100.0 * (n_dates - date_rank_idx) / n_dates",
+      "observation_mapping": "map date deciles to underlying observations for outcome reporting",
+      "reporting": "report both unique date count and observation count per decile; do not present lift as cross-sectional stock selection"
+    }
+  },
+  "dependence_uncertainty": {
+    "bootstrap_method": "stationary_calendar_block_resampling",
+    "primary_block_size": 21,
+    "robustness_block_size": 42,
+    "num_bootstraps": 1000,
+    "seed": 20260927,
+    "metric": "favorable_decile_clean_rate_lift_over_common_base_rate",
+    "cross_section_handling": "keep each market-date cross-section intact within calendar blocks"
+  },
+  "redundancy_analysis": {
+    "correlation_type": "spearman_rank",
+    "sample_definition": "deterministic common non-null sample across evaluated features",
+    "high_redundancy_threshold": 0.95,
+    "flag": "high_redundancy_candidate"
+  },
+  "status_taxonomy": {
+    "candidate_default": "review_pending",
+    "reference_default": "reference",
+    "invalid_condition": "data_contract_violation_or_calculation_error",
+    "mechanical_flags": ["high_redundancy_candidate", "coverage_limited"],
+    "post_run_carry_forward": "determined by Gary/ChatGPT review"
+  },
+  "runtime_gates": {
+    "benchmark_securities_count": 25,
+    "preferred_projected_runtime_seconds": 600,
+    "hard_gate_projected_runtime_seconds": 1200,
+    "allow_live": false,
+    "provider_cache_mode": "read_only"
+  }
+}
