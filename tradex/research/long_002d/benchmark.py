@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import gc
-import json
 import os
 import time
 from dataclasses import dataclass
@@ -12,7 +11,6 @@ import numpy as np
 import pandas as pd
 import psutil
 
-from tradex.research.long_002c.manifest import CandidateSecurity
 from tradex.research.long_002d.bootstrap import run_feature_block_bootstrap
 from tradex.research.long_002d.census import (
     run_feature_census,
@@ -22,6 +20,7 @@ from tradex.research.long_002d.loader import (
     create_read_only_alpaca_client,
     load_candidate_bars,
     load_spy_daily_closes,
+    select_study_candidates,
 )
 from tradex.research.long_002d.redundancy import compute_pairwise_redundancy
 from tradex.research.long_002d.spec import (
@@ -43,8 +42,11 @@ class BenchmarkReport:
     projected_full_aggregation_seconds: float
     total_projected_runtime_seconds: float
     peak_working_set_mb: float
-    network_requests_attempted: int
-    network_requests_blocked: int
+    provider_cache_hits: int
+    provider_cache_misses: int
+    live_request_path_attempts: int
+    outbound_http_requests_executed: int
+    blocked_live_request_attempts: int
     gate_preferred_pass: bool  # < 10 minutes
     gate_hard_pass: bool  # < 20 minutes
     hotspot_analysis: str
@@ -59,45 +61,43 @@ def get_peak_memory_mb() -> float:
 def run_pre_launch_benchmark(
     discovery_manifest_path: Path,
     cache_dir: Path,
+    stage_c_dir: Path | None = None,
     benchmark_size: int = 25,
-    total_universe_candidates: int = 1291,
 ) -> BenchmarkReport:
     """Execute the mandatory pre-launch runtime benchmark over 25 representative securities."""
     print(f"\n[BENCHMARK] Initializing pre-launch benchmark over {benchmark_size} representative candidates...")
     gc.collect()
 
-    # Load discovery manifest
-    with open(discovery_manifest_path, "r", encoding="utf-8") as f:
-        disc = json.load(f)
+    # Determine Stage C observations path
+    s_dir = stage_c_dir or discovery_manifest_path.parent
+    stage_c_obs = s_dir / "decision_observations.parquet"
+    if not stage_c_obs.exists():
+        raise FileNotFoundError(f"Stage C observations not found for benchmark: {stage_c_obs}")
 
-    candidates_raw = disc.get("candidates", [])
-    if not candidates_raw:
-        raise ValueError(f"No candidates found in {discovery_manifest_path}")
+    import pyarrow.parquet as pq
 
-    # If Stage C observations exist in the same directory, restrict candidates to active universe
-    stage_c_obs = discovery_manifest_path.parent / "decision_observations.parquet"
-    if stage_c_obs.exists():
-        import pyarrow.parquet as pq
+    tbl = pq.read_table(
+        stage_c_obs,
+        columns=["immutable_security_id"],
+        filters=[
+            ("cutoff_time", "=", POPULATION_CUTOFF),
+            ("raw_outcome_eligible", "=", True),
+            ("split_boundary_purged", "=", False),
+        ],
+    )
+    study_sec_ids = sorted(set(tbl["immutable_security_id"].to_pylist()))
+    if len(study_sec_ids) != 1271:
+        raise ValueError(f"Expected 1,271 study securities for benchmark, got {len(study_sec_ids)}")
 
-        tbl = pq.read_table(
-            stage_c_obs,
-            columns=["immutable_security_id"],
-            filters=[
-                ("cutoff_time", "=", POPULATION_CUTOFF),
-                ("raw_outcome_eligible", "=", True),
-                ("split_boundary_purged", "=", False),
-            ],
-        )
-        valid_sec_ids = set(tbl["immutable_security_id"].to_pylist())
-        candidates_raw = [c for c in candidates_raw if c.get("immutable_security_id") in valid_sec_ids]
-        total_universe_candidates = len(candidates_raw)
+    study_cands = select_study_candidates(discovery_manifest_path, study_sec_ids)
+    total_universe_candidates = len(study_cands)
 
     # Select representative eligible candidates (sampling across sectors/symbols)
-    step = max(1, len(candidates_raw) // benchmark_size)
-    sample_cands = [CandidateSecurity.from_dict(c) for c in candidates_raw[::step][:benchmark_size]]
+    step = max(1, len(study_cands) // benchmark_size)
+    sample_cands = study_cands[::step][:benchmark_size]
 
     # Initialize read-only fail-closed client
-    alpaca, _auditing_cache = create_read_only_alpaca_client(cache_dir)
+    alpaca, _auditing_cache, tracker = create_read_only_alpaca_client(cache_dir)
 
     # Ingest SPY closes
     t_spy_start = time.perf_counter()
@@ -191,8 +191,11 @@ def run_pre_launch_benchmark(
         projected_full_aggregation_seconds=round(proj_agg_sec, 2),
         total_projected_runtime_seconds=round(tot_proj_sec, 2),
         peak_working_set_mb=round(peak_mem, 2),
-        network_requests_attempted=alpaca.network_requests_count,
-        network_requests_blocked=0,
+        provider_cache_hits=tracker.provider_cache_hits,
+        provider_cache_misses=tracker.provider_cache_misses,
+        live_request_path_attempts=tracker.live_request_path_attempts,
+        outbound_http_requests_executed=tracker.outbound_http_requests_executed,
+        blocked_live_request_attempts=tracker.blocked_live_request_attempts,
         gate_preferred_pass=gate_pref,
         gate_hard_pass=gate_hard,
         hotspot_analysis=hotspot,

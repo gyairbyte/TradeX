@@ -1,25 +1,27 @@
 {
   "benchmark_report": {
-    "benchmark_observations_count": 28728,
+    "benchmark_observations_count": 28997,
     "benchmark_securities_count": 25,
-    "census_and_bootstrap_elapsed_seconds": 0.22,
-    "feature_construction_elapsed_seconds": 1.2,
-    "feature_construction_sec_per_sec": 0.048,
+    "blocked_live_request_attempts": 0,
+    "census_and_bootstrap_elapsed_seconds": 0.23,
+    "feature_construction_elapsed_seconds": 1.16,
+    "feature_construction_sec_per_sec": 0.0464,
     "gate_hard_pass": true,
     "gate_preferred_pass": true,
     "hotspot_analysis": "No bottleneck detected; vectorized feature construction and pre-aggregated bootstrap are within gates.",
-    "network_requests_attempted": 0,
-    "network_requests_blocked": 0,
-    "peak_working_set_mb": 334.54,
-    "projected_full_aggregation_seconds": 5.75,
-    "projected_full_feature_construction_seconds": 61.04,
-    "total_projected_runtime_seconds": 66.79
+    "live_request_path_attempts": 0,
+    "outbound_http_requests_executed": 0,
+    "peak_working_set_mb": 328.47,
+    "projected_full_aggregation_seconds": 6.08,
+    "projected_full_feature_construction_seconds": 58.94,
+    "provider_cache_hits": 53,
+    "provider_cache_misses": 0,
+    "total_projected_runtime_seconds": 65.02
   },
   "clean_primary_base_rate": 0.08864406,
   "clean_primary_events": 67257,
-  "created_at_utc": "2026-09-27T22:59:44.048613Z",
-  "disposition": "superseded_execution_audit_defect",
-  "execution_time_seconds": 1375.11,
+  "created_at_utc": "2026-09-28T00:37:31.514349Z",
+  "execution_time_seconds": 109.8,
   "external_files": [
     {
       "byte_count": 136524010,
@@ -50,8 +52,7 @@
       "sha256": "a11c360158307d20c9cb76fd582ca9f4d39a37b12db2e1d9160df86fa1dcc8c8"
     }
   ],
-  "run_id": "2026-09-27-223646",
-  "superseded_reason": "the empirical D1 population was correct, but the runtime unnecessarily loaded non-study discovery securities, causing blocked live-request-path attempts and unmatched cache provenance.",
+  "run_id": "2026-09-28-003539",
   "task_id": "LONG-002D1-CORE-KPI-CENSUS",
   "total_observations": 758731
 }

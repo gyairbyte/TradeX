@@ -15,7 +15,6 @@ import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 
-from tradex.research.long_002c.manifest import CandidateSecurity
 from tradex.research.long_002d.artifacts import (
     DEFAULT_EXTERNAL_DIR,
     DEFAULT_SUMMARY_BASE_DIR,
@@ -28,10 +27,12 @@ from tradex.research.long_002d.bootstrap import run_feature_block_bootstrap
 from tradex.research.long_002d.census import run_feature_census
 from tradex.research.long_002d.features import compute_features_for_security_df
 from tradex.research.long_002d.loader import (
+    audit_stage_c_cache_provenance,
     create_read_only_alpaca_client,
     load_candidate_bars,
     load_spy_daily_closes,
     load_stage_c_primary_data,
+    select_study_candidates,
 )
 from tradex.research.long_002d.redundancy import compute_pairwise_redundancy
 from tradex.research.long_002d.spec import (
@@ -88,6 +89,7 @@ def main(argv: list[str] | None = None) -> int:
     p_bench = subparsers.add_parser("benchmark", help="Run 25-security pre-launch runtime benchmark")
     p_bench.add_argument("--discovery-manifest", type=Path, default=REPO_ROOT / "data" / "research" / "long_002c" / "discovery_manifest.json")
     p_bench.add_argument("--cache-dir", type=Path, default=REPO_ROOT / "data" / "cache" / "long_002c")
+    p_bench.add_argument("--stage-c-dir", type=Path, default=REPO_ROOT / "data" / "research" / "long_002c")
     p_bench.add_argument("--benchmark-size", type=int, default=25)
 
     # 2. run
@@ -112,6 +114,7 @@ def main(argv: list[str] | None = None) -> int:
         report = run_pre_launch_benchmark(
             discovery_manifest_path=args.discovery_manifest,
             cache_dir=args.cache_dir,
+            stage_c_dir=args.stage_c_dir,
             benchmark_size=args.benchmark_size,
         )
         print("\n=== BENCHMARK REPORT ===")
@@ -185,6 +188,7 @@ def main(argv: list[str] | None = None) -> int:
         bench_report = run_pre_launch_benchmark(
             discovery_manifest_path=args.discovery_manifest,
             cache_dir=args.cache_dir,
+            stage_c_dir=args.stage_c_dir,
             benchmark_size=25,
         )
         print(f"[PREFLIGHT] Benchmark passed! Total projected runtime: {bench_report.total_projected_runtime_seconds/60:.2f} minutes.")
@@ -195,32 +199,40 @@ def main(argv: list[str] | None = None) -> int:
         df_obs, df_out, df_elig = load_stage_c_primary_data(args.stage_c_dir)
         print(f"  Loaded {len(df_obs)} observations and {len(df_out)} outcomes in {time.perf_counter() - t_load_start:.2f}s")
 
-        # Step 4: Initialize Provider Cache Client & Ingest SPY Bars
+        # Step 4: Derive Study Securities and Load Candidates
+        study_security_ids = sorted(df_obs["immutable_security_id"].unique())
+        if len(study_security_ids) != 1271:
+            raise ValueError(
+                f"Expected exactly 1,271 study securities in primary observations, got {len(study_security_ids)}"
+            )
+        study_cands = select_study_candidates(args.discovery_manifest, study_security_ids)
+        print(f"  Validated {len(study_cands)} study candidates against discovery manifest.")
+
+        # Step 5: Initialize Provider Cache Client & Ingest SPY Bars
         print("\n[2/6] Loading SPY daily bars from provider cache (read-only)...")
-        alpaca, auditing_cache = create_read_only_alpaca_client(args.cache_dir)
+        alpaca, auditing_cache, tracker = create_read_only_alpaca_client(args.cache_dir)
         spy_closes = load_spy_daily_closes(alpaca)
-        print(f"  Loaded {len(spy_closes)} SPY daily closes. Cache hits: {alpaca.cache_hits_count}")
+        print(f"  Loaded {len(spy_closes)} SPY daily closes. Cache hits: {tracker.provider_cache_hits}")
 
-        # Step 5: Feature Construction for All Candidates
-        print("\n[3/6] Computing 15 features across all universe candidates from provider cache...")
+        # Step 6: Feature Construction for Study Candidates Only
+        print("\n[3/6] Computing 15 features across 1,271 study candidates from provider cache...")
         t_feat_start = time.perf_counter()
-
-        with open(args.discovery_manifest, "r", encoding="utf-8") as f:
-            disc = json.load(f)
-        all_cands = [CandidateSecurity.from_dict(c) for c in disc.get("candidates", [])]
 
         # Map candidate bars and compute features
         features_by_sec_id: dict[str, pd.DataFrame] = {}
         processed_candidates = 0
 
-        for cand in all_cands:
+        for cand in study_cands:
             sec_id = cand.immutable_security_id
             df_bars, _, _ = load_candidate_bars(cand, alpaca)
-            if df_bars.empty:
-                continue
             feat_df = compute_features_for_security_df(df_bars, spy_closes)
             features_by_sec_id[sec_id] = feat_df
             processed_candidates += 1
+
+        if processed_candidates != 1271:
+            raise RuntimeError(
+                f"Expected exactly 1,271 processed study candidates, got {processed_candidates}"
+            )
 
         t_feat_elapsed = time.perf_counter() - t_feat_start
         print(f"  Computed features for {processed_candidates} candidates in {t_feat_elapsed:.2f}s ({t_feat_elapsed/processed_candidates*1000:.1f}ms/sec)")
@@ -358,19 +370,39 @@ def main(argv: list[str] | None = None) -> int:
         )
 
         # Audit consumed cache payloads against Stage C provenance records
-        print("[AUDIT] Auditing consumed provider cache payloads...")
-        consumed = auditing_cache.consumed_payloads
-        p_prov = args.stage_c_dir / "provenance_records.parquet"
-        matched_prov = 0
-        unmatched_prov = 0
-        if p_prov.exists():
-            df_prov = pq.read_table(p_prov, columns=["request_fingerprint_sha256", "response_sha256"]).to_pandas()
-            prov_set = set(zip(df_prov["request_fingerprint_sha256"], df_prov["response_sha256"]))
-            for item in consumed.values():
-                if (item["req_fp"], item["sha256"]) in prov_set:
-                    matched_prov += 1
-                else:
-                    unmatched_prov += 1
+        print("\n[AUDIT] Auditing consumed provider cache payloads against Stage C Alpaca provenance...")
+        audit_summary = audit_stage_c_cache_provenance(
+            stage_c_dir=args.stage_c_dir,
+            auditing_cache=auditing_cache,
+            tracker=tracker,
+        )
+
+        if audit_summary.outbound_http_requests_executed != 0:
+            raise RuntimeError(
+                f"FAIL-CLOSED: {audit_summary.outbound_http_requests_executed} outbound HTTP requests were executed!"
+            )
+        if audit_summary.provider_cache_misses != 0:
+            raise RuntimeError(
+                f"FAIL-CLOSED: {audit_summary.provider_cache_misses} provider cache misses occurred!"
+            )
+        if audit_summary.live_request_path_attempts != 0:
+            raise RuntimeError(
+                f"FAIL-CLOSED: {audit_summary.live_request_path_attempts} live request path attempts occurred!"
+            )
+        if audit_summary.blocked_live_request_attempts != 0:
+            raise RuntimeError(
+                f"FAIL-CLOSED: {audit_summary.blocked_live_request_attempts} blocked live request attempts occurred!"
+            )
+        if audit_summary.unmatched_provenance_count != 0:
+            raise RuntimeError(
+                f"FAIL-CLOSED: {audit_summary.unmatched_provenance_count} unmatched provenance records!"
+            )
+
+        print(
+            f"  Audit PASSED: {audit_summary.matched_provenance_count} payloads verified (100.0%). "
+            f"Cache hits: {audit_summary.provider_cache_hits}, misses: {audit_summary.provider_cache_misses}, "
+            f"live attempts: {audit_summary.live_request_path_attempts}, outbound HTTP: {audit_summary.outbound_http_requests_executed}."
+        )
 
         data_quality_report = {
             "task_id": "LONG-002D1-CORE-KPI-CENSUS",
@@ -378,13 +410,18 @@ def main(argv: list[str] | None = None) -> int:
             "created_at_utc": datetime.now(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z"),
             "total_primary_observations": EXPECTED_DENOMINATOR,
             "total_clean_primary_events": EXPECTED_CLEAN_EVENTS,
-            "provider_cache_consumed_payloads": len(consumed),
-            "provider_cache_consumed_bytes": sum(item["byte_count"] for item in consumed.values()),
-            "provider_cache_unique_keys": list(consumed.keys()),
-            "matched_stage_c_provenance_count": matched_prov,
-            "unmatched_stage_c_provenance_count": unmatched_prov,
-            "live_network_requests_attempted": alpaca.network_requests_count,
-            "live_network_requests_blocked": 0,
+            "provider_cache_consumed_payloads": audit_summary.total_payloads_consumed,
+            "provider_cache_consumed_bytes": audit_summary.total_payload_bytes,
+            "provider_cache_unique_keys": audit_summary.unique_cache_keys,
+            "matched_stage_c_provenance_count": audit_summary.matched_provenance_count,
+            "unmatched_stage_c_provenance_count": audit_summary.unmatched_provenance_count,
+            "provider_cache_hits": audit_summary.provider_cache_hits,
+            "provider_cache_misses": audit_summary.provider_cache_misses,
+            "live_request_path_attempts": audit_summary.live_request_path_attempts,
+            "outbound_http_requests_executed": audit_summary.outbound_http_requests_executed,
+            "blocked_live_request_attempts": audit_summary.blocked_live_request_attempts,
+            "live_network_requests_attempted": audit_summary.live_request_path_attempts,
+            "live_network_requests_blocked": audit_summary.blocked_live_request_attempts,
             "allow_live_enforced": True,
             "feature_coverage_summary": [
                 {

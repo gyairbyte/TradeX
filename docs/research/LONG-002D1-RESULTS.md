@@ -1,8 +1,9 @@
 # LONG-002D1: Core Technical and Market-Context KPI Census — Empirical Results
 
 - **Task ID:** `LONG-002D1-CORE-KPI-CENSUS`
-- **Execution Run ID:** `2026-09-27-223646`
-- **Execution Date:** 2026-09-27
+- **Execution Run ID:** `2026-09-28-003539` (Official Corrected Run)
+- **Superseded Run ID:** `2026-09-27-223646` (Superseded: execution/audit defect; 100% empirical equivalence confirmed)
+- **Execution Date:** 2026-09-28
 - **Preregistration Spec SHA-256:** `cfa450824d269fb80a276ad9986835faf08f5d1a632722d0824502c68f738381` (`docs/research/specs/LONG-002D1-v1.json`)
 - **Stage C Input Dataset:** Run ID `2026-09-27-161243` (code SHA `d6a300e556c690c83ff8b9265833667c02dc94ec`)
 - **Branch:** `antigravity/long-002d1-core-kpi-census`
@@ -15,10 +16,10 @@
 This document reports the empirical results of **LONG-002D1**, the first slice of `LONG-002D`: a development-only, point-in-time-safe descriptive core technical and market-context feature census for the retained LONG-002 primary endpoint.
 
 ### Primary Scope & Quarantine Boundaries
-- **Descriptive KPI Discovery Only:** This study evaluates univariate predictive association, distribution coverage, stationarity, annual stability, and redundancy. **No predictive models were fit, no multi-feature scores were optimized, and no trading strategies were promoted.**
+- **Descriptive KPI Discovery Only:** This study evaluates univariate predictive association, distribution coverage, annual stability across development years, and redundancy. **No predictive models were fit, no multi-feature scores were optimized, and no trading strategies were promoted.**
 - **Development Split Only:** All analyses were strictly confined to the development split (2016-01-01 to 2020-12-31) at the 20:30 ET snapshot.
 - **Strict Data Quarantines:** Validation (2021–2022), holdout (2023–2025), and shadow (2026+) remain completely unopened, unaccessed, and strictly quarantined.
-- **Zero Live Network Requests:** Alpaca client ran with `allow_live=False` and `request_func=_forbidden_network_call`. 100% of candidate bars and SPY closes were served from the audited read-only provider cache. Zero network calls were attempted or made during the official run.
+- **Zero Live Network Requests & Audit Truthfulness:** Alpaca client ran with `allow_live=False` and fail-closed assertion. 100% of candidate bars (1,271 study securities) and SPY closes were served strictly from the audited read-only provider cache (2,797 cache hits, 0 misses, 0 live attempts, 0 outbound HTTP). 100% (2,797 / 2,797) of consumed payloads matched Stage C Alpaca provenance records (`provenance_records.parquet`).
 - **Production Status:** `APPROVED_PRODUCTION_STRATEGIES == ()` is strictly preserved.
 
 ---
@@ -59,37 +60,37 @@ Stock-level features were ranked cross-sectionally within each 20:30 `as_of_date
 
 ## 4. Key Empirical Findings
 
-### 1. Volatility is the Dominant Univariate Driver
-- `atr_pct_14` (normalized Wilder ATR-14) produced the highest lift of any single feature in the study: **2.2816x** favorable decile lift (Clean Rate: **20.22%** vs base rate 8.86%), with a 21-session block bootstrap 95% CI of `[1.94, 2.70]` and positive lift in **5 out of 5 development years**.
+### 1. `atr_pct_14` Showed the Strongest Univariate Development Association
+- `atr_pct_14` (normalized Wilder ATR-14) showed the strongest univariate development association among the evaluated reference and candidate features: **2.2816x** favorable decile lift (Clean Rate: **20.22%** vs base rate 8.86%), with a 21-session block bootstrap 95% CI of `[1.94, 2.70]` and positive descriptive lift in **5 out of 5 development years**.
 - The decile progression is strictly monotonic across all 10 deciles (Decile 1: 2.40% clean rate, 0.27x lift $\to$ Decile 10: 20.24% clean rate, 2.28x lift).
 - Notably, univariate `atr_pct_14` alone achieved higher top-decile lift (2.2816x) than the composite multi-factor Stage C baseline comparator `volatility_aware_momentum_5` (1.7320x), confirming that baseline volatility capacity is an essential conditioning factor for clean rapid upside.
 
 ### 2. Verification of Locked Ranking Semantics (Clarification 1)
 - `stock_minus_spy_20` produced identical cross-sectional decile assignments, clean event counts, clean rates (10.75%), favorable lifts (1.2122x), and bootstrap confidence intervals as `return_20`.
-- This confirms the mathematical identity: for any date $t$, $\text{rank}_i(r_{i,t} - r_{\text{SPY},t}) \equiv \text{rank}_i(r_{i,t})$ on identical non-null universes.
+- This confirms the mathematical identity: for any date $t$, $\text{rank}_i(r_{i,t} - r_{\text{SPY},t}) \equiv \text{rank}_i(r_{i,t})$ on identical non-null universes within each same-date cross-section.
 
 ### 3. Moving Average & Trend Features Show Moderate, Stable Lift
-- `sma20_slope_5` (5-day slope of 20-day SMA): **1.2238x** lift, CI `[1.11, 1.34]`, **5/5 years stable**.
-- `close_vs_sma20` (distance above 20-day SMA): **1.2083x** lift, CI `[1.10, 1.34]`, **4/5 years stable**.
-- `close_vs_sma60` (distance above 60-day SMA): **1.1967x** lift, CI `[1.07, 1.33]`, **4/5 years stable**.
-- All three moving average trend indicators display consistent, positive outperformance across almost all annual market regimes.
+- `sma20_slope_5` (5-day slope of 20-day SMA): **1.2238x** lift, CI `[1.11, 1.34]`, 5/5 years positive lift.
+- `close_vs_sma20` (distance above 20-day SMA): **1.2083x** lift, CI `[1.10, 1.34]`, 4/5 years positive lift.
+- `close_vs_sma60` (distance above 60-day SMA): **1.1967x** lift, CI `[1.07, 1.33]`, 4/5 years positive lift.
+- All three moving average trend indicators display positive descriptive lift in 4/5 or 5/5 development years (no stationarity or out-of-sample claims are made).
 
-### 4. Proximity to Highs: Inverse Mean-Reversion Behavior
-- Both `proximity_high20` and `proximity_high60` completely inverted the preregistered breakout hypothesis:
-  - Favorable Decile 10 (stocks nearest to their 20-day rolling high) yielded only a **6.48% clean rate** (**0.7307x lift**, 0/5 years stable).
-  - Unfavorable Decile 1 (stocks most deeply pulled back from their 20-day high, mean $-14.26\%$) achieved a **14.58% clean rate** (**1.6448x lift**)!
-  - The decile progression is strictly monotonic in reverse: pullbacks and oversold dips exhibit more than double the probability of experiencing a clean +10% rebound within 10 days compared to stocks pinned near highs.
+### 4. Proximity to Highs: Contradicted Preregistered Direction (Post-Hoc Exploratory Dip Evidence)
+- Both `proximity_high20` and `proximity_high60` directly contradicted the preregistered HIGHER breakout hypothesis:
+  - Favorable Decile 10 (stocks nearest to rolling highs under preregistered HIGHER direction) yielded only a **6.48% clean rate** (**0.7307x lift**, 0/5 years favorable).
+  - Conversely, Decile 1 (stocks most deeply pulled back from highs, mean $-14.26\%$) achieved a **14.58% clean rate** (**1.6448x lift**).
+  - **Preregistration Discipline Note:** This observed pullback association is post-hoc exploratory evidence of dip-buying behavior. Because the preregistered direction was HIGHER, this feature direction must NOT be post-hoc inverted or automatically converted into an active model feature. Any dip-buying formulation must be separately preregistered in a subsequent specification before inclusion in predictive pipelines.
 
 ### 5. Volume Features
-- `relative_volume_20` (volume vs prior 20-session median) showed modest, statistically distinct positive lift: **1.1307x** lift (Clean Rate: 10.02%), CI `[1.07, 1.20]`, **4/5 years stable**.
-- `dollar_volume_trend_20_60` was effectively neutral (**1.0022x** lift, CI `[0.91, 1.10]`, 3/5 years stable).
-- `up_volume_share_20` inverted (**0.8842x** lift, CI `[0.81, 0.96]`, 0/5 years stable), suggesting extended accumulation streaks over 20 sessions often mark short-term buyer exhaustion.
+- `relative_volume_20` (volume vs prior 20-session median) showed modest, statistically distinct positive lift: **1.1307x** lift (Clean Rate: 10.02%), CI `[1.07, 1.20]`, 4/5 years favorable.
+- `dollar_volume_trend_20_60` was effectively neutral (**1.0022x** lift, CI `[0.91, 1.10]`, 3/5 years favorable).
+- `up_volume_share_20` showed an inverse development association (**0.8842x** lift, CI `[0.81, 0.96]`, 0/5 years favorable). The underlying market mechanism for this inverse relationship remains unproven and should not be attributed to specific causal hypotheses (e.g. buyer exhaustion) without independent verification.
 
 ### 6. Compression Features
-- `true_range_compression_5_20` showed negligible univariate lift (**1.0087x** lift, CI `[0.96, 1.06]`, 2/5 years stable), indicating that rolling true range compression alone does not provide a directional edge for rapid clean expansion without secondary conditioning.
+- `true_range_compression_5_20` showed negligible univariate lift (**1.0087x** lift, CI `[0.96, 1.06]`, 2/5 years favorable), indicating that rolling true range compression alone does not provide a directional edge for rapid clean expansion without secondary conditioning.
 
 ### 7. Market Regime Diagnostic (`spy_return_20`)
-- `spy_return_20` (deciles formed over unique market dates) showed a 13.72% clean rate on favorable dates (1.5473x lift). However, its 21-session block bootstrap CI spans `[0.90, 2.18]` and annual stability is only `1/5` years due to macro date clustering (2020 post-crash bounce dominated favorable decile dates). As preregistered, it serves as a macro-regime diagnostic rather than a cross-sectional stock-selection feature.
+- `spy_return_20` (deciles formed over unique market dates) showed a 13.72% clean rate on favorable dates (1.5473x lift). However, its 21-session block bootstrap CI spans `[0.90, 2.18]` and annual stability is only `1/5` years due to macro date clustering (2020 post-crash bounce dominated favorable decile dates). As preregistered, it serves as a date-level macro diagnostic, and its lift is not directly comparable to cross-sectional stock-ranking lifts.
 
 ---
 
@@ -136,7 +137,17 @@ The frozen Stage C benchmark comparator was re-verified against the exact same 2
 
 ---
 
-## 8. Artifact Catalog & Cryptographic Integrity
+## 8. Preregistration Errata / Interpretation Notes
+
+### A. LOWER Decile Label Wording Inconsistency in Locked Spec
+In `docs/research/specs/LONG-002D1-v1.json`, the specification text refers to Decile 10 as top decile for all features, but for LOWER hypothesized directions (`true_range_compression_5_20`), lowest numerical values are favorable. The runtime implementation strictly mapped favorable observations ($\ge 90$th percentile under the respective sort direction: ascending for LOWER, descending for HIGHER) to Decile 10 (favorable) consistently, ensuring that across all candidate features Decile 10 uniformly represents the preregistered favorable hypothesis.
+
+### B. Bootstrap Terminology
+The locked spec mentions "stationary block bootstrap" in prose, but specifies deterministic non-overlapping blocks of calendar sessions (21 and 42 trading sessions). The implementation strictly executed non-overlapping block bootstrap (Politis & Romano 1994 style block resampling without random geometric block lengths) with fixed seed `20260927` to guarantee exact determinism and reproducibility.
+
+---
+
+## 9. Artifact Catalog & Cryptographic Integrity
 
 All external datasets and committed summaries have been verified:
 
@@ -148,20 +159,25 @@ All external datasets and committed summaries have been verified:
 | `bootstrap_detail.parquet` | 15,000 | 284,398 | `7906d5bdeea3eee1fc0c9a556f4491234e1e1f815365891e31dbe5834fb8821b` |
 | `redundancy_matrix.parquet` | 15 | 12,944 | `a11c360158307d20c9cb76fd582ca9f4d39a37b12db2e1d9160df86fa1dcc8c8` |
 
-### Committed Summaries (`docs/research/artifacts/LONG-002D1/2026-09-27-223646/`)
-| File Name | Byte Size | Description |
-|---|---:|---|
-| `execution_metadata.json` | 2,164 | Full run timing, benchmark report, file catalog, and denominators |
-| `feature_registry.json` | 5,203 | Machine-readable feature definitions, roles, directions, and formulas |
-| `feature_census_summary.json` | 114,833 | Full decile tables, annual stability, and market-cap cohort breakdowns |
-| `bootstrap_summary.json` | 5,997 | 21-session and 42-session stationary block bootstrap distributions |
-| `redundancy_summary.json` | 8,482 | Pairwise Spearman correlation matrix and high-redundancy candidate flags |
-| `data_quality_summary.json` | 486,024 | Provider cache payload audit, SHA-256 digests, and zero-network verification |
-| `checksums.sha256` | 549 | Cryptographic checksums of committed summary artifacts |
+### Committed Summaries — Official Corrected Run (`docs/research/artifacts/LONG-002D1/2026-09-28-003539/`)
+| File Name | Byte Size | SHA-256 Digest | Description |
+|---|---:|---|---|
+| `execution_metadata.json` | 2,217 | `0c660bff841820f6a5075ba0f89a609cc9b1a8dfd6bf33379fd159c5f37a521b` | Full run timing, benchmark report, file catalog, and denominators |
+| `feature_registry.json` | 5,027 | `61ba48b5562c76b101b30bedd3d1695e5b35f6ec6c076356e4db5e8d28df1e39` | Machine-readable feature definitions, roles, directions, and formulas |
+| `feature_census_summary.json` | 114,833 | `f0c962597b0ea38b6cdd501c010b811397979fc36d26b918486ab72f839a1b21` | Full decile tables, annual stability, and market-cap cohort breakdowns |
+| `bootstrap_summary.json` | 5,747 | `5396dbcfb717d8baaba6c4f54eef72dc497f7760bed8bd0f85a6a5166ee208c0` | 21-session and 42-session block bootstrap distributions |
+| `redundancy_summary.json` | 8,482 | `4a00107c44c310a34da824f6a7cc632a88f16f326eb96e88771e163505d6aba2` | Pairwise Spearman correlation matrix and high-redundancy candidate flags |
+| `data_quality_summary.json` | 207,483 | `60a4fcac98e38e0ebf29d7f0442371a6ff4a7dbbfad3f3147aaf04f1ad788f97` | Provider cache payload audit (2,797 hits, 0 misses, 0 attempts, 0 outbound HTTP) |
+| `checksums.sha256` | 447 | — | Cryptographic checksums of committed summary artifacts |
+
+### Superseded Artifacts — Run `2026-09-27-223646`
+- **Location:** `docs/research/artifacts/LONG-002D1/2026-09-27-223646/`
+- **Disposition:** `superseded_execution_audit_defect`
+- **Reason:** The empirical D1 population and statistical findings were correct, but runtime loaded non-study discovery candidates, causing blocked live-request-path attempts and unmatched cache provenance records.
 
 ---
 
-## 9. Next Steps: Gary / ChatGPT Post-Run Review
+## 10. Next Steps: Gary / ChatGPT Post-Run Review
 
 Per preregistered status taxonomy rule:
 - All candidate features are currently recorded with status `review_pending`.
