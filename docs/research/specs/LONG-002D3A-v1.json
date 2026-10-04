@@ -1,0 +1,359 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "task_id": "LONG-002D3A-BLINDED-REVIEW-PILOT-001",
+  "spec_version": "v1",
+  "program": "LONG-002",
+  "phase": "LONG-002D3A",
+  "title": "Blinded Review Tooling, Pilot Freeze, and Main-Study Contract Foundation",
+  "classification": "research_only",
+  "production_promotion_eligible": false,
+  "approved_production_strategies": [],
+  "authorization": {
+    "authorizer": "Gary Yang",
+    "authorization_date": "2026-10-03",
+    "bounded_by": "ChatGPT",
+    "scope": "development-only blinded-review tooling, preregistration, deterministic pilot sample construction, pilot answer-key cryptographic commitment, Stage A/B review-packet generation, reviewer-label schema, leakage/blinding safeguards, and main-study sampling contract foundation",
+    "unauthorized_actions": [
+      "executing_240_case_main_review",
+      "revealing_main_study_outcomes",
+      "revealing_pilot_study_outcomes_during_review",
+      "final_feature_registry_freeze",
+      "recommendation_episode_lifecycle_freeze",
+      "long_002e_model_fitting",
+      "48_configuration_model_search",
+      "model_weights_or_coefficients",
+      "qualification_thresholds",
+      "trigger_research",
+      "stop_exit_research",
+      "validation_access",
+      "holdout_access",
+      "shadow_replay_access",
+      "production_promotion",
+      "production_trading_behavior_changes"
+    ]
+  },
+  "upstream_evidence": {
+    "stage_c": {
+      "run_id": "2026-09-27-161243",
+      "execution_code_sha": "d6a300e556c690c83ff8b9265833667c02dc94ec",
+      "development_period": "2016-01-01 to 2020-12-31",
+      "primary_cutoff": "20:30",
+      "expected_denominator": 758731,
+      "expected_clean_events": 67257,
+      "expected_base_rate": 0.088644
+    },
+    "frozen_baseline": {
+      "comparator_id": "volatility_aware_momentum_5",
+      "formula": "0.5 * cross_sectional_momentum_5_pct + 0.5 * cross_sectional_atr_pct_14_pct",
+      "official_reference": {
+        "top_10": {
+          "count": 76407,
+          "clean_count": 11731,
+          "clean_rate": 0.153533,
+          "lift": 1.732
+        },
+        "top_25": {
+          "count": 190288,
+          "clean_count": 24144,
+          "clean_rate": 0.126881,
+          "lift": 1.4314
+        }
+      }
+    },
+    "stage_d1": {
+      "run_id": "2026-09-28-003539",
+      "preregistration_spec_sha256": "cfa450824d269fb80a276ad9986835faf08f5d1a632722d0824502c68f738381"
+    },
+    "stage_d2": {
+      "run_id": "2026-10-04-002604",
+      "execution_code_sha": "e494f12dfa526a62e5014572d335510099a3a024",
+      "preregistration_spec_sha256": "db82482333fb0c9810279d289e87e82e7274802fae82269cbf1b63c7ad2a6fb8",
+      "primary_candidate_disposition": "NOT_SUPPORTED",
+      "secondary_challenger_disposition": "descriptive_underperformance"
+    },
+    "required_input_digests": {
+      "decision_observations.parquet": {
+        "path": "data/research/long_002c/decision_observations.parquet",
+        "sha256": "722bee866cabb697931dfb96abaf7f9250f1cd1240b405d2e308af0b6bbb48af",
+        "row_count": 2815600
+      },
+      "outcome_matrix.parquet": {
+        "path": "data/research/long_002c/outcome_matrix.parquet",
+        "sha256": "b59a5f7f8a8a0498abdadb156299719f43ffa8854df5cad8e20a6cd4fbe237c3",
+        "row_count": 13657194
+      },
+      "master_episodes.parquet": {
+        "path": "data/research/long_002c/master_episodes.parquet",
+        "sha256": "1fe5b36f98919465007a720908c626203e5272b054a4ef76be772db279b3cc98",
+        "row_count": 16139
+      },
+      "constituent_memberships.parquet": {
+        "path": "data/research/long_002c/constituent_memberships.parquet",
+        "sha256": "53a8adc92f1210ef3a1b6d10c9eedd1f360dad2760897f97b5d293f473734b11",
+        "row_count": 677736
+      },
+      "baseline_comparator_outputs.parquet": {
+        "path": "data/research/long_002c/baseline_comparator_outputs.parquet",
+        "sha256": "faec26ddb26fd5a17feddf5ae09232a8aeb8ba24c3529abd88422682357e4734",
+        "row_count": 21244524
+      },
+      "feature_table.parquet": {
+        "path": "data/research/long_002d1/feature_table.parquet",
+        "sha256": "7dc09bdeed02c44eb48a0143884deb0ad7795466a08e25fd26c32640a0c813d8",
+        "row_count": 758731
+      },
+      "discovery_manifest.json": {
+        "path": "data/research/long_002c/discovery_manifest.json",
+        "sha256": "d1bf16d6b475c93b5c47e81a47af5597fd514432880107030040a81fd61e9947"
+      }
+    }
+  },
+  "study_population": {
+    "split": "development",
+    "start_date": "2016-01-01",
+    "end_date": "2020-12-31",
+    "cutoff_time": "20:30",
+    "timezone": "America/New_York",
+    "raw_outcome_eligible_required": true,
+    "split_boundary_purged_allowed": false,
+    "quarantined_splits": [
+      "validation (2021-01-01 to 2022-12-31)",
+      "holdout (2023-01-01 to 2025-12-31)",
+      "shadow (2026-01-01 onward)"
+    ],
+    "out_of_scope_cutoffs": [
+      "09:00"
+    ]
+  },
+  "primary_endpoint": {
+    "target_pct": 10.0,
+    "horizon_sessions": 10,
+    "label_column": "clean_target_reached",
+    "expected_base_rate": 0.088644
+  },
+  "strata_definitions": {
+    "class_priority_precedence": [
+      "positive_master_episode",
+      "near_miss",
+      "adverse_trap",
+      "ordinary_non_mover"
+    ],
+    "classes": {
+      "positive_master_episode": {
+        "stratum_id": 1,
+        "name": "positive_master_episode",
+        "description": "Anchor observation of a valid Stage C master opportunity episode at the 20:30 snapshot",
+        "source": "master_episodes.parquet",
+        "anchor_cutoff_required": "20:30"
+      },
+      "near_miss": {
+        "stratum_id": 2,
+        "name": "near_miss",
+        "description": "Observation outside any active positive master episode with near_miss == True and clean_target_reached == False on the primary (+10% / 10 sessions) cell",
+        "source": "outcome_matrix.parquet (target_pct=10, horizon_sessions=10)",
+        "conditions": {
+          "outside_active_master_episode": true,
+          "clean_target_reached": false,
+          "near_miss": true
+        }
+      },
+      "adverse_trap": {
+        "stratum_id": 3,
+        "name": "adverse_trap",
+        "description": "Observation outside any active positive master episode not qualifying as near_miss with adverse_excursion == True and clean_target_reached == False on primary cell",
+        "source": "outcome_matrix.parquet (target_pct=10, horizon_sessions=10)",
+        "conditions": {
+          "outside_active_master_episode": true,
+          "clean_target_reached": false,
+          "near_miss": false,
+          "adverse_excursion": true
+        }
+      },
+      "ordinary_non_mover": {
+        "stratum_id": 4,
+        "name": "ordinary_non_mover",
+        "description": "Observation outside any active positive master episode not qualifying as near_miss or adverse_trap with target_progress_ratio < 0.50 and clean_target_reached == False on primary cell",
+        "source": "outcome_matrix.parquet (target_pct=10, horizon_sessions=10)",
+        "conditions": {
+          "outside_active_master_episode": true,
+          "clean_target_reached": false,
+          "near_miss": false,
+          "adverse_excursion": false,
+          "target_progress_ratio_lt": 0.5
+        }
+      }
+    }
+  },
+  "control_exclusion_rules": {
+    "no_active_episode_overlap": "Control cases must not be inside an active positive master episode (neither anchor nor constituent observation in 21-session window)",
+    "no_identical_observation_reuse": "An observation key (immutable_security_id, as_of_date, cutoff_time) cannot be reused across cases",
+    "no_predictive_matching": "Controls must not be matched on predictive variables such as momentum, price structure, volume pattern, earnings surprise, news, or fundamentals",
+    "rolling_window_avoidance": "Repeated reuse of one ticker within a rolling 21-session review window is avoided where possible"
+  },
+  "pilot_study_contract": {
+    "sample_size": 24,
+    "quota_per_stratum": 6,
+    "strata_counts": {
+      "positive_master_episode": 6,
+      "near_miss": 6,
+      "adverse_trap": 6,
+      "ordinary_non_mover": 6
+    },
+    "pilot_random_seed": 20261003,
+    "ticker_diversity_policy": "Strict preference for 24 distinct tickers across the 24 pilot cases (no ticker appearing more than once)",
+    "annual_diversity_policy": "At least one case from each development year (2016, 2017, 2018, 2019, 2020) per stratum",
+    "case_id_pattern": "D3A-PILOT-{03d}",
+    "case_id_range": ["D3A-PILOT-001", "D3A-PILOT-024"],
+    "case_id_opacity_requirement": "Case IDs must NOT encode ticker, date, class, outcome, sector, or year",
+    "deterministic_shuffling": "After class-balanced selection, perform exactly one deterministic seeded shuffle using seed 20261003 so presentation order does not reveal stratum",
+    "exclusion_from_main_study": "All 24 pilot source observation keys are permanently excluded from the future 240-case main sample"
+  },
+  "future_main_study_contract": {
+    "main_study_sample_size": 240,
+    "future_main_seed": 20261004,
+    "strata_counts": {
+      "positive_master_episode": 120,
+      "ordinary_non_mover": 40,
+      "near_miss": 40,
+      "adverse_trap": 40
+    },
+    "batching_target": "12 batches of 20 cases",
+    "ticker_frequency_limit": "Normally no ticker more than twice",
+    "execution_status": "NOT_EXECUTED_IN_THIS_PR",
+    "generation_gate": "Requires formal Gary authorization and completed pilot workflow review before generation"
+  },
+  "anonymization_and_blinding": {
+    "hidden_fields": [
+      "ticker",
+      "company_name",
+      "immutable_security_id",
+      "exact_calendar_date",
+      "future_bars",
+      "target_outcome",
+      "true_class",
+      "mfe_pct",
+      "mae_pct",
+      "future_return",
+      "time_to_target",
+      "answer_key_metadata"
+    ],
+    "relative_time_indexing": {
+      "enabled": true,
+      "labels": ["T-60", "...", "T-1", "T0"],
+      "cutoff_bar": "T0",
+      "future_bar_leakage_prohibited": true
+    },
+    "price_normalization": {
+      "enabled": true,
+      "base_bar": "T-60",
+      "normalized_base_price": 100.0,
+      "preserves_returns_and_ratios": true
+    },
+    "stage_a_content": {
+      "name": "Anonymized Technical and Market View",
+      "included": [
+        "normalized_ohlc_bars",
+        "relative_volume_history",
+        "atr_pct_volatility_context",
+        "moving_average_trend_context",
+        "momentum_return_context",
+        "spy_market_context",
+        "pit_sector_context_where_valid",
+        "data_quality_warnings"
+      ],
+      "prohibited": [
+        "stage_b_fundamentals",
+        "security_identity",
+        "exact_dates",
+        "future_bars",
+        "target_outcome"
+      ]
+    },
+    "stage_b_content": {
+      "name": "Point-in-Time Fundamental and Event Context",
+      "preserves_stage_a": true,
+      "added_pit_fields": [
+        "market_cap_cohort",
+        "trading_history_cohort",
+        "pit_earnings_schedule_status",
+        "pit_earnings_announcement_timing",
+        "pit_sessions_to_earnings",
+        "data_confidence_and_coverage_metadata"
+      ],
+      "missing_policy": "Missing fields remain strictly null / unknown; never zero; no external provider calls"
+    }
+  },
+  "reviewer_label_schema": {
+    "fields": {
+      "surface_decision": {
+        "type": "string",
+        "allowed_values": ["surface", "do_not_surface"]
+      },
+      "visible_state_if_surfaced": {
+        "type": "string",
+        "nullable": true,
+        "allowed_values": ["Enter Now", "Armed", "Qualified Waitlist", null]
+      },
+      "expected_target_pct": {
+        "type": "integer",
+        "nullable": true,
+        "allowed_values": [10, 20, 30, null]
+      },
+      "expected_horizon_sessions": {
+        "type": "integer",
+        "nullable": true,
+        "allowed_values": [5, 10, 21, null]
+      },
+      "qualitative_confidence": {
+        "type": "integer",
+        "range": [1, 5]
+      },
+      "setup_archetype": {
+        "type": "string",
+        "allowed_values": ["setup_archetype", "other", "unclear"]
+      },
+      "entry_plan": {
+        "type": "string"
+      },
+      "trigger_or_zone": {
+        "type": "string"
+      },
+      "max_validity_sessions": {
+        "type": "integer",
+        "max": 5
+      },
+      "gap_handling": {
+        "type": "string"
+      },
+      "invalidation": {
+        "type": "string"
+      },
+      "positive_reasons": {
+        "type": "list_of_strings",
+        "max_items": 3
+      },
+      "material_risks_counterarguments": {
+        "type": "string",
+        "required_when_material_risks_visible": true
+      }
+    },
+    "storage_rule": "Stage A and Stage B labels are stored as separate immutable review records"
+  },
+  "answer_key_isolation_contract": {
+    "git_policy": "Answer key must NEVER be committed to Git. Stored strictly in gitignored external research data area.",
+    "external_path_pattern": "data/research/long_002d3a/{run_id}/pilot_answer_key.json",
+    "committed_commitment_file": "answer_key_commitment.json",
+    "commitment_fields": [
+      "relative_external_path",
+      "byte_count",
+      "sha256",
+      "row_count",
+      "schema_version"
+    ],
+    "outcome_reveal_policy": "NO per-case reveal, running accuracy, or class hints during review. Outcomes remain unrevealed until all labels are locked."
+  },
+  "output_paths": {
+    "committed_safe_artifacts_dir": "docs/research/artifacts/LONG-002D3A/{run_id}/",
+    "external_gitignored_dir": "data/research/long_002d3a/{run_id}/"
+  }
+}
