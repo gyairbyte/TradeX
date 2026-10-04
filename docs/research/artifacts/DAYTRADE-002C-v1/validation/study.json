@@ -1,0 +1,171 @@
+{
+  "bootstrap": {
+    "event_minus_baseline_uplift": {
+      "ci_lower": null,
+      "ci_upper": null,
+      "error_reason": "no_eligible_target_dates",
+      "point_estimate": null,
+      "resamples": 2000,
+      "seed": 20260926,
+      "status": "non_computable"
+    },
+    "primary_net_return": {
+      "ci_lower": null,
+      "ci_upper": null,
+      "error_reason": "no_eligible_target_dates",
+      "point_estimate": null,
+      "resamples": 2000,
+      "seed": 20260926,
+      "status": "non_computable"
+    }
+  },
+  "disposition": "inconclusive",
+  "disposition_reason": "sample_gate_failed (events=0, etfs=0, dates=0); data_quality_gate_failed (100.00%)",
+  "disposition_step": "step_2_evidence_sufficiency",
+  "gates": {
+    "baseline_uplift_gate": {
+      "detail": {
+        "ci_lower": null,
+        "ci_status": "non_computable",
+        "mean_uplift_2bps": null
+      },
+      "gate_name": "baseline_uplift_gate",
+      "passed": false
+    },
+    "breadth_gate": {
+      "detail": {
+        "min_required_pct": 60.0,
+        "pct_positive_etfs": 0.0,
+        "per_etf_net_means": {}
+      },
+      "gate_name": "breadth_gate",
+      "passed": false
+    },
+    "concentration_gate": {
+      "detail": {
+        "max_allowed_pct": 15.0,
+        "max_single_etf_pct": 0.0
+      },
+      "gate_name": "concentration_gate",
+      "passed": true
+    },
+    "data_quality_gate": {
+      "detail": {
+        "excluded_rate_pct": 100.0,
+        "excluded_ticker_sessions": 615,
+        "max_allowed_pct": 5.0,
+        "total_ticker_sessions": 615
+      },
+      "gate_name": "data_quality_gate",
+      "passed": false
+    },
+    "primary_net_effect_gate": {
+      "detail": {
+        "ci_lower": null,
+        "ci_status": "non_computable",
+        "cost_basis_bps_per_side": 2.0,
+        "mean_net_return_2bps": null
+      },
+      "gate_name": "primary_net_effect_gate",
+      "passed": false
+    },
+    "sample_gate": {
+      "detail": {
+        "event_count": 0,
+        "event_session_count": 0,
+        "min_event_session_count": 20,
+        "min_events": 75,
+        "min_represented_etfs": 10,
+        "represented_etfs": 0
+      },
+      "gate_name": "sample_gate",
+      "passed": false
+    }
+  },
+  "metrics": {
+    "data_quality_summary": {
+      "exceeds_split_gate": true,
+      "excluded_rate_pct": 100.0,
+      "excluded_ticker_sessions": 615,
+      "exclusion_breakdown": {
+        "excess_missing_bars_390_pct_100.00": 615
+      },
+      "total_ticker_sessions": 615
+    },
+    "eligible_ticker_session_count": 0,
+    "event_count": 0,
+    "event_minus_baseline_mean": null,
+    "event_minus_baseline_median": null,
+    "event_session_count": 0,
+    "events_per_etf": {},
+    "events_per_month": {},
+    "long_event_count": 0,
+    "long_side_primary_results": {
+      "event_count": 0,
+      "mean_net_signed_return_2bps": 0.0,
+      "mean_uplift_2bps": null,
+      "win_rate_gross": 0.0
+    },
+    "matched_non_event_baseline_mean": null,
+    "matched_non_event_baseline_median": null,
+    "maximum_single_etf_event_concentration": 0.0,
+    "mean_gross_signed_return_30m": 0.0,
+    "mean_net_signed_return_0bps": 0.0,
+    "mean_net_signed_return_2bps": 0.0,
+    "mean_net_signed_return_5bps": 0.0,
+    "median_gross_signed_return_30m": 0.0,
+    "median_net_signed_return_0bps": 0.0,
+    "median_net_signed_return_2bps": 0.0,
+    "median_net_signed_return_5bps": 0.0,
+    "multi_signal_session_count": 0,
+    "multi_signal_session_rate": 0.0,
+    "per_etf_primary_results": {},
+    "per_month_primary_results": {},
+    "provider_provenance_summary": {
+      "adjustment": "split",
+      "calendar": "XNYS",
+      "feed": "sip",
+      "provider": "alpaca",
+      "status": "synthetic_fixtures_only",
+      "timeframe": "1Min",
+      "timezone": "America/New_York"
+    },
+    "represented_etf_count": 0,
+    "short_event_count": 0,
+    "short_side_primary_results": {
+      "event_count": 0,
+      "mean_net_signed_return_2bps": 0.0,
+      "mean_uplift_2bps": null,
+      "win_rate_gross": 0.0
+    },
+    "win_rate_gross_30m": 0.0
+  },
+  "provenance": {
+    "adjustment": "split",
+    "calendar": "XNYS",
+    "evaluator_code_sha": "774b37efe883233d0c3f2a888e37aebf0851d347",
+    "evidence_confidence_cap": "limited_but_usable_evidence",
+    "feed": "sip",
+    "manifest_sha256": "1b0da463a5d928cce3019fcb785f014180650d824f7d04d713d4e8fd75fd8ebb",
+    "production_promotion_eligible": false,
+    "provider": "alpaca",
+    "spec_sha256": "dfad19dc6c88a009e05ef4a42a8b7ad9c64838ca84cdfd64a830a7f70f127127",
+    "task_id": "DAYTRADE-002B",
+    "timeframe": "1Min",
+    "timezone": "America/New_York"
+  },
+  "quality_summary": {
+    "exceeds_split_gate": true,
+    "excluded_rate_pct": 100.0,
+    "excluded_ticker_sessions": 615,
+    "exclusion_breakdown": {
+      "excess_missing_bars_390_pct_100.00": 615
+    },
+    "is_valid": true,
+    "split": "validation",
+    "total_ticker_sessions": 615
+  },
+  "split": "validation",
+  "study_name": "DAYTRADE-002: Early-to-Late ETF Intraday Momentum",
+  "task_id": "DAYTRADE-002B"
+}

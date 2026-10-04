@@ -1,0 +1,58 @@
+{
+  "data_quality_summary": {
+    "exceeds_split_gate": true,
+    "excluded_rate_pct": 100.0,
+    "excluded_ticker_sessions": 615,
+    "exclusion_breakdown": {
+      "excess_missing_bars_390_pct_100.00": 615
+    },
+    "total_ticker_sessions": 615
+  },
+  "eligible_ticker_session_count": 0,
+  "event_count": 0,
+  "event_minus_baseline_mean": null,
+  "event_minus_baseline_median": null,
+  "event_session_count": 0,
+  "events_per_etf": {},
+  "events_per_month": {},
+  "long_event_count": 0,
+  "long_side_primary_results": {
+    "event_count": 0,
+    "mean_net_signed_return_2bps": 0.0,
+    "mean_uplift_2bps": null,
+    "win_rate_gross": 0.0
+  },
+  "matched_non_event_baseline_mean": null,
+  "matched_non_event_baseline_median": null,
+  "maximum_single_etf_event_concentration": 0.0,
+  "mean_gross_signed_return_30m": 0.0,
+  "mean_net_signed_return_0bps": 0.0,
+  "mean_net_signed_return_2bps": 0.0,
+  "mean_net_signed_return_5bps": 0.0,
+  "median_gross_signed_return_30m": 0.0,
+  "median_net_signed_return_0bps": 0.0,
+  "median_net_signed_return_2bps": 0.0,
+  "median_net_signed_return_5bps": 0.0,
+  "multi_signal_session_count": 0,
+  "multi_signal_session_rate": 0.0,
+  "per_etf_primary_results": {},
+  "per_month_primary_results": {},
+  "provider_provenance_summary": {
+    "adjustment": "split",
+    "calendar": "XNYS",
+    "feed": "sip",
+    "provider": "alpaca",
+    "status": "synthetic_fixtures_only",
+    "timeframe": "1Min",
+    "timezone": "America/New_York"
+  },
+  "represented_etf_count": 0,
+  "short_event_count": 0,
+  "short_side_primary_results": {
+    "event_count": 0,
+    "mean_net_signed_return_2bps": 0.0,
+    "mean_uplift_2bps": null,
+    "win_rate_gross": 0.0
+  },
+  "win_rate_gross_30m": 0.0
+}
