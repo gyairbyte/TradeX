@@ -1,8 +1,10 @@
 # LONG-002D2: Incremental Ranking Value of Relative Volume Beyond Frozen VAM5 — Empirical Results
 
 - **Task ID:** `LONG-002D2-INCREMENTAL-RERANK-001`
-- **Execution Run ID:** `2026-09-28-143047`
-- **Execution Date:** 2026-09-28
+- **Execution Run ID:** `2026-10-04-002604` (Official Corrected Run)
+- **Superseded Run ID:** `2026-09-28-143047` (Superseded: execution provenance defect; 100% empirical equivalence confirmed)
+- **Execution Date:** 2026-10-04
+- **Execution Code SHA:** `e494f12dfa526a62e5014572d335510099a3a024`
 - **Preregistration Spec SHA-256:** `db82482333fb0c9810279d289e87e82e7274802fae82269cbf1b63c7ad2a6fb8` (`docs/research/specs/LONG-002D2-v1.json`)
 - **Preregistration Commit SHA:** `494caa8df3e60bae15e5015ad98a42a13eb109f3`
 - **Spec Immutability:** Verified; `git diff 494caa8df3e60bae15e5015ad98a42a13eb109f3..HEAD -- docs/research/specs/LONG-002D2-v1.json` is clean.
@@ -37,6 +39,10 @@ This document reports the empirical findings of **LONG-002D2**, a controlled, co
   - **21-Session Block Bootstrap 95% CI:** `[-0.0415, -0.0258]`
   - **Annual Stability:** **0 out of 5 development years** positive.
   - Per preregistration, this challenger is purely descriptive and did not alter the primary relative-volume status.
+
+### Execution Provenance Correction & Empirical Equivalence
+- **Correction Context:** Initial execution `2026-09-28-143047` occurred before the empirical implementation commit and lacked committed `execution_code_sha` metadata recording. Under assignment `LONG-002D2-CORR-001`, the correction implementation was committed first (`e494f12dfa526a62e5014572d335510099a3a024`), and the identical study was rerun from a clean committed worktree under run ID `2026-10-04-002604`.
+- **100% Empirical Equivalence:** All analytical metrics and summary artifacts (`bootstrap_summary.json`, `input_integrity.json`, `regime_diagnostic_summary.json`, `rerank_summary.json`) are 100% byte-for-byte identical between runs `2026-09-28-143047` and `2026-10-04-002604`. Initial run `2026-09-28-143047` is preserved and marked `superseded_execution_provenance_defect`.
 
 ### Research Scope & Governance Quarantines
 - **Controlled Coverage-Matched Reranking Only:** On each date, the candidate and matched baseline selected exactly $K(date)$ securities ($K(date) = \text{count of frozen VAM5 top-10 observations}$).
@@ -110,7 +116,7 @@ Paired resamples were generated using non-overlapping calendar blocks with fixed
 | **21 Sessions** | Primary Block Size | -2.9247 pp | -2.9284 pp | 0.3097 pp | -3.5191 pp | -2.3472 pp | **[-0.0352, -0.0235]** |
 | **42 Sessions** | Robustness Block Size | -2.9109 pp | -2.9104 pp | 0.2915 pp | -3.5169 pp | -2.3853 pp | **[-0.0352, -0.0239]** |
 
-The upper bound of the 95% confidence interval is strictly negative (`-2.35 pp`), proving that the observed underperformance is robust to calendar clustering and not an artifact of block size.
+The upper bound of the 95% confidence interval is strictly negative (`-2.35 pp`), with both preregistered block-bootstrap intervals (21 and 42 sessions) remaining below zero within this development resampling design.
 
 ---
 
@@ -170,13 +176,13 @@ Unique development dates (982 sessions) were partitioned into three fixed bins b
 
 ### Secondary Challenger (`sma20_slope_5`) by Regime
 
-| Regime | Dates | Selected Obs ($K$) | Matched VAM5 Precision | Candidate Precision | Absolute Delta | Precision Ratio |
+| Regime | Dates | Selected Obs ($K$) | Matched VAM5 Precision | Challenger Precision | Absolute Delta | Precision Ratio |
 |---|---:|---:|---:|---:|---:|---:|
 | **Lower Regime** (SPY bottom 30%) | 294 | 23,404 | 18.4840% | 15.0444% | **-3.4396 pp** | 0.8139 |
 | **Middle Regime** (SPY mid 40%) | 393 | 28,750 | 11.6591% | 8.2922% | **-3.3670 pp** | 0.7112 |
 | **Upper Regime** (SPY top 30%) | 295 | 24,253 | 16.7113% | 13.4416% | **-3.2697 pp** | 0.8043 |
 
-**Key Diagnostic Insight:** The negative delta of both candidate rerankers relative to frozen VAM5 is remarkably uniform across all three market regimes (consistently between `-2.7 pp` and `-3.4 pp`). The performance degradation is not confined to bear, chop, or bull environments.
+**Key Diagnostic Insight:** The negative delta of both candidate rerankers relative to frozen VAM5 is remarkably uniform across all three market regimes (consistently between `-2.7 pp` and `-3.4 pp`). The performance degradation is observed consistently across the lower, middle, and upper 20-session SPY-return bins.
 
 ---
 
@@ -184,10 +190,10 @@ Unique development dates (982 sessions) were partitioned into three fixed bins b
 
 1. **Univariate Association Does Not Imply Incremental Conditional Value:**
    In D1, `relative_volume_20` exhibited a positive univariate association (1.1307x top-decile lift, 4/5 positive years). However, when used to rerank stocks that are *already* in the top quartile of the volatility-aware momentum composite (`volatility_aware_momentum_5`), selecting highest-relative-volume stocks displaces higher-ranked VAM5 stocks that have substantially higher clean-event rates.
-2. **Dilution of Momentum / ATR Signal:**
-   Frozen VAM5 selects names with the highest combined 5-day momentum and ATR movement capacity. In the top quartile, selecting by `relative_volume_20` favors stocks experiencing volume spikes that may correspond to gap openings, late-stage churn, or distribution, rather than clean follow-through.
-3. **Collinear Trend Features Suffer the Same Fate:**
-   `sma20_slope_5` exhibited the exact same degradation (-3.36 pp delta, 0/5 years positive). Selecting the steepest 20-day SMA slope from the top-quartile pool replaces top-10 VAM5 names with extended or late-stage trends that fail to cleanly expand an additional +10% over the next 10 sessions.
+2. **Displacement of Higher-Precision VAM5 Selections:**
+   Frozen VAM5 selects names with the highest combined 5-day momentum and ATR movement capacity. Within the top quartile, selecting by `relative_volume_20` systematically displaces higher-ranked VAM5 candidates that possess higher clean-event rates for the retained primary endpoint. D2 tested ranking performance only, not underlying microstructure or execution mechanisms.
+3. **Collinear Trend Features Exhibit Similar Underperformance:**
+   `sma20_slope_5` exhibited the exact same empirical degradation (-3.36 pp delta, 0/5 years positive). Selecting by steepest 20-day SMA slope from the top-quartile pool similarly displaces top-10 VAM5 names, resulting in lower precision without testing specific trend exhaustion mechanisms.
 4. **Research Quarantine Integrity:**
    All findings are based solely on development split observations (`2016-01-01` to `2020-12-31`). No validation or holdout data was accessed.
 
@@ -195,16 +201,23 @@ Unique development dates (982 sessions) were partitioned into three fixed bins b
 
 ## 7. Artifact Catalog & Cryptographic Integrity
 
-All committed summary artifacts have been generated in `docs/research/artifacts/LONG-002D2/2026-09-28-143047/`:
+### Official Corrected Artifacts — Run `2026-10-04-002604`
+All committed summary artifacts are located in `docs/research/artifacts/LONG-002D2/2026-10-04-002604/`:
 
 | Artifact File | Byte Size | SHA-256 Digest | Description |
 |---|---:|---|---|
-| `execution_metadata.json` | 1,375 | `382d3bec1fb5b9cb01e5192fdcab53ae77e6bb5687d3f6bc335e7c2ec7e25f3f` | Run metadata, timing, authorization, and denominators |
+| `execution_metadata.json` | 1,444 | `485426efa41be5bdfcdc8911b4b3c6eccc2a37225a2a18c4ecfe4355814601fd` | Run metadata, committed execution code SHA (`e494f12d`), timing, and denominators |
 | `input_integrity.json` | 877 | `df4c76fabdcd51ca421194477a2d78d63074c27fa58e1fbf6a266d0a469e55ce` | Verified input file hashes and quarantine audit |
 | `rerank_summary.json` | 5,363 | `3b8dfe7ceb9a15cca310e10aae13148f8848a9161ad44918fd8b02b67f8c2b92` | Full pooled and annual reranking metrics for both candidates |
 | `bootstrap_summary.json` | 1,328 | `8425b222d653359051d701d95ecb621b809c286690435dfd03eef857c329b227` | Paired calendar-block bootstrap distributions (21 and 42 sessions) |
 | `regime_diagnostic_summary.json` | 3,518 | `7c27447b6db142b63d41666bffaed4f83e5317cf9ffd002451682d6a12df5bdf` | SPY return regime breakdown across Lower, Middle, and Upper bins |
 | `checksums.sha256` | 454 | — | Manifest of SHA-256 digests for all summary JSON artifacts |
+
+### Superseded Artifacts — Run `2026-09-28-143047`
+Preserved in `docs/research/artifacts/LONG-002D2/2026-09-28-143047/` for historical provenance auditability:
+- **Disposition:** `superseded_execution_provenance_defect`
+- **Superseded Reason:** Executed before correction implementation commit; lacked committed `execution_code_sha` runtime recording.
+- **Empirical Equivalence:** 100% bit-for-bit identical on all four analysis artifacts (`bootstrap_summary.json`, `input_integrity.json`, `regime_diagnostic_summary.json`, `rerank_summary.json`).
 
 ---
 
