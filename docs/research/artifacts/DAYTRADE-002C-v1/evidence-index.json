@@ -1,6 +1,12 @@
 {
   "task_id": "DAYTRADE-002C",
   "execution_date": "2026-10-04",
+  "execution_validity": "invalid",
+  "invalidity_category": "evaluator_implementation_defect",
+  "invalidity_reason": "Normalized dataset uses bar_start but audit_ticker_session omitted bar_start from timestamp resolution, causing all rows to be skipped.",
+  "strategy_evidence_usable": false,
+  "reexecution_performed": false,
+  "governing_research_conclusion": "Execution invalid due to evaluator implementation defect; raw evaluator dispositions (inconclusive / step_2_evidence_sufficiency) are preserved as raw audit records but superseded for research interpretation; no valid empirical strategy evidence produced.",
   "spec_sha256": "dfad19dc6c88a009e05ef4a42a8b7ad9c64838ca84cdfd64a830a7f70f127127",
   "evaluator_code_sha": "774b37efe883233d0c3f2a888e37aebf0851d347",
   "preholdout_manifest_sha256": "1b0da463a5d928cce3019fcb785f014180650d824f7d04d713d4e8fd75fd8ebb",
@@ -17,6 +23,7 @@
   "approved_production_strategies": [],
   "production_promotion_eligible": false,
   "maximum_evidence_confidence": "limited_but_usable_evidence",
+  "evidence_confidence_note": "Spec confidence cap is limited_but_usable_evidence, but strategy_evidence_usable is false for this run due to execution invalidity.",
   "holdout_acquired": false,
   "holdout_evaluated": false,
   "holdout_status": "unread_not_acquired",
@@ -26,9 +33,11 @@
   "holdout_validation_lineage": null,
   "development": {
     "split": "development",
+    "raw_evaluator_disposition": "inconclusive",
     "disposition": "inconclusive",
     "disposition_step": "step_2_evidence_sufficiency",
     "disposition_reason": "sample_gate_failed (events=0, etfs=0, dates=0); data_quality_gate_failed (100.00%)",
+    "research_interpretation": "audit_evidence_only_invalid_execution",
     "gate_outcomes": {
       "baseline_uplift_gate": "FAIL",
       "breadth_gate": "FAIL",
@@ -61,9 +70,11 @@
   },
   "validation": {
     "split": "validation",
+    "raw_evaluator_disposition": "inconclusive",
     "disposition": "inconclusive",
     "disposition_step": "step_2_evidence_sufficiency",
     "disposition_reason": "sample_gate_failed (events=0, etfs=0, dates=0); data_quality_gate_failed (100.00%)",
+    "research_interpretation": "audit_evidence_only_invalid_execution",
     "gate_outcomes": {
       "baseline_uplift_gate": "FAIL",
       "breadth_gate": "FAIL",
