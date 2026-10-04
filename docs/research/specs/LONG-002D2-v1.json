@@ -1,0 +1,201 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "task_id": "LONG-002D2-INCREMENTAL-RERANK-001",
+  "spec_version": "v1",
+  "program": "LONG-002",
+  "phase": "LONG-002D2",
+  "title": "Incremental Ranking Value of Relative Volume Beyond Frozen VAM5",
+  "classification": "research_only",
+  "production_promotion_eligible": false,
+  "approved_production_strategies": [],
+  "authorization": {
+    "authorizer": "Gary Yang",
+    "authorization_date": "2026-09-28",
+    "scope": "development-only incremental-value study",
+    "unauthorized_actions": [
+      "validation_access",
+      "holdout_access",
+      "shadow_replay_access",
+      "production_promotion",
+      "production_score_changes",
+      "production_ranking_changes",
+      "long_002e",
+      "additional_feature_search"
+    ]
+  },
+  "upstream_evidence": {
+    "stage_c": {
+      "run_id": "2026-09-27-161243",
+      "execution_code_sha": "d6a300e556c690c83ff8b9265833667c02dc94ec",
+      "development_period": "2016-01-01 to 2020-12-31",
+      "primary_cutoff": "20:30",
+      "expected_denominator": 758731,
+      "expected_clean_events": 67257,
+      "expected_base_rate": 0.088644
+    },
+    "frozen_baseline": {
+      "comparator_id": "volatility_aware_momentum_5",
+      "formula": "0.5 * cross_sectional_momentum_5_pct + 0.5 * cross_sectional_atr_pct_14_pct",
+      "official_reference": {
+        "top_10": {
+          "count": 76407,
+          "clean_count": 11731,
+          "clean_rate": 0.153533,
+          "lift": 1.7320
+        },
+        "top_25": {
+          "count": 190288,
+          "clean_count": 24144,
+          "clean_rate": 0.126881,
+          "lift": 1.4314
+        }
+      }
+    },
+    "stage_d1": {
+      "run_id": "2026-09-28-003539",
+      "preregistration_spec_sha256": "cfa450824d269fb80a276ad9986835faf08f5d1a632722d0824502c68f738381"
+    },
+    "required_input_digests": {
+      "feature_table.parquet": {
+        "path": "data/research/long_002d1/feature_table.parquet",
+        "sha256": "7dc09bdeed02c44eb48a0143884deb0ad7795466a08e25fd26c32640a0c813d8"
+      },
+      "baseline_comparator_outputs.parquet": {
+        "path": "data/research/long_002c/baseline_comparator_outputs.parquet",
+        "sha256": "faec26ddb26fd5a17feddf5ae09232a8aeb8ba24c3529abd88422682357e4734"
+      },
+      "outcome_matrix.parquet": {
+        "path": "data/research/long_002c/outcome_matrix.parquet",
+        "sha256": "b59a5f7f8a8a0498abdadb156299719f43ffa8854df5cad8e20a6cd4fbe237c3"
+      }
+    }
+  },
+  "study_population": {
+    "split": "development",
+    "start_date": "2016-01-01",
+    "end_date": "2020-12-31",
+    "cutoff_time": "20:30",
+    "raw_outcome_eligible_required": true,
+    "split_boundary_purged_allowed": false,
+    "quarantined_splits": [
+      "validation (2021-01-01 to 2022-12-31)",
+      "holdout (2023-01-01 to 2025-12-31)",
+      "shadow (2026-01-01 onward)"
+    ],
+    "out_of_scope_cutoffs": [
+      "09:00"
+    ]
+  },
+  "primary_endpoint": {
+    "target_pct": 10.0,
+    "horizon_sessions": 10,
+    "label_column": "clean_target_reached",
+    "expected_base_rate": 0.088644
+  },
+  "primary_candidate": {
+    "feature_id": "relative_volume_20",
+    "role": "primary_candidate",
+    "hypothesized_direction": "HIGHER",
+    "formula": "volume_t / median(volume over PRIOR 20 completed sessions, excluding t)",
+    "price_series": "volume",
+    "min_lookback_sessions": 21
+  },
+  "secondary_challenger": {
+    "feature_id": "sma20_slope_5",
+    "role": "secondary_challenger",
+    "hypothesized_direction": "HIGHER",
+    "formula": "SMA20_t / SMA20_t-5 - 1",
+    "price_series": "split_normalized_close",
+    "min_lookback_sessions": 25,
+    "collinearity_note": "D1 pooled Spearman rho with return_20 is ~+0.9190; descriptive challenger only, does not alter primary status"
+  },
+  "spy_regime_diagnostic": {
+    "feature_id": "spy_return_20",
+    "role": "market_regime_diagnostic",
+    "formula": "SPY close_t / SPY close_t-20 - 1",
+    "price_series": "split_normalized_close (SPY)",
+    "min_lookback_sessions": 20,
+    "hypothesized_direction": "HIGHER",
+    "description": "Date-level market-regime context diagnostic only; does not affect selection or status",
+    "bins": [
+      {
+        "name": "lower_regime",
+        "description": "bottom 30% of DEVELOPMENT dates by SPY 20-session return",
+        "percentile_range": [0.0, 30.0]
+      },
+      {
+        "name": "middle_regime",
+        "description": "middle 40% of DEVELOPMENT dates by SPY 20-session return",
+        "percentile_range": [30.0, 70.0]
+      },
+      {
+        "name": "upper_regime",
+        "description": "top 30% of DEVELOPMENT dates by SPY 20-session return",
+        "percentile_range": [70.0, 100.0]
+      }
+    ]
+  },
+  "reranking_algorithm": {
+    "description": "Controlled coverage-matched reranking within frozen VAM5 top-25 pool",
+    "step_1_join": {
+      "keys": [
+        "immutable_security_id",
+        "as_of_date",
+        "cutoff_time"
+      ],
+      "required_cutoff": "20:30"
+    },
+    "step_2_common_population": "Observations where candidate feature is not-null, frozen VAM5 record exists, and clean_target_reached is not-null",
+    "step_3_k_date": "Count of frozen VAM5 top_10_flag == True on that date within candidate common population",
+    "step_4_matched_baseline": "Rank common population on date by frozen VAM5 ranking (cross_sectional_rank ASC, tie-break immutable_security_id ASC), select best K(date)",
+    "step_5_candidate_pool": "Filter common population on date to VAM5 top_25_flag == True",
+    "step_6_candidate_rerank": "Rank candidate pool on date by candidate feature HIGHER (descending), tie-break immutable_security_id ASC, select best K(date)",
+    "step_7_equality_assertion": "candidate_selected_count == matched_vam5_selected_count == K(date) for every date"
+  },
+  "bootstrap_configuration": {
+    "method": "paired_fixed_non_overlapping_calendar_block_bootstrap",
+    "primary_block_size_sessions": 21,
+    "robustness_block_size_sessions": 42,
+    "replicates": 1000,
+    "seed": 20260928,
+    "metric": "candidate_precision - matched_vam5_precision"
+  },
+  "status_decision_rules": {
+    "allowed_statuses": [
+      "supported_for_next_stage",
+      "inconclusive",
+      "not_supported",
+      "invalid_data_contract"
+    ],
+    "supported_for_next_stage_criteria": {
+      "pooled_precision_delta_gt_zero": true,
+      "bootstrap_21_ci_2_5_gt_zero": true,
+      "positive_annual_delta_min_years": 4,
+      "bootstrap_42_median_gt_zero": true,
+      "all_integrity_gates_passed": true
+    },
+    "not_supported_criteria": [
+      {
+        "condition": "bootstrap_21_ci_97_5_lte_zero"
+      },
+      {
+        "condition": "pooled_precision_delta_lte_zero_and_annual_positive_lte_2"
+      }
+    ],
+    "inconclusive_criteria": "All other statistically valid outcomes",
+    "invalid_data_contract_criteria": "Any required data quality or integrity gate fails"
+  },
+  "data_quality_gates": {
+    "min_candidate_coverage_within_vam5_top_25": 0.95,
+    "candidate_pool_gte_k_date_every_date": true,
+    "candidate_selected_eq_baseline_selected_every_date": true,
+    "join_keys_unique": true,
+    "dates_within_dev_window_only": true,
+    "cutoff_20_30_only": true,
+    "zero_validation_rows": true,
+    "zero_holdout_rows": true,
+    "zero_shadow_rows": true,
+    "zero_provider_network_calls": true,
+    "input_hashes_exact_match": true
+  }
+}
