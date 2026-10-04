@@ -1,0 +1,1 @@
+ticker,session_date,direction,signal_return,threshold,entry_time,exit_time,entry_price,exit_price,gross_return,net_return_0bps,net_return_2bps,net_return_5bps,matched_baseline_net_2bps,uplift_net_2bps,split
