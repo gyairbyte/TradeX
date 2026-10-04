@@ -4,7 +4,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from tradex.research.long_002d2.artifacts import write_d2_artifacts
+from tradex.research.long_002d2.cli import main
 from tradex.research.long_002d2.models import (
     AnnualBreakdown,
     BootstrapDistributionSummary,
@@ -147,3 +150,28 @@ def test_write_d2_artifacts(tmp_path: Path) -> None:
     assert meta["execution_code_sha"] == "dummy_exec_sha"
 
     assert (tmp_path / "checksums.sha256").exists()
+
+
+def test_cli_execution_code_sha_mismatch_fails_closed() -> None:
+    """Verify that specifying a mismatched --execution-code-sha fails closed immediately."""
+    with pytest.raises(ValueError, match="EXECUTION CODE SHA MISMATCH"):
+        main(["--execution-code-sha", "0123456789abcdef0123456789abcdef01234567"])
+
+
+def test_cli_execution_code_sha_unknown_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify that an unresolvable git HEAD fails closed with RuntimeError."""
+    monkeypatch.setattr("tradex.research.long_002d2.cli.get_git_commit_sha", lambda: "unknown")
+    with pytest.raises(RuntimeError, match="Cannot record official execution metadata: git commit SHA is unknown"):
+        main([])
+
+
+def test_cli_execution_code_sha_matching_passes_guard(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify that matching --execution-code-sha passes provenance guard before execution."""
+    monkeypatch.setattr("tradex.research.long_002d2.cli.get_git_commit_sha", lambda: "matchingsha123")
+
+    def _stop_before_heavy_loading() -> str:
+        raise RuntimeError("passed_guard_sentinel")
+
+    monkeypatch.setattr("tradex.research.long_002d2.cli.verify_spec_integrity", _stop_before_heavy_loading)
+    with pytest.raises(RuntimeError, match="passed_guard_sentinel"):
+        main(["--execution-code-sha", "matchingsha123"])

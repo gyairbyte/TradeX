@@ -76,6 +76,19 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
 
+    # Verify execution code provenance early to prevent spoofing
+    git_sha = get_git_commit_sha()
+    if not git_sha or git_sha == "unknown":
+        raise RuntimeError("Cannot record official execution metadata: git commit SHA is unknown")
+
+    if args.execution_code_sha and args.execution_code_sha != git_sha:
+        raise ValueError(
+            f"EXECUTION CODE SHA MISMATCH: supplied --execution-code-sha '{args.execution_code_sha}' "
+            f"does not match runtime git HEAD '{git_sha}'"
+        )
+
+    exec_sha = git_sha
+
     start_wall = time.time()
     start_iso = datetime.datetime.now(datetime.UTC).isoformat()
     run_id = args.run_id or datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d-%H%M%S")
@@ -232,11 +245,6 @@ def main(argv: list[str] | None = None) -> int:
         "end_iso": end_iso,
         "duration_seconds": duration_s,
     }
-
-    # Determine execution code commit SHA
-    exec_sha = args.execution_code_sha or get_git_commit_sha()
-    if not exec_sha or exec_sha == "unknown":
-        raise RuntimeError("Cannot record official execution metadata: git commit SHA is unknown")
 
     print("\n[6/6] Writing committed summary artifacts...")
     print(f"  Execution Code SHA: {exec_sha}")
