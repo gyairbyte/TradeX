@@ -1,0 +1,99 @@
+{
+  "diagnostic_feature": "spy_return_20",
+  "method": "date_level_ranking_three_fixed_bins",
+  "disclaimer": "Purely descriptive market-regime context diagnostic; did not filter securities, alter candidate direction, or affect primary status",
+  "primary_candidate": {
+    "feature_id": "relative_volume_20",
+    "regimes": [
+      {
+        "regime_name": "lower_regime",
+        "description": "bottom 30% of DEVELOPMENT dates by SPY 20-session return",
+        "percentile_min": 0.0,
+        "percentile_max": 30.0,
+        "date_count": 294,
+        "selected_count": 23404,
+        "candidate_clean_count": 3685,
+        "candidate_precision": 0.157452,
+        "matched_vam5_clean_count": 4326,
+        "matched_vam5_precision": 0.18484,
+        "absolute_delta": -0.027388,
+        "precision_ratio": 0.8518
+      },
+      {
+        "regime_name": "middle_regime",
+        "description": "middle 40% of DEVELOPMENT dates by SPY 20-session return",
+        "percentile_min": 30.0,
+        "percentile_max": 70.0,
+        "date_count": 393,
+        "selected_count": 28750,
+        "candidate_clean_count": 2494,
+        "candidate_precision": 0.086748,
+        "matched_vam5_clean_count": 3352,
+        "matched_vam5_precision": 0.116591,
+        "absolute_delta": -0.029843,
+        "precision_ratio": 0.744
+      },
+      {
+        "regime_name": "upper_regime",
+        "description": "top 30% of DEVELOPMENT dates by SPY 20-session return",
+        "percentile_min": 70.0,
+        "percentile_max": 100.0,
+        "date_count": 295,
+        "selected_count": 24253,
+        "candidate_clean_count": 3320,
+        "candidate_precision": 0.13689,
+        "matched_vam5_clean_count": 4053,
+        "matched_vam5_precision": 0.167113,
+        "absolute_delta": -0.030223,
+        "precision_ratio": 0.8191
+      }
+    ]
+  },
+  "secondary_challenger": {
+    "feature_id": "sma20_slope_5",
+    "regimes": [
+      {
+        "regime_name": "lower_regime",
+        "description": "bottom 30% of DEVELOPMENT dates by SPY 20-session return",
+        "percentile_min": 0.0,
+        "percentile_max": 30.0,
+        "date_count": 294,
+        "selected_count": 23404,
+        "candidate_clean_count": 3521,
+        "candidate_precision": 0.150444,
+        "matched_vam5_clean_count": 4326,
+        "matched_vam5_precision": 0.18484,
+        "absolute_delta": -0.034396,
+        "precision_ratio": 0.8139
+      },
+      {
+        "regime_name": "middle_regime",
+        "description": "middle 40% of DEVELOPMENT dates by SPY 20-session return",
+        "percentile_min": 30.0,
+        "percentile_max": 70.0,
+        "date_count": 393,
+        "selected_count": 28750,
+        "candidate_clean_count": 2384,
+        "candidate_precision": 0.082922,
+        "matched_vam5_clean_count": 3352,
+        "matched_vam5_precision": 0.116591,
+        "absolute_delta": -0.03367,
+        "precision_ratio": 0.7112
+      },
+      {
+        "regime_name": "upper_regime",
+        "description": "top 30% of DEVELOPMENT dates by SPY 20-session return",
+        "percentile_min": 70.0,
+        "percentile_max": 100.0,
+        "date_count": 295,
+        "selected_count": 24253,
+        "candidate_clean_count": 3260,
+        "candidate_precision": 0.134416,
+        "matched_vam5_clean_count": 4053,
+        "matched_vam5_precision": 0.167113,
+        "absolute_delta": -0.032697,
+        "precision_ratio": 0.8043
+      }
+    ]
+  }
+}

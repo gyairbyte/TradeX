@@ -1,0 +1,24 @@
+{
+  "feature_table_path": "data\\research\\long_002d1\\feature_table.parquet",
+  "feature_table_sha256": "7dc09bdeed02c44eb48a0143884deb0ad7795466a08e25fd26c32640a0c813d8",
+  "feature_table_rows": 758731,
+  "baseline_path": "data\\research\\long_002c\\baseline_comparator_outputs.parquet",
+  "baseline_sha256": "faec26ddb26fd5a17feddf5ae09232a8aeb8ba24c3529abd88422682357e4734",
+  "baseline_rows": 758731,
+  "outcome_matrix_path": null,
+  "outcome_matrix_sha256": "not_used_or_absent",
+  "zero_validation_rows": true,
+  "zero_holdout_rows": true,
+  "zero_shadow_rows": true,
+  "zero_network_calls": true,
+  "join_keys_unique": true,
+  "all_dates_within_dev": true,
+  "all_cutoffs_20_30": true,
+  "gates_passed": true,
+  "gate_details": {
+    "merged_rows": 758731,
+    "dev_start": "2016-01-01",
+    "dev_end": "2020-12-31",
+    "cutoff": "20:30"
+  }
+}
