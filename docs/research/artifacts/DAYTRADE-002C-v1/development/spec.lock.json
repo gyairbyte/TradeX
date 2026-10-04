@@ -1,0 +1,24 @@
+{
+  "primary_cost_bps_per_side": 2.0,
+  "spec_sha256": "dfad19dc6c88a009e05ef4a42a8b7ad9c64838ca84cdfd64a830a7f70f127127",
+  "split": "development",
+  "task_id": "DAYTRADE-002A",
+  "threshold_percentile": 80.0,
+  "universe": [
+    "XLK",
+    "XLV",
+    "XLF",
+    "XLY",
+    "XLP",
+    "XLE",
+    "XLI",
+    "XLB",
+    "XLU",
+    "XLRE",
+    "XLC",
+    "SPY",
+    "QQQ",
+    "IWM",
+    "DIA"
+  ]
+}
