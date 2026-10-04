@@ -1,0 +1,222 @@
+{
+  "packet_count": 24,
+  "packets": [
+    {
+      "case_id": "D3A-PILOT-001",
+      "data_quality_warnings_count": 0,
+      "normalized_base_price": 100.0,
+      "pit_data_confidence_status": "verified_local_pit_artifacts_only",
+      "relative_bar_count": 61,
+      "stage_a_packet_file": "cases/D3A-PILOT-001_stage_a.json",
+      "stage_b_packet_file": "cases/D3A-PILOT-001_stage_b.json"
+    },
+    {
+      "case_id": "D3A-PILOT-002",
+      "data_quality_warnings_count": 0,
+      "normalized_base_price": 100.0,
+      "pit_data_confidence_status": "verified_local_pit_artifacts_only",
+      "relative_bar_count": 61,
+      "stage_a_packet_file": "cases/D3A-PILOT-002_stage_a.json",
+      "stage_b_packet_file": "cases/D3A-PILOT-002_stage_b.json"
+    },
+    {
+      "case_id": "D3A-PILOT-003",
+      "data_quality_warnings_count": 0,
+      "normalized_base_price": 100.0,
+      "pit_data_confidence_status": "verified_local_pit_artifacts_only",
+      "relative_bar_count": 61,
+      "stage_a_packet_file": "cases/D3A-PILOT-003_stage_a.json",
+      "stage_b_packet_file": "cases/D3A-PILOT-003_stage_b.json"
+    },
+    {
+      "case_id": "D3A-PILOT-004",
+      "data_quality_warnings_count": 0,
+      "normalized_base_price": 100.0,
+      "pit_data_confidence_status": "verified_local_pit_artifacts_only",
+      "relative_bar_count": 61,
+      "stage_a_packet_file": "cases/D3A-PILOT-004_stage_a.json",
+      "stage_b_packet_file": "cases/D3A-PILOT-004_stage_b.json"
+    },
+    {
+      "case_id": "D3A-PILOT-005",
+      "data_quality_warnings_count": 0,
+      "normalized_base_price": 100.0,
+      "pit_data_confidence_status": "verified_local_pit_artifacts_only",
+      "relative_bar_count": 61,
+      "stage_a_packet_file": "cases/D3A-PILOT-005_stage_a.json",
+      "stage_b_packet_file": "cases/D3A-PILOT-005_stage_b.json"
+    },
+    {
+      "case_id": "D3A-PILOT-006",
+      "data_quality_warnings_count": 0,
+      "normalized_base_price": 100.0,
+      "pit_data_confidence_status": "verified_local_pit_artifacts_only",
+      "relative_bar_count": 61,
+      "stage_a_packet_file": "cases/D3A-PILOT-006_stage_a.json",
+      "stage_b_packet_file": "cases/D3A-PILOT-006_stage_b.json"
+    },
+    {
+      "case_id": "D3A-PILOT-007",
+      "data_quality_warnings_count": 0,
+      "normalized_base_price": 100.0,
+      "pit_data_confidence_status": "verified_local_pit_artifacts_only",
+      "relative_bar_count": 61,
+      "stage_a_packet_file": "cases/D3A-PILOT-007_stage_a.json",
+      "stage_b_packet_file": "cases/D3A-PILOT-007_stage_b.json"
+    },
+    {
+      "case_id": "D3A-PILOT-008",
+      "data_quality_warnings_count": 0,
+      "normalized_base_price": 100.0,
+      "pit_data_confidence_status": "verified_local_pit_artifacts_only",
+      "relative_bar_count": 61,
+      "stage_a_packet_file": "cases/D3A-PILOT-008_stage_a.json",
+      "stage_b_packet_file": "cases/D3A-PILOT-008_stage_b.json"
+    },
+    {
+      "case_id": "D3A-PILOT-009",
+      "data_quality_warnings_count": 0,
+      "normalized_base_price": 100.0,
+      "pit_data_confidence_status": "verified_local_pit_artifacts_only",
+      "relative_bar_count": 61,
+      "stage_a_packet_file": "cases/D3A-PILOT-009_stage_a.json",
+      "stage_b_packet_file": "cases/D3A-PILOT-009_stage_b.json"
+    },
+    {
+      "case_id": "D3A-PILOT-010",
+      "data_quality_warnings_count": 0,
+      "normalized_base_price": 100.0,
+      "pit_data_confidence_status": "verified_local_pit_artifacts_only",
+      "relative_bar_count": 61,
+      "stage_a_packet_file": "cases/D3A-PILOT-010_stage_a.json",
+      "stage_b_packet_file": "cases/D3A-PILOT-010_stage_b.json"
+    },
+    {
+      "case_id": "D3A-PILOT-011",
+      "data_quality_warnings_count": 0,
+      "normalized_base_price": 100.0,
+      "pit_data_confidence_status": "verified_local_pit_artifacts_only",
+      "relative_bar_count": 61,
+      "stage_a_packet_file": "cases/D3A-PILOT-011_stage_a.json",
+      "stage_b_packet_file": "cases/D3A-PILOT-011_stage_b.json"
+    },
+    {
+      "case_id": "D3A-PILOT-012",
+      "data_quality_warnings_count": 0,
+      "normalized_base_price": 100.0,
+      "pit_data_confidence_status": "verified_local_pit_artifacts_only",
+      "relative_bar_count": 61,
+      "stage_a_packet_file": "cases/D3A-PILOT-012_stage_a.json",
+      "stage_b_packet_file": "cases/D3A-PILOT-012_stage_b.json"
+    },
+    {
+      "case_id": "D3A-PILOT-013",
+      "data_quality_warnings_count": 0,
+      "normalized_base_price": 100.0,
+      "pit_data_confidence_status": "verified_local_pit_artifacts_only",
+      "relative_bar_count": 61,
+      "stage_a_packet_file": "cases/D3A-PILOT-013_stage_a.json",
+      "stage_b_packet_file": "cases/D3A-PILOT-013_stage_b.json"
+    },
+    {
+      "case_id": "D3A-PILOT-014",
+      "data_quality_warnings_count": 0,
+      "normalized_base_price": 100.0,
+      "pit_data_confidence_status": "verified_local_pit_artifacts_only",
+      "relative_bar_count": 61,
+      "stage_a_packet_file": "cases/D3A-PILOT-014_stage_a.json",
+      "stage_b_packet_file": "cases/D3A-PILOT-014_stage_b.json"
+    },
+    {
+      "case_id": "D3A-PILOT-015",
+      "data_quality_warnings_count": 0,
+      "normalized_base_price": 100.0,
+      "pit_data_confidence_status": "verified_local_pit_artifacts_only",
+      "relative_bar_count": 61,
+      "stage_a_packet_file": "cases/D3A-PILOT-015_stage_a.json",
+      "stage_b_packet_file": "cases/D3A-PILOT-015_stage_b.json"
+    },
+    {
+      "case_id": "D3A-PILOT-016",
+      "data_quality_warnings_count": 0,
+      "normalized_base_price": 100.0,
+      "pit_data_confidence_status": "verified_local_pit_artifacts_only",
+      "relative_bar_count": 61,
+      "stage_a_packet_file": "cases/D3A-PILOT-016_stage_a.json",
+      "stage_b_packet_file": "cases/D3A-PILOT-016_stage_b.json"
+    },
+    {
+      "case_id": "D3A-PILOT-017",
+      "data_quality_warnings_count": 0,
+      "normalized_base_price": 100.0,
+      "pit_data_confidence_status": "verified_local_pit_artifacts_only",
+      "relative_bar_count": 61,
+      "stage_a_packet_file": "cases/D3A-PILOT-017_stage_a.json",
+      "stage_b_packet_file": "cases/D3A-PILOT-017_stage_b.json"
+    },
+    {
+      "case_id": "D3A-PILOT-018",
+      "data_quality_warnings_count": 0,
+      "normalized_base_price": 100.0,
+      "pit_data_confidence_status": "verified_local_pit_artifacts_only",
+      "relative_bar_count": 61,
+      "stage_a_packet_file": "cases/D3A-PILOT-018_stage_a.json",
+      "stage_b_packet_file": "cases/D3A-PILOT-018_stage_b.json"
+    },
+    {
+      "case_id": "D3A-PILOT-019",
+      "data_quality_warnings_count": 0,
+      "normalized_base_price": 100.0,
+      "pit_data_confidence_status": "verified_local_pit_artifacts_only",
+      "relative_bar_count": 61,
+      "stage_a_packet_file": "cases/D3A-PILOT-019_stage_a.json",
+      "stage_b_packet_file": "cases/D3A-PILOT-019_stage_b.json"
+    },
+    {
+      "case_id": "D3A-PILOT-020",
+      "data_quality_warnings_count": 0,
+      "normalized_base_price": 100.0,
+      "pit_data_confidence_status": "verified_local_pit_artifacts_only",
+      "relative_bar_count": 61,
+      "stage_a_packet_file": "cases/D3A-PILOT-020_stage_a.json",
+      "stage_b_packet_file": "cases/D3A-PILOT-020_stage_b.json"
+    },
+    {
+      "case_id": "D3A-PILOT-021",
+      "data_quality_warnings_count": 0,
+      "normalized_base_price": 100.0,
+      "pit_data_confidence_status": "verified_local_pit_artifacts_only",
+      "relative_bar_count": 61,
+      "stage_a_packet_file": "cases/D3A-PILOT-021_stage_a.json",
+      "stage_b_packet_file": "cases/D3A-PILOT-021_stage_b.json"
+    },
+    {
+      "case_id": "D3A-PILOT-022",
+      "data_quality_warnings_count": 0,
+      "normalized_base_price": 100.0,
+      "pit_data_confidence_status": "verified_local_pit_artifacts_only",
+      "relative_bar_count": 61,
+      "stage_a_packet_file": "cases/D3A-PILOT-022_stage_a.json",
+      "stage_b_packet_file": "cases/D3A-PILOT-022_stage_b.json"
+    },
+    {
+      "case_id": "D3A-PILOT-023",
+      "data_quality_warnings_count": 0,
+      "normalized_base_price": 100.0,
+      "pit_data_confidence_status": "verified_local_pit_artifacts_only",
+      "relative_bar_count": 61,
+      "stage_a_packet_file": "cases/D3A-PILOT-023_stage_a.json",
+      "stage_b_packet_file": "cases/D3A-PILOT-023_stage_b.json"
+    },
+    {
+      "case_id": "D3A-PILOT-024",
+      "data_quality_warnings_count": 0,
+      "normalized_base_price": 100.0,
+      "pit_data_confidence_status": "verified_local_pit_artifacts_only",
+      "relative_bar_count": 61,
+      "stage_a_packet_file": "cases/D3A-PILOT-024_stage_a.json",
+      "stage_b_packet_file": "cases/D3A-PILOT-024_stage_b.json"
+    }
+  ],
+  "task_id": "LONG-002D3A-BLINDED-REVIEW-PILOT-001"
+}

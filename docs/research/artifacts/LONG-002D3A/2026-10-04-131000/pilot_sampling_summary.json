@@ -1,0 +1,49 @@
+{
+  "annual_distribution": {
+    "2016": 4,
+    "2017": 5,
+    "2018": 5,
+    "2019": 5,
+    "2020": 5
+  },
+  "case_id_pattern": "D3A-PILOT-{03d}",
+  "case_ids": [
+    "D3A-PILOT-001",
+    "D3A-PILOT-002",
+    "D3A-PILOT-003",
+    "D3A-PILOT-004",
+    "D3A-PILOT-005",
+    "D3A-PILOT-006",
+    "D3A-PILOT-007",
+    "D3A-PILOT-008",
+    "D3A-PILOT-009",
+    "D3A-PILOT-010",
+    "D3A-PILOT-011",
+    "D3A-PILOT-012",
+    "D3A-PILOT-013",
+    "D3A-PILOT-014",
+    "D3A-PILOT-015",
+    "D3A-PILOT-016",
+    "D3A-PILOT-017",
+    "D3A-PILOT-018",
+    "D3A-PILOT-019",
+    "D3A-PILOT-020",
+    "D3A-PILOT-021",
+    "D3A-PILOT-022",
+    "D3A-PILOT-023",
+    "D3A-PILOT-024"
+  ],
+  "excluded_keys_count_from_main": 24,
+  "quota_per_stratum": 6,
+  "sample_size": 24,
+  "seed": 20261003,
+  "strata_counts": {
+    "adverse_trap": 6,
+    "near_miss": 6,
+    "ordinary_non_mover": 6,
+    "positive_master_episode": 6
+  },
+  "task_id": "LONG-002D3A-BLINDED-REVIEW-PILOT-001",
+  "ticker_overlap_count": 0,
+  "unique_tickers_count": 24
+}

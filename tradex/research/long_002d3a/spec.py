@@ -27,6 +27,12 @@ PILOT_SEED = 20261003
 MAIN_STUDY_SIZE = 240
 MAIN_STUDY_SEED = 20261004
 
+# Aliases
+SPEC_SHA256 = EXPECTED_SPEC_SHA256
+FUTURE_MAIN_SIZE = MAIN_STUDY_SIZE
+FUTURE_MAIN_SEED = MAIN_STUDY_SEED
+PREREGISTRATION_COMMIT_SHA = "a6345f97330358b1dfbbdf7c11e6aba9f10e2c87"
+
 STRATA_PRECEDENCE = (
     "positive_master_episode",
     "near_miss",
@@ -73,6 +79,26 @@ def verify_spec_integrity(spec_path: Path = SPEC_PATH) -> str:
             f"D3A Spec SHA-256 integrity breach! Expected {EXPECTED_SPEC_SHA256}, got {digest}"
         )
     return digest
+
+
+verify_spec_sha256 = verify_spec_integrity
+
+
+def verify_upstream_hashes(stage_c_dir: Path) -> None:
+    """Verify hashes of Stage C upstream input files."""
+    for fname, expected in UPSTREAM_INPUT_HASHES.items():
+        if fname.endswith("feature_table.parquet"):
+            continue
+        p = stage_c_dir / fname
+        if not p.exists():
+            raise FileNotFoundError(f"Missing upstream file: {p}")
+        h = hashlib.sha256()
+        with open(p, "rb") as f:
+            while chunk := f.read(1024 * 1024):
+                h.update(chunk)
+        digest = h.hexdigest()
+        if digest != expected:
+            raise ValueError(f"Hash mismatch for {fname}: expected {expected}, got {digest}")
 
 
 def enforce_split_guard(as_of_date: str) -> None:

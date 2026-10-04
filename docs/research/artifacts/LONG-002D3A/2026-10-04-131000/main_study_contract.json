@@ -1,0 +1,139 @@
+{
+  "batching_target": "12 batches of 20 cases",
+  "contract_title": "Future Main-Study Sampling Contract Foundation",
+  "execution_status": "NOT_EXECUTED_IN_THIS_PR",
+  "future_main_seed": 20261004,
+  "generation_gate": "Requires formal Gary authorization and completed pilot workflow review before generation",
+  "main_study_sample_size": 240,
+  "pilot_cases_excluded_count": 24,
+  "pilot_excluded_keys": [
+    [
+      "FIGI_BBG0065B7K40",
+      "2020-02-27",
+      "20:30"
+    ],
+    [
+      "FIGI_BBG001S6G4K5",
+      "2016-12-30",
+      "20:30"
+    ],
+    [
+      "FIGI_BBG001T8JKN8",
+      "2018-02-27",
+      "20:30"
+    ],
+    [
+      "FIGI_BBG001S89N72",
+      "2019-12-02",
+      "20:30"
+    ],
+    [
+      "FIGI_BBG001S5TZM2",
+      "2017-12-27",
+      "20:30"
+    ],
+    [
+      "FIGI_BBG001S6C009",
+      "2018-10-23",
+      "20:30"
+    ],
+    [
+      "FIGI_BBG001S6PXB1",
+      "2016-12-30",
+      "20:30"
+    ],
+    [
+      "FIGI_BBG001S5WQK0",
+      "2017-04-27",
+      "20:30"
+    ],
+    [
+      "FIGI_BBG001V0PDL3",
+      "2017-10-26",
+      "20:30"
+    ],
+    [
+      "FIGI_BBG004MN1R50",
+      "2018-09-04",
+      "20:30"
+    ],
+    [
+      "FIGI_BBG001S5RNN0",
+      "2019-01-29",
+      "20:30"
+    ],
+    [
+      "FIGI_BBG001S7H752",
+      "2020-07-08",
+      "20:30"
+    ],
+    [
+      "FIGI_BBG001V0NR70",
+      "2018-08-02",
+      "20:30"
+    ],
+    [
+      "FIGI_BBG001S5TKX3",
+      "2016-12-30",
+      "20:30"
+    ],
+    [
+      "FIGI_BBG001S5RLD5",
+      "2018-03-14",
+      "20:30"
+    ],
+    [
+      "FIGI_BBG001S5WYZ7",
+      "2019-05-17",
+      "20:30"
+    ],
+    [
+      "FIGI_BBG001S5PTM0",
+      "2020-08-28",
+      "20:30"
+    ],
+    [
+      "FIGI_BBG001S5V466",
+      "2019-08-27",
+      "20:30"
+    ],
+    [
+      "FIGI_BBG001S5VXD4",
+      "2019-02-25",
+      "20:30"
+    ],
+    [
+      "FIGI_BBG001S7TWW4",
+      "2020-09-18",
+      "20:30"
+    ],
+    [
+      "FIGI_BBG001S5PC01",
+      "2020-08-04",
+      "20:30"
+    ],
+    [
+      "FIGI_BBG001S5XDC7",
+      "2017-04-28",
+      "20:30"
+    ],
+    [
+      "FIGI_BBG001S8FKK6",
+      "2017-11-16",
+      "20:30"
+    ],
+    [
+      "FIGI_BBG001S77MK3",
+      "2016-12-30",
+      "20:30"
+    ]
+  ],
+  "strata_counts": {
+    "adverse_trap": 40,
+    "near_miss": 40,
+    "ordinary_non_mover": 40,
+    "positive_master_episode": 120
+  },
+  "task_id": "LONG-002D3A-BLINDED-REVIEW-PILOT-001",
+  "ticker_frequency_limit": "Normally no ticker more than twice"
+}
