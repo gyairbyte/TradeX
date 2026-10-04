@@ -1,0 +1,46 @@
+{
+  "task_id": "LONG-002D2-INCREMENTAL-RERANK-001",
+  "run_id": "2026-09-28-143047",
+  "program": "LONG-002",
+  "phase": "LONG-002D2",
+  "title": "Incremental Ranking Value of Relative Volume Beyond Frozen VAM5",
+  "classification": "research_only",
+  "disposition": "superseded_execution_provenance_defect",
+  "superseded_reason": "Executed before correction implementation commit; lacked committed execution_code_sha runtime recording.",
+  "superseded_by_run_id": "2026-10-04-002604",
+  "production_promotion_eligible": false,
+  "approved_production_strategies": [],
+  "preregistration": {
+    "spec_sha256": "db82482333fb0c9810279d289e87e82e7274802fae82269cbf1b63c7ad2a6fb8",
+    "preregistration_commit_sha": "494caa8df3e60bae15e5015ad98a42a13eb109f3",
+    "authorization": {
+      "authorizer": "Gary Yang",
+      "authorization_date": "2026-09-28",
+      "scope": "development-only incremental-value study"
+    }
+  },
+  "timing": {
+    "start_iso": "2026-09-28T14:30:47.638964+00:00",
+    "end_iso": "2026-09-28T14:31:02.962181+00:00",
+    "duration_seconds": 15.32
+  },
+  "frozen_baseline_reference": {
+    "comparator_id": "volatility_aware_momentum_5",
+    "formula": "0.5 * cross_sectional_momentum_5_pct + 0.5 * cross_sectional_atr_pct_14_pct",
+    "top_10": {
+      "count": 76407,
+      "clean_rate": 0.153533,
+      "lift": 1.732
+    },
+    "top_25": {
+      "count": 190288,
+      "clean_rate": 0.126881,
+      "lift": 1.4314
+    }
+  },
+  "evaluated_candidates": [
+    "relative_volume_20",
+    "sma20_slope_5"
+  ],
+  "primary_status": "not_supported"
+}
