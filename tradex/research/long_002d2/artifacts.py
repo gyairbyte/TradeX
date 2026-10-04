@@ -30,7 +30,7 @@ def serialize_json_artifact(payload: Any, path: Path) -> str:
     """Serialize a Python structure to canonical formatted JSON and return its SHA-256."""
     text = json.dumps(payload, indent=2, sort_keys=False) + "\n"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+    path.write_text(text, encoding="utf-8", newline="\n")
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
@@ -38,6 +38,7 @@ def write_d2_artifacts(
     run_id: str,
     output_dir: Path,
     preregistration_commit_sha: str,
+    execution_code_sha: str,
     audit: InputIntegrityAudit,
     primary_result: CandidateEvaluationResult,
     challenger_result: CandidateEvaluationResult,
@@ -51,6 +52,7 @@ def write_d2_artifacts(
     metadata_payload = {
         "task_id": TASK_ID,
         "run_id": run_id,
+        "execution_code_sha": execution_code_sha,
         "program": PROGRAM,
         "phase": PHASE,
         "title": "Incremental Ranking Value of Relative Volume Beyond Frozen VAM5",
@@ -181,6 +183,6 @@ def write_d2_artifacts(
     # 6. checksums.sha256
     lines = [f"{sha}  {fname}\n" for fname, sha in sorted(checksums.items())]
     p_chk = output_dir / "checksums.sha256"
-    p_chk.write_text("".join(lines), encoding="utf-8")
+    p_chk.write_text("".join(lines), encoding="utf-8", newline="\n")
 
     return checksums

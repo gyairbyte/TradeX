@@ -67,6 +67,12 @@ def main(argv: list[str] | None = None) -> int:
         default="494caa8df3e60bae15e5015ad98a42a13eb109f3",
         help="Exact preregistration commit SHA",
     )
+    parser.add_argument(
+        "--execution-code-sha",
+        type=str,
+        default=None,
+        help="Optional explicit execution commit SHA (default: runtime git rev-parse HEAD)",
+    )
 
     args = parser.parse_args(argv)
 
@@ -227,11 +233,18 @@ def main(argv: list[str] | None = None) -> int:
         "duration_seconds": duration_s,
     }
 
+    # Determine execution code commit SHA
+    exec_sha = args.execution_code_sha or get_git_commit_sha()
+    if not exec_sha or exec_sha == "unknown":
+        raise RuntimeError("Cannot record official execution metadata: git commit SHA is unknown")
+
     print("\n[6/6] Writing committed summary artifacts...")
+    print(f"  Execution Code SHA: {exec_sha}")
     checksums = write_d2_artifacts(
         run_id=run_id,
         output_dir=out_dir,
         preregistration_commit_sha=args.prereg_commit_sha,
+        execution_code_sha=exec_sha,
         audit=audit,
         primary_result=primary_result,
         challenger_result=challenger_result,

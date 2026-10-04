@@ -123,6 +123,7 @@ def test_write_d2_artifacts(tmp_path: Path) -> None:
         run_id="test_run",
         output_dir=tmp_path,
         preregistration_commit_sha="dummy_sha",
+        execution_code_sha="dummy_exec_sha",
         audit=audit,
         primary_result=primary_res,
         challenger_result=challenger_res,
@@ -141,5 +142,8 @@ def test_write_d2_artifacts(tmp_path: Path) -> None:
         assert (tmp_path / ef).exists()
         content = json.loads((tmp_path / ef).read_text(encoding="utf-8"))
         assert isinstance(content, dict)
+
+    meta = json.loads((tmp_path / "execution_metadata.json").read_text(encoding="utf-8"))
+    assert meta["execution_code_sha"] == "dummy_exec_sha"
 
     assert (tmp_path / "checksums.sha256").exists()
