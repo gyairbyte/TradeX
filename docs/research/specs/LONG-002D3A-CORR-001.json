@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "task_id": "LONG-002D3A-CORR-001",
+  "spec_version": "v1",
+  "program": "LONG-002",
+  "phase": "LONG-002D3A-CORR",
+  "title": "Preserve Frozen Pilot Sample; Correct PIT Context, Provenance, Seed Enforcement, and Forward Blinding Hygiene",
+  "classification": "research_only_correction",
+  "production_promotion_eligible": false,
+  "approved_production_strategies": [],
+  "authorization": {
+    "authorizer": "Gary Yang",
+    "authorization_date": "2026-10-04",
+    "bounded_by": "ChatGPT",
+    "scope": "correction of Stage B point-in-time evidence joins, execution code provenance recording, locked seed enforcement, company-name leakage auditing, and forward exclusion-key commitment hygiene while strictly retaining the exact frozen 24-case pilot sample",
+    "unauthorized_actions": [
+      "resampling_pilot_cases",
+      "reshuffling_pilot_cases",
+      "changing_pilot_case_ids",
+      "changing_source_observations",
+      "revealing_pilot_outcomes",
+      "pilot_predictive_performance_claims",
+      "240_case_main_study_generation",
+      "final_feature_registry_freeze",
+      "recommendation_episode_lifecycle_freeze",
+      "long_002e_model_fitting",
+      "validation_access",
+      "holdout_access",
+      "shadow_replay_access",
+      "production_promotion",
+      "production_trading_behavior_changes"
+    ]
+  },
+  "source_pilot": {
+    "source_pilot_run_id": "2026-10-04-131000",
+    "source_pilot_answer_key_sha256": "3805f5142369a0579e257f3f3ff163f1796bc9d4f6056fce544a07b3ebffb103",
+    "source_pilot_case_count": 24,
+    "case_id_range": ["D3A-PILOT-001", "D3A-PILOT-024"],
+    "sample_policy": "retain_exact_existing_sample",
+    "resampling_authorized": false,
+    "reshuffling_authorized": false,
+    "case_id_changes_authorized": false,
+    "pilot_identity_recoverability_disposition": "accepted_workflow_pilot_limitation",
+    "pilot_performance_claims_authorized": false,
+    "future_main_strict_blinding_required": true,
+    "long_002e_authorized": false,
+    "production_change_authorized": false
+  },
+  "locked_seed_policy": {
+    "locked_seed": 20261003,
+    "runtime_override_permitted": false,
+    "correction_packet_generation_sampling": "strictly_prohibited_reconstruct_from_source_answer_key"
+  },
+  "verified_pit_inputs": {
+    "data_eligibility.parquet": {
+      "path": "data/research/long_002c/data_eligibility.parquet",
+      "sha256": "16147606e629daf02e54db4b6b0127ede04aeb45608f27900a92f73805baa4d9",
+      "row_count": 2815600,
+      "required_fields": [
+        "immutable_security_id",
+        "as_of_date",
+        "cutoff_time",
+        "market_cap",
+        "trading_history_sessions",
+        "cohort_type",
+        "eligibility_passed",
+        "rejection_reason_codes",
+        "index_membership_verified"
+      ]
+    },
+    "security_classification_status.parquet": {
+      "path": "data/research/long_002c/security_classification_status.parquet",
+      "sha256": "65adc6170f2095371f3842153256b96c16042b88c6716d78c329f45ffb8d4d6d",
+      "row_count": 2815600,
+      "required_fields": [
+        "immutable_security_id",
+        "as_of_date",
+        "ticker_at_decision",
+        "inferred_classification",
+        "classification_status",
+        "is_eligible_common_stock",
+        "provenance_source"
+      ]
+    },
+    "earnings_schedule_status.parquet": {
+      "path": "data/research/long_002c/earnings_schedule_status.parquet",
+      "sha256": "439b85a5c5c2ed618585007fe6e62ef213eb2600bb47ba222f35ff338557d05b",
+      "row_count": 2815600,
+      "required_fields": [
+        "immutable_security_id",
+        "as_of_date",
+        "cutoff_time",
+        "schedule_status",
+        "next_earnings_date",
+        "announcement_timing",
+        "sessions_to_earnings",
+        "provenance_source"
+      ]
+    }
+  },
+  "forward_artifact_hygiene": {
+    "committed_raw_keys_prohibited": true,
+    "external_exclusion_file_required": true,
+    "external_exclusion_schema": [
+      "immutable_security_id",
+      "as_of_date",
+      "cutoff_time"
+    ],
+    "cryptographic_commitment_required": true
+  }
+}

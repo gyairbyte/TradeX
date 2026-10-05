@@ -1,0 +1,24 @@
+{
+  "batching_target": "12 batches of 20 cases",
+  "contract_title": "Future Main-Study Sampling Contract Foundation",
+  "execution_status": "NOT_EXECUTED_IN_THIS_PR",
+  "future_main_seed": 20261004,
+  "generation_gate": "Requires formal Gary authorization and completed pilot workflow review before generation",
+  "main_study_sample_size": 240,
+  "pilot_cases_excluded_count": 24,
+  "pilot_exclusion_count": 24,
+  "pilot_exclusion_keys_sha256": "3f9ab79c1e258471ff02cf3a4b859fe739c0fe08f161f1bd739a4b715478be00",
+  "pilot_exclusion_schema": [
+    "immutable_security_id",
+    "as_of_date",
+    "cutoff_time"
+  ],
+  "strata_counts": {
+    "adverse_trap": 40,
+    "near_miss": 40,
+    "ordinary_non_mover": 40,
+    "positive_master_episode": 120
+  },
+  "task_id": "LONG-002D3A-BLINDED-REVIEW-PILOT-001",
+  "ticker_frequency_limit": "Normally no ticker more than twice"
+}

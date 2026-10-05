@@ -1,0 +1,31 @@
+{
+  "approved_production_strategies": [],
+  "authorizer": "Gary Yang",
+  "case_order_equivalence": true,
+  "classification": "research_only",
+  "corr_spec_sha256": "f0c239ab934cb7435ed914a33e1224b490974218016b442cba4793a7a8f87cfe",
+  "execution_code_sha": "e83dec0813514e2d8627a513deae93eb3b03f0e9",
+  "future_main_seed": 20261004,
+  "future_main_study_size": 240,
+  "git_worktree_clean_at_start": true,
+  "main_study_executed": false,
+  "pilot_sample_size": 24,
+  "pilot_seed": 20261003,
+  "preregistration_commit_sha": "a6345f97330358b1dfbbdf7c11e6aba9f10e2c87",
+  "production_promotion_eligible": false,
+  "run_id": "2026-10-04-223000",
+  "sample_case_count": 24,
+  "sample_mapping_equivalence": true,
+  "sample_resampled": false,
+  "source_pilot_answer_key_sha256": "3805f5142369a0579e257f3f3ff163f1796bc9d4f6056fce544a07b3ebffb103",
+  "source_pilot_run_id": "2026-10-04-131000",
+  "spec_sha256": "7b2dcc9c0d53b56053c52dbc227bd04a96998120d26b49051627312c60545427",
+  "spec_version": "v1",
+  "system_info": {
+    "platform": "win32",
+    "python_version": "3.11.15"
+  },
+  "task_id": "LONG-002D3A-CORR-001",
+  "timestamp_utc": "2026-10-05T02:25:58.429360+00:00",
+  "zero_provider_network_calls": true
+}
