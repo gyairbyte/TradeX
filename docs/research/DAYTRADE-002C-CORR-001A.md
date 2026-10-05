@@ -110,7 +110,7 @@ To preserve complete research integrity and prevent methodology drift, the follo
 - **Universe:** Fixed 15-ETF universe (`XLK`, `XLV`, `XLF`, `XLY`, `XLP`, `XLE`, `XLI`, `XLB`, `XLU`, `XLRE`, `XLC`, `SPY`, `QQQ`, `IWM`, `DIA`).
 - **Date Ranges:** Context anchor `2025-12-31`, warmup `2026-01-02`–`2026-01-30`, development `2026-02-02`–`2026-04-30`, validation `2026-05-01`–`2026-06-30`, holdout `2026-07-01`–`2026-08-31`.
 - **Trading Rules & Endpoints:** Signal formula (first half-hour return relative to previous session 15:59 close), rolling 20-session threshold, 80th percentile cutoff, entry at 15:30 open, exit at 15:59 close.
-- **Cost Model & Baselines:** Primary net return at 2 bps friction, matched non-event baselines, stationary block bootstrap with seed `20260901`, 95% confidence intervals.
+- **Cost Model & Baselines:** Primary net return uses 2 bps/side friction with direction-matched non-event baselines. Statistical uncertainty uses the locked deterministic session-date clustered bootstrap (2,000 resamples, seed 20260926, 95% percentile CI), with all ETF observations on the same session date resampled together and the matched baseline recomputed inside every replicate.
 - **Data Quality Thresholds:** Realizable session thresholds (19 missing pass / 20 missing exclude; 3 duplicates pass / 4 duplicates exclude; 5.0% split exclusion gate).
 - **Timezone & Calendar:** Exchange calendar `XNYS`, timezone `America/New_York`, 390-minute regular-session grid.
 - **Production Strategy Registry:** `APPROVED_PRODUCTION_STRATEGIES == ()` strictly preserved.
