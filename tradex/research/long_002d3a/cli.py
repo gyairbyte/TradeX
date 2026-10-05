@@ -222,8 +222,8 @@ def run_pipeline(
     run_id: str | None = None,
     repo_root: Path = Path("."),
     seed: int = PILOT_SEED,
-    allow_dirty: bool = False,
     execution_code_sha: str | None = None,
+    _allow_dirty_for_unit_tests: bool = False,
 ) -> dict[str, Any]:
     """Execute complete empirical pilot generation pipeline."""
     # 0. Enforce locked seed policy
@@ -243,10 +243,20 @@ def run_pipeline(
     verify_corr_spec_sha256(corr_spec_path if corr_spec_path.exists() else CORR_SPEC_PATH)
     print("  [OK] CORR-001 correction contract verified (SHA-256 matches locked value)")
 
-    # 2. Execution provenance verification
-    git_sha = execution_code_sha or get_git_head_sha(repo_root)
+    # 2. Execution provenance verification (runtime HEAD is authoritative)
+    runtime_sha = get_git_head_sha(repo_root)
+    if not runtime_sha or len(runtime_sha) != 40:
+        raise RuntimeError(f"FAIL-CLOSED: Unresolved or invalid runtime git HEAD SHA: '{runtime_sha}'")
+
+    if execution_code_sha is not None and execution_code_sha.strip().lower() != runtime_sha.lower():
+        raise RuntimeError(
+            f"FAIL-CLOSED: Supplied execution_code_sha '{execution_code_sha}' does not match "
+            f"authoritative runtime git HEAD SHA '{runtime_sha}'!"
+        )
+
+    git_sha = runtime_sha
     is_clean = is_git_worktree_clean(repo_root)
-    if not is_clean and not allow_dirty:
+    if not is_clean and not _allow_dirty_for_unit_tests:
         raise RuntimeError(
             "FAIL-CLOSED: Git working tree is dirty! Official correction execution requires a clean worktree."
         )
@@ -371,6 +381,11 @@ def run_pipeline(
     print(f"Source Answer Key SHA-256: {res['answer_key_sha256']}")
     print(f"Pilot Exclusion Keys SHA-256: {res['exclusion_keys_sha256']}")
     print(f"Network audit: {tracker.live_request_path_attempts} live attempts, {tracker.outbound_http_requests_executed} HTTP calls executed")
+    if tracker.live_request_path_attempts != 0 or tracker.outbound_http_requests_executed != 0:
+        raise RuntimeError(
+            f"FAIL-CLOSED: Network isolation breach detected! {tracker.live_request_path_attempts} live attempts, "
+            f"{tracker.outbound_http_requests_executed} HTTP calls executed."
+        )
 
     return res
 
@@ -541,7 +556,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--run-id", type=str, default=None, help="Optional run ID (defaults to UTC timestamp)")
     p_run.add_argument("--seed", type=int, default=PILOT_SEED, help="Random seed (defaults to 20261003)")
     p_run.add_argument("--repo-root", type=Path, default=Path("."), help="Path to repository root")
-    p_run.add_argument("--allow-dirty", action="store_true", help="Allow running on dirty worktree (testing only)")
 
     # Subcommand: verify
     p_verify = subparsers.add_parser("verify", help="Verify run artifacts and commitments")
@@ -576,7 +590,6 @@ def main(args: list[str] | None = None) -> int:
             run_id=parsed.run_id,
             repo_root=parsed.repo_root,
             seed=parsed.seed,
-            allow_dirty=parsed.allow_dirty,
         )
         return 0
     elif parsed.command == "verify":

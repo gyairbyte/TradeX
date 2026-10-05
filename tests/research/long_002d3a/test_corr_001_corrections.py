@@ -58,7 +58,6 @@ from tradex.research.long_002d3a.audit import audit_single_case
 from tradex.research.long_002d3a.blinder import generate_blinded_case_packet
 from tradex.research.long_002d3a.cli import (
     get_git_head_sha,
-    is_git_worktree_clean,
     load_pit_tables,
     reconstruct_candidates_from_source_answer_key,
     verify_exact_sample_equivalence,
@@ -213,11 +212,25 @@ def test_10_non_locked_pilot_seed_rejected() -> None:
         enforce_pilot_seed(42)
 
 
-# 11. Runtime Git execution SHA is recorded.
-def test_11_runtime_git_execution_sha_recorded(repo_root: Path) -> None:
-    sha = get_git_head_sha(repo_root)
-    assert isinstance(sha, str)
-    assert len(sha) == 40
+# 11. Runtime Git execution SHA is recorded and enforced.
+def test_11_runtime_git_execution_sha_recorded_and_enforced(repo_root: Path) -> None:
+    from tradex.research.long_002d3a.cli import run_pipeline
+
+    runtime_sha = get_git_head_sha(repo_root)
+    assert isinstance(runtime_sha, str)
+    assert len(runtime_sha) == 40
+
+    # Matching supplied SHA is accepted by runtime verification
+    with (
+        patch("tradex.research.long_002d3a.cli.is_git_worktree_clean", return_value=True),
+        patch("tradex.research.long_002d3a.cli.verify_upstream_hashes", side_effect=RuntimeError("STOPPED_AFTER_PROVENANCE")),
+        pytest.raises(RuntimeError, match="STOPPED_AFTER_PROVENANCE"),
+    ):
+        run_pipeline(execution_code_sha=runtime_sha)
+
+    # Mismatching supplied SHA is rejected
+    with pytest.raises(RuntimeError, match="does not match authoritative runtime git HEAD SHA"):
+        run_pipeline(execution_code_sha="0000000000000000000000000000000000000000")
 
 
 # 12. Unknown/unresolved runtime Git SHA fails closed.
@@ -226,11 +239,38 @@ def test_12_unresolved_git_sha_fails_closed(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError, match="FAIL-CLOSED"):
         get_git_head_sha(tmp_path)
 
+    # In run_pipeline, unresolved git SHA fails closed
+    from tradex.research.long_002d3a.cli import run_pipeline
+    with (
+        patch("tradex.research.long_002d3a.cli.get_git_head_sha", side_effect=RuntimeError("FAIL-CLOSED: Unresolved HEAD")),
+        pytest.raises(RuntimeError, match="FAIL-CLOSED: Unresolved HEAD"),
+    ):
+        run_pipeline()
 
-# 13. Dirty worktree official execution fails closed if implemented.
-def test_13_dirty_worktree_detection(repo_root: Path) -> None:
-    clean = is_git_worktree_clean(repo_root)
-    assert isinstance(clean, bool)
+
+# 13. Dirty worktree official execution fails closed and public CLI has no bypass.
+def test_13_dirty_worktree_fails_closed_and_cli_has_no_bypass(repo_root: Path) -> None:
+    from tradex.research.long_002d3a.cli import build_parser, run_pipeline
+
+    # Parser does NOT expose --allow-dirty
+    parser = build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(["run", "--allow-dirty"])
+
+    # Dirty worktree fails closed in run_pipeline
+    with (
+        patch("tradex.research.long_002d3a.cli.is_git_worktree_clean", return_value=False),
+        pytest.raises(RuntimeError, match="FAIL-CLOSED: Git working tree is dirty!"),
+    ):
+        run_pipeline()
+
+    # Internal testing bypass works when explicitly requested
+    with (
+        patch("tradex.research.long_002d3a.cli.is_git_worktree_clean", return_value=False),
+        patch("tradex.research.long_002d3a.cli.verify_upstream_hashes", side_effect=RuntimeError("STOPPED_AFTER_PROVENANCE")),
+        pytest.raises(RuntimeError, match="STOPPED_AFTER_PROVENANCE"),
+    ):
+        run_pipeline(_allow_dirty_for_unit_tests=True)
 
 
 # 14. data_eligibility hash verified.
@@ -500,6 +540,47 @@ def test_28_viewer_html_checked_for_hidden_identity_terms() -> None:
         audit_single_case(sa, sb, ak, cand_security=cand_sec, viewer_html_text=leaked_html)
 
 
+# Focused test for requirement 5: Viewer HTML audit checks primary_symbol when different from historical ticker
+def test_viewer_html_audit_catches_alternate_primary_symbol() -> None:
+    ak = AnswerKeyRecord(
+        case_id="D3A-PILOT-001",
+        immutable_security_id="FIGI_TEST0001",
+        ticker="OLD",
+        decision_date="2018-05-15",
+        cutoff_time="20:30",
+        sample_stratum="positive_master_episode",
+        episode_id=None,
+        clean_target_reached=True,
+        target_progress_ratio=1.0,
+        near_miss=False,
+        adverse_excursion=False,
+        mfe_pct=10.0,
+        mae_pct=0.0,
+        time_to_target=5,
+    )
+    cand_sec = CandidateSecurity(
+        immutable_security_id="FIGI_TEST0001",
+        primary_symbol="NEW",
+        company_name="MegaCorp",
+    )
+    sa = {
+        "case_id": "D3A-PILOT-001",
+        "relative_bars": [{"relative_index": 0, "relative_label": "T0"}],
+        "technical_metrics": {},
+    }
+    sb = {"case_id": "D3A-PILOT-001", "stage_a": sa, "pit_context": {}}
+
+    # Viewer HTML containing alternate primary_symbol NEW must fail closed
+    leaked_html = "<html><body>Alternate ticker: NEW listed here</body></html>"
+    with pytest.raises(ValueError, match="Viewer HTML contains primary ticker: NEW"):
+        audit_single_case(sa, sb, ak, cand_security=cand_sec, viewer_html_text=leaked_html)
+
+    # Clean viewer HTML passes
+    clean_html = "<html><body>Candidate is blinded and anonymous</body></html>"
+    res = audit_single_case(sa, sb, ak, cand_security=cand_sec, viewer_html_text=clean_html)
+    assert res["viewer_html_clean"] is True
+
+
 # 29. Corrected committed safe artifacts contain no raw pilot exclusion keys.
 def test_29_committed_main_contract_contains_no_raw_exclusion_keys(repo_root: Path) -> None:
     artifacts_base = repo_root / "docs" / "research" / "artifacts" / "LONG-002D3A"
@@ -581,9 +662,43 @@ def test_34_to_36_quarantine_splits_enforced() -> None:
 
 
 # 37. No provider calls.
-def test_37_no_provider_calls_mock_boundary() -> None:
-    # All tests run offline with read-only Alpaca cache client
-    pass
+def test_37_no_provider_calls_mock_boundary(repo_root: Path) -> None:
+    """Verify that read-only Alpaca cache client used in D3A executes zero live/network calls.
+
+    References upstream tests in tests/research/long_002d/test_corr_001_selection_and_audit.py
+    and proves that the D3A loader path strictly adheres to the offline zero-network contract:
+    - live_request_path_attempts == 0
+    - outbound_http_requests_executed == 0
+    - blocked_live_request_attempts == 0 on normal cache reads
+    - any live attempt fails closed and is blocked
+    """
+    from tradex.research.long_002d.loader import (
+        create_read_only_alpaca_client,
+        load_spy_daily_closes,
+    )
+
+    cache_dir = repo_root / "data" / "cache" / "long_002c"
+    if not cache_dir.exists():
+        pytest.skip("Cache dir not found locally")
+
+    alpaca, _cache, tracker = create_read_only_alpaca_client(cache_dir)
+    assert tracker.live_request_path_attempts == 0
+    assert tracker.outbound_http_requests_executed == 0
+    assert tracker.blocked_live_request_attempts == 0
+
+    # Exercise SPY daily closes loader (as used by D3A blinder/cli)
+    spy_closes = load_spy_daily_closes(alpaca)
+    assert len(spy_closes) > 0
+    assert tracker.live_request_path_attempts == 0
+    assert tracker.outbound_http_requests_executed == 0
+
+    # Verify that any attempted live request fails closed and is blocked
+    with pytest.raises(RuntimeError, match="FAIL-CLOSED BREACH"):
+        alpaca._request_func("https://data.alpaca.markets/v2/stocks/AAPL/bars")
+
+    assert tracker.live_request_path_attempts == 1
+    assert tracker.blocked_live_request_attempts == 1
+    assert tracker.outbound_http_requests_executed == 0
 
 
 # 38. APPROVED_PRODUCTION_STRATEGIES == ().

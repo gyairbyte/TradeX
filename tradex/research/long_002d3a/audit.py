@@ -172,6 +172,18 @@ def audit_single_case(
         # Check ticker with word boundary regex
         if re.search(r"\b" + re.escape(ticker) + r"\b", viewer_html_text, re.IGNORECASE):
             violations.append(f"Viewer HTML contains ticker: {ticker}")
+        # Check primary_symbol if non-empty and different from historical ticker
+        primary_sym = None
+        if cand_security is not None:
+            primary_sym = getattr(cand_security, "primary_symbol", None)
+            if primary_sym is None and isinstance(cand_security, dict):
+                primary_sym = cand_security.get("primary_symbol")
+        if (
+            primary_sym
+            and primary_sym != ticker
+            and re.search(r"\b" + re.escape(primary_sym) + r"\b", viewer_html_text, re.IGNORECASE)
+        ):
+            violations.append(f"Viewer HTML contains primary ticker: {primary_sym}")
         if sec_id.lower() in viewer_html_text.lower():
             violations.append(f"Viewer HTML contains security ID: {sec_id}")
         if date_str in viewer_html_text:
