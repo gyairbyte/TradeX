@@ -2,17 +2,26 @@
 from __future__ import annotations
 
 import math
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 import pandas as pd
 
 from .calendar import (
     EXPECTED_REGULAR_MINUTES,
+    MARKET_TIMEZONE,
     to_market_time,
     to_utc,
 )
 from .models import DataQualityReport, DaytradeBar, DaytradeSession, SplitDataQualitySummary
+
+TIMESTAMP_CANDIDATE_COLUMNS: tuple[str, ...] = (
+    "dt_parsed",
+    "bar_start",
+    "datetime",
+    "timestamp",
+    "t",
+)
 
 MAX_MISSING_RATE_PCT = 5.0   # > 5.0% (> 19 missing bars out of 390) excludes ticker-session
 MAX_DUPLICATE_RATE_PCT = 1.0  # > 1.0% (> 3 duplicate bars out of 390) excludes ticker-session
@@ -21,6 +30,103 @@ MAX_SPLIT_EXCLUDED_RATE_PCT = 5.0  # > 5.0% excluded ticker-sessions fails split
 
 class DataQualityError(Exception):
     """Raised when an unrecoverable data quality or format error occurs."""
+
+
+def _extract_candidate_value(row: Any, col: str) -> tuple[bool, Any]:
+    """Check if candidate column exists in row and return (exists, value)."""
+    if isinstance(row, pd.Series):
+        if col in row.index:
+            return True, row[col]
+        return False, None
+    if isinstance(row, dict):
+        if col in row:
+            return True, row[col]
+        return False, None
+    try:
+        if hasattr(row, col):
+            return True, getattr(row, col)
+        if col in row:
+            return True, row[col]
+    except (KeyError, TypeError, IndexError):
+        pass
+    return False, None
+
+
+def _normalize_to_utc_datetime(val: Any) -> datetime | None:
+    """Parse and normalize candidate value to a timezone-aware UTC datetime.
+
+    Returns None if parsing fails or if the value is not a valid timestamp.
+    """
+    if isinstance(val, (pd.Series, pd.DataFrame, list, dict, set)):
+        return None
+    try:
+        if isinstance(val, str):
+            val_clean = val.strip()
+            if not val_clean:
+                return None
+            ts = pd.to_datetime(val_clean, utc=True)
+            if pd.isna(ts):
+                return None
+            return ts.to_pydatetime()
+        elif isinstance(val, pd.Timestamp):
+            if pd.isna(val):
+                return None
+            if val.tzinfo is None:
+                val = val.tz_localize(MARKET_TIMEZONE).tz_convert(UTC)
+            else:
+                val = val.tz_convert(UTC)
+            return val.to_pydatetime()
+        elif isinstance(val, datetime):
+            return to_utc(val)
+        else:
+            ts = pd.to_datetime(val, utc=True)
+            if pd.isna(ts):
+                return None
+            return ts.to_pydatetime()
+    except (ValueError, TypeError, pd.errors.OutOfBoundsDatetime):
+        return None
+
+
+def _resolve_bar_timestamp(row: Any) -> datetime | None:
+    """Resolve and normalize bar start timestamp according to locked precedence.
+
+    Precedence:
+    1. dt_parsed
+    2. bar_start
+    3. datetime
+    4. timestamp
+    5. t
+
+    For each candidate in order:
+    - candidate must exist in the row;
+    - candidate must not be None;
+    - candidate must not be pandas NA/NaT;
+    Once a non-null candidate is found, it is parsed and normalized to UTC datetime exactly once.
+    If parsing fails, returns None (treated as malformed timestamp).
+    """
+    selected_val: Any = None
+    candidate_found = False
+
+    for col in TIMESTAMP_CANDIDATE_COLUMNS:
+        exists, val = _extract_candidate_value(row, col)
+        if not exists:
+            continue
+        if val is None:
+            continue
+        try:
+            if pd.isna(val):
+                continue
+        except (ValueError, TypeError):
+            pass
+
+        selected_val = val
+        candidate_found = True
+        break
+
+    if not candidate_found or selected_val is None:
+        return None
+
+    return _normalize_to_utc_datetime(selected_val)
 
 
 def is_valid_numeric_price(val: Any) -> bool:
@@ -98,21 +204,8 @@ def audit_ticker_session(
         return audit_missing_ticker_session(ticker, session_date)
 
     for _, row in bars_df.iterrows():
-        raw_ts = row.get("datetime") or row.get("timestamp") or row.get("t")
-        if raw_ts is None or pd.isna(raw_ts):
-            malformed_timestamp_count += 1
-            continue
-
-        try:
-            if isinstance(raw_ts, str):
-                dt = pd.to_datetime(raw_ts, utc=True).to_pydatetime()
-            elif isinstance(raw_ts, datetime):
-                dt = to_utc(raw_ts)
-            elif isinstance(raw_ts, pd.Timestamp):
-                dt = raw_ts.to_pydatetime().astimezone(datetime.timezone.utc)
-            else:
-                dt = pd.to_datetime(raw_ts, utc=True).to_pydatetime()
-        except (ValueError, TypeError, pd.errors.OutOfBoundsDatetime):
+        dt = _resolve_bar_timestamp(row)
+        if dt is None:
             malformed_timestamp_count += 1
             continue
 
