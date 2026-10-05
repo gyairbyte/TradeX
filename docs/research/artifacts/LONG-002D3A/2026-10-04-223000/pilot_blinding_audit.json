@@ -1,0 +1,21 @@
+{
+  "all_cases_passed_blinding_audit": true,
+  "audit_checks_enforced": [
+    "zero_ticker_leakage",
+    "zero_security_id_leakage",
+    "zero_company_name_leakage",
+    "zero_calendar_date_leakage",
+    "zero_true_class_leakage",
+    "zero_future_outcome_leakage",
+    "zero_future_bars_beyond_T0",
+    "stage_a_excludes_stage_b_fields",
+    "stage_b_retains_stage_a",
+    "price_normalized_to_100_at_lookback_base",
+    "viewer_html_leakage_clean"
+  ],
+  "audit_timestamp_utc": "2026-10-05T02:25:58.429360+00:00",
+  "company_name_checks_applicable_count": 24,
+  "task_id": "LONG-002D3A-CORR-001",
+  "total_cases_audited": 24,
+  "violations_detected": 0
+}

@@ -1,0 +1,11 @@
+{
+  "case_count": 24,
+  "same_case_ids": true,
+  "same_case_order": true,
+  "same_identity_mapping": true,
+  "same_strata": true,
+  "sample_resampled": false,
+  "source_answer_key_sha256": "3805f5142369a0579e257f3f3ff163f1796bc9d4f6056fce544a07b3ebffb103",
+  "source_pilot_run_id": "2026-10-04-131000",
+  "task_id": "LONG-002D3A-CORR-001"
+}

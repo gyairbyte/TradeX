@@ -248,3 +248,52 @@ The committed safe artifact bundle is located at:
 - `review_schema.json` — Locked reviewer label schema definition.
 - `main_study_contract.json` — Structural contract foundation for future 240-case study.
 - `checksums.sha256` — SHA-256 digests of all committed artifact JSON files.
+
+---
+
+## 12. Correction Assignment LONG-002D3A-CORR-001
+
+### Purpose & Review Decision
+Following code review by Gary Yang and ChatGPT on Draft PR #95, correction assignment **LONG-002D3A-CORR-001** was executed to correct reviewer-visible Point-in-Time (PIT) context evidence, execution code provenance, locked seed enforcement, company-name leakage auditing, and forward exclusion-key artifact hygiene, while strictly retaining the exact frozen 24-case pilot sample.
+
+### Invariant: Exact Sample Retention
+- **Sample Preserved:** The exact 24 pilot cases from source run `2026-10-04-131000` were retained byte-for-byte.
+- **No Resampling or Reshuffling:** Sampler was not invoked; cases were reconstructed directly from the frozen source answer key (`data/research/long_002d3a/2026-10-04-131000/pilot_answer_key.json`, SHA-256 `3805f5142369a0579e257f3f3ff163f1796bc9d4f6056fce544a07b3ebffb103`).
+- **Case IDs & Order:** Identical ordering from `D3A-PILOT-001` through `D3A-PILOT-024`.
+- **Accepted Workflow-Pilot Limitation:** As noted in the preregistered correction contract, the fact that pilot identities/dates were recoverable in Git history is an accepted workflow-pilot limitation. Gary has not inspected that mapping; pilot labels are workflow/presentation feedback only; no performance claims will be made.
+
+### Corrections Implemented
+1. **Stage B PIT Evidence Joins:**
+   - Joined `data/research/long_002c/data_eligibility.parquet` (`market_cap`, `cohort_type`, `trading_history_sessions`).
+   - Joined `data/research/long_002c/security_classification_status.parquet` (`is_eligible_common_stock`, `inferred_classification`).
+   - Joined `data/research/long_002c/earnings_schedule_status.parquet` (`schedule_status`, `announcement_timing`, `sessions_to_earnings`).
+   - Fabricated defaults (`"established"`, `252` sessions) were completely removed. Missing source values remain `unknown` / `null`.
+2. **Execution Code Provenance:**
+   - Recorded `execution_code_sha = "e83dec0813514e2d8627a513deae93eb3b03f0e9"` (matching `git rev-parse HEAD` of the committed implementation).
+   - Recorded `git_worktree_clean_at_start = true`.
+3. **Locked Seed Enforcement:**
+   - Enforced `PILOT_SEED == 20261003`. Non-locked seeds fail closed with a clear error.
+4. **Genuine Company-Name Leakage Audit:**
+   - Verified that company names from `discovery_manifest.json` are audited across Stage A, Stage B, and viewer HTML (`company_name_checks_applicable_count = 24`, 0 violations detected).
+5. **Forward Blinding Hygiene:**
+   - Removed raw pilot observation keys from committed `main_study_contract.json`.
+   - Committed `pilot_exclusion_commitment.json` referencing external gitignored `data/research/long_002d3a/2026-10-04-223000/pilot_exclusion_keys.json` (SHA-256 `3f9ab79c1e258471ff02cf3a4b859fe739c0fe08f161f1bd739a4b715478be00`, 24 records).
+   - Committed `sample_equivalence.json` documenting 100% exact sample equivalence without disclosing sensitive mappings.
+
+### Correction Run & Verification Artifacts
+- **Correction Run ID:** `2026-10-04-223000`
+- **Superseded Run ID:** `2026-10-04-131000` (superseded for Stage B context and execution provenance; sample preserved)
+- **Committed Artifacts Directory:** `docs/research/artifacts/LONG-002D3A/2026-10-04-223000/`
+- **Corrected Reviewer URL Command:**
+  ```bash
+  uv run python -m tradex.research.long_002d3a.cli open-viewer --run-id 2026-10-04-223000
+  ```
+- **Verification Command:**
+  ```bash
+  uv run python -m tradex.research.long_002d3a.cli verify --run-id 2026-10-04-223000
+  ```
+- **Test Suite Verification:**
+  ```bash
+  uv run pytest tests/research/long_002d3a -q
+  ```
+  Result: **79 passed** (including all 40 requirements in `test_corr_001_corrections.py`).

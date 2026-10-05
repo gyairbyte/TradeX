@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "fields": {
+    "entry_plan": {
+      "required": false,
+      "type": "string"
+    },
+    "expected_horizon_sessions": {
+      "allowed_values": [
+        5,
+        10,
+        21,
+        null
+      ],
+      "nullable": true,
+      "type": "integer"
+    },
+    "expected_target_pct": {
+      "allowed_values": [
+        10,
+        20,
+        30,
+        null
+      ],
+      "nullable": true,
+      "type": "integer"
+    },
+    "gap_handling": {
+      "required": false,
+      "type": "string"
+    },
+    "invalidation": {
+      "required": false,
+      "type": "string"
+    },
+    "material_risks_counterarguments": {
+      "required_when_material_risks_visible": true,
+      "type": "string"
+    },
+    "max_validity_sessions": {
+      "max": 5,
+      "nullable": true,
+      "type": "integer"
+    },
+    "positive_reasons": {
+      "max_items": 3,
+      "type": "list_of_strings"
+    },
+    "qualitative_confidence": {
+      "range": [
+        1,
+        5
+      ],
+      "required": true,
+      "type": "integer"
+    },
+    "setup_archetype": {
+      "allowed_values": [
+        "setup_archetype",
+        "other",
+        "unclear"
+      ],
+      "required": true,
+      "type": "string"
+    },
+    "surface_decision": {
+      "allowed_values": [
+        "surface",
+        "do_not_surface"
+      ],
+      "required": true,
+      "type": "string"
+    },
+    "trigger_or_zone": {
+      "required": false,
+      "type": "string"
+    },
+    "visible_state_if_surfaced": {
+      "allowed_values": [
+        "Enter Now",
+        "Armed",
+        "Qualified Waitlist",
+        null
+      ],
+      "nullable": true,
+      "required_when_surface": true,
+      "type": "string"
+    }
+  },
+  "schema_version": "v1",
+  "stages": [
+    "stage_a",
+    "stage_b"
+  ],
+  "storage_rule": "Stage A and Stage B labels are stored as separate immutable review records"
+}
