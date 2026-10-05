@@ -1,0 +1,14 @@
+{
+  "byte_count": 2834,
+  "created_at_utc": "2026-10-05T02:25:58.429360+00:00",
+  "record_count": 24,
+  "relative_external_path": "data/research/long_002d3a/2026-10-04-223000/pilot_exclusion_keys.json",
+  "schema": [
+    "immutable_security_id",
+    "as_of_date",
+    "cutoff_time"
+  ],
+  "sha256": "3f9ab79c1e258471ff02cf3a4b859fe739c0fe08f161f1bd739a4b715478be00",
+  "spec_sha256": "7b2dcc9c0d53b56053c52dbc227bd04a96998120d26b49051627312c60545427",
+  "task_id": "LONG-002D3A-CORR-001"
+}

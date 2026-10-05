@@ -1,0 +1,22 @@
+{
+  "approved_production_strategies": [],
+  "authorizer": "Gary Yang",
+  "classification": "research_only",
+  "future_main_seed": 20261004,
+  "future_main_study_size": 240,
+  "main_study_executed": false,
+  "pilot_sample_size": 24,
+  "pilot_seed": 20261003,
+  "preregistration_commit_sha": "a6345f97330358b1dfbbdf7c11e6aba9f10e2c87",
+  "production_promotion_eligible": false,
+  "run_id": "2026-10-04-131000",
+  "spec_sha256": "7b2dcc9c0d53b56053c52dbc227bd04a96998120d26b49051627312c60545427",
+  "spec_version": "v1",
+  "system_info": {
+    "platform": "win32",
+    "python_version": "3.11.15"
+  },
+  "task_id": "LONG-002D3A-BLINDED-REVIEW-PILOT-001",
+  "timestamp_utc": "2026-10-04T13:07:30.252733+00:00",
+  "zero_provider_network_calls": true
+}

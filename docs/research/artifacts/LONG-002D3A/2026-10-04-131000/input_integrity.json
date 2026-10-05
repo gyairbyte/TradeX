@@ -1,0 +1,55 @@
+{
+  "inputs": {
+    "baseline_comparator_outputs.parquet": {
+      "actual_sha256": "faec26ddb26fd5a17feddf5ae09232a8aeb8ba24c3529abd88422682357e4734",
+      "exists": true,
+      "expected_sha256": "faec26ddb26fd5a17feddf5ae09232a8aeb8ba24c3529abd88422682357e4734",
+      "path": "data/research/long_002c/baseline_comparator_outputs.parquet",
+      "verified": true
+    },
+    "constituent_memberships.parquet": {
+      "actual_sha256": "53a8adc92f1210ef3a1b6d10c9eedd1f360dad2760897f97b5d293f473734b11",
+      "exists": true,
+      "expected_sha256": "53a8adc92f1210ef3a1b6d10c9eedd1f360dad2760897f97b5d293f473734b11",
+      "path": "data/research/long_002c/constituent_memberships.parquet",
+      "verified": true
+    },
+    "decision_observations.parquet": {
+      "actual_sha256": "722bee866cabb697931dfb96abaf7f9250f1cd1240b405d2e308af0b6bbb48af",
+      "exists": true,
+      "expected_sha256": "722bee866cabb697931dfb96abaf7f9250f1cd1240b405d2e308af0b6bbb48af",
+      "path": "data/research/long_002c/decision_observations.parquet",
+      "verified": true
+    },
+    "discovery_manifest.json": {
+      "actual_sha256": "d1bf16d6b475c93b5c47e81a47af5597fd514432880107030040a81fd61e9947",
+      "exists": true,
+      "expected_sha256": "d1bf16d6b475c93b5c47e81a47af5597fd514432880107030040a81fd61e9947",
+      "path": "data/research/long_002c/discovery_manifest.json",
+      "verified": true
+    },
+    "feature_table.parquet": {
+      "actual_sha256": "7dc09bdeed02c44eb48a0143884deb0ad7795466a08e25fd26c32640a0c813d8",
+      "exists": true,
+      "expected_sha256": "7dc09bdeed02c44eb48a0143884deb0ad7795466a08e25fd26c32640a0c813d8",
+      "path": "data/research/long_002d1/feature_table.parquet",
+      "verified": true
+    },
+    "master_episodes.parquet": {
+      "actual_sha256": "1fe5b36f98919465007a720908c626203e5272b054a4ef76be772db279b3cc98",
+      "exists": true,
+      "expected_sha256": "1fe5b36f98919465007a720908c626203e5272b054a4ef76be772db279b3cc98",
+      "path": "data/research/long_002c/master_episodes.parquet",
+      "verified": true
+    },
+    "outcome_matrix.parquet": {
+      "actual_sha256": "b59a5f7f8a8a0498abdadb156299719f43ffa8854df5cad8e20a6cd4fbe237c3",
+      "exists": true,
+      "expected_sha256": "b59a5f7f8a8a0498abdadb156299719f43ffa8854df5cad8e20a6cd4fbe237c3",
+      "path": "data/research/long_002c/outcome_matrix.parquet",
+      "verified": true
+    }
+  },
+  "task_id": "LONG-002D3A-BLINDED-REVIEW-PILOT-001",
+  "verified_all_upstream_inputs": true
+}
