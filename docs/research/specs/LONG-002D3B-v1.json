@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "task_id": "LONG-002D3B-QUANTITATIVE-FREEZE-001",
+  "spec_version": "v1",
+  "program": "LONG-002",
+  "phase": "LONG-002D3B",
+  "title": "Quantitative-Only Research Amendment, Final Feature Registry Freeze, and Recommendation-Episode Evaluation Contract",
+  "classification": "research_only_specification_and_decision",
+  "production_promotion_eligible": false,
+  "approved_production_strategies": [],
+  "authorization": {
+    "authorizer": "Gary Yang",
+    "authorization_date": "2026-10-05",
+    "bounded_by": "ChatGPT",
+    "scope": "Formal D-stage research contract amendment waiving discretionary human blinded review, freezing quantitative feature registry strictly from completed development evidence, locking recommendation-episode evaluation contract, and issuing D-stage readiness decision.",
+    "unauthorized_actions": [
+      "new_empirical_model_fitting",
+      "new_outcome_mining_study",
+      "validation_access",
+      "holdout_access",
+      "shadow_access",
+      "long_002e_execution",
+      "production_promotion",
+      "production_trading_behavior_changes"
+    ]
+  },
+  "amendment_reference": {
+    "amendment_id": "LONG-002D-AMEND-001",
+    "spec_path": "docs/research/specs/LONG-002D-AMEND-001.json",
+    "markdown_path": "docs/research/LONG-002D-AMEND-001.md",
+    "human_blinded_review_status": "waived_by_gary_not_executed",
+    "pilot_human_labels_collected": false,
+    "main_240_human_sample_generated": false,
+    "human_review_required_for_long_002e": false
+  },
+  "d3a_tooling_disposition": {
+    "tooling_status": "completed",
+    "24_case_pilot": "waived_not_executed",
+    "240_case_main_study": "waived_not_generated",
+    "human_labels": "none",
+    "answer_key_status": "quarantined_unrevealed"
+  },
+  "committed_artifacts": {
+    "feature_registry": {
+      "path": "docs/research/artifacts/LONG-002D3B/feature_registry.json",
+      "sha256": "f49f2d9ab1032b7cb15ff6275d2ee790864bab00b6dfaf4ffa760bdb82c3922b",
+      "feature_count": 15,
+      "frozen_baseline_system": "volatility_aware_momentum_5"
+    },
+    "recommendation_episode_contract": {
+      "path": "docs/research/artifacts/LONG-002D3B/recommendation_episode_contract.json",
+      "sha256": "6ccfd778ce971fa42cc37ee3b822585b02cdca520e56b729218b78b60b52ad04",
+      "primary_cutoff": "20:30 America/New_York",
+      "cap_sessions": 21,
+      "anti_double_count_rule_locked": true
+    },
+    "readiness_decision": {
+      "path": "docs/research/artifacts/LONG-002D3B/readiness_decision.json",
+      "sha256": "f47ba4630594d05343a061b6c53540cc0e5401d56ed5a86a66e1e0a8a0b859fa",
+      "disposition": "ready_for_long_002e_authorization",
+      "long_002e_authorized": false,
+      "requires_separate_gary_authorization": true
+    }
+  },
+  "upstream_spec_hashes": {
+    "LONG-002-v1.json": "f3df2845543500985c88568f9b855812576e9e4a10901f8a5f7a1834a319b3b5",
+    "LONG-002D1-v1.json": "cfa450824d269fb80a276ad9986835faf08f5d1a632722d0824502c68f738381",
+    "LONG-002D2-v1.json": "db82482333fb0c9810279d289e87e82e7274802fae82269cbf1b63c7ad2a6fb8",
+    "LONG-002D3A-v1.json": "7b2dcc9c0d53b56053c52dbc227bd04a96998120d26b49051627312c60545427",
+    "LONG-002D3A-CORR-001.json": "f0c239ab934cb7435ed914a33e1224b490974218016b442cba4793a7a8f87cfe"
+  }
+}
