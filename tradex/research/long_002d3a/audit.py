@@ -70,8 +70,11 @@ def audit_single_case(
     stage_a_dict: dict[str, Any],
     stage_b_dict: dict[str, Any],
     answer_key: AnswerKeyRecord,
+    cand_security: Any | None = None,
+    company_name: str | None = None,
+    viewer_html_text: str | None = None,
 ) -> dict[str, Any]:
-    """Audit a single case packet against identity, date, class, and outcome leakage."""
+    """Audit a single case packet against identity, company name, date, class, and outcome leakage."""
     ticker = answer_key.ticker
     sec_id = answer_key.immutable_security_id
     date_str = answer_key.decision_date
@@ -84,13 +87,38 @@ def audit_single_case(
     if _recursive_string_search(stage_b_dict, ticker):
         violations.append(f"Stage B contains ticker: {ticker}")
 
+    # Check primary_symbol if different from ticker
+    if cand_security is not None and hasattr(cand_security, "primary_symbol"):
+        primary_sym = cand_security.primary_symbol
+        if primary_sym and primary_sym != ticker:
+            if _recursive_string_search(stage_a_dict, primary_sym):
+                violations.append(f"Stage A contains primary ticker: {primary_sym}")
+            if _recursive_string_search(stage_b_dict, primary_sym):
+                violations.append(f"Stage B contains primary ticker: {primary_sym}")
+
     # 2. Identity Leakage Check: immutable_security_id
     if _recursive_string_search(stage_a_dict, sec_id):
         violations.append(f"Stage A contains security ID: {sec_id}")
     if _recursive_string_search(stage_b_dict, sec_id):
         violations.append(f"Stage B contains security ID: {sec_id}")
 
-    # 3. Calendar Date Leakage Check
+    # 3. Company Name Leakage Check
+    target_company = company_name
+    if target_company is None and cand_security is not None and hasattr(cand_security, "company_name"):
+        target_company = cand_security.company_name
+
+    company_name_applicable = False
+    if target_company and target_company.strip():
+        cleaned_company = target_company.strip()
+        company_name_applicable = True
+        if _recursive_string_search(stage_a_dict, cleaned_company):
+            violations.append(f"Stage A contains company name: {cleaned_company}")
+        if _recursive_string_search(stage_b_dict, cleaned_company):
+            violations.append(f"Stage B contains company name: {cleaned_company}")
+        if viewer_html_text and cleaned_company.lower() in viewer_html_text.lower():
+            violations.append(f"Viewer HTML contains company name: {cleaned_company}")
+
+    # 4. Calendar Date Leakage Check
     if _recursive_string_search(stage_a_dict, date_str):
         violations.append(f"Stage A contains exact decision date: {date_str}")
     if _recursive_string_search(stage_b_dict, date_str):
@@ -102,21 +130,21 @@ def audit_single_case(
     if date_matches_b:
         violations.append(f"Stage B contains calendar dates: {date_matches_b}")
 
-    # 4. True Sample Class Leakage Check
+    # 5. True Sample Class Leakage Check
     for stratum in PROHIBITED_STRATA_NAMES:
         if _recursive_string_search(stage_a_dict, stratum):
             violations.append(f"Stage A contains stratum name: {stratum}")
         if _recursive_string_search(stage_b_dict, stratum):
             violations.append(f"Stage B contains stratum name: {stratum}")
 
-    # 5. Future Outcome Leakage Check
+    # 6. Future Outcome Leakage Check
     for outcome_field in PROHIBITED_OUTCOME_FIELDS:
         if outcome_field in stage_a_dict or _recursive_string_search(stage_a_dict, outcome_field):
             violations.append(f"Stage A contains outcome field: {outcome_field}")
         if outcome_field in stage_b_dict or _recursive_string_search(stage_b_dict, outcome_field):
             violations.append(f"Stage B contains outcome field: {outcome_field}")
 
-    # 6. Future Bar Leakage Check
+    # 7. Future Bar Leakage Check
     bars_a = stage_a_dict.get("relative_bars", [])
     if not bars_a:
         violations.append("Stage A relative_bars is empty")
@@ -130,14 +158,30 @@ def audit_single_case(
             if bar.get("relative_index", 0) > 0:
                 violations.append(f"Future bar index {bar.get('relative_index')} > 0 found!")
 
-    # 7. Stage A Exclusion of Stage B-Only Fields
+    # 8. Stage A Exclusion of Stage B-Only Fields
     for f in STAGE_B_EXCLUSIVE_FIELDS:
         if f in stage_a_dict:
             violations.append(f"Stage A contains Stage B field: {f}")
 
-    # 8. Stage B Retention of Stage A
+    # 9. Stage B Retention of Stage A
     if "stage_a" not in stage_b_dict:
         violations.append("Stage B missing nested stage_a")
+
+    # 10. Viewer HTML checks for this case if HTML text provided
+    if viewer_html_text:
+        # Check ticker with word boundary regex
+        if re.search(r"\b" + re.escape(ticker) + r"\b", viewer_html_text, re.IGNORECASE):
+            violations.append(f"Viewer HTML contains ticker: {ticker}")
+        if sec_id.lower() in viewer_html_text.lower():
+            violations.append(f"Viewer HTML contains security ID: {sec_id}")
+        if date_str in viewer_html_text:
+            violations.append(f"Viewer HTML contains decision date: {date_str}")
+        for stratum in PROHIBITED_STRATA_NAMES:
+            if stratum.lower() in viewer_html_text.lower():
+                violations.append(f"Viewer HTML contains stratum name: {stratum}")
+        for outcome_field in PROHIBITED_OUTCOME_FIELDS:
+            if outcome_field.lower() in viewer_html_text.lower():
+                violations.append(f"Viewer HTML contains outcome field: {outcome_field}")
 
     if violations:
         raise ValueError(
@@ -148,12 +192,15 @@ def audit_single_case(
         "case_id": answer_key.case_id,
         "ticker_leakage_clean": True,
         "security_id_leakage_clean": True,
+        "company_name_check_applicable": company_name_applicable,
+        "company_name_leakage_clean": True,
         "calendar_date_leakage_clean": True,
         "class_leakage_clean": True,
         "outcome_leakage_clean": True,
         "future_bar_leakage_clean": True,
         "stage_a_isolation_clean": True,
         "stage_b_retention_clean": True,
+        "viewer_html_clean": bool(viewer_html_text is not None),
         "bar_count": len(bars_a),
         "cutoff_bar_label": "T0",
     }
@@ -163,14 +210,27 @@ def audit_all_pilot_cases(
     stage_a_packets: list[dict[str, Any]],
     stage_b_packets: list[dict[str, Any]],
     answer_keys: list[AnswerKeyRecord],
+    cands_by_id: dict[str, Any] | None = None,
+    viewer_html_text: str | None = None,
 ) -> dict[str, Any]:
     """Audit all pilot cases and return comprehensive audit summary."""
     assert len(stage_a_packets) == len(stage_b_packets) == len(answer_keys) == 24
 
     case_audits = []
     for sa, sb, ak in zip(stage_a_packets, stage_b_packets, answer_keys):
-        res = audit_single_case(sa, sb, ak)
+        cand_sec = cands_by_id.get(ak.immutable_security_id) if cands_by_id else None
+        res = audit_single_case(
+            sa,
+            sb,
+            ak,
+            cand_security=cand_sec,
+            viewer_html_text=viewer_html_text,
+        )
         case_audits.append(res)
+
+    comp_checks_applicable = sum(
+        1 for c in case_audits if c.get("company_name_check_applicable")
+    )
 
     return {
         "task_id": "LONG-002D3A-BLINDED-REVIEW-PILOT-001",
@@ -187,6 +247,8 @@ def audit_all_pilot_cases(
             "stage_a_excludes_stage_b_fields",
             "stage_b_retains_stage_a",
             "price_normalized_to_100_at_lookback_base",
+            "viewer_html_leakage_clean",
         ],
+        "company_name_checks_applicable_count": comp_checks_applicable,
         "case_audit_results": case_audits,
     }

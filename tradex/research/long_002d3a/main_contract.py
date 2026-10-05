@@ -66,3 +66,34 @@ def assert_main_study_not_generated(external_dir: Path | None = None) -> None:
             raise RuntimeError(
                 "FAIL-CLOSED: Main study 240-case generation is UNAUTHORIZED in LONG-002D3A!"
             )
+
+
+def load_pilot_exclusion_keys(
+    exclusion_file: Path,
+    expected_sha256: str | None = None,
+) -> list[tuple[str, str, str]]:
+    """Load and verify external pilot exclusion keys."""
+    if not exclusion_file.exists():
+        raise FileNotFoundError(f"FAIL-CLOSED: Exclusion keys file missing: {exclusion_file}")
+    if expected_sha256:
+        import hashlib
+        h = hashlib.sha256()
+        with open(exclusion_file, "rb") as f:
+            while chunk := f.read(65536):
+                h.update(chunk)
+        actual_sha = h.hexdigest()
+        if actual_sha != expected_sha256:
+            raise ValueError(
+                f"FAIL-CLOSED: Exclusion keys SHA-256 mismatch! Expected {expected_sha256}, got {actual_sha}"
+            )
+    import json
+    with open(exclusion_file, "r", encoding="utf-8") as f:
+        records = json.load(f)
+    if len(records) != PILOT_SIZE:
+        raise ValueError(
+            f"FAIL-CLOSED: Expected {PILOT_SIZE} exclusion keys, got {len(records)}"
+        )
+    return [
+        (r["immutable_security_id"], r["as_of_date"], r["cutoff_time"])
+        for r in records
+    ]

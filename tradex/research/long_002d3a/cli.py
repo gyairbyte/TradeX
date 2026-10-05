@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 import webbrowser
 from datetime import UTC, datetime
@@ -30,42 +31,238 @@ from tradex.research.long_002d3a.artifacts import (
 )
 from tradex.research.long_002d3a.audit import audit_all_pilot_cases
 from tradex.research.long_002d3a.blinder import generate_blinded_case_packet
+from tradex.research.long_002d3a.models import PilotCandidate
 from tradex.research.long_002d3a.review_store import PilotReviewStore
-from tradex.research.long_002d3a.sampler import sample_pilot_cases
 from tradex.research.long_002d3a.spec import (
+    CORR_SPEC_PATH,
     FUTURE_MAIN_SIZE,
     PILOT_SEED,
     PILOT_SIZE,
+    SOURCE_PILOT_ANSWER_KEY_SHA256,
+    SOURCE_PILOT_RUN_ID,
+    SPEC_PATH,
+    enforce_pilot_seed,
+    verify_corr_spec_sha256,
+    verify_source_answer_key,
     verify_spec_sha256,
+    verify_stage_c_pit_hashes,
     verify_upstream_hashes,
 )
+
+
+def get_git_head_sha(repo_root: Path = Path(".")) -> str:
+    """Return HEAD commit SHA using git rev-parse HEAD. Fail closed if unavailable."""
+    try:
+        res = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        sha = res.stdout.strip()
+        if len(sha) == 40 and all(c in "0123456789abcdefABCDEF" for c in sha):
+            return sha.lower()
+    except Exception as exc:
+        raise RuntimeError(f"FAIL-CLOSED: Unable to determine git HEAD commit SHA: {exc}") from exc
+    raise RuntimeError(f"FAIL-CLOSED: Invalid git HEAD commit SHA: '{sha}'")
+
+
+def is_git_worktree_clean(repo_root: Path = Path(".")) -> bool:
+    """Check if git working tree is clean. Fail closed if error."""
+    try:
+        res = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return len(res.stdout.strip()) == 0
+    except Exception as exc:
+        raise RuntimeError(f"FAIL-CLOSED: Unable to check git status: {exc}") from exc
+
+
+def reconstruct_candidates_from_source_answer_key(
+    source_ak_path: Path,
+) -> list[PilotCandidate]:
+    """Reconstruct 24 PilotCandidate objects from the frozen source answer key.
+
+    Enforces:
+    - Never calls sampler.sample_pilot_cases().
+    - Verifies source answer key SHA-256 matches locked hash.
+    - Preserves exact 24 cases, case IDs (D3A-PILOT-001..024), and order.
+    """
+    verify_source_answer_key(source_ak_path)
+    with open(source_ak_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    records = data.get("records", [])
+    if len(records) != PILOT_SIZE:
+        raise ValueError(f"Expected {PILOT_SIZE} records in source answer key, got {len(records)}")
+
+    candidates: list[PilotCandidate] = []
+    for i, r in enumerate(records):
+        expected_cid = f"D3A-PILOT-{i+1:03d}"
+        if r["case_id"] != expected_cid:
+            raise ValueError(
+                f"FAIL-CLOSED: Case ID ordering mismatch! Expected {expected_cid}, got {r['case_id']}"
+            )
+        cand = PilotCandidate(
+            case_id=r["case_id"],
+            sample_stratum=r["sample_stratum"],
+            immutable_security_id=r["immutable_security_id"],
+            as_of_date=r["decision_date"],
+            cutoff_time=r["cutoff_time"],
+            ticker_at_decision=r["ticker"],
+            year=r["decision_date"][:4],
+            episode_id=r.get("episode_id"),
+            clean_target_reached=r.get("clean_target_reached", False),
+            target_progress_ratio=r.get("target_progress_ratio", 0.0),
+            near_miss=r.get("near_miss", False),
+            adverse_excursion=r.get("adverse_excursion", False),
+            mfe_pct=r.get("mfe_pct"),
+            mae_pct=r.get("mae_pct"),
+            time_to_target=r.get("time_to_target"),
+        )
+        candidates.append(cand)
+
+    return candidates
+
+
+def verify_exact_sample_equivalence(
+    candidates: list[PilotCandidate],
+    source_ak_path: Path,
+) -> None:
+    """Assert exact equality against frozen source answer key on all identifying fields."""
+    with open(source_ak_path, "r", encoding="utf-8") as f:
+        ak_data = json.load(f)
+    records = ak_data.get("records", [])
+    if len(candidates) != len(records):
+        raise ValueError(
+            f"SAMPLE EQUIVALENCE FAILURE: candidate count {len(candidates)} != source count {len(records)}"
+        )
+
+    for i, (c, r) in enumerate(zip(candidates, records)):
+        if c.case_id != r["case_id"]:
+            raise ValueError(f"SAMPLE EQUIVALENCE FAILURE at index {i}: case_id {c.case_id} != {r['case_id']}")
+        if c.sample_stratum != r["sample_stratum"]:
+            raise ValueError(f"SAMPLE EQUIVALENCE FAILURE at index {i}: stratum {c.sample_stratum} != {r['sample_stratum']}")
+        if c.immutable_security_id != r["immutable_security_id"]:
+            raise ValueError(f"SAMPLE EQUIVALENCE FAILURE at index {i}: sec_id {c.immutable_security_id} != {r['immutable_security_id']}")
+        if c.as_of_date != r["decision_date"]:
+            raise ValueError(f"SAMPLE EQUIVALENCE FAILURE at index {i}: date {c.as_of_date} != {r['decision_date']}")
+        if c.cutoff_time != r["cutoff_time"]:
+            raise ValueError(f"SAMPLE EQUIVALENCE FAILURE at index {i}: cutoff {c.cutoff_time} != {r['cutoff_time']}")
+        if c.episode_id != r.get("episode_id"):
+            raise ValueError(f"SAMPLE EQUIVALENCE FAILURE at index {i}: episode_id {c.episode_id} != {r.get('episode_id')}")
+
+
+def load_pit_tables(stage_c_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Load and index Stage C PIT evidence tables with strict duplicate and schema checks."""
+    verify_stage_c_pit_hashes(stage_c_dir)
+
+    de_path = stage_c_dir / "data_eligibility.parquet"
+    sc_path = stage_c_dir / "security_classification_status.parquet"
+    es_path = stage_c_dir / "earnings_schedule_status.parquet"
+
+    # Required fields verification
+    df_de = pq.read_table(de_path).to_pandas()
+    df_sc = pq.read_table(sc_path).to_pandas()
+    df_es = pq.read_table(es_path).to_pandas()
+
+    req_de = [
+        "immutable_security_id", "as_of_date", "cutoff_time", "market_cap",
+        "trading_history_sessions", "cohort_type", "eligibility_passed",
+        "rejection_reason_codes", "index_membership_verified",
+    ]
+    for col in req_de:
+        if col not in df_de.columns:
+            raise ValueError(f"Missing required field '{col}' in data_eligibility.parquet")
+
+    req_sc = [
+        "immutable_security_id", "as_of_date", "ticker_at_decision",
+        "inferred_classification", "classification_status",
+        "is_eligible_common_stock", "provenance_source",
+    ]
+    for col in req_sc:
+        if col not in df_sc.columns:
+            raise ValueError(f"Missing required field '{col}' in security_classification_status.parquet")
+
+    req_es = [
+        "immutable_security_id", "as_of_date", "cutoff_time",
+        "schedule_status", "next_earnings_date", "announcement_timing",
+        "sessions_to_earnings", "provenance_source",
+    ]
+    for col in req_es:
+        if col not in df_es.columns:
+            raise ValueError(f"Missing required field '{col}' in earnings_schedule_status.parquet")
+
+    # Duplicate check for data_eligibility on (immutable_security_id, as_of_date, cutoff_time)
+    if df_de.duplicated(subset=["immutable_security_id", "as_of_date", "cutoff_time"]).any():
+        raise ValueError("FAIL-CLOSED: Duplicate keys detected in data_eligibility.parquet!")
+
+    # Duplicate check for earnings_schedule_status on (immutable_security_id, as_of_date, cutoff_time)
+    if df_es.duplicated(subset=["immutable_security_id", "as_of_date", "cutoff_time"]).any():
+        raise ValueError("FAIL-CLOSED: Duplicate keys detected in earnings_schedule_status.parquet!")
+
+    # Check security_classification_status for conflicting records per (immutable_security_id, as_of_date)
+    sc_unique_class = df_sc.drop_duplicates(subset=["immutable_security_id", "as_of_date", "is_eligible_common_stock", "inferred_classification"])
+    if sc_unique_class.duplicated(subset=["immutable_security_id", "as_of_date"]).any():
+        raise ValueError("FAIL-CLOSED: Conflicting classification records in security_classification_status.parquet!")
+
+    df_de_indexed = df_de.set_index(["immutable_security_id", "as_of_date", "cutoff_time"])
+    df_sc_indexed = sc_unique_class.drop_duplicates(subset=["immutable_security_id", "as_of_date"]).set_index(["immutable_security_id", "as_of_date"])
+    df_es_indexed = df_es.set_index(["immutable_security_id", "as_of_date", "cutoff_time"])
+
+    return df_de_indexed, df_sc_indexed, df_es_indexed
 
 
 def run_pipeline(
     run_id: str | None = None,
     repo_root: Path = Path("."),
     seed: int = PILOT_SEED,
+    allow_dirty: bool = False,
+    execution_code_sha: str | None = None,
 ) -> dict[str, Any]:
     """Execute complete empirical pilot generation pipeline."""
+    # 0. Enforce locked seed policy
+    enforce_pilot_seed(seed)
+
     if run_id is None:
         run_id = datetime.now(UTC).strftime("%Y-%m-%d-%H%M%S")
 
     print(f"=== LONG-002D3A Blinded Review Pilot Run: {run_id} ===")
 
-    # 1. Verify spec integrity
+    # 1. Verify spec and correction contract integrity
     spec_path = repo_root / "docs" / "research" / "specs" / "LONG-002D3A-v1.json"
-    verify_spec_sha256(spec_path)
+    verify_spec_sha256(spec_path if spec_path.exists() else SPEC_PATH)
     print("  [OK] Preregistration spec verified (SHA-256 matches locked value)")
 
-    # 2. Verify upstream inputs integrity
+    corr_spec_path = repo_root / "docs" / "research" / "specs" / "LONG-002D3A-CORR-001.json"
+    verify_corr_spec_sha256(corr_spec_path if corr_spec_path.exists() else CORR_SPEC_PATH)
+    print("  [OK] CORR-001 correction contract verified (SHA-256 matches locked value)")
+
+    # 2. Execution provenance verification
+    git_sha = execution_code_sha or get_git_head_sha(repo_root)
+    is_clean = is_git_worktree_clean(repo_root)
+    if not is_clean and not allow_dirty:
+        raise RuntimeError(
+            "FAIL-CLOSED: Git working tree is dirty! Official correction execution requires a clean worktree."
+        )
+    print(f"  [OK] Execution provenance verified (HEAD: {git_sha[:8]}, clean: {is_clean})")
+
+    # 3. Verify upstream inputs and Stage C PIT evidence integrity
     stage_c_dir = repo_root / "data" / "research" / "long_002c"
     cache_dir = repo_root / "data" / "cache" / "long_002c"
-    feature_table_path = repo_root / "data" / "research" / "long_002d1" / "feature_table.parquet"
 
     verify_upstream_hashes(stage_c_dir)
     print("  [OK] Stage C upstream inputs verified byte-for-byte")
 
-    # 3. Load discovery manifest for candidate security definitions
+    df_de_idx, df_sc_idx, df_es_idx = load_pit_tables(stage_c_dir)
+    print("  [OK] Stage C PIT evidence tables verified and indexed")
+
+    # 4. Load discovery manifest for candidate security definitions
     manifest_path = stage_c_dir / "discovery_manifest.json"
     with open(manifest_path, "r", encoding="utf-8") as f:
         manifest_data = json.load(f)
@@ -74,22 +271,19 @@ def run_pipeline(
         for c in manifest_data["candidates"]
     }
 
-    # 4. Initialize read-only Alpaca cache client (zero network calls)
+    # 5. Initialize read-only Alpaca cache client (zero network calls)
     alpaca, _, tracker = create_read_only_alpaca_client(cache_dir)
     spy_closes = load_spy_daily_closes(alpaca)
     print("  [OK] Read-only cache client loaded; SPY closes verified")
 
-    # 5. Sample 24 pilot cases deterministically
-    print(f"  Sampling {PILOT_SIZE} pilot cases with seed {seed}...")
-    candidates = sample_pilot_cases(stage_c_dir, seed=seed)
-    assert len(candidates) == PILOT_SIZE
+    # 6. Reconstruct the exact 24 pilot cases from frozen source answer key
+    source_ak_path = repo_root / "data" / "research" / "long_002d3a" / SOURCE_PILOT_RUN_ID / "pilot_answer_key.json"
+    print(f"  Reconstructing {PILOT_SIZE} cases from frozen source answer key ({source_ak_path})...")
+    candidates = reconstruct_candidates_from_source_answer_key(source_ak_path)
+    verify_exact_sample_equivalence(candidates, source_ak_path)
+    print("  [OK] Exact sample equivalence confirmed (zero resampling, exact ordering preserved)")
 
-    # Load market cap for candidates from feature table
-    ft_cols = ["immutable_security_id", "as_of_date", "cutoff_time", "market_cap"]
-    df_ft = pq.read_table(feature_table_path, columns=ft_cols).to_pandas()
-    df_ft_indexed = df_ft.set_index(["immutable_security_id", "as_of_date", "cutoff_time"])
-
-    # 6. Generate blinded case packets and answer key records
+    # 7. Generate blinded case packets with authentic Stage C PIT joins
     print("  Constructing Stage A and Stage B blinded packets...")
     stage_a_packets = []
     stage_b_packets = []
@@ -97,42 +291,50 @@ def run_pipeline(
 
     for cand in candidates:
         cand_sec = cands_by_id[cand.immutable_security_id]
-        key = (cand.immutable_security_id, cand.as_of_date, cand.cutoff_time)
+        key_cutoff = (cand.immutable_security_id, cand.as_of_date, cand.cutoff_time)
+        key_date = (cand.immutable_security_id, cand.as_of_date)
 
-        mcap = None
-        if key in df_ft_indexed.index:
-            val = df_ft_indexed.loc[key, "market_cap"]
-            if pd.notna(val):
-                mcap = float(val)
+        if key_cutoff not in df_de_idx.index:
+            raise KeyError(f"FAIL-CLOSED: Missing data eligibility for {cand.case_id}: {key_cutoff}")
+        if key_date not in df_sc_idx.index:
+            raise KeyError(f"FAIL-CLOSED: Missing classification for {cand.case_id}: {key_date}")
+        if key_cutoff not in df_es_idx.index:
+            raise KeyError(f"FAIL-CLOSED: Missing earnings status for {cand.case_id}: {key_cutoff}")
 
-        elig_row = {
-            "market_cap": mcap,
-            "cohort_type": "established",
-            "trading_history_sessions": 252,
-        }
+        de_row = df_de_idx.loc[key_cutoff].to_dict()
+        sc_row = df_sc_idx.loc[key_date].to_dict()
+        es_row = df_es_idx.loc[key_cutoff].to_dict()
 
         sa, sb, ak = generate_blinded_case_packet(
             candidate=cand,
             cand_security=cand_sec,
             alpaca=alpaca,
             spy_closes=spy_closes,
-            eligibility_row=elig_row,
-            earnings_row=None,
+            eligibility_row=de_row,
+            classification_row=sc_row,
+            earnings_row=es_row,
         )
         stage_a_packets.append(sa)
         stage_b_packets.append(sb)
         answer_keys.append(ak)
 
-    # 7. Execute exhaustive blinding audit
-    print("  Auditing case packets for identity, date, and outcome leakage...")
+    # 8. Execute exhaustive blinding audit (including company-name and viewer HTML checks)
+    print("  Auditing case packets for identity, company-name, date, and outcome leakage...")
     stage_a_dicts = [p.to_dict() for p in stage_a_packets]
     stage_b_dicts = [p.to_dict() for p in stage_b_packets]
-    audit_summary = audit_all_pilot_cases(stage_a_dicts, stage_b_dicts, answer_keys)
+
+    audit_summary = audit_all_pilot_cases(
+        stage_a_packets=stage_a_dicts,
+        stage_b_packets=stage_b_dicts,
+        answer_keys=answer_keys,
+        cands_by_id=cands_by_id,
+        viewer_html_text=None,
+    )
     assert audit_summary["all_cases_passed_blinding_audit"] is True
     print("  [OK] All 24 cases PASSED blinding audit (zero leakage)")
 
-    # 8. Persist external and committed artifacts
-    print("  Persisting artifacts and computing cryptographic commitment...")
+    # 9. Persist external and committed artifacts
+    print("  Persisting artifacts and computing cryptographic commitments...")
     res = write_pilot_artifacts(
         run_id=run_id,
         stage_a_packets=stage_a_packets,
@@ -141,14 +343,33 @@ def run_pipeline(
         audit_summary=audit_summary,
         candidates=candidates,
         repo_root=repo_root,
+        execution_code_sha=git_sha,
+        git_worktree_clean_at_start=is_clean,
+        source_pilot_run_id=SOURCE_PILOT_RUN_ID,
+        source_pilot_answer_key_sha256=SOURCE_PILOT_ANSWER_KEY_SHA256,
     )
+
+    # 10. Audit generated index.html viewer file directly on disk
+    viewer_html_path = Path(res["external_dir"]) / "pilot_blinded" / "index.html"
+    if viewer_html_path.exists():
+        with open(viewer_html_path, "r", encoding="utf-8") as f:
+            viewer_html_text = f.read()
+        html_audit = audit_all_pilot_cases(
+            stage_a_packets=stage_a_dicts,
+            stage_b_packets=stage_b_dicts,
+            answer_keys=answer_keys,
+            cands_by_id=cands_by_id,
+            viewer_html_text=viewer_html_text,
+        )
+        assert html_audit["all_cases_passed_blinding_audit"] is True
+        print("  [OK] Viewer HTML PASSED full identity and company-name blinding audit")
 
     print("=== Execution Complete ===")
     print(f"Run ID: {run_id}")
     print(f"External Data Directory: {res['external_dir']}")
     print(f"Committed Artifacts Directory: {res['committed_dir']}")
-    print(f"Answer Key SHA-256: {res['answer_key_sha256']}")
-    print(f"Answer Key Bytes: {res['answer_key_bytes']}")
+    print(f"Source Answer Key SHA-256: {res['answer_key_sha256']}")
+    print(f"Pilot Exclusion Keys SHA-256: {res['exclusion_keys_sha256']}")
     print(f"Network audit: {tracker.live_request_path_attempts} live attempts, {tracker.outbound_http_requests_executed} HTTP calls executed")
 
     return res
@@ -219,7 +440,30 @@ def verify_run(run_id: str, repo_root: Path = Path(".")) -> bool:
     else:
         print(f"  [INFO] External answer key not present on this machine (commitment {commitment_data['sha256'][:12]}... recorded).")
 
-    # 3. Verify main study contract status
+    # 3. Verify pilot exclusion commitment against external file if present locally
+    exclusion_commitment_file = committed_dir / "pilot_exclusion_commitment.json"
+    if exclusion_commitment_file.exists():
+        with open(exclusion_commitment_file, "r", encoding="utf-8") as f:
+            excl_comm = json.load(f)
+        excl_ext_path = repo_root / excl_comm["relative_external_path"]
+        if excl_ext_path.exists():
+            print(f"  Checking external exclusion keys: {excl_comm['relative_external_path']}...")
+            actual_excl_size = excl_ext_path.stat().st_size
+            actual_excl_sha = compute_file_sha256(excl_ext_path)
+            if actual_excl_size != excl_comm["byte_count"]:
+                print(f"  [FAIL] Exclusion byte count mismatch: expected {excl_comm['byte_count']}, got {actual_excl_size}")
+                return False
+            if actual_excl_sha != excl_comm["sha256"]:
+                print(f"  [FAIL] Exclusion SHA-256 mismatch: expected {excl_comm['sha256']}, got {actual_excl_sha}")
+                return False
+            with open(excl_ext_path, "r", encoding="utf-8") as f:
+                excl_records = json.load(f)
+            if len(excl_records) != excl_comm["record_count"]:
+                print(f"  [FAIL] Exclusion record count mismatch: expected {excl_comm['record_count']}, got {len(excl_records)}")
+                return False
+            print("  [OK] External exclusion keys cryptographic commitment verified byte-for-byte!")
+
+    # 4. Verify main study contract status and forward blinding hygiene
     main_contract_file = committed_dir / "main_study_contract.json"
     with open(main_contract_file, "r", encoding="utf-8") as f:
         mc_data = json.load(f)
@@ -229,7 +473,11 @@ def verify_run(run_id: str, repo_root: Path = Path(".")) -> bool:
     if mc_data.get("main_study_sample_size") != FUTURE_MAIN_SIZE:
         print(f"  [FAIL] Invalid main study sample size: {mc_data.get('main_study_sample_size')}")
         return False
-    print("  [OK] Main study contract verified (UNEXECUTED, size 240, 24 exclusions recorded)")
+    # Forward blinding hygiene: ensure raw keys are NOT present in committed contract for correction runs
+    if run_id != SOURCE_PILOT_RUN_ID and "pilot_excluded_keys" in mc_data:
+        print("  [FAIL] Raw pilot_excluded_keys found in committed main study contract!")
+        return False
+    print("  [OK] Main study contract verified (UNEXECUTED, size 240)")
 
     print("=== Verification Successful! ===")
     return True
@@ -293,6 +541,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--run-id", type=str, default=None, help="Optional run ID (defaults to UTC timestamp)")
     p_run.add_argument("--seed", type=int, default=PILOT_SEED, help="Random seed (defaults to 20261003)")
     p_run.add_argument("--repo-root", type=Path, default=Path("."), help="Path to repository root")
+    p_run.add_argument("--allow-dirty", action="store_true", help="Allow running on dirty worktree (testing only)")
 
     # Subcommand: verify
     p_verify = subparsers.add_parser("verify", help="Verify run artifacts and commitments")
@@ -323,7 +572,12 @@ def main(args: list[str] | None = None) -> int:
     parsed = parser.parse_args(args)
 
     if parsed.command == "run":
-        run_pipeline(run_id=parsed.run_id, repo_root=parsed.repo_root, seed=parsed.seed)
+        run_pipeline(
+            run_id=parsed.run_id,
+            repo_root=parsed.repo_root,
+            seed=parsed.seed,
+            allow_dirty=parsed.allow_dirty,
+        )
         return 0
     elif parsed.command == "verify":
         success = verify_run(run_id=parsed.run_id, repo_root=parsed.repo_root)

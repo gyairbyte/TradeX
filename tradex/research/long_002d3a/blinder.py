@@ -47,7 +47,8 @@ def generate_blinded_case_packet(
     alpaca: AlpacaDailyClient,
     spy_closes: dict[str, float],
     eligibility_row: dict[str, Any] | None,
-    earnings_row: dict[str, Any] | None,
+    classification_row: dict[str, Any] | None = None,
+    earnings_row: dict[str, Any] | None = None,
 ) -> tuple[StageAPacket, StageBPacket, AnswerKeyRecord]:
     """Construct anonymized Stage A packet, Stage B packet, and AnswerKeyRecord.
 
@@ -192,18 +193,40 @@ def generate_blinded_case_packet(
 
     # 5. Build Stage B packet with approved PIT fields
     mkt_cap = eligibility_row.get("market_cap") if eligibility_row else None
-    cohort_type = eligibility_row.get("cohort_type", "established") if eligibility_row else "established"
-    trading_sessions = eligibility_row.get("trading_history_sessions", 252) if eligibility_row else 252
+    cohort_type = eligibility_row.get("cohort_type") if eligibility_row else None
+    trading_sessions = eligibility_row.get("trading_history_sessions") if eligibility_row else None
 
-    pit_mkt_cap_cohort = get_market_cap_cohort(mkt_cap)
-    pit_trading_cohort = f"{cohort_type} ({trading_sessions}+ sessions history)"
+    pit_mkt_cap_cohort = get_market_cap_cohort(mkt_cap) if mkt_cap is not None else "unknown"
+    if cohort_type is not None and trading_sessions is not None:
+        pit_trading_cohort = f"{cohort_type} ({trading_sessions}+ sessions history)"
+    elif cohort_type is not None:
+        pit_trading_cohort = f"{cohort_type}"
+    elif trading_sessions is not None:
+        pit_trading_cohort = f"{trading_sessions}+ sessions history"
+    else:
+        pit_trading_cohort = "unknown"
 
-    earnings_status = earnings_row.get("schedule_status", "unknown") if earnings_row else "unknown"
+    # Security classification status
+    is_eligible_stock = classification_row.get("is_eligible_common_stock") if classification_row else None
+    inferred_class = classification_row.get("inferred_classification") if classification_row else None
+    if classification_row is None:
+        sec_type = "unknown"
+    elif is_eligible_stock is True:
+        sec_type = "U.S. Common Stock (Operating Company)"
+    elif is_eligible_stock is False:
+        sec_type = f"Ineligible ({inferred_class or 'unknown'})"
+    else:
+        sec_type = "unknown"
+
+    # Earnings schedule status
+    earnings_status = earnings_row.get("schedule_status") if earnings_row else None
+    if earnings_status is None:
+        earnings_status = "unknown"
     announcement_timing = earnings_row.get("announcement_timing") if earnings_row else None
     sessions_to_earnings = earnings_row.get("sessions_to_earnings") if earnings_row else None
 
     pit_context = {
-        "security_type": "U.S. Common Stock (Operating Company)",
+        "security_type": sec_type,
         "market_cap_cohort": pit_mkt_cap_cohort,
         "trading_history_cohort": pit_trading_cohort,
         "pit_earnings_schedule_status": earnings_status,
