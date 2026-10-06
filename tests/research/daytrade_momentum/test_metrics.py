@@ -201,11 +201,6 @@ def test_provenance_summary_canonical_manifest_backed_path(
     assert summary["calendar"] == manifest.calendar
     assert summary["timezone"] == manifest.timezone
 
-    # Also verify result.provenance is consistent
-    assert res.provenance["provider"] == manifest.provider
-    assert res.provenance["feed"] == manifest.feed
-    assert res.provenance["manifest_sha256"] == manifest.manifest_sha256
-
 
 def test_provenance_summary_canonical_manifest_fallback_status(
     locked_spec: DaytradeSpec, temp_dataset_root: Path

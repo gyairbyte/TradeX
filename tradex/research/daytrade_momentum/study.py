@@ -295,6 +295,7 @@ def evaluate_split(
         if manifest_file.is_file():
             manifest_data = json.loads(manifest_file.read_text(encoding="utf-8"))
             target_manifest = DaytradeDatasetManifest.from_dict(manifest_data)
+            verify_dataset_manifest(target_manifest, spec, manifest_file.parent)
 
     # Determine split dates and target calendar sessions
     split_dates = spec.get_split_dates(split)
@@ -596,34 +597,19 @@ def evaluate_split(
     )
 
     eval_sha = freeze.evaluation_code_sha if freeze else (holdout_proof.evaluator_code_sha if holdout_proof else "unfrozen_synthetic")
-    man_sha = freeze.manifest_sha256 if freeze and freeze.manifest_sha256 else (holdout_proof.manifest_sha256 if holdout_proof else (target_manifest.manifest_sha256 if target_manifest else ""))
-
-    if target_manifest is not None:
-        prov_provider = target_manifest.provider
-        prov_feed = target_manifest.feed
-        prov_timeframe = target_manifest.timeframe
-        prov_adjustment = target_manifest.adjustment
-        prov_calendar = target_manifest.calendar
-        prov_timezone = target_manifest.timezone
-    else:
-        prov_provider = "alpaca"
-        prov_feed = "sip"
-        prov_timeframe = "1Min"
-        prov_adjustment = "split"
-        prov_calendar = "XNYS"
-        prov_timezone = "America/New_York"
+    man_sha = freeze.manifest_sha256 if freeze and freeze.manifest_sha256 else (holdout_proof.manifest_sha256 if holdout_proof else "")
 
     provenance = {
         "task_id": "DAYTRADE-002B",
         "spec_sha256": spec.sha256,
         "evaluator_code_sha": eval_sha,
         "manifest_sha256": man_sha,
-        "provider": prov_provider,
-        "feed": prov_feed,
-        "timeframe": prov_timeframe,
-        "adjustment": prov_adjustment,
-        "calendar": prov_calendar,
-        "timezone": prov_timezone,
+        "provider": "alpaca",
+        "feed": "sip",
+        "timeframe": "1Min",
+        "adjustment": "split",
+        "calendar": "XNYS",
+        "timezone": "America/New_York",
         "evidence_confidence_cap": "limited_but_usable_evidence",
         "production_promotion_eligible": False,
     }

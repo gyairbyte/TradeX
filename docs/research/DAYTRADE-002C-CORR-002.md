@@ -89,6 +89,17 @@ No trading or research methodology was changed:
 * Zero changes to signals, thresholds, rolling window, events, directions, entry, exit, friction, baselines, bootstrap, CI, validation gates, or disposition logic.
 * Locked specification SHA-256 remains: `dfad19dc6c88a009e05ef4a42a8b7ad9c64838ca84cdfd64a830a7f70f127127`.
 
+### 3.4 Scope Boundary: Top-Level `StudyResult.provenance` Strictly Preserved
+Following independent review and reconciliation under `PR #99`, this correction strictly modifies ONLY the nested evaluation output metadata:
+`metrics["provider_provenance_summary"]`
+
+The top-level `StudyResult.provenance` audit structure is deliberately and strictly UNCHANGED:
+* `StudyResult.provenance["evaluator_code_sha"]` maintains its pre-existing definition (derived from `EvaluationFreezeRecord` or `HoldoutAccessProof`, falling back to `"unfrozen_synthetic"`).
+* `StudyResult.provenance["manifest_sha256"]` maintains its pre-existing definition (derived from `EvaluationFreezeRecord` or `HoldoutAccessProof`).
+* Top-level provenance environment keys (`provider`, `feed`, `timeframe`, `adjustment`, `calendar`, `timezone`) remain fixed to their locked specification baseline.
+* Target manifest data from disk is NEVER substituted into top-level `StudyResult.provenance`.
+* Any manifest loaded from disk is strictly validated via `verify_dataset_manifest(target_manifest, spec, manifest_file.parent)` prior to building `provider_provenance_summary`.
+
 ---
 
 ## 4. Historical Evidence Immutability
