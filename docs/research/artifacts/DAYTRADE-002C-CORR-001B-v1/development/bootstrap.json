@@ -1,0 +1,20 @@
+{
+  "event_minus_baseline_uplift": {
+    "ci_lower": -0.0003345382119786687,
+    "ci_upper": 0.0010563213939105173,
+    "error_reason": null,
+    "point_estimate": 0.00038481311748724684,
+    "resamples": 2000,
+    "seed": 20260926,
+    "status": "computable"
+  },
+  "primary_net_return": {
+    "ci_lower": -0.0007563420747303547,
+    "ci_upper": 0.0005547494073994659,
+    "error_reason": null,
+    "point_estimate": -9.4711543408713e-05,
+    "resamples": 2000,
+    "seed": 20260926,
+    "status": "computable"
+  }
+}

@@ -1,0 +1,160 @@
+{
+  "data_quality_summary": {
+    "exceeds_split_gate": false,
+    "excluded_rate_pct": 0.0,
+    "excluded_ticker_sessions": 0,
+    "exclusion_breakdown": {},
+    "total_ticker_sessions": 615
+  },
+  "eligible_ticker_session_count": 615,
+  "event_count": 153,
+  "event_minus_baseline_mean": 0.0006444268766389628,
+  "event_minus_baseline_median": 0.0006583715696906746,
+  "event_session_count": 36,
+  "events_per_etf": {
+    "DIA": 9,
+    "IWM": 12,
+    "QQQ": 12,
+    "SPY": 11,
+    "XLB": 11,
+    "XLC": 10,
+    "XLE": 9,
+    "XLF": 9,
+    "XLI": 9,
+    "XLK": 12,
+    "XLP": 12,
+    "XLRE": 11,
+    "XLU": 7,
+    "XLV": 10,
+    "XLY": 9
+  },
+  "events_per_month": {
+    "2026-05": 74,
+    "2026-06": 79
+  },
+  "long_event_count": 91,
+  "long_side_primary_results": {
+    "event_count": 91,
+    "mean_net_signed_return_2bps": -8.374543594625995e-05,
+    "mean_uplift_2bps": 0.0002866691429211126,
+    "win_rate_gross": 0.5934065934065934
+  },
+  "matched_non_event_baseline_mean": -0.00029821470032322464,
+  "matched_non_event_baseline_median": -0.00037689295797005515,
+  "maximum_single_etf_event_concentration": 7.8431372549019605,
+  "mean_gross_signed_return_30m": 0.0007462121763157383,
+  "mean_net_signed_return_0bps": 0.0007462121763157383,
+  "mean_net_signed_return_2bps": 0.00034621217631573825,
+  "mean_net_signed_return_5bps": -0.0002537878236842618,
+  "median_gross_signed_return_30m": 0.0009002925950933882,
+  "median_net_signed_return_0bps": 0.0009002925950933882,
+  "median_net_signed_return_2bps": 0.0005002925950933882,
+  "median_net_signed_return_5bps": -9.97074049066118e-05,
+  "multi_signal_session_count": 33,
+  "multi_signal_session_rate": 0.9166666666666666,
+  "per_etf_primary_results": {
+    "DIA": {
+      "event_count": 9,
+      "mean_net_signed_return_2bps": -0.0006306817771697463,
+      "win_rate_gross": 0.3333333333333333
+    },
+    "IWM": {
+      "event_count": 12,
+      "mean_net_signed_return_2bps": 0.00039257000402176606,
+      "win_rate_gross": 0.75
+    },
+    "QQQ": {
+      "event_count": 12,
+      "mean_net_signed_return_2bps": 0.0010184134417423076,
+      "win_rate_gross": 0.8333333333333334
+    },
+    "SPY": {
+      "event_count": 11,
+      "mean_net_signed_return_2bps": 0.00036743125095686655,
+      "win_rate_gross": 0.8181818181818182
+    },
+    "XLB": {
+      "event_count": 11,
+      "mean_net_signed_return_2bps": -0.0002710339373067475,
+      "win_rate_gross": 0.5454545454545454
+    },
+    "XLC": {
+      "event_count": 10,
+      "mean_net_signed_return_2bps": 0.0004990477096208704,
+      "win_rate_gross": 0.9
+    },
+    "XLE": {
+      "event_count": 9,
+      "mean_net_signed_return_2bps": 6.121217500110708e-05,
+      "win_rate_gross": 0.5555555555555556
+    },
+    "XLF": {
+      "event_count": 9,
+      "mean_net_signed_return_2bps": -0.0007165871062583704,
+      "win_rate_gross": 0.5555555555555556
+    },
+    "XLI": {
+      "event_count": 9,
+      "mean_net_signed_return_2bps": 0.00023962961339323076,
+      "win_rate_gross": 0.6666666666666666
+    },
+    "XLK": {
+      "event_count": 12,
+      "mean_net_signed_return_2bps": 0.0014809949205839765,
+      "win_rate_gross": 0.75
+    },
+    "XLP": {
+      "event_count": 12,
+      "mean_net_signed_return_2bps": -0.00032841683855865355,
+      "win_rate_gross": 0.5
+    },
+    "XLRE": {
+      "event_count": 11,
+      "mean_net_signed_return_2bps": 0.0015965725673024267,
+      "win_rate_gross": 0.9090909090909091
+    },
+    "XLU": {
+      "event_count": 7,
+      "mean_net_signed_return_2bps": 0.001278472441980066,
+      "win_rate_gross": 0.8571428571428571
+    },
+    "XLV": {
+      "event_count": 10,
+      "mean_net_signed_return_2bps": -9.43786448004632e-05,
+      "win_rate_gross": 0.5
+    },
+    "XLY": {
+      "event_count": 9,
+      "mean_net_signed_return_2bps": 7.668961774068448e-07,
+      "win_rate_gross": 0.6666666666666666
+    }
+  },
+  "per_month_primary_results": {
+    "2026-05": {
+      "event_count": 74,
+      "mean_net_signed_return_2bps": -3.626167778170666e-05
+    },
+    "2026-06": {
+      "event_count": 79,
+      "mean_net_signed_return_2bps": 0.0007044788244576489
+    }
+  },
+  "provider_provenance_summary": {
+    "adjustment": "split",
+    "calendar": "XNYS",
+    "feed": "sip",
+    "provider": "alpaca",
+    "status": "synthetic_fixtures_only",
+    "timeframe": "1Min",
+    "timezone": "America/New_York"
+  },
+  "represented_etf_count": 15,
+  "short_event_count": 62,
+  "short_side_primary_results": {
+    "event_count": 62,
+    "mean_net_signed_return_2bps": 0.0009772789943131874,
+    "mean_uplift_2bps": 0.0011695229051603237,
+    "win_rate_gross": 0.8064516129032258
+  },
+  "win_rate_gross_30m": 0.6797385620915033
+}
