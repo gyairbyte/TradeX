@@ -1,0 +1,34 @@
+{
+  "comparator_id": "volatility_aware_momentum_5",
+  "family": "frozen_baseline",
+  "formula": "0.5 * percentile(return_5) + 0.5 * percentile(atr_pct_14)",
+  "evaluation_period": "2017-01-01 to 2020-12-31",
+  "evaluation_dates_count": 981,
+  "oof_base_rate": 0.088685,
+  "matched_top10": {
+    "selected_count": 9675,
+    "precision_at_10": 0.210439,
+    "lift_vs_oof_base_rate": 2.3729,
+    "empirical_clean_move_value": 3.3499,
+    "primary_adverse_rate": 0.4387
+  },
+  "matched_top25": {
+    "selected_count": 24150,
+    "precision_at_25": 0.181615,
+    "lift_vs_oof_base_rate": 2.0479,
+    "empirical_clean_move_value": 2.7226,
+    "primary_adverse_rate": 0.425
+  },
+  "annual_precision_10": {
+    "2017": 0.123506,
+    "2018": 0.177291,
+    "2019": 0.236111,
+    "2020": 0.321311
+  },
+  "full_development_reference": {
+    "top_10_clean_rate": 0.153533,
+    "top_10_lift": 1.732,
+    "top_25_clean_rate": 0.126881,
+    "top_25_lift": 1.4314
+  }
+}

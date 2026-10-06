@@ -1,0 +1,2306 @@
+{
+  "RANK_S1_T1": {
+    "family": "cross_sectional_rank_score",
+    "calibration_status": "not_applicable_round1_unscaled_score",
+    "brier_score": null,
+    "reliability_table": null,
+    "top10_overlap_pct": 0.3776,
+    "top25_overlap_pct": 0.4236,
+    "top10_distinct_tickers": 626,
+    "top25_distinct_tickers": 907
+  },
+  "RANK_S1_T2": {
+    "family": "cross_sectional_rank_score",
+    "calibration_status": "not_applicable_round1_unscaled_score",
+    "brier_score": null,
+    "reliability_table": null,
+    "top10_overlap_pct": 0.4178,
+    "top25_overlap_pct": 0.481,
+    "top10_distinct_tickers": 557,
+    "top25_distinct_tickers": 814
+  },
+  "RANK_S1_T3": {
+    "family": "cross_sectional_rank_score",
+    "calibration_status": "not_applicable_round1_unscaled_score",
+    "brier_score": null,
+    "reliability_table": null,
+    "top10_overlap_pct": 0.414,
+    "top25_overlap_pct": 0.4783,
+    "top10_distinct_tickers": 614,
+    "top25_distinct_tickers": 894
+  },
+  "RANK_S2_T1": {
+    "family": "cross_sectional_rank_score",
+    "calibration_status": "not_applicable_round1_unscaled_score",
+    "brier_score": null,
+    "reliability_table": null,
+    "top10_overlap_pct": 0.3539,
+    "top25_overlap_pct": 0.3925,
+    "top10_distinct_tickers": 664,
+    "top25_distinct_tickers": 956
+  },
+  "RANK_S2_T2": {
+    "family": "cross_sectional_rank_score",
+    "calibration_status": "not_applicable_round1_unscaled_score",
+    "brier_score": null,
+    "reliability_table": null,
+    "top10_overlap_pct": 0.4249,
+    "top25_overlap_pct": 0.4765,
+    "top10_distinct_tickers": 545,
+    "top25_distinct_tickers": 798
+  },
+  "RANK_S2_T3": {
+    "family": "cross_sectional_rank_score",
+    "calibration_status": "not_applicable_round1_unscaled_score",
+    "brier_score": null,
+    "reliability_table": null,
+    "top10_overlap_pct": 0.4537,
+    "top25_overlap_pct": 0.5197,
+    "top10_distinct_tickers": 628,
+    "top25_distinct_tickers": 897
+  },
+  "RANK_S3_T1": {
+    "family": "cross_sectional_rank_score",
+    "calibration_status": "not_applicable_round1_unscaled_score",
+    "brier_score": null,
+    "reliability_table": null,
+    "top10_overlap_pct": 0.3048,
+    "top25_overlap_pct": 0.3672,
+    "top10_distinct_tickers": 809,
+    "top25_distinct_tickers": 1083
+  },
+  "RANK_S3_T2": {
+    "family": "cross_sectional_rank_score",
+    "calibration_status": "not_applicable_round1_unscaled_score",
+    "brier_score": null,
+    "reliability_table": null,
+    "top10_overlap_pct": 0.415,
+    "top25_overlap_pct": 0.4894,
+    "top10_distinct_tickers": 640,
+    "top25_distinct_tickers": 855
+  },
+  "RANK_S3_T3": {
+    "family": "cross_sectional_rank_score",
+    "calibration_status": "not_applicable_round1_unscaled_score",
+    "brier_score": null,
+    "reliability_table": null,
+    "top10_overlap_pct": 0.4504,
+    "top25_overlap_pct": 0.5417,
+    "top10_distinct_tickers": 704,
+    "top25_distinct_tickers": 942
+  },
+  "RANK_S4_T1": {
+    "family": "cross_sectional_rank_score",
+    "calibration_status": "not_applicable_round1_unscaled_score",
+    "brier_score": null,
+    "reliability_table": null,
+    "top10_overlap_pct": 0.2913,
+    "top25_overlap_pct": 0.3448,
+    "top10_distinct_tickers": 809,
+    "top25_distinct_tickers": 1074
+  },
+  "RANK_S4_T2": {
+    "family": "cross_sectional_rank_score",
+    "calibration_status": "not_applicable_round1_unscaled_score",
+    "brier_score": null,
+    "reliability_table": null,
+    "top10_overlap_pct": 0.3989,
+    "top25_overlap_pct": 0.4635,
+    "top10_distinct_tickers": 611,
+    "top25_distinct_tickers": 828
+  },
+  "RANK_S4_T3": {
+    "family": "cross_sectional_rank_score",
+    "calibration_status": "not_applicable_round1_unscaled_score",
+    "brier_score": null,
+    "reliability_table": null,
+    "top10_overlap_pct": 0.4434,
+    "top25_overlap_pct": 0.5332,
+    "top10_distinct_tickers": 687,
+    "top25_distinct_tickers": 925
+  },
+  "LOGIT_S1_C003": {
+    "family": "regularized_probabilistic",
+    "calibration_status": "calibrated_probabilities_available",
+    "brier_score": 0.089596,
+    "reliability_table": [
+      {
+        "bin_index": 1,
+        "bin_lower": 0.0,
+        "bin_upper": 0.1,
+        "observation_count": 468659,
+        "mean_predicted_prob": 0.0455,
+        "empirical_clean_rate": 0.055
+      },
+      {
+        "bin_index": 2,
+        "bin_lower": 0.1,
+        "bin_upper": 0.2,
+        "observation_count": 73469,
+        "mean_predicted_prob": 0.1377,
+        "empirical_clean_rate": 0.1922
+      },
+      {
+        "bin_index": 3,
+        "bin_lower": 0.2,
+        "bin_upper": 0.3,
+        "observation_count": 22933,
+        "mean_predicted_prob": 0.243,
+        "empirical_clean_rate": 0.2526
+      },
+      {
+        "bin_index": 4,
+        "bin_lower": 0.3,
+        "bin_upper": 0.4,
+        "observation_count": 11657,
+        "mean_predicted_prob": 0.3459,
+        "empirical_clean_rate": 0.2956
+      },
+      {
+        "bin_index": 5,
+        "bin_lower": 0.4,
+        "bin_upper": 0.5,
+        "observation_count": 7646,
+        "mean_predicted_prob": 0.4471,
+        "empirical_clean_rate": 0.3155
+      },
+      {
+        "bin_index": 6,
+        "bin_lower": 0.5,
+        "bin_upper": 0.6,
+        "observation_count": 5544,
+        "mean_predicted_prob": 0.5473,
+        "empirical_clean_rate": 0.3487
+      },
+      {
+        "bin_index": 7,
+        "bin_lower": 0.6,
+        "bin_upper": 0.7,
+        "observation_count": 4592,
+        "mean_predicted_prob": 0.649,
+        "empirical_clean_rate": 0.3693
+      },
+      {
+        "bin_index": 8,
+        "bin_lower": 0.7,
+        "bin_upper": 0.8,
+        "observation_count": 4561,
+        "mean_predicted_prob": 0.7501,
+        "empirical_clean_rate": 0.3813
+      },
+      {
+        "bin_index": 9,
+        "bin_lower": 0.8,
+        "bin_upper": 0.9,
+        "observation_count": 4566,
+        "mean_predicted_prob": 0.8508,
+        "empirical_clean_rate": 0.3984
+      },
+      {
+        "bin_index": 10,
+        "bin_lower": 0.9,
+        "bin_upper": 1.0,
+        "observation_count": 7021,
+        "mean_predicted_prob": 0.9631,
+        "empirical_clean_rate": 0.3784
+      }
+    ],
+    "top10_overlap_pct": 0.223,
+    "top25_overlap_pct": 0.2784,
+    "top10_distinct_tickers": 245,
+    "top25_distinct_tickers": 409
+  },
+  "LOGIT_S1_C030": {
+    "family": "regularized_probabilistic",
+    "calibration_status": "calibrated_probabilities_available",
+    "brier_score": 0.089611,
+    "reliability_table": [
+      {
+        "bin_index": 1,
+        "bin_lower": 0.0,
+        "bin_upper": 0.1,
+        "observation_count": 468438,
+        "mean_predicted_prob": 0.0454,
+        "empirical_clean_rate": 0.0549
+      },
+      {
+        "bin_index": 2,
+        "bin_lower": 0.1,
+        "bin_upper": 0.2,
+        "observation_count": 73564,
+        "mean_predicted_prob": 0.1377,
+        "empirical_clean_rate": 0.1921
+      },
+      {
+        "bin_index": 3,
+        "bin_lower": 0.2,
+        "bin_upper": 0.3,
+        "observation_count": 22981,
+        "mean_predicted_prob": 0.243,
+        "empirical_clean_rate": 0.2521
+      },
+      {
+        "bin_index": 4,
+        "bin_lower": 0.3,
+        "bin_upper": 0.4,
+        "observation_count": 11662,
+        "mean_predicted_prob": 0.3459,
+        "empirical_clean_rate": 0.2951
+      },
+      {
+        "bin_index": 5,
+        "bin_lower": 0.4,
+        "bin_upper": 0.5,
+        "observation_count": 7676,
+        "mean_predicted_prob": 0.4471,
+        "empirical_clean_rate": 0.3164
+      },
+      {
+        "bin_index": 6,
+        "bin_lower": 0.5,
+        "bin_upper": 0.6,
+        "observation_count": 5553,
+        "mean_predicted_prob": 0.5474,
+        "empirical_clean_rate": 0.3468
+      },
+      {
+        "bin_index": 7,
+        "bin_lower": 0.6,
+        "bin_upper": 0.7,
+        "observation_count": 4600,
+        "mean_predicted_prob": 0.6491,
+        "empirical_clean_rate": 0.3696
+      },
+      {
+        "bin_index": 8,
+        "bin_lower": 0.7,
+        "bin_upper": 0.8,
+        "observation_count": 4566,
+        "mean_predicted_prob": 0.7502,
+        "empirical_clean_rate": 0.3809
+      },
+      {
+        "bin_index": 9,
+        "bin_lower": 0.8,
+        "bin_upper": 0.9,
+        "observation_count": 4564,
+        "mean_predicted_prob": 0.8507,
+        "empirical_clean_rate": 0.3992
+      },
+      {
+        "bin_index": 10,
+        "bin_lower": 0.9,
+        "bin_upper": 1.0,
+        "observation_count": 7044,
+        "mean_predicted_prob": 0.963,
+        "empirical_clean_rate": 0.3783
+      }
+    ],
+    "top10_overlap_pct": 0.2229,
+    "top25_overlap_pct": 0.2784,
+    "top10_distinct_tickers": 245,
+    "top25_distinct_tickers": 409
+  },
+  "LOGIT_S1_C300": {
+    "family": "regularized_probabilistic",
+    "calibration_status": "calibrated_probabilities_available",
+    "brier_score": 0.089612,
+    "reliability_table": [
+      {
+        "bin_index": 1,
+        "bin_lower": 0.0,
+        "bin_upper": 0.1,
+        "observation_count": 468411,
+        "mean_predicted_prob": 0.0454,
+        "empirical_clean_rate": 0.0549
+      },
+      {
+        "bin_index": 2,
+        "bin_lower": 0.1,
+        "bin_upper": 0.2,
+        "observation_count": 73577,
+        "mean_predicted_prob": 0.1377,
+        "empirical_clean_rate": 0.192
+      },
+      {
+        "bin_index": 3,
+        "bin_lower": 0.2,
+        "bin_upper": 0.3,
+        "observation_count": 22986,
+        "mean_predicted_prob": 0.243,
+        "empirical_clean_rate": 0.2522
+      },
+      {
+        "bin_index": 4,
+        "bin_lower": 0.3,
+        "bin_upper": 0.4,
+        "observation_count": 11660,
+        "mean_predicted_prob": 0.3459,
+        "empirical_clean_rate": 0.295
+      },
+      {
+        "bin_index": 5,
+        "bin_lower": 0.4,
+        "bin_upper": 0.5,
+        "observation_count": 7679,
+        "mean_predicted_prob": 0.447,
+        "empirical_clean_rate": 0.3163
+      },
+      {
+        "bin_index": 6,
+        "bin_lower": 0.5,
+        "bin_upper": 0.6,
+        "observation_count": 5559,
+        "mean_predicted_prob": 0.5474,
+        "empirical_clean_rate": 0.3466
+      },
+      {
+        "bin_index": 7,
+        "bin_lower": 0.6,
+        "bin_upper": 0.7,
+        "observation_count": 4599,
+        "mean_predicted_prob": 0.6491,
+        "empirical_clean_rate": 0.3699
+      },
+      {
+        "bin_index": 8,
+        "bin_lower": 0.7,
+        "bin_upper": 0.8,
+        "observation_count": 4565,
+        "mean_predicted_prob": 0.7502,
+        "empirical_clean_rate": 0.3809
+      },
+      {
+        "bin_index": 9,
+        "bin_lower": 0.8,
+        "bin_upper": 0.9,
+        "observation_count": 4568,
+        "mean_predicted_prob": 0.8507,
+        "empirical_clean_rate": 0.3989
+      },
+      {
+        "bin_index": 10,
+        "bin_lower": 0.9,
+        "bin_upper": 1.0,
+        "observation_count": 7044,
+        "mean_predicted_prob": 0.963,
+        "empirical_clean_rate": 0.3783
+      }
+    ],
+    "top10_overlap_pct": 0.2229,
+    "top25_overlap_pct": 0.2784,
+    "top10_distinct_tickers": 245,
+    "top25_distinct_tickers": 409
+  },
+  "LOGIT_S2_C003": {
+    "family": "regularized_probabilistic",
+    "calibration_status": "calibrated_probabilities_available",
+    "brier_score": 0.08959,
+    "reliability_table": [
+      {
+        "bin_index": 1,
+        "bin_lower": 0.0,
+        "bin_upper": 0.1,
+        "observation_count": 467204,
+        "mean_predicted_prob": 0.0452,
+        "empirical_clean_rate": 0.0552
+      },
+      {
+        "bin_index": 2,
+        "bin_lower": 0.1,
+        "bin_upper": 0.2,
+        "observation_count": 73884,
+        "mean_predicted_prob": 0.1379,
+        "empirical_clean_rate": 0.1877
+      },
+      {
+        "bin_index": 3,
+        "bin_lower": 0.2,
+        "bin_upper": 0.3,
+        "observation_count": 23444,
+        "mean_predicted_prob": 0.2434,
+        "empirical_clean_rate": 0.25
+      },
+      {
+        "bin_index": 4,
+        "bin_lower": 0.3,
+        "bin_upper": 0.4,
+        "observation_count": 11693,
+        "mean_predicted_prob": 0.345,
+        "empirical_clean_rate": 0.2919
+      },
+      {
+        "bin_index": 5,
+        "bin_lower": 0.4,
+        "bin_upper": 0.5,
+        "observation_count": 7872,
+        "mean_predicted_prob": 0.4464,
+        "empirical_clean_rate": 0.3101
+      },
+      {
+        "bin_index": 6,
+        "bin_lower": 0.5,
+        "bin_upper": 0.6,
+        "observation_count": 5619,
+        "mean_predicted_prob": 0.5481,
+        "empirical_clean_rate": 0.3449
+      },
+      {
+        "bin_index": 7,
+        "bin_lower": 0.6,
+        "bin_upper": 0.7,
+        "observation_count": 4607,
+        "mean_predicted_prob": 0.6494,
+        "empirical_clean_rate": 0.3644
+      },
+      {
+        "bin_index": 8,
+        "bin_lower": 0.7,
+        "bin_upper": 0.8,
+        "observation_count": 4708,
+        "mean_predicted_prob": 0.7494,
+        "empirical_clean_rate": 0.3745
+      },
+      {
+        "bin_index": 9,
+        "bin_lower": 0.8,
+        "bin_upper": 0.9,
+        "observation_count": 4582,
+        "mean_predicted_prob": 0.8506,
+        "empirical_clean_rate": 0.4129
+      },
+      {
+        "bin_index": 10,
+        "bin_lower": 0.9,
+        "bin_upper": 1.0,
+        "observation_count": 7035,
+        "mean_predicted_prob": 0.962,
+        "empirical_clean_rate": 0.3842
+      }
+    ],
+    "top10_overlap_pct": 0.2169,
+    "top25_overlap_pct": 0.2749,
+    "top10_distinct_tickers": 260,
+    "top25_distinct_tickers": 423
+  },
+  "LOGIT_S2_C030": {
+    "family": "regularized_probabilistic",
+    "calibration_status": "calibrated_probabilities_available",
+    "brier_score": 0.089624,
+    "reliability_table": [
+      {
+        "bin_index": 1,
+        "bin_lower": 0.0,
+        "bin_upper": 0.1,
+        "observation_count": 466941,
+        "mean_predicted_prob": 0.0451,
+        "empirical_clean_rate": 0.0552
+      },
+      {
+        "bin_index": 2,
+        "bin_lower": 0.1,
+        "bin_upper": 0.2,
+        "observation_count": 73942,
+        "mean_predicted_prob": 0.1379,
+        "empirical_clean_rate": 0.1874
+      },
+      {
+        "bin_index": 3,
+        "bin_lower": 0.2,
+        "bin_upper": 0.3,
+        "observation_count": 23540,
+        "mean_predicted_prob": 0.2434,
+        "empirical_clean_rate": 0.25
+      },
+      {
+        "bin_index": 4,
+        "bin_lower": 0.3,
+        "bin_upper": 0.4,
+        "observation_count": 11740,
+        "mean_predicted_prob": 0.3451,
+        "empirical_clean_rate": 0.2907
+      },
+      {
+        "bin_index": 5,
+        "bin_lower": 0.4,
+        "bin_upper": 0.5,
+        "observation_count": 7875,
+        "mean_predicted_prob": 0.4464,
+        "empirical_clean_rate": 0.3101
+      },
+      {
+        "bin_index": 6,
+        "bin_lower": 0.5,
+        "bin_upper": 0.6,
+        "observation_count": 5637,
+        "mean_predicted_prob": 0.5481,
+        "empirical_clean_rate": 0.3445
+      },
+      {
+        "bin_index": 7,
+        "bin_lower": 0.6,
+        "bin_upper": 0.7,
+        "observation_count": 4616,
+        "mean_predicted_prob": 0.6494,
+        "empirical_clean_rate": 0.3633
+      },
+      {
+        "bin_index": 8,
+        "bin_lower": 0.7,
+        "bin_upper": 0.8,
+        "observation_count": 4712,
+        "mean_predicted_prob": 0.7494,
+        "empirical_clean_rate": 0.3746
+      },
+      {
+        "bin_index": 9,
+        "bin_lower": 0.8,
+        "bin_upper": 0.9,
+        "observation_count": 4598,
+        "mean_predicted_prob": 0.8506,
+        "empirical_clean_rate": 0.4128
+      },
+      {
+        "bin_index": 10,
+        "bin_lower": 0.9,
+        "bin_upper": 1.0,
+        "observation_count": 7047,
+        "mean_predicted_prob": 0.962,
+        "empirical_clean_rate": 0.3841
+      }
+    ],
+    "top10_overlap_pct": 0.2165,
+    "top25_overlap_pct": 0.2747,
+    "top10_distinct_tickers": 262,
+    "top25_distinct_tickers": 424
+  },
+  "LOGIT_S2_C300": {
+    "family": "regularized_probabilistic",
+    "calibration_status": "calibrated_probabilities_available",
+    "brier_score": 0.089628,
+    "reliability_table": [
+      {
+        "bin_index": 1,
+        "bin_lower": 0.0,
+        "bin_upper": 0.1,
+        "observation_count": 466916,
+        "mean_predicted_prob": 0.0451,
+        "empirical_clean_rate": 0.0552
+      },
+      {
+        "bin_index": 2,
+        "bin_lower": 0.1,
+        "bin_upper": 0.2,
+        "observation_count": 73954,
+        "mean_predicted_prob": 0.1379,
+        "empirical_clean_rate": 0.1874
+      },
+      {
+        "bin_index": 3,
+        "bin_lower": 0.2,
+        "bin_upper": 0.3,
+        "observation_count": 23544,
+        "mean_predicted_prob": 0.2434,
+        "empirical_clean_rate": 0.2499
+      },
+      {
+        "bin_index": 4,
+        "bin_lower": 0.3,
+        "bin_upper": 0.4,
+        "observation_count": 11740,
+        "mean_predicted_prob": 0.3451,
+        "empirical_clean_rate": 0.2911
+      },
+      {
+        "bin_index": 5,
+        "bin_lower": 0.4,
+        "bin_upper": 0.5,
+        "observation_count": 7878,
+        "mean_predicted_prob": 0.4464,
+        "empirical_clean_rate": 0.3092
+      },
+      {
+        "bin_index": 6,
+        "bin_lower": 0.5,
+        "bin_upper": 0.6,
+        "observation_count": 5641,
+        "mean_predicted_prob": 0.5482,
+        "empirical_clean_rate": 0.3452
+      },
+      {
+        "bin_index": 7,
+        "bin_lower": 0.6,
+        "bin_upper": 0.7,
+        "observation_count": 4613,
+        "mean_predicted_prob": 0.6494,
+        "empirical_clean_rate": 0.3633
+      },
+      {
+        "bin_index": 8,
+        "bin_lower": 0.7,
+        "bin_upper": 0.8,
+        "observation_count": 4715,
+        "mean_predicted_prob": 0.7494,
+        "empirical_clean_rate": 0.3743
+      },
+      {
+        "bin_index": 9,
+        "bin_lower": 0.8,
+        "bin_upper": 0.9,
+        "observation_count": 4599,
+        "mean_predicted_prob": 0.8506,
+        "empirical_clean_rate": 0.4129
+      },
+      {
+        "bin_index": 10,
+        "bin_lower": 0.9,
+        "bin_upper": 1.0,
+        "observation_count": 7048,
+        "mean_predicted_prob": 0.962,
+        "empirical_clean_rate": 0.3841
+      }
+    ],
+    "top10_overlap_pct": 0.2165,
+    "top25_overlap_pct": 0.2745,
+    "top10_distinct_tickers": 262,
+    "top25_distinct_tickers": 424
+  },
+  "LOGIT_S3_C003": {
+    "family": "regularized_probabilistic",
+    "calibration_status": "calibrated_probabilities_available",
+    "brier_score": 0.089633,
+    "reliability_table": [
+      {
+        "bin_index": 1,
+        "bin_lower": 0.0,
+        "bin_upper": 0.1,
+        "observation_count": 467248,
+        "mean_predicted_prob": 0.0452,
+        "empirical_clean_rate": 0.0552
+      },
+      {
+        "bin_index": 2,
+        "bin_lower": 0.1,
+        "bin_upper": 0.2,
+        "observation_count": 73672,
+        "mean_predicted_prob": 0.1378,
+        "empirical_clean_rate": 0.1872
+      },
+      {
+        "bin_index": 3,
+        "bin_lower": 0.2,
+        "bin_upper": 0.3,
+        "observation_count": 23448,
+        "mean_predicted_prob": 0.2433,
+        "empirical_clean_rate": 0.2508
+      },
+      {
+        "bin_index": 4,
+        "bin_lower": 0.3,
+        "bin_upper": 0.4,
+        "observation_count": 11740,
+        "mean_predicted_prob": 0.345,
+        "empirical_clean_rate": 0.2902
+      },
+      {
+        "bin_index": 5,
+        "bin_lower": 0.4,
+        "bin_upper": 0.5,
+        "observation_count": 7867,
+        "mean_predicted_prob": 0.4468,
+        "empirical_clean_rate": 0.3112
+      },
+      {
+        "bin_index": 6,
+        "bin_lower": 0.5,
+        "bin_upper": 0.6,
+        "observation_count": 5602,
+        "mean_predicted_prob": 0.5479,
+        "empirical_clean_rate": 0.3458
+      },
+      {
+        "bin_index": 7,
+        "bin_lower": 0.6,
+        "bin_upper": 0.7,
+        "observation_count": 4647,
+        "mean_predicted_prob": 0.6492,
+        "empirical_clean_rate": 0.3641
+      },
+      {
+        "bin_index": 8,
+        "bin_lower": 0.7,
+        "bin_upper": 0.8,
+        "observation_count": 4697,
+        "mean_predicted_prob": 0.7495,
+        "empirical_clean_rate": 0.3728
+      },
+      {
+        "bin_index": 9,
+        "bin_lower": 0.8,
+        "bin_upper": 0.9,
+        "observation_count": 4621,
+        "mean_predicted_prob": 0.8506,
+        "empirical_clean_rate": 0.4127
+      },
+      {
+        "bin_index": 10,
+        "bin_lower": 0.9,
+        "bin_upper": 1.0,
+        "observation_count": 7106,
+        "mean_predicted_prob": 0.962,
+        "empirical_clean_rate": 0.3853
+      }
+    ],
+    "top10_overlap_pct": 0.2174,
+    "top25_overlap_pct": 0.2752,
+    "top10_distinct_tickers": 265,
+    "top25_distinct_tickers": 425
+  },
+  "LOGIT_S3_C030": {
+    "family": "regularized_probabilistic",
+    "calibration_status": "calibrated_probabilities_available",
+    "brier_score": 0.089668,
+    "reliability_table": [
+      {
+        "bin_index": 1,
+        "bin_lower": 0.0,
+        "bin_upper": 0.1,
+        "observation_count": 466950,
+        "mean_predicted_prob": 0.0451,
+        "empirical_clean_rate": 0.0552
+      },
+      {
+        "bin_index": 2,
+        "bin_lower": 0.1,
+        "bin_upper": 0.2,
+        "observation_count": 73757,
+        "mean_predicted_prob": 0.1378,
+        "empirical_clean_rate": 0.1871
+      },
+      {
+        "bin_index": 3,
+        "bin_lower": 0.2,
+        "bin_upper": 0.3,
+        "observation_count": 23550,
+        "mean_predicted_prob": 0.2433,
+        "empirical_clean_rate": 0.2501
+      },
+      {
+        "bin_index": 4,
+        "bin_lower": 0.3,
+        "bin_upper": 0.4,
+        "observation_count": 11767,
+        "mean_predicted_prob": 0.345,
+        "empirical_clean_rate": 0.2895
+      },
+      {
+        "bin_index": 5,
+        "bin_lower": 0.4,
+        "bin_upper": 0.5,
+        "observation_count": 7876,
+        "mean_predicted_prob": 0.4466,
+        "empirical_clean_rate": 0.3094
+      },
+      {
+        "bin_index": 6,
+        "bin_lower": 0.5,
+        "bin_upper": 0.6,
+        "observation_count": 5622,
+        "mean_predicted_prob": 0.5476,
+        "empirical_clean_rate": 0.3463
+      },
+      {
+        "bin_index": 7,
+        "bin_lower": 0.6,
+        "bin_upper": 0.7,
+        "observation_count": 4672,
+        "mean_predicted_prob": 0.6491,
+        "empirical_clean_rate": 0.3628
+      },
+      {
+        "bin_index": 8,
+        "bin_lower": 0.7,
+        "bin_upper": 0.8,
+        "observation_count": 4705,
+        "mean_predicted_prob": 0.7496,
+        "empirical_clean_rate": 0.3724
+      },
+      {
+        "bin_index": 9,
+        "bin_lower": 0.8,
+        "bin_upper": 0.9,
+        "observation_count": 4630,
+        "mean_predicted_prob": 0.8506,
+        "empirical_clean_rate": 0.4127
+      },
+      {
+        "bin_index": 10,
+        "bin_lower": 0.9,
+        "bin_upper": 1.0,
+        "observation_count": 7119,
+        "mean_predicted_prob": 0.962,
+        "empirical_clean_rate": 0.3854
+      }
+    ],
+    "top10_overlap_pct": 0.2167,
+    "top25_overlap_pct": 0.2752,
+    "top10_distinct_tickers": 268,
+    "top25_distinct_tickers": 429
+  },
+  "LOGIT_S3_C300": {
+    "family": "regularized_probabilistic",
+    "calibration_status": "calibrated_probabilities_available",
+    "brier_score": 0.089671,
+    "reliability_table": [
+      {
+        "bin_index": 1,
+        "bin_lower": 0.0,
+        "bin_upper": 0.1,
+        "observation_count": 466938,
+        "mean_predicted_prob": 0.0451,
+        "empirical_clean_rate": 0.0552
+      },
+      {
+        "bin_index": 2,
+        "bin_lower": 0.1,
+        "bin_upper": 0.2,
+        "observation_count": 73749,
+        "mean_predicted_prob": 0.1378,
+        "empirical_clean_rate": 0.187
+      },
+      {
+        "bin_index": 3,
+        "bin_lower": 0.2,
+        "bin_upper": 0.3,
+        "observation_count": 23556,
+        "mean_predicted_prob": 0.2433,
+        "empirical_clean_rate": 0.2503
+      },
+      {
+        "bin_index": 4,
+        "bin_lower": 0.3,
+        "bin_upper": 0.4,
+        "observation_count": 11769,
+        "mean_predicted_prob": 0.345,
+        "empirical_clean_rate": 0.2895
+      },
+      {
+        "bin_index": 5,
+        "bin_lower": 0.4,
+        "bin_upper": 0.5,
+        "observation_count": 7881,
+        "mean_predicted_prob": 0.4465,
+        "empirical_clean_rate": 0.3092
+      },
+      {
+        "bin_index": 6,
+        "bin_lower": 0.5,
+        "bin_upper": 0.6,
+        "observation_count": 5620,
+        "mean_predicted_prob": 0.5476,
+        "empirical_clean_rate": 0.3464
+      },
+      {
+        "bin_index": 7,
+        "bin_lower": 0.6,
+        "bin_upper": 0.7,
+        "observation_count": 4676,
+        "mean_predicted_prob": 0.6491,
+        "empirical_clean_rate": 0.3629
+      },
+      {
+        "bin_index": 8,
+        "bin_lower": 0.7,
+        "bin_upper": 0.8,
+        "observation_count": 4709,
+        "mean_predicted_prob": 0.7496,
+        "empirical_clean_rate": 0.3721
+      },
+      {
+        "bin_index": 9,
+        "bin_lower": 0.8,
+        "bin_upper": 0.9,
+        "observation_count": 4629,
+        "mean_predicted_prob": 0.8506,
+        "empirical_clean_rate": 0.4126
+      },
+      {
+        "bin_index": 10,
+        "bin_lower": 0.9,
+        "bin_upper": 1.0,
+        "observation_count": 7121,
+        "mean_predicted_prob": 0.962,
+        "empirical_clean_rate": 0.3855
+      }
+    ],
+    "top10_overlap_pct": 0.2173,
+    "top25_overlap_pct": 0.2751,
+    "top10_distinct_tickers": 268,
+    "top25_distinct_tickers": 429
+  },
+  "LOGIT_S4_C003": {
+    "family": "regularized_probabilistic",
+    "calibration_status": "calibrated_probabilities_available",
+    "brier_score": 0.089657,
+    "reliability_table": [
+      {
+        "bin_index": 1,
+        "bin_lower": 0.0,
+        "bin_upper": 0.1,
+        "observation_count": 466761,
+        "mean_predicted_prob": 0.0452,
+        "empirical_clean_rate": 0.0553
+      },
+      {
+        "bin_index": 2,
+        "bin_lower": 0.1,
+        "bin_upper": 0.2,
+        "observation_count": 73871,
+        "mean_predicted_prob": 0.1379,
+        "empirical_clean_rate": 0.1865
+      },
+      {
+        "bin_index": 3,
+        "bin_lower": 0.2,
+        "bin_upper": 0.3,
+        "observation_count": 23624,
+        "mean_predicted_prob": 0.2434,
+        "empirical_clean_rate": 0.2497
+      },
+      {
+        "bin_index": 4,
+        "bin_lower": 0.3,
+        "bin_upper": 0.4,
+        "observation_count": 11805,
+        "mean_predicted_prob": 0.345,
+        "empirical_clean_rate": 0.2905
+      },
+      {
+        "bin_index": 5,
+        "bin_lower": 0.4,
+        "bin_upper": 0.5,
+        "observation_count": 7853,
+        "mean_predicted_prob": 0.4467,
+        "empirical_clean_rate": 0.3094
+      },
+      {
+        "bin_index": 6,
+        "bin_lower": 0.5,
+        "bin_upper": 0.6,
+        "observation_count": 5655,
+        "mean_predicted_prob": 0.5478,
+        "empirical_clean_rate": 0.3473
+      },
+      {
+        "bin_index": 7,
+        "bin_lower": 0.6,
+        "bin_upper": 0.7,
+        "observation_count": 4652,
+        "mean_predicted_prob": 0.6493,
+        "empirical_clean_rate": 0.3629
+      },
+      {
+        "bin_index": 8,
+        "bin_lower": 0.7,
+        "bin_upper": 0.8,
+        "observation_count": 4700,
+        "mean_predicted_prob": 0.7494,
+        "empirical_clean_rate": 0.3743
+      },
+      {
+        "bin_index": 9,
+        "bin_lower": 0.8,
+        "bin_upper": 0.9,
+        "observation_count": 4616,
+        "mean_predicted_prob": 0.8505,
+        "empirical_clean_rate": 0.4103
+      },
+      {
+        "bin_index": 10,
+        "bin_lower": 0.9,
+        "bin_upper": 1.0,
+        "observation_count": 7111,
+        "mean_predicted_prob": 0.962,
+        "empirical_clean_rate": 0.3856
+      }
+    ],
+    "top10_overlap_pct": 0.2165,
+    "top25_overlap_pct": 0.2768,
+    "top10_distinct_tickers": 258,
+    "top25_distinct_tickers": 424
+  },
+  "LOGIT_S4_C030": {
+    "family": "regularized_probabilistic",
+    "calibration_status": "calibrated_probabilities_available",
+    "brier_score": 0.089704,
+    "reliability_table": [
+      {
+        "bin_index": 1,
+        "bin_lower": 0.0,
+        "bin_upper": 0.1,
+        "observation_count": 466425,
+        "mean_predicted_prob": 0.0451,
+        "empirical_clean_rate": 0.0553
+      },
+      {
+        "bin_index": 2,
+        "bin_lower": 0.1,
+        "bin_upper": 0.2,
+        "observation_count": 73967,
+        "mean_predicted_prob": 0.138,
+        "empirical_clean_rate": 0.186
+      },
+      {
+        "bin_index": 3,
+        "bin_lower": 0.2,
+        "bin_upper": 0.3,
+        "observation_count": 23716,
+        "mean_predicted_prob": 0.2434,
+        "empirical_clean_rate": 0.2489
+      },
+      {
+        "bin_index": 4,
+        "bin_lower": 0.3,
+        "bin_upper": 0.4,
+        "observation_count": 11861,
+        "mean_predicted_prob": 0.345,
+        "empirical_clean_rate": 0.2899
+      },
+      {
+        "bin_index": 5,
+        "bin_lower": 0.4,
+        "bin_upper": 0.5,
+        "observation_count": 7879,
+        "mean_predicted_prob": 0.4467,
+        "empirical_clean_rate": 0.3089
+      },
+      {
+        "bin_index": 6,
+        "bin_lower": 0.5,
+        "bin_upper": 0.6,
+        "observation_count": 5666,
+        "mean_predicted_prob": 0.5479,
+        "empirical_clean_rate": 0.347
+      },
+      {
+        "bin_index": 7,
+        "bin_lower": 0.6,
+        "bin_upper": 0.7,
+        "observation_count": 4665,
+        "mean_predicted_prob": 0.6492,
+        "empirical_clean_rate": 0.3616
+      },
+      {
+        "bin_index": 8,
+        "bin_lower": 0.7,
+        "bin_upper": 0.8,
+        "observation_count": 4713,
+        "mean_predicted_prob": 0.7493,
+        "empirical_clean_rate": 0.3747
+      },
+      {
+        "bin_index": 9,
+        "bin_lower": 0.8,
+        "bin_upper": 0.9,
+        "observation_count": 4633,
+        "mean_predicted_prob": 0.8505,
+        "empirical_clean_rate": 0.4092
+      },
+      {
+        "bin_index": 10,
+        "bin_lower": 0.9,
+        "bin_upper": 1.0,
+        "observation_count": 7123,
+        "mean_predicted_prob": 0.962,
+        "empirical_clean_rate": 0.3859
+      }
+    ],
+    "top10_overlap_pct": 0.2163,
+    "top25_overlap_pct": 0.2764,
+    "top10_distinct_tickers": 260,
+    "top25_distinct_tickers": 425
+  },
+  "LOGIT_S4_C300": {
+    "family": "regularized_probabilistic",
+    "calibration_status": "calibrated_probabilities_available",
+    "brier_score": 0.089709,
+    "reliability_table": [
+      {
+        "bin_index": 1,
+        "bin_lower": 0.0,
+        "bin_upper": 0.1,
+        "observation_count": 466391,
+        "mean_predicted_prob": 0.0451,
+        "empirical_clean_rate": 0.0553
+      },
+      {
+        "bin_index": 2,
+        "bin_lower": 0.1,
+        "bin_upper": 0.2,
+        "observation_count": 73971,
+        "mean_predicted_prob": 0.138,
+        "empirical_clean_rate": 0.1859
+      },
+      {
+        "bin_index": 3,
+        "bin_lower": 0.2,
+        "bin_upper": 0.3,
+        "observation_count": 23735,
+        "mean_predicted_prob": 0.2434,
+        "empirical_clean_rate": 0.2489
+      },
+      {
+        "bin_index": 4,
+        "bin_lower": 0.3,
+        "bin_upper": 0.4,
+        "observation_count": 11861,
+        "mean_predicted_prob": 0.345,
+        "empirical_clean_rate": 0.2895
+      },
+      {
+        "bin_index": 5,
+        "bin_lower": 0.4,
+        "bin_upper": 0.5,
+        "observation_count": 7883,
+        "mean_predicted_prob": 0.4467,
+        "empirical_clean_rate": 0.309
+      },
+      {
+        "bin_index": 6,
+        "bin_lower": 0.5,
+        "bin_upper": 0.6,
+        "observation_count": 5669,
+        "mean_predicted_prob": 0.5479,
+        "empirical_clean_rate": 0.3466
+      },
+      {
+        "bin_index": 7,
+        "bin_lower": 0.6,
+        "bin_upper": 0.7,
+        "observation_count": 4665,
+        "mean_predicted_prob": 0.6493,
+        "empirical_clean_rate": 0.3621
+      },
+      {
+        "bin_index": 8,
+        "bin_lower": 0.7,
+        "bin_upper": 0.8,
+        "observation_count": 4716,
+        "mean_predicted_prob": 0.7493,
+        "empirical_clean_rate": 0.3745
+      },
+      {
+        "bin_index": 9,
+        "bin_lower": 0.8,
+        "bin_upper": 0.9,
+        "observation_count": 4631,
+        "mean_predicted_prob": 0.8505,
+        "empirical_clean_rate": 0.4092
+      },
+      {
+        "bin_index": 10,
+        "bin_lower": 0.9,
+        "bin_upper": 1.0,
+        "observation_count": 7126,
+        "mean_predicted_prob": 0.962,
+        "empirical_clean_rate": 0.3859
+      }
+    ],
+    "top10_overlap_pct": 0.2163,
+    "top25_overlap_pct": 0.276,
+    "top10_distinct_tickers": 261,
+    "top25_distinct_tickers": 425
+  },
+  "GBDT_S1_G1": {
+    "family": "shallow_strongly_regularized_gbdt",
+    "calibration_status": "calibrated_probabilities_available",
+    "brier_score": 0.082151,
+    "reliability_table": [
+      {
+        "bin_index": 1,
+        "bin_lower": 0.0,
+        "bin_upper": 0.1,
+        "observation_count": 413604,
+        "mean_predicted_prob": 0.0428,
+        "empirical_clean_rate": 0.0445
+      },
+      {
+        "bin_index": 2,
+        "bin_lower": 0.1,
+        "bin_upper": 0.2,
+        "observation_count": 139401,
+        "mean_predicted_prob": 0.1456,
+        "empirical_clean_rate": 0.1768
+      },
+      {
+        "bin_index": 3,
+        "bin_lower": 0.2,
+        "bin_upper": 0.3,
+        "observation_count": 57643,
+        "mean_predicted_prob": 0.2425,
+        "empirical_clean_rate": 0.3181
+      },
+      {
+        "bin_index": 4,
+        "bin_lower": 0.3,
+        "bin_upper": 0.4,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 5,
+        "bin_lower": 0.4,
+        "bin_upper": 0.5,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 6,
+        "bin_lower": 0.5,
+        "bin_upper": 0.6,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 7,
+        "bin_lower": 0.6,
+        "bin_upper": 0.7,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 8,
+        "bin_lower": 0.7,
+        "bin_upper": 0.8,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 9,
+        "bin_lower": 0.8,
+        "bin_upper": 0.9,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 10,
+        "bin_lower": 0.9,
+        "bin_upper": 1.0,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      }
+    ],
+    "top10_overlap_pct": 0.1206,
+    "top25_overlap_pct": 0.1811,
+    "top10_distinct_tickers": 416,
+    "top25_distinct_tickers": 629
+  },
+  "GBDT_S1_G2": {
+    "family": "shallow_strongly_regularized_gbdt",
+    "calibration_status": "calibrated_probabilities_available",
+    "brier_score": 0.08166,
+    "reliability_table": [
+      {
+        "bin_index": 1,
+        "bin_lower": 0.0,
+        "bin_upper": 0.1,
+        "observation_count": 413093,
+        "mean_predicted_prob": 0.0422,
+        "empirical_clean_rate": 0.0446
+      },
+      {
+        "bin_index": 2,
+        "bin_lower": 0.1,
+        "bin_upper": 0.2,
+        "observation_count": 129374,
+        "mean_predicted_prob": 0.1447,
+        "empirical_clean_rate": 0.1695
+      },
+      {
+        "bin_index": 3,
+        "bin_lower": 0.2,
+        "bin_upper": 0.3,
+        "observation_count": 52821,
+        "mean_predicted_prob": 0.2502,
+        "empirical_clean_rate": 0.2816
+      },
+      {
+        "bin_index": 4,
+        "bin_lower": 0.3,
+        "bin_upper": 0.4,
+        "observation_count": 15360,
+        "mean_predicted_prob": 0.3147,
+        "empirical_clean_rate": 0.4007
+      },
+      {
+        "bin_index": 5,
+        "bin_lower": 0.4,
+        "bin_upper": 0.5,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 6,
+        "bin_lower": 0.5,
+        "bin_upper": 0.6,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 7,
+        "bin_lower": 0.6,
+        "bin_upper": 0.7,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 8,
+        "bin_lower": 0.7,
+        "bin_upper": 0.8,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 9,
+        "bin_lower": 0.8,
+        "bin_upper": 0.9,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 10,
+        "bin_lower": 0.9,
+        "bin_upper": 1.0,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      }
+    ],
+    "top10_overlap_pct": 0.1267,
+    "top25_overlap_pct": 0.1867,
+    "top10_distinct_tickers": 516,
+    "top25_distinct_tickers": 717
+  },
+  "GBDT_S1_G3": {
+    "family": "shallow_strongly_regularized_gbdt",
+    "calibration_status": "calibrated_probabilities_available",
+    "brier_score": 0.081659,
+    "reliability_table": [
+      {
+        "bin_index": 1,
+        "bin_lower": 0.0,
+        "bin_upper": 0.1,
+        "observation_count": 412970,
+        "mean_predicted_prob": 0.0421,
+        "empirical_clean_rate": 0.0446
+      },
+      {
+        "bin_index": 2,
+        "bin_lower": 0.1,
+        "bin_upper": 0.2,
+        "observation_count": 129115,
+        "mean_predicted_prob": 0.1449,
+        "empirical_clean_rate": 0.1699
+      },
+      {
+        "bin_index": 3,
+        "bin_lower": 0.2,
+        "bin_upper": 0.3,
+        "observation_count": 50152,
+        "mean_predicted_prob": 0.248,
+        "empirical_clean_rate": 0.2804
+      },
+      {
+        "bin_index": 4,
+        "bin_lower": 0.3,
+        "bin_upper": 0.4,
+        "observation_count": 18411,
+        "mean_predicted_prob": 0.3151,
+        "empirical_clean_rate": 0.3784
+      },
+      {
+        "bin_index": 5,
+        "bin_lower": 0.4,
+        "bin_upper": 0.5,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 6,
+        "bin_lower": 0.5,
+        "bin_upper": 0.6,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 7,
+        "bin_lower": 0.6,
+        "bin_upper": 0.7,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 8,
+        "bin_lower": 0.7,
+        "bin_upper": 0.8,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 9,
+        "bin_lower": 0.8,
+        "bin_upper": 0.9,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 10,
+        "bin_lower": 0.9,
+        "bin_upper": 1.0,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      }
+    ],
+    "top10_overlap_pct": 0.1463,
+    "top25_overlap_pct": 0.2018,
+    "top10_distinct_tickers": 495,
+    "top25_distinct_tickers": 716
+  },
+  "GBDT_S2_G1": {
+    "family": "shallow_strongly_regularized_gbdt",
+    "calibration_status": "calibrated_probabilities_available",
+    "brier_score": 0.082164,
+    "reliability_table": [
+      {
+        "bin_index": 1,
+        "bin_lower": 0.0,
+        "bin_upper": 0.1,
+        "observation_count": 413604,
+        "mean_predicted_prob": 0.0428,
+        "empirical_clean_rate": 0.0445
+      },
+      {
+        "bin_index": 2,
+        "bin_lower": 0.1,
+        "bin_upper": 0.2,
+        "observation_count": 139671,
+        "mean_predicted_prob": 0.1453,
+        "empirical_clean_rate": 0.1769
+      },
+      {
+        "bin_index": 3,
+        "bin_lower": 0.2,
+        "bin_upper": 0.3,
+        "observation_count": 57373,
+        "mean_predicted_prob": 0.2426,
+        "empirical_clean_rate": 0.3185
+      },
+      {
+        "bin_index": 4,
+        "bin_lower": 0.3,
+        "bin_upper": 0.4,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 5,
+        "bin_lower": 0.4,
+        "bin_upper": 0.5,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 6,
+        "bin_lower": 0.5,
+        "bin_upper": 0.6,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 7,
+        "bin_lower": 0.6,
+        "bin_upper": 0.7,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 8,
+        "bin_lower": 0.7,
+        "bin_upper": 0.8,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 9,
+        "bin_lower": 0.8,
+        "bin_upper": 0.9,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 10,
+        "bin_lower": 0.9,
+        "bin_upper": 1.0,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      }
+    ],
+    "top10_overlap_pct": 0.1153,
+    "top25_overlap_pct": 0.178,
+    "top10_distinct_tickers": 416,
+    "top25_distinct_tickers": 629
+  },
+  "GBDT_S2_G2": {
+    "family": "shallow_strongly_regularized_gbdt",
+    "calibration_status": "calibrated_probabilities_available",
+    "brier_score": 0.081684,
+    "reliability_table": [
+      {
+        "bin_index": 1,
+        "bin_lower": 0.0,
+        "bin_upper": 0.1,
+        "observation_count": 413565,
+        "mean_predicted_prob": 0.0423,
+        "empirical_clean_rate": 0.0449
+      },
+      {
+        "bin_index": 2,
+        "bin_lower": 0.1,
+        "bin_upper": 0.2,
+        "observation_count": 128969,
+        "mean_predicted_prob": 0.1448,
+        "empirical_clean_rate": 0.1693
+      },
+      {
+        "bin_index": 3,
+        "bin_lower": 0.2,
+        "bin_upper": 0.3,
+        "observation_count": 53334,
+        "mean_predicted_prob": 0.25,
+        "empirical_clean_rate": 0.2781
+      },
+      {
+        "bin_index": 4,
+        "bin_lower": 0.3,
+        "bin_upper": 0.4,
+        "observation_count": 14780,
+        "mean_predicted_prob": 0.3134,
+        "empirical_clean_rate": 0.4155
+      },
+      {
+        "bin_index": 5,
+        "bin_lower": 0.4,
+        "bin_upper": 0.5,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 6,
+        "bin_lower": 0.5,
+        "bin_upper": 0.6,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 7,
+        "bin_lower": 0.6,
+        "bin_upper": 0.7,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 8,
+        "bin_lower": 0.7,
+        "bin_upper": 0.8,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 9,
+        "bin_lower": 0.8,
+        "bin_upper": 0.9,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 10,
+        "bin_lower": 0.9,
+        "bin_upper": 1.0,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      }
+    ],
+    "top10_overlap_pct": 0.1288,
+    "top25_overlap_pct": 0.2017,
+    "top10_distinct_tickers": 504,
+    "top25_distinct_tickers": 733
+  },
+  "GBDT_S2_G3": {
+    "family": "shallow_strongly_regularized_gbdt",
+    "calibration_status": "calibrated_probabilities_available",
+    "brier_score": 0.081662,
+    "reliability_table": [
+      {
+        "bin_index": 1,
+        "bin_lower": 0.0,
+        "bin_upper": 0.1,
+        "observation_count": 413593,
+        "mean_predicted_prob": 0.0422,
+        "empirical_clean_rate": 0.0449
+      },
+      {
+        "bin_index": 2,
+        "bin_lower": 0.1,
+        "bin_upper": 0.2,
+        "observation_count": 128460,
+        "mean_predicted_prob": 0.1449,
+        "empirical_clean_rate": 0.1696
+      },
+      {
+        "bin_index": 3,
+        "bin_lower": 0.2,
+        "bin_upper": 0.3,
+        "observation_count": 48675,
+        "mean_predicted_prob": 0.2472,
+        "empirical_clean_rate": 0.2717
+      },
+      {
+        "bin_index": 4,
+        "bin_lower": 0.3,
+        "bin_upper": 0.4,
+        "observation_count": 19920,
+        "mean_predicted_prob": 0.3143,
+        "empirical_clean_rate": 0.3904
+      },
+      {
+        "bin_index": 5,
+        "bin_lower": 0.4,
+        "bin_upper": 0.5,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 6,
+        "bin_lower": 0.5,
+        "bin_upper": 0.6,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 7,
+        "bin_lower": 0.6,
+        "bin_upper": 0.7,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 8,
+        "bin_lower": 0.7,
+        "bin_upper": 0.8,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 9,
+        "bin_lower": 0.8,
+        "bin_upper": 0.9,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 10,
+        "bin_lower": 0.9,
+        "bin_upper": 1.0,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      }
+    ],
+    "top10_overlap_pct": 0.128,
+    "top25_overlap_pct": 0.1921,
+    "top10_distinct_tickers": 520,
+    "top25_distinct_tickers": 740
+  },
+  "GBDT_S3_G1": {
+    "family": "shallow_strongly_regularized_gbdt",
+    "calibration_status": "calibrated_probabilities_available",
+    "brier_score": 0.082267,
+    "reliability_table": [
+      {
+        "bin_index": 1,
+        "bin_lower": 0.0,
+        "bin_upper": 0.1,
+        "observation_count": 414020,
+        "mean_predicted_prob": 0.0429,
+        "empirical_clean_rate": 0.0445
+      },
+      {
+        "bin_index": 2,
+        "bin_lower": 0.1,
+        "bin_upper": 0.2,
+        "observation_count": 139522,
+        "mean_predicted_prob": 0.1455,
+        "empirical_clean_rate": 0.1773
+      },
+      {
+        "bin_index": 3,
+        "bin_lower": 0.2,
+        "bin_upper": 0.3,
+        "observation_count": 57092,
+        "mean_predicted_prob": 0.2382,
+        "empirical_clean_rate": 0.3185
+      },
+      {
+        "bin_index": 4,
+        "bin_lower": 0.3,
+        "bin_upper": 0.4,
+        "observation_count": 14,
+        "mean_predicted_prob": 0.3085,
+        "empirical_clean_rate": 0.6429
+      },
+      {
+        "bin_index": 5,
+        "bin_lower": 0.4,
+        "bin_upper": 0.5,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 6,
+        "bin_lower": 0.5,
+        "bin_upper": 0.6,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 7,
+        "bin_lower": 0.6,
+        "bin_upper": 0.7,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 8,
+        "bin_lower": 0.7,
+        "bin_upper": 0.8,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 9,
+        "bin_lower": 0.8,
+        "bin_upper": 0.9,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 10,
+        "bin_lower": 0.9,
+        "bin_upper": 1.0,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      }
+    ],
+    "top10_overlap_pct": 0.097,
+    "top25_overlap_pct": 0.164,
+    "top10_distinct_tickers": 507,
+    "top25_distinct_tickers": 716
+  },
+  "GBDT_S3_G2": {
+    "family": "shallow_strongly_regularized_gbdt",
+    "calibration_status": "calibrated_probabilities_available",
+    "brier_score": 0.081773,
+    "reliability_table": [
+      {
+        "bin_index": 1,
+        "bin_lower": 0.0,
+        "bin_upper": 0.1,
+        "observation_count": 413331,
+        "mean_predicted_prob": 0.0422,
+        "empirical_clean_rate": 0.0448
+      },
+      {
+        "bin_index": 2,
+        "bin_lower": 0.1,
+        "bin_upper": 0.2,
+        "observation_count": 131337,
+        "mean_predicted_prob": 0.1453,
+        "empirical_clean_rate": 0.1711
+      },
+      {
+        "bin_index": 3,
+        "bin_lower": 0.2,
+        "bin_upper": 0.3,
+        "observation_count": 57595,
+        "mean_predicted_prob": 0.253,
+        "empirical_clean_rate": 0.2929
+      },
+      {
+        "bin_index": 4,
+        "bin_lower": 0.3,
+        "bin_upper": 0.4,
+        "observation_count": 8277,
+        "mean_predicted_prob": 0.3132,
+        "empirical_clean_rate": 0.4207
+      },
+      {
+        "bin_index": 5,
+        "bin_lower": 0.4,
+        "bin_upper": 0.5,
+        "observation_count": 95,
+        "mean_predicted_prob": 0.4315,
+        "empirical_clean_rate": 0.3368
+      },
+      {
+        "bin_index": 6,
+        "bin_lower": 0.5,
+        "bin_upper": 0.6,
+        "observation_count": 13,
+        "mean_predicted_prob": 0.5246,
+        "empirical_clean_rate": 0.5385
+      },
+      {
+        "bin_index": 7,
+        "bin_lower": 0.6,
+        "bin_upper": 0.7,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 8,
+        "bin_lower": 0.7,
+        "bin_upper": 0.8,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 9,
+        "bin_lower": 0.8,
+        "bin_upper": 0.9,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 10,
+        "bin_lower": 0.9,
+        "bin_upper": 1.0,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      }
+    ],
+    "top10_overlap_pct": 0.1197,
+    "top25_overlap_pct": 0.1834,
+    "top10_distinct_tickers": 553,
+    "top25_distinct_tickers": 780
+  },
+  "GBDT_S3_G3": {
+    "family": "shallow_strongly_regularized_gbdt",
+    "calibration_status": "calibrated_probabilities_available",
+    "brier_score": 0.081754,
+    "reliability_table": [
+      {
+        "bin_index": 1,
+        "bin_lower": 0.0,
+        "bin_upper": 0.1,
+        "observation_count": 413590,
+        "mean_predicted_prob": 0.0422,
+        "empirical_clean_rate": 0.0449
+      },
+      {
+        "bin_index": 2,
+        "bin_lower": 0.1,
+        "bin_upper": 0.2,
+        "observation_count": 130932,
+        "mean_predicted_prob": 0.1454,
+        "empirical_clean_rate": 0.1711
+      },
+      {
+        "bin_index": 3,
+        "bin_lower": 0.2,
+        "bin_upper": 0.3,
+        "observation_count": 55538,
+        "mean_predicted_prob": 0.2526,
+        "empirical_clean_rate": 0.2881
+      },
+      {
+        "bin_index": 4,
+        "bin_lower": 0.3,
+        "bin_upper": 0.4,
+        "observation_count": 10459,
+        "mean_predicted_prob": 0.3151,
+        "empirical_clean_rate": 0.4157
+      },
+      {
+        "bin_index": 5,
+        "bin_lower": 0.4,
+        "bin_upper": 0.5,
+        "observation_count": 111,
+        "mean_predicted_prob": 0.4268,
+        "empirical_clean_rate": 0.3694
+      },
+      {
+        "bin_index": 6,
+        "bin_lower": 0.5,
+        "bin_upper": 0.6,
+        "observation_count": 18,
+        "mean_predicted_prob": 0.5288,
+        "empirical_clean_rate": 0.5
+      },
+      {
+        "bin_index": 7,
+        "bin_lower": 0.6,
+        "bin_upper": 0.7,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 8,
+        "bin_lower": 0.7,
+        "bin_upper": 0.8,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 9,
+        "bin_lower": 0.8,
+        "bin_upper": 0.9,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 10,
+        "bin_lower": 0.9,
+        "bin_upper": 1.0,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      }
+    ],
+    "top10_overlap_pct": 0.1263,
+    "top25_overlap_pct": 0.1866,
+    "top10_distinct_tickers": 566,
+    "top25_distinct_tickers": 795
+  },
+  "GBDT_S4_G1": {
+    "family": "shallow_strongly_regularized_gbdt",
+    "calibration_status": "calibrated_probabilities_available",
+    "brier_score": 0.08233,
+    "reliability_table": [
+      {
+        "bin_index": 1,
+        "bin_lower": 0.0,
+        "bin_upper": 0.1,
+        "observation_count": 413877,
+        "mean_predicted_prob": 0.0428,
+        "empirical_clean_rate": 0.0445
+      },
+      {
+        "bin_index": 2,
+        "bin_lower": 0.1,
+        "bin_upper": 0.2,
+        "observation_count": 139961,
+        "mean_predicted_prob": 0.1451,
+        "empirical_clean_rate": 0.1771
+      },
+      {
+        "bin_index": 3,
+        "bin_lower": 0.2,
+        "bin_upper": 0.3,
+        "observation_count": 56787,
+        "mean_predicted_prob": 0.2373,
+        "empirical_clean_rate": 0.3194
+      },
+      {
+        "bin_index": 4,
+        "bin_lower": 0.3,
+        "bin_upper": 0.4,
+        "observation_count": 23,
+        "mean_predicted_prob": 0.3088,
+        "empirical_clean_rate": 0.4783
+      },
+      {
+        "bin_index": 5,
+        "bin_lower": 0.4,
+        "bin_upper": 0.5,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 6,
+        "bin_lower": 0.5,
+        "bin_upper": 0.6,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 7,
+        "bin_lower": 0.6,
+        "bin_upper": 0.7,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 8,
+        "bin_lower": 0.7,
+        "bin_upper": 0.8,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 9,
+        "bin_lower": 0.8,
+        "bin_upper": 0.9,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 10,
+        "bin_lower": 0.9,
+        "bin_upper": 1.0,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      }
+    ],
+    "top10_overlap_pct": 0.1037,
+    "top25_overlap_pct": 0.1731,
+    "top10_distinct_tickers": 493,
+    "top25_distinct_tickers": 710
+  },
+  "GBDT_S4_G2": {
+    "family": "shallow_strongly_regularized_gbdt",
+    "calibration_status": "calibrated_probabilities_available",
+    "brier_score": 0.081804,
+    "reliability_table": [
+      {
+        "bin_index": 1,
+        "bin_lower": 0.0,
+        "bin_upper": 0.1,
+        "observation_count": 413538,
+        "mean_predicted_prob": 0.0422,
+        "empirical_clean_rate": 0.0449
+      },
+      {
+        "bin_index": 2,
+        "bin_lower": 0.1,
+        "bin_upper": 0.2,
+        "observation_count": 130694,
+        "mean_predicted_prob": 0.1447,
+        "empirical_clean_rate": 0.1706
+      },
+      {
+        "bin_index": 3,
+        "bin_lower": 0.2,
+        "bin_upper": 0.3,
+        "observation_count": 59139,
+        "mean_predicted_prob": 0.2549,
+        "empirical_clean_rate": 0.2959
+      },
+      {
+        "bin_index": 4,
+        "bin_lower": 0.3,
+        "bin_upper": 0.4,
+        "observation_count": 7180,
+        "mean_predicted_prob": 0.3134,
+        "empirical_clean_rate": 0.4132
+      },
+      {
+        "bin_index": 5,
+        "bin_lower": 0.4,
+        "bin_upper": 0.5,
+        "observation_count": 84,
+        "mean_predicted_prob": 0.4252,
+        "empirical_clean_rate": 0.3333
+      },
+      {
+        "bin_index": 6,
+        "bin_lower": 0.5,
+        "bin_upper": 0.6,
+        "observation_count": 13,
+        "mean_predicted_prob": 0.509,
+        "empirical_clean_rate": 0.5385
+      },
+      {
+        "bin_index": 7,
+        "bin_lower": 0.6,
+        "bin_upper": 0.7,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 8,
+        "bin_lower": 0.7,
+        "bin_upper": 0.8,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 9,
+        "bin_lower": 0.8,
+        "bin_upper": 0.9,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 10,
+        "bin_lower": 0.9,
+        "bin_upper": 1.0,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      }
+    ],
+    "top10_overlap_pct": 0.1304,
+    "top25_overlap_pct": 0.1902,
+    "top10_distinct_tickers": 551,
+    "top25_distinct_tickers": 772
+  },
+  "GBDT_S4_G3": {
+    "family": "shallow_strongly_regularized_gbdt",
+    "calibration_status": "calibrated_probabilities_available",
+    "brier_score": 0.081793,
+    "reliability_table": [
+      {
+        "bin_index": 1,
+        "bin_lower": 0.0,
+        "bin_upper": 0.1,
+        "observation_count": 413683,
+        "mean_predicted_prob": 0.0421,
+        "empirical_clean_rate": 0.045
+      },
+      {
+        "bin_index": 2,
+        "bin_lower": 0.1,
+        "bin_upper": 0.2,
+        "observation_count": 130261,
+        "mean_predicted_prob": 0.145,
+        "empirical_clean_rate": 0.1704
+      },
+      {
+        "bin_index": 3,
+        "bin_lower": 0.2,
+        "bin_upper": 0.3,
+        "observation_count": 57634,
+        "mean_predicted_prob": 0.2547,
+        "empirical_clean_rate": 0.2928
+      },
+      {
+        "bin_index": 4,
+        "bin_lower": 0.3,
+        "bin_upper": 0.4,
+        "observation_count": 8967,
+        "mean_predicted_prob": 0.3142,
+        "empirical_clean_rate": 0.404
+      },
+      {
+        "bin_index": 5,
+        "bin_lower": 0.4,
+        "bin_upper": 0.5,
+        "observation_count": 92,
+        "mean_predicted_prob": 0.4281,
+        "empirical_clean_rate": 0.4022
+      },
+      {
+        "bin_index": 6,
+        "bin_lower": 0.5,
+        "bin_upper": 0.6,
+        "observation_count": 11,
+        "mean_predicted_prob": 0.5342,
+        "empirical_clean_rate": 0.6364
+      },
+      {
+        "bin_index": 7,
+        "bin_lower": 0.6,
+        "bin_upper": 0.7,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 8,
+        "bin_lower": 0.7,
+        "bin_upper": 0.8,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 9,
+        "bin_lower": 0.8,
+        "bin_upper": 0.9,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      },
+      {
+        "bin_index": 10,
+        "bin_lower": 0.9,
+        "bin_upper": 1.0,
+        "observation_count": 0,
+        "mean_predicted_prob": null,
+        "empirical_clean_rate": null
+      }
+    ],
+    "top10_overlap_pct": 0.1351,
+    "top25_overlap_pct": 0.1932,
+    "top10_distinct_tickers": 564,
+    "top25_distinct_tickers": 779
+  }
+}
