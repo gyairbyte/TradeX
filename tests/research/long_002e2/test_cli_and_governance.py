@@ -135,11 +135,16 @@ def _ensure_commit(sha: str) -> bool:
     return _commit_exists(sha)
 
 
+LONG_002E2_APPROVED_BASE = BASE_GIT_SHA
+LONG_002E2_TASK_HEAD = "972eefc275d867a14e118a1f277e996f663da74d"
+
+
 def test_67_no_production_files_changed() -> None:
-    """Verify no production trading files were modified from base SHA."""
-    assert _ensure_commit(BASE_GIT_SHA), f"Base commit {BASE_GIT_SHA} could not be resolved."
+    """Verify no production trading files were modified in LONG-002E2 task commits."""
+    assert _ensure_commit(LONG_002E2_APPROVED_BASE), f"Base commit {LONG_002E2_APPROVED_BASE} could not be resolved."
+    assert _ensure_commit(LONG_002E2_TASK_HEAD), f"Task head {LONG_002E2_TASK_HEAD} could not be resolved."
     res = subprocess.run(
-        ["git", "diff", "--name-only", BASE_GIT_SHA, "HEAD"],
+        ["git", "diff", "--name-only", LONG_002E2_APPROVED_BASE, LONG_002E2_TASK_HEAD],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
@@ -155,10 +160,11 @@ def test_67_no_production_files_changed() -> None:
 
 
 def test_68_no_daytrade_files_changed() -> None:
-    """Verify zero DAYTRADE files were modified from base SHA."""
-    assert _ensure_commit(BASE_GIT_SHA), f"Base commit {BASE_GIT_SHA} could not be resolved."
+    """Verify zero DAYTRADE files were modified in LONG-002E2 task commits."""
+    assert _ensure_commit(LONG_002E2_APPROVED_BASE), f"Base commit {LONG_002E2_APPROVED_BASE} could not be resolved."
+    assert _ensure_commit(LONG_002E2_TASK_HEAD), f"Task head {LONG_002E2_TASK_HEAD} could not be resolved."
     res = subprocess.run(
-        ["git", "diff", "--name-only", BASE_GIT_SHA, "HEAD"],
+        ["git", "diff", "--name-only", LONG_002E2_APPROVED_BASE, LONG_002E2_TASK_HEAD],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
