@@ -1,0 +1,16 @@
+{
+  "task_id": "LONG-002E1-ROUND1-CANDIDATE-SEARCH-001",
+  "run_id": "LONG-002E1-20261006_133722",
+  "base_git_sha": "8058c5d858b70090335338176f11a20ddfd04502",
+  "preregistration_commit_sha": "49103f84ffbf7cd7b60216c2866ad103282bae58",
+  "preregistration_spec_sha": "d10b3fd5e24cf6880d76f18cf84eabe23cf65d6fa0a32735877b7383ae51c2b0",
+  "execution_code_sha": "8446ca948032b599314315a33f3380425cdc9e03",
+  "executed_at": "2026-10-06T13:43:18.120783+00:00",
+  "python_environment": "3.11.15 (main, Jul 23 2026, 14:42:43) [MSC v.1944 64 bit (AMD64)]",
+  "system_info": "Windows-10-10.0.26200-SP0",
+  "total_configurations_budgeted": 36,
+  "total_configurations_attempted": 36,
+  "total_configurations_completed": 36,
+  "round2_authorized": false,
+  "requires_separate_assignment": true
+}

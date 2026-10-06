@@ -1,0 +1,11 @@
+{
+  "file_digests": {
+    "d1_feature_table": "7dc09bdeed02c44eb48a0143884deb0ad7795466a08e25fd26c32640a0c813d8",
+    "stage_c_baseline": "faec26ddb26fd5a17feddf5ae09232a8aeb8ba24c3529abd88422682357e4734",
+    "stage_c_outcome": "b59a5f7f8a8a0498abdadb156299719f43ffa8854df5cad8e20a6cd4fbe237c3"
+  },
+  "total_population_rows": 758731,
+  "clean_events_count": 67257,
+  "clean_base_rate": 0.08864406489256403,
+  "verification_status": "verified_against_spec"
+}

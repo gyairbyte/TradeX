@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "task_id": "LONG-002E1-CORR-001",
+  "program": "LONG-002",
+  "phase": "LONG-002E1",
+  "type": "correction_specification",
+  "description": "Preregistered correction contract for LONG-002E1 Round-1 Candidate-System Search correcting evaluation period alignment, fold definitions, outcome join integrity, execution provenance, and calibration labeling.",
+  "base_specification": "docs/research/specs/LONG-002E1-v1.json",
+  "base_specification_sha256": "d10b3fd5e24cf6880d76f18cf84eabe23cf65d6fa0a32735877b7383ae51c2b0",
+  "superseded_run_id": "LONG-002E1-20261006_133722",
+  "superseded_reason": "Fold-1 design asymmetry left fitted families unpredicted in 2017 due to post-purge 2016 training set having zero rows; models evaluated on non-common periods (2017-2020 vs 2018-2020) and non-common baselines; outcome matrix positional merge; unverified execution provenance; mislabeled calibration status.",
+  "common_evaluation_period": {
+    "start_date": "2018-01-01",
+    "end_date": "2020-12-31",
+    "trading_sessions_count": 730,
+    "population_cutoff": "20:30",
+    "common_to_all_families": true
+  },
+  "expanding_folds": [
+    {
+      "fold_id": 1,
+      "train_years": [2016, 2017],
+      "eval_year": 2018,
+      "eval_start_date": "2018-01-01",
+      "eval_end_date": "2018-12-31",
+      "purge_sessions_count": 26,
+      "description": "Fold A: train on retained 2016-2017, evaluate on 2018"
+    },
+    {
+      "fold_id": 2,
+      "train_years": [2016, 2017, 2018],
+      "eval_year": 2019,
+      "eval_start_date": "2019-01-01",
+      "eval_end_date": "2019-12-31",
+      "purge_sessions_count": 26,
+      "description": "Fold B: train on retained 2016-2018, evaluate on 2019"
+    },
+    {
+      "fold_id": 3,
+      "train_years": [2016, 2017, 2018, 2019],
+      "eval_year": 2020,
+      "eval_start_date": "2020-01-01",
+      "eval_end_date": "2020-12-31",
+      "purge_sessions_count": 26,
+      "description": "Fold C: train on retained 2016-2019, evaluate on 2020"
+    }
+  ],
+  "disposition_criteria": {
+    "round2_eligible": {
+      "pooled_p10_delta_vs_vam5_strictly_positive": true,
+      "pooled_p25_delta_vs_vam5_non_negative": true,
+      "annual_positive_p10_delta_years_threshold": 3,
+      "annual_positive_years_description": "Exactly 3 of 3 OOF evaluation years (2018, 2019, 2020) must have positive Precision@10 delta vs matched VAM5, derived mechanically as ceil(0.75 * 3) = 3",
+      "bootstrap_21_median_p10_delta_strictly_positive": true
+    },
+    "round1_not_supported": {
+      "condition": "Either 21-session bootstrap 97.5th percentile Precision@10 delta <= 0, OR (pooled Precision@10 delta <= 0 AND positive annual years <= 1 of 3)"
+    },
+    "round1_inconclusive": {
+      "condition": "Fails round2_eligible and fails round1_not_supported"
+    }
+  },
+  "search_budget": {
+    "total_long_002e_budget": 48,
+    "material_configurations_budgeted": 36,
+    "material_configurations_consumed": 36,
+    "attempt_number": 2,
+    "consumes_new_material_slot": false,
+    "round2_reserve": 12,
+    "round2_authorized": false,
+    "requires_separate_assignment": true
+  },
+  "calibration_labeling": {
+    "probabilistic_and_gbdt_status": "raw_oof_probabilities_uncalibrated",
+    "rank_status": "not_applicable_round1_unscaled_score"
+  },
+  "invariants": {
+    "zero_provider_calls": true,
+    "quarantined_splits": {
+      "validation": "2021-01-01 to 2022-12-31",
+      "holdout": "2023-01-01 to 2025-12-31",
+      "shadow": ">= 2026-01-01"
+    },
+    "approved_production_strategies": []
+  }
+}

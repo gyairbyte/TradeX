@@ -1,0 +1,295 @@
+{
+  "run_id": "LONG-002E1-20261006_133722",
+  "storage_directory": "data/research/long_002e1/LONG-002E1-20261006_133722",
+  "total_files": 36,
+  "files": [
+    {
+      "filename": "predictions_cross_sectional_rank_score_RANK_S1_T1.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_cross_sectional_rank_score_RANK_S1_T1.parquet",
+      "row_count": 758192,
+      "sha256": "e05458c830643d6f077c9fbe713e8d4ba21b47f09e1d75fb3d781d9acd640a04",
+      "family": "cross_sectional_rank_score",
+      "configuration_id": "RANK_S1_T1"
+    },
+    {
+      "filename": "predictions_cross_sectional_rank_score_RANK_S1_T2.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_cross_sectional_rank_score_RANK_S1_T2.parquet",
+      "row_count": 758192,
+      "sha256": "64a418dfee3de60be1df47d481a71c2688a175ffeacb3b11b73fa3a4d68fe46b",
+      "family": "cross_sectional_rank_score",
+      "configuration_id": "RANK_S1_T2"
+    },
+    {
+      "filename": "predictions_cross_sectional_rank_score_RANK_S1_T3.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_cross_sectional_rank_score_RANK_S1_T3.parquet",
+      "row_count": 758192,
+      "sha256": "01b540af770ad7f5995b802df92a156a8bf2a30cab4d5b4a4556f24f24fb77d8",
+      "family": "cross_sectional_rank_score",
+      "configuration_id": "RANK_S1_T3"
+    },
+    {
+      "filename": "predictions_cross_sectional_rank_score_RANK_S2_T1.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_cross_sectional_rank_score_RANK_S2_T1.parquet",
+      "row_count": 758192,
+      "sha256": "a104cfea6c77040a7e8efef3ec4c3871e6d386d187c64ba7a7dad164e8c02115",
+      "family": "cross_sectional_rank_score",
+      "configuration_id": "RANK_S2_T1"
+    },
+    {
+      "filename": "predictions_cross_sectional_rank_score_RANK_S2_T2.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_cross_sectional_rank_score_RANK_S2_T2.parquet",
+      "row_count": 758192,
+      "sha256": "6b4f010c69cbfb130090affbff6431706f069687ccd99d5c9646d0a87fab72f6",
+      "family": "cross_sectional_rank_score",
+      "configuration_id": "RANK_S2_T2"
+    },
+    {
+      "filename": "predictions_cross_sectional_rank_score_RANK_S2_T3.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_cross_sectional_rank_score_RANK_S2_T3.parquet",
+      "row_count": 758192,
+      "sha256": "2a41125105cab1a5cc8ac977d4a27a23b277e9df120ea51d16439c3bf3ff53a0",
+      "family": "cross_sectional_rank_score",
+      "configuration_id": "RANK_S2_T3"
+    },
+    {
+      "filename": "predictions_cross_sectional_rank_score_RANK_S3_T1.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_cross_sectional_rank_score_RANK_S3_T1.parquet",
+      "row_count": 758192,
+      "sha256": "6693461b4385b953427150fc382dc43b8c8cf77a29d68bbce61268d0f6bc55f1",
+      "family": "cross_sectional_rank_score",
+      "configuration_id": "RANK_S3_T1"
+    },
+    {
+      "filename": "predictions_cross_sectional_rank_score_RANK_S3_T2.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_cross_sectional_rank_score_RANK_S3_T2.parquet",
+      "row_count": 758192,
+      "sha256": "cd9e661495e9cdfab2f0624eb2bbfa0c0c1627d6dcc9561447c16e52d44f4924",
+      "family": "cross_sectional_rank_score",
+      "configuration_id": "RANK_S3_T2"
+    },
+    {
+      "filename": "predictions_cross_sectional_rank_score_RANK_S3_T3.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_cross_sectional_rank_score_RANK_S3_T3.parquet",
+      "row_count": 758192,
+      "sha256": "76157de9b8c44b35ec75e538c1333014fe11c440317c1666d0582d3bbe1bd8f6",
+      "family": "cross_sectional_rank_score",
+      "configuration_id": "RANK_S3_T3"
+    },
+    {
+      "filename": "predictions_cross_sectional_rank_score_RANK_S4_T1.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_cross_sectional_rank_score_RANK_S4_T1.parquet",
+      "row_count": 758192,
+      "sha256": "46f2cf897130843bd912fc7de3f3f4f5e9e0c18010c0a02493875dd6acdd992d",
+      "family": "cross_sectional_rank_score",
+      "configuration_id": "RANK_S4_T1"
+    },
+    {
+      "filename": "predictions_cross_sectional_rank_score_RANK_S4_T2.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_cross_sectional_rank_score_RANK_S4_T2.parquet",
+      "row_count": 758192,
+      "sha256": "7beb7d6e4ff9058faea910b2ec7dcc4d10671937fc4edf0170a6e0e17fe30785",
+      "family": "cross_sectional_rank_score",
+      "configuration_id": "RANK_S4_T2"
+    },
+    {
+      "filename": "predictions_cross_sectional_rank_score_RANK_S4_T3.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_cross_sectional_rank_score_RANK_S4_T3.parquet",
+      "row_count": 758192,
+      "sha256": "6d2395310e11113448a66bb1ff4d12879bf41a0743d53d401bebff49de0b4730",
+      "family": "cross_sectional_rank_score",
+      "configuration_id": "RANK_S4_T3"
+    },
+    {
+      "filename": "predictions_regularized_probabilistic_LOGIT_S1_C003.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_regularized_probabilistic_LOGIT_S1_C003.parquet",
+      "row_count": 758192,
+      "sha256": "b47bf8e9b2b01dc26c7a79c23a3f7eda2ff435caaf649bb679fb6455dbe5597f",
+      "family": "regularized_probabilistic",
+      "configuration_id": "LOGIT_S1_C003"
+    },
+    {
+      "filename": "predictions_regularized_probabilistic_LOGIT_S1_C030.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_regularized_probabilistic_LOGIT_S1_C030.parquet",
+      "row_count": 758192,
+      "sha256": "c226ba36969f7b54ca45d3adb03df2a26b10b8741b9581368b8e4acdf85b1d2c",
+      "family": "regularized_probabilistic",
+      "configuration_id": "LOGIT_S1_C030"
+    },
+    {
+      "filename": "predictions_regularized_probabilistic_LOGIT_S1_C300.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_regularized_probabilistic_LOGIT_S1_C300.parquet",
+      "row_count": 758192,
+      "sha256": "e067cac616d3b720798d42f844380e8993fa546785ab7f0f57ef9bf66d365ce0",
+      "family": "regularized_probabilistic",
+      "configuration_id": "LOGIT_S1_C300"
+    },
+    {
+      "filename": "predictions_regularized_probabilistic_LOGIT_S2_C003.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_regularized_probabilistic_LOGIT_S2_C003.parquet",
+      "row_count": 758192,
+      "sha256": "f882307b1d4bf428c84a39f302e9a80fe530aab0287d19fa9ed6813bd2701e5d",
+      "family": "regularized_probabilistic",
+      "configuration_id": "LOGIT_S2_C003"
+    },
+    {
+      "filename": "predictions_regularized_probabilistic_LOGIT_S2_C030.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_regularized_probabilistic_LOGIT_S2_C030.parquet",
+      "row_count": 758192,
+      "sha256": "361526e43f57f51ff73e04b6f5b35f778bfb5f5fab4c7ffe3dc30de38db3e86d",
+      "family": "regularized_probabilistic",
+      "configuration_id": "LOGIT_S2_C030"
+    },
+    {
+      "filename": "predictions_regularized_probabilistic_LOGIT_S2_C300.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_regularized_probabilistic_LOGIT_S2_C300.parquet",
+      "row_count": 758192,
+      "sha256": "d4120638b630422db71344b68b89fc2622c8f3d6d2838287ff78f1bcacb23715",
+      "family": "regularized_probabilistic",
+      "configuration_id": "LOGIT_S2_C300"
+    },
+    {
+      "filename": "predictions_regularized_probabilistic_LOGIT_S3_C003.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_regularized_probabilistic_LOGIT_S3_C003.parquet",
+      "row_count": 758192,
+      "sha256": "9e5853b4e14eca0ca34916678de84f1b7ced8a78ddf04ff296f7d65b286c51d1",
+      "family": "regularized_probabilistic",
+      "configuration_id": "LOGIT_S3_C003"
+    },
+    {
+      "filename": "predictions_regularized_probabilistic_LOGIT_S3_C030.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_regularized_probabilistic_LOGIT_S3_C030.parquet",
+      "row_count": 758192,
+      "sha256": "c022126da106851de9cfdae457f31fd9984d126a9d9ac72c0685d8021666dbf9",
+      "family": "regularized_probabilistic",
+      "configuration_id": "LOGIT_S3_C030"
+    },
+    {
+      "filename": "predictions_regularized_probabilistic_LOGIT_S3_C300.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_regularized_probabilistic_LOGIT_S3_C300.parquet",
+      "row_count": 758192,
+      "sha256": "859b045d4d298d607672bfbc748489ab4953d253a8fa991051c63c72c5701efa",
+      "family": "regularized_probabilistic",
+      "configuration_id": "LOGIT_S3_C300"
+    },
+    {
+      "filename": "predictions_regularized_probabilistic_LOGIT_S4_C003.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_regularized_probabilistic_LOGIT_S4_C003.parquet",
+      "row_count": 758192,
+      "sha256": "c8e833d531f3ea191b3d486ac68df03ff1c8888a91c670c64a59383ce3dd036c",
+      "family": "regularized_probabilistic",
+      "configuration_id": "LOGIT_S4_C003"
+    },
+    {
+      "filename": "predictions_regularized_probabilistic_LOGIT_S4_C030.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_regularized_probabilistic_LOGIT_S4_C030.parquet",
+      "row_count": 758192,
+      "sha256": "ae0dc9abb1f8074449ef842fda8c38e090edeb43016566dcae4f6e6ca58c7549",
+      "family": "regularized_probabilistic",
+      "configuration_id": "LOGIT_S4_C030"
+    },
+    {
+      "filename": "predictions_regularized_probabilistic_LOGIT_S4_C300.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_regularized_probabilistic_LOGIT_S4_C300.parquet",
+      "row_count": 758192,
+      "sha256": "04b452fff091bf079c1d106d954fc605ae6bfbd2f3538910035278ad023eaec9",
+      "family": "regularized_probabilistic",
+      "configuration_id": "LOGIT_S4_C300"
+    },
+    {
+      "filename": "predictions_shallow_strongly_regularized_gbdt_GBDT_S1_G1.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_shallow_strongly_regularized_gbdt_GBDT_S1_G1.parquet",
+      "row_count": 758192,
+      "sha256": "dc376ef378250b3a0995c9197f65ab1a0c6113484a5d8df545e0ad2b9b4e0029",
+      "family": "shallow_strongly_regularized_gbdt",
+      "configuration_id": "GBDT_S1_G1"
+    },
+    {
+      "filename": "predictions_shallow_strongly_regularized_gbdt_GBDT_S1_G2.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_shallow_strongly_regularized_gbdt_GBDT_S1_G2.parquet",
+      "row_count": 758192,
+      "sha256": "b00fa3aebfbc12b9f8e7bb2d1ebc9b858b981b6e15ee262fd400280c0d537a88",
+      "family": "shallow_strongly_regularized_gbdt",
+      "configuration_id": "GBDT_S1_G2"
+    },
+    {
+      "filename": "predictions_shallow_strongly_regularized_gbdt_GBDT_S1_G3.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_shallow_strongly_regularized_gbdt_GBDT_S1_G3.parquet",
+      "row_count": 758192,
+      "sha256": "342ca5a5ba5821d56c473f36630520e675a4f0627c41a119706aac3d200ae531",
+      "family": "shallow_strongly_regularized_gbdt",
+      "configuration_id": "GBDT_S1_G3"
+    },
+    {
+      "filename": "predictions_shallow_strongly_regularized_gbdt_GBDT_S2_G1.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_shallow_strongly_regularized_gbdt_GBDT_S2_G1.parquet",
+      "row_count": 758192,
+      "sha256": "102428d32928f4cabecfe21cc2d1216ce560ce694cb519008faa6a92fb9b594f",
+      "family": "shallow_strongly_regularized_gbdt",
+      "configuration_id": "GBDT_S2_G1"
+    },
+    {
+      "filename": "predictions_shallow_strongly_regularized_gbdt_GBDT_S2_G2.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_shallow_strongly_regularized_gbdt_GBDT_S2_G2.parquet",
+      "row_count": 758192,
+      "sha256": "a361e16631a7c589920ea1ff80f607f2bc65e623f859fc000ddfa666e14a57bc",
+      "family": "shallow_strongly_regularized_gbdt",
+      "configuration_id": "GBDT_S2_G2"
+    },
+    {
+      "filename": "predictions_shallow_strongly_regularized_gbdt_GBDT_S2_G3.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_shallow_strongly_regularized_gbdt_GBDT_S2_G3.parquet",
+      "row_count": 758192,
+      "sha256": "4f837e173fa9d2f79185a2e518c1be1724514a754fcff35386b5007806db26f4",
+      "family": "shallow_strongly_regularized_gbdt",
+      "configuration_id": "GBDT_S2_G3"
+    },
+    {
+      "filename": "predictions_shallow_strongly_regularized_gbdt_GBDT_S3_G1.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_shallow_strongly_regularized_gbdt_GBDT_S3_G1.parquet",
+      "row_count": 758192,
+      "sha256": "a59f60e86c02eca8fbe9c95c5ec6f860a854eb4c85fd9fe4a410fbe5ba081376",
+      "family": "shallow_strongly_regularized_gbdt",
+      "configuration_id": "GBDT_S3_G1"
+    },
+    {
+      "filename": "predictions_shallow_strongly_regularized_gbdt_GBDT_S3_G2.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_shallow_strongly_regularized_gbdt_GBDT_S3_G2.parquet",
+      "row_count": 758192,
+      "sha256": "7f32e6d0e9333390c988b581ba8c666cca2008a76522eb296788e0390438d7f2",
+      "family": "shallow_strongly_regularized_gbdt",
+      "configuration_id": "GBDT_S3_G2"
+    },
+    {
+      "filename": "predictions_shallow_strongly_regularized_gbdt_GBDT_S3_G3.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_shallow_strongly_regularized_gbdt_GBDT_S3_G3.parquet",
+      "row_count": 758192,
+      "sha256": "854080392a426094a04eb7154b0996b8a9aa8c6d50ec1d802f9559c1eb4cf818",
+      "family": "shallow_strongly_regularized_gbdt",
+      "configuration_id": "GBDT_S3_G3"
+    },
+    {
+      "filename": "predictions_shallow_strongly_regularized_gbdt_GBDT_S4_G1.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_shallow_strongly_regularized_gbdt_GBDT_S4_G1.parquet",
+      "row_count": 758192,
+      "sha256": "b790976424f61bd10570f87ea7ee5c9e0aa2683b175ae9ceae6666fe4b2e18b8",
+      "family": "shallow_strongly_regularized_gbdt",
+      "configuration_id": "GBDT_S4_G1"
+    },
+    {
+      "filename": "predictions_shallow_strongly_regularized_gbdt_GBDT_S4_G2.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_shallow_strongly_regularized_gbdt_GBDT_S4_G2.parquet",
+      "row_count": 758192,
+      "sha256": "340c83dad251c490f5c656c7cbc559732cc2d38672c21122c0d37fc03fe8f61e",
+      "family": "shallow_strongly_regularized_gbdt",
+      "configuration_id": "GBDT_S4_G2"
+    },
+    {
+      "filename": "predictions_shallow_strongly_regularized_gbdt_GBDT_S4_G3.parquet",
+      "relative_path": "data/research/long_002e1/LONG-002E1-20261006_133722/predictions_shallow_strongly_regularized_gbdt_GBDT_S4_G3.parquet",
+      "row_count": 758192,
+      "sha256": "aff074acf64c75fddbe190520380b4d064b3c37ac3f36d5b1306e70bb17791b9",
+      "family": "shallow_strongly_regularized_gbdt",
+      "configuration_id": "GBDT_S4_G3"
+    }
+  ]
+}
