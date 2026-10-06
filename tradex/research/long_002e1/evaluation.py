@@ -270,13 +270,13 @@ def evaluate_configuration_predictions(
     m10 = _calc_k_metrics(df_cand_10, df_vam5_10, 10)
     m25 = _calc_k_metrics(df_cand_25, df_vam5_25, 25)
 
-    # Annual breakdown for Precision@10 (2017, 2018, 2019, 2020)
+    # Annual breakdown for Precision@10 (2018, 2019, 2020)
     annual_p10: dict[int, float | None] = {}
     annual_vam5_p10: dict[int, float] = {}
     annual_p10_delta: dict[int, float | None] = {}
     pos_years = 0
 
-    for yr in [2017, 2018, 2019, 2020]:
+    for yr in [2018, 2019, 2020]:
         sub_c = df_cand_10[df_cand_10["as_of_date"].str.startswith(str(yr))] if len(df_cand_10) > 0 else pd.DataFrame()
         sub_v = df_vam5_10[df_vam5_10["as_of_date"].str.startswith(str(yr))] if len(df_vam5_10) > 0 else pd.DataFrame()
 
@@ -299,7 +299,7 @@ def evaluate_configuration_predictions(
 
     # Calibration & probability metrics
     if family in ("regularized_probabilistic", "shallow_strongly_regularized_gbdt"):
-        calibration_status = "calibrated_probabilities_available"
+        calibration_status = "raw_oof_probabilities_uncalibrated"
         probs_all = joined[score_column].to_numpy(dtype=float)
         labels_all = joined["clean_target_reached"].to_numpy(dtype=int)
         brier = float(brier_score_loss(labels_all, probs_all))
@@ -357,7 +357,7 @@ def assign_round1_status(
     # All of:
     # 1. pooled OOF Precision@10 delta > 0
     # 2. pooled OOF Precision@25 delta >= 0
-    # 3. at least 3 of 4 OOF years have positive Precision@10 delta
+    # 3. exactly 3 of 3 OOF years have positive Precision@10 delta (ceil(0.75 * 3) = 3)
     # 4. 21-session bootstrap median Precision@10 delta > 0
     if (
         p10_delta > 0.0
@@ -371,10 +371,10 @@ def assign_round1_status(
     # Either:
     # - 21-session bootstrap 97.5th percentile Precision@10 delta <= 0
     # OR
-    # - pooled Precision@10 delta <= 0 AND positive annual Precision@10 delta years <= 2 of 4
+    # - pooled Precision@10 delta <= 0 AND positive annual Precision@10 delta years <= 1 of 3
     if (
         bs_upper_21 <= 0.0
-        or (p10_delta <= 0.0 and pos_years <= 2)
+        or (p10_delta <= 0.0 and pos_years <= 1)
     ):
         return "round1_not_supported"
 

@@ -176,11 +176,14 @@ def load_primary_dataset(
             f"BASELINE ROW COUNT MISMATCH: {len(df_base)} != {EXPECTED_DENOMINATOR}"
         )
 
-    # Check join integrity with feature table
-    merged_test = df_feat[["immutable_security_id", "as_of_date", "cutoff_time"]].merge(
-        df_base[["immutable_security_id", "as_of_date", "cutoff_time"]],
-        on=["immutable_security_id", "as_of_date", "cutoff_time"],
+    join_keys = ["immutable_security_id", "as_of_date", "cutoff_time"]
+
+    # Check join integrity with feature table using validate='one_to_one'
+    merged_test = df_feat[join_keys].merge(
+        df_base[join_keys],
+        on=join_keys,
         how="inner",
+        validate="one_to_one",
     )
     if len(merged_test) != EXPECTED_DENOMINATOR:
         raise ValueError(
@@ -203,19 +206,19 @@ def load_primary_dataset(
     ]
     df_out_raw = pq.read_table(outcome_matrix_path, columns=cols_out, filters=filters_out).to_pandas()
 
-    # Pivot target_pct to get clean_10, clean_20, clean_30
+    # Pivot target_pct to get clean_10, clean_20, clean_30 with validated 1:1 merges
     df_10 = df_out_raw[df_out_raw["target_pct"] == 10.0].copy()
     df_20 = df_out_raw[df_out_raw["target_pct"] == 20.0][
-        ["immutable_security_id", "as_of_date", "cutoff_time", "clean_target_reached"]
+        join_keys + ["clean_target_reached"]
     ].rename(columns={"clean_target_reached": "clean_target_reached_20"})
     df_30 = df_out_raw[df_out_raw["target_pct"] == 30.0][
-        ["immutable_security_id", "as_of_date", "cutoff_time", "clean_target_reached"]
+        join_keys + ["clean_target_reached"]
     ].rename(columns={"clean_target_reached": "clean_target_reached_30"})
 
     df_outcomes = df_10.merge(
-        df_20, on=["immutable_security_id", "as_of_date", "cutoff_time"], how="inner"
+        df_20, on=join_keys, how="inner", validate="one_to_one"
     ).merge(
-        df_30, on=["immutable_security_id", "as_of_date", "cutoff_time"], how="inner"
+        df_30, on=join_keys, how="inner", validate="one_to_one"
     )
 
     if len(df_outcomes) != EXPECTED_DENOMINATOR:
@@ -234,9 +237,31 @@ def load_primary_dataset(
     tier[c30] = 30
     df_outcomes["realized_clean_tier"] = tier
 
-    # Attach outcome columns to df_feat
-    df_feat["realized_clean_tier"] = df_outcomes["realized_clean_tier"]
-    df_feat["adverse_excursion"] = df_outcomes["adverse_excursion"]
-    df_feat["time_to_target"] = df_outcomes["time_to_target"]
+    # Key-based validated merge onto feature population with validate='one_to_one'
+    outcome_cols = join_keys + [
+        "clean_target_reached",
+        "realized_clean_tier",
+        "adverse_excursion",
+        "time_to_target",
+    ]
+    df_feat = df_feat.merge(
+        df_outcomes[outcome_cols].rename(columns={"clean_target_reached": "outcome_matrix_target_reached"}),
+        on=join_keys,
+        how="inner",
+        validate="one_to_one",
+    )
+    if len(df_feat) != EXPECTED_DENOMINATOR:
+        raise ValueError(
+            f"OUTCOME MERGE ROW COUNT MISMATCH: {len(df_feat)} != {EXPECTED_DENOMINATOR}"
+        )
+
+    # Assert the +10/10 outcome label from the outcome matrix exactly equals
+    # the already-frozen feature-table clean_target_reached for every row
+    mismatches = int((df_feat["clean_target_reached"] != df_feat["outcome_matrix_target_reached"]).sum())
+    if mismatches > 0:
+        raise ValueError(
+            f"OUTCOME LABEL MISMATCH: {mismatches} rows differ between feature table and outcome matrix!"
+        )
+    df_feat.drop(columns=["outcome_matrix_target_reached"], inplace=True)
 
     return df_feat, df_base

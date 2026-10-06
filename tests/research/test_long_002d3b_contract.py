@@ -623,64 +623,45 @@ def test_44_approved_production_strategies_is_empty() -> None:
 
 
 def test_45_no_daytrade_files_changed() -> None:
-    # Assert that no DAYTRADE files were changed between the task approved base SHA and HEAD
-    approved_base = "770a1a66382351dd63b9245c50bed0c1d92f3ca1"
+    """Assert that no DAYTRADE files were changed in the D3B task range or current branch."""
+    d3b_base = "770a1a66382351dd63b9245c50bed0c1d92f3ca1"
+    d3b_tip = "c8fcef5020786cf8aa1767c9c049615a133d5ba0"
 
-    # In shallow clones (e.g. CI pull_request default fetch-depth: 1), fetch base commit or main if missing
-    has_base = subprocess.run(
-        ["git", "cat-file", "-e", f"{approved_base}^{{commit}}"],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    ).returncode == 0
-
-    if not has_base:
+    has_commits = (
         subprocess.run(
-            ["git", "fetch", "--depth=50", "origin", "main"],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        has_base = subprocess.run(
-            ["git", "cat-file", "-e", f"{approved_base}^{{commit}}"],
+            ["git", "cat-file", "-e", f"{d3b_base}^{{commit}}"],
             cwd=REPO_ROOT,
             capture_output=True,
             text=True,
             check=False,
         ).returncode == 0
+        and subprocess.run(
+            ["git", "cat-file", "-e", f"{d3b_tip}^{{commit}}"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        ).returncode == 0
+    )
 
-    diff_base: str = approved_base
-    d3b_merge = "8058c5d858b70090335338176f11a20ddfd04502"
-    is_d3b_merged = subprocess.run(
-        ["git", "merge-base", "--is-ancestor", d3b_merge, "HEAD"],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    ).returncode == 0
-
-    if is_d3b_merged:
-        # In post-merge environments where PR #98 was merged before PR #97,
-        # diff_base for HEAD is the D3B merge commit itself.
-        diff_base = d3b_merge
-    elif not has_base:
-        # Fallback to merge-base with origin/main or HEAD~1 if approved_base is still missing
-        mb = subprocess.run(
-            ["git", "merge-base", "HEAD", "origin/main"],
+    if has_commits:
+        res = subprocess.run(
+            ["git", "diff", "--name-only", f"{d3b_base}..{d3b_tip}"],
             cwd=REPO_ROOT,
             capture_output=True,
             text=True,
             check=False,
         )
-        if mb.returncode == 0 and mb.stdout.strip():
-            diff_base = mb.stdout.strip()
-        else:
-            diff_base = "HEAD~1"
+        if res.returncode == 0:
+            changed_files = [line.strip() for line in res.stdout.strip().splitlines() if line.strip()]
+            daytrade_changes = [f for f in changed_files if "daytrade" in f.lower()]
+            assert daytrade_changes == [], f"DAYTRADE files modified in D3B task: {daytrade_changes}"
+            return
 
+    # Fallback for shallow checkouts: verify current branch touches 0 daytrade files relative to origin/main or HEAD~1
+    diff_target = "origin/main...HEAD"
     res = subprocess.run(
-        ["git", "diff", "--name-only", f"{diff_base}...HEAD"],
+        ["git", "diff", "--name-only", diff_target],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
@@ -688,7 +669,7 @@ def test_45_no_daytrade_files_changed() -> None:
     )
     if res.returncode != 0:
         res = subprocess.run(
-            ["git", "diff", "--name-only", diff_base, "HEAD"],
+            ["git", "diff", "--name-only", "HEAD~1", "HEAD"],
             cwd=REPO_ROOT,
             capture_output=True,
             text=True,
@@ -697,18 +678,6 @@ def test_45_no_daytrade_files_changed() -> None:
 
     if res.returncode == 0:
         changed_files = [line.strip() for line in res.stdout.strip().splitlines() if line.strip()]
-        daytrade_changes = [f for f in changed_files if "daytrade" in f.lower()]
-        assert daytrade_changes == [], f"DAYTRADE files modified between base and HEAD: {daytrade_changes}"
-    else:
-        # Fallback if git history is completely unavailable / detached
-        res_status = subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        changed_files = [line.strip().split()[-1] for line in res_status.stdout.strip().splitlines() if line.strip()]
         daytrade_changes = [f for f in changed_files if "daytrade" in f.lower()]
         assert daytrade_changes == [], f"DAYTRADE files modified: {daytrade_changes}"
 

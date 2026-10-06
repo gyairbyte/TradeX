@@ -14,27 +14,29 @@ from tradex.research.long_002e1.splits import (
 )
 
 
-def test_24_four_expanding_folds_defined():
-    """Test 24: Four expanding folds correctly defined."""
+def test_24_three_corrected_expanding_folds_defined():
+    """Test 24: Three corrected expanding folds correctly defined for 2018-2020."""
     folds = build_fold_definitions()
-    assert len(folds) == 4
-    assert folds[0].train_years == [2016] and folds[0].eval_year == 2017
-    assert folds[1].train_years == [2016, 2017] and folds[1].eval_year == 2018
-    assert folds[2].train_years == [2016, 2017, 2018] and folds[2].eval_year == 2019
-    assert folds[3].train_years == [2016, 2017, 2018, 2019] and folds[3].eval_year == 2020
+    assert len(folds) == 3
+    assert folds[0].train_years == [2016, 2017] and folds[0].eval_year == 2018
+    assert folds[1].train_years == [2016, 2017, 2018] and folds[1].eval_year == 2019
+    assert folds[2].train_years == [2016, 2017, 2018, 2019] and folds[2].eval_year == 2020
+
+    # Test legacy 4-fold builder for audit verification
+    legacy_folds = build_fold_definitions(legacy=True)
+    assert len(legacy_folds) == 4
+    assert legacy_folds[0].train_years == [2016] and legacy_folds[0].eval_year == 2017
 
 
 def test_25_purge_sessions_identified():
     """Test 25: For each fold, exactly 26 trading sessions prior to evaluation boundary are identified."""
     folds = build_fold_definitions(purge_sessions_count=26)
     for f in folds:
-        assert len(f.purged_session_dates) <= 26
-        if f.fold_id > 1:
-            assert len(f.purged_session_dates) == 26
-            # Confirm they are trading sessions immediately before eval year
-            last_yr = f.train_years[-1]
-            sessions = get_trading_sessions(f"{f.train_years[0]}-01-01", f"{last_yr}-12-31")
-            assert f.purged_session_dates == sessions[-26:]
+        assert len(f.purged_session_dates) == 26
+        # Confirm they are trading sessions immediately before eval year
+        last_yr = f.train_years[-1]
+        sessions = get_trading_sessions(f"{f.train_years[0]}-01-01", f"{last_yr}-12-31")
+        assert f.purged_session_dates == sessions[-26:]
 
 
 def test_26_purge_boundary_forward_window_invariance():

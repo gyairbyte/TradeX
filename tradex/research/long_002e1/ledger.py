@@ -28,6 +28,9 @@ class LedgerRecord:
     primary_metrics: dict[str, Any]
     robustness_metrics: dict[str, Any]
     created_at_or_run_reference: str
+    consumes_new_material_slot: bool = False
+    correction_contract: str | None = None
+    supersedes_run_id: str | None = None
 
 
 def write_experiment_ledger(

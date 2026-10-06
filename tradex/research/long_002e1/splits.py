@@ -26,14 +26,32 @@ class FoldDefinition:
     last_retained_training_session: str | None
 
 
-def build_fold_definitions(purge_sessions_count: int = 26) -> list[FoldDefinition]:
-    """Construct the 4 expanding folds with 26-session pre-eval boundary purging."""
-    fold_configs = [
-        (1, [2016], 2017),
-        (2, [2016, 2017], 2018),
-        (3, [2016, 2017, 2018], 2019),
-        (4, [2016, 2017, 2018, 2019], 2020),
-    ]
+def build_fold_definitions(
+    purge_sessions_count: int = 26,
+    legacy: bool = False,
+) -> list[FoldDefinition]:
+    """Construct expanding folds with 26-session pre-eval boundary purging.
+
+    By default (legacy=False), builds the 3 corrected expanding folds for 2018-2020:
+    - Fold 1: Train 2016-2017, Eval 2018
+    - Fold 2: Train 2016-2018, Eval 2019
+    - Fold 3: Train 2016-2019, Eval 2020
+
+    If legacy=True, builds the original 4 folds (including 2017 eval).
+    """
+    if legacy:
+        fold_configs = [
+            (1, [2016], 2017),
+            (2, [2016, 2017], 2018),
+            (3, [2016, 2017, 2018], 2019),
+            (4, [2016, 2017, 2018, 2019], 2020),
+        ]
+    else:
+        fold_configs = [
+            (1, [2016, 2017], 2018),
+            (2, [2016, 2017, 2018], 2019),
+            (3, [2016, 2017, 2018, 2019], 2020),
+        ]
 
     definitions: list[FoldDefinition] = []
 
@@ -84,6 +102,11 @@ def build_fold_definitions(purge_sessions_count: int = 26) -> list[FoldDefinitio
         )
 
     return definitions
+
+
+def build_corrected_fold_definitions(purge_sessions_count: int = 26) -> list[FoldDefinition]:
+    """Construct the 3 corrected expanding folds for 2018-2020 evaluation."""
+    return build_fold_definitions(purge_sessions_count=purge_sessions_count, legacy=False)
 
 
 def split_fold_data(

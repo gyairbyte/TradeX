@@ -108,13 +108,9 @@ def build_and_write_artifacts(
         bs42 = bootstrap_results_42.get(cid)
         fail_msg = execution_failures.get(cid)
 
-        # Folds attempted and completed
-        if c.family == "cross_sectional_rank_score":
-            f_att = 4
-            f_comp = 4
-        else:
-            f_att = 4
-            f_comp = 3 if fail_msg is None else 0
+        # Folds attempted and completed (3 expanding folds in corrected design)
+        f_att = 3
+        f_comp = 3 if fail_msg is None else 0
 
         p_metrics: dict[str, Any] = {}
         r_metrics: dict[str, Any] = {}
@@ -161,7 +157,7 @@ def build_and_write_artifacts(
                 family=c.family,
                 feature_subset=c.feature_subset_id,
                 hyperparameters_or_weights=c.parameters,
-                attempt_number=1,
+                attempt_number=metadata.get("attempt_number", 2),
                 budget_slot=c.budget_slot,
                 status=config_statuses[cid],
                 failure_reason_if_any=fail_msg,
@@ -173,6 +169,9 @@ def build_and_write_artifacts(
                 primary_metrics=p_metrics,
                 robustness_metrics=r_metrics,
                 created_at_or_run_reference=run_id,
+                consumes_new_material_slot=metadata.get("consumes_new_material_slot", False),
+                correction_contract=metadata.get("correction_task_id", "LONG-002E1-CORR-001"),
+                supersedes_run_id=metadata.get("superseded_run_id", "LONG-002E1-20261006_133722"),
             )
         )
 
@@ -257,7 +256,7 @@ def build_and_write_artifacts(
         "comparator_id": "volatility_aware_momentum_5",
         "family": "frozen_baseline",
         "formula": "0.5 * percentile(return_5) + 0.5 * percentile(atr_pct_14)",
-        "evaluation_period": "2017-01-01 to 2020-12-31",
+        "evaluation_period": "2018-01-01 to 2020-12-31",
         "evaluation_dates_count": first_sum.evaluation_dates_count,
         "oof_base_rate": round(first_sum.oof_base_rate, 6),
         "matched_top10": {
@@ -357,6 +356,10 @@ def build_and_write_artifacts(
         "round1_configurations_budgeted": 36,
         "round1_configurations_attempted": 36,
         "round1_configurations_completed": len(eval_summaries),
+        "attempt_number": metadata.get("attempt_number", 2),
+        "consumes_new_material_slot": metadata.get("consumes_new_material_slot", False),
+        "correction_contract": metadata.get("correction_task_id", "LONG-002E1-CORR-001"),
+        "superseded_run_id": metadata.get("superseded_run_id", "LONG-002E1-20261006_133722"),
         "round1_budget_remaining": 0,
         "total_e_budget": 48,
         "remaining_e_budget": 12,
@@ -404,6 +407,10 @@ def generate_markdown_results_report(
     md: list[str] = []
     md.append("# LONG-002E1: Preregistered Development-Only Round-1 Candidate-System Search Results\n")
     md.append(f"- **Task ID:** `{metadata['task_id']}`")
+    md.append(f"- **Correction Contract:** `{metadata.get('correction_task_id', 'LONG-002E1-CORR-001')}`")
+    md.append(f"- **Correction Spec SHA-256:** `{metadata.get('correction_spec_sha', '6a4345f6c9c0b96a3c11d4e44b437157128f1222ad346466f8d51c9f4f550c96')}`")
+    md.append(f"- **Attempt Number:** {metadata.get('attempt_number', 2)} (Consumes New Material Budget Slot: `false`)")
+    md.append(f"- **Superseded Run ID:** `{metadata.get('superseded_run_id', 'LONG-002E1-20261006_133722')}` *(preserved as audit evidence; invalid for decision use)*")
     md.append("- **Program:** `LONG-002` (Rapid-Upside Long Opportunity Program)")
     md.append("- **Phase:** `LONG-002E1` (Round-1 Candidate Search)")
     md.append("- **Authorization:** Gary Yang (authorized 2026-10-05)")
@@ -413,17 +420,24 @@ def generate_markdown_results_report(
     md.append(f"- **Preregistration Spec SHA-256:** `{metadata['preregistration_spec_sha']}`")
     md.append(f"- **Execution Code SHA:** `{metadata['execution_code_sha']}`")
     md.append(f"- **Official Run ID:** `{run_id}`")
-    md.append("- **Round-1 Search Budget Accounting:** 36 / 36 configurations attempted and accounted")
+    md.append("- **Round-1 Search Budget Accounting:** 36 / 36 material configurations attempted and accounted")
     md.append("- **Remaining LONG-002E Search Budget:** 12 configurations")
     md.append("- **Round 2 Authorized:** `false` (`requires_separate_assignment = true`)")
     md.append("- **Approved Production Strategies:** `[]` (`APPROVED_PRODUCTION_STRATEGIES == ()`)")
     md.append("\n---\n")
 
+    md.append("> [!WARNING]\n"
+              f"> **Audit Notice — Superseded Run:** This execution supersedes run `{metadata.get('superseded_run_id', 'LONG-002E1-20261006_133722')}`. "
+              "The original run suffered from Fold-1 design asymmetry (post-purge 2016 training set had 0 rows leaving fitted models unpredicted for 2017), "
+              "non-common evaluation periods (2017–2020 vs 2018–2020), positional outcome join, and unverified execution provenance. "
+              "Per `LONG-002E1-CORR-001`, all 36 configurations are re-executed across the common 2018–2020 evaluation period (730 sessions) "
+              "under a 3-of-3 annual positive stability requirement.\n")
+
     md.append("## 1. Executive Summary & Purpose\n")
     md.append("LONG-002E1 is the first controlled empirical candidate-system search for the LONG-002 program. "
               "Among the 8 frozen features established in LONG-002D3B, exactly 36 material configurations across 3 approved "
               "model families were evaluated strictly on the DEVELOPMENT split (2016–2020 at 20:30 ET) using chronological "
-              "expanding-window out-of-fold evaluation (2017–2020 primary evaluation period).\n")
+              "expanding-window out-of-fold evaluation (2018–2020 common evaluation period across 730 sessions).\n")
     md.append("> [!IMPORTANT]\n"
               "> This report presents DEVELOPMENT-ONLY evidence. It does NOT constitute validation, holdout, or shadow support, "
               "and does NOT authorize production changes, trading triggers, or Round 2 execution.\n")
@@ -460,7 +474,7 @@ def generate_markdown_results_report(
             d10_str = f"{item['p10_delta']:+.4%}" if "p10_delta" in item else "N/A"
             p25_str = f"{item['p25']:.4%}" if "p25" in item else "N/A"
             d25_str = f"{item['p25_delta']:+.4%}" if "p25_delta" in item else "N/A"
-            pos_str = f"{item['annual_positive_years']}/4" if "annual_positive_years" in item else "N/A"
+            pos_str = f"{item['annual_positive_years']}/3" if "annual_positive_years" in item else "N/A"
             adv_str = f"{item['adverse_rate_10']:.4%}" if "adverse_rate_10" in item else "N/A"
             ecmv_str = f"{item['ecmv10']:.2f}" if "ecmv10" in item else "N/A"
             md.append(f"| `{item['configuration_id']}` | {item['feature_subset_id']} | `{item['status']}` | {p10_str} | {d10_str} | {p25_str} | {d25_str} | {bs_str} | {pos_str} | {adv_str} | {ecmv_str} |")

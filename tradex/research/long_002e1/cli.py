@@ -36,8 +36,13 @@ from tradex.research.long_002e1.probabilistic import fit_and_predict_logistic
 from tradex.research.long_002e1.rank_model import evaluate_rank_model
 from tradex.research.long_002e1.spec import (
     BASE_GIT_SHA,
+    CORR_TASK_ID,
+    EXPECTED_CORR_SPEC_SHA256,
     PREREGISTRATION_COMMIT_SHA,
     PREREGISTRATION_SPEC_SHA256,
+    SUPERSEDED_RUN_ID,
+    TASK_ID,
+    verify_spec_integrity,
 )
 from tradex.research.long_002e1.splits import (
     build_fold_definitions,
@@ -73,14 +78,15 @@ def run_official_round1_search(
     run_id: str | None = None,
     execution_sha: str | None = None,
     repo_root: Path | None = None,
-    allow_dirty: bool = False,
     round_num: int = 1,
 ) -> dict[str, Any]:
     """Execute the preregistered Round-1 candidate-system search.
 
     Rejects Round 2 or any other round numbers.
-    Enforces clean git status unless allow_dirty is True.
-    Evaluates exactly 36 configurations across 3 families.
+    Enforces specification integrity before data loading.
+    Enforces clean git status (fail-closed, no dirty bypass).
+    Enforces runtime HEAD equality with execution_sha if provided.
+    Evaluates exactly 36 configurations across 3 families over common 2018-2020.
     Writes safe artifacts and external parquets.
     """
     if round_num != 1:
@@ -92,23 +98,38 @@ def run_official_round1_search(
     if repo_root is None:
         repo_root = Path(__file__).resolve().parents[3]
 
-    if not allow_dirty and not check_git_clean(repo_root):
+    # 1. Upfront specification integrity verification
+    verify_spec_integrity()
+
+    # 2. Fail-closed git working tree check
+    if not check_git_clean(repo_root):
         raise RuntimeError(
-            "Working tree is dirty. Execution requires a clean working tree unless "
-            "--allow-dirty is explicitly specified."
+            "Working tree is dirty. Execution requires a clean working tree."
         )
 
-    execution_code_sha = execution_sha or get_git_head_sha(repo_root)
+    # 3. Resolve runtime git HEAD
+    runtime_head_sha = get_git_head_sha(repo_root)
+    if not runtime_head_sha:
+        raise RuntimeError("Failed to resolve runtime git HEAD commit SHA.")
+
+    if execution_sha is not None and execution_sha != runtime_head_sha:
+        raise ValueError(
+            f"EXECUTION SHA MISMATCH: Supplied execution SHA {execution_sha} "
+            f"does not match runtime HEAD {runtime_head_sha}."
+        )
+    execution_code_sha = runtime_head_sha
 
     if run_id is None:
         timestamp_str = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d_%H%M%S")
         run_id = f"LONG-002E1-{timestamp_str}"
 
-    print("=== LONG-002E1 Official Round-1 Candidate Search ===")
+    print("=== LONG-002E1 Official Round-1 Candidate Search (CORR-001) ===")
     print(f"Run ID: {run_id}")
     print(f"Execution Code SHA: {execution_code_sha}")
     print(f"Base Git SHA: {BASE_GIT_SHA}")
     print(f"Preregistration Spec SHA-256: {PREREGISTRATION_SPEC_SHA256}")
+    print(f"Correction Spec SHA-256: {EXPECTED_CORR_SPEC_SHA256}")
+    print(f"Supersedes Run ID: {SUPERSEDED_RUN_ID}")
 
     # 1. Load primary dataset and verify input digests
     print("\n[1/5] Loading primary datasets and verifying digests...")
@@ -140,10 +161,11 @@ def run_official_round1_search(
         fold_splits[f.fold_id] = (tr, ev)
         print(f"Fold {f.fold_id}: Train {len(tr):,} rows | Eval ({f.eval_year}) {len(ev):,} rows")
 
-    # Full evaluation population across 2017-2020
+    # Full evaluation population across common 2018-2020
     df_eval_all = pd.concat([fold_splits[f.fold_id][1] for f in folds], ignore_index=True)
     eval_row_count = len(df_eval_all)
-    print(f"Total OOF evaluation observations (2017-2020): {eval_row_count:,}")
+    eval_sessions_count = len(df_eval_all["as_of_date"].unique())
+    print(f"Total OOF evaluation observations (2018-2020): {eval_row_count:,} across {eval_sessions_count} sessions.")
 
     # 4. Build configuration registry
     configs = build_round1_registry()
@@ -253,7 +275,18 @@ def run_official_round1_search(
     # Assemble execution metadata
     executed_at = datetime.datetime.now(datetime.UTC).isoformat()
     metadata = {
-        "task_id": "LONG-002E1-ROUND1-CANDIDATE-SEARCH-001",
+        "task_id": TASK_ID,
+        "correction_task_id": CORR_TASK_ID,
+        "correction_spec_sha": EXPECTED_CORR_SPEC_SHA256,
+        "attempt_number": 2,
+        "consumes_new_material_slot": False,
+        "superseded_run_id": SUPERSEDED_RUN_ID,
+        "superseded_reason": (
+            "Fold-1 design asymmetry left fitted families unpredicted in 2017 "
+            "due to post-purge 2016 training set having zero rows; models evaluated on "
+            "non-common periods (2017-2020 vs 2018-2020) and non-common baselines; "
+            "outcome matrix positional merge; unverified execution provenance; mislabeled calibration status."
+        ),
         "run_id": run_id,
         "base_git_sha": BASE_GIT_SHA,
         "preregistration_commit_sha": PREREGISTRATION_COMMIT_SHA,
@@ -265,6 +298,8 @@ def run_official_round1_search(
         "total_configurations_budgeted": 36,
         "total_configurations_attempted": 36,
         "total_configurations_completed": len(eval_summaries),
+        "common_evaluation_period": "2018-01-01 to 2020-12-31",
+        "evaluation_sessions_count": eval_sessions_count,
         "round2_authorized": False,
         "requires_separate_assignment": True,
     }
@@ -344,7 +379,6 @@ def main(argv: list[str] | None = None) -> int:
     run_parser.add_argument("--run-id", type=str, default=None, help="Custom run identifier")
     run_parser.add_argument("--execution-sha", type=str, default=None, help="Execution code Git SHA override")
     run_parser.add_argument("--repo-root", type=Path, default=None, help="Repository root path")
-    run_parser.add_argument("--allow-dirty", action="store_true", default=False, help="Allow running with dirty working tree")
     run_parser.add_argument("--round", type=str, default="1", help="Round number (only round 1 authorized)")
 
     # Optional root-level arguments for convenience
@@ -369,7 +403,6 @@ def main(argv: list[str] | None = None) -> int:
                 run_id=getattr(args, "run_id", None),
                 execution_sha=getattr(args, "execution_sha", None),
                 repo_root=getattr(args, "repo_root", None),
-                allow_dirty=getattr(args, "allow_dirty", False),
                 round_num=round_val,
             )
             return 0
