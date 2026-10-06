@@ -330,7 +330,7 @@ dfc3d4ee78906be753d0473e6d8a221f52da3f67232231e3427ec689a7fb3ee1  per_etf.csv
 During independent post-execution review of PR #98, one non-calculation artifact metadata defect was identified in the emitted artifact bundles:
 
 * **Emitted Value:** `provider_provenance_summary.status = "synthetic_fixtures_only"` in `development/metrics.json` and `validation/metrics.json`.
-* **Root Cause:** A hardcoded label string in legacy evaluator code (`tradex/research/daytrade_momentum/metrics.py`) carried over from early offline testing and was frozen into the evaluator before execution.
+* **Root Cause:** A hardcoded label string in evaluator code (`tradex/research/daytrade_momentum/study.py`) carried over from early offline testing and was frozen into the evaluator before execution.
 * **Authoritative Lineage Verification:**
   * Both development and validation executions operated strictly on real preholdout Alpaca SIP market data.
   * Verified dataset manifest SHA-256: `1b0da463a5d928cce3019fcb785f014180650d824f7d04d713d4e8fd75fd8ebb`.
@@ -348,7 +348,7 @@ During independent post-execution review of PR #98, one non-calculation artifact
 * **Remediation & Governance Tracking:**
   * Emitted artifact bundles (`metrics.json`) remain immutable audit records and are not rewritten.
   * Disclosed in `docs/research/artifacts/DAYTRADE-002C-CORR-001B-v1/evidence-index.json` under `artifact_metadata_defects`.
-  * Future evaluator code maintenance should correct the hardcoded label string prior to any subsequent authorized empirical study.
+  * Future evaluator code maintenance should correct the hardcoded label string prior to any subsequent authorized empirical study (corrected for future evaluations in `DAYTRADE-002C-CORR-002`).
 
 ---
 

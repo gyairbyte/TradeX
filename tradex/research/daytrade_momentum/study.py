@@ -181,6 +181,39 @@ def verify_holdout_access_prerequisites(
     )
 
 
+def _build_provider_provenance_summary(
+    manifest: DaytradeDatasetManifest | None,
+    is_custom_injected: bool,
+) -> dict[str, str]:
+    """Construct provider-provenance summary distinguishing synthetic vs verified manifest datasets."""
+    if is_custom_injected or manifest is None:
+        return {
+            "provider": "alpaca",
+            "feed": "sip",
+            "timeframe": "1Min",
+            "adjustment": "split",
+            "calendar": "XNYS",
+            "timezone": "America/New_York",
+            "status": "synthetic_fixtures_only",
+        }
+
+    status = "verified_manifest_dataset"
+    if isinstance(manifest.acquisition_provenance, dict):
+        acq_status = manifest.acquisition_provenance.get("status")
+        if isinstance(acq_status, str) and acq_status.strip():
+            status = acq_status.strip()
+
+    return {
+        "provider": manifest.provider,
+        "feed": manifest.feed,
+        "timeframe": manifest.timeframe,
+        "adjustment": manifest.adjustment,
+        "calendar": manifest.calendar,
+        "timezone": manifest.timezone,
+        "status": status,
+    }
+
+
 def evaluate_split(
     split_name: str,
     spec: DaytradeSpec,
@@ -240,8 +273,11 @@ def evaluate_split(
             raise HoldoutAccessDeniedError("Holdout evaluation requires --validation-artifact-dir pointing to supported validation evidence.")
         holdout_proof = verify_holdout_access_prerequisites(validation_artifact_dir, spec, repo_root=repo_root)
 
+    target_manifest: DaytradeDatasetManifest | None = None
+    is_custom_injected = custom_sessions is not None and custom_reports is not None
+
     # Load private dataset or use custom injected synthetic data
-    if custom_sessions is not None and custom_reports is not None:
+    if is_custom_injected:
         sessions_by_ticker = custom_sessions
         quality_reports = custom_reports
     else:
@@ -253,6 +289,13 @@ def evaluate_split(
             repo_root=repo_root,
             validation_artifact_dir=validation_artifact_dir,
         )
+        target_partition = "holdout" if split == "holdout" else "preholdout"
+        valid_root = Path(dataset_root).expanduser().resolve()
+        manifest_file = valid_root / target_partition / "manifest.lock.json"
+        if manifest_file.is_file():
+            manifest_data = json.loads(manifest_file.read_text(encoding="utf-8"))
+            target_manifest = DaytradeDatasetManifest.from_dict(manifest_data)
+            verify_dataset_manifest(target_manifest, spec, manifest_file.parent)
 
     # Determine split dates and target calendar sessions
     split_dates = spec.get_split_dates(split)
@@ -532,15 +575,9 @@ def evaluate_split(
             "exceeds_split_gate": split_quality.exceeds_split_gate,
             "exclusion_breakdown": split_quality.exclusion_breakdown,
         },
-        "provider_provenance_summary": {
-            "provider": "alpaca",
-            "feed": "sip",
-            "timeframe": "1Min",
-            "adjustment": "split",
-            "calendar": "XNYS",
-            "timezone": "America/New_York",
-            "status": "synthetic_fixtures_only",
-        },
+        "provider_provenance_summary": _build_provider_provenance_summary(
+            target_manifest, is_custom_injected
+        ),
     }
 
     # Evaluate all 6 validation gates & disposition

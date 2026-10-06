@@ -463,6 +463,11 @@ def test_real_dual_partition_holdout_pipeline_on_disk(
         start_date=fast_spec.holdout.start,
         end_date=fast_spec.holdout.end,
         source_files=holdout_source_files,
+        acquisition_provenance={
+            "status": "authorized_provider_acquisition",
+            "provider": "alpaca",
+            "feed": "sip",
+        },
         preholdout_manifest_sha256=pre_manifest.manifest_sha256,
         validation_bundle_sha256=proof.validation_bundle_sha256,
         evaluator_code_sha=val_eval_sha,
@@ -481,6 +486,15 @@ def test_real_dual_partition_holdout_pipeline_on_disk(
     assert res.split == "holdout"
     assert res.disposition in ("supported", "inconclusive", "rejected")
     assert res.provenance["validation_bundle_sha256"] == proof.validation_bundle_sha256
+
+    summary = res.metrics["provider_provenance_summary"]
+    assert summary["status"] == "authorized_provider_acquisition"
+    assert summary["provider"] == holdout_manifest.provider
+    assert summary["feed"] == holdout_manifest.feed
+    assert summary["timeframe"] == holdout_manifest.timeframe
+    assert summary["adjustment"] == holdout_manifest.adjustment
+    assert summary["calendar"] == holdout_manifest.calendar
+    assert summary["timezone"] == holdout_manifest.timezone
 
     # Verify all generated events and non-events belong to the holdout partition
     for ev in res.events:
