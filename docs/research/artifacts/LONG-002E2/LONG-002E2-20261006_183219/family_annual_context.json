@@ -1,0 +1,116 @@
+{
+  "family": "regularized_probabilistic",
+  "total_configurations_count": 12,
+  "all_12_share_2018pos_2019pos_2020neg_pattern": true,
+  "interpretation": "All 12 regularized logistic configurations exhibited positive Precision@10 delta in 2018 and 2019, and negative delta in 2020 (exactly 2 of 3 positive years). The 2020 instability is a family-wide property of the logistic formulations, not an idiosyncratic artifact of LOGIT_S4_C300.",
+  "configurations": {
+    "LOGIT_S1_C003": {
+      "deltas": {
+        "2018": 0.033865,
+        "2019": 0.044841,
+        "2020": -0.022482
+      },
+      "annual_positive_years_count": 2,
+      "matches_2018pos_2019pos_2020neg": true
+    },
+    "LOGIT_S1_C030": {
+      "deltas": {
+        "2018": 0.033865,
+        "2019": 0.044444,
+        "2020": -0.022482
+      },
+      "annual_positive_years_count": 2,
+      "matches_2018pos_2019pos_2020neg": true
+    },
+    "LOGIT_S1_C300": {
+      "deltas": {
+        "2018": 0.033865,
+        "2019": 0.044444,
+        "2020": -0.022482
+      },
+      "annual_positive_years_count": 2,
+      "matches_2018pos_2019pos_2020neg": true
+    },
+    "LOGIT_S2_C003": {
+      "deltas": {
+        "2018": 0.035857,
+        "2019": 0.049206,
+        "2020": -0.017799
+      },
+      "annual_positive_years_count": 2,
+      "matches_2018pos_2019pos_2020neg": true
+    },
+    "LOGIT_S2_C030": {
+      "deltas": {
+        "2018": 0.03745,
+        "2019": 0.04881,
+        "2020": -0.01733
+      },
+      "annual_positive_years_count": 2,
+      "matches_2018pos_2019pos_2020neg": true
+    },
+    "LOGIT_S2_C300": {
+      "deltas": {
+        "2018": 0.037849,
+        "2019": 0.04881,
+        "2020": -0.01733
+      },
+      "annual_positive_years_count": 2,
+      "matches_2018pos_2019pos_2020neg": true
+    },
+    "LOGIT_S3_C003": {
+      "deltas": {
+        "2018": 0.033068,
+        "2019": 0.049603,
+        "2020": -0.015925
+      },
+      "annual_positive_years_count": 2,
+      "matches_2018pos_2019pos_2020neg": true
+    },
+    "LOGIT_S3_C030": {
+      "deltas": {
+        "2018": 0.03506,
+        "2019": 0.049603,
+        "2020": -0.015457
+      },
+      "annual_positive_years_count": 2,
+      "matches_2018pos_2019pos_2020neg": true
+    },
+    "LOGIT_S3_C300": {
+      "deltas": {
+        "2018": 0.036255,
+        "2019": 0.049603,
+        "2020": -0.015925
+      },
+      "annual_positive_years_count": 2,
+      "matches_2018pos_2019pos_2020neg": true
+    },
+    "LOGIT_S4_C003": {
+      "deltas": {
+        "2018": 0.03745,
+        "2019": 0.05,
+        "2020": -0.014988
+      },
+      "annual_positive_years_count": 2,
+      "matches_2018pos_2019pos_2020neg": true
+    },
+    "LOGIT_S4_C030": {
+      "deltas": {
+        "2018": 0.039442,
+        "2019": 0.05,
+        "2020": -0.01452
+      },
+      "annual_positive_years_count": 2,
+      "matches_2018pos_2019pos_2020neg": true
+    },
+    "LOGIT_S4_C300": {
+      "deltas": {
+        "2018": 0.039841,
+        "2019": 0.05,
+        "2020": -0.01452
+      },
+      "annual_positive_years_count": 2,
+      "matches_2018pos_2019pos_2020neg": true
+    }
+  }
+}

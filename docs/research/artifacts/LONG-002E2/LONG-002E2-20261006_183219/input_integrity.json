@@ -1,0 +1,13 @@
+{
+  "status": "verified",
+  "observation_count": 610648,
+  "evaluation_sessions_count": 730,
+  "digests": {
+    "e1_representative_prediction_parquet": "837b824ac11754a900b44c2e118872996a9cad424cab1c549be7df5b61780062",
+    "d1_feature_table": "7dc09bdeed02c44eb48a0143884deb0ad7795466a08e25fd26c32640a0c813d8",
+    "stage_c_baseline_comparator_outputs": "faec26ddb26fd5a17feddf5ae09232a8aeb8ba24c3529abd88422682357e4734",
+    "e1_safe_artifact_annual_stability.json": "5a9d15232fc09a76a70422a57c8c137d86df25f2214037a449ba4ee9a3c8f5cf",
+    "e1_safe_artifact_baseline_summary.json": "3838600a636a9539337201d551933115211f89476bbaee9d0baa2a8391fa126d",
+    "e1_safe_artifact_round1_summary.json": "dfde6712084a7ac1d9c58f8c5babb22cf24aba146e2762bc5368cb7d90201708"
+  }
+}

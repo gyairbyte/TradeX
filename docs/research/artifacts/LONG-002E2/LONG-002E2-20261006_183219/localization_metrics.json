@@ -1,0 +1,46 @@
+{
+  "year": "2020",
+  "annual_hit_delta": -31,
+  "calendar_quarter_dimension": {
+    "quarter_hit_deltas": {
+      "2020Q1": -18,
+      "2020Q2": -14,
+      "2020Q3": 17,
+      "2020Q4": -16
+    },
+    "quarter_negative_losses": {
+      "2020Q1": 18,
+      "2020Q2": 14,
+      "2020Q3": 0,
+      "2020Q4": 16
+    },
+    "total_negative_hit_loss": 48,
+    "dominant_negative_quarter": "2020Q1",
+    "dominant_negative_quarter_loss": 18,
+    "dominant_negative_quarter_share": 0.375,
+    "dominant_quarter_hit_delta": -18,
+    "remaining_three_quarters_hit_delta": -13,
+    "localization_threshold": 0.6,
+    "rule_a_calendar_localization_passed": false
+  },
+  "market_context_regime_dimension": {
+    "regime_hit_deltas": {
+      "LOWER": -5,
+      "MIDDLE": 0,
+      "UPPER": -26
+    },
+    "regime_negative_losses": {
+      "LOWER": 5,
+      "MIDDLE": 0,
+      "UPPER": 26
+    },
+    "total_negative_hit_loss": 31,
+    "dominant_negative_regime": "UPPER",
+    "dominant_negative_regime_loss": 26,
+    "dominant_negative_regime_share": 0.8387,
+    "dominant_regime_hit_delta": -26,
+    "remaining_two_regimes_hit_delta": -5,
+    "localization_threshold": 0.6,
+    "rule_b_market_context_localization_passed": false
+  }
+}

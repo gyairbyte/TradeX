@@ -1,0 +1,422 @@
+{
+  "overall": {
+    "OVERLAP": {
+      "observation_count": 1550,
+      "clean_count": 419,
+      "clean_rate": 0.270323,
+      "adverse_rate": 0.409,
+      "ecmv": 5.071,
+      "median_time_to_target": 4.0
+    },
+    "LOGIT_ONLY": {
+      "observation_count": 5615,
+      "clean_count": 1502,
+      "clean_rate": 0.267498,
+      "adverse_rate": 0.3879,
+      "ecmv": 5.1238,
+      "median_time_to_target": 4.0
+    },
+    "VAM5_ONLY": {
+      "observation_count": 5615,
+      "clean_count": 1307,
+      "clean_rate": 0.232769,
+      "adverse_rate": 0.4581,
+      "ecmv": 3.715,
+      "median_time_to_target": 5.0
+    }
+  },
+  "by_year": {
+    "2018": {
+      "OVERLAP": {
+        "observation_count": 663,
+        "clean_count": 134,
+        "clean_rate": 0.202112,
+        "adverse_rate": 0.451,
+        "ecmv": 3.0166,
+        "median_time_to_target": 5.0
+      },
+      "LOGIT_ONLY": {
+        "observation_count": 1847,
+        "clean_count": 411,
+        "clean_rate": 0.222523,
+        "adverse_rate": 0.4478,
+        "ecmv": 3.3622,
+        "median_time_to_target": 5.0
+      },
+      "VAM5_ONLY": {
+        "observation_count": 1847,
+        "clean_count": 311,
+        "clean_rate": 0.168381,
+        "adverse_rate": 0.4965,
+        "ecmv": 2.0195,
+        "median_time_to_target": 6.0
+      }
+    },
+    "2019": {
+      "OVERLAP": {
+        "observation_count": 520,
+        "clean_count": 168,
+        "clean_rate": 0.323077,
+        "adverse_rate": 0.3731,
+        "ecmv": 5.1538,
+        "median_time_to_target": 4.0
+      },
+      "LOGIT_ONLY": {
+        "observation_count": 2000,
+        "clean_count": 553,
+        "clean_rate": 0.2765,
+        "adverse_rate": 0.3455,
+        "ecmv": 4.14,
+        "median_time_to_target": 5.0
+      },
+      "VAM5_ONLY": {
+        "observation_count": 2000,
+        "clean_count": 427,
+        "clean_rate": 0.2135,
+        "adverse_rate": 0.416,
+        "ecmv": 2.66,
+        "median_time_to_target": 6.0
+      }
+    },
+    "2020": {
+      "OVERLAP": {
+        "observation_count": 367,
+        "clean_count": 117,
+        "clean_rate": 0.318801,
+        "adverse_rate": 0.3842,
+        "ecmv": 8.6649,
+        "median_time_to_target": 3.0
+      },
+      "LOGIT_ONLY": {
+        "observation_count": 1768,
+        "clean_count": 538,
+        "clean_rate": 0.304299,
+        "adverse_rate": 0.3733,
+        "ecmv": 8.0769,
+        "median_time_to_target": 2.0
+      },
+      "VAM5_ONLY": {
+        "observation_count": 1768,
+        "clean_count": 569,
+        "clean_rate": 0.321833,
+        "adverse_rate": 0.4655,
+        "ecmv": 6.6799,
+        "median_time_to_target": 3.0
+      }
+    }
+  },
+  "by_quarter": {
+    "2018Q1": {
+      "OVERLAP": {
+        "observation_count": 181,
+        "clean_count": 45,
+        "clean_rate": 0.248619,
+        "adverse_rate": 0.4641,
+        "ecmv": 3.8674,
+        "median_time_to_target": 4.0
+      },
+      "LOGIT_ONLY": {
+        "observation_count": 429,
+        "clean_count": 86,
+        "clean_rate": 0.200466,
+        "adverse_rate": 0.5268,
+        "ecmv": 3.1235,
+        "median_time_to_target": 5.0
+      },
+      "VAM5_ONLY": {
+        "observation_count": 429,
+        "clean_count": 62,
+        "clean_rate": 0.144522,
+        "adverse_rate": 0.5385,
+        "ecmv": 1.8415,
+        "median_time_to_target": 4.0
+      }
+    },
+    "2018Q2": {
+      "OVERLAP": {
+        "observation_count": 170,
+        "clean_count": 26,
+        "clean_rate": 0.152941,
+        "adverse_rate": 0.4882,
+        "ecmv": 1.8235,
+        "median_time_to_target": 5.5
+      },
+      "LOGIT_ONLY": {
+        "observation_count": 470,
+        "clean_count": 120,
+        "clean_rate": 0.255319,
+        "adverse_rate": 0.3213,
+        "ecmv": 3.0213,
+        "median_time_to_target": 5.0
+      },
+      "VAM5_ONLY": {
+        "observation_count": 470,
+        "clean_count": 106,
+        "clean_rate": 0.225532,
+        "adverse_rate": 0.3362,
+        "ecmv": 2.617,
+        "median_time_to_target": 7.0
+      }
+    },
+    "2018Q3": {
+      "OVERLAP": {
+        "observation_count": 182,
+        "clean_count": 40,
+        "clean_rate": 0.21978,
+        "adverse_rate": 0.4066,
+        "ecmv": 3.022,
+        "median_time_to_target": 6.0
+      },
+      "LOGIT_ONLY": {
+        "observation_count": 448,
+        "clean_count": 69,
+        "clean_rate": 0.154018,
+        "adverse_rate": 0.4777,
+        "ecmv": 1.875,
+        "median_time_to_target": 7.0
+      },
+      "VAM5_ONLY": {
+        "observation_count": 448,
+        "clean_count": 49,
+        "clean_rate": 0.109375,
+        "adverse_rate": 0.5268,
+        "ecmv": 1.183,
+        "median_time_to_target": 7.0
+      }
+    },
+    "2018Q4": {
+      "OVERLAP": {
+        "observation_count": 130,
+        "clean_count": 23,
+        "clean_rate": 0.176923,
+        "adverse_rate": 0.4462,
+        "ecmv": 3.3846,
+        "median_time_to_target": 4.0
+      },
+      "LOGIT_ONLY": {
+        "observation_count": 500,
+        "clean_count": 136,
+        "clean_rate": 0.272,
+        "adverse_rate": 0.472,
+        "ecmv": 5.22,
+        "median_time_to_target": 3.0
+      },
+      "VAM5_ONLY": {
+        "observation_count": 500,
+        "clean_count": 94,
+        "clean_rate": 0.188,
+        "adverse_rate": 0.584,
+        "ecmv": 2.36,
+        "median_time_to_target": 5.0
+      }
+    },
+    "2019Q1": {
+      "OVERLAP": {
+        "observation_count": 160,
+        "clean_count": 53,
+        "clean_rate": 0.33125,
+        "adverse_rate": 0.2812,
+        "ecmv": 5.6875,
+        "median_time_to_target": 5.0
+      },
+      "LOGIT_ONLY": {
+        "observation_count": 450,
+        "clean_count": 171,
+        "clean_rate": 0.38,
+        "adverse_rate": 0.2333,
+        "ecmv": 5.4889,
+        "median_time_to_target": 5.0
+      },
+      "VAM5_ONLY": {
+        "observation_count": 450,
+        "clean_count": 117,
+        "clean_rate": 0.26,
+        "adverse_rate": 0.3,
+        "ecmv": 3.0889,
+        "median_time_to_target": 6.0
+      }
+    },
+    "2019Q2": {
+      "OVERLAP": {
+        "observation_count": 118,
+        "clean_count": 37,
+        "clean_rate": 0.313559,
+        "adverse_rate": 0.3898,
+        "ecmv": 4.4915,
+        "median_time_to_target": 5.0
+      },
+      "LOGIT_ONLY": {
+        "observation_count": 512,
+        "clean_count": 135,
+        "clean_rate": 0.263672,
+        "adverse_rate": 0.3535,
+        "ecmv": 3.5742,
+        "median_time_to_target": 5.0
+      },
+      "VAM5_ONLY": {
+        "observation_count": 512,
+        "clean_count": 75,
+        "clean_rate": 0.146484,
+        "adverse_rate": 0.4805,
+        "ecmv": 1.6602,
+        "median_time_to_target": 6.0
+      }
+    },
+    "2019Q3": {
+      "OVERLAP": {
+        "observation_count": 78,
+        "clean_count": 9,
+        "clean_rate": 0.115385,
+        "adverse_rate": 0.5,
+        "ecmv": 1.4103,
+        "median_time_to_target": 3.0
+      },
+      "LOGIT_ONLY": {
+        "observation_count": 562,
+        "clean_count": 85,
+        "clean_rate": 0.151246,
+        "adverse_rate": 0.4591,
+        "ecmv": 2.3132,
+        "median_time_to_target": 4.0
+      },
+      "VAM5_ONLY": {
+        "observation_count": 562,
+        "clean_count": 118,
+        "clean_rate": 0.209964,
+        "adverse_rate": 0.4804,
+        "ecmv": 2.5623,
+        "median_time_to_target": 5.0
+      }
+    },
+    "2019Q4": {
+      "OVERLAP": {
+        "observation_count": 164,
+        "clean_count": 69,
+        "clean_rate": 0.420732,
+        "adverse_rate": 0.3902,
+        "ecmv": 6.8902,
+        "median_time_to_target": 4.0
+      },
+      "LOGIT_ONLY": {
+        "observation_count": 476,
+        "clean_count": 162,
+        "clean_rate": 0.340336,
+        "adverse_rate": 0.3088,
+        "ecmv": 5.6303,
+        "median_time_to_target": 4.0
+      },
+      "VAM5_ONLY": {
+        "observation_count": 476,
+        "clean_count": 117,
+        "clean_rate": 0.245798,
+        "adverse_rate": 0.3803,
+        "ecmv": 3.4454,
+        "median_time_to_target": 6.0
+      }
+    },
+    "2020Q1": {
+      "OVERLAP": {
+        "observation_count": 99,
+        "clean_count": 24,
+        "clean_rate": 0.242424,
+        "adverse_rate": 0.5152,
+        "ecmv": 6.8687,
+        "median_time_to_target": 4.0
+      },
+      "LOGIT_ONLY": {
+        "observation_count": 521,
+        "clean_count": 107,
+        "clean_rate": 0.205374,
+        "adverse_rate": 0.5777,
+        "ecmv": 6.1612,
+        "median_time_to_target": 2.0
+      },
+      "VAM5_ONLY": {
+        "observation_count": 521,
+        "clean_count": 125,
+        "clean_rate": 0.239923,
+        "adverse_rate": 0.5988,
+        "ecmv": 4.7793,
+        "median_time_to_target": 3.0
+      }
+    },
+    "2020Q2": {
+      "OVERLAP": {
+        "observation_count": 123,
+        "clean_count": 40,
+        "clean_rate": 0.325203,
+        "adverse_rate": 0.3008,
+        "ecmv": 11.0569,
+        "median_time_to_target": 2.0
+      },
+      "LOGIT_ONLY": {
+        "observation_count": 507,
+        "clean_count": 197,
+        "clean_rate": 0.38856,
+        "adverse_rate": 0.2229,
+        "ecmv": 11.4793,
+        "median_time_to_target": 2.0
+      },
+      "VAM5_ONLY": {
+        "observation_count": 507,
+        "clean_count": 211,
+        "clean_rate": 0.416174,
+        "adverse_rate": 0.3412,
+        "ecmv": 10.5128,
+        "median_time_to_target": 2.0
+      }
+    },
+    "2020Q3": {
+      "OVERLAP": {
+        "observation_count": 99,
+        "clean_count": 32,
+        "clean_rate": 0.323232,
+        "adverse_rate": 0.4242,
+        "ecmv": 7.2727,
+        "median_time_to_target": 3.0
+      },
+      "LOGIT_ONLY": {
+        "observation_count": 541,
+        "clean_count": 196,
+        "clean_rate": 0.362292,
+        "adverse_rate": 0.2662,
+        "ecmv": 7.5231,
+        "median_time_to_target": 3.0
+      },
+      "VAM5_ONLY": {
+        "observation_count": 541,
+        "clean_count": 179,
+        "clean_rate": 0.330869,
+        "adverse_rate": 0.4122,
+        "ecmv": 5.7486,
+        "median_time_to_target": 4.0
+      }
+    },
+    "2020Q4": {
+      "OVERLAP": {
+        "observation_count": 46,
+        "clean_count": 21,
+        "clean_rate": 0.456522,
+        "adverse_rate": 0.2391,
+        "ecmv": 9.1304,
+        "median_time_to_target": 3.0
+      },
+      "LOGIT_ONLY": {
+        "observation_count": 199,
+        "clean_count": 38,
+        "clean_rate": 0.190955,
+        "adverse_rate": 0.5126,
+        "ecmv": 5.9296,
+        "median_time_to_target": 3.0
+      },
+      "VAM5_ONLY": {
+        "observation_count": 199,
+        "clean_count": 54,
+        "clean_rate": 0.271357,
+        "adverse_rate": 0.5779,
+        "ecmv": 4.4221,
+        "median_time_to_target": 3.0
+      }
+    }
+  }
+}
