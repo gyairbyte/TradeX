@@ -2,6 +2,27 @@
   "additional_provider_calls": 0,
   "adjustment": "split",
   "approved_production_strategies": [],
+  "artifact_metadata_defects": [
+    {
+      "affected_splits": [
+        "development",
+        "validation"
+      ],
+      "authoritative_lineage_sources": [
+        "manifest.lock.json",
+        "study.json.provenance",
+        "freeze.json"
+      ],
+      "calculation_impact": false,
+      "correct_interpretation": "real_preholdout_alpaca_sip_reused_from_verified_manifest",
+      "dataset_integrity_impact": false,
+      "defect_type": "non_calculation_artifact_metadata_defect",
+      "disposition_impact": false,
+      "field": "metrics.provider_provenance_summary.status",
+      "recorded_value": "synthetic_fixtures_only",
+      "reexecution_required": false
+    }
+  ],
   "authorized_on": "2026-10-05",
   "calendar": "XNYS",
   "corr_001a_correction_reference": {
@@ -46,6 +67,7 @@
   "development_disposition_step": "step_3_directional_hypothesis_failure",
   "development_execution_count": 1,
   "execution_plan_sha256": "e0022b3f40c3d9e23cc014380d3c4cd5c8005bc3943744df1c809f5c9bac4c2a",
+  "execution_validity": "valid",
   "feed": "sip",
   "gary_authorized": true,
   "holdout_acquired": false,
@@ -65,6 +87,7 @@
   "production_promotion_eligible": false,
   "provider": "alpaca",
   "spec_sha256": "dfad19dc6c88a009e05ef4a42a8b7ad9c64838ca84cdfd64a830a7f70f127127",
+  "strategy_evidence_usable": true,
   "task_id": "DAYTRADE-002C-CORR-001B",
   "timeframe": "1Min",
   "timezone": "America/New_York",

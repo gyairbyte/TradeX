@@ -110,8 +110,11 @@ Development was executed exactly once using the frozen corrected evaluator. Purs
 | **2. Concentration Gate** | **PASS** | Max single ETF $\le 15.0\%$ | 7.77% (XLI, 16/206 events) |
 | **3. Data Quality Gate** | **PASS** | Split exclusion rate $\le 5.0\%$ | 0.00% (0 / 930 sessions) |
 | **4. Primary Net-Effect Gate** | **FAIL** | Mean net return @ 2 bps $> 0$ & 95% CI lower $> 0$ | Mean: $-0.95$ bps; 95% CI: $[-7.56\text{ bps}, +5.55\text{ bps}]$ |
-| **5. Baseline-Uplift Gate** | **PASS** (Directional) | Mean uplift $> 0$ | Mean: $+3.85$ bps; 95% CI: $[-3.35\text{ bps}, +10.56\text{ bps}]$ |
+| **5. Baseline-Uplift Gate** | **FAIL** | Mean uplift $> 0$ & 95% CI lower $> 0$ | Mean: $+3.85$ bps; 95% CI lower: $-3.35$ bps ($\le 0$) |
 | **6. Cross-ETF Breadth Gate** | **FAIL** | Positively performing ETFs $\ge 60.0\%$ | 53.33% (8 of 15 ETFs positive) |
+
+> [!NOTE]
+> While development mean uplift is positive (+3.85 bps), the 95% session-date clustered confidence interval lower bound is $\le 0$ ($-3.35$ bps; CI $[-3.35\text{ bps}, +10.56\text{ bps}]$), so the full locked baseline-uplift gate failed (`baseline_uplift_gate.passed = false` in authoritative development `study.json`). This did NOT alter the formal development disposition: `REJECTED` (`step_3_directional_hypothesis_failure`), because Step 3 was already triggered by mean primary net return $\le 0$ ($-0.95$ bps) and cross-ETF breadth $< 60.0\%$ (53.33%).
 
 ### Development Core Metrics
 
@@ -261,7 +264,7 @@ Validation was executed exactly once immediately after development with zero cod
 
 Under the locked 5-step disposition precedence hierarchy:
 
-* **Step 1 (Invalidity):** Execution is valid (zero schema or integrity defect).
+* **Step 1 (Invalidity):** Execution is valid (no calculation-, timestamp-, split-, or dataset-integrity defect was identified. One non-calculation artifact metadata-label defect is documented separately in Section 8).
 * **Step 2 (Evidence Sufficiency):** All sufficiency gates pass (153 events $\ge 75$, 15 ETFs $\ge 10$, 36 dates $\ge 20$, 7.84% concentration $\le 15\%$, 0.0% DQ exclusions $\le 5\%$).
 * **Step 3 (Directional Hypothesis Failure):** All directional gates pass (mean primary net return $+3.46$ bps $> 0$; mean uplift $+6.44$ bps $> 0$; positive ETF breadth $66.67\% \ge 60\%$).
 * **Step 4 (Statistical Uncertainty):**
@@ -322,7 +325,34 @@ dfc3d4ee78906be753d0473e6d8a221f52da3f67232231e3427ec689a7fb3ee1  per_etf.csv
 
 ---
 
-## 8. Research Limitations & Governance Invariants
+## 8. Known Non-Calculation Artifact Metadata Defect
+
+During independent post-execution review of PR #98, one non-calculation artifact metadata defect was identified in the emitted artifact bundles:
+
+* **Emitted Value:** `provider_provenance_summary.status = "synthetic_fixtures_only"` in `development/metrics.json` and `validation/metrics.json`.
+* **Root Cause:** A hardcoded label string in legacy evaluator code (`tradex/research/daytrade_momentum/metrics.py`) carried over from early offline testing and was frozen into the evaluator before execution.
+* **Authoritative Lineage Verification:**
+  * Both development and validation executions operated strictly on real preholdout Alpaca SIP market data.
+  * Verified dataset manifest SHA-256: `1b0da463a5d928cce3019fcb785f014180650d824f7d04d713d4e8fd75fd8ebb`.
+  * Preserved runtime provenance in `study.json.provenance`:
+    * `feed`: `"sip"`
+    * `provider`: `"alpaca"`
+    * `evaluator_code_sha`: `"770a1a66382351dd63b9245c50bed0c1d92f3ca1"`
+    * `run_id`: `"daytrade_002c_corr_001b_reexecution"`
+  * Authoritative `manifest.lock.json` and `freeze.json` record the exact verified preholdout files.
+* **Impact Assessment:**
+  * **Calculation Impact:** NONE. Return, uplift, bootstrap CI, and event detection calculations are completely independent of this label.
+  * **Dataset Integrity Impact:** NONE. Reused exact preholdout bytes matching the verified manifest.
+  * **Disposition Impact:** NONE. Development disposition (`REJECTED`) and validation disposition (`INCONCLUSIVE`) are unchanged.
+  * **Rerun Requirement:** NONE. Rerunning development or validation is prohibited and scientifically unjustified.
+* **Remediation & Governance Tracking:**
+  * Emitted artifact bundles (`metrics.json`) remain immutable audit records and are not rewritten.
+  * Disclosed in `docs/research/artifacts/DAYTRADE-002C-CORR-001B-v1/evidence-index.json` under `artifact_metadata_defects`.
+  * Future evaluator code maintenance should correct the hardcoded label string prior to any subsequent authorized empirical study.
+
+---
+
+## 9. Research Limitations & Governance Invariants
 
 1. **Evidence Confidence Cap:** Formally capped at `limited_but_usable_evidence` under the locked specification.
 2. **Frozen Universe:** Evaluated exclusively on the locked 15-ETF universe (`XLK`, `XLV`, `XLF`, `XLY`, `XLP`, `XLE`, `XLI`, `XLB`, `XLU`, `XLRE`, `XLC`, `SPY`, `QQQ`, `IWM`, `DIA`).
