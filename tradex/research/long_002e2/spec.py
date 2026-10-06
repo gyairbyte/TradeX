@@ -14,6 +14,10 @@ SPEC_PATH = REPO_ROOT / "docs" / "research" / "specs" / "LONG-002E2-v1.json"
 EXPECTED_SPEC_SHA256 = "cec5105883198cbd856c763cd39993fa1e2f72960fd7c4c5bb17dbfd2a0f9519"
 PREREGISTRATION_SPEC_SHA256 = EXPECTED_SPEC_SHA256
 
+# Correction specification metadata (LONG-002E2-CORR-001)
+CORR_001_SPEC_PATH = REPO_ROOT / "docs" / "research" / "specs" / "LONG-002E2-CORR-001-v1.json"
+EXPECTED_CORR_001_SPEC_SHA256 = "4e57fb503d99bab5e02a90461eb2da6ce32825f065075c85587e8fec225c74a0"
+
 TASK_ID = "LONG-002E2-LOGISTIC-STABILITY-DIAGNOSTIC-001"
 PROGRAM = "LONG-002"
 PHASE = "LONG-002E2"
@@ -23,6 +27,14 @@ AUTHORIZER = "Gary Yang"
 
 REPRESENTATIVE_CONFIGURATION_ID = "LOGIT_S4_C300"
 REPRESENTATIVE_SELECTION_BASIS = "best_by_locked_LONG_002E1_ordering"
+# Corrected hyperparameter matching canonical E1 configuration registry (C denotes 3.0, not three hundred)
+CORRECTED_REPRESENTATIVE_HYPERPARAMETERS = {
+    "C": 3.0,
+    "penalty": "l2",
+    "solver": "lbfgs",
+    "max_iter": 1000,
+    "class_weight": None,
+}
 
 # Evaluation population bounds
 DEV_START = "2018-01-01"
@@ -129,4 +141,24 @@ def load_e2_spec() -> dict[str, Any]:
     """Load verified E2 specification."""
     verify_e2_spec_hash()
     with SPEC_PATH.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def verify_corr_001_spec_hash() -> None:
+    """Verify that the LONG-002E2-CORR-001 specification file exists and matches the locked SHA-256 digest."""
+    if not CORR_001_SPEC_PATH.exists():
+        raise FileNotFoundError(
+            f"LONG-002E2-CORR-001 specification missing at {CORR_001_SPEC_PATH}"
+        )
+    computed = compute_file_sha256(CORR_001_SPEC_PATH)
+    if computed != EXPECTED_CORR_001_SPEC_SHA256:
+        raise ValueError(
+            f"LONG-002E2-CORR-001 SPECIFICATION TAMPERED / HASH MISMATCH: {computed} != {EXPECTED_CORR_001_SPEC_SHA256}"
+        )
+
+
+def load_corr_001_spec() -> dict[str, Any]:
+    """Load verified LONG-002E2-CORR-001 specification."""
+    verify_corr_001_spec_hash()
+    with CORR_001_SPEC_PATH.open("r", encoding="utf-8") as f:
         return json.load(f)

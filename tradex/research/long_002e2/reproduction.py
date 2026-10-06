@@ -176,9 +176,8 @@ def analyze_family_annual_context() -> dict[str, Any]:
         "total_configurations_count": len(logit_configs),
         "all_12_share_2018pos_2019pos_2020neg_pattern": all_share_pattern,
         "interpretation": (
-            "All 12 regularized logistic configurations exhibited positive Precision@10 delta in 2018 and 2019, "
-            "and negative delta in 2020 (exactly 2 of 3 positive years). The 2020 instability is a family-wide "
-            "property of the logistic formulations, not an idiosyncratic artifact of LOGIT_S4_C300."
+            "all 12 tested E1 logistic configurations exhibited the same annual sign pattern; "
+            "therefore the 2020 reversal was not unique to LOGIT_S4_C300 within the tested Round-1 logistic grid."
             if all_share_pattern
             else "Annual patterns vary across logistic configurations."
         ),

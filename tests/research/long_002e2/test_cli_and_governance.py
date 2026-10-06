@@ -100,8 +100,44 @@ def test_66_no_provider_network_imports() -> None:
         assert "urllib" not in source
 
 
+def _commit_exists(sha: str) -> bool:
+    res = subprocess.run(
+        ["git", "cat-file", "-e", sha],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return res.returncode == 0
+
+
+def _ensure_commit(sha: str) -> bool:
+    if _commit_exists(sha):
+        return True
+    # In shallow CI environments, attempt bounded fetch of exact SHA
+    subprocess.run(
+        ["git", "fetch", "--depth=1", "origin", sha],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if _commit_exists(sha):
+        return True
+    # If still missing, attempt fetching bounded main history
+    subprocess.run(
+        ["git", "fetch", "--depth=100", "origin", "main"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return _commit_exists(sha)
+
+
 def test_67_no_production_files_changed() -> None:
     """Verify no production trading files were modified from base SHA."""
+    assert _ensure_commit(BASE_GIT_SHA), f"Base commit {BASE_GIT_SHA} could not be resolved."
     res = subprocess.run(
         ["git", "diff", "--name-only", BASE_GIT_SHA, "HEAD"],
         cwd=REPO_ROOT,
@@ -120,6 +156,7 @@ def test_67_no_production_files_changed() -> None:
 
 def test_68_no_daytrade_files_changed() -> None:
     """Verify zero DAYTRADE files were modified from base SHA."""
+    assert _ensure_commit(BASE_GIT_SHA), f"Base commit {BASE_GIT_SHA} could not be resolved."
     res = subprocess.run(
         ["git", "diff", "--name-only", BASE_GIT_SHA, "HEAD"],
         cwd=REPO_ROOT,

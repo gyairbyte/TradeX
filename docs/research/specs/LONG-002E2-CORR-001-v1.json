@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "task_id": "LONG-002E2-CORR-001",
+  "program": "LONG-002",
+  "phase": "LONG-002E2-CORR",
+  "spec_version": "v1",
+  "type": "correction_specification",
+  "title": "Representative Model Hyperparameter Metadata Correction for LONG-002E2",
+  "description": "Correction contract for LONG-002E2 correcting representative model LOGIT_S4_C300 hyperparameter metadata from erroneous C=300.0 to canonical C=3.0, preserving all empirical diagnostic evidence and run artifacts without rerun.",
+  "classification": "research_only_correction",
+  "production_promotion_eligible": false,
+  "approved_production_strategies": [],
+  "authorization": {
+    "authorizer": "Gary Yang",
+    "authorization_date": "2026-10-06",
+    "scope": "metadata-only correction of representative model hyperparameter C from 300.0 to 3.0 matching canonical E1 configuration registry",
+    "unauthorized_actions": [
+      "model_refitting",
+      "new_model_searches",
+      "empirical_reruns",
+      "opening_validation_split",
+      "opening_holdout_split",
+      "opening_shadow_split",
+      "production_promotion"
+    ]
+  },
+  "base_specification": {
+    "path": "docs/research/specs/LONG-002E2-v1.json",
+    "sha256": "cec5105883198cbd856c763cd39993fa1e2f72960fd7c4c5bb17dbfd2a0f9519",
+    "preregistration_commit_sha": "90f3b3daa8c6ac234da724e8ad1ce2ec629a1bc7"
+  },
+  "canonical_e1_evidence": {
+    "configuration_registry_path": "docs/research/artifacts/LONG-002E1/LONG-002E1-20261006_152832/configuration_registry.json",
+    "configuration_id": "LOGIT_S4_C300",
+    "budget_slot": 24,
+    "family": "regularized_probabilistic",
+    "feature_subset_id": "S4",
+    "model_type": "LogisticRegression",
+    "canonical_hyperparameters": {
+      "C": 3.0,
+      "penalty": "l2",
+      "solver": "lbfgs",
+      "max_iter": 1000,
+      "tol": 1e-06,
+      "class_weight": null,
+      "random_state": 20261005
+    },
+    "prediction_parquet_path": "data/research/long_002e1/LONG-002E1-20261006_152832/predictions_regularized_probabilistic_LOGIT_S4_C300.parquet",
+    "prediction_parquet_sha256": "837b824ac11754a900b44c2e118872996a9cad424cab1c549be7df5b61780062"
+  },
+  "corrected_representative_metadata": {
+    "configuration_id": "LOGIT_S4_C300",
+    "preregistered_c_erroneous": 300.0,
+    "corrected_c": 3.0,
+    "explanation": "The ID suffix C300 denotes C=3.00 (two decimal places). LONG-002E2-v1.json erroneously transcribed C as 300.0 instead of 3.0."
+  },
+  "no_empirical_rerun_justification": {
+    "rerun_required": false,
+    "reasons": [
+      "Zero model refitting was performed in LONG-002E2; all diagnostic calculations operate strictly on frozen predictions.",
+      "The representative configuration ID LOGIT_S4_C300 is unchanged.",
+      "The input prediction parquet SHA-256 (837b824ac11754a900b44c2e118872996a9cad424cab1c549be7df5b61780062) is identical and verified.",
+      "The E2 diagnostic consumes the frozen predicted probabilities and actual outcomes, not hyperparameter metadata; no code in tradex/research/long_002e2 consumed or branched on the C parameter value.",
+      "All empirical results, reproduction metrics, quarterly decompositions, regime statistics, and localization decision outcomes are mathematically unaffected."
+    ],
+    "preserved_run_id": "LONG-002E2-20261006_183219",
+    "preserved_run_validity": "valid_empirical_evidence_subject_to_corrected_metadata"
+  },
+  "governance_invariants": {
+    "model_fitting_prohibited": true,
+    "search_budget_consumed": 36,
+    "search_budget_unused": 12,
+    "round2_authorized": false,
+    "validation_holdout_quarantined": true,
+    "approved_production_strategies": []
+  }
+}

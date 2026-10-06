@@ -1,19 +1,20 @@
 # LONG-002E2: Development-Only Logistic Regime/Stability Diagnostic
 
-**Task ID:** `LONG-002E2-LOGISTIC-STABILITY-DIAGNOSTIC-001`  
-**Official Run ID:** `LONG-002E2-20261006_183219`  
-**Representative Configuration:** `LOGIT_S4_C300` (best_by_locked_LONG_002E1_ordering)  
-**Diagnostic Disposition:** `no_bounded_regime_hypothesis_supported`  
-**Recommended Next Action:** `close_initial_long_002e_search_preserve_unused_budget`  
-**Authorization:** Authorized by Gary Yang on 2026-10-06 (Research-Only / Post-Hoc Diagnostic)  
+**Task ID:** `LONG-002E2-LOGISTIC-STABILITY-DIAGNOSTIC-001`
+**Official Run ID:** `LONG-002E2-20261006_183219`
+**Correction Contract:** `LONG-002E2-CORR-001` (`docs/research/specs/LONG-002E2-CORR-001-v1.json`)
+**Representative Configuration:** `LOGIT_S4_C300` (best_by_locked_LONG_002E1_ordering; C=3.0, penalty=l2, solver=lbfgs)
+**Diagnostic Disposition:** `no_bounded_regime_hypothesis_supported`
+**Recommended Next Action:** `close_initial_long_002e_search_preserve_unused_budget`
+**Authorization:** Authorized by Gary Yang on 2026-10-06 (Research-Only / Post-Hoc Diagnostic)
 
 ---
 
 ## Executive Summary
 
-In corrected Round 1 (`LONG-002E1-20261006_152832`), the best regularized logistic configuration (`LOGIT_S4_C300`) demonstrated pooled Precision@10 of 26.8109% (+2.7216 pp vs matched VAM5) and Precision@25 of 25.2420% (+4.2909 pp vs matched VAM5), but exhibited negative delta in 2020 (-1.4520 pp), failing the preregistered 3-of-3 year annual stability gate (achieving 2/3 years).
+In corrected Round 1 (`LONG-002E1-20261006_152832`), the best regularized logistic configuration (`LOGIT_S4_C300`, C=3.0) demonstrated pooled Precision@10 of 26.8109% (+2.7216 pp vs matched VAM5) and Precision@25 of 25.2420% (+4.2909 pp vs matched VAM5), but exhibited negative delta in 2020 (-1.4520 pp), failing the preregistered 3-of-3 year annual stability gate (achieving 2/3 years).
 
-This diagnostic (LONG-002E2) investigated why the logistic family underperformed in 2020 without model refitting, hyperparameter tuning, or searching new configurations. The evaluation locked two preregistered localization rules:
+This diagnostic (LONG-002E2) investigated why the logistic family underperformed in 2020 without model refitting, hyperparameter tuning, or searching new configurations. Formal correction contract `LONG-002E2-CORR-001` corrects representative model hyperparameter metadata from erroneous C=300.0 to canonical C=3.0 (matching canonical E1 `configuration_registry.json`), preserving all empirical results without rerun because E2 evaluates frozen predictions and consumes no hyperparameter metadata. The evaluation locked two preregistered localization rules:
 - **Rule A (Calendar Localization):** One calendar quarter accounts for >= 60% of 2020 negative hit loss AND other 3 quarters have clean hit delta >= 0.
 - **Rule B (Market-Context Localization):** One SPY return regime accounts for >= 60% of 2020 negative hit loss AND other 2 regimes have clean hit delta >= 0.
 
@@ -29,6 +30,7 @@ This diagnostic (LONG-002E2) investigated why the logistic family underperformed
 - **Execution Code SHA:** `bbb9b136c54cde87de143e9ea7b033e4ed21bbdb`
 - **Preregistration Commit SHA:** `90f3b3daa8c6ac234da724e8ad1ce2ec629a1bc7`
 - **E2 Spec SHA-256:** `cec5105883198cbd856c763cd39993fa1e2f72960fd7c4c5bb17dbfd2a0f9519`
+- **E2 Correction Spec (CORR-001) SHA-256:** `4e57fb503d99bab5e02a90461eb2da6ce32825f065075c85587e8fec225c74a0`
 - **E1 Input Prediction SHA-256:** `837b824ac11754a900b44c2e118872996a9cad424cab1c549be7df5b61780062` (Verified)
 - **D1 Feature Table SHA-256:** `7dc09bdeed02c44eb48a0143884deb0ad7795466a08e25fd26c32640a0c813d8` (Verified)
 - **Stage C Baseline SHA-256:** `faec26ddb26fd5a17feddf5ae09232a8aeb8ba24c3529abd88422682357e4734` (Verified)
@@ -53,7 +55,7 @@ This diagnostic (LONG-002E2) investigated why the logistic family underperformed
 ## 2. Family-Wide Annual Context
 
 - **All 12 LOGIT configurations share 2018+ / 2019+ / 2020- pattern:** `True`
-- **Interpretation:** All 12 regularized logistic configurations exhibited positive Precision@10 delta in 2018 and 2019, and negative delta in 2020 (exactly 2 of 3 positive years). The 2020 instability is a family-wide property of the logistic formulations, not an idiosyncratic artifact of LOGIT_S4_C300.
+- **Interpretation:** all 12 tested E1 logistic configurations exhibited the same annual sign pattern; therefore the 2020 reversal was not unique to LOGIT_S4_C300 within the tested Round-1 logistic grid.
 
 ---
 
@@ -135,6 +137,8 @@ Comparison of average cross-sectional percentile rank of securities chosen by `L
 | `sma20_slope_5` | -27.72 | -23.79 | -33.50 | -28.14 |
 | `relative_volume_20` | -6.51 | -4.95 | -13.06 | -8.02 |
 
+- **Descriptive Observation:** The LOGIT_ONLY vs VAM5_ONLY relative-volume percentile gap was larger in 2020 (-13.06 vs -6.51 in 2018 and -4.95 in 2019); this coincided with weaker relative performance, but E2 does not establish causality.
+
 ---
 
 ## 8. Diagnostic 6 — Selection Concentration
@@ -157,6 +161,8 @@ Comparison of average cross-sectional percentile rank of securities chosen by `L
 | 2018 | 211,140 | 6.25% | 0.056923 | 6.21% | 4.08% |
 | 2019 | 217,101 | 6.90% | 0.061069 | 5.82% | 4.13% |
 | 2020 | 182,407 | 18.20% | 0.161748 | 21.57% | 10.38% |
+
+- **Descriptive Observation:** 2020 had a substantially higher empirical base rate (18.20%) than 2018 (6.25%) and 2019 (6.90%). E2 measured empirical distribution shifts only and does not establish specific macro causal drivers.
 
 ---
 
@@ -191,3 +197,4 @@ Comparison of average cross-sectional percentile rank of securities chosen by `L
 3. **Zero Model Refitting:** No model parameters, coefficients, scalers, or probability calibrations were refitted.
 4. **No Production Strategy Promotion:** `APPROVED_PRODUCTION_STRATEGIES == ()` strictly preserved.
 5. **Hypothesis Generation Only:** Findings from this development diagnostic cannot directly justify trading rules, market timing gates, or score modifications without independent preregistered validation.
+6. **Metadata Correction (LONG-002E2-CORR-001):** Preregistered specification `LONG-002E2-v1.json` recorded representative hyperparameter `C: 300.0` due to a typographic error for ID `LOGIT_S4_C300`. Canonical E1 `configuration_registry.json` documents `C: 3.0` (penalty=l2, solver=lbfgs). Correction contract `LONG-002E2-CORR-001` formally corrects this metadata without empirical rerun because E2 evaluates frozen predictions and no calculation branched on or consumed the hyperparameter value. The original run and all 13 safe JSON artifacts are preserved as valid empirical evidence subject to corrected metadata.
