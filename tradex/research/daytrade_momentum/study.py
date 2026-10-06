@@ -181,6 +181,39 @@ def verify_holdout_access_prerequisites(
     )
 
 
+def _build_provider_provenance_summary(
+    manifest: DaytradeDatasetManifest | None,
+    is_custom_injected: bool,
+) -> dict[str, str]:
+    """Construct provider-provenance summary distinguishing synthetic vs verified manifest datasets."""
+    if is_custom_injected or manifest is None:
+        return {
+            "provider": "alpaca",
+            "feed": "sip",
+            "timeframe": "1Min",
+            "adjustment": "split",
+            "calendar": "XNYS",
+            "timezone": "America/New_York",
+            "status": "synthetic_fixtures_only",
+        }
+
+    status = "verified_manifest_dataset"
+    if isinstance(manifest.acquisition_provenance, dict):
+        acq_status = manifest.acquisition_provenance.get("status")
+        if isinstance(acq_status, str) and acq_status.strip():
+            status = acq_status.strip()
+
+    return {
+        "provider": manifest.provider,
+        "feed": manifest.feed,
+        "timeframe": manifest.timeframe,
+        "adjustment": manifest.adjustment,
+        "calendar": manifest.calendar,
+        "timezone": manifest.timezone,
+        "status": status,
+    }
+
+
 def evaluate_split(
     split_name: str,
     spec: DaytradeSpec,
@@ -240,8 +273,11 @@ def evaluate_split(
             raise HoldoutAccessDeniedError("Holdout evaluation requires --validation-artifact-dir pointing to supported validation evidence.")
         holdout_proof = verify_holdout_access_prerequisites(validation_artifact_dir, spec, repo_root=repo_root)
 
+    target_manifest: DaytradeDatasetManifest | None = None
+    is_custom_injected = custom_sessions is not None and custom_reports is not None
+
     # Load private dataset or use custom injected synthetic data
-    if custom_sessions is not None and custom_reports is not None:
+    if is_custom_injected:
         sessions_by_ticker = custom_sessions
         quality_reports = custom_reports
     else:
@@ -253,6 +289,12 @@ def evaluate_split(
             repo_root=repo_root,
             validation_artifact_dir=validation_artifact_dir,
         )
+        target_partition = "holdout" if split == "holdout" else "preholdout"
+        valid_root = Path(dataset_root).expanduser().resolve()
+        manifest_file = valid_root / target_partition / "manifest.lock.json"
+        if manifest_file.is_file():
+            manifest_data = json.loads(manifest_file.read_text(encoding="utf-8"))
+            target_manifest = DaytradeDatasetManifest.from_dict(manifest_data)
 
     # Determine split dates and target calendar sessions
     split_dates = spec.get_split_dates(split)
@@ -532,15 +574,9 @@ def evaluate_split(
             "exceeds_split_gate": split_quality.exceeds_split_gate,
             "exclusion_breakdown": split_quality.exclusion_breakdown,
         },
-        "provider_provenance_summary": {
-            "provider": "alpaca",
-            "feed": "sip",
-            "timeframe": "1Min",
-            "adjustment": "split",
-            "calendar": "XNYS",
-            "timezone": "America/New_York",
-            "status": "synthetic_fixtures_only",
-        },
+        "provider_provenance_summary": _build_provider_provenance_summary(
+            target_manifest, is_custom_injected
+        ),
     }
 
     # Evaluate all 6 validation gates & disposition
@@ -560,19 +596,34 @@ def evaluate_split(
     )
 
     eval_sha = freeze.evaluation_code_sha if freeze else (holdout_proof.evaluator_code_sha if holdout_proof else "unfrozen_synthetic")
-    man_sha = freeze.manifest_sha256 if freeze and freeze.manifest_sha256 else (holdout_proof.manifest_sha256 if holdout_proof else "")
+    man_sha = freeze.manifest_sha256 if freeze and freeze.manifest_sha256 else (holdout_proof.manifest_sha256 if holdout_proof else (target_manifest.manifest_sha256 if target_manifest else ""))
+
+    if target_manifest is not None:
+        prov_provider = target_manifest.provider
+        prov_feed = target_manifest.feed
+        prov_timeframe = target_manifest.timeframe
+        prov_adjustment = target_manifest.adjustment
+        prov_calendar = target_manifest.calendar
+        prov_timezone = target_manifest.timezone
+    else:
+        prov_provider = "alpaca"
+        prov_feed = "sip"
+        prov_timeframe = "1Min"
+        prov_adjustment = "split"
+        prov_calendar = "XNYS"
+        prov_timezone = "America/New_York"
 
     provenance = {
         "task_id": "DAYTRADE-002B",
         "spec_sha256": spec.sha256,
         "evaluator_code_sha": eval_sha,
         "manifest_sha256": man_sha,
-        "provider": "alpaca",
-        "feed": "sip",
-        "timeframe": "1Min",
-        "adjustment": "split",
-        "calendar": "XNYS",
-        "timezone": "America/New_York",
+        "provider": prov_provider,
+        "feed": prov_feed,
+        "timeframe": prov_timeframe,
+        "adjustment": prov_adjustment,
+        "calendar": prov_calendar,
+        "timezone": prov_timezone,
         "evidence_confidence_cap": "limited_but_usable_evidence",
         "production_promotion_eligible": False,
     }
