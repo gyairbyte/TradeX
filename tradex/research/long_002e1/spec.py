@@ -13,7 +13,12 @@ EXPECTED_SPEC_SHA256 = "d10b3fd5e24cf6880d76f18cf84eabe23cf65d6fa0a32735877b7383
 PREREGISTRATION_SPEC_SHA256 = EXPECTED_SPEC_SHA256
 PREREGISTRATION_COMMIT_SHA = "49103f84ffbf7cd7b60216c2866ad103282bae58"
 
+CORR_SPEC_PATH = REPO_ROOT / "docs" / "research" / "specs" / "LONG-002E1-CORR-001-v1.json"
+EXPECTED_CORR_SPEC_SHA256 = "6a4345f6c9c0b96a3c11d4e44b437157128f1222ad346466f8d51c9f4f550c96"
+SUPERSEDED_RUN_ID = "LONG-002E1-20261006_133722"
+
 TASK_ID = "LONG-002E1-ROUND1-CANDIDATE-SEARCH-001"
+CORR_TASK_ID = "LONG-002E1-CORR-001"
 PROGRAM = "LONG-002"
 PHASE = "LONG-002E1"
 BASE_GIT_SHA = "8058c5d858b70090335338176f11a20ddfd04502"
@@ -23,6 +28,8 @@ DEV_START = "2016-01-01"
 DEV_END = "2020-12-31"
 PRIMARY_OOF_START = "2017-01-01"
 PRIMARY_OOF_END = "2020-12-31"
+CORRECTED_OOF_START = "2018-01-01"
+CORRECTED_OOF_END = "2020-12-31"
 POPULATION_CUTOFF = "20:30"
 TARGET_PCT = 10.0
 HORIZON_SESSIONS = 10
@@ -97,12 +104,26 @@ def load_spec() -> dict[str, Any]:
         return json.load(f)
 
 
+def load_corr_spec() -> dict[str, Any]:
+    """Load and return the locked LONG-002E1-CORR-001 correction specification dictionary."""
+    with CORR_SPEC_PATH.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+
 def verify_spec_integrity() -> None:
-    """Verify that the committed specification exists and matches its locked hash."""
+    """Verify that both committed specifications exist and match their locked hashes."""
     if not SPEC_PATH.exists():
         raise FileNotFoundError(f"Preregistration specification missing at {SPEC_PATH}")
     current_sha = compute_file_sha256(SPEC_PATH)
     if current_sha != EXPECTED_SPEC_SHA256:
         raise ValueError(
             f"SPECIFICATION INTEGRITY BREACH: Spec SHA {current_sha} != expected {EXPECTED_SPEC_SHA256}"
+        )
+
+    if not CORR_SPEC_PATH.exists():
+        raise FileNotFoundError(f"Correction specification missing at {CORR_SPEC_PATH}")
+    corr_sha = compute_file_sha256(CORR_SPEC_PATH)
+    if corr_sha != EXPECTED_CORR_SPEC_SHA256:
+        raise ValueError(
+            f"CORRECTION SPEC INTEGRITY BREACH: Spec SHA {corr_sha} != expected {EXPECTED_CORR_SPEC_SHA256}"
         )

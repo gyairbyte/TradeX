@@ -165,3 +165,61 @@ def test_governance_invariants(e1_spec: dict[str, Any]) -> None:
     assert e1_spec["quarantine_and_governance"]["holdout_access_authorized"] is False
     assert e1_spec["quarantine_and_governance"]["shadow_access_authorized"] is False
     assert e1_spec["quarantine_and_governance"]["zero_provider_calls"] is True
+
+
+# --- Tests for LONG-002E1-CORR-001 ---
+
+CORR_SPEC_PATH = REPO_ROOT / "docs" / "research" / "specs" / "LONG-002E1-CORR-001-v1.json"
+EXPECTED_CORR_SPEC_SHA256 = "6a4345f6c9c0b96a3c11d4e44b437157128f1222ad346466f8d51c9f4f550c96"
+
+
+@pytest.fixture(scope="module")
+def corr_spec() -> dict[str, Any]:
+    with CORR_SPEC_PATH.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def test_corr_01_spec_hash_verified():
+    """Verify LONG-002E1-CORR-001-v1.json matches its locked SHA-256."""
+    assert CORR_SPEC_PATH.is_file()
+    assert _sha256(CORR_SPEC_PATH) == EXPECTED_CORR_SPEC_SHA256
+
+
+def test_corr_02_e1_v1_spec_hash_unchanged():
+    """Verify original LONG-002E1-v1.json remains byte-identical."""
+    assert _sha256(E1_SPEC_PATH) == EXPECTED_E1_SPEC_SHA256
+
+
+def test_corr_03_common_evaluation_period_2018_2020(corr_spec: dict[str, Any]):
+    """Verify common evaluation period is 2018-01-01 to 2020-12-31 (730 sessions)."""
+    p = corr_spec["common_evaluation_period"]
+    assert p["start_date"] == "2018-01-01"
+    assert p["end_date"] == "2020-12-31"
+    assert p["trading_sessions_count"] == 730
+    assert p["common_to_all_families"] is True
+
+
+def test_corr_04_three_folds_defined_with_26_session_purge(corr_spec: dict[str, Any]):
+    """Verify exactly 3 expanding folds (2018, 2019, 2020) each with 26-session purge."""
+    folds = corr_spec["expanding_folds"]
+    assert len(folds) == 3
+    assert folds[0]["eval_year"] == 2018 and folds[0]["train_years"] == [2016, 2017]
+    assert folds[1]["eval_year"] == 2019 and folds[1]["train_years"] == [2016, 2017, 2018]
+    assert folds[2]["eval_year"] == 2020 and folds[2]["train_years"] == [2016, 2017, 2018, 2019]
+    for f in folds:
+        assert f["purge_sessions_count"] == 26
+
+
+def test_corr_05_three_of_three_annual_stability_requirement(corr_spec: dict[str, Any]):
+    """Verify eligibility requires exactly 3 of 3 positive annual years (ceil(0.75 * 3) = 3)."""
+    crit = corr_spec["disposition_criteria"]["round2_eligible"]
+    assert crit["annual_positive_p10_delta_years_threshold"] == 3
+
+
+def test_corr_06_budget_preserves_36_material_configurations(corr_spec: dict[str, Any]):
+    """Verify correction re-execution uses attempt 2, consumes no new material slots, round2 unauthorized."""
+    b = corr_spec["search_budget"]
+    assert b["material_configurations_consumed"] == 36
+    assert b["attempt_number"] == 2
+    assert b["consumes_new_material_slot"] is False
+    assert b["round2_authorized"] is False
