@@ -1,0 +1,454 @@
+{
+  "task_id": "LONG-002E1-ROUND1-CANDIDATE-SEARCH-001",
+  "program": "LONG-002",
+  "phase": "LONG-002E1",
+  "spec_version": 1,
+  "spec_name": "LONG-002E1: Preregistered Development-Only Round-1 Candidate-System Search",
+  "classification": "research-only",
+  "status": "preregistered_ready_for_execution",
+  "authorizer": "Gary Yang",
+  "authorization_date": "2026-10-05",
+  "authorization_scope": "LONG-002E research-only bounded candidate-system development",
+  "base_git_sha": "8058c5d858b70090335338176f11a20ddfd04502",
+  "production_boundary": {
+    "production_promotion_eligible": false,
+    "production_change_authorized": false,
+    "production_trading_logic_modified": false,
+    "approved_production_strategies": []
+  },
+  "quarantine_and_governance": {
+    "validation_access_authorized": false,
+    "validation_period": {
+      "start": "2021-01-01",
+      "end": "2022-12-31",
+      "status": "quarantined_unopened"
+    },
+    "holdout_access_authorized": false,
+    "holdout_period": {
+      "start": "2023-01-01",
+      "end": "2025-12-31",
+      "status": "quarantined_unopened"
+    },
+    "shadow_access_authorized": false,
+    "shadow_period": {
+      "start": "2026-01-01",
+      "status": "quarantined_unopened"
+    },
+    "zero_provider_calls": true,
+    "no_market_data_download": true,
+    "no_feature_registry_modifications": true,
+    "no_post_hoc_pullback_or_dip_features": true,
+    "long_002f_trigger_research_authorized": false,
+    "long_002g_stop_management_research_authorized": false
+  },
+  "upstream_specifications_and_artifacts": {
+    "LONG-002-v1.json": {
+      "path": "docs/research/specs/LONG-002-v1.json",
+      "sha256": "f3df2845543500985c88568f9b855812576e9e4a10901f8a5f7a1834a319b3b5"
+    },
+    "LONG-002D1-v1.json": {
+      "path": "docs/research/specs/LONG-002D1-v1.json",
+      "sha256": "cfa450824d269fb80a276ad9986835faf08f5d1a632722d0824502c68f738381"
+    },
+    "LONG-002D2-v1.json": {
+      "path": "docs/research/specs/LONG-002D2-v1.json",
+      "sha256": "db82482333fb0c9810279d289e87e82e7274802fae82269cbf1b63c7ad2a6fb8"
+    },
+    "LONG-002D3B-v1.json": {
+      "path": "docs/research/specs/LONG-002D3B-v1.json",
+      "sha256": "130eec4c9f9afd5c7b1e826e5a39aa8a6fba748ce53d2001cb089716b8d7992c"
+    },
+    "D3B_feature_registry.json": {
+      "path": "docs/research/artifacts/LONG-002D3B/feature_registry.json",
+      "sha256": "57a1837f25004272d3a1a16fce3939d184ba5f388a117a3e631df4b12158d628"
+    },
+    "D3B_recommendation_episode_contract.json": {
+      "path": "docs/research/artifacts/LONG-002D3B/recommendation_episode_contract.json",
+      "sha256": "e503991cb2fca33e00a5a150a61f22e5b4d9df9ee64505113e3b4b9be2803642"
+    },
+    "D3B_readiness_decision.json": {
+      "path": "docs/research/artifacts/LONG-002D3B/readiness_decision.json",
+      "sha256": "3511bb186aa8c95ed5c2b6b471969e7cb9ab1d39bac8939007c4ec4102020a25"
+    }
+  },
+  "required_input_artifacts": {
+    "d1_feature_table": {
+      "path": "data/research/long_002d1/feature_table.parquet",
+      "sha256": "7dc09bdeed02c44eb48a0143884deb0ad7795466a08e25fd26c32640a0c813d8",
+      "expected_row_count": 758731
+    },
+    "stage_c_baseline_comparator_outputs": {
+      "path": "data/research/long_002c/baseline_comparator_outputs.parquet",
+      "sha256": "faec26ddb26fd5a17feddf5ae09232a8aeb8ba24c3529abd88422682357e4734"
+    },
+    "stage_c_outcome_matrix": {
+      "path": "data/research/long_002c/outcome_matrix.parquet",
+      "sha256": "b59a5f7f8a8a0498abdadb156299719f43ffa8854df5cad8e20a6cd4fbe237c3"
+    }
+  },
+  "common_study_population": {
+    "split": "development",
+    "start_date": "2016-01-01",
+    "end_date": "2020-12-31",
+    "cutoff_time": "20:30",
+    "timezone": "America/New_York",
+    "calendar": "XNYS",
+    "join_keys": [
+      "immutable_security_id",
+      "as_of_date",
+      "cutoff_time"
+    ],
+    "expected_denominator": 758731,
+    "expected_clean_events": 67257,
+    "expected_base_rate": 0.08864393282993459,
+    "zero_imputation_prohibited": true,
+    "identical_population_for_all_configs": true
+  },
+  "frozen_feature_registry": {
+    "allowed_predictive_features": [
+      "return_5",
+      "atr_pct_14",
+      "return_20",
+      "return_60",
+      "close_vs_sma20",
+      "close_vs_sma60",
+      "sma20_slope_5",
+      "relative_volume_20"
+    ],
+    "feature_restrictions": {
+      "sma20_slope_5": "multivariate_challenger_only_not_standalone",
+      "relative_volume_20": "multivariate_contextual_challenger_only_not_standalone"
+    },
+    "excluded_features": [
+      "proximity_high20",
+      "proximity_high60",
+      "true_range_compression_5_20",
+      "dollar_volume_trend_20_60",
+      "up_volume_share_20",
+      "spy_return_20",
+      "stock_minus_spy_20"
+    ],
+    "context_only_features": [
+      "spy_return_20"
+    ],
+    "feature_subsets": {
+      "S1": {
+        "id": "CORE4",
+        "description": "Core 4 momentum and volatility reference features",
+        "features": [
+          "return_5",
+          "atr_pct_14",
+          "return_20",
+          "return_60"
+        ]
+      },
+      "S2": {
+        "id": "CORE6",
+        "description": "Core 6 features: CORE4 plus trend/location features",
+        "features": [
+          "return_5",
+          "atr_pct_14",
+          "return_20",
+          "return_60",
+          "close_vs_sma20",
+          "close_vs_sma60"
+        ]
+      },
+      "S3": {
+        "id": "CORE7_RVOL",
+        "description": "Core 7 features: CORE6 plus relative volume",
+        "features": [
+          "return_5",
+          "atr_pct_14",
+          "return_20",
+          "return_60",
+          "close_vs_sma20",
+          "close_vs_sma60",
+          "relative_volume_20"
+        ]
+      },
+      "S4": {
+        "id": "ALL8",
+        "description": "All 8 frozen predictive features",
+        "features": [
+          "return_5",
+          "atr_pct_14",
+          "return_20",
+          "return_60",
+          "close_vs_sma20",
+          "close_vs_sma60",
+          "sma20_slope_5",
+          "relative_volume_20"
+        ]
+      }
+    }
+  },
+  "primary_model_target": {
+    "endpoint": "clean_target_reached",
+    "target_pct": 10.0,
+    "horizon_sessions": 10,
+    "description": "Primary confirmatory target: clean +10% reached within 10 trading sessions from next-session reference entry"
+  },
+  "secondary_outcome_diagnostics": {
+    "clean_tiers": [10, 20, 30],
+    "highest_clean_tier_definition": "30 if clean +30/10 else 20 if clean +20/10 else 10 if clean +10/10 else 0",
+    "adverse_excursion_field": "adverse_excursion",
+    "time_to_target_field": "time_to_target"
+  },
+  "oof_evaluation_design": {
+    "methodology": "chronological_expanding_window_out_of_fold",
+    "primary_evaluation_period": {
+      "start": "2017-01-01",
+      "end": "2020-12-31"
+    },
+    "folds": [
+      {
+        "fold_id": 1,
+        "training_years": ["2016"],
+        "evaluation_year": "2017",
+        "evaluation_start": "2017-01-01",
+        "evaluation_end": "2017-12-31",
+        "purge_sessions_before_eval": 26
+      },
+      {
+        "fold_id": 2,
+        "training_years": ["2016", "2017"],
+        "evaluation_year": "2018",
+        "evaluation_start": "2018-01-01",
+        "evaluation_end": "2018-12-31",
+        "purge_sessions_before_eval": 26
+      },
+      {
+        "fold_id": 3,
+        "training_years": ["2016", "2017", "2018"],
+        "evaluation_year": "2019",
+        "evaluation_start": "2019-01-01",
+        "evaluation_end": "2019-12-31",
+        "purge_sessions_before_eval": 26
+      },
+      {
+        "fold_id": 4,
+        "training_years": ["2016", "2017", "2018", "2019"],
+        "evaluation_year": "2020",
+        "evaluation_start": "2020-01-01",
+        "evaluation_end": "2020-12-31",
+        "purge_sessions_before_eval": 26
+      }
+    ],
+    "fold_boundary_purge": {
+      "sessions_removed_from_end_of_training": 26,
+      "dependency_window_sessions": 26,
+      "calendar": "XNYS",
+      "invariant": "latest retained training observation + 26 forward sessions terminates strictly before first evaluation-session date"
+    }
+  },
+  "deterministic_ranking": {
+    "primary_k": 10,
+    "secondary_k": 25,
+    "sort_order": "DESC",
+    "tie_breaker": "immutable_security_id ASC",
+    "sector_quota": false,
+    "forced_diversification": false,
+    "backfill": false
+  },
+  "frozen_baseline_comparator": {
+    "comparator_id": "volatility_aware_momentum_5",
+    "family": "frozen_baseline",
+    "formula": "0.5 * cross_sectional_percentile(return_5) + 0.5 * cross_sectional_percentile(atr_pct_14)",
+    "source_dataset": "data/research/long_002c/baseline_comparator_outputs.parquet",
+    "consumes_configuration_slot": false,
+    "full_development_reference": {
+      "top_10_clean_rate": 0.153533,
+      "top_10_lift": 1.7320,
+      "top_25_clean_rate": 0.126881,
+      "top_25_lift": 1.4314
+    }
+  },
+  "material_configuration_registry": {
+    "total_authorized_configurations": 36,
+    "configurations_per_family": 12,
+    "families": {
+      "cross_sectional_rank_score": {
+        "family_id": "cross_sectional_rank_score",
+        "model_type": "deterministic_rank_sum",
+        "configuration_count": 12,
+        "weight_templates": {
+          "T1": {
+            "name": "EQUAL",
+            "rule": "All features in subset receive equal weight (1 / N)"
+          },
+          "T2": {
+            "name": "ATR_TILT",
+            "rule": "atr_pct_14 = 0.40, remaining features split remaining 0.60 equally"
+          },
+          "T3": {
+            "name": "CORE_TILT",
+            "rule": "return_5 = 0.30, atr_pct_14 = 0.30, remaining features split remaining 0.40 equally"
+          }
+        },
+        "configuration_ids": [
+          "RANK_S1_T1", "RANK_S1_T2", "RANK_S1_T3",
+          "RANK_S2_T1", "RANK_S2_T2", "RANK_S2_T3",
+          "RANK_S3_T1", "RANK_S3_T2", "RANK_S3_T3",
+          "RANK_S4_T1", "RANK_S4_T2", "RANK_S4_T3"
+        ]
+      },
+      "regularized_probabilistic": {
+        "family_id": "regularized_probabilistic",
+        "model_type": "LogisticRegression",
+        "library": "scikit-learn",
+        "configuration_count": 12,
+        "fixed_parameters": {
+          "penalty": "l2",
+          "solver": "lbfgs",
+          "max_iter": 1000,
+          "tol": 1e-06,
+          "class_weight": null,
+          "random_state": 20261005
+        },
+        "preprocessing": "StandardScaler fit ONLY on training fold, evaluated without refitting",
+        "c_values": [0.03, 0.30, 3.00],
+        "configuration_ids": [
+          "LOGIT_S1_C003", "LOGIT_S1_C030", "LOGIT_S1_C300",
+          "LOGIT_S2_C003", "LOGIT_S2_C030", "LOGIT_S2_C300",
+          "LOGIT_S3_C003", "LOGIT_S3_C030", "LOGIT_S3_C300",
+          "LOGIT_S4_C003", "LOGIT_S4_C030", "LOGIT_S4_C300"
+        ]
+      },
+      "shallow_strongly_regularized_gbdt": {
+        "family_id": "shallow_strongly_regularized_gbdt",
+        "model_type": "HistGradientBoostingClassifier",
+        "library": "scikit-learn",
+        "configuration_count": 12,
+        "fixed_parameters": {
+          "random_state": 20261005,
+          "early_stopping": false
+        },
+        "profiles": {
+          "G1": {
+            "learning_rate": 0.03,
+            "max_iter": 100,
+            "max_depth": 2,
+            "max_leaf_nodes": 4,
+            "min_samples_leaf": 200,
+            "l2_regularization": 5.0,
+            "early_stopping": false
+          },
+          "G2": {
+            "learning_rate": 0.03,
+            "max_iter": 150,
+            "max_depth": 3,
+            "max_leaf_nodes": 8,
+            "min_samples_leaf": 200,
+            "l2_regularization": 10.0,
+            "early_stopping": false
+          },
+          "G3": {
+            "learning_rate": 0.05,
+            "max_iter": 100,
+            "max_depth": 3,
+            "max_leaf_nodes": 8,
+            "min_samples_leaf": 100,
+            "l2_regularization": 20.0,
+            "early_stopping": false
+          }
+        },
+        "configuration_ids": [
+          "GBDT_S1_G1", "GBDT_S1_G2", "GBDT_S1_G3",
+          "GBDT_S2_G1", "GBDT_S2_G2", "GBDT_S2_G3",
+          "GBDT_S3_G1", "GBDT_S3_G2", "GBDT_S3_G3",
+          "GBDT_S4_G1", "GBDT_S4_G2", "GBDT_S4_G3"
+        ]
+      }
+    }
+  },
+  "search_budget_accounting": {
+    "round_1_budget": 36,
+    "round_1_configurations": 36,
+    "round_2_max_additional_configurations": 12,
+    "total_authorized_e_budget": 48,
+    "failed_attempt_policy": "Failed attempts consume budget slots. Silent replacement is strictly prohibited."
+  },
+  "bootstrap_methodology": {
+    "method": "paired_calendar_block_bootstrap",
+    "primary_block_size_sessions": 21,
+    "robustness_block_size_sessions": 42,
+    "replicates": 1000,
+    "seed": 20261005,
+    "confidence_intervals": {
+      "lower_quantile": 0.025,
+      "median_quantile": 0.50,
+      "upper_quantile": 0.975
+    },
+    "pairing_rule": "Candidate and matched baseline evaluated on identical sampled date blocks"
+  },
+  "round1_disposition_rules": {
+    "vocabulary": [
+      "round2_eligible",
+      "round1_inconclusive",
+      "round1_not_supported",
+      "invalid_configuration"
+    ],
+    "round2_eligible_criteria": [
+      "all integrity gates pass",
+      "pooled OOF Precision@10 delta vs matched VAM5 > 0",
+      "pooled OOF Precision@25 delta vs matched VAM5 >= 0",
+      "at least 3 of 4 OOF years have positive Precision@10 delta",
+      "21-session bootstrap median Precision@10 delta > 0"
+    ],
+    "round1_not_supported_criteria": [
+      "21-session bootstrap 97.5th percentile Precision@10 delta <= 0",
+      "OR (pooled Precision@10 delta <= 0 AND positive annual Precision@10 delta years <= 2 of 4)"
+    ],
+    "round1_inconclusive_criteria": [
+      "Any configuration not meeting round2_eligible or round1_not_supported criteria"
+    ],
+    "invalid_configuration_criteria": [
+      "Any integrity, data, or execution failure"
+    ]
+  },
+  "within_family_ordering_rules": [
+    "status (round2_eligible > round1_inconclusive > round1_not_supported > invalid_configuration)",
+    "pooled Precision@10 delta vs matched VAM5 DESC",
+    "21-session bootstrap lower bound DESC",
+    "pooled Precision@25 delta DESC",
+    "empirical clean move value @10 delta DESC",
+    "lower adverse rate",
+    "simpler configuration",
+    "configuration_id ASC"
+  ],
+  "round2_guardrails_frozen": {
+    "round2_authorized": false,
+    "requires_separate_assignment": true,
+    "max_configurations_total": 12,
+    "allowed_features": "Only the 8 frozen features from D3B",
+    "rank_bounds": {
+      "weight_increments": 0.05,
+      "sum_weights": 1.0,
+      "no_negative_weights": true,
+      "relative_volume_20_max_weight": 0.10,
+      "sma20_slope_5_max_weight": 0.10,
+      "no_standalone": true
+    },
+    "logistic_bounds": {
+      "c_min": 0.01,
+      "c_max": 3.0,
+      "penalty": "l2_only"
+    },
+    "gbdt_bounds": {
+      "max_depth_max": 3,
+      "max_leaf_nodes_max": 8,
+      "learning_rate_min": 0.02,
+      "learning_rate_max": 0.05,
+      "max_iter_max": 200,
+      "min_samples_leaf_min": 100,
+      "l2_regularization_min": 1.0
+    }
+  },
+  "artifact_paths": {
+    "committed_summary_directory": "docs/research/artifacts/LONG-002E1/<run_id>/",
+    "external_row_level_directory": "data/research/long_002e1/<run_id>/",
+    "results_report": "docs/research/LONG-002E1-ROUND1-RESULTS.md"
+  },
+  "stop_condition": "Stop after E1 Round-1 execution, draft PR, and completion report. Do NOT execute Round 2 or modify production."
+}

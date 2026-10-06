@@ -652,7 +652,20 @@ def test_45_no_daytrade_files_changed() -> None:
         ).returncode == 0
 
     diff_base: str = approved_base
-    if not has_base:
+    d3b_merge = "8058c5d858b70090335338176f11a20ddfd04502"
+    is_d3b_merged = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", d3b_merge, "HEAD"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    ).returncode == 0
+
+    if is_d3b_merged:
+        # In post-merge environments where PR #98 was merged before PR #97,
+        # diff_base for HEAD is the D3B merge commit itself.
+        diff_base = d3b_merge
+    elif not has_base:
         # Fallback to merge-base with origin/main or HEAD~1 if approved_base is still missing
         mb = subprocess.run(
             ["git", "merge-base", "HEAD", "origin/main"],
