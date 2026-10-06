@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "decision_id": "LONG-002D3B-READINESS-DECISION",
+  "task_id": "LONG-002D3B-QUANTITATIVE-FREEZE-001",
+  "program": "LONG-002",
+  "phase": "LONG-002D3B",
+  "title": "Quantitative D-Stage Readiness Decision for LONG-002E Consideration",
+  "status": "ready_for_long_002e_authorization",
+  "disposition": "ready_for_long_002e_authorization",
+  "decision_date": "2026-10-05",
+  "long_002e_authorized": false,
+  "requires_separate_gary_authorization": true,
+  "meaning_of_disposition": "This disposition certifies ONLY that all D-stage prerequisites are complete, verified, and sufficiently locked for Gary Yang and ChatGPT to evaluate whether to authorize LONG-002E. It does NOT authorize LONG-002E execution, model fitting, validation access, holdout access, shadow access, or production changes.",
+  "prerequisites_evaluation": {
+    "human_review_waiver_amendment": {
+      "status": "satisfied",
+      "reference": "LONG-002D-AMEND-001",
+      "summary": "Human blinded chart review formally waived by Gary Yang; zero labels collected; zero performance claims; D3A tooling preserved."
+    },
+    "kpi_discovery_completion": {
+      "status": "satisfied",
+      "reference": "LONG-002D1 (run 2026-09-28-003539)",
+      "summary": "Core technical and market-context univariate census complete across 758,731 development observations."
+    },
+    "incremental_reranking_completion": {
+      "status": "satisfied",
+      "reference": "LONG-002D2 (run 2026-10-04-002604)",
+      "summary": "Controlled reranking evaluated; relative_volume_20 conclusively NOT_SUPPORTED as standalone reranker; sma20_slope_5 underperformed matched VAM5."
+    },
+    "feature_registry_freeze": {
+      "status": "satisfied",
+      "reference": "docs/research/artifacts/LONG-002D3B/feature_registry.json",
+      "summary": "All 15 D1 features explicitly classified into controlled vocabulary; baseline components and carry bounded challengers locked; contradictory and neutral candidates excluded; post-hoc pullback excluded."
+    },
+    "baseline_comparator_frozen": {
+      "status": "satisfied",
+      "reference": "volatility_aware_momentum_5",
+      "summary": "Stage C VAM5 baseline comparator frozen without retuning, weight changes, or threshold shifts."
+    },
+    "recommendation_episode_contract": {
+      "status": "satisfied",
+      "reference": "docs/research/artifacts/LONG-002D3B/recommendation_episode_contract.json",
+      "summary": "Deterministic evaluation grouping rule established; 21-session cap and anti-double-count rule prevent persistent signal inflation; primary outcome and predictions strictly anchored to episode-start 20:30 observation without post-start pooling."
+    },
+    "model_search_budget_preserved": {
+      "status": "satisfied",
+      "reference": "LONG-002-v1.json (lines 809-820)",
+      "summary": "Maximum 48 material configurations preserved across 3 allowed model families; experiment ledger mandatory."
+    },
+    "split_quarantines_preserved": {
+      "status": "satisfied",
+      "summary": "Validation split (2021-2022) unopened; holdout split (2023-2025) unopened; shadow mode untouched."
+    },
+    "production_boundary_preserved": {
+      "status": "satisfied",
+      "summary": "APPROVED_PRODUCTION_STRATEGIES == () strictly preserved; zero production trading behavior changes."
+    }
+  },
+  "allowed_next_action": "STOP and present completion report to Gary Yang and ChatGPT for independent review. Await explicit Gary Yang authorization before beginning LONG-002E."
+}

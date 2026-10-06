@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract_id": "LONG-002D3B-RECOMMENDATION-EPISODE-CONTRACT",
+  "task_id": "LONG-002D3B-QUANTITATIVE-FREEZE-001",
+  "program": "LONG-002",
+  "phase": "LONG-002D3B",
+  "title": "Frozen Evaluation Recommendation-Episode Lifecycle and Grouping Contract",
+  "construct_name": "evaluation_recommendation_episode",
+  "status": "frozen",
+  "frozen_on": "2026-10-05",
+  "snapshot_specification": {
+    "primary_cutoff_time": "20:30",
+    "timezone": "America/New_York",
+    "calendar": "XNYS",
+    "rule": "Evaluation recommendation episodes are evaluated on the official evening 20:30 America/New_York decision snapshot."
+  },
+  "lifecycle_rules": {
+    "start_rule": {
+      "definition": "An episode opens on the first official 20:30 snapshot where an immutable security is surfaced by a candidate system (assigned to Enter Now, Armed, or Qualified Waitlist) after not currently having an active evaluation recommendation episode for that system.",
+      "cardinality": "At most one active evaluation recommendation episode is permitted per immutable security per candidate system at any snapshot. Tracking and reset state are independently maintained per immutable security."
+    },
+    "continuation_rule": {
+      "definition": "An active episode continues across consecutive official 20:30 snapshots while the security remains continuously surfaced (in any qualifying state: Enter Now, Armed, or Qualified Waitlist).",
+      "state_transitions": "Transitions between visible surfaced states (e.g. Enter Now -> Armed, Armed -> Enter Now, Armed -> Qualified Waitlist) do NOT by themselves create a new evaluation episode. Contiguous surfaced observations remain grouped within the same single active episode."
+    },
+    "close_rule": {
+      "definition": "An active episode closes on the earliest occurrence of any of the following terminal conditions:",
+      "triggers": [
+        {
+          "reason": "surface_lost_hidden",
+          "description": "First official 20:30 snapshot where the security is no longer surfaced (downgraded to Hidden / not surfaced / disqualified)."
+        },
+        {
+          "reason": "max_session_cap_reached",
+          "description": "Episode reaches exactly 21 trading sessions from episode start date."
+        },
+        {
+          "reason": "invalidation_triggered",
+          "description": "Explicit recommendation invalidation under a later frozen state/entry contract."
+        }
+      ]
+    },
+    "anti_double_count_rule": {
+      "definition": "If the 21-session maximum cap is reached while the security remains continuously surfaced by the candidate system, the episode closes with close_reason 'max_session_cap_reached' and a new episode is NOT automatically opened on the next trading session.",
+      "eligibility_reset": "The security becomes eligible to initiate a new evaluation recommendation episode only after at least one official 20:30 snapshot in which it is NOT surfaced (i.e. a hidden / unsurfaced snapshot must occur before a subsequent surfacing can open a new episode). Suppression and eligibility are tracked independently per immutable security.",
+      "purpose": "Prevents one persistent signal or permanently qualifying security from inflating sample counts or being counted as repeated independent recommendations."
+    },
+    "future_entry_plan_rule": {
+      "definition": "Once LONG-002F introduces frozen entry-plan IDs, a material change to a frozen entry plan, trigger, or invalidation closes the prior recommendation ID and creates a new operational recommendation ID. However, this later operational rule must not retroactively alter the LONG-002E evaluation recommendation-episode grouping without an explicit amendment."
+    }
+  },
+  "outcome_semantics": {
+    "primary_outcome_anchor": "episode_start_observation",
+    "definition": "The primary evaluation recommendation-episode outcome is strictly frozen to the episode-start 20:30 observation and its existing primary Stage C label/reference-entry semantics.",
+    "prohibition_of_post_start_pooling": "clean_target_reached_10_10 and time_to_target_if_reached are measured from the episode-start observation/reference entry only. They must NEVER be computed as a logical OR, maximum, or composite across subsequent constituent snapshots within the episode.",
+    "rationale": "Freezing the outcome to the episode-start observation prevents favorable post-start rows or delayed market moves from retroactively determining episode success, eliminating selection and lookahead degrees of freedom for Stage E."
+  },
+  "prediction_fields_semantics": {
+    "primary_prediction_fields": [
+      "start_score_or_probability",
+      "start_rank"
+    ],
+    "primary_prediction_rule": "Primary start-of-episode performance, ranking, decile lift, and calibration evaluations must use the prediction fields from the episode-start 20:30 observation (start_score_or_probability and start_rank).",
+    "descriptive_fields": [
+      "max_score_or_probability",
+      "best_rank"
+    ],
+    "descriptive_fields_restriction": "max_score_or_probability and best_rank are strictly descriptive trajectory diagnostics across the episode duration and are explicitly PROHIBITED from primary start-of-episode performance, ranking, or calibration calculations."
+  },
+  "deterministic_identity": {
+    "formula": "REC_{system_id}_{immutable_security_id}_{episode_start_date}_{snapshot_cutoff}",
+    "collision_resistant_hash_alternative": "sha256(f'{system_id}:{immutable_security_id}:{episode_start_date}:{snapshot_cutoff}')",
+    "required_components": [
+      "system_id",
+      "immutable_security_id",
+      "episode_start_date",
+      "snapshot_cutoff"
+    ]
+  },
+  "conceptual_distinctions": {
+    "stage_c_master_opportunity_episodes": "Stage C master opportunity episodes are ex-post ground-truth labeling windows (up to 21 sessions following the first anchor entry that reaches at least +10%) that group natural market outcome phenomena. Evaluation recommendation episodes are candidate-system-generated evaluation grouping units that reflect when a specific model chose to surface a security.",
+    "live_order_lifecycles": "Evaluation recommendation episodes do not represent live brokerage orders, broker-fill executions, or position lifecycles.",
+    "brokerage_positions": "Evaluation recommendation episodes do not represent account positions or portfolio holdings."
+  },
+  "denominator_and_reporting_rules": {
+    "dual_reporting_mandatory": "LONG-002E model evaluation must report BOTH raw observation-level diagnostics AND unique evaluation recommendation-episode metrics.",
+    "raw_daily_rows_prohibition": "Raw daily observation rows must NOT be treated as independent recommendations or used as the denominator for product-usefulness claims.",
+    "primary_sample_interpretation": "Primary sample counts and product-usefulness metrics must evaluate unique evaluation recommendation episodes alongside independent master opportunity episodes, distinct tickers, calendar coverage, and year/sector concentration."
+  },
+  "tracked_fields": [
+    "recommendation_episode_id",
+    "system_id",
+    "immutable_security_id",
+    "start_date",
+    "end_date",
+    "start_state",
+    "terminal_state",
+    "episode_session_count",
+    "close_reason",
+    "start_score_or_probability",
+    "start_rank",
+    "max_score_or_probability",
+    "best_rank",
+    "clean_target_reached_10_10",
+    "time_to_target_if_reached"
+  ]
+}
