@@ -16,25 +16,25 @@
       "layer": 1,
       "resolution": "daily",
       "name": "Daily / multi-year context",
-      "role": "Macro and multi-day trend/volatility/volume context filtering to identify interesting candidates before market open or during session preparation; candidate qualification rather than direct entry trigger."
+      "role": "Opportunity discovery and candidate filtering layer; establishes higher-timeframe context before or during session preparation. Note: specific indicators/thresholds remain unresolved and illustrative only."
     },
     {
       "layer": 2,
       "resolution": "133_tick",
       "name": "133-tick structure",
-      "role": "Intermediate intraday market structure characterization using activity-driven volume bars rather than fixed clock intervals; establishes intraday structural trend, swings, and support/resistance zones."
+      "role": "Intermediate intraday market structure characterization using activity-driven volume bars; filters out choppy or counter-trend regimes. Note: specific structural rules remain unresolved and illustrative only."
     },
     {
       "layer": 3,
       "resolution": "1_minute",
       "name": "1-minute setup context",
-      "role": "Concrete chart setup pattern identification in calendar time (e.g. consolidation, pullback, breakout pattern, VWAP relationship) conditioned on upstream Daily and 133-tick alignment."
+      "role": "Concrete chart setup pattern identification in calendar time conditioned on upstream Daily and 133-tick qualification. Note: specific chart patterns remain unresolved and illustrative only."
     },
     {
       "layer": 4,
       "resolution": "50_tick",
       "name": "50-tick entry timing",
-      "role": "High-resolution micro-structure confirmation and precision entry timing; fires only when upstream layers are fully satisfied."
+      "role": "High-resolution micro-structure confirmation and precision entry timing; fires only when upstream layers are fully satisfied. Note: specific micro triggers remain unresolved and illustrative only."
     },
     {
       "layer": 5,
@@ -47,36 +47,41 @@
     {
       "gap_id": "DT3-GAP-DATA-001",
       "title": "Raw trade-tick acquisition and provider contract absence",
-      "status": "NOT_SUPPORTED",
-      "description": "TradeX currently possesses zero provider clients, fetchers, or storage pipelines for historical trade ticks. Existing fetchers (tradex/data/fetcher.py and tradex/research/intraday_dataset/alpaca_client.py) support only daily or fixed-time minute bars (/v2/stocks/bars). No tick-level acquisition (/v2/stocks/trades) exists.",
+      "repository_status": "NOT_SUPPORTED",
+      "external_provider_status": "UNKNOWN_REQUIRES_DAYTRADE_003B_VERIFICATION",
+      "description": "TradeX currently possesses zero provider clients, fetchers, or storage pipelines for historical trade ticks. Existing fetchers support only daily or fixed-time minute bars (/v2/stocks/bars). External provider capabilities for raw trade ticks (/v2/stocks/trades) remain unknown and require empirical verification in DAYTRADE-003B.",
       "remediation_phase": "DAYTRADE-003B"
     },
     {
       "gap_id": "DT3-GAP-TICK-001",
       "title": "Tick-bar aggregation engine and deterministic storage foundation",
-      "status": "NOT_SUPPORTED",
-      "description": "Zero runtime logic exists to aggregate raw execution trades into 133-tick or 50-tick CompletedBar sequences. No storage format (Parquet/database), session-reset rules, trade qualification filters, or timestamp convention policies exist in code.",
+      "repository_status": "NOT_SUPPORTED",
+      "external_provider_status": "UNKNOWN_REQUIRES_DAYTRADE_003B_VERIFICATION",
+      "description": "Zero runtime logic exists in TradeX to aggregate raw execution trades into 133-tick or 50-tick CompletedBar sequences. No storage format, session-reset rules, trade qualification filters, or timestamp convention policies exist in code. Whether external providers supply native N-tick bars is unknown.",
       "remediation_phase": "DAYTRADE-003C"
     },
     {
       "gap_id": "DT3-GAP-SYNC-001",
       "title": "Cross-resolution PIT synchronization and availability contract",
-      "status": "PARTIALLY_SUPPORTED",
-      "description": "MultiResolutionSeries.filter_as_of() in tradex/research/daytrade_mvp/models.py provides pure in-memory timestamp filtering (bar.timestamp <= as_of), but lacks source-specific availability metadata (available_at vs bar_start), daily-session closure awareness, and real-time SIP delay modeling.",
+      "repository_status": "PARTIALLY_SUPPORTED",
+      "external_provider_status": "N_A",
+      "description": "MultiResolutionSeries.filter_as_of() in tradex/research/daytrade_mvp/models.py provides pure in-memory timestamp filtering (bar.timestamp <= as_of), but lacks source-specific availability contracts, daily-session closure awareness, and real-world provider latency modeling.",
       "remediation_phase": "DAYTRADE-003C"
     },
     {
       "gap_id": "DT3-GAP-SETUP-001",
       "title": "Concrete Gary strategy rule elicitation and preregistration lock",
-      "status": "UNRESOLVED_REQUIRES_GARY",
+      "repository_status": "UNRESOLVED_REQUIRES_GARY",
+      "external_provider_status": "N_A",
       "description": "The repository currently contains only an illustrative synthetic setup (SYNTH-DAYTRADE-001 in tradex/research/daytrade_mvp/synthetic.py). Gary's actual discretionary rules for Daily context, 133-tick trend, 1-minute setup, 50-tick trigger, stops, and targets have never been formally elicited or preregistered.",
       "remediation_phase": "DAYTRADE-003D"
     },
     {
       "gap_id": "DT3-GAP-EVAL-001",
       "title": "Full-lifecycle trade execution simulator and path-dependent outcome engine",
-      "status": "NOT_SUPPORTED",
-      "description": "Existing intraday research evaluators (tradex/research/daytrade_reversal and tradex/research/daytrade_momentum) are fixed-horizon event studies (1m, 2m, 5m, 30m). They do not simulate path-dependent trade execution (first-touch between stop and target, trailing stops, MFE/MAE, or trade concurrency limits).",
+      "repository_status": "NOT_SUPPORTED",
+      "external_provider_status": "N_A",
+      "description": "Existing intraday research evaluators in tradex/research/daytrade_reversal and tradex/research/daytrade_momentum are fixed-horizon event studies (1m, 2m, 5m, 30m). They do not simulate path-dependent trade execution (first-touch between stop and target, trailing stops, MFE/MAE, or trade concurrency limits).",
       "remediation_phase": "DAYTRADE-003E"
     }
   ],
@@ -85,7 +90,7 @@
       "component": "Multi-resolution data container",
       "location": "tradex/research/daytrade_mvp/models.py",
       "status": "SUPPORTED",
-      "evidence": "Resolution enum (DAILY, TICK_133, MINUTE_1, TICK_50); CompletedBar immutable dataclass with aware datetimes, OHLCV, and bar_start; MultiResolutionSeries container supporting all 4 resolutions and isolated as-of filtering."
+      "evidence": "Resolution enum (DAILY, TICK_133, MINUTE_1, TICK_50); CompletedBar immutable dataclass enforcing aware datetimes, bar_start <= timestamp, high >= low, volume >= 0; MultiResolutionSeries container supporting all 4 resolutions and isolated as-of filtering. Note: CompletedBar does not currently enforce positive price boundaries."
     },
     {
       "component": "Setup interface and fail-closed evaluator",
@@ -100,10 +105,10 @@
       "evidence": "SYNTH_DAYTRADE_001 smoke setup; generate_synthetic_multi_res_data() generates deterministic 4-resolution series with future bars; 9 passing tests verify zero future leakage and fail-closed invariants."
     },
     {
-      "component": "Historical daily OHLCV fetcher",
+      "component": "Daily OHLCV fetchers",
       "location": "tradex/data/fetcher.py, tradex/data/history.py",
-      "status": "SUPPORTED",
-      "evidence": "Multi-provider daily history via Schwab, Alpaca, Yahoo, IBKR; normalized UTC DataFrame with open, high, low, close, volume; FetchPolicy with retry and fallback."
+      "status": "PARTIALLY_SUPPORTED",
+      "evidence": "tradex/data/fetcher.py supports timeframe presets across Yahoo, Alpaca, IBKR, Schwab. tradex/data/history.py supports date-ranged daily history for Yahoo and Schwab, and explicitly raises ProviderCapabilityError for Alpaca and IBKR."
     },
     {
       "component": "Point-in-time reference and corporate action data",
@@ -121,47 +126,56 @@
   "missing_capabilities": [
     {
       "capability": "Historical raw trade-tick download client",
-      "status": "NOT_SUPPORTED",
-      "notes": "No TradeX client requests /v2/stocks/trades or raw ticks from Alpaca, Schwab, IBKR, or Polygon."
+      "repository_status": "NOT_SUPPORTED",
+      "external_provider_status": "UNKNOWN_REQUIRES_DAYTRADE_003B_VERIFICATION",
+      "notes": "No TradeX client requests /v2/stocks/trades or raw ticks from Alpaca, Schwab, IBKR, or Polygon. External provider availability is unknown."
     },
     {
       "capability": "Streaming trade websocket ingestion",
-      "status": "NOT_SUPPORTED",
+      "repository_status": "NOT_SUPPORTED",
+      "external_provider_status": "UNKNOWN_REQUIRES_DAYTRADE_003B_VERIFICATION",
       "notes": "No websocket client, event loop, or real-time trade receiver exists in TradeX."
     },
     {
       "capability": "Tick-bar aggregation engine (50-tick and 133-tick)",
-      "status": "NOT_SUPPORTED",
-      "notes": "No logic exists to group raw trades into N-tick OHLCV bars, track volume, or emit CompletedBar objects."
+      "repository_status": "NOT_SUPPORTED",
+      "external_provider_status": "UNKNOWN_REQUIRES_DAYTRADE_003B_VERIFICATION",
+      "notes": "No logic exists in TradeX to group raw trades into N-tick OHLCV bars, track volume, or emit CompletedBar objects."
     },
     {
       "capability": "Historical trade-tick and tick-bar storage layout",
-      "status": "NOT_SUPPORTED",
+      "repository_status": "NOT_SUPPORTED",
+      "external_provider_status": "N_A",
       "notes": "No database schema, Parquet directory structure, or serialization format exists for tick data."
     },
     {
       "capability": "Trade qualification and filtering rules",
-      "status": "NOT_SUPPORTED",
-      "notes": "No rules implemented for odd lots, dark pool prints, Form T, trade condition codes, or corrections/cancellations."
+      "repository_status": "NOT_SUPPORTED",
+      "external_provider_status": "UNKNOWN_REQUIRES_DAYTRADE_003B_VERIFICATION",
+      "notes": "No rules implemented for odd lots, Form T, trade condition codes, or corrections/cancellations. Policy remains unresolved."
     },
     {
       "capability": "Session boundary tick-bar reset policy",
-      "status": "NOT_SUPPORTED",
-      "notes": "No mechanism exists to reset tick accumulators at 09:30:00 ET or handle partial bars at 16:00:00 ET."
+      "repository_status": "NOT_SUPPORTED",
+      "external_provider_status": "N_A",
+      "notes": "No mechanism exists to reset tick accumulators at 09:30:00 ET or handle partial bars at 16:00:00 ET. Policy remains unresolved."
     },
     {
       "capability": "Formal DailyContextContract for day trading",
-      "status": "NOT_SUPPORTED",
+      "repository_status": "NOT_SUPPORTED",
+      "external_provider_status": "N_A",
       "notes": "No domain model or extractor exists to transform daily bars into standardized daily context variables (trend, ATR, levels)."
     },
     {
       "capability": "Multi-resolution trade execution simulator",
-      "status": "NOT_SUPPORTED",
+      "repository_status": "NOT_SUPPORTED",
+      "external_provider_status": "N_A",
       "notes": "Existing evaluators are fixed-horizon event studies; no simulator tracks path-dependent stop/target hits or MFE/MAE."
     },
     {
       "capability": "Gary Yang's actual day-trading strategy specification",
-      "status": "NOT_SUPPORTED",
+      "repository_status": "NOT_SUPPORTED",
+      "external_provider_status": "N_A",
       "notes": "Only synthetic demonstration rules exist; real discretionary rules have never been documented or approved."
     }
   ],
@@ -184,7 +198,7 @@
     {
       "item": "Storage footprint and IO performance of multi-symbol tick-bar databases",
       "status": "UNKNOWN",
-      "notes": "Unknown disk footprint and read latency for 133-tick and 50-tick bars across a 30-50 symbol universe over 1-2 years."
+      "notes": "Unknown disk footprint and read latency for 133-tick and 50-tick bars across candidate universes over historical test periods."
     }
   ],
   "policy_decisions_required": [
@@ -199,10 +213,19 @@
       "current_status": "UNRESOLVED_REQUIRES_LOCK"
     },
     {
+      "category": "Odd Lots",
+      "decision": "Do odd-lot trades (<100 shares) increment the tick counter?",
+      "options": [
+        "Include odd-lot trades in tick counting",
+        "Exclude odd-lot trades from tick counting"
+      ],
+      "current_status": "UNRESOLVED_REQUIRES_LOCK"
+    },
+    {
       "category": "Session Boundary",
       "decision": "How do tick counters behave across session boundaries (09:30 and 16:00 ET)?",
       "options": [
-        "Reset bar accumulator fresh at 09:30:00 ET every regular session (Standard)",
+        "Reset bar accumulator fresh at 09:30:00 ET every regular session",
         "Carry forward incomplete bar trade count from previous session",
         "Include premarket trades in the opening bar"
       ],
@@ -214,7 +237,7 @@
       "options": [
         "Discard incomplete bar (only fully completed 50/133 trade bars are evaluated)",
         "Emit marked partial bar with final trade at 16:00:00",
-        "Freeze and resume next morning"
+        "Freeze trade count and resume next morning"
       ],
       "current_status": "UNRESOLVED_REQUIRES_LOCK"
     },
@@ -222,9 +245,19 @@
       "category": "Timestamp Semantics",
       "decision": "What timestamp is assigned to CompletedBar for tick bars?",
       "options": [
-        "Timestamp of the final constituent trade (completion timestamp) as primary timestamp, with first trade as bar_start",
+        "Timestamp of the final constituent trade as completion timestamp, with first trade as bar_start",
         "Timestamp of the first trade as primary timestamp",
-        "SIP receipt timestamp rather than participant exchange timestamp"
+        "Receipt timestamp rather than participant exchange timestamp"
+      ],
+      "current_status": "UNRESOLVED_REQUIRES_LOCK"
+    },
+    {
+      "category": "Clock Source",
+      "decision": "Which clock source is used for tick timestamps?",
+      "options": [
+        "Participant exchange execution timestamp",
+        "SIP receipt timestamp",
+        "Local receiver ingest timestamp"
       ],
       "current_status": "UNRESOLVED_REQUIRES_LOCK"
     },
@@ -242,8 +275,27 @@
       "category": "Corporate Actions & Splits",
       "decision": "How are raw trade prices adjusted for historical stock splits?",
       "options": [
-        "Raw trade prices stored; split factors applied dynamically at bar aggregation or read time",
+        "Raw trade prices stored unadjusted; split factors applied dynamically at bar aggregation or read time",
         "Pre-split raw trade files; historical tick bars rebuilt upon corporate action"
+      ],
+      "current_status": "UNRESOLVED_REQUIRES_LOCK"
+    },
+    {
+      "category": "Shared Underlying Trade Stream",
+      "decision": "Should 133-tick and 50-tick bars be derived from a single canonical ordered trade stream?",
+      "options": [
+        "Recommended architecture: single canonical ordered trade stream for both resolutions (subject to DAYTRADE-003B feasibility)",
+        "Separate independent subscriptions/feeds for each resolution"
+      ],
+      "current_status": "UNRESOLVED_REQUIRES_LOCK"
+    },
+    {
+      "category": "Intraday Opportunity Universe",
+      "decision": "How is the intraday candidate universe defined for tick-bar research?",
+      "options": [
+        "Dedicated separate DAYTRADE universe restricted to liquid, high-trade-velocity securities",
+        "Dynamic upstream candidate funnel filtered by daily liquidity/volatility",
+        "Inherited static basket from existing equity or ETF studies"
       ],
       "current_status": "UNRESOLVED_REQUIRES_LOCK"
     }
@@ -259,54 +311,54 @@
   "strategy_inputs_requiring_gary_definition": [
     {
       "area": "Context Variables (Daily / Multi-Year)",
-      "questions": "What technical or fundamental factors make a security eligible for day trading? E.g., moving average trend (EMA 20, SMA 50), ATR minimum, multi-day coil/compression, relative volume buildup, earnings proximity, or sector relative strength?"
+      "questions": "What technical or fundamental factors make a security eligible for day trading? (Illustrative possibilities: moving average trend, ATR minimum, multi-day coil/compression, relative volume buildup, earnings proximity, or sector relative strength — exact rules remain unresolved)."
     },
     {
       "area": "133-Tick Structure Qualifiers",
-      "questions": "What exact market structure must the 133-tick chart display before a setup can be considered? E.g., higher highs and higher lows, breakout from 133-tick consolidation range, VWAP slope/position, or 133-tick moving average cross?"
+      "questions": "What exact market structure must the 133-tick chart display before a setup can be considered? (Illustrative possibilities: higher highs/lows, consolidation breakout, VWAP slope/position, or moving average cross — exact rules remain unresolved)."
     },
     {
       "area": "1-Minute Setup Context",
-      "questions": "What specific chart setup pattern must form on the 1-minute chart? E.g., bull flag, pullback to 1-min 20 EMA, VWAP reclaim, opening range breakout, or volume compression?"
+      "questions": "What specific chart setup pattern must form on the 1-minute chart? (Illustrative possibilities: bull/bear flag, pullback to moving average/VWAP, opening range breakout, or volume compression — exact rules remain unresolved)."
     },
     {
       "area": "50-Tick Entry Trigger",
-      "questions": "What precise micro-structure event on the 50-tick chart authorizes entry? E.g., 50-tick close breaking local micro-resistance, micro-double bottom breakout, micro-volume spike, or consecutive advancing tick bars?"
+      "questions": "What precise micro-structure event on the 50-tick chart authorizes entry? (Illustrative possibilities: 50-tick close breaking micro-resistance, micro-double bottom breakout, micro-volume spike, or consecutive advancing tick bars — exact rules remain unresolved)."
     },
     {
       "area": "Entry Mechanics & Order Semantics",
-      "questions": "Direction (Long only, Short only, or Bidirectional)? Order type (Market on 50-tick bar completion, Limit at breakout price, or Stop-market above bar high)? Execution fill price convention and slippage allowance?"
+      "questions": "Direction (Long only, Short only, or Bidirectional)? Order type (Market on 50-tick bar completion, Limit at breakout price, or Stop-market above bar high)? Execution fill price convention and slippage allowance? (Exact rules remain unresolved)."
     },
     {
       "area": "Invalidation & Stop Loss",
-      "questions": "What is the exact, deterministic stop-loss rule known at entry? E.g., low of the 50-tick trigger bar, lowest swing low of the 1-minute setup, fixed tick distance, or ATR fraction?"
+      "questions": "What is the exact, deterministic stop-loss rule known at entry? (Illustrative possibilities: low of 50-tick trigger bar, lowest swing low of 1-minute setup, fixed tick distance, or ATR fraction — exact rules remain unresolved)."
     },
     {
       "area": "Exit & Profit Targets",
-      "questions": "What are the profit target and exit rules? E.g., fixed R-multiple (1R, 2R), prior 133-tick resistance level, trailing stop logic, or partial scale-outs?"
+      "questions": "What are the profit target and exit rules? (Illustrative possibilities: fixed R-multiple, prior 133-tick level, trailing stop logic, or partial scale-outs — exact rules remain unresolved)."
     },
     {
       "area": "Position Constraints & Duration",
-      "questions": "Maximum position duration before time exit? Intraday forced liquidation time (e.g. 15:55 or 15:59 ET)? Strict prohibition against holding overnight? Maximum concurrent positions?"
+      "questions": "Maximum position duration before time exit? Intraday forced liquidation time (e.g. 15:55 or 15:59 ET)? Strict prohibition against holding overnight? Maximum concurrent positions? (Exact rules remain unresolved)."
     },
     {
       "area": "Explicit No-Trade Conditions",
-      "questions": "What conditions explicitly suppress trading? E.g., time-of-day restrictions (first 15 minutes 09:30-09:45 ET, lunch 12:00-13:00 ET, last 30 minutes), major economic releases (FOMC, CPI), wide bid-ask spread, or low tick velocity?"
+      "questions": "What conditions explicitly suppress trading? (Illustrative possibilities: time-of-day restrictions, major economic releases, wide bid-ask spread, or low tick velocity — exact rules remain unresolved)."
     },
     {
       "area": "Explainability Requirements",
-      "questions": "What specific human-readable reasons and quantitative evidence values must TradeX display in the decision-support UI for Gary to understand why a setup triggered?"
+      "questions": "What specific human-readable reasons and quantitative evidence values must TradeX display in the decision-support UI for Gary to understand why a setup triggered? (Exact rules remain unresolved)."
     }
   ],
   "reusable_components": [
     {
       "source": "DAYTRADE-001A",
-      "component": "Resolution enum, CompletedBar, MultiResolutionSeries, DaytradeSetup, evaluate_setup()",
+      "component": "Resolution enum, CompletedBar, MultiResolutionSeries (in models.py), DaytradeSetup (in setup.py), evaluate_setup() (in evaluator.py)",
       "justification": "Provides a clean, verified, tested in-memory multi-resolution foundation with fail-closed checks and PIT filtering."
     },
     {
       "source": "DAYTRADE-001A",
-      "component": "Synthetic 4-resolution test harness",
+      "component": "Synthetic 4-resolution test harness (in synthetic.py)",
       "justification": "Proves deterministic coexistence, future-data isolation, and zero-provider execution."
     },
     {
@@ -348,15 +400,15 @@
       "reason": "Arbitrary 0-100 indicator heuristics with no execution rules, transaction friction, or point-in-time validation."
     },
     {
-      "component": "Binary-only research disposition gate (Step 2 & Step 4 hard failure)",
-      "reason": "Binary gate mechanically discarded studies with positive edge due to minor ticker data-quality flaws or CI crossing zero; multi-resolution needs a nuanced taxonomy separating research continuation from production promotion."
+      "component": "Binary-only research disposition gate (Step 2 & Step 4 hard termination)",
+      "reason": "Preregistered binary gates strictly governed formal claims; proposed multi-state taxonomy separates research continuation from production promotion without altering historical dispositions."
     }
   ],
   "recommended_sequence": [
     {
       "phase": "DAYTRADE-003A",
       "title": "Original multi-resolution thesis re-anchor and gap analysis",
-      "status": "IN_PROGRESS",
+      "status": "completed_pending_review",
       "scope": "Documentation and gap matrix only; no code changes, no provider calls, no empirical tests."
     },
     {
@@ -367,7 +419,7 @@
     },
     {
       "phase": "DAYTRADE-003C",
-      "title": "Tick-bar deterministic aggregation engine & storage foundation",
+      "title": "Tick-data semantic contract & deterministic storage foundation",
       "status": "PROPOSED",
       "scope": "Implement offline and streaming trade accumulators producing 133-tick and 50-tick CompletedBar series from raw trade streams; lock session boundaries, trade condition filters, and storage schema."
     },
