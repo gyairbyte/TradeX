@@ -33,14 +33,20 @@ EXPECTED_PREDICTION_ROW_COUNT = 610648
 JOIN_KEYS = ["immutable_security_id", "as_of_date", "cutoff_time"]
 
 # Required input paths and digests
-E1_PREDICTION_PATH = Path("data/research/long_002e1/LONG-002E1-20261006_152832/predictions_regularized_probabilistic_LOGIT_S4_C300.parquet")
+E1_PREDICTION_PATH = Path(
+    "data/research/long_002e1/LONG-002E1-20261006_152832/predictions_regularized_probabilistic_LOGIT_S4_C300.parquet"
+)
 EXPECTED_E1_PREDICTION_SHA256 = "837b824ac11754a900b44c2e118872996a9cad424cab1c549be7df5b61780062"
 
 D1_FEATURE_TABLE_PATH = Path("data/research/long_002d1/feature_table.parquet")
-EXPECTED_D1_FEATURE_TABLE_SHA256 = "7dc09bdeed02c44eb48a0143884deb0ad7795466a08e25fd26c32640a0c813d8"
+EXPECTED_D1_FEATURE_TABLE_SHA256 = (
+    "7dc09bdeed02c44eb48a0143884deb0ad7795466a08e25fd26c32640a0c813d8"
+)
 
 STAGE_C_BASELINE_PATH = Path("data/research/long_002c/baseline_comparator_outputs.parquet")
-EXPECTED_STAGE_C_BASELINE_SHA256 = "faec26ddb26fd5a17feddf5ae09232a8aeb8ba24c3529abd88422682357e4734"
+EXPECTED_STAGE_C_BASELINE_SHA256 = (
+    "faec26ddb26fd5a17feddf5ae09232a8aeb8ba24c3529abd88422682357e4734"
+)
 
 # Upstream specifications and committed artifact hashes
 UPSTREAM_SPECS = {
@@ -59,7 +65,9 @@ UPSTREAM_SPECS = {
 }
 
 E1_CORRECTED_RUN_ID = "LONG-002E1-20261006_152832"
-E1_SAFE_ARTIFACTS_DIR = REPO_ROOT / "docs" / "research" / "artifacts" / "LONG-002E1" / E1_CORRECTED_RUN_ID
+E1_SAFE_ARTIFACTS_DIR = (
+    REPO_ROOT / "docs" / "research" / "artifacts" / "LONG-002E1" / E1_CORRECTED_RUN_ID
+)
 E1_SAFE_ARTIFACT_HASHES = {
     "annual_stability.json": "5a9d15232fc09a76a70422a57c8c137d86df25f2214037a449ba4ee9a3c8f5cf",
     "baseline_summary.json": "3838600a636a9539337201d551933115211f89476bbaee9d0baa2a8391fa126d",

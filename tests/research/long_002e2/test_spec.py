@@ -124,9 +124,14 @@ def test_09_production_unchanged_and_empty_strategies(e2_spec: dict[str, Any]) -
 def test_10_through_13_input_hashes_and_artifacts(e2_spec: dict[str, Any]) -> None:
     inputs = e2_spec["required_input_artifacts"]
     assert inputs["e1_representative_prediction_parquet"]["sha256"] == EXPECTED_E1_PREDICTION_SHA256
-    assert inputs["e1_representative_prediction_parquet"]["expected_row_count"] == EXPECTED_PREDICTION_ROW_COUNT
+    assert (
+        inputs["e1_representative_prediction_parquet"]["expected_row_count"]
+        == EXPECTED_PREDICTION_ROW_COUNT
+    )
     assert inputs["d1_feature_table"]["sha256"] == EXPECTED_D1_FEATURE_TABLE_SHA256
-    assert inputs["stage_c_baseline_comparator_outputs"]["sha256"] == EXPECTED_STAGE_C_BASELINE_SHA256
+    assert (
+        inputs["stage_c_baseline_comparator_outputs"]["sha256"] == EXPECTED_STAGE_C_BASELINE_SHA256
+    )
 
     assert E1_SAFE_ARTIFACTS_DIR.exists()
     assert E1_CORRECTED_RUN_ID == "LONG-002E1-20261006_152832"
