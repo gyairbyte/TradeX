@@ -1,0 +1,372 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "task_id": "LONG-002E2-LOGISTIC-STABILITY-DIAGNOSTIC-001",
+  "program": "LONG-002",
+  "phase": "LONG-002E2",
+  "spec_version": 1,
+  "spec_name": "LONG-002E2: Development-Only Logistic Regime/Stability Diagnostic and Round-2 Research Decision Gate",
+  "classification": "research_only_post_hoc_development_diagnostic",
+  "status": "preregistered_ready_for_execution",
+  "authorizer": "Gary Yang",
+  "authorization_date": "2026-10-06",
+  "authorization_scope": "LONG-002E2-LOGISTIC-STABILITY-DIAGNOSTIC-001",
+  "base_git_sha": "58df7d468d7175264758a997a7a9c701c7f8d369",
+  "objective": {
+    "primary_question": "Why did LOGIT_S4_C300 beat frozen VAM5 in 2018 and 2019 but lose to VAM5 in 2020?",
+    "secondary_question": "Is the 2020 underperformance sufficiently concentrated in ONE preregistered context dimension to justify one future bounded hypothesis?",
+    "diagnostic_scope_statement": "This task is hypothesis generation and diagnostic only. It cannot itself rescue the model, fit new models, or promote configurations."
+  },
+  "representative_configuration": {
+    "configuration_id": "LOGIT_S4_C300",
+    "selection_basis": "best_by_locked_LONG_002E1_ordering",
+    "family": "regularized_probabilistic",
+    "feature_subset_id": "S4",
+    "hyperparameters": {
+      "C": 300.0,
+      "penalty": "l2",
+      "solver": "lbfgs"
+    },
+    "not_a_new_model_configuration": true
+  },
+  "no_new_model_fitting": {
+    "empirical_model_fitting_prohibited": true,
+    "prohibited_calls": [
+      "LogisticRegression.fit",
+      "HistGradientBoostingClassifier.fit",
+      "StandardScaler.fit"
+    ],
+    "no_prediction_regeneration": true,
+    "no_probability_recalibration": true,
+    "no_threshold_tuning": true,
+    "frozen_oof_predictions_only": true
+  },
+  "search_budget": {
+    "total_long_002e_budget": 48,
+    "material_configurations_consumed_before": 36,
+    "material_configurations_consumed_after": 36,
+    "remaining_long_002e_budget": 12,
+    "round2_authorized": false,
+    "requires_separate_assignment": true
+  },
+  "production_boundary": {
+    "production_promotion_eligible": false,
+    "production_change_authorized": false,
+    "production_trading_logic_modified": false,
+    "approved_production_strategies": []
+  },
+  "quarantine_and_governance": {
+    "validation_access_authorized": false,
+    "validation_period": {
+      "start": "2021-01-01",
+      "end": "2022-12-31",
+      "status": "quarantined_unopened"
+    },
+    "holdout_access_authorized": false,
+    "holdout_period": {
+      "start": "2023-01-01",
+      "end": "2025-12-31",
+      "status": "quarantined_unopened"
+    },
+    "shadow_access_authorized": false,
+    "shadow_period": {
+      "start": "2026-01-01",
+      "status": "quarantined_unopened"
+    },
+    "zero_provider_calls": true,
+    "no_market_data_download": true,
+    "long_002f_trigger_research_authorized": false,
+    "long_002g_stop_management_research_authorized": false
+  },
+  "upstream_specifications_and_artifacts": {
+    "LONG-002-v1.json": {
+      "path": "docs/research/specs/LONG-002-v1.json",
+      "sha256": "f3df2845543500985c88568f9b855812576e9e4a10901f8a5f7a1834a319b3b5"
+    },
+    "LONG-002E1-v1.json": {
+      "path": "docs/research/specs/LONG-002E1-v1.json",
+      "sha256": "d10b3fd5e24cf6880d76f18cf84eabe23cf65d6fa0a32735877b7383ae51c2b0"
+    },
+    "LONG-002E1-CORR-001-v1.json": {
+      "path": "docs/research/specs/LONG-002E1-CORR-001-v1.json",
+      "sha256": "6a4345f6c9c0b96a3c11d4e44b437157128f1222ad346466f8d51c9f4f550c96"
+    },
+    "E1_annual_stability.json": {
+      "path": "docs/research/artifacts/LONG-002E1/LONG-002E1-20261006_152832/annual_stability.json",
+      "sha256": "5a9d15232fc09a76a70422a57c8c137d86df25f2214037a449ba4ee9a3c8f5cf"
+    },
+    "E1_baseline_summary.json": {
+      "path": "docs/research/artifacts/LONG-002E1/LONG-002E1-20261006_152832/baseline_summary.json",
+      "sha256": "3838600a636a9539337201d551933115211f89476bbaee9d0baa2a8391fa126d"
+    },
+    "E1_round1_summary.json": {
+      "path": "docs/research/artifacts/LONG-002E1/LONG-002E1-20261006_152832/round1_summary.json",
+      "sha256": "dfde6712084a7ac1d9c58f8c5babb22cf24aba146e2762bc5368cb7d90201708"
+    }
+  },
+  "required_input_artifacts": {
+    "e1_representative_prediction_parquet": {
+      "logical_path": "data/research/long_002e1/LONG-002E1-20261006_152832/predictions_regularized_probabilistic_LOGIT_S4_C300.parquet",
+      "sha256": "837b824ac11754a900b44c2e118872996a9cad424cab1c549be7df5b61780062",
+      "expected_row_count": 610648
+    },
+    "d1_feature_table": {
+      "path": "data/research/long_002d1/feature_table.parquet",
+      "sha256": "7dc09bdeed02c44eb48a0143884deb0ad7795466a08e25fd26c32640a0c813d8"
+    },
+    "stage_c_baseline_comparator_outputs": {
+      "path": "data/research/long_002c/baseline_comparator_outputs.parquet",
+      "sha256": "faec26ddb26fd5a17feddf5ae09232a8aeb8ba24c3529abd88422682357e4734"
+    }
+  },
+  "common_evaluation_population": {
+    "split": "development",
+    "start_date": "2018-01-01",
+    "end_date": "2020-12-31",
+    "cutoff_time": "20:30",
+    "timezone": "America/New_York",
+    "calendar": "XNYS",
+    "evaluation_dates_count": 730,
+    "expected_observation_count": 610648,
+    "join_keys": [
+      "immutable_security_id",
+      "as_of_date",
+      "cutoff_time"
+    ]
+  },
+  "representative_reproduction_targets": {
+    "candidate_p10": 0.268109,
+    "candidate_p25": 0.252420,
+    "matched_vam5_p10": 0.240893,
+    "matched_vam5_p25": 0.209510,
+    "annual_candidate_p10": {
+      "2018": 0.217131,
+      "2019": 0.286111,
+      "2020": 0.306792
+    },
+    "annual_vam5_p10": {
+      "2018": 0.177291,
+      "2019": 0.236111,
+      "2020": 0.321311
+    },
+    "annual_p10_delta": {
+      "2018": 0.039841,
+      "2019": 0.050000,
+      "2020": -0.014520
+    }
+  },
+  "frozen_features": [
+    "return_5",
+    "atr_pct_14",
+    "return_20",
+    "return_60",
+    "close_vs_sma20",
+    "close_vs_sma60",
+    "sma20_slope_5",
+    "relative_volume_20"
+  ],
+  "calibration_status": "raw_oof_probabilities_uncalibrated",
+  "diagnostics": {
+    "diagnostic_1_annual_bootstrap": {
+      "years": [2018, 2019, 2020],
+      "block_size_sessions": 21,
+      "replicates": 1000,
+      "seed": 20261006,
+      "paired": true,
+      "metrics_reported": [
+        "candidate_p10",
+        "vam5_p10",
+        "delta",
+        "bootstrap_median",
+        "ci_2_5",
+        "ci_97_5",
+        "selected_observations",
+        "clean_hit_difference"
+      ]
+    },
+    "diagnostic_2_calendar_quarters": {
+      "quarters_count": 12,
+      "quarters": [
+        "2018Q1",
+        "2018Q2",
+        "2018Q3",
+        "2018Q4",
+        "2019Q1",
+        "2019Q2",
+        "2019Q3",
+        "2019Q4",
+        "2020Q1",
+        "2020Q2",
+        "2020Q3",
+        "2020Q4"
+      ],
+      "no_custom_dates": true,
+      "metrics_reported": [
+        "evaluation_dates_count",
+        "candidate_selected_count",
+        "vam5_selected_count",
+        "candidate_clean_hits",
+        "vam5_clean_hits",
+        "clean_hit_difference",
+        "candidate_p10",
+        "vam5_p10",
+        "p10_delta",
+        "candidate_p25",
+        "vam5_p25",
+        "p25_delta",
+        "candidate_adverse_rate_10",
+        "vam5_adverse_rate_10",
+        "candidate_ecmv_10",
+        "vam5_ecmv_10",
+        "top10_overlap_pct"
+      ]
+    },
+    "diagnostic_3_market_context_regimes": {
+      "context_variable": "spy_return_20",
+      "context_only_not_predictive": true,
+      "date_level_collapse": true,
+      "quantile_method": "linear",
+      "quantiles": [0.30, 0.70],
+      "regimes": [
+        {
+          "name": "LOWER",
+          "definition": "spy_return_20 <= q30"
+        },
+        {
+          "name": "MIDDLE",
+          "definition": "q30 < spy_return_20 <= q70"
+        },
+        {
+          "name": "UPPER",
+          "definition": "spy_return_20 > q70"
+        }
+      ],
+      "metrics_reported": [
+        "q30",
+        "q70",
+        "date_count",
+        "candidate_p10",
+        "vam5_p10",
+        "delta_p10",
+        "candidate_p25",
+        "vam5_p25",
+        "delta_p25",
+        "clean_hit_difference",
+        "adverse_rate",
+        "ecmv",
+        "selection_overlap"
+      ],
+      "include_year_by_regime": true
+    },
+    "diagnostic_4_selection_set_decomposition": {
+      "k": 10,
+      "partitions": [
+        "OVERLAP",
+        "LOGIT_ONLY",
+        "VAM5_ONLY"
+      ],
+      "identity_leakage_prohibited": true,
+      "metrics_reported": [
+        "observation_count",
+        "clean_count",
+        "clean_rate",
+        "adverse_rate",
+        "ecmv",
+        "median_time_to_target"
+      ]
+    },
+    "diagnostic_5_feature_profile_drift": {
+      "features": [
+        "return_5",
+        "atr_pct_14",
+        "return_20",
+        "return_60",
+        "close_vs_sma20",
+        "close_vs_sma60",
+        "sma20_slope_5",
+        "relative_volume_20"
+      ],
+      "percentile_formula": "100.0 * (n_valid - rank_idx) / n_valid",
+      "tie_break": "immutable_security_id ASC",
+      "descriptive_only": true,
+      "comparison": "LOGIT_ONLY vs VAM5_ONLY by year",
+      "metrics_reported": [
+        "logit_only_mean_percentile",
+        "vam5_only_mean_percentile",
+        "mean_percentile_difference",
+        "logit_only_median_percentile",
+        "vam5_only_median_percentile",
+        "median_percentile_difference"
+      ]
+    },
+    "diagnostic_6_selection_concentration": {
+      "metrics_reported": [
+        "distinct_immutable_securities_count",
+        "maximum_selection_count",
+        "top_5_securities_share",
+        "top_10_securities_share",
+        "herfindahl_hirschman_index"
+      ],
+      "aggregate_only": true,
+      "no_ticker_names_committed": true,
+      "no_company_names_committed": true,
+      "no_security_ids_committed": true
+    },
+    "diagnostic_7_raw_probability_stability": {
+      "status": "raw_oof_probabilities_uncalibrated",
+      "metrics_reported": [
+        "brier_score",
+        "mean_predicted_probability",
+        "median_predicted_probability",
+        "reliability_table_10_bins"
+      ],
+      "calibration_fitting_prohibited": true
+    }
+  },
+  "localization_and_decision_rules": {
+    "hit_delta_definition": "hit_delta_t = candidate_clean_hits_t - baseline_clean_hits_t",
+    "annual_hit_delta_definition": "annual_hit_delta = sum(hit_delta_t)",
+    "negative_hit_loss_definition": "abs(hit_delta_segment) if hit_delta_segment < 0 else 0",
+    "dominant_negative_segment_share_definition": "largest negative_hit_loss / sum(all negative_hit_loss values)",
+    "remaining_segment_hit_delta_definition": "annual_hit_delta - dominant_segment_hit_delta",
+    "localization_threshold": 0.60,
+    "rule_a_calendar_localization": {
+      "threshold": 0.60,
+      "rule": "one 2020 calendar quarter accounts for >= 60% of total negative hit loss AND other three quarters combined have clean-hit delta >= 0"
+    },
+    "rule_b_market_context_localization": {
+      "threshold": 0.60,
+      "rule": "one SPY-return regime accounts for >= 60% of total negative hit loss AND other two SPY regimes combined have clean-hit delta >= 0"
+    },
+    "allowed_diagnostic_dispositions": [
+      "bounded_followup_hypothesis_warranted",
+      "no_bounded_regime_hypothesis_supported",
+      "diagnostic_invalid"
+    ],
+    "allowed_recommended_next_actions": [
+      "preregister_one_bounded_followup_hypothesis",
+      "close_initial_long_002e_search_preserve_unused_budget",
+      "invalidate_and_correct_diagnostic"
+    ],
+    "disposition_logic": {
+      "bounded_followup_hypothesis_warranted": "Satisfies Rule A OR Rule B",
+      "no_bounded_regime_hypothesis_supported": "Fails both Rule A and Rule B",
+      "diagnostic_invalid": "Any input, reproduction, or execution integrity check fails"
+    }
+  },
+  "required_safe_artifacts": [
+    "execution_metadata.json",
+    "input_integrity.json",
+    "e1_reproduction_check.json",
+    "family_annual_context.json",
+    "annual_bootstrap.json",
+    "quarterly_diagnostics.json",
+    "spy_regime_diagnostics.json",
+    "selection_set_decomposition.json",
+    "feature_profile_drift.json",
+    "selection_concentration.json",
+    "probability_stability.json",
+    "localization_metrics.json",
+    "diagnostic_decision.json",
+    "checksums.sha256"
+  ]
+}
