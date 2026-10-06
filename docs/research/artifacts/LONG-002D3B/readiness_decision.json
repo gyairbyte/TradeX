@@ -7,7 +7,7 @@
   "title": "Quantitative D-Stage Readiness Decision for LONG-002E Consideration",
   "status": "ready_for_long_002e_authorization",
   "disposition": "ready_for_long_002e_authorization",
-  "decision_timestamp_utc": "2026-10-05T12:00:00Z",
+  "decision_date": "2026-10-05",
   "long_002e_authorized": false,
   "requires_separate_gary_authorization": true,
   "meaning_of_disposition": "This disposition certifies ONLY that all D-stage prerequisites are complete, verified, and sufficiently locked for Gary Yang and ChatGPT to evaluate whether to authorize LONG-002E. It does NOT authorize LONG-002E execution, model fitting, validation access, holdout access, shadow access, or production changes.",
@@ -40,7 +40,7 @@
     "recommendation_episode_contract": {
       "status": "satisfied",
       "reference": "docs/research/artifacts/LONG-002D3B/recommendation_episode_contract.json",
-      "summary": "Deterministic evaluation grouping rule established; 21-session cap and anti-double-count rule prevent persistent signal inflation."
+      "summary": "Deterministic evaluation grouping rule established; 21-session cap and anti-double-count rule prevent persistent signal inflation; primary outcome and predictions strictly anchored to episode-start 20:30 observation without post-start pooling."
     },
     "model_search_budget_preserved": {
       "status": "satisfied",

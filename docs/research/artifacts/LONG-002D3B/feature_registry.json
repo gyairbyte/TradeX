@@ -6,7 +6,7 @@
   "phase": "LONG-002D3B",
   "title": "Final Frozen Quantitative Feature Registry for Initial LONG-002E",
   "status": "frozen",
-  "frozen_at_utc": "2026-10-05T12:00:00Z",
+  "frozen_on": "2026-10-05",
   "upstream_sources": {
     "stage_c_run": "2026-09-27-161243",
     "stage_d1_run": "2026-09-28-003539",

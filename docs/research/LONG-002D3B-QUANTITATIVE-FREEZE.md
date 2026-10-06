@@ -167,6 +167,13 @@ An evaluation recommendation episode is a deterministic grouping construct desig
 - **Evaluation Recommendation Episodes:** Candidate-system-generated evaluation grouping units reflecting when a specific model surfaces a security.
 - **Live Orders / Brokerage Positions:** Neither construct represents live brokerage orders, broker-fill executions, or portfolio positions.
 
+### Primary Outcome & Prediction Anchors (Frozen Semantics)
+- **Primary Outcome Anchor (Episode Start):** The primary evaluation recommendation-episode outcome is strictly frozen to the **episode-start 20:30 observation** and its existing primary Stage C label/reference-entry semantics.
+- **Prohibition of Post-Start Outcome Pooling:** `clean_target_reached_10_10` and `time_to_target_if_reached` are measured from the episode-start observation/reference entry only. They must **NEVER** be evaluated as a logical OR, maximum, or composite across subsequent constituent snapshots within the episode.
+- **Primary Prediction Fields:** All primary start-of-episode performance, ranking, decile lift, and calibration evaluations must use prediction fields from the episode-start 20:30 observation (`start_score_or_probability` and `start_rank`).
+- **Descriptive Trajectory Fields:** `max_score_or_probability` and `best_rank` are strictly descriptive trajectory diagnostics across the episode duration and are explicitly **PROHIBITED** from primary start-of-episode performance, ranking, or calibration calculations.
+- **Independent Per-Security Tracking:** Active episodes, 21-session duration caps, suppression, and eligibility reset are tracked and maintained independently per immutable security.
+
 ### Model-Evaluation Denominator Rules
 `LONG-002E` must report **BOTH**:
 1. Observation-level diagnostics (raw daily observation metrics); and
@@ -215,9 +222,9 @@ All committed artifacts for `LONG-002D3B` are located in `docs/research/artifact
 
 | Artifact File | Description | SHA-256 Digest |
 |---|---|---|
-| [`feature_registry.json`](artifacts/LONG-002D3B/feature_registry.json) | Final frozen quantitative feature registry (15 D1 features classified + VAM5 baseline comparator) | `f49f2d9ab1032b7cb15ff6275d2ee790864bab00b6dfaf4ffa760bdb82c3922b` |
-| [`recommendation_episode_contract.json`](artifacts/LONG-002D3B/recommendation_episode_contract.json) | Frozen evaluation recommendation-episode grouping rules and anti-double-count contract | `6ccfd778ce971fa42cc37ee3b822585b02cdca520e56b729218b78b60b52ad04` |
-| [`readiness_decision.json`](artifacts/LONG-002D3B/readiness_decision.json) | Quantitative D-stage readiness decision (`ready_for_long_002e_authorization`) | `f47ba4630594d05343a061b6c53540cc0e5401d56ed5a86a66e1e0a8a0b859fa` |
+| [`feature_registry.json`](artifacts/LONG-002D3B/feature_registry.json) | Final frozen quantitative feature registry (15 D1 features classified + VAM5 baseline comparator) | `57a1837f25004272d3a1a16fce3939d184ba5f388a117a3e631df4b12158d628` |
+| [`recommendation_episode_contract.json`](artifacts/LONG-002D3B/recommendation_episode_contract.json) | Frozen evaluation recommendation-episode grouping rules and anti-double-count contract | `e503991cb2fca33e00a5a150a61f22e5b4d9df9ee64505113e3b4b9be2803642` |
+| [`readiness_decision.json`](artifacts/LONG-002D3B/readiness_decision.json) | Quantitative D-stage readiness decision (`ready_for_long_002e_authorization`) | `3511bb186aa8c95ed5c2b6b471969e7cb9ab1d39bac8939007c4ec4102020a25` |
 | [`checksums.sha256`](artifacts/LONG-002D3B/checksums.sha256) | Cryptographic checksums of committed summary JSON artifacts | — |
 
 ---

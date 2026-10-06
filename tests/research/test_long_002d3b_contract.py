@@ -345,41 +345,78 @@ class SyntheticEpisode:
     session_count: int
     close_reason: str
     states: list[str]
+    start_score_or_probability: float | None = None
+    start_rank: int | None = None
+    max_score_or_probability: float | None = None
+    best_rank: int | None = None
+    clean_target_reached_10_10: bool | None = None
+    time_to_target_if_reached: int | None = None
 
 
 class RecommendationEpisodeSimulator:
-    """Reference implementation of the frozen recommendation-episode grouping contract."""
+    """Reference implementation of the frozen recommendation-episode grouping contract.
+
+    Tracks active episodes and anti-double-count suppression states independently
+    keyed by immutable security_id.
+    """
 
     def __init__(self, system_id: str, cutoff: str = "20:30") -> None:
         self.system_id = system_id
         self.cutoff = cutoff
-        self._active_episode: SyntheticEpisode | None = None
-        self._eligible_for_new_episode: bool = True
+        self._active_episodes: dict[str, SyntheticEpisode] = {}
+        self._eligible_for_new_episode: dict[str, bool] = {}
         self.closed_episodes: list[SyntheticEpisode] = []
 
-    def process_session(self, security_id: str, session_date: str, state: str | None) -> None:
-        """Process one session. state in {'Enter Now', 'Armed', 'Qualified Waitlist'} or None (hidden)."""
+    def get_active_episode(self, security_id: str) -> SyntheticEpisode | None:
+        return self._active_episodes.get(security_id)
+
+    def is_eligible(self, security_id: str) -> bool:
+        return self._eligible_for_new_episode.get(security_id, True)
+
+    def process_session(
+        self,
+        security_id: str,
+        session_date: str,
+        state: str | None,
+        score_or_prob: float | None = None,
+        rank: int | None = None,
+        clean_target_reached_10_10: bool | None = None,
+        time_to_target_if_reached: int | None = None,
+    ) -> None:
+        """Process one session for an immutable security.
+        state in {'Enter Now', 'Armed', 'Qualified Waitlist'} or None (hidden).
+        """
         is_surfaced = state in {"Enter Now", "Armed", "Qualified Waitlist"}
+        eligible = self._eligible_for_new_episode.get(security_id, True)
 
         if is_surfaced:
-            if self._active_episode is not None:
+            if security_id in self._active_episodes:
                 # Active episode continues
-                self._active_episode.session_count += 1
-                self._active_episode.end_date = session_date
-                self._active_episode.states.append(state or "")
+                ep = self._active_episodes[security_id]
+                ep.session_count += 1
+                ep.end_date = session_date
+                ep.states.append(state or "")
+
+                # Update trajectory descriptive diagnostics only (start predictions and outcomes remain locked)
+                if score_or_prob is not None and (
+                    ep.max_score_or_probability is None or score_or_prob > ep.max_score_or_probability
+                ):
+                    ep.max_score_or_probability = score_or_prob
+                if rank is not None and (ep.best_rank is None or rank < ep.best_rank):
+                    ep.best_rank = rank
 
                 # Check 21-session cap
-                if self._active_episode.session_count >= 21:
-                    self._active_episode.close_reason = "max_session_cap_reached"
-                    self.closed_episodes.append(self._active_episode)
-                    self._active_episode = None
-                    self._eligible_for_new_episode = False  # Anti-double-count rule!
+                if ep.session_count >= 21:
+                    ep.close_reason = "max_session_cap_reached"
+                    self.closed_episodes.append(ep)
+                    del self._active_episodes[security_id]
+                    self._eligible_for_new_episode[security_id] = False  # Anti-double-count rule!
             else:
-                # Not in active episode
-                if self._eligible_for_new_episode:
-                    # Open new episode
+                # Not currently in an active episode for this security
+                if eligible:
+                    # Open new episode: anchor primary prediction and outcome strictly to episode-start 20:30 observation
                     ep_id = f"REC_{self.system_id}_{security_id}_{session_date}_{self.cutoff.replace(':', '')}"
-                    self._active_episode = SyntheticEpisode(
+                    new_ep = SyntheticEpisode(
                         episode_id=ep_id,
                         system_id=self.system_id,
                         security_id=security_id,
@@ -388,29 +425,58 @@ class RecommendationEpisodeSimulator:
                         session_count=1,
                         close_reason="in_progress",
                         states=[state or ""],
+                        start_score_or_probability=score_or_prob,
+                        start_rank=rank,
+                        max_score_or_probability=score_or_prob,
+                        best_rank=rank,
+                        clean_target_reached_10_10=clean_target_reached_10_10,
+                        time_to_target_if_reached=time_to_target_if_reached,
                     )
+                    self._active_episodes[security_id] = new_ep
                 else:
-                    # Suppressed by anti-double-count rule
+                    # Suppressed by anti-double-count rule for this security
                     pass
         else:
             # Not surfaced (Hidden)
-            if self._active_episode is not None:
-                self._active_episode.close_reason = "surface_lost_hidden"
-                self.closed_episodes.append(self._active_episode)
-                self._active_episode = None
-            # Hidden snapshot resets eligibility!
-            self._eligible_for_new_episode = True
+            if security_id in self._active_episodes:
+                ep = self._active_episodes[security_id]
+                ep.close_reason = "surface_lost_hidden"
+                self.closed_episodes.append(ep)
+                del self._active_episodes[security_id]
+            # Hidden snapshot resets eligibility for this security!
+            self._eligible_for_new_episode[security_id] = True
 
 
 def test_31_one_active_episode_per_security_and_system() -> None:
     sim = RecommendationEpisodeSimulator(system_id="test_sys")
+    # Day 1: Both SEC1 and SEC2 surface concurrently
     sim.process_session("SEC1", "2020-01-02", "Armed")
-    assert sim._active_episode is not None
-    assert sim._active_episode.security_id == "SEC1"
-    # Further calls do not create a second episode for SEC1
+    sim.process_session("SEC2", "2020-01-02", "Enter Now")
+    assert sim.get_active_episode("SEC1") is not None
+    assert sim.get_active_episode("SEC2") is not None
+    assert sim.get_active_episode("SEC1").security_id == "SEC1"
+    assert sim.get_active_episode("SEC2").security_id == "SEC2"
+    assert sim.get_active_episode("SEC1").episode_id != sim.get_active_episode("SEC2").episode_id
+
+    # Day 2: SEC1 continues, SEC2 goes Hidden
     sim.process_session("SEC1", "2020-01-03", "Armed")
-    assert len(sim.closed_episodes) == 0
-    assert sim._active_episode.session_count == 2
+    sim.process_session("SEC2", "2020-01-03", None)
+
+    # SEC1 remains active with session_count == 2, SEC2 closed independently
+    assert sim.get_active_episode("SEC1") is not None
+    assert sim.get_active_episode("SEC1").session_count == 2
+    assert sim.get_active_episode("SEC2") is None
+    assert len(sim.closed_episodes) == 1
+    assert sim.closed_episodes[0].security_id == "SEC2"
+    assert sim.closed_episodes[0].close_reason == "surface_lost_hidden"
+
+    # Day 3: SEC2 resurfaces, SEC1 continues
+    sim.process_session("SEC1", "2020-01-04", "Armed")
+    sim.process_session("SEC2", "2020-01-04", "Enter Now")
+    assert sim.get_active_episode("SEC1").session_count == 3
+    assert sim.get_active_episode("SEC2") is not None
+    assert sim.get_active_episode("SEC2").session_count == 1
+    assert sim.get_active_episode("SEC2").start_date == "2020-01-04"
 
 
 def test_32_contiguous_surfaced_observations_remain_one_episode() -> None:
@@ -418,8 +484,9 @@ def test_32_contiguous_surfaced_observations_remain_one_episode() -> None:
     for day in range(1, 10):
         sim.process_session("SEC1", f"2020-01-{day:02d}", "Enter Now")
     assert len(sim.closed_episodes) == 0
-    assert sim._active_episode is not None
-    assert sim._active_episode.session_count == 9
+    ep = sim.get_active_episode("SEC1")
+    assert ep is not None
+    assert ep.session_count == 9
 
 
 def test_33_state_changes_do_not_create_new_evaluation_episode() -> None:
@@ -428,9 +495,10 @@ def test_33_state_changes_do_not_create_new_evaluation_episode() -> None:
     for day, st in enumerate(states, start=1):
         sim.process_session("SEC1", f"2020-01-{day:02d}", st)
     assert len(sim.closed_episodes) == 0
-    assert sim._active_episode is not None
-    assert sim._active_episode.session_count == 5
-    assert sim._active_episode.states == states
+    ep = sim.get_active_episode("SEC1")
+    assert ep is not None
+    assert ep.session_count == 5
+    assert ep.states == states
 
 
 def test_34_hidden_snapshot_closes_episode() -> None:
@@ -438,7 +506,7 @@ def test_34_hidden_snapshot_closes_episode() -> None:
     sim.process_session("SEC1", "2020-01-02", "Enter Now")
     sim.process_session("SEC1", "2020-01-03", "Enter Now")
     sim.process_session("SEC1", "2020-01-04", None)  # Hidden!
-    assert sim._active_episode is None
+    assert sim.get_active_episode("SEC1") is None
     assert len(sim.closed_episodes) == 1
     assert sim.closed_episodes[0].close_reason == "surface_lost_hidden"
     assert sim.closed_episodes[0].session_count == 2
@@ -451,7 +519,7 @@ def test_35_21_session_cap_applies() -> None:
     assert len(sim.closed_episodes) == 1
     assert sim.closed_episodes[0].session_count == 21
     assert sim.closed_episodes[0].close_reason == "max_session_cap_reached"
-    assert sim._active_episode is None
+    assert sim.get_active_episode("SEC1") is None
 
 
 def test_36_persistent_surface_after_21_sessions_does_not_automatically_open_new_episode() -> None:
@@ -464,7 +532,7 @@ def test_36_persistent_surface_after_21_sessions_does_not_automatically_open_new
     sim.process_session("SEC1", "2020-01-22", "Armed")
     sim.process_session("SEC1", "2020-01-23", "Armed")
     assert len(sim.closed_episodes) == 1
-    assert sim._active_episode is None
+    assert sim.get_active_episode("SEC1") is None
 
 
 def test_37_later_hidden_snapshot_resets_eligibility_for_new_episode() -> None:
@@ -475,15 +543,15 @@ def test_37_later_hidden_snapshot_resets_eligibility_for_new_episode() -> None:
     assert len(sim.closed_episodes) == 1
     # Remains surfaced: suppressed
     sim.process_session("SEC1", "2020-01-22", "Armed")
-    assert sim._active_episode is None
+    assert sim.get_active_episode("SEC1") is None
     # Hidden snapshot: reset!
     sim.process_session("SEC1", "2020-01-23", None)
-    assert sim._eligible_for_new_episode is True
+    assert sim.is_eligible("SEC1") is True
     # Surfaced again: opens NEW episode!
     sim.process_session("SEC1", "2020-01-24", "Enter Now")
-    assert sim._active_episode is not None
-    assert sim._active_episode.session_count == 1
-    assert sim._active_episode.start_date == "2020-01-24"
+    assert sim.get_active_episode("SEC1") is not None
+    assert sim.get_active_episode("SEC1").session_count == 1
+    assert sim.get_active_episode("SEC1").start_date == "2020-01-24"
 
 
 def test_38_episode_grouping_is_deterministic() -> None:
@@ -502,11 +570,13 @@ def test_38_episode_grouping_is_deterministic() -> None:
         sim2.process_session("SEC1", d, s)
 
     assert [ep.episode_id for ep in sim1.closed_episodes] == [ep.episode_id for ep in sim2.closed_episodes]
-    assert sim1._active_episode is not None and sim2._active_episode is not None
-    assert sim1._active_episode.episode_id == sim2._active_episode.episode_id
+    ep1 = sim1.get_active_episode("SEC1")
+    ep2 = sim2.get_active_episode("SEC1")
+    assert ep1 is not None and ep2 is not None
+    assert ep1.episode_id == ep2.episode_id
 
 
-# --- 39-45: Metadata, search budget, isolation, and production guards ---
+# --- 39-48: Metadata, search budget, isolation, and production guards ---
 
 
 def test_39_primary_evaluation_cutoff_is_20_30(rec_episode_contract: dict[str, Any]) -> None:
@@ -553,14 +623,118 @@ def test_44_approved_production_strategies_is_empty() -> None:
 
 
 def test_45_no_daytrade_files_changed() -> None:
-    # Verify via git status that no DAYTRADE files were touched
+    # Assert that no DAYTRADE files were changed between the task approved base SHA and HEAD
+    approved_base = "770a1a66382351dd63b9245c50bed0c1d92f3ca1"
     res = subprocess.run(
-        ["git", "status", "--porcelain"],
+        ["git", "diff", "--name-only", f"{approved_base}...HEAD"],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
-        check=True,
+        check=False,
     )
-    changed_files = [line.strip().split()[-1] for line in res.stdout.strip().splitlines() if line.strip()]
+    if res.returncode != 0:
+        res = subprocess.run(
+            ["git", "diff", "--name-only", approved_base, "HEAD"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    changed_files = [line.strip() for line in res.stdout.strip().splitlines() if line.strip()]
     daytrade_changes = [f for f in changed_files if "daytrade" in f.lower()]
-    assert daytrade_changes == [], f"DAYTRADE files modified: {daytrade_changes}"
+    assert daytrade_changes == [], f"DAYTRADE files modified between base and HEAD: {daytrade_changes}"
+
+
+def test_46_primary_outcome_anchored_to_episode_start_no_post_start_pooling(
+    rec_episode_contract: dict[str, Any],
+) -> None:
+    # Verify contract outcome specification
+    outcome_sem = rec_episode_contract["outcome_semantics"]
+    assert outcome_sem["primary_outcome_anchor"] == "episode_start_observation"
+    assert "never" in outcome_sem["prohibition_of_post_start_pooling"].lower()
+    assert "start" in outcome_sem["definition"].lower()
+
+    # Simulator behavioral check: outcome must NOT be pooled/OR'd across constituent snapshots
+    sim = RecommendationEpisodeSimulator(system_id="rank_model_1")
+    # Day 1: Episode opens. Start observation has clean_target_reached = False, score = 0.75, rank = 5
+    sim.process_session(
+        "SEC1",
+        "2020-01-02",
+        "Armed",
+        score_or_prob=0.75,
+        rank=5,
+        clean_target_reached_10_10=False,
+        time_to_target_if_reached=None,
+    )
+    # Day 2: Continued observation has favorable outcome (True), higher score (0.95), best rank (1)
+    sim.process_session(
+        "SEC1",
+        "2020-01-03",
+        "Enter Now",
+        score_or_prob=0.95,
+        rank=1,
+        clean_target_reached_10_10=True,
+        time_to_target_if_reached=3,
+    )
+    # Day 3: Closes
+    sim.process_session("SEC1", "2020-01-04", None)
+
+    ep = sim.closed_episodes[0]
+    # Primary outcome must remain strictly anchored to start observation (False, not pooled/OR'd)
+    assert ep.clean_target_reached_10_10 is False
+    assert ep.time_to_target_if_reached is None
+    # Primary prediction fields remain anchored to start observation
+    assert ep.start_score_or_probability == 0.75
+    assert ep.start_rank == 5
+    # Descriptive trajectory fields record the maximums
+    assert ep.max_score_or_probability == 0.95
+    assert ep.best_rank == 1
+
+
+def test_47_primary_prediction_fields_specified_and_descriptive_fields_restricted(
+    rec_episode_contract: dict[str, Any],
+) -> None:
+    pred_sem = rec_episode_contract["prediction_fields_semantics"]
+    assert pred_sem["primary_prediction_fields"] == ["start_score_or_probability", "start_rank"]
+    assert "start_score_or_probability" in pred_sem["primary_prediction_rule"]
+    assert "start_rank" in pred_sem["primary_prediction_rule"]
+    assert "max_score_or_probability" in pred_sem["descriptive_fields"]
+    assert "best_rank" in pred_sem["descriptive_fields"]
+    assert "prohibited" in pred_sem["descriptive_fields_restriction"].lower()
+
+    tracked = rec_episode_contract["tracked_fields"]
+    required_fields = [
+        "recommendation_episode_id",
+        "system_id",
+        "immutable_security_id",
+        "start_date",
+        "end_date",
+        "start_state",
+        "terminal_state",
+        "episode_session_count",
+        "close_reason",
+        "start_score_or_probability",
+        "start_rank",
+        "max_score_or_probability",
+        "best_rank",
+        "clean_target_reached_10_10",
+        "time_to_target_if_reached",
+    ]
+    for rf in required_fields:
+        assert rf in tracked
+
+
+def test_48_auditability_of_freeze_and_decision_dates(
+    feature_registry: dict[str, Any],
+    rec_episode_contract: dict[str, Any],
+    readiness_decision: dict[str, Any],
+) -> None:
+    # Verify date-only auditability fields
+    assert feature_registry.get("frozen_on") == "2026-10-05"
+    assert "frozen_at_utc" not in feature_registry
+
+    assert rec_episode_contract.get("frozen_on") == "2026-10-05"
+    assert "frozen_at_utc" not in rec_episode_contract
+
+    assert readiness_decision.get("decision_date") == "2026-10-05"
+    assert "decision_timestamp_utc" not in readiness_decision
