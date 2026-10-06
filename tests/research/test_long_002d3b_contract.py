@@ -622,52 +622,66 @@ def test_44_approved_production_strategies_is_empty() -> None:
     assert APPROVED_PRODUCTION_STRATEGIES == ()
 
 
-def test_45_no_daytrade_files_changed() -> None:
-    # Assert that no DAYTRADE files were changed between the task approved base SHA and HEAD
-    approved_base = "770a1a66382351dd63b9245c50bed0c1d92f3ca1"
+LONG_002D3B_APPROVED_BASE = "770a1a66382351dd63b9245c50bed0c1d92f3ca1"
+LONG_002D3B_IMPLEMENTATION_HEAD = "c8fcef5afc490147c3dd4143616ae8d22c0b585f"
 
-    # In shallow clones (e.g. CI pull_request default fetch-depth: 1), fetch base commit or main if missing
-    has_base = subprocess.run(
-        ["git", "cat-file", "-e", f"{approved_base}^{{commit}}"],
+
+def _commit_exists(sha: str) -> bool:
+    return subprocess.run(
+        ["git", "cat-file", "-e", f"{sha}^{{commit}}"],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
         check=False,
     ).returncode == 0
 
-    if not has_base:
-        subprocess.run(
-            ["git", "fetch", "--depth=50", "origin", "main"],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        has_base = subprocess.run(
-            ["git", "cat-file", "-e", f"{approved_base}^{{commit}}"],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
-        ).returncode == 0
 
-    diff_base: str = approved_base
-    if not has_base:
-        # Fallback to merge-base with origin/main or HEAD~1 if approved_base is still missing
-        mb = subprocess.run(
-            ["git", "merge-base", "HEAD", "origin/main"],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if mb.returncode == 0 and mb.stdout.strip():
-            diff_base = mb.stdout.strip()
-        else:
-            diff_base = "HEAD~1"
+def _ensure_commit(sha: str) -> bool:
+    if _commit_exists(sha):
+        return True
+    # In shallow CI environments, attempt bounded fetch of exact SHA
+    subprocess.run(
+        ["git", "fetch", "--depth=1", "origin", sha],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if _commit_exists(sha):
+        return True
+    # If still missing, attempt fetching bounded main history
+    subprocess.run(
+        ["git", "fetch", "--depth=100", "origin", "main"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return _commit_exists(sha)
 
+
+def test_45_no_daytrade_files_changed() -> None:
+    """Historical audit invariant: verify PR #97 / LONG-002D3B itself changed zero DAYTRADE files.
+
+    This test checks that the immutable historical commit range of LONG-002D3B
+    (base 770a1a66382351dd63b9245c50bed0c1d92f3ca1 to implementation head
+    c8fcef5afc490147c3dd4143616ae8d22c0b585f) did not touch any DAYTRADE files.
+
+    It scopes the check strictly to that historical task commit range rather than
+    comparing against current HEAD. This proves LONG-002D3B task isolation without
+    falsely asserting that no DAYTRADE work may ever occur in subsequent tasks/PRs.
+    """
+    # Fail closed if required historical commits cannot be obtained
+    assert _ensure_commit(LONG_002D3B_APPROVED_BASE), (
+        f"Required historical base commit {LONG_002D3B_APPROVED_BASE} could not be resolved."
+    )
+    assert _ensure_commit(LONG_002D3B_IMPLEMENTATION_HEAD), (
+        f"Required historical implementation head commit {LONG_002D3B_IMPLEMENTATION_HEAD} could not be resolved."
+    )
+
+    # Diff between the two immutable commits; fallback to direct tree diff if shallow clone lacks merge base
     res = subprocess.run(
-        ["git", "diff", "--name-only", f"{diff_base}...HEAD"],
+        ["git", "diff", "--name-only", f"{LONG_002D3B_APPROVED_BASE}...{LONG_002D3B_IMPLEMENTATION_HEAD}"],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
@@ -675,29 +689,72 @@ def test_45_no_daytrade_files_changed() -> None:
     )
     if res.returncode != 0:
         res = subprocess.run(
-            ["git", "diff", "--name-only", diff_base, "HEAD"],
+            ["git", "diff", "--name-only", LONG_002D3B_APPROVED_BASE, LONG_002D3B_IMPLEMENTATION_HEAD],
             cwd=REPO_ROOT,
             capture_output=True,
             text=True,
             check=False,
         )
 
-    if res.returncode == 0:
-        changed_files = [line.strip() for line in res.stdout.strip().splitlines() if line.strip()]
-        daytrade_changes = [f for f in changed_files if "daytrade" in f.lower()]
-        assert daytrade_changes == [], f"DAYTRADE files modified between base and HEAD: {daytrade_changes}"
-    else:
-        # Fallback if git history is completely unavailable / detached
-        res_status = subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
+    assert res.returncode == 0, (
+        f"Failed to compute git diff between {LONG_002D3B_APPROVED_BASE} and {LONG_002D3B_IMPLEMENTATION_HEAD}: {res.stderr}"
+    )
+
+    changed_files = [line.strip() for line in res.stdout.strip().splitlines() if line.strip()]
+    assert len(changed_files) > 0, "Expected non-empty set of files changed in LONG-002D3B task."
+
+    daytrade_changes = [f for f in changed_files if "daytrade" in f.lower()]
+    assert daytrade_changes == [], (
+        f"DAYTRADE files were modified in historical LONG-002D3B task ({LONG_002D3B_APPROVED_BASE}..{LONG_002D3B_IMPLEMENTATION_HEAD}): {daytrade_changes}"
+    )
+
+
+def test_45_historical_scope_regression_proof() -> None:
+    """Regression proof for TEST-004: test_45 is historical-scoped and active.
+
+    Demonstrates that:
+    1. The detection logic actively flags any path containing 'daytrade' (not a no-op).
+    2. The historical LONG-002D3B task range contains zero DAYTRADE changes.
+    3. The post-PR97 repository history (such as PR #98 on main) does contain legitimate
+       DAYTRADE changes, proving that scoping to the historical commit range rather than
+       current HEAD is strictly necessary and sufficient.
+    """
+    # 1. Verify detection logic actively catches daytrade files
+    sample_files = [
+        "docs/research/LONG-002D-AMEND-001.md",
+        "tradex/research/daytrade_momentum/study.py",
+        "docs/research/artifacts/DAYTRADE-002C-v1/development/metrics.json",
+    ]
+    detected = [f for f in sample_files if "daytrade" in f.lower()]
+    assert len(detected) == 2
+    assert "tradex/research/daytrade_momentum/study.py" in detected
+
+    # 2. Verify historical range has zero daytrade files
+    res = subprocess.run(
+        ["git", "diff", "--name-only", LONG_002D3B_APPROVED_BASE, LONG_002D3B_IMPLEMENTATION_HEAD],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert res.returncode == 0
+    hist_files = [line.strip() for line in res.stdout.strip().splitlines() if line.strip()]
+    assert [f for f in hist_files if "daytrade" in f.lower()] == []
+
+    # 3. Verify that changes between LONG base and current main indeed contain legitimate DAYTRADE files
+    res_main = subprocess.run(
+        ["git", "diff", "--name-only", LONG_002D3B_APPROVED_BASE, "origin/main"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if res_main.returncode == 0:
+        main_files = [line.strip() for line in res_main.stdout.strip().splitlines() if line.strip()]
+        main_daytrade = [f for f in main_files if "daytrade" in f.lower()]
+        assert len(main_daytrade) > 0, (
+            "Expected legitimate post-PR97 DAYTRADE changes to exist between approved base and origin/main."
         )
-        changed_files = [line.strip().split()[-1] for line in res_status.stdout.strip().splitlines() if line.strip()]
-        daytrade_changes = [f for f in changed_files if "daytrade" in f.lower()]
-        assert daytrade_changes == [], f"DAYTRADE files modified: {daytrade_changes}"
 
 
 def test_46_primary_outcome_anchored_to_episode_start_no_post_start_pooling(
