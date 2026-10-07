@@ -1,13 +1,13 @@
 # DAYTRADE-003B: Stocks-in-Play 5-Minute Opening Range Breakout Preregistration
 
-**Task ID:** `DAYTRADE-003B-ORB-PREREG-001`  
-**Strategy ID:** `DAYTRADE-003B-ORB-SIP5M`  
-**Title:** Preregister the evidence-backed 5-minute Opening Range Breakout on Stocks in Play strategy  
-**Repository:** `gyairbyte/TradeX`  
-**Classification:** Research-only preregistration  
-**Starting Base Commit SHA:** `b15015cb46adf5ceca707589455fc12fbca64c63`  
-**Machine-Readable Spec:** [`docs/research/specs/DAYTRADE-003B-ORB-v1.json`](specs/DAYTRADE-003B-ORB-v1.json)  
-**Spec JSON SHA-256:** `62f5028c1b11a392aeb596c4e05b8c1f194cc5cec3af1a9406f4fe16c80460c0`
+* **Task ID:** `DAYTRADE-003B-ORB-PREREG-001`
+* **Strategy ID:** `DAYTRADE-003B-ORB-SIP5M`
+* **Title:** Preregister the evidence-backed 5-minute Opening Range Breakout on Stocks in Play strategy
+* **Repository:** `gyairbyte/TradeX`
+* **Classification:** Research-only preregistration
+* **Starting Base Commit SHA:** `b15015cb46adf5ceca707589455fc12fbca64c63`
+* **Machine-Readable Spec:** [`docs/research/specs/DAYTRADE-003B-ORB-v1.json`](specs/DAYTRADE-003B-ORB-v1.json)
+* **Spec JSON SHA-256:** `62f5028c1b11a392aeb596c4e05b8c1f194cc5cec3af1a9406f4fe16c80460c0`
 
 ---
 
@@ -33,15 +33,15 @@ This assignment explicitly **supersedes** the previously contemplated `DAYTRADE-
 
 The candidate strategy selected by Gary is the **5-minute Opening Range Breakout (ORB) on Stocks in Play**, grounded primarily in the academic research paper:
 
-> **Carlo Zarattini, Andrea Barbon, Andrew Aziz**  
-> *"A Profitable Day Trading Strategy For The U.S. Equity Market"*  
+> **Carlo Zarattini, Andrea Barbon, Andrew Aziz**<br>
+> *"A Profitable Day Trading Strategy For The U.S. Equity Market"*<br>
 > Swiss Finance Institute Research Paper No. 24-98 / SSRN 4729284 (Reviewed PDF Date: 2024-02-16; SSRN posted February 2024, subsequently revised).
 
 The core thesis of the paper is that applying standard Opening Range Breakout mechanics across the broad universe of liquid equities fails to deliver sustained alpha, but restricting execution exclusively to **"Stocks in Play"**—securities experiencing abnormal relative volume and heightened volatility driven by fresh catalysts—produces substantial, uncorrelated economic edge.
 
 ### Critical Boundary: External Prior Evidence vs. TradeX Validation
 
-The published results in the Zarattini et al. (2024) paper (2016–2023 sample period) are recognized strictly as **EXTERNAL PRIOR LITERATURE EVIDENCE**. 
+The published results in the Zarattini et al. (2024) paper (2016–2023 sample period) are recognized strictly as **EXTERNAL PRIOR LITERATURE EVIDENCE**:
 * They do **NOT** prove strategy validity for TradeX.
 * They do **NOT** guarantee future profitability.
 * They do **NOT** authorize production promotion or live trading.
@@ -131,7 +131,7 @@ $$\text{Relative Volume}(D, j) = \frac{\text{OR\_volume}(D, j)}{\frac{1}{14}\sum
 * **Fewer than 20 Qualified:** If fewer than 20 securities satisfy all eligibility criteria, the strategy trades only the qualifying symbols.
 * **Deterministic Tie-Breaker:** In case of identical Relative Volume:
   1. Higher Relative Volume;
-  2. Ticker symbol alphabetical ascending (`A` $\rightarrow$ `Z`).  
+  2. Ticker symbol alphabetical ascending (`A` $\rightarrow$ `Z`).
   *(Labeled explicitly as a TradeX determinism rule, not a published alpha rule).*
 
 ### 3.5 Entry Order Execution
