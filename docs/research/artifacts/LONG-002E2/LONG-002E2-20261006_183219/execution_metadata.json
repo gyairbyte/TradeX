@@ -1,0 +1,13 @@
+{
+  "task_id": "LONG-002E2-LOGISTIC-STABILITY-DIAGNOSTIC-001",
+  "run_id": "LONG-002E2-20261006_183219",
+  "execution_timestamp_utc": "2026-10-06T18:32:19.428132+00:00",
+  "execution_code_sha": "bbb9b136c54cde87de143e9ea7b033e4ed21bbdb",
+  "preregistration_commit_sha": "90f3b3daa8c6ac234da724e8ad1ce2ec629a1bc7",
+  "spec_sha256": "cec5105883198cbd856c763cd39993fa1e2f72960fd7c4c5bb17dbfd2a0f9519",
+  "representative_configuration_id": "LOGIT_S4_C300",
+  "clean_worktree_verified": true,
+  "zero_provider_calls": true,
+  "quarantines_enforced": true,
+  "python_version": "3.11.15 (main, Jul 23 2026, 14:42:43) [MSC v.1944 64 bit (AMD64)]"
+}

@@ -1,0 +1,26 @@
+{
+  "task_id": "LONG-002E2-LOGISTIC-STABILITY-DIAGNOSTIC-001",
+  "representative_configuration_id": "LOGIT_S4_C300",
+  "representative_selection_basis": "best_by_locked_LONG_002E1_ordering",
+  "material_configurations_consumed_before": 36,
+  "material_configurations_consumed_after": 36,
+  "remaining_long_002e_budget": 12,
+  "round2_authorized": false,
+  "validation_opened": false,
+  "holdout_opened": false,
+  "shadow_opened": false,
+  "production_change_authorized": false,
+  "calendar_localization_passed": false,
+  "market_context_localization_passed": false,
+  "diagnostic_disposition": "no_bounded_regime_hypothesis_supported",
+  "recommended_next_action": "close_initial_long_002e_search_preserve_unused_budget",
+  "limitations": [
+    "Development-only post-hoc diagnostic covering 2018-2020; does not constitute out-of-sample evidence.",
+    "Descriptive market-context regimes are derived from retrospective development SPY return distributions.",
+    "Quarterly and regime decompositions are for hypothesis generation only and do not validate a trading rule or regime gate.",
+    "Validation (2021-2022), holdout (2023-2025), and shadow (2026+) remain strictly quarantined.",
+    "No model was refitted or modified; remaining 12 search budget slots remain unspent."
+  ],
+  "run_id": "LONG-002E2-20261006_183219",
+  "execution_code_sha": "bbb9b136c54cde87de143e9ea7b033e4ed21bbdb"
+}
