@@ -1,0 +1,84 @@
+{
+  "overall": {
+    "candidate": {
+      "total_selections_count": 7165,
+      "distinct_immutable_securities_count": 261,
+      "maximum_selection_count": 291,
+      "top_5_securities_share": 0.1625,
+      "top_10_securities_share": 0.2604,
+      "herfindahl_hirschman_index": 0.013424,
+      "effective_number_of_securities": 74.49
+    },
+    "matched_vam5": {
+      "total_selections_count": 7165,
+      "distinct_immutable_securities_count": 483,
+      "maximum_selection_count": 131,
+      "top_5_securities_share": 0.0836,
+      "top_10_securities_share": 0.1517,
+      "herfindahl_hirschman_index": 0.006371,
+      "effective_number_of_securities": 156.95
+    }
+  },
+  "by_year": {
+    "2018": {
+      "candidate": {
+        "total_selections_count": 2510,
+        "distinct_immutable_securities_count": 127,
+        "maximum_selection_count": 156,
+        "top_5_securities_share": 0.2147,
+        "top_10_securities_share": 0.3578,
+        "herfindahl_hirschman_index": 0.022056,
+        "effective_number_of_securities": 45.34
+      },
+      "matched_vam5": {
+        "total_selections_count": 2510,
+        "distinct_immutable_securities_count": 247,
+        "maximum_selection_count": 66,
+        "top_5_securities_share": 0.1139,
+        "top_10_securities_share": 0.1984,
+        "herfindahl_hirschman_index": 0.009818,
+        "effective_number_of_securities": 101.85
+      }
+    },
+    "2019": {
+      "candidate": {
+        "total_selections_count": 2520,
+        "distinct_immutable_securities_count": 127,
+        "maximum_selection_count": 243,
+        "top_5_securities_share": 0.2933,
+        "top_10_securities_share": 0.4325,
+        "herfindahl_hirschman_index": 0.030384,
+        "effective_number_of_securities": 32.91
+      },
+      "matched_vam5": {
+        "total_selections_count": 2520,
+        "distinct_immutable_securities_count": 240,
+        "maximum_selection_count": 110,
+        "top_5_securities_share": 0.1417,
+        "top_10_securities_share": 0.2282,
+        "herfindahl_hirschman_index": 0.011493,
+        "effective_number_of_securities": 87.01
+      }
+    },
+    "2020": {
+      "candidate": {
+        "total_selections_count": 2135,
+        "distinct_immutable_securities_count": 120,
+        "maximum_selection_count": 120,
+        "top_5_securities_share": 0.2239,
+        "top_10_securities_share": 0.3691,
+        "herfindahl_hirschman_index": 0.022233,
+        "effective_number_of_securities": 44.98
+      },
+      "matched_vam5": {
+        "total_selections_count": 2135,
+        "distinct_immutable_securities_count": 266,
+        "maximum_selection_count": 67,
+        "top_5_securities_share": 0.1208,
+        "top_10_securities_share": 0.2075,
+        "herfindahl_hirschman_index": 0.009874,
+        "effective_number_of_securities": 101.27
+      }
+    }
+  }
+}

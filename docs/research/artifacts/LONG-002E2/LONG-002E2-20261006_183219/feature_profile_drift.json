@@ -1,0 +1,311 @@
+{
+  "features_evaluated": [
+    "return_5",
+    "atr_pct_14",
+    "return_20",
+    "return_60",
+    "close_vs_sma20",
+    "close_vs_sma60",
+    "sma20_slope_5",
+    "relative_volume_20"
+  ],
+  "methodology": "Within-date cross-sectional percentile rank, higher is higher value, sec_id ASC tie-break.",
+  "overall": [
+    {
+      "feature": "return_5",
+      "logit_only_mean_percentile": 24.37,
+      "vam5_only_mean_percentile": 97.68,
+      "mean_percentile_difference": -73.3,
+      "logit_only_median_percentile": 7.25,
+      "vam5_only_median_percentile": 98.58,
+      "median_percentile_difference": -91.34
+    },
+    {
+      "feature": "atr_pct_14",
+      "logit_only_mean_percentile": 99.28,
+      "vam5_only_mean_percentile": 94.96,
+      "mean_percentile_difference": 4.31,
+      "logit_only_median_percentile": 99.42,
+      "vam5_only_median_percentile": 96.0,
+      "median_percentile_difference": 3.42
+    },
+    {
+      "feature": "return_20",
+      "logit_only_mean_percentile": 29.99,
+      "vam5_only_mean_percentile": 73.32,
+      "mean_percentile_difference": -43.33,
+      "logit_only_median_percentile": 7.35,
+      "vam5_only_median_percentile": 91.3,
+      "median_percentile_difference": -83.94
+    },
+    {
+      "feature": "return_60",
+      "logit_only_mean_percentile": 40.33,
+      "vam5_only_mean_percentile": 60.75,
+      "mean_percentile_difference": -20.42,
+      "logit_only_median_percentile": 20.75,
+      "vam5_only_median_percentile": 75.68,
+      "median_percentile_difference": -54.93
+    },
+    {
+      "feature": "close_vs_sma20",
+      "logit_only_mean_percentile": 27.44,
+      "vam5_only_mean_percentile": 84.4,
+      "mean_percentile_difference": -56.96,
+      "logit_only_median_percentile": 6.57,
+      "vam5_only_median_percentile": 96.76,
+      "median_percentile_difference": -90.19
+    },
+    {
+      "feature": "close_vs_sma60",
+      "logit_only_mean_percentile": 33.22,
+      "vam5_only_mean_percentile": 69.28,
+      "mean_percentile_difference": -36.06,
+      "logit_only_median_percentile": 9.86,
+      "vam5_only_median_percentile": 88.22,
+      "median_percentile_difference": -78.36
+    },
+    {
+      "feature": "sma20_slope_5",
+      "logit_only_mean_percentile": 35.58,
+      "vam5_only_mean_percentile": 63.72,
+      "mean_percentile_difference": -28.14,
+      "logit_only_median_percentile": 13.05,
+      "vam5_only_median_percentile": 79.65,
+      "median_percentile_difference": -66.61
+    },
+    {
+      "feature": "relative_volume_20",
+      "logit_only_mean_percentile": 54.85,
+      "vam5_only_mean_percentile": 62.87,
+      "mean_percentile_difference": -8.02,
+      "logit_only_median_percentile": 57.16,
+      "vam5_only_median_percentile": 70.27,
+      "median_percentile_difference": -13.11
+    }
+  ],
+  "by_year": {
+    "2018": [
+      {
+        "feature": "return_5",
+        "logit_only_mean_percentile": 29.57,
+        "vam5_only_mean_percentile": 97.48,
+        "mean_percentile_difference": -67.91,
+        "logit_only_median_percentile": 13.79,
+        "vam5_only_median_percentile": 98.46,
+        "median_percentile_difference": -84.67
+      },
+      {
+        "feature": "atr_pct_14",
+        "logit_only_mean_percentile": 99.08,
+        "vam5_only_mean_percentile": 94.58,
+        "mean_percentile_difference": 4.49,
+        "logit_only_median_percentile": 99.41,
+        "vam5_only_median_percentile": 95.42,
+        "median_percentile_difference": 3.99
+      },
+      {
+        "feature": "return_20",
+        "logit_only_mean_percentile": 26.86,
+        "vam5_only_mean_percentile": 71.8,
+        "mean_percentile_difference": -44.94,
+        "logit_only_median_percentile": 7.42,
+        "vam5_only_median_percentile": 88.71,
+        "median_percentile_difference": -81.29
+      },
+      {
+        "feature": "return_60",
+        "logit_only_mean_percentile": 38.64,
+        "vam5_only_mean_percentile": 60.47,
+        "mean_percentile_difference": -21.82,
+        "logit_only_median_percentile": 17.1,
+        "vam5_only_median_percentile": 71.48,
+        "median_percentile_difference": -54.38
+      },
+      {
+        "feature": "close_vs_sma20",
+        "logit_only_mean_percentile": 31.31,
+        "vam5_only_mean_percentile": 82.64,
+        "mean_percentile_difference": -51.33,
+        "logit_only_median_percentile": 10.89,
+        "vam5_only_median_percentile": 95.48,
+        "median_percentile_difference": -84.59
+      },
+      {
+        "feature": "close_vs_sma60",
+        "logit_only_mean_percentile": 30.93,
+        "vam5_only_mean_percentile": 67.85,
+        "mean_percentile_difference": -36.93,
+        "logit_only_median_percentile": 9.95,
+        "vam5_only_median_percentile": 82.77,
+        "median_percentile_difference": -72.82
+      },
+      {
+        "feature": "sma20_slope_5",
+        "logit_only_mean_percentile": 33.03,
+        "vam5_only_mean_percentile": 60.75,
+        "mean_percentile_difference": -27.72,
+        "logit_only_median_percentile": 11.84,
+        "vam5_only_median_percentile": 71.34,
+        "median_percentile_difference": -59.5
+      },
+      {
+        "feature": "relative_volume_20",
+        "logit_only_mean_percentile": 53.22,
+        "vam5_only_mean_percentile": 59.73,
+        "mean_percentile_difference": -6.51,
+        "logit_only_median_percentile": 55.08,
+        "vam5_only_median_percentile": 65.71,
+        "median_percentile_difference": -10.63
+      }
+    ],
+    "2019": [
+      {
+        "feature": "return_5",
+        "logit_only_mean_percentile": 21.31,
+        "vam5_only_mean_percentile": 98.08,
+        "mean_percentile_difference": -76.77,
+        "logit_only_median_percentile": 4.87,
+        "vam5_only_median_percentile": 98.62,
+        "median_percentile_difference": -93.76
+      },
+      {
+        "feature": "atr_pct_14",
+        "logit_only_mean_percentile": 99.35,
+        "vam5_only_mean_percentile": 95.79,
+        "mean_percentile_difference": 3.56,
+        "logit_only_median_percentile": 99.42,
+        "vam5_only_median_percentile": 96.45,
+        "median_percentile_difference": 2.96
+      },
+      {
+        "feature": "return_20",
+        "logit_only_mean_percentile": 31.44,
+        "vam5_only_mean_percentile": 71.66,
+        "mean_percentile_difference": -40.21,
+        "logit_only_median_percentile": 7.79,
+        "vam5_only_median_percentile": 90.19,
+        "median_percentile_difference": -82.4
+      },
+      {
+        "feature": "return_60",
+        "logit_only_mean_percentile": 39.31,
+        "vam5_only_mean_percentile": 57.53,
+        "mean_percentile_difference": -18.22,
+        "logit_only_median_percentile": 19.41,
+        "vam5_only_median_percentile": 66.78,
+        "median_percentile_difference": -47.38
+      },
+      {
+        "feature": "close_vs_sma20",
+        "logit_only_mean_percentile": 26.76,
+        "vam5_only_mean_percentile": 84.21,
+        "mean_percentile_difference": -57.44,
+        "logit_only_median_percentile": 5.24,
+        "vam5_only_median_percentile": 96.86,
+        "median_percentile_difference": -91.63
+      },
+      {
+        "feature": "close_vs_sma60",
+        "logit_only_mean_percentile": 34.34,
+        "vam5_only_mean_percentile": 68.25,
+        "mean_percentile_difference": -33.91,
+        "logit_only_median_percentile": 9.92,
+        "vam5_only_median_percentile": 86.69,
+        "median_percentile_difference": -76.78
+      },
+      {
+        "feature": "sma20_slope_5",
+        "logit_only_mean_percentile": 37.6,
+        "vam5_only_mean_percentile": 61.39,
+        "mean_percentile_difference": -23.79,
+        "logit_only_median_percentile": 15.12,
+        "vam5_only_median_percentile": 76.43,
+        "median_percentile_difference": -61.32
+      },
+      {
+        "feature": "relative_volume_20",
+        "logit_only_mean_percentile": 59.66,
+        "vam5_only_mean_percentile": 64.62,
+        "mean_percentile_difference": -4.95,
+        "logit_only_median_percentile": 66.94,
+        "vam5_only_median_percentile": 72.31,
+        "median_percentile_difference": -5.37
+      }
+    ],
+    "2020": [
+      {
+        "feature": "return_5",
+        "logit_only_mean_percentile": 22.41,
+        "vam5_only_mean_percentile": 97.41,
+        "mean_percentile_difference": -75.0,
+        "logit_only_median_percentile": 6.3,
+        "vam5_only_median_percentile": 98.63,
+        "median_percentile_difference": -92.34
+      },
+      {
+        "feature": "atr_pct_14",
+        "logit_only_mean_percentile": 99.4,
+        "vam5_only_mean_percentile": 94.42,
+        "mean_percentile_difference": 4.98,
+        "logit_only_median_percentile": 99.45,
+        "vam5_only_median_percentile": 96.17,
+        "median_percentile_difference": 3.28
+      },
+      {
+        "feature": "return_20",
+        "logit_only_mean_percentile": 31.62,
+        "vam5_only_mean_percentile": 76.78,
+        "mean_percentile_difference": -45.16,
+        "logit_only_median_percentile": 6.62,
+        "vam5_only_median_percentile": 94.62,
+        "median_percentile_difference": -88.0
+      },
+      {
+        "feature": "return_60",
+        "logit_only_mean_percentile": 43.25,
+        "vam5_only_mean_percentile": 64.68,
+        "mean_percentile_difference": -21.43,
+        "logit_only_median_percentile": 27.34,
+        "vam5_only_median_percentile": 86.22,
+        "median_percentile_difference": -58.88
+      },
+      {
+        "feature": "close_vs_sma20",
+        "logit_only_mean_percentile": 24.16,
+        "vam5_only_mean_percentile": 86.46,
+        "mean_percentile_difference": -62.3,
+        "logit_only_median_percentile": 4.74,
+        "vam5_only_median_percentile": 97.71,
+        "median_percentile_difference": -92.97
+      },
+      {
+        "feature": "close_vs_sma60",
+        "logit_only_mean_percentile": 34.36,
+        "vam5_only_mean_percentile": 71.95,
+        "mean_percentile_difference": -37.58,
+        "logit_only_median_percentile": 9.25,
+        "vam5_only_median_percentile": 93.78,
+        "median_percentile_difference": -84.53
+      },
+      {
+        "feature": "sma20_slope_5",
+        "logit_only_mean_percentile": 35.94,
+        "vam5_only_mean_percentile": 69.44,
+        "mean_percentile_difference": -33.5,
+        "logit_only_median_percentile": 11.26,
+        "vam5_only_median_percentile": 90.14,
+        "median_percentile_difference": -78.88
+      },
+      {
+        "feature": "relative_volume_20",
+        "logit_only_mean_percentile": 51.12,
+        "vam5_only_mean_percentile": 64.18,
+        "mean_percentile_difference": -13.06,
+        "logit_only_median_percentile": 49.35,
+        "vam5_only_median_percentile": 74.1,
+        "median_percentile_difference": -24.75
+      }
+    ]
+  }
+}
