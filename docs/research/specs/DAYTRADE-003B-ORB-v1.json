@@ -1,0 +1,496 @@
+{
+  "schema_version": "1.0",
+  "task_id": "DAYTRADE-003B-ORB-PREREG-001",
+  "strategy_id": "DAYTRADE-003B-ORB-SIP5M",
+  "spec_version": 1,
+  "study_name": "DAYTRADE-003B: Stocks-in-Play 5-Minute Opening Range Breakout Preregistration",
+  "classification": "research_only_preregistration",
+  "status": "preregistered_not_executed",
+  "base_commit_sha": "b15015cb46adf5ceca707589455fc12fbca64c63",
+  "governance": {
+    "implementation_authorized": false,
+    "dataset_construction_authorized": false,
+    "provider_calls_authorized": false,
+    "empirical_execution_authorized": false,
+    "holdout_access_authorized": false,
+    "production_promotion_authorized": false,
+    "approved_production_strategies_empty": true,
+    "external_evidence_not_confirmatory": true,
+    "tick_infrastructure_required": false
+  },
+  "source_citation": {
+    "primary_paper": {
+      "authors": [
+        "Carlo Zarattini",
+        "Andrea Barbon",
+        "Andrew Aziz"
+      ],
+      "title": "A Profitable Day Trading Strategy For The U.S. Equity Market",
+      "series": "Swiss Finance Institute Research Paper No. 24-98",
+      "ssrn_id": "4729284",
+      "publication_year": 2024,
+      "reviewed_pdf_date": "2024-02-16",
+      "ssrn_revision_note": "SSRN posted February 2024, subsequently revised",
+      "authority": "authoritative_for_published_strategy_rules"
+    },
+    "secondary_corroboration": [
+      {
+        "source": "Andrea Barbon Research Page",
+        "author": "Andrea Barbon",
+        "institution": "University of St. Gallen / Swiss Finance Institute",
+        "role": "author_corroboration"
+      },
+      {
+        "source": "QuantConnect: Opening Range Breakout for Stocks in Play",
+        "author": "Derek Melchin",
+        "publication_date": "2024-12",
+        "role": "secondary_replication",
+        "known_universe_divergence": "1,000 liquid equities instead of ~7,000 source universe",
+        "authority": "must_not_overwrite_primary_paper"
+      }
+    ]
+  },
+  "source_evidence_period": {
+    "start_date": "2016-01-01",
+    "end_date": "2023-12-31",
+    "description": "Historical sample analyzed in the primary source paper; prior literature evidence only"
+  },
+  "source_published_results": {
+    "examined_universe_size_approx": 7000,
+    "sample_years": "2016-2023",
+    "strategy_variant": "Top-20 Stocks-in-Play 5-minute ORB",
+    "total_net_return_pct": 1637.0,
+    "annualized_return_pct": 41.6,
+    "annualized_alpha_pct": 36.0,
+    "beta_approx": 0.0,
+    "sharpe_ratio": 2.81,
+    "max_drawdown_pct": 12.0,
+    "status": "prior_literature_only_not_tradex_validation"
+  },
+  "quantconnect_replication_summary": {
+    "sample_start_year": 2016,
+    "reported_sharpe_ratio_approx": 2.396,
+    "reported_beta_approx": -0.042,
+    "universe_divergence": "1,000-stock liquid universe vs source ~7,000 universe",
+    "status": "secondary_corroboration_exploratory_sensitivities_prohibited_in_tradex"
+  },
+  "universe_contract": {
+    "description": "Point-in-time U.S.-listed NYSE and Nasdaq equities consistent with Zarattini et al. (2024), subject to basic eligibility filters",
+    "point_in_time_requirement": true,
+    "survivorship_bias_free_requirement": true,
+    "exchanges": [
+      "NYSE",
+      "NASDAQ"
+    ],
+    "source_universe_approx_count": 7000,
+    "source_crsp_survivorship_statement": "Source used CRSP to avoid survivorship bias, including delisted securities; approximately 7,000 U.S. equities on NYSE and Nasdaq (2016-2023). Primary paper does not state an explicit limitation to common stocks.",
+    "security_type_inclusion_status": "Unresolved mapping for TradeX: exact CRSP security-type inclusion/exclusion mapping (ADRs, REITs, closed-end funds, multiple share classes, etc.) to be determined in DAYTRADE-003C",
+    "tradex_operational_adaptation_rule": "A smaller operational universe (such as top 1,000) would constitute a VARIANT requiring explicit Gary/ChatGPT approval and is not authorized here",
+    "constituent_resolution_policy": "Point-in-time historical constituent membership, delistings, mergers, and ticker changes are data-feasibility requirements to be evaluated in DAYTRADE-003C"
+  },
+  "eligibility_filters": {
+    "price_filter": {
+      "metric": "opening_price",
+      "operator": "gt",
+      "threshold": 5.0,
+      "unit": "USD",
+      "source_status": "SOURCE_EXPLICIT"
+    },
+    "average_daily_volume_filter": {
+      "metric": "average_daily_volume",
+      "lookback_trading_sessions": 14,
+      "operator": "gte",
+      "threshold": 1000000,
+      "unit": "shares_per_day",
+      "sessions_used": "completed_sessions_prior_to_session_D (D-1 and earlier)",
+      "current_session_excluded": true,
+      "source_status": "SOURCE_EXPLICIT"
+    },
+    "atr_filter": {
+      "metric": "average_true_range",
+      "lookback_trading_sessions": 14,
+      "operator": "gt",
+      "threshold": 0.50,
+      "unit": "USD",
+      "sessions_used": "completed_sessions_prior_to_session_D (D-1 and earlier)",
+      "current_session_excluded": true,
+      "source_status": "SOURCE_EXPLICIT"
+    }
+  },
+  "relative_volume_ranking": {
+    "metric_name": "Relative Volume (RV)",
+    "lookback_sessions": 14,
+    "numerator": "opening_range_volume(D, j) [total volume in first 5 minutes of session D for security j]",
+    "denominator": "mean(opening_range_volume(D-k, j)) over k=1..14 completed eligible sessions for j",
+    "current_session_in_trailing_reference": false,
+    "threshold_operator": "gte",
+    "threshold_value": 1.0,
+    "top_n_selection": 20,
+    "selection_order": "descending_by_relative_volume",
+    "fewer_than_top_n_rule": "If fewer than 20 symbols satisfy all filters and RV >= 1.0, trade only the qualifying symbols",
+    "deterministic_tie_breaker": [
+      "higher_relative_volume",
+      "ticker_ascending"
+    ],
+    "tie_breaker_label": "TradeX determinism rule, not published alpha rule",
+    "source_status": "SOURCE_EXPLICIT"
+  },
+  "strategy_mechanics": {
+    "session_definition": {
+      "calendar": "XNYS",
+      "timezone": "America/New_York",
+      "regular_session_start": "09:30:00",
+      "regular_session_end": "16:00:00"
+    },
+    "opening_range": {
+      "duration_minutes": 5,
+      "minute_bars": [
+        "09:30",
+        "09:31",
+        "09:32",
+        "09:33",
+        "09:34"
+      ],
+      "availability_timestamp": "09:35:00 America/New_York",
+      "fields": {
+        "or_open": "first executable regular-session price / 09:30 bar open",
+        "or_high": "maximum high during 09:30-09:35",
+        "or_low": "minimum low during 09:30-09:35",
+        "or_close": "final price / 09:34 bar close",
+        "or_volume": "total traded volume across completed 09:30-09:34 bars"
+      },
+      "pre_completion_decision_prohibited": true
+    },
+    "direction_qualification": {
+      "bullish_condition": "OR_close > OR_open",
+      "bullish_direction": "LONG",
+      "bullish_entry_stop_level": "OR_high",
+      "bearish_condition": "OR_close < OR_open",
+      "bearish_direction": "SHORT",
+      "bearish_entry_stop_level": "OR_low",
+      "doji_condition": "OR_close == OR_open",
+      "doji_action": "NO_ORDER",
+      "bidirectional_same_symbol_session_prohibited": true
+    },
+    "entry_order": {
+      "order_type": "stop_order",
+      "earliest_executable_time": "09:35:00 America/New_York",
+      "opening_candle_self_touch_prohibited": true,
+      "max_initiated_trades_per_symbol_per_session": 1,
+      "order_lifetime_interpretation": "Order remains active during regular trading session until filled or canceled at regular-session close (locked TradeX execution convention AMB-04)"
+    },
+    "stop_loss": {
+      "long_stop_formula": "executed_entry_price - 0.10 * ATR14",
+      "short_stop_formula": "executed_entry_price + 0.10 * ATR14",
+      "atr_input": "14-day ATR from completed sessions D-1 and earlier",
+      "trailing_stop_authorized": false,
+      "breakeven_adjustment_authorized": false,
+      "profit_target_authorized": false,
+      "alternative_stops_authorized": false
+    },
+    "exit_rules": {
+      "stop_hit_exit": "Exit immediately at stop execution price subject to execution model",
+      "session_close_exit": "Close all open positions at end of regular trading session",
+      "one_minute_eod_convention": "Completed 15:59-16:00 bar close liquidation convention locked as TradeX execution rule (Option A; non-blocking)",
+      "overnight_holds_permitted": false
+    },
+    "position_sizing": {
+      "source_published_language": "Each stock was sized so that if the stop were hit, the loss on the capital deployed for that position would be approximately 1%, subject to a 4x leverage constraint. Initial capital $25,000.",
+      "initial_capital_usd": 25000.0,
+      "source_reported_deployed_capital_loss_pct": 1.0,
+      "max_leverage_ratio": 4.0,
+      "concurrent_portfolio_sizing_semantics": "Source does not detail mathematical portfolio NAV compounding or concurrent position margin allocation when multiple of the 20 setups trigger; preserved under AMB-03 for resolution in DAYTRADE-003C."
+    }
+  },
+  "dates_and_splits": {
+    "warmup": {
+      "start": "2023-12-01",
+      "end": "2023-12-29",
+      "purpose": "context_and_trailing_lookback_only",
+      "min_prior_completed_sessions": 14,
+      "signal_origin_prohibited": true,
+      "trade_origin_prohibited": true
+    },
+    "development": {
+      "start": "2024-01-02",
+      "end": "2024-12-31",
+      "purpose": "implementation_diagnostics_and_execution_sanity_checks",
+      "parameter_tuning_prohibited": true
+    },
+    "validation": {
+      "start": "2025-01-02",
+      "end": "2025-12-31",
+      "purpose": "formal_out_of_sample_decision_gate_evaluation",
+      "single_evaluation_rule": true
+    },
+    "holdout": {
+      "start": "2026-01-02",
+      "end": "2026-09-30",
+      "purpose": "untouched_holdout_conditional_on_validation_supported",
+      "exclusion_note": "October 2026 excluded because month is incomplete at design time",
+      "quarantine_rule": "strictly_unopened_unless_validation_disposition_is_SUPPORTED"
+    }
+  },
+  "data_contract": {
+    "required_data_classes": [
+      "daily_ohlcv",
+      "regular_session_1_minute_ohlcv",
+      "point_in_time_security_reference_and_universe_membership"
+    ],
+    "unnecessary_and_prohibited_data_classes": [
+      "raw_trade_ticks",
+      "50_tick_bars",
+      "133_tick_bars",
+      "level_2_quotes",
+      "order_book_depth",
+      "websocket_streaming",
+      "options_chain_flow",
+      "news_sentiment_feeds"
+    ],
+    "source_intraday_data_citation": "IQFeed regular-session intraday data, explicitly unadjusted for stock splits and dividends",
+    "source_universe_reference_citation": "CRSP survivorship-bias-free database (NYSE/Nasdaq, including delistings)",
+    "session_calendar": "XNYS",
+    "timezone": "America/New_York"
+  },
+  "point_in_time_discipline": {
+    "opening_range_availability": "09:35:00 America/New_York strictly",
+    "relative_volume_availability": "09:35:00 America/New_York strictly",
+    "trailing_history_boundary": "Completed trading session D-1 and earlier only",
+    "current_session_close_exclusion": "Current session D close never enters ATR or daily volume history",
+    "universe_membership": "Point-in-time constituent status with zero survivorship or lookahead bias",
+    "corporate_actions_policy": "Consistent adjustment across daily and intraday series; split adjustments must not cause threshold distortion"
+  },
+  "execution_model": {
+    "stop_entry_trigger_and_fill": {
+      "long_stop_at_p": {
+        "step_1_open_trigger": "If bar.open >= P: fill at bar.open",
+        "step_2_intrabar_trigger": "Else if bar.high >= P: fill at P",
+        "step_3_no_fill": "Else: NO FILL (order remains active subject to locked order-lifetime rule)"
+      },
+      "short_stop_at_p": {
+        "step_1_open_trigger": "If bar.open <= P: fill at bar.open",
+        "step_2_intrabar_trigger": "Else if bar.low <= P: fill at P",
+        "step_3_no_fill": "Else: NO FILL (order remains active subject to locked order-lifetime rule)"
+      },
+      "equality_handling": "Uses >= and <= so that an opening print exactly at the stop level is executable",
+      "label": "TRADEX_EXECUTION_RULE"
+    },
+    "stop_loss_gap_through": {
+      "rule": "If price gaps beyond protective stop level, fill at worse executable opening price rather than assuming exact stop price",
+      "label": "TRADEX_EXECUTION_RULE"
+    },
+    "same_bar_entry_and_stop": {
+      "rule": "If a 1-minute bar triggers entry and touches the protective stop in the same bar and intrabar path cannot be proven, conservatively assume entry occurred and the stop was triggered (worst-case fail closed)",
+      "diagnostic_metric": "same_bar_ambiguity_count",
+      "favorable_ordering_permitted": false,
+      "label": "TRADEX_EXECUTION_RULE"
+    },
+    "stop_activation_timing": {
+      "rule": "Protective stop is economically active immediately upon hypothetical entry fill; no unprotected 1-minute window permitted",
+      "label": "TRADEX_EXECUTION_RULE"
+    }
+  },
+  "friction_and_cost_scenarios": {
+    "scenario_a_source_comparison": {
+      "description": "Source replication comparison",
+      "commission_per_share_usd": 0.0035,
+      "adverse_slippage_bps_per_side": 0.0,
+      "purpose": "Direct comparability to published Zarattini et al. (2024) headline results"
+    },
+    "scenario_b_tradex_primary": {
+      "description": "TradeX primary research hurdle",
+      "commission_per_share_usd": 0.0035,
+      "adverse_slippage_bps_per_side": 2.0,
+      "purpose": "Primary decision and validation gate evaluation"
+    },
+    "scenario_c_stress": {
+      "description": "Stress-test friction robustness diagnostic",
+      "commission_per_share_usd": 0.0035,
+      "adverse_slippage_bps_per_side": 5.0,
+      "purpose": "Robustness diagnostic; failure does not automatically invalidate formal support"
+    }
+  },
+  "outcome_metrics": {
+    "primary_decision_metric": "mean_daily_portfolio_net_return_under_tradex_primary_costs",
+    "trade_level_metrics": [
+      "qualified_candidates_count",
+      "entry_orders_placed_count",
+      "triggered_trades_count",
+      "long_trades_count",
+      "short_trades_count",
+      "win_rate",
+      "mean_r_multiple",
+      "median_r_multiple",
+      "mean_gross_return",
+      "median_gross_return",
+      "mean_net_return",
+      "median_net_return",
+      "stop_out_rate",
+      "eod_exit_rate",
+      "same_bar_ambiguity_count",
+      "non_computable_trade_count"
+    ],
+    "portfolio_session_level_metrics": [
+      "mean_daily_portfolio_net_return",
+      "cumulative_net_return",
+      "annualized_return",
+      "annualized_volatility",
+      "sharpe_ratio",
+      "max_drawdown",
+      "worst_day_net_return",
+      "daily_turnover",
+      "gross_exposure",
+      "leverage_usage",
+      "alpha_vs_spy",
+      "beta_vs_spy"
+    ]
+  },
+  "disposition_taxonomy": {
+    "INVALID": "Material methodology, point-in-time, universe, data-quality, or execution-integrity failure",
+    "INCONCLUSIVE": "Evidence is insufficient or materially non-computable (fails evidence-sufficiency gate)",
+    "NOT_SUPPORTED": "Adequate evidence indicates the strategy does not produce positive economics under TradeX primary costs (mean daily net return <= 0)",
+    "PROMISING_NOT_CONFIRMED": "Primary point estimate is economically positive (mean daily net return > 0), but statistical uncertainty prevents formal support (95% CI lower bound <= 0)",
+    "SUPPORTED": "All preregistered validation gates pass: integrity, sufficiency, primary economics (>0), and 95% CI lower bound > 0"
+  },
+  "validation_gates": {
+    "integrity_gate": {
+      "condition": "Zero material point-in-time, lookahead, universe, or execution-integrity violations",
+      "failure_disposition": "INVALID"
+    },
+    "evidence_sufficiency_gate": {
+      "min_regular_sessions_with_candidates": 100,
+      "min_triggered_trades_total": 500,
+      "min_unique_securities_traded": 50,
+      "failure_disposition": "INCONCLUSIVE"
+    },
+    "primary_economics_gate": {
+      "metric": "mean_daily_portfolio_net_return_under_scenario_b",
+      "condition": "gt_zero",
+      "failure_disposition": "NOT_SUPPORTED"
+    },
+    "statistical_confidence_gate": {
+      "method": "session_date_block_bootstrap_95_ci",
+      "condition": "ci_95_lower_bound_gt_zero",
+      "failure_disposition_when_point_estimate_positive": "PROMISING_NOT_CONFIRMED"
+    },
+    "cost_survival_gate": {
+      "scenario_b_primary_required_positive": true,
+      "scenario_c_stress_reported_diagnostic_only": true
+    },
+    "stability_diagnostics": [
+      "quarterly_breakdown",
+      "long_vs_short_breakdown",
+      "relative_volume_decile_buckets",
+      "broad_market_regimes"
+    ]
+  },
+  "holdout_access_rule": {
+    "permitted_validation_disposition": "SUPPORTED",
+    "prohibited_validation_dispositions": [
+      "INVALID",
+      "INCONCLUSIVE",
+      "NOT_SUPPORTED",
+      "PROMISING_NOT_CONFIRMED"
+    ],
+    "action_if_validation_not_supported": "Holdout partition 2026-01-02 through 2026-09-30 remains strictly unopened, unread, and unacquired",
+    "re_testing_prohibition": "Any follow-on hypothesis generated by validation requires a new preregistered strategy/version and new untouched evidence"
+  },
+  "parameter_fishing_prohibitions": [
+    "Testing opening range durations other than 5 minutes (e.g. 1m, 2m, 3m, 10m, 15m)",
+    "Changing top-N selection from Top 20 (e.g. Top 10, Top 30)",
+    "Altering relative volume threshold from 1.0",
+    "Replacing absolute $0.50 ATR with ATR percentage or different dollar threshold",
+    "Modifying minimum price filter from $5.00",
+    "Modifying 14-day average volume filter from 1,000,000 shares",
+    "Adding technical indicators (VWAP, EMAs, RSI, MACD, etc.)",
+    "Adding news, sentiment, or social feeds",
+    "Adding profit targets or take-profit orders",
+    "Altering stop loss distance from 0.10 * ATR14",
+    "Adding trailing stops or breakeven stops",
+    "Restricting direction to long-only or short-only after inspecting results",
+    "Selecting favorable sectors or market capitalization bands post-hoc",
+    "Restricting trades to favorable times of day",
+    "Optimizing friction, commissions, or slippage models",
+    "Altering session-close exit timing"
+  ],
+  "unresolved_source_ambiguities": [
+    {
+      "ambiguity_id": "AMB-01",
+      "topic": "CRSP Security-Type Universe Inclusion/Exclusion Mapping",
+      "classification": "MUST_RESOLVE_FOR_DATASET",
+      "source_explicit": "Approximately 7,000 U.S. equities, NYSE and Nasdaq, 2016-2023, survivorship-bias-free CRSP universe, delisted names included",
+      "still_unresolved_for_tradex": "Exact CRSP security-type mapping needed to reproduce the source universe: treatment of ADRs, REITs, closed-end funds, multiple share classes, and other security-type edge cases",
+      "resolution_requirement": "MUST_RESOLVE_BEFORE_DAYTRADE-003C_DATASET_CONSTRUCTION"
+    },
+    {
+      "ambiguity_id": "AMB-02",
+      "topic": "Exact Numerical ATR Smoothing Method",
+      "classification": "MUST_RESOLVE_FOR_EVALUATOR",
+      "description": "Paper specifies 14-day ATR > $0.50 and 0.10 * ATR stop distance, but does not specify whether Wilder smoothing, exponential smoothing, or simple 14-day rolling mean was used",
+      "proposed_tradex_convention": "Standard Wilder ATR14 on completed D-1 daily bars",
+      "resolution_requirement": "MUST_RESOLVE_BEFORE_DAYTRADE-003C_EVALUATOR_IMPLEMENTATION"
+    },
+    {
+      "ambiguity_id": "AMB-03",
+      "topic": "Concurrent-Portfolio 1% Deployed Capital Risk Sizing Mathematics",
+      "classification": "MUST_RESOLVE_FOR_EVALUATOR",
+      "source_explicit": "Each stock sized so that if stop hit, loss on capital deployed for that position would be 1%, subject to 4x leverage constraint",
+      "still_unresolved_for_tradex": "Mathematical formula for portfolio NAV compounding, pro-rata scaling, and margin consumption when up to 20 concurrent trades are active",
+      "resolution_requirement": "MUST_RESOLVE_BEFORE_DAYTRADE-003C_EVALUATOR_IMPLEMENTATION"
+    },
+    {
+      "ambiguity_id": "AMB-04",
+      "topic": "Stop-Entry Order Lifetime & Cancellation",
+      "classification": "LOCKED_TRADEX_EXECUTION_CONVENTION",
+      "description": "Paper implies entry stop orders remain active intraday until hit or EOD exit; does not define an earlier cutoff",
+      "locked_convention": "Stop order remains active from 09:35 ET until filled or session close (16:00 ET)",
+      "resolution_requirement": "RESOLVED_AS_LOCKED_TRADEX_EXECUTION_CONVENTION"
+    },
+    {
+      "ambiguity_id": "AMB-05",
+      "topic": "Source Engine Intraday Bar Resolution",
+      "classification": "NON_BLOCKING_SOURCE_DIFFERENCE",
+      "description": "Source backtest resolution (1m vs 5m vs tick) is unknown, but non-blocking because TradeX explicitly evaluates against locked conservative 1-minute execution rules",
+      "resolution_requirement": "NON_BLOCKING_SOURCE_DIFFERENCE"
+    },
+    {
+      "ambiguity_id": "AMB-06",
+      "topic": "Stop-Entry & Stop-Loss Gap-Through Fill Treatment",
+      "classification": "LOCKED_TRADEX_EXECUTION_CONVENTION",
+      "description": "Handling of gap-through fills on stop-entry and stop-loss orders in discrete 1-minute bars",
+      "locked_convention": "Conservative 3-step conditional trigger rules: fill at worse open if gap-through occurs",
+      "resolution_requirement": "RESOLVED_AS_LOCKED_TRADEX_EXECUTION_CONVENTION"
+    },
+    {
+      "ambiguity_id": "AMB-07",
+      "topic": "Same-Bar Entry and Stop Path Collision",
+      "classification": "LOCKED_TRADEX_EXECUTION_CONVENTION",
+      "description": "Intrabar path ambiguity when both entry and stop price levels are touched within the same 1-minute bar",
+      "locked_convention": "Conservative fail-closed assumption: entry triggered, stop hit in same bar; reported in same_bar_ambiguity_count",
+      "resolution_requirement": "RESOLVED_AS_LOCKED_TRADEX_EXECUTION_CONVENTION"
+    },
+    {
+      "ambiguity_id": "AMB-08",
+      "topic": "Session-Close Liquidation Price Convention",
+      "classification": "LOCKED_TRADEX_EXECUTION_CONVENTION",
+      "description": "Paper specifies positions liquidated at market close (4:00 PM)",
+      "locked_convention": "Completed 15:59-16:00 1-minute bar close liquidation convention locked as TradeX execution rule (Option A; non-blocking)",
+      "resolution_requirement": "RESOLVED_AS_LOCKED_TRADEX_EXECUTION_CONVENTION"
+    },
+    {
+      "ambiguity_id": "AMB-09",
+      "topic": "Commission Fee Structure & Minimum Ticket Fees",
+      "classification": "MUST_RESOLVE_FOR_EVALUATOR",
+      "description": "Paper cites $0.0035/share (Interactive Brokers tiered); must determine whether IBKR ticket minimums ($0.35 or $1.00) materially affect small share positions in TradeX",
+      "resolution_requirement": "MUST_RESOLVE_BEFORE_DAYTRADE-003C_EVALUATOR_IMPLEMENTATION"
+    },
+    {
+      "ambiguity_id": "AMB-10",
+      "topic": "Corporate Action Adjustment Consistency Between Daily and Intraday Data",
+      "classification": "MUST_RESOLVE_FOR_DATASET",
+      "source_explicit": "Intraday stock data from IQFeed were unadjusted for stock splits and dividends",
+      "still_unresolved_for_tradex": "Exact daily-data adjustment convention for ATR and average-volume calculations (split-only vs total return in CRSP); how daily inputs and unadjusted intraday data were aligned across splits; and what deterministic TradeX convention reproduces internally consistent prices",
+      "resolution_requirement": "MUST_RESOLVE_BEFORE_DAYTRADE-003C_DATASET_CONSTRUCTION"
+    }
+  ]
+}
