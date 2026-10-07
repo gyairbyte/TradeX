@@ -93,7 +93,7 @@ def test_reset_button_resets_and_reruns(weights_tab_module, fake_st):
 
 
 def test_widget_keys_preserved(weights_tab_module, fake_st):
-    """All expected weight slider keys are rendered."""
+    """Intraday and short weight sliders are rendered; long sliders are locked and omitted."""
     settings = _default_settings()
     weights_tab_module.signal_weights.load = lambda *, settings: signal_weights.Weights.defaults()
 
@@ -104,8 +104,15 @@ def test_widget_keys_preserved(weights_tab_module, fake_st):
     for timeframe, section in (
         ("intraday", signal_weights.IntradayWeights()),
         ("short", signal_weights.ShortWeights()),
-        ("long", signal_weights.LongWeights()),
     ):
         for field in section.__dataclass_fields__:
             expected.add(f"w_{timeframe}_{field}")
     assert expected.issubset(slider_keys)
+
+    # Long sliders must not be rendered
+    long_keys = {f"w_long_{field}" for field in signal_weights.LongWeights().__dataclass_fields__}
+    assert not (long_keys & slider_keys)
+
+    # Locked guidance message rendered
+    info_texts = [str(c[0][0]) for c in fake_st.info.call_args_list]
+    assert any("Long Opportunity Strategy v1 scoring weights are locked" in t for t in info_texts)

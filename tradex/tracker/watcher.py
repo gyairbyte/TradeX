@@ -275,9 +275,20 @@ def run_once(
             f"[{timestamp}] {len(results)} signals found (actual provider={actual_provider}, "
             f"retries={report.total_retries}, fallback={report.fallback_used}):"
         )
-        print(
-            results[["ticker", "score", "volume_ratio", "rsi", "provider"]].to_string(index=False)
-        )
+        if timeframe == "long":
+            from tradex.screener.engine import build_long_focus_list
+
+            focus = build_long_focus_list(results)
+            display_cols = [
+                c
+                for c in ["ticker", "state", "primary_setup", "score", "last_close", "trigger"]
+                if c in focus.columns
+            ]
+            print(focus[display_cols].to_string(index=False))
+        else:
+            print(
+                results[["ticker", "score", "volume_ratio", "rsi", "provider"]].to_string(index=False)
+            )
 
     # Persist the full scan report (observations, session, and signals).
     session_id = store.record_scan(

@@ -62,3 +62,32 @@ def test_fetch_uses_resolved_provider(monkeypatch):
 def test_fetch_invalid_provider_raises():
     with pytest.raises(ValueError):
         fetch("AAPL", "short", provider="notaprovider")
+
+
+def test_long_timeframe_is_daily_across_all_providers():
+    """All supported providers must configure daily bars for long timeframe (LONG-MVP-002)."""
+    from tradex.data.fetcher import (
+        TIMEFRAMES,
+        _ALPACA_INTERVAL_MAP,
+        _ALPACA_LIMIT_MAP,
+        _IBKR_DURATION_MAP,
+        _SCHWAB_TIMEFRAMES,
+    )
+
+    # 1. Yahoo preset
+    assert TIMEFRAMES["long"]["period"] == "2y"
+    assert TIMEFRAMES["long"]["interval"] == "1d"
+
+    # 2. Alpaca
+    assert _ALPACA_INTERVAL_MAP["long"] == "1Day"
+    assert _ALPACA_LIMIT_MAP["long"] >= 504  # ~2 years of trading days (520)
+
+    # 3. IBKR
+    duration, bar_size = _IBKR_DURATION_MAP["long"]
+    assert duration == "2 Y"
+    assert bar_size == "1 day"
+
+    # 4. Schwab
+    method_name, lookback = _SCHWAB_TIMEFRAMES["long"]
+    assert method_name == "get_price_history_every_day"
+    assert lookback.days >= 700  # 730 days (~2 years)

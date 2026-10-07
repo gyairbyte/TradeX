@@ -1306,3 +1306,43 @@ def test_start_loop_schedules_premarket_with_yahoo_provider():
     )
     assert premarket_call is not None
     assert premarket_call.kwargs.get("provider") == "yahoo"
+
+
+def test_run_once_long_timeframe_formats_focus_list_and_persists_full_report(capsys):
+    """When timeframe == 'long', run_once formats console output with focus list and persists full report."""
+    results_df = pd.DataFrame([
+        {
+            "ticker": "AAPL",
+            "score": 85,
+            "last_close": 150.0,
+            "volume_ratio": 1.5,
+            "rsi": 60.0,
+            "state": "ENTER NOW",
+            "primary_setup": "breakout_expansion",
+            "trigger": "Close above prior 20-session high",
+            "invalidation": "Close below EMA50",
+            "provider": "yahoo",
+            "days_until_earnings": None,
+            "reasons": "Breakout confirmed",
+        }
+    ])
+    report = _scan_report(results_df, "yahoo", tickers=["AAPL"])
+
+    with (
+        patch.object(watcher, "screener_run_with_report", return_value=report),
+        patch.object(watcher.store, "record_scan", return_value="sess_test") as mock_record,
+        patch.object(watcher, "_check_alerts", return_value=[]),
+        patch("tradex.candidates.service.record_session_candidates") as mock_candidates,
+    ):
+        mock_candidates.return_value = MagicMock(failures={})
+        watcher.run_once(["AAPL"], timeframe="long", min_score=60, provider="yahoo")
+
+    captured = capsys.readouterr().out
+    assert "ENTER NOW" in captured
+    assert "breakout_expansion" in captured
+    assert "Close above prior 20-session high" in captured
+
+    # Verify store.record_scan received the full report
+    assert mock_record.call_count == 1
+    assert mock_record.call_args[0][0] is report
+    assert mock_record.call_args.kwargs["timeframe"] == "long"

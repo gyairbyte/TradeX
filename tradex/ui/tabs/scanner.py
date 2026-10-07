@@ -36,7 +36,30 @@ def render_scanner_tab(
     )
 
     with st.expander("How scoring works", expanded=False):
-        st.markdown("""
+        if timeframe == "long":
+            st.markdown("""
+TradeX **Long Opportunity Strategy v1** models liquid stocks across three distinct swing setup archetypes over a 5–21 session horizon using daily bars.
+
+### The 3 Strategy Archetypes
+1. **Momentum Continuation (`momentum_continuation`)**: Strong secular uptrend (`close > EMA20 > EMA50 > EMA200`), persistent intermediate momentum (`return_20 >= +5%`, `return_60 >= +10%`), within 5% of 20-day high, healthy RSI (50–75).
+2. **Trend Pullback (`trend_pullback`)**: Primary trend intact (`EMA20 > EMA50 > EMA200`, `return_60 >= +10%`, `close > EMA50`), controlled retracement (`return_5` between -8% and +2%), near EMA20 support (within 4%), reset RSI (40–62).
+3. **Breakout / Expansion (`breakout_expansion`)**: Trend intact (`EMA20 > EMA50 > EMA200`), consolidating within 2% of 20-day high or breaking out with volume (`volume_ratio >= 1.30`), RSI 50–78.
+
+### 100-Point Deterministic Score
+- **Trend Quality (30 pts)**: Moving average alignment (`close > EMA20`, `EMA20 > EMA50`, `EMA50 > EMA200`) and rising EMA20 slope.
+- **Momentum Quality (25 pts)**: Archetype-aware returns (5d, 20d, 60d) and RSI ranges.
+- **Setup Quality (20 pts)**: Archetype-specific structural proximity and confirmation.
+- **Movement Capacity (15 pts)**: Normalized volatility capacity (`ATR14 / close`, sweet spot 2.0%–6.0%).
+- **Participation (10 pts)**: 20-session relative volume turnover conviction.
+
+### Execution States
+- **ENTER NOW**: Score >= 75 and actionable confirmation trigger met.
+- **ARMED**: Score >= 70 and nearing trigger level.
+- **QUALIFIED WAITLIST**: Score >= 60 and technically credible setup.
+- Candidates below 60 or failing eligibility floor (220 bars, price >= $5, median dollar volume >= $20M) are omitted.
+            """)
+        else:
+            st.markdown("""
 Each timeframe runs its own set of signal checks. Points are awarded for each condition met and capped at 100.
 
 | Signal | What it checks | Points |
@@ -53,7 +76,7 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
 - 40–59: Moderate condition alignment
 - 60–79: Multiple conditions aligned
 - 80–100: Most conditions aligned simultaneously (legacy heuristic discovery only)
-        """)
+            """)
 
     run_scan = st.button(
         "Run Scan",
@@ -150,32 +173,85 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
                     )
                 else:
                     st.success(f"Found {len(results)} matching results")
-            st.dataframe(
-                results,
-                use_container_width=True,
-                column_config={
-                    "ticker": st.column_config.TextColumn("Ticker"),
-                    "score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100),
-                    "last_close": st.column_config.NumberColumn("Last Close", format="$%.2f"),
-                    "volume_ratio": st.column_config.NumberColumn(
-                        "Vol Ratio",
-                        help="Current volume ÷ 20-bar average. >2 = unusually high volume.",
-                    ),
-                    "rsi": st.column_config.NumberColumn(
-                        "RSI",
-                        help="Relative Strength Index. 30=oversold, 70=overbought. Sweet spot: 50–70.",
-                    ),
-                    "days_until_earnings": st.column_config.NumberColumn(
-                        "Earnings In",
-                        format="%d d",
-                        help="Calendar days until the next scheduled earnings report. Blank/unavailable means TradeX could not establish a reliable upcoming earnings date; it does not prove there is no scheduled earnings event.",
-                    ),
-                    "reasons": st.column_config.TextColumn("Reasons", width="large"),
-                    "provider": st.column_config.TextColumn(
-                        "OHLCV Provider", help="Market-data provider used to score this ticker."
-                    ),
-                },
-            )
+            if timeframe == "long":
+                from tradex.screener.engine import build_long_focus_list
+
+                display_df = build_long_focus_list(results)
+                long_cols = [
+                    c
+                    for c in [
+                        "ticker",
+                        "state",
+                        "primary_setup",
+                        "score",
+                        "last_close",
+                        "trigger",
+                        "invalidation",
+                        "atr_pct",
+                        "volume_ratio",
+                        "return_5",
+                        "return_20",
+                        "return_60",
+                        "days_until_earnings",
+                        "reasons",
+                        "provider",
+                    ]
+                    if c in display_df.columns
+                ]
+                st.dataframe(
+                    display_df[long_cols],
+                    use_container_width=True,
+                    column_config={
+                        "ticker": st.column_config.TextColumn("Ticker"),
+                        "state": st.column_config.TextColumn("State"),
+                        "primary_setup": st.column_config.TextColumn("Setup"),
+                        "score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100),
+                        "last_close": st.column_config.NumberColumn("Last Close", format="$%.2f"),
+                        "trigger": st.column_config.TextColumn("Trigger", width="medium"),
+                        "invalidation": st.column_config.TextColumn("Invalidation", width="medium"),
+                        "atr_pct": st.column_config.NumberColumn("ATR %", format="%.2f"),
+                        "volume_ratio": st.column_config.NumberColumn("Vol Ratio", format="%.2f"),
+                        "return_5": st.column_config.NumberColumn("5d Return", format="%.2f"),
+                        "return_20": st.column_config.NumberColumn("20d Return", format="%.2f"),
+                        "return_60": st.column_config.NumberColumn("60d Return", format="%.2f"),
+                        "days_until_earnings": st.column_config.NumberColumn(
+                            "Earnings In",
+                            format="%d d",
+                            help="Calendar days until the next scheduled earnings report. Blank/unavailable means TradeX could not establish a reliable upcoming earnings date; it does not prove there is no scheduled earnings event.",
+                        ),
+                        "reasons": st.column_config.TextColumn("Reasons", width="large"),
+                        "provider": st.column_config.TextColumn(
+                            "OHLCV Provider", help="Market-data provider used to score this ticker."
+                        ),
+                    },
+                )
+            else:
+                st.dataframe(
+                    results,
+                    use_container_width=True,
+                    column_config={
+                        "ticker": st.column_config.TextColumn("Ticker"),
+                        "score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100),
+                        "last_close": st.column_config.NumberColumn("Last Close", format="$%.2f"),
+                        "volume_ratio": st.column_config.NumberColumn(
+                            "Vol Ratio",
+                            help="Current volume ÷ 20-bar average. >2 = unusually high volume.",
+                        ),
+                        "rsi": st.column_config.NumberColumn(
+                            "RSI",
+                            help="Relative Strength Index. 30=oversold, 70=overbought. Sweet spot: 50–70.",
+                        ),
+                        "days_until_earnings": st.column_config.NumberColumn(
+                            "Earnings In",
+                            format="%d d",
+                            help="Calendar days until the next scheduled earnings report. Blank/unavailable means TradeX could not establish a reliable upcoming earnings date; it does not prove there is no scheduled earnings event.",
+                        ),
+                        "reasons": st.column_config.TextColumn("Reasons", width="large"),
+                        "provider": st.column_config.TextColumn(
+                            "OHLCV Provider", help="Market-data provider used to score this ticker."
+                        ),
+                    },
+                )
             st.session_state["scan_results"] = results
             st.session_state["scan_timeframe"] = timeframe
             st.session_state["scan_provider"] = actual_provider
@@ -232,9 +308,16 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
     if "scan_results" in st.session_state and not st.session_state["scan_results"].empty:
         st.divider()
         st.subheader("Drill-down Chart")
-        st.caption(
-            "Candlestick chart with EMA20 (orange), EMA50 (blue), and Bollinger Bands (gray shaded). Volume bars below. Uses the provider from the saved scan."
-        )
+        tf = st.session_state.get("scan_timeframe", timeframe)
+        scan_provider = st.session_state.get("scan_provider", provider)
+        if tf == "long":
+            st.caption(
+                "Candlestick chart with EMA20 (orange), EMA50 (blue), EMA200 (purple), and Bollinger Bands (gray shaded). Volume bars below. Uses the provider from the saved scan."
+            )
+        else:
+            st.caption(
+                "Candlestick chart with EMA20 (orange), EMA50 (blue), and Bollinger Bands (gray shaded). Volume bars below. Uses the provider from the saved scan."
+            )
         tickers_with_signals = st.session_state["scan_results"]["ticker"].tolist()
         selected = st.selectbox(
             "Select ticker",
@@ -242,8 +325,6 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
             key="sel_scanner",
             help="Pick any stock from the scan results to view its chart.",
         )
-        tf = st.session_state["scan_timeframe"]
-        scan_provider = st.session_state.get("scan_provider", provider)
 
         df = fetch(selected, tf, provider=scan_provider, settings=settings)
         df = add_indicators(df)
@@ -267,6 +348,15 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
         fig.add_trace(
             go.Scatter(x=df.index, y=df["ema_50"], name="EMA50", line={"color": "blue", "width": 1})
         )
+        if tf == "long" and "ema_200" in df.columns:
+            fig.add_trace(
+                go.Scatter(
+                    x=df.index,
+                    y=df["ema_200"],
+                    name="EMA200",
+                    line={"color": "purple", "width": 1},
+                )
+            )
         fig.add_trace(
             go.Scatter(
                 x=df.index,

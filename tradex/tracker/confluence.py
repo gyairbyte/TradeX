@@ -134,7 +134,8 @@ def score_confluence(
         scorer, tf_key = fetchers[tf]
         try:
             df = fetch(ticker, tf_key, provider=provider, settings=settings)
-            if len(df) < 30:
+            min_bars = 220 if tf == "long" else 30
+            if len(df) < min_bars:
                 errors[tf] = "insufficient data"
                 continue
             available[tf] = scorer(df)

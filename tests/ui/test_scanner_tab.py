@@ -870,3 +870,111 @@ def test_retry_caption_uses_singular_when_max_retries_is_one(scanner_module, fak
 
     caption_texts = [str(c[0][0]) for c in fake_st.caption.call_args_list]
     assert any("Retries: 1 retry" in t for t in caption_texts)
+
+
+def test_long_timeframe_scoring_expander_explanation(scanner_module, fake_st):
+    """When timeframe == 'long', the expander renders 3 archetypes and state model."""
+    settings = _default_settings()
+    scanner_module.render_scanner_tab(
+        settings=settings,
+        watchlist=["AAPL"],
+        timeframe="long",
+        min_score=60,
+        earnings_buffer=0,
+        provider="yahoo",
+        earnings_source="yahoo",
+    )
+
+    markdown_texts = [str(c[0][0]) for c in fake_st.markdown.call_args_list]
+    assert any("Long Opportunity Strategy v1" in t for t in markdown_texts)
+    assert any("Momentum Continuation" in t for t in markdown_texts)
+    assert any("Trend Pullback" in t for t in markdown_texts)
+    assert any("Breakout / Expansion" in t for t in markdown_texts)
+    assert any("ENTER NOW" in t for t in markdown_texts)
+
+
+def test_long_timeframe_results_table_renders_focus_list_and_extended_columns(scanner_module, fake_st):
+    """When timeframe == 'long', the results table renders focus list and extended columns."""
+    settings = _default_settings()
+    fake_st._active_button_keys = {"btn_scan"}
+
+    long_results = pd.DataFrame([
+        {
+            "ticker": "AAPL",
+            "score": 85,
+            "last_close": 150.0,
+            "volume_ratio": 1.5,
+            "rsi": 60.0,
+            "days_until_earnings": 10,
+            "reasons": "Breakout confirmed",
+            "provider": "yahoo",
+            "strategy_id": "long_mvp",
+            "strategy_version": "v1",
+            "primary_setup": "breakout_expansion",
+            "matched_setups": ["breakout_expansion"],
+            "state": "ENTER NOW",
+            "component_scores": {},
+            "trigger": "Hold prior high",
+            "invalidation": "Close below EMA50",
+            "atr_pct": 0.03,
+            "return_5": 0.02,
+            "return_20": 0.08,
+            "return_60": 0.15,
+            "qualified": True,
+        }
+    ])
+    rep = _scan_report(results=long_results)
+    scanner_module.run_with_report.return_value = rep
+
+    scanner_module.render_scanner_tab(
+        settings=settings,
+        watchlist=["AAPL"],
+        timeframe="long",
+        min_score=60,
+        earnings_buffer=0,
+        provider="yahoo",
+        earnings_source="yahoo",
+    )
+
+    assert fake_st.dataframe.call_count == 1
+    df_kwargs = fake_st.dataframe.call_args.kwargs
+    column_config = df_kwargs.get("column_config", {})
+    assert "state" in column_config
+    assert "primary_setup" in column_config
+    assert "trigger" in column_config
+    assert "invalidation" in column_config
+    assert "atr_pct" in column_config
+    assert "return_5" in column_config
+    assert "return_20" in column_config
+    assert "return_60" in column_config
+
+
+def test_long_timeframe_drilldown_chart_includes_ema200(scanner_module, fake_st):
+    """When scan_timeframe == 'long', drill-down chart includes EMA200 trace in purple."""
+    settings = _default_settings()
+    df_with_ema200 = _drill_df().copy()
+    df_with_ema200["ema_200"] = [0.9, 1.9, 2.9]
+
+    scanner_module.fetch.return_value = df_with_ema200
+    scanner_module.add_indicators.return_value = df_with_ema200
+
+    results = _scan_results_df()
+    fake_st.session_state["scan_results"] = results
+    fake_st.session_state["scan_timeframe"] = "long"
+    fake_st.session_state["scan_provider"] = "yahoo"
+
+    scanner_module.render_scanner_tab(
+        settings=settings,
+        watchlist=["AAPL", "MSFT"],
+        timeframe="long",
+        min_score=60,
+        earnings_buffer=0,
+        provider="yahoo",
+        earnings_source="yahoo",
+    )
+
+    price_fig = fake_st.plotly_chart.call_args_list[0][0][0]
+    trace_names = [t.name for t in price_fig.data]
+    assert "EMA200" in trace_names
+    ema200_trace = next(t for t in price_fig.data if t.name == "EMA200")
+    assert ema200_trace.line.color == "purple"

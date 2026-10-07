@@ -58,6 +58,19 @@ OBSERVATION_COLUMNS = [
     "provider",
     "error_category",
     "error_message",
+    "strategy_id",
+    "strategy_version",
+    "primary_setup",
+    "matched_setups",
+    "state",
+    "component_scores",
+    "trigger",
+    "invalidation",
+    "atr_pct",
+    "return_5",
+    "return_20",
+    "return_60",
+    "qualified",
 ]
 
 SUCCESSFUL_STATUSES = {
@@ -256,6 +269,19 @@ def _build_observation_row(
     reasons: str | None = None,
     provider: str | None = None,
     error: ProviderError | None = None,
+    strategy_id: str | None = None,
+    strategy_version: str | None = None,
+    primary_setup: str | None = None,
+    matched_setups: list[str] | None = None,
+    state: str | None = None,
+    component_scores: dict | None = None,
+    trigger: str | None = None,
+    invalidation: str | None = None,
+    atr_pct: float | None = None,
+    return_5: float | None = None,
+    return_20: float | None = None,
+    return_60: float | None = None,
+    qualified: bool | None = None,
 ) -> dict:
     """Create a single normalized observation row."""
     return {
@@ -270,6 +296,19 @@ def _build_observation_row(
         "provider": _safe_str(provider),
         "error_category": type(error).__name__ if error is not None else None,
         "error_message": _safe_str(str(error)) if error is not None else None,
+        "strategy_id": _safe_str(strategy_id),
+        "strategy_version": _safe_str(strategy_version),
+        "primary_setup": _safe_str(primary_setup),
+        "matched_setups": matched_setups if matched_setups is not None else None,
+        "state": _safe_str(state),
+        "component_scores": component_scores,
+        "trigger": _safe_str(trigger),
+        "invalidation": _safe_str(invalidation),
+        "atr_pct": _clean_numeric(atr_pct),
+        "return_5": _clean_numeric(return_5),
+        "return_20": _clean_numeric(return_20),
+        "return_60": _clean_numeric(return_60),
+        "qualified": qualified,
     }
 
 
@@ -400,10 +439,11 @@ def run_with_report(
             )
             continue
 
-        if len(df) < 30:
+        min_bars = 220 if timeframe == "long" else 30
+        if len(df) < min_bars:
             total_insufficient_data += 1
             err = ProviderDataUnavailableError(
-                f"Insufficient OHLCV data for {ticker} ({timeframe})"
+                f"Insufficient OHLCV data for {ticker} ({timeframe}): {len(df)} bars < {min_bars} required"
             )
             fetch_failures[ticker] = err
             observations.append(
@@ -431,6 +471,22 @@ def run_with_report(
             )
             continue
 
+        if timeframe == "long" and result.get("insufficient_data", False):
+            total_insufficient_data += 1
+            err = ProviderDataUnavailableError(
+                f"Insufficient or non-finite indicator inputs for {ticker} ({timeframe})"
+            )
+            fetch_failures[ticker] = err
+            observations.append(
+                _build_observation_row(
+                    ticker,
+                    ObservationStatus.INSUFFICIENT_DATA,
+                    provider=actual_provider or requested_provider,
+                    error=err,
+                )
+            )
+            continue
+
         total_scored += 1
         reasons = _format_reasons(result)
         obs_provider = actual_provider or requested_provider
@@ -447,9 +503,32 @@ def run_with_report(
             "days_until_earnings": days_map.get(ticker),
             "reasons": reasons,
             "provider": obs_provider,
+            "strategy_id": result.get("strategy_id"),
+            "strategy_version": result.get("strategy_version"),
+            "primary_setup": result.get("primary_setup"),
+            "matched_setups": result.get("matched_setups"),
+            "state": result.get("state"),
+            "component_scores": result.get("component_scores"),
+            "trigger": result.get("trigger"),
+            "invalidation": result.get("invalidation"),
+            "atr_pct": round(float(result["atr_pct"]), 4) if result.get("atr_pct") is not None else None,
+            "return_5": round(float(result["return_5"]), 4) if result.get("return_5") is not None else None,
+            "return_20": round(float(result["return_20"]), 4) if result.get("return_20") is not None else None,
+            "return_60": round(float(result["return_60"]), 4) if result.get("return_60") is not None else None,
+            "qualified": result.get("qualified"),
         }
 
-        if result["score"] < min_score:
+        if timeframe == "long":
+            effective_min = max(60, min_score)
+            is_signal = (
+                bool(result.get("qualified", False))
+                and (result.get("state") is not None)
+                and (result.get("score", 0) >= effective_min)
+            )
+        else:
+            is_signal = result["score"] >= min_score
+
+        if not is_signal:
             total_below_threshold += 1
             observations.append(
                 _build_observation_row(
@@ -462,6 +541,19 @@ def run_with_report(
                     days_until_earnings=canonical["days_until_earnings"],
                     reasons=canonical["reasons"],
                     provider=canonical["provider"],
+                    strategy_id=canonical["strategy_id"],
+                    strategy_version=canonical["strategy_version"],
+                    primary_setup=canonical["primary_setup"],
+                    matched_setups=canonical["matched_setups"],
+                    state=canonical["state"],
+                    component_scores=canonical["component_scores"],
+                    trigger=canonical["trigger"],
+                    invalidation=canonical["invalidation"],
+                    atr_pct=canonical["atr_pct"],
+                    return_5=canonical["return_5"],
+                    return_20=canonical["return_20"],
+                    return_60=canonical["return_60"],
+                    qualified=canonical["qualified"],
                     error=obs_earnings_err,
                 )
             )
@@ -480,6 +572,19 @@ def run_with_report(
                 days_until_earnings=canonical["days_until_earnings"],
                 reasons=canonical["reasons"],
                 provider=canonical["provider"],
+                strategy_id=canonical["strategy_id"],
+                strategy_version=canonical["strategy_version"],
+                primary_setup=canonical["primary_setup"],
+                matched_setups=canonical["matched_setups"],
+                state=canonical["state"],
+                component_scores=canonical["component_scores"],
+                trigger=canonical["trigger"],
+                invalidation=canonical["invalidation"],
+                atr_pct=canonical["atr_pct"],
+                return_5=canonical["return_5"],
+                return_20=canonical["return_20"],
+                return_60=canonical["return_60"],
+                qualified=canonical["qualified"],
                 error=obs_earnings_err,
             )
         )
@@ -492,20 +597,50 @@ def run_with_report(
     failures = {**fetch_failures, **scoring_failures}
 
     if not rows:
-        results = pd.DataFrame(
-            columns=[
-                "ticker",
-                "score",
-                "last_close",
-                "volume_ratio",
-                "rsi",
-                "days_until_earnings",
-                "reasons",
-                "provider",
-            ]
-        )
+        base_cols = [
+            "ticker",
+            "score",
+            "last_close",
+            "volume_ratio",
+            "rsi",
+            "days_until_earnings",
+            "reasons",
+            "provider",
+        ]
+        if timeframe == "long":
+            base_cols.extend(
+                [
+                    "strategy_id",
+                    "strategy_version",
+                    "primary_setup",
+                    "matched_setups",
+                    "state",
+                    "component_scores",
+                    "trigger",
+                    "invalidation",
+                    "atr_pct",
+                    "return_5",
+                    "return_20",
+                    "return_60",
+                    "qualified",
+                ]
+            )
+        results = pd.DataFrame(columns=base_cols)
     else:
-        results = pd.DataFrame(rows).sort_values("score", ascending=False).reset_index(drop=True)
+        if timeframe == "long":
+            STATE_RANK = {"ENTER NOW": 0, "ARMED": 1, "QUALIFIED WAITLIST": 2}
+            df_res = pd.DataFrame(rows)
+            df_res["_state_rank"] = df_res["state"].map(lambda s: STATE_RANK.get(s, 99))
+            results = (
+                df_res.sort_values(
+                    by=["_state_rank", "score", "ticker"],
+                    ascending=[True, False, True],
+                )
+                .drop(columns=["_state_rank"])
+                .reset_index(drop=True)
+            )
+        else:
+            results = pd.DataFrame(rows).sort_values("score", ascending=False).reset_index(drop=True)
 
     observations_df = pd.DataFrame(observations, columns=OBSERVATION_COLUMNS)
     report = ScanReport(
@@ -563,3 +698,42 @@ def run(
         settings=settings,
     )
     return report.results
+
+
+LONG_FOCUS_CAPS: dict[str, int] = {
+    "ENTER NOW": 7,
+    "ARMED": 12,
+    "QUALIFIED WAITLIST": 12,
+}
+MAX_LONG_FOCUS_DISPLAY: int = 31
+
+
+def build_long_focus_list(results: pd.DataFrame) -> pd.DataFrame:
+    """Return a display-capped focus list of long opportunities (7 / 12 / 12, max 31).
+
+    Caps:
+      ENTER NOW: at most 7
+      ARMED: at most 12
+      QUALIFIED WAITLIST: at most 12
+      Total combined: at most 31
+
+    Accepts the full ranked long result set.
+    Does NOT modify or truncate telemetry in the underlying ScanReport.
+    """
+    if results.empty:
+        return results.copy()
+
+    parts: list[pd.DataFrame] = []
+    for state_name, cap in LONG_FOCUS_CAPS.items():
+        if "state" in results.columns:
+            subset = results[results["state"] == state_name]
+            if not subset.empty:
+                parts.append(subset.iloc[:cap])
+
+    if not parts:
+        return results.iloc[:MAX_LONG_FOCUS_DISPLAY].copy()
+
+    focus_df = pd.concat(parts, ignore_index=True)
+    if len(focus_df) > MAX_LONG_FOCUS_DISPLAY:
+        focus_df = focus_df.iloc[:MAX_LONG_FOCUS_DISPLAY]
+    return focus_df.reset_index(drop=True)

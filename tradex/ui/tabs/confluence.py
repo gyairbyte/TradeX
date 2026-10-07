@@ -33,14 +33,14 @@ Most screeners evaluate a single timeframe. The Confluence Scanner measures whet
 **Confluence evaluates cross-timeframe score alignment:**
 - Intraday chart (5-min) technical score
 - Daily chart (short-term) technical score
-- Weekly chart (long-term) technical score
+- Daily chart (long-term, 2y) technical score
 
 **Confluence score weights (fixed denominator — missing timeframes contribute zero):**
 | Timeframe | Weight | Why |
 |---|---|---|
 | Intraday (5m) | 30% | Shorter-term technical momentum |
 | Short-term (1d) | 40% | Daily timeframe swing structure |
-| Long-term (1wk) | 30% | Weekly timeframe broader trend |
+| Long-term (1d) | 30% | Daily broader trend and swing structure (2y) |
 
 **Coverage:**
 - `3/3` — All three timeframes fetched and scored successfully.

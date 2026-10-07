@@ -115,7 +115,7 @@ if __name__ == "__main__":
                 "Controls which time window the scanner and coil detector operate on.\n\n"
                 "• **Intraday** — 5-minute bars over 5 days. For intraday momentum and swing conditions.\n"
                 "• **Short** — Daily bars over 60 days. For short-term technical conditions.\n"
-                "• **Long** — Weekly bars over 2 years. For multi-week to multi-month trend context."
+                "• **Long** — Daily bars over 2 years (5–21 session swing opportunity; 3 setup archetypes)."
             ),
         )
 
