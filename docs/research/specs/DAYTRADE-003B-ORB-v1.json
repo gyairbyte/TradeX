@@ -29,6 +29,8 @@
       "series": "Swiss Finance Institute Research Paper No. 24-98",
       "ssrn_id": "4729284",
       "publication_year": 2024,
+      "reviewed_pdf_date": "2024-02-16",
+      "ssrn_revision_note": "SSRN posted February 2024, subsequently revised",
       "authority": "authoritative_for_published_strategy_rules"
     },
     "secondary_corroboration": [
@@ -81,6 +83,8 @@
       "NASDAQ"
     ],
     "source_universe_approx_count": 7000,
+    "source_crsp_survivorship_statement": "Source used CRSP to avoid survivorship bias, including delisted securities; approximately 7,000 U.S. equities on NYSE and Nasdaq (2016-2023). Primary paper does not state an explicit limitation to common stocks.",
+    "security_type_inclusion_status": "Unresolved mapping for TradeX: exact CRSP security-type inclusion/exclusion mapping (ADRs, REITs, closed-end funds, multiple share classes, etc.) to be determined in DAYTRADE-003C",
     "tradex_operational_adaptation_rule": "A smaller operational universe (such as top 1,000) would constitute a VARIANT requiring explicit Gary/ChatGPT approval and is not authorized here",
     "constituent_resolution_policy": "Point-in-time historical constituent membership, delistings, mergers, and ticker changes are data-feasibility requirements to be evaluated in DAYTRADE-003C"
   },
@@ -173,8 +177,7 @@
       "earliest_executable_time": "09:35:00 America/New_York",
       "opening_candle_self_touch_prohibited": true,
       "max_initiated_trades_per_symbol_per_session": 1,
-      "order_lifetime_interpretation": "Order remains active during regular trading session until filled or canceled at regular-session close",
-      "unresolved_cancellation_ambiguity": "Paper does not specify an intraday cutoff (such as 10:00); TradeX preserves this as an open source ambiguity"
+      "order_lifetime_interpretation": "Order remains active during regular trading session until filled or canceled at regular-session close (locked TradeX execution convention AMB-04)"
     },
     "stop_loss": {
       "long_stop_formula": "executed_entry_price - 0.10 * ATR14",
@@ -188,15 +191,15 @@
     "exit_rules": {
       "stop_hit_exit": "Exit immediately at stop execution price subject to execution model",
       "session_close_exit": "Close all open positions at end of regular trading session",
-      "one_minute_eod_convention": "Completed 15:59-16:00 bar close liquidation convention",
+      "one_minute_eod_convention": "Completed 15:59-16:00 bar close liquidation convention locked as TradeX execution rule (Option A; non-blocking)",
       "overnight_holds_permitted": false
     },
     "position_sizing": {
-      "source_published_language": "Initial capital $25,000; position sized so potential stop loss is approximately 1% of capital; maximum leverage 4x",
+      "source_published_language": "Each stock was sized so that if the stop were hit, the loss on the capital deployed for that position would be approximately 1%, subject to a 4x leverage constraint. Initial capital $25,000.",
       "initial_capital_usd": 25000.0,
-      "target_risk_pct_per_trade": 1.0,
+      "source_reported_deployed_capital_loss_pct": 1.0,
       "max_leverage_ratio": 4.0,
-      "unresolved_sizing_ambiguity": "Whether '1%' refers to total portfolio NAV per trade, static initial capital, or capital allocated to position; must be resolved before DAYTRADE-003C evaluator implementation"
+      "concurrent_portfolio_sizing_semantics": "Source does not detail mathematical portfolio NAV compounding or concurrent position margin allocation when multiple of the 20 setups trigger; preserved under AMB-03 for resolution in DAYTRADE-003C."
     }
   },
   "dates_and_splits": {
@@ -244,6 +247,8 @@
       "options_chain_flow",
       "news_sentiment_feeds"
     ],
+    "source_intraday_data_citation": "IQFeed regular-session intraday data, explicitly unadjusted for stock splits and dividends",
+    "source_universe_reference_citation": "CRSP survivorship-bias-free database (NYSE/Nasdaq, including delistings)",
     "session_calendar": "XNYS",
     "timezone": "America/New_York"
   },
@@ -256,8 +261,18 @@
     "corporate_actions_policy": "Consistent adjustment across daily and intraday series; split adjustments must not cause threshold distortion"
   },
   "execution_model": {
-    "stop_entry_gap_through": {
-      "rule": "For LONG stop at P: if next executable bar opens > P, fill at open; otherwise fill at P. For SHORT stop at P: if next bar opens < P, fill at open; otherwise fill at P.",
+    "stop_entry_trigger_and_fill": {
+      "long_stop_at_p": {
+        "step_1_open_trigger": "If bar.open >= P: fill at bar.open",
+        "step_2_intrabar_trigger": "Else if bar.high >= P: fill at P",
+        "step_3_no_fill": "Else: NO FILL (order remains active subject to locked order-lifetime rule)"
+      },
+      "short_stop_at_p": {
+        "step_1_open_trigger": "If bar.open <= P: fill at bar.open",
+        "step_2_intrabar_trigger": "Else if bar.low <= P: fill at P",
+        "step_3_no_fill": "Else: NO FILL (order remains active subject to locked order-lifetime rule)"
+      },
+      "equality_handling": "Uses >= and <= so that an opening print exactly at the stop level is executable",
       "label": "TRADEX_EXECUTION_RULE"
     },
     "stop_loss_gap_through": {
@@ -401,66 +416,80 @@
   "unresolved_source_ambiguities": [
     {
       "ambiguity_id": "AMB-01",
-      "topic": "Security-Type Universe Definition",
-      "description": "Paper specifies ~7,000 NYSE and Nasdaq stocks survivorship-bias-free, but does not explicitly document exclusions/inclusions for ADRs, REITs, ETFs, CEFs, or dual-class shares",
+      "topic": "CRSP Security-Type Universe Inclusion/Exclusion Mapping",
+      "classification": "MUST_RESOLVE_FOR_DATASET",
+      "source_explicit": "Approximately 7,000 U.S. equities, NYSE and Nasdaq, 2016-2023, survivorship-bias-free CRSP universe, delisted names included",
+      "still_unresolved_for_tradex": "Exact CRSP security-type mapping needed to reproduce the source universe: treatment of ADRs, REITs, closed-end funds, multiple share classes, and other security-type edge cases",
       "resolution_requirement": "MUST_RESOLVE_BEFORE_DAYTRADE-003C_DATASET_CONSTRUCTION"
     },
     {
       "ambiguity_id": "AMB-02",
-      "topic": "Exact ATR Smoothing Method",
+      "topic": "Exact Numerical ATR Smoothing Method",
+      "classification": "MUST_RESOLVE_FOR_EVALUATOR",
       "description": "Paper specifies 14-day ATR > $0.50 and 0.10 * ATR stop distance, but does not specify whether Wilder smoothing, exponential smoothing, or simple 14-day rolling mean was used",
       "proposed_tradex_convention": "Standard Wilder ATR14 on completed D-1 daily bars",
       "resolution_requirement": "MUST_RESOLVE_BEFORE_DAYTRADE-003C_EVALUATOR_IMPLEMENTATION"
     },
     {
       "ambiguity_id": "AMB-03",
-      "topic": "1% Position Risk Sizing Formula",
-      "description": "Paper mentions $25k capital, 4x leverage cap, and ~1% risk per trade based on stop distance, but does not explicitly state mathematical handling of concurrent positions, cash compounding, or margin consumption when up to 20 positions are open",
+      "topic": "Concurrent-Portfolio 1% Deployed Capital Risk Sizing Mathematics",
+      "classification": "MUST_RESOLVE_FOR_EVALUATOR",
+      "source_explicit": "Each stock sized so that if stop hit, loss on capital deployed for that position would be 1%, subject to 4x leverage constraint",
+      "still_unresolved_for_tradex": "Mathematical formula for portfolio NAV compounding, pro-rata scaling, and margin consumption when up to 20 concurrent trades are active",
       "resolution_requirement": "MUST_RESOLVE_BEFORE_DAYTRADE-003C_EVALUATOR_IMPLEMENTATION"
     },
     {
       "ambiguity_id": "AMB-04",
       "topic": "Stop-Entry Order Lifetime & Cancellation",
-      "description": "Paper implies entry stop orders remain active intraday until hit or EOD exit, but does not state an explicit time-of-day cancellation rule (e.g. cancel unfilled orders at 10:00 vs keep until 16:00)",
-      "resolution_requirement": "MUST_RESOLVE_BEFORE_DAYTRADE-003C_EVALUATOR_IMPLEMENTATION"
+      "classification": "LOCKED_TRADEX_EXECUTION_CONVENTION",
+      "description": "Paper implies entry stop orders remain active intraday until hit or EOD exit; does not define an earlier cutoff",
+      "locked_convention": "Stop order remains active from 09:35 ET until filled or session close (16:00 ET)",
+      "resolution_requirement": "RESOLVED_AS_LOCKED_TRADEX_EXECUTION_CONVENTION"
     },
     {
       "ambiguity_id": "AMB-05",
-      "topic": "Exact Intraday Data Resolution",
-      "description": "Paper describes 5-minute opening range and intraday trade management, but does not detail whether internal simulation executed against 1-minute bars, 5-minute bars, or tick feeds",
-      "resolution_requirement": "MUST_RESOLVE_BEFORE_DAYTRADE-003C_EVALUATOR_IMPLEMENTATION"
+      "topic": "Source Engine Intraday Bar Resolution",
+      "classification": "NON_BLOCKING_SOURCE_DIFFERENCE",
+      "description": "Source backtest resolution (1m vs 5m vs tick) is unknown, but non-blocking because TradeX explicitly evaluates against locked conservative 1-minute execution rules",
+      "resolution_requirement": "NON_BLOCKING_SOURCE_DIFFERENCE"
     },
     {
       "ambiguity_id": "AMB-06",
-      "topic": "Gap-Through Stop Fill Treatment",
-      "description": "Paper does not explicitly state how gap-through fills on entry or protective stop orders were handled in backtest execution",
-      "proposed_tradex_convention": "Conservative execution rule: fill at worse executable open",
-      "resolution_requirement": "MUST_RESOLVE_BEFORE_DAYTRADE-003C_EVALUATOR_IMPLEMENTATION"
+      "topic": "Stop-Entry & Stop-Loss Gap-Through Fill Treatment",
+      "classification": "LOCKED_TRADEX_EXECUTION_CONVENTION",
+      "description": "Handling of gap-through fills on stop-entry and stop-loss orders in discrete 1-minute bars",
+      "locked_convention": "Conservative 3-step conditional trigger rules: fill at worse open if gap-through occurs",
+      "resolution_requirement": "RESOLVED_AS_LOCKED_TRADEX_EXECUTION_CONVENTION"
     },
     {
       "ambiguity_id": "AMB-07",
-      "topic": "Same-Bar Entry and Stop Ambiguity",
-      "description": "Paper does not document the intrabar path assumption when both entry and stop price levels are touched within the same bar",
-      "proposed_tradex_convention": "Conservative worst-case assumption: entry triggered and stop hit",
-      "resolution_requirement": "MUST_RESOLVE_BEFORE_DAYTRADE-003C_EVALUATOR_IMPLEMENTATION"
+      "topic": "Same-Bar Entry and Stop Path Collision",
+      "classification": "LOCKED_TRADEX_EXECUTION_CONVENTION",
+      "description": "Intrabar path ambiguity when both entry and stop price levels are touched within the same 1-minute bar",
+      "locked_convention": "Conservative fail-closed assumption: entry triggered, stop hit in same bar; reported in same_bar_ambiguity_count",
+      "resolution_requirement": "RESOLVED_AS_LOCKED_TRADEX_EXECUTION_CONVENTION"
     },
     {
       "ambiguity_id": "AMB-08",
-      "topic": "EOD Liquidation Price Convention",
-      "description": "Paper specifies positions are liquidated at market close (4:00 PM), but does not state whether official closing print (MOC) or final 1-minute bar close (15:59-16:00) was used",
-      "proposed_tradex_convention": "Completed 15:59-16:00 bar close convention",
-      "resolution_requirement": "MUST_RESOLVE_BEFORE_DAYTRADE-003C_EVALUATOR_IMPLEMENTATION"
+      "topic": "Session-Close Liquidation Price Convention",
+      "classification": "LOCKED_TRADEX_EXECUTION_CONVENTION",
+      "description": "Paper specifies positions liquidated at market close (4:00 PM)",
+      "locked_convention": "Completed 15:59-16:00 1-minute bar close liquidation convention locked as TradeX execution rule (Option A; non-blocking)",
+      "resolution_requirement": "RESOLVED_AS_LOCKED_TRADEX_EXECUTION_CONVENTION"
     },
     {
       "ambiguity_id": "AMB-09",
-      "topic": "Commission Fee Structure & Minimums",
-      "description": "Paper cites $0.0035/share (Interactive Brokers tiered), but does not clarify whether IBKR minimum ticket fees ($0.35/order or $1.00/order) or exchange regulatory fees were modeled",
+      "topic": "Commission Fee Structure & Minimum Ticket Fees",
+      "classification": "MUST_RESOLVE_FOR_EVALUATOR",
+      "description": "Paper cites $0.0035/share (Interactive Brokers tiered); must determine whether IBKR ticket minimums ($0.35 or $1.00) materially affect small share positions in TradeX",
       "resolution_requirement": "MUST_RESOLVE_BEFORE_DAYTRADE-003C_EVALUATOR_IMPLEMENTATION"
     },
     {
       "ambiguity_id": "AMB-10",
-      "topic": "Corporate Action Adjustment Consistency",
-      "description": "Paper does not specify how cash dividends and stock splits were handled between daily historical reference bars and intraday execution bars",
+      "topic": "Corporate Action Adjustment Consistency Between Daily and Intraday Data",
+      "classification": "MUST_RESOLVE_FOR_DATASET",
+      "source_explicit": "Intraday stock data from IQFeed were unadjusted for stock splits and dividends",
+      "still_unresolved_for_tradex": "Exact daily-data adjustment convention for ATR and average-volume calculations (split-only vs total return in CRSP); how daily inputs and unadjusted intraday data were aligned across splits; and what deterministic TradeX convention reproduces internally consistent prices",
       "resolution_requirement": "MUST_RESOLVE_BEFORE_DAYTRADE-003C_DATASET_CONSTRUCTION"
     }
   ]

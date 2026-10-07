@@ -83,6 +83,8 @@ def test_source_citation_and_prior_evidence_period(spec: dict) -> None:
     assert paper["ssrn_id"] == "4729284"
     assert paper["publication_year"] == 2024
     assert paper["series"] == "Swiss Finance Institute Research Paper No. 24-98"
+    assert paper["reviewed_pdf_date"] == "2024-02-16"
+    assert "SSRN" in paper["ssrn_revision_note"]
 
     assert len(citation["secondary_corroboration"]) >= 2
     assert any("QuantConnect" in s["source"] for s in citation["secondary_corroboration"])
@@ -90,6 +92,33 @@ def test_source_citation_and_prior_evidence_period(spec: dict) -> None:
     evidence_period = spec["source_evidence_period"]
     assert evidence_period["start_date"] == "2016-01-01"
     assert evidence_period["end_date"] == "2023-12-31"
+
+
+def test_universe_contract_and_source_citations(spec: dict) -> None:
+    """Requirement: CRSP survivorship-free universe (~7,000) and unadjusted IQFeed intraday citations."""
+    u_contract = spec["universe_contract"]
+    assert u_contract["source_universe_approx_count"] == 7000
+    assert "CRSP" in u_contract["source_crsp_survivorship_statement"]
+    assert "delisted" in u_contract["source_crsp_survivorship_statement"].lower()
+    assert "common" not in u_contract["description"].lower()
+    assert "unresolved" in u_contract["security_type_inclusion_status"].lower()
+
+    d_contract = spec["data_contract"]
+    assert "IQFeed" in d_contract["source_intraday_data_citation"]
+    assert "unadjusted for stock splits and dividends" in d_contract["source_intraday_data_citation"]
+    assert "CRSP" in d_contract["source_universe_reference_citation"]
+
+
+def test_position_sizing_contract(spec: dict) -> None:
+    """Requirement: Position sizing reflects 1% loss on deployed capital per position and 4x leverage cap."""
+    sizing = spec["strategy_mechanics"]["position_sizing"]
+    assert sizing["source_reported_deployed_capital_loss_pct"] == 1.0
+    assert sizing["initial_capital_usd"] == 25000.0
+    assert sizing["max_leverage_ratio"] == 4.0
+    assert "target_risk_pct_per_trade" not in sizing
+    assert "capital deployed for that position" in sizing["source_published_language"]
+    assert "AMB-03" in sizing["concurrent_portfolio_sizing_semantics"]
+    assert "nav compounding" in sizing["concurrent_portfolio_sizing_semantics"].lower()
 
 
 def test_opening_range_duration_and_availability(spec: dict) -> None:
@@ -240,9 +269,31 @@ def test_validation_decision_gates(spec: dict) -> None:
 
 
 def test_execution_model_rules(spec: dict) -> None:
-    """Requirement: Execution model encodes gap-through, same-bar worst case, and immediate stop activation."""
+    """Requirement: Execution model encodes 3-step stop trigger, gap-through, same-bar worst case, and immediate stop activation."""
     model = spec["execution_model"]
-    assert "open" in model["stop_entry_gap_through"]["rule"].lower()
+
+    # 3-step conditional stop-entry trigger rules
+    triggers = model["stop_entry_trigger_and_fill"]
+    long_rule = triggers["long_stop_at_p"]
+    assert ">= P" in long_rule["step_1_open_trigger"]
+    assert "fill at bar.open" in long_rule["step_1_open_trigger"]
+    assert ">= P" in long_rule["step_2_intrabar_trigger"]
+    assert "fill at P" in long_rule["step_2_intrabar_trigger"]
+    assert "NO FILL" in long_rule["step_3_no_fill"]
+    assert "no fill" in long_rule["step_3_no_fill"].lower()
+
+    short_rule = triggers["short_stop_at_p"]
+    assert "<= P" in short_rule["step_1_open_trigger"]
+    assert "fill at bar.open" in short_rule["step_1_open_trigger"]
+    assert "<= P" in short_rule["step_2_intrabar_trigger"]
+    assert "fill at P" in short_rule["step_2_intrabar_trigger"]
+    assert "NO FILL" in short_rule["step_3_no_fill"]
+    assert "no fill" in short_rule["step_3_no_fill"].lower()
+
+    assert ">=" in triggers["equality_handling"]
+    assert "<=" in triggers["equality_handling"]
+    assert triggers["label"] == "TRADEX_EXECUTION_RULE"
+
     assert "worse" in model["stop_loss_gap_through"]["rule"].lower()
     assert model["same_bar_entry_and_stop"]["favorable_ordering_permitted"] is False
     assert model["same_bar_entry_and_stop"]["diagnostic_metric"] == "same_bar_ambiguity_count"
@@ -279,20 +330,45 @@ def test_parameter_fishing_prohibitions_explicit(spec: dict) -> None:
 
 
 def test_unresolved_source_ambiguities_registered(spec: dict) -> None:
-    """Requirement: Unresolved source ambiguities are explicitly cataloged with AMB identifiers."""
+    """Requirement: Unresolved source ambiguities are explicitly cataloged and categorized across 5 statuses."""
     ambiguities = spec["unresolved_source_ambiguities"]
-    assert len(ambiguities) >= 10
-    topics = [a["topic"].lower() for a in ambiguities]
-    assert any("universe" in t for t in topics)
-    assert any("atr smoothing" in t for t in topics)
-    assert any("sizing" in t for t in topics)
-    assert any("lifetime" in t or "cancellation" in t for t in topics)
-    assert any("resolution" in t for t in topics)
-    assert any("gap-through" in t for t in topics)
-    assert any("same-bar" in t for t in topics)
-    assert any("liquidation" in t or "eod" in t for t in topics)
-    assert any("commission" in t for t in topics)
-    assert any("corporate action" in t for t in topics)
+    assert len(ambiguities) == 10
+    amb_map = {a["ambiguity_id"]: a for a in ambiguities}
+
+    for i in range(1, 11):
+        assert f"AMB-{i:02d}" in amb_map
+
+    classifications = {a["classification"] for a in ambiguities}
+    expected_classes = {
+        "MUST_RESOLVE_FOR_DATASET",
+        "MUST_RESOLVE_FOR_EVALUATOR",
+        "LOCKED_TRADEX_EXECUTION_CONVENTION",
+        "NON_BLOCKING_SOURCE_DIFFERENCE",
+    }
+    assert classifications == expected_classes
+
+    # MUST_RESOLVE_FOR_DATASET: AMB-01, AMB-10
+    assert amb_map["AMB-01"]["classification"] == "MUST_RESOLVE_FOR_DATASET"
+    assert "CRSP" in amb_map["AMB-01"]["topic"] or "CRSP" in amb_map["AMB-01"]["source_explicit"]
+    assert amb_map["AMB-10"]["classification"] == "MUST_RESOLVE_FOR_DATASET"
+    assert "IQFeed" in amb_map["AMB-10"]["source_explicit"]
+
+    # MUST_RESOLVE_FOR_EVALUATOR: AMB-02, AMB-03, AMB-09
+    assert amb_map["AMB-02"]["classification"] == "MUST_RESOLVE_FOR_EVALUATOR"
+    assert amb_map["AMB-03"]["classification"] == "MUST_RESOLVE_FOR_EVALUATOR"
+    assert "capital deployed" in amb_map["AMB-03"]["source_explicit"].lower()
+    assert amb_map["AMB-09"]["classification"] == "MUST_RESOLVE_FOR_EVALUATOR"
+
+    # LOCKED_TRADEX_EXECUTION_CONVENTION: AMB-04, AMB-06, AMB-07, AMB-08
+    assert amb_map["AMB-04"]["classification"] == "LOCKED_TRADEX_EXECUTION_CONVENTION"
+    assert amb_map["AMB-06"]["classification"] == "LOCKED_TRADEX_EXECUTION_CONVENTION"
+    assert amb_map["AMB-07"]["classification"] == "LOCKED_TRADEX_EXECUTION_CONVENTION"
+    assert amb_map["AMB-08"]["classification"] == "LOCKED_TRADEX_EXECUTION_CONVENTION"
+    assert "Option A" in amb_map["AMB-08"]["locked_convention"]
+    assert "15:59-16:00" in amb_map["AMB-08"]["locked_convention"]
+
+    # NON_BLOCKING_SOURCE_DIFFERENCE: AMB-05
+    assert amb_map["AMB-05"]["classification"] == "NON_BLOCKING_SOURCE_DIFFERENCE"
 
 
 def test_no_tick_data_dependency(spec: dict) -> None:
@@ -305,10 +381,12 @@ def test_no_tick_data_dependency(spec: dict) -> None:
 
 
 def test_spec_hash_matches_human_readable_contract(md_content: str) -> None:
-    """Specification SHA-256 matches the hash recorded in DAYTRADE-003B-ORB.md."""
+    """Specification SHA-256 matches the canonical hash and the hash recorded in DAYTRADE-003B-ORB.md."""
+    canonical_hash = "62f5028c1b11a392aeb596c4e05b8c1f194cc5cec3af1a9406f4fe16c80460c0"
     actual_hash = _sha256(SPEC_PATH)
+    assert actual_hash == canonical_hash, f"Spec hash drifted: expected {canonical_hash}, got {actual_hash}"
     match = re.search(r"Spec JSON SHA-256:\*\* `([a-f0-9]{64})`", md_content)
     assert match is not None, "Spec JSON SHA-256 hash not found in DAYTRADE-003B-ORB.md"
-    assert match.group(1) == actual_hash, (
-        f"Hash mismatch: spec has {actual_hash}, markdown records {match.group(1)}"
+    assert match.group(1) == canonical_hash, (
+        f"Hash mismatch: spec has {canonical_hash}, markdown records {match.group(1)}"
     )

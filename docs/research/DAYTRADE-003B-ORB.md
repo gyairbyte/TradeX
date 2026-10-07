@@ -7,7 +7,7 @@
 **Classification:** Research-only preregistration  
 **Starting Base Commit SHA:** `b15015cb46adf5ceca707589455fc12fbca64c63`  
 **Machine-Readable Spec:** [`docs/research/specs/DAYTRADE-003B-ORB-v1.json`](specs/DAYTRADE-003B-ORB-v1.json)  
-**Spec JSON SHA-256:** `d8eaaabb0e05c31b465ce1d9a630eaab37f1a46f66a20fc5c3dc332b8ea21249`  
+**Spec JSON SHA-256:** `62f5028c1b11a392aeb596c4e05b8c1f194cc5cec3af1a9406f4fe16c80460c0`
 
 ---
 
@@ -35,7 +35,7 @@ The candidate strategy selected by Gary is the **5-minute Opening Range Breakout
 
 > **Carlo Zarattini, Andrea Barbon, Andrew Aziz**  
 > *"A Profitable Day Trading Strategy For The U.S. Equity Market"*  
-> Swiss Finance Institute Research Paper No. 24-98 / SSRN 4729284 (2024).
+> Swiss Finance Institute Research Paper No. 24-98 / SSRN 4729284 (Reviewed PDF Date: 2024-02-16; SSRN posted February 2024, subsequently revised).
 
 The core thesis of the paper is that applying standard Opening Range Breakout mechanics across the broad universe of liquid equities fails to deliver sustained alpha, but restricting execution exclusively to **"Stocks in Play"**—securities experiencing abnormal relative volume and heightened volatility driven by fresh catalysts—produces substantial, uncorrelated economic edge.
 
@@ -64,7 +64,9 @@ flowchart TD
 ```
 
 ### 2.1 Primary Source
-* **Citation:** Carlo Zarattini, Andrea Barbon, Andrew Aziz, *"A Profitable Day Trading Strategy For The U.S. Equity Market"*, Swiss Finance Institute Research Paper No. 24-98, SSRN 4729284 (2024).
+* **Citation:** Carlo Zarattini, Andrea Barbon, Andrew Aziz, *"A Profitable Day Trading Strategy For The U.S. Equity Market"*, Swiss Finance Institute Research Paper No. 24-98, SSRN 4729284.
+* **Reviewed PDF Date:** `2024-02-16`.
+* **SSRN Revision Note:** SSRN posted February 2024, subsequently revised.
 * **Role:** Authoritative source for all published screening, entry, sizing, stop-loss, and exit rules.
 
 ### 2.2 Secondary Corroboration
@@ -76,7 +78,7 @@ flowchart TD
 
 ### 2.3 Published Headline Results (Prior Literature Only)
 As reported by Zarattini et al. (2024) over the 2016-01-01 through 2023-12-31 sample period:
-* **Examined Universe:** >7,000 U.S. common equities listed on NYSE and Nasdaq (survivorship-bias-free database).
+* **Examined Universe:** Approximately 7,000 U.S. equities listed on NYSE and Nasdaq (2016–2023) using the CRSP survivorship-bias-free database, including delisted securities. The primary paper does not state an explicit limitation to common stocks.
 * **Portfolio Setup:** Top-20 Stocks in Play traded daily with 5-minute ORB.
 * **Cumulative Net Return:** +1,637% total net performance.
 * **Annualized Return / IRR:** 41.6%.
@@ -155,30 +157,35 @@ Immediately upon execution of an entry order:
 * **Intraday Stop Exit:** If the protective stop price is touched or penetrated during regular trading hours, the position is liquidated immediately subject to the execution model.
 * **End-of-Day (EOD) Exit:** If the protective stop is not triggered, the position is closed at the end of the regular trading session.
 * **Overnight Prohibition:** No position is held overnight under any circumstance.
-* **1-Minute Bar Convention:** In a 1-minute bar evaluator, the completed `15:59–16:00` bar close serves as the session liquidation convention.
+* **1-Minute Bar Convention:** Completed 15:59–16:00 bar close liquidation convention locked as TradeX execution rule (Option A; non-blocking; see AMB-08).
 
 ### 3.9 Position Sizing & Leverage
 * **Published Capital Base:** $\$25,000$ initial capital.
-* **Target Risk:** Each trade is sized so that the protective stop loss distance represents approximately **1%** of capital.
-$$\text{Shares} \approx \frac{0.01 \times \text{Capital}}{\text{Stop Distance}} = \frac{0.01 \times \text{Capital}}{0.10 \times \text{ATR}_{14}} = \frac{0.10 \times \text{Capital}}{\text{ATR}_{14}}$$
+* **Published Source Language:** Each stock was sized so that if the stop were hit, the loss on the capital deployed for that position would be approximately 1%, subject to a 4x leverage constraint.
+* **Deployed Capital Loss Target:** 1.0% loss on deployed capital for that position if stop hit (`source_reported_deployed_capital_loss_pct: 1.0`).
 * **Leverage Constraint:** Maximum portfolio leverage of **4×** intraday (consistent with FINRA Rule 4210 pattern day trader margin).
-* *(See Section 11 for unresolved position-risk semantics across concurrent positions).*
+* **Concurrent Portfolio Sizing Semantics:** The primary paper does not detail the mathematical formula for portfolio NAV compounding, pro-rata scaling, or margin allocation across concurrent open positions when multiple of the 20 candidate setups trigger. TradeX does not claim a portfolio NAV sizing formula. This mathematics is cataloged as `MUST_RESOLVE_FOR_EVALUATOR` under AMB-03 for resolution in `DAYTRADE-003C`.
 
 ---
 
 ## 4. Universe Contract & Data Feasibility
 
-The primary source examined approximately **7,000 U.S. equities** listed on NYSE and Nasdaq across 2016–2023 using a survivorship-bias-free database.
+The primary source examined approximately **7,000 U.S. equities** listed on NYSE and Nasdaq across 2016–2023 using the CRSP survivorship-bias-free database, including delisted securities. The primary paper does not state an explicit limitation to common stocks.
 
 TradeX locks the following universe contract:
-1. **Primary Research Target:** Point-in-time U.S.-listed NYSE and Nasdaq common stocks subject to the basic eligibility filters.
+1. **Primary Research Target:** Point-in-time U.S.-listed NYSE and Nasdaq equities consistent with Zarattini et al. (2024), subject to basic eligibility filters.
 2. **Anti-Drift Rule:** TradeX must **NOT** silently substitute a convenient subset—such as the Dow 30, S&P 500, ETF presets, or current top-1,000 liquid names—as the primary study.
-3. **Data-Feasibility Milestone:** Full point-in-time historical constituent reconstruction, delisting treatment, merger tracking, and corporate identifier mapping represent data-feasibility requirements to be scoped and verified in `DAYTRADE-003C`. If full ~7,000-stock point-in-time reconstruction proves cost-prohibitive, any smaller operational universe adaptation must be formally defined as a **VARIANT** and explicitly approved by Gary Yang and ChatGPT.
+3. **Data-Feasibility Milestone:** Full point-in-time historical constituent reconstruction, delisting treatment, merger tracking, and corporate identifier mapping represent data-feasibility requirements to be evaluated in `DAYTRADE-003C`. If full ~7,000-stock point-in-time reconstruction proves cost-prohibitive, any smaller operational universe adaptation must be formally defined as a **VARIANT** and explicitly approved by Gary Yang and ChatGPT.
+4. **Security-Type Mapping Status:** Exact CRSP security-type mapping needed to reproduce the source universe (treatment of ADRs, REITs, closed-end funds, multiple share classes, etc.) is preserved under AMB-01 as `MUST_RESOLVE_FOR_DATASET`.
 
 ### Primary Data Classes Required
 * Daily OHLCV (for ADV14 and ATR14 calculations);
 * Regular-session 1-minute OHLCV (09:30–16:00 ET for opening range, entry, and intraday tracking);
 * Point-in-time security/universe membership and corporate-actions reference data.
+
+### Source Data Citations
+* **Intraday Data:** IQFeed regular-session intraday data, explicitly unadjusted for stock splits and dividends in the primary source paper.
+* **Universe Reference:** CRSP survivorship-bias-free database (NYSE and Nasdaq equities, including delistings).
 
 ### Explicitly Excluded & Prohibited Data Classes
 To prevent infrastructure rabbit holes, the following data classes are **strictly excluded** from the historical research design:
@@ -221,12 +228,20 @@ timeline
 
 Modeling continuous intraday stop orders on discrete 1-minute OHLC bars introduces execution ambiguities. TradeX establishes conservative, fail-closed execution rules:
 
-### 6.1 Stop-Entry Gap-Through Rule
-* **Rule:** For a LONG stop-buy order at price $P$:
-  * If the next executable bar opens above $P$ ($\text{bar\_open} > P$), the order fills at $\text{bar\_open}$ (slippage taken), not $P$.
-  * If the bar opens $\le P$ and trades through $P$ ($\text{bar\_high} \ge P$), the order fills at $P$.
-  * Mirror logic applies to SHORT stop-sell orders.
-* **Classification:** `TRADEX_EXECUTION_RULE`. Prevents unrealistically favorable fills on opening breakouts.
+### 6.1 Stop-Entry Trigger and Fill Rules
+Continuous stop orders evaluated on discrete 1-minute bars follow a strict, deterministic 3-step conditional trigger rule using `>=` and `<=` so that opening prints exactly at the stop level are executable:
+
+* **For LONG stop-buy order at price $P$:**
+  * **Step 1 (Open Trigger):** If $\text{bar\_open} \ge P$: fill at $\text{bar\_open}$ (gap-through slippage taken).
+  * **Step 2 (Intrabar Trigger):** Else if $\text{bar\_high} \ge P$: fill at $P$.
+  * **Step 3 (No Fill):** Else (i.e. $\text{bar\_open} < P$ and $\text{bar\_high} < P$): **NO FILL** (order remains active subject to locked order-lifetime rule).
+
+* **For SHORT stop-sell order at price $P$:**
+  * **Step 1 (Open Trigger):** If $\text{bar\_open} \le P$: fill at $\text{bar\_open}$ (gap-through slippage taken).
+  * **Step 2 (Intrabar Trigger):** Else if $\text{bar\_low} \le P$: fill at $P$.
+  * **Step 3 (No Fill):** Else (i.e. $\text{bar\_open} > P$ and $\text{bar\_low} > P$): **NO FILL** (order remains active subject to locked order-lifetime rule).
+
+* **Classification:** `TRADEX_EXECUTION_RULE` / `LOCKED_TRADEX_EXECUTION_CONVENTION`. Prevents unrealistically favorable fills on opening breakouts and specifies explicit non-fill handling.
 
 ### 6.2 Stop-Loss Gap-Through Rule
 * **Rule:** If the market gaps beyond the protective stop loss level:
@@ -344,11 +359,14 @@ To protect against data mining and overfitting, the following actions are **stri
 
 ## 12. Source Audit Table
 
-Every material strategy rule is classified into one of four normative statuses:
+Every material strategy rule is classified into one of the normative statuses:
 * `SOURCE_EXPLICIT`: Directly defined and stated in Zarattini et al. (2024);
 * `SOURCE_INFERRED`: Strongly supported by the text and methodology of Zarattini et al. (2024);
 * `TRADEX_EXECUTION_RULE`: Added by TradeX to enforce conservative, reproducible execution;
-* `UNRESOLVED_SOURCE_AMBIGUITY`: Open question remaining in published methodology.
+* `LOCKED_TRADEX_EXECUTION_CONVENTION`: Preserved as a locked, reproducible TradeX execution convention;
+* `MUST_RESOLVE_FOR_DATASET`: Data-layer requirement to be resolved before dataset construction in DAYTRADE-003C;
+* `MUST_RESOLVE_FOR_EVALUATOR`: Engine-layer requirement to be resolved before evaluator implementation in DAYTRADE-003C;
+* `NON_BLOCKING_SOURCE_DIFFERENCE`: Documented divergence between source and TradeX design that does not block execution.
 
 | Rule Area | Exact Value / Formula | Source Type | Source Evidence | TradeX Interpretation | Status |
 |---|---|---|---|---|---|
@@ -364,76 +382,90 @@ Every material strategy rule is classified into one of four normative statuses:
 | **Tie-Breaker Rule** | Ticker ascending tie-break | TradeX Rule | Paper silent on RV ties | Deterministic secondary sort: alphabetical ticker | `TRADEX_EXECUTION_RULE` |
 | **Entry Order Type** | Stop-buy at OR_high / Stop-sell at OR_low | Primary Paper | Section 2.3 | Active at/after 09:35:00 ET; no self-touch fill | `SOURCE_EXPLICIT` |
 | **Max Trades per Symbol** | 1 initiated trade / symbol / session | Primary Paper | Section 2.3 | At most one ORB execution per symbol per day | `SOURCE_EXPLICIT` |
-| **Order Cancellation Timing** | Available until hit or session close | Inferred | Paper mentions no intraday cancellation | Stop order remains open during regular hours | `SOURCE_INFERRED` |
+| **Order Cancellation Timing** | Available until hit or session close | Inferred / TradeX | Paper mentions no earlier intraday cutoff | Stop order remains open 09:35–16:00 ET | `LOCKED_TRADEX_EXECUTION_CONVENTION` |
 | **Stop Loss Distance** | $0.10 \times \text{ATR}_{14}$ | Primary Paper | Section 2.4 | Entry $\mp (0.10 \times \text{ATR}_{14})$ | `SOURCE_EXPLICIT` |
 | **Profit Target** | None (Exit at market close) | Primary Paper | Section 2.4 | No profit target; hold until stop or EOD | `SOURCE_EXPLICIT` |
 | **Overnight Hold** | Strictly prohibited (0 overnight) | Primary Paper | Section 2.4 | Liquidate at regular session close (16:00 ET) | `SOURCE_EXPLICIT` |
 | **Initial Capital** | $\$25,000$ | Primary Paper | Section 3.1 | Baseline starting portfolio equity | `SOURCE_EXPLICIT` |
 | **Leverage Cap** | Maximum 4× | Primary Paper | Section 3.1 | FINRA pattern day trader intraday margin cap | `SOURCE_EXPLICIT` |
-| **Position Sizing Risk** | ~1% risk of capital per trade | Primary Paper | Section 3.1 | Risk $\approx 0.01 \times \text{Capital} / \text{Stop Distance}$ | `SOURCE_EXPLICIT` |
+| **Position Sizing Risk** | ~1% loss on deployed capital per position | Primary Paper | Section 3.1 | Sized so stop loss is 1% loss on deployed capital | `SOURCE_EXPLICIT` |
 | **Replication Commission** | $\$0.0035$ per share | Primary Paper | Section 3.2 | IBKR Pro tiered pricing model | `SOURCE_EXPLICIT` |
-| **Stop Gap-Through** | Fill at worse opening price | TradeX Rule | Paper silent on discrete bar gap | Prevents unrealistically favorable stop fills | `TRADEX_EXECUTION_RULE` |
-| **Same-Bar Entry & Stop** | Assume entry filled then stopped out | TradeX Rule | Paper silent on intrabar collision | Conservative worst-case fail closed | `TRADEX_EXECUTION_RULE` |
+| **Stop Trigger & Gap Fill** | 3-step conditional trigger; worse open on gap | TradeX Rule | Paper silent on discrete bar gap | Deterministic open, intrabar, or NO FILL | `LOCKED_TRADEX_EXECUTION_CONVENTION` |
+| **Same-Bar Entry & Stop** | Assume entry filled then stopped out | TradeX Rule | Paper silent on intrabar collision | Conservative worst-case fail closed | `LOCKED_TRADEX_EXECUTION_CONVENTION` |
 | **Stop Activation Timing** | Active immediately on entry | TradeX Rule | QuantConnect noted naive engine delay | Protective stop active in entry minute | `TRADEX_EXECUTION_RULE` |
-| **ATR Smoothing** | Wilder 14-day smoothing | TradeX Proposal | Paper says "14-day ATR" | Recommended conventional smoothing | `UNRESOLVED_SOURCE_AMBIGUITY` |
-| **Concurrent Capital Sizing**| Allocation across up to 20 trades | Primary Paper | Paper reports portfolio return | Formula when concurrent trades exceed margin | `UNRESOLVED_SOURCE_AMBIGUITY` |
+| **Session-Close Liquidation**| Completed 15:59–16:00 bar close (Option A) | TradeX Rule | Paper states close (4:00 PM) | Locked execution rule Option A | `LOCKED_TRADEX_EXECUTION_CONVENTION` |
+| **CRSP Universe Scope** | ~7,000 U.S. equities, delisted included | Primary Paper | CRSP survivorship-bias-free | Security-type inclusion/exclusion mapping needed | `MUST_RESOLVE_FOR_DATASET` |
+| **Intraday Data Adjustments**| IQFeed unadjusted for splits/dividends | Primary Paper | IQFeed regular-session data | Alignment with daily historical series needed | `MUST_RESOLVE_FOR_DATASET` |
+| **ATR Smoothing** | Wilder 14-day smoothing | TradeX Proposal | Paper says "14-day ATR" | Recommended conventional smoothing | `MUST_RESOLVE_FOR_EVALUATOR` |
+| **Concurrent Capital Sizing**| Allocation across up to 20 trades | Primary Paper | Paper reports portfolio return | Portfolio compounding & pro-rata margin math | `MUST_RESOLVE_FOR_EVALUATOR` |
+| **Commission Minimums** | Ticket minimum fees ($0.35 / $1.00) | TradeX Audit | Paper cites $0.0035/share | Impact on small share sizes to evaluate | `MUST_RESOLVE_FOR_EVALUATOR` |
+| **Source Engine Resolution** | 1m vs 5m vs tick engine resolution | Primary Paper | Paper silent on internal engine | Non-blocking; TradeX evaluates 1-minute rules | `NON_BLOCKING_SOURCE_DIFFERENCE` |
 
 ---
 
 ## 13. Source Ambiguity Register
 
-The following ambiguities remain after thorough review of Zarattini et al. (2024), Barbon's research page, and Melchin's replication. Each item is classified by whether it must be resolved prior to `DAYTRADE-003C`.
+The following ambiguities remain after thorough review of Zarattini et al. (2024), Barbon's research page, and Melchin's replication. Each item is classified by its normative role and resolution requirement:
 
-### AMB-01: Point-in-Time Security-Type Universe Inclusions/Exclusions
-* **Description:** The paper references ~7,000 common stocks listed on NYSE and Nasdaq using a survivorship-bias-free database. It does not explicitly catalog exclusions for ADRs, REITs, closed-end funds, or dual-class shares.
-* **Impact:** Material for universe construction.
+### AMB-01: CRSP Security-Type Universe Inclusion/Exclusion Mapping
+* **Classification:** `MUST_RESOLVE_FOR_DATASET`
+* **Source Explicit:** The paper explicitly analyzes approximately 7,000 U.S. equities on NYSE and Nasdaq across 2016–2023 from the CRSP survivorship-bias-free database, including delisted securities. The primary paper does not state an explicit limitation to common stocks.
+* **Still Unresolved for TradeX:** Exact CRSP security-type mapping needed to reproduce the source universe: treatment of ADRs, REITs, closed-end funds, multiple share classes, and other security-type edge cases.
 * **Resolution Requirement:** `MUST_RESOLVE_BEFORE_DAYTRADE-003C_DATASET_CONSTRUCTION`.
 
 ### AMB-02: Exact Numerical ATR Smoothing Method
+* **Classification:** `MUST_RESOLVE_FOR_EVALUATOR`
 * **Description:** The paper specifies a 14-day ATR filter ($> \$0.50$) and stop distance ($0.10 \times \text{ATR}_{14}$), but does not distinguish between Wilder's smoothing, exponential moving average, or simple rolling average.
 * **Impact:** Modest numerical variance on stop distance and candidate qualification.
 * **Proposed TradeX Convention:** Standard Wilder 14-day ATR on completed daily bars ($D-1$ and earlier).
 * **Resolution Requirement:** `MUST_RESOLVE_BEFORE_DAYTRADE-003C_EVALUATOR_IMPLEMENTATION`.
 
-### AMB-03: Mathematical Formulation of Concurrent 1% Position Risk Sizing
-* **Description:** With $\$25,000$ capital and up to 20 concurrent positions, risking 1% per trade ($\$250$) with a tight stop ($0.10 \times \text{ATR}$) can imply substantial share quantities that may test the 4× leverage cap ($4 \times \$25,000 = \$100,000$). The exact formula for pro-rata scaling or capital re-allocation across concurrent open positions is not explicitly detailed.
-* **Impact:** Material for portfolio equity curve generation and leverage utilization.
+### AMB-03: Concurrent-Portfolio 1% Deployed Capital Risk Sizing Mathematics
+* **Classification:** `MUST_RESOLVE_FOR_EVALUATOR`
+* **Source Explicit:** Each stock was sized so that if the stop were hit, the loss on the capital deployed for that position would be approximately 1%, subject to a 4x leverage constraint. Initial capital $25,000.
+* **Still Unresolved for TradeX:** The paper does not provide the exact mathematical formula for portfolio NAV compounding, pro-rata scaling, and margin consumption when multiple of the 20 candidate setups trigger concurrently. TradeX does not claim a portfolio NAV sizing formula.
 * **Resolution Requirement:** `MUST_RESOLVE_BEFORE_DAYTRADE-003C_EVALUATOR_IMPLEMENTATION`.
 
-### AMB-04: Stop-Entry Order Lifetime & Intraday Cancellation Timing
-* **Description:** The paper implies that stop entry orders remain valid throughout the regular session until triggered or market close. It does not define an earlier cutoff (e.g. 10:00 or 10:30 ET).
-* **Impact:** Substantial for trade trigger counts and late-day entries.
-* **TradeX Policy:** Maintain source faithfulness—orders remain open until filled or session close; do not arbitrarily introduce an earlier cutoff.
+### AMB-04: Stop-Entry Order Lifetime & Cancellation
+* **Classification:** `LOCKED_TRADEX_EXECUTION_CONVENTION`
+* **Description:** The paper implies that stop entry orders remain valid throughout the regular session until triggered or market close; it does not define an earlier cutoff.
+* **Locked Convention:** Stop order remains active from 09:35 ET until filled or session close (16:00 ET).
+* **Resolution Requirement:** `RESOLVED_AS_LOCKED_TRADEX_EXECUTION_CONVENTION`.
+
+### AMB-05: Source Engine Intraday Bar Resolution
+* **Classification:** `NON_BLOCKING_SOURCE_DIFFERENCE`
+* **Description:** The source backtest engine resolution (1-minute vs 5-minute vs tick) is unknown.
+* **Resolution:** Non-blocking difference because TradeX explicitly evaluates against locked conservative 1-minute execution rules.
+* **Resolution Requirement:** `NON_BLOCKING_SOURCE_DIFFERENCE`.
+
+### AMB-06: Stop-Entry & Stop-Loss Gap-Through Fill Treatment
+* **Classification:** `LOCKED_TRADEX_EXECUTION_CONVENTION`
+* **Description:** Handling of gap-through fills on stop-entry and stop-loss orders in discrete 1-minute bars.
+* **Locked Convention:** Conservative 3-step conditional trigger rules for entries (open, intrabar, or NO FILL) and fill at worse open if gap-through occurs on stops.
+* **Resolution Requirement:** `RESOLVED_AS_LOCKED_TRADEX_EXECUTION_CONVENTION`.
+
+### AMB-07: Same-Bar Entry and Stop Path Collision
+* **Classification:** `LOCKED_TRADEX_EXECUTION_CONVENTION`
+* **Description:** Intrabar path ambiguity when both entry and stop price levels are touched within the same 1-minute bar.
+* **Locked Convention:** Conservative fail-closed assumption: entry triggered, stop hit in same bar; reported in `same_bar_ambiguity_count`.
+* **Resolution Requirement:** `RESOLVED_AS_LOCKED_TRADEX_EXECUTION_CONVENTION`.
+
+### AMB-08: Session-Close Liquidation Price Convention
+* **Classification:** `LOCKED_TRADEX_EXECUTION_CONVENTION`
+* **Description:** The paper specifies positions liquidated at market close (4:00 PM), but does not distinguish between MOC cross and bar close.
+* **Locked Convention:** Completed 15:59–16:00 1-minute bar close liquidation convention locked as TradeX execution rule (Option A; non-blocking).
+* **Resolution Requirement:** `RESOLVED_AS_LOCKED_TRADEX_EXECUTION_CONVENTION`.
+
+### AMB-09: Commission Fee Structure & Minimum Ticket Fees
+* **Classification:** `MUST_RESOLVE_FOR_EVALUATOR`
+* **Description:** The paper cites $\$0.0035$ per share (matching IBKR tiered pricing), but does not clarify whether IBKR minimum ticket fees ($\$0.35$ or $\$1.00$ per order) or exchange regulatory fees were modeled.
+* **Impact:** Must determine whether IBKR ticket minimums materially affect small share positions in TradeX.
 * **Resolution Requirement:** `MUST_RESOLVE_BEFORE_DAYTRADE-003C_EVALUATOR_IMPLEMENTATION`.
 
-### AMB-05: Exact Intraday Bar Resolution of the Source Backtest Engine
-* **Description:** The paper states the strategy uses 5-minute opening ranges, but does not specify whether execution tracking was evaluated on 1-minute bars, 5-minute bars, or tick bars.
-* **Impact:** Influences same-bar ambiguity frequency and stop activation timing.
-* **Resolution Requirement:** `MUST_RESOLVE_BEFORE_DAYTRADE-003C_EVALUATOR_IMPLEMENTATION`.
-
-### AMB-06: Gap-Through Stop Execution Treatment in the Paper
-* **Description:** The paper does not explicitly detail whether backtest fills assumed exact stop prices or accounted for gap-through slippage.
-* **TradeX Stance:** Lock conservative gap-through rules (fill at worse executable open) in TradeX execution model.
-* **Resolution Requirement:** `MUST_RESOLVE_BEFORE_DAYTRADE-003C_EVALUATOR_IMPLEMENTATION`.
-
-### AMB-07: Same-Bar Entry and Stop Trigger Resolution
-* **Description:** The paper does not discuss intrabar path ambiguity when both entry and stop are touched in the same bar.
-* **TradeX Stance:** Lock conservative fail-closed rule (entry filled, stop hit).
-* **Resolution Requirement:** `MUST_RESOLVE_BEFORE_DAYTRADE-003C_EVALUATOR_IMPLEMENTATION`.
-
-### AMB-08: Exact Session-Close Liquidation Price Convention
-* **Description:** The paper specifies liquidation at 4:00 PM, but does not state whether it used the official closing cross (MOC) print or the final intraday bar close (15:59–16:00).
-* **Proposed TradeX Convention:** Completed 15:59–16:00 bar close liquidation convention.
-* **Resolution Requirement:** `MUST_RESOLVE_BEFORE_DAYTRADE-003C_EVALUATOR_IMPLEMENTATION`.
-
-### AMB-09: Commission Fee Structure & Minimum Ticket Costs
-* **Description:** The paper specifies $\$0.0035$ per share, matching IBKR tiered pricing, but does not clarify whether IBKR minimum ticket fees ($\$0.35$ or $\$1.00$ per order) or exchange fees were modeled.
-* **Impact:** Material on small share sizes.
-* **Resolution Requirement:** `MUST_RESOLVE_BEFORE_DAYTRADE-003C_EVALUATOR_IMPLEMENTATION`.
-
-### AMB-10: Corporate Actions Adjustment Consistency
-* **Description:** The paper does not detail whether daily ATR and volume filters used split-only or split-and-dividend adjusted series, nor how intraday bar prices were aligned with daily historical thresholds.
-* **Impact:** Critical for point-in-time calculation integrity.
+### AMB-10: Corporate Action Adjustment Consistency Between Daily and Intraday Data
+* **Classification:** `MUST_RESOLVE_FOR_DATASET`
+* **Source Explicit:** Intraday stock data from IQFeed were explicitly unadjusted for stock splits and dividends.
+* **Still Unresolved for TradeX:** Exact daily-data adjustment convention for ATR and average-volume calculations (split-only vs total return in CRSP); how daily inputs and unadjusted intraday data were aligned across splits; and what deterministic TradeX convention reproduces internally consistent prices.
 * **Resolution Requirement:** `MUST_RESOLVE_BEFORE_DAYTRADE-003C_DATASET_CONSTRUCTION`.
 
 ---
