@@ -570,7 +570,8 @@ def test_tracker_summary_and_remaining_work_are_consistent(tracker_text: str) ->
     assert "MVP-ARCH-001-R7-PIT-ACTIVATE-001:" not in remaining
     assert "MVP-ARCH-001-R7-PIT-ACTIVATE-001 " not in remaining
     assert "MVP-ARCH-001-R7-PIT-ACTIVATE-001-VERIFY" in remaining
-    assert "LONG-002C" in remaining
+    assert "LONG-MVP-002" in remaining
+    assert "LONG-002C" not in remaining
     assert "DAYTRADE-001" in remaining
     assert "LONG-002A" not in remaining
     assert "LONG-002B" not in remaining
@@ -582,15 +583,10 @@ def test_tracker_summary_and_remaining_work_are_consistent(tracker_text: str) ->
     assert "no production strategy was promoted" in tracker_text.lower()
     assert "steps 6–8 remain pending separate gary approval" in tracker_text.lower() or "steps 6-8 remain pending separate gary approval" in tracker_text.lower()
 
-    # The recommended work order states a separate Gary/ChatGPT decision is required and no next PR is already authorized.
-    assert "separate gary/chatgpt sequencing and approval decision" in work_order.lower()
-    assert "no next rollout implementation pr is currently authorized" in work_order.lower()
-    assert "LONG-002C" in work_order
+    # The recommended work order and PR order reflect the active LONG-MVP-001/002 roadmap.
+    assert "LONG-MVP-002" in work_order
     assert "DAYTRADE-001" in work_order
-    assert (
-        "no next implementation pr is currently authorized"
-        in pr_order.lower()
-    )
+    assert "LONG-MVP-001" in pr_order
     assert "long-002a-locked-research-contract" not in tracker_text.lower()
 
 
