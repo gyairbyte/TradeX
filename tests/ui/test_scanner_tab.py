@@ -937,6 +937,7 @@ def test_long_timeframe_results_table_renders_focus_list_and_extended_columns(sc
     )
 
     assert fake_st.dataframe.call_count == 1
+    rendered_df = fake_st.dataframe.call_args.args[0]
     df_kwargs = fake_st.dataframe.call_args.kwargs
     column_config = df_kwargs.get("column_config", {})
     assert "state" in column_config
@@ -947,6 +948,18 @@ def test_long_timeframe_results_table_renders_focus_list_and_extended_columns(sc
     assert "return_5" in column_config
     assert "return_20" in column_config
     assert "return_60" in column_config
+
+    # Proves 0.03 is presented as 3.00% semantics, not 0.03%, while preserving raw results
+    assert rendered_df["atr_pct"].iloc[0] == pytest.approx(3.0)
+    assert rendered_df["return_5"].iloc[0] == pytest.approx(2.0)
+    assert rendered_df["return_20"].iloc[0] == pytest.approx(8.0)
+    assert rendered_df["return_60"].iloc[0] == pytest.approx(15.0)
+    assert rep.results["atr_pct"].iloc[0] == pytest.approx(0.03)
+    assert rep.results["return_5"].iloc[0] == pytest.approx(0.02)
+    fake_st.column_config.NumberColumn.assert_any_call("ATR %", format="%.2f%%")
+    fake_st.column_config.NumberColumn.assert_any_call("5d Return", format="%.2f%%")
+    fake_st.column_config.NumberColumn.assert_any_call("20d Return", format="%.2f%%")
+    fake_st.column_config.NumberColumn.assert_any_call("60d Return", format="%.2f%%")
 
 
 def test_long_timeframe_drilldown_chart_includes_ema200(scanner_module, fake_st):

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -176,7 +177,12 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
             if timeframe == "long":
                 from tradex.screener.engine import build_long_focus_list
 
-                display_df = build_long_focus_list(results)
+                display_df = build_long_focus_list(results).copy()
+                pct_cols = ["atr_pct", "return_5", "return_20", "return_60"]
+                for col in pct_cols:
+                    if col in display_df.columns:
+                        display_df[col] = pd.to_numeric(display_df[col], errors="coerce") * 100.0
+
                 long_cols = [
                     c
                     for c in [
@@ -209,11 +215,11 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
                         "last_close": st.column_config.NumberColumn("Last Close", format="$%.2f"),
                         "trigger": st.column_config.TextColumn("Trigger", width="medium"),
                         "invalidation": st.column_config.TextColumn("Invalidation", width="medium"),
-                        "atr_pct": st.column_config.NumberColumn("ATR %", format="%.2f"),
+                        "atr_pct": st.column_config.NumberColumn("ATR %", format="%.2f%%"),
                         "volume_ratio": st.column_config.NumberColumn("Vol Ratio", format="%.2f"),
-                        "return_5": st.column_config.NumberColumn("5d Return", format="%.2f"),
-                        "return_20": st.column_config.NumberColumn("20d Return", format="%.2f"),
-                        "return_60": st.column_config.NumberColumn("60d Return", format="%.2f"),
+                        "return_5": st.column_config.NumberColumn("5d Return", format="%.2f%%"),
+                        "return_20": st.column_config.NumberColumn("20d Return", format="%.2f%%"),
+                        "return_60": st.column_config.NumberColumn("60d Return", format="%.2f%%"),
                         "days_until_earnings": st.column_config.NumberColumn(
                             "Earnings In",
                             format="%d d",

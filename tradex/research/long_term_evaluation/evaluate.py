@@ -331,8 +331,8 @@ def _score_vectorized(
 
 
 def _score_bar(weekly: pd.DataFrame, i: int, spec: LongTermStudySpec) -> tuple[float, list[str]]:
-    """Direct production-scorer parity helper for a single bar."""
-    result = long_term.score(weekly.iloc[: i + 1], weights=spec.weights)
+    """Direct frozen legacy-scorer parity helper for a single bar."""
+    result = long_term.legacy_score(weekly.iloc[: i + 1], weights=spec.weights)
     return float(result["score"]), list(result["reasons"])
 
 

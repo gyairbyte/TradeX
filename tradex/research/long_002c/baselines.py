@@ -17,7 +17,7 @@ from tradex.research.long_002c.models import (
     OutcomeLabelRecord,
 )
 from tradex.signals.indicators import add_indicators
-from tradex.signals.long_term import score
+from tradex.signals.long_term import legacy_score
 from tradex.signals.weights import LongWeights
 
 
@@ -60,9 +60,9 @@ def compute_simple_momentum_series(
 
 
 def compute_legacy_tradex_score(history_df: pd.DataFrame, weights: LongWeights | None = None) -> float:
-    """Run existing TradeX long-term scorer with fresh repository defaults (no saved weights)."""
+    """Run frozen legacy TradeX long-term scorer with fresh repository defaults (no saved weights)."""
     effective_weights = weights if weights is not None else LongWeights()
-    result = score(history_df, weights=effective_weights)
+    result = legacy_score(history_df, weights=effective_weights)
     return float(result.get("score", 0.0))
 
 
