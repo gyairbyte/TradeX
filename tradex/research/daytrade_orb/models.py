@@ -1,6 +1,7 @@
 """Typed immutable domain models for the deterministic research-only ORB evaluator."""
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import Enum
@@ -70,6 +71,15 @@ class DailyBar:
         if not self.symbol or not self.symbol.strip():
             raise DataIntegrityError("DailyBar symbol must be a non-empty string")
         object.__setattr__(self, "symbol", self.symbol.strip().upper())
+        for name, val in (
+            ("open", self.open),
+            ("high", self.high),
+            ("low", self.low),
+            ("close", self.close),
+            ("volume", self.volume),
+        ):
+            if isinstance(val, bool) or not isinstance(val, (int, float)) or not math.isfinite(val):
+                raise DataIntegrityError(f"DailyBar {name} must be a finite number for {self.symbol}: {val}")
         if self.open <= 0 or self.high <= 0 or self.low <= 0 or self.close <= 0:
             raise DataIntegrityError(
                 f"DailyBar prices must be strictly positive for {self.symbol} on {self.session_date}: "
@@ -115,6 +125,15 @@ class MinuteBar:
             raise DataIntegrityError(
                 f"MinuteBar New York date {ny_date} does not match session_date {self.session_date} for {self.symbol}"
             )
+        for name, val in (
+            ("open", self.open),
+            ("high", self.high),
+            ("low", self.low),
+            ("close", self.close),
+            ("volume", self.volume),
+        ):
+            if isinstance(val, bool) or not isinstance(val, (int, float)) or not math.isfinite(val):
+                raise DataIntegrityError(f"MinuteBar {name} must be a finite number for {self.symbol}: {val}")
         if self.open <= 0 or self.high <= 0 or self.low <= 0 or self.close <= 0:
             raise DataIntegrityError(
                 f"MinuteBar prices must be strictly positive for {self.symbol} at {self.timestamp}: "
@@ -148,11 +167,14 @@ class OpeningRangeVolumeObservation:
                 "OpeningRangeVolumeObservation symbol must be a non-empty string"
             )
         object.__setattr__(self, "symbol", self.symbol.strip().upper())
+        if isinstance(self.volume, bool) or not isinstance(self.volume, (int, float)) or not math.isfinite(self.volume):
+            raise DataIntegrityError(
+                f"OpeningRangeVolumeObservation volume must be a finite number for {self.symbol}: {self.volume}"
+            )
         if self.volume < 0:
             raise DataIntegrityError(
                 f"OpeningRangeVolumeObservation volume must be non-negative for {self.symbol}: {self.volume}"
             )
-
 
 
 @dataclass(frozen=True)
@@ -164,6 +186,11 @@ class UniverseMember:
     active_on_date: bool
     security_type: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not self.symbol or not self.symbol.strip():
+            raise DataIntegrityError("UniverseMember symbol must be a non-empty string")
+        object.__setattr__(self, "symbol", self.symbol.strip().upper())
 
 
 @dataclass(frozen=True)
@@ -179,6 +206,26 @@ class OpeningRange:
     or_volume: float
     direction: Direction
     stop_level: float | None
+
+    def __post_init__(self) -> None:
+        if not self.symbol or not self.symbol.strip():
+            raise DataIntegrityError("OpeningRange symbol must be a non-empty string")
+        object.__setattr__(self, "symbol", self.symbol.strip().upper())
+        for name, val in (
+            ("or_open", self.or_open),
+            ("or_high", self.or_high),
+            ("or_low", self.or_low),
+            ("or_close", self.or_close),
+            ("or_volume", self.or_volume),
+        ):
+            if isinstance(val, bool) or not isinstance(val, (int, float)) or not math.isfinite(val):
+                raise DataIntegrityError(f"OpeningRange {name} must be finite for {self.symbol}: {val}")
+        if self.stop_level is not None and (
+            isinstance(self.stop_level, bool)
+            or not isinstance(self.stop_level, (int, float))
+            or not math.isfinite(self.stop_level)
+        ):
+            raise DataIntegrityError(f"OpeningRange stop_level must be finite for {self.symbol}: {self.stop_level}")
 
 
 @dataclass(frozen=True)
@@ -199,6 +246,21 @@ class Candidate:
     rv_passed: bool
     is_eligible: bool
     rejection_reasons: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.symbol or not self.symbol.strip():
+            raise DataIntegrityError("Candidate symbol must be a non-empty string")
+        object.__setattr__(self, "symbol", self.symbol.strip().upper())
+        for name, val in (
+            ("opening_price", self.opening_price),
+            ("adv14", self.adv14),
+            ("atr14", self.atr14),
+            ("or_volume", self.or_volume),
+            ("mean_prior_or_volume", self.mean_prior_or_volume),
+            ("relative_volume", self.relative_volume),
+        ):
+            if isinstance(val, bool) or not isinstance(val, (int, float)) or not math.isfinite(val):
+                raise DataIntegrityError(f"Candidate {name} must be finite for {self.symbol}: {val}")
 
 
 @dataclass(frozen=True)

@@ -4,6 +4,8 @@ from __future__ import annotations
 from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from tradex.market.hours import _calendar
 from tradex.research.daytrade_orb import (
     DailyBar,
@@ -203,3 +205,157 @@ def test_session_calendar_non_session_date_rejected() -> None:
     assert result.is_valid is False
     assert result.status == "non_computable"
     assert "not a valid xnys trading session" in result.error_reason.lower()
+
+
+def test_stage_a_daily_bars_symbol_mismatch_fails_closed() -> None:
+    """Requirement: AAPL key with MSFT daily bars fails closed as non_computable."""
+    evaluator = ORBEvaluator()
+    d = date(2025, 6, 2)
+    members, daily_b, prior_v, or_b, trade_b = _setup_synthetic_session_data(d, num_symbols=2)
+
+    # Corrupt daily bars for SYM01 with mismatched symbol 'MSFT'
+    bad_daily = [
+        DailyBar("MSFT", b.session_date, b.open, b.high, b.low, b.close, b.volume)
+        for b in daily_b["SYM01"]
+    ]
+    daily_b["SYM01"] = bad_daily
+
+    result = evaluator.evaluate_session(d, members, daily_b, prior_v, or_b, trade_b)
+    assert result.is_valid is False
+    assert result.status == "non_computable"
+    assert "daily bar symbol mismatch for sym01" in result.error_reason.lower()
+
+
+def test_stage_a_rv_observations_symbol_mismatch_fails_closed() -> None:
+    """Requirement: AAPL key with MSFT RV observations fails closed as non_computable."""
+    evaluator = ORBEvaluator()
+    d = date(2025, 6, 2)
+    members, daily_b, prior_v, or_b, trade_b = _setup_synthetic_session_data(d, num_symbols=2)
+
+    # Corrupt RV observations for SYM01 with mismatched symbol 'MSFT'
+    bad_rv = [
+        OpeningRangeVolumeObservation("MSFT", obs.session_date, obs.volume)
+        for obs in prior_v["SYM01"]
+    ]
+    prior_v["SYM01"] = bad_rv
+
+    result = evaluator.evaluate_session(d, members, daily_b, prior_v, or_b, trade_b)
+    assert result.is_valid is False
+    assert result.status == "non_computable"
+    assert "prior or volume observation symbol mismatch for sym01" in result.error_reason.lower()
+
+
+def test_stage_a_opening_bars_symbol_mismatch_fails_closed() -> None:
+    """Requirement: AAPL key with MSFT opening range bars fails closed as non_computable."""
+    evaluator = ORBEvaluator()
+    d = date(2025, 6, 2)
+    members, daily_b, prior_v, or_b, trade_b = _setup_synthetic_session_data(d, num_symbols=2)
+
+    # Corrupt opening minute bars for SYM01 with mismatched symbol 'MSFT'
+    bad_or = [
+        MinuteBar("MSFT", b.timestamp, b.session_date, b.open, b.high, b.low, b.close, b.volume)
+        for b in or_b["SYM01"]
+    ]
+    or_b["SYM01"] = bad_or
+
+    result = evaluator.evaluate_session(d, members, daily_b, prior_v, or_b, trade_b)
+    assert result.is_valid is False
+    assert result.status == "non_computable"
+    assert "opening range bar symbol mismatch for sym01" in result.error_reason.lower()
+
+
+def test_duplicate_active_universe_symbols_fails_closed() -> None:
+    """Requirement: Duplicate active symbols in universe fail closed as non_computable."""
+    evaluator = ORBEvaluator()
+    d = date(2025, 6, 2)
+    members, daily_b, prior_v, or_b, trade_b = _setup_synthetic_session_data(d, num_symbols=2)
+
+    # Add duplicate active member for SYM01 (one uppercase, one lowercase/whitespace)
+    dup_member = UniverseMember("  sym01  ", "NYSE", True)
+    members.append(dup_member)
+
+    result = evaluator.evaluate_session(d, members, daily_b, prior_v, or_b, trade_b)
+    assert result.is_valid is False
+    assert result.status == "non_computable"
+    assert "duplicate active universe symbol detected" in result.error_reason.lower()
+
+
+def test_symbol_normalization_canonical_matching() -> None:
+    """Requirement: Casing and whitespace variations match canonically."""
+    evaluator = ORBEvaluator()
+    d = date(2025, 6, 2)
+    members, daily_b, prior_v, or_b, trade_b = _setup_synthetic_session_data(d, num_symbols=1)
+
+    # Use lowercase keys in input mappings
+    daily_b["sym01"] = daily_b.pop("SYM01")
+    prior_v["sym01"] = prior_v.pop("SYM01")
+    or_b["sym01"] = or_b.pop("SYM01")
+    trade_b["sym01"] = trade_b.pop("SYM01")
+
+    result = evaluator.evaluate_session(d, members, daily_b, prior_v, or_b, trade_b)
+    assert result.is_valid is True
+    assert result.candidate_count == 1
+    assert result.qualified_candidate_count == 1
+    assert result.top_20_count == 1
+
+
+def test_top_20_audit_counts_more_than_20_qualified() -> None:
+    """Requirement: When >20 candidates qualify (e.g. 25), candidate_count=25, qualified=25, top_20_count=20."""
+    evaluator = ORBEvaluator(top_n=20)
+    d = date(2025, 6, 2)
+    members, daily_b, prior_v, or_b, trade_b = _setup_synthetic_session_data(d, num_symbols=25)
+
+    result = evaluator.evaluate_session(d, members, daily_b, prior_v, or_b, trade_b)
+    assert result.is_valid is True
+    assert result.candidate_count == 25
+    assert result.qualified_candidate_count == 25
+    assert result.top_20_count == 20
+    # Exactly 20 orders placed (one per selected candidate)
+    assert result.orders_placed_count == 20
+
+
+def test_top_20_audit_counts_fewer_than_20_qualified() -> None:
+    """Requirement: When <20 candidates qualify (e.g. 8 of 25), candidate_count=25, qualified=8, top_20_count=8."""
+    evaluator = ORBEvaluator(top_n=20)
+    d = date(2025, 6, 2)
+    members, daily_b, prior_v, or_b, trade_b = _setup_synthetic_session_data(d, num_symbols=25)
+
+    # Make symbols 9..25 fail the price filter by setting opening price to $4.00
+    for i in range(9, 26):
+        sym = f"SYM{i:02d}"
+        new_or = []
+        for b in or_b[sym]:
+            new_or.append(MinuteBar(b.symbol, b.timestamp, b.session_date, 4.0, 4.5, 3.8, 4.2, b.volume))
+        or_b[sym] = new_or
+
+    result = evaluator.evaluate_session(d, members, daily_b, prior_v, or_b, trade_b)
+    assert result.is_valid is True
+    assert result.candidate_count == 25
+    assert result.qualified_candidate_count == 8
+    assert result.top_20_count == 8
+    assert result.orders_placed_count == 8
+
+
+def test_non_finite_stage_a_indicator_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Requirement: Non-finite derived Stage-A value fails closed as non_computable and does not become normal rejection."""
+    evaluator = ORBEvaluator()
+    d = date(2025, 6, 2)
+    members, daily_b, prior_v, or_b, trade_b = _setup_synthetic_session_data(d, num_symbols=2)
+
+    # Monkeypatch compute_adv14 to return NaN
+    monkeypatch.setattr("tradex.research.daytrade_orb.evaluator.compute_adv14", lambda bars, s_date: float("nan"))
+    result = evaluator.evaluate_session(d, members, daily_b, prior_v, or_b, trade_b)
+    assert result.is_valid is False
+    assert result.status == "non_computable"
+    assert "adv14 non-computable" in result.error_reason.lower()
+
+    # Monkeypatch compute_relative_volume to return NaN
+    monkeypatch.undo()
+    monkeypatch.setattr(
+        "tradex.research.daytrade_orb.evaluator.compute_relative_volume",
+        lambda prior_observations, current_or_volume, target_session: (float("nan"), 25000.0),
+    )
+    result = evaluator.evaluate_session(d, members, daily_b, prior_v, or_b, trade_b)
+    assert result.is_valid is False
+    assert result.status == "non_computable"
+    assert "rv non-computable" in result.error_reason.lower()

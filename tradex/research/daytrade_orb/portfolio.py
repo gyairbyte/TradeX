@@ -77,14 +77,16 @@ def simulate_session_portfolio(
         if qualified_candidate_count is not None
         else len([rc for rc in ranked_candidates if rc.candidate.is_eligible])
     )
+    selected_top_20_count = len(ranked_candidates)
 
     # Index minute bars by (symbol, local_time) and strictly validate bar integrity
     bars_by_symbol_time: dict[str, dict[time, MinuteBar]] = {}
 
     for sym, bars in minute_bars_by_symbol.items():
+        canonical_sym = sym.strip().upper()
         time_map: dict[time, MinuteBar] = {}
         for b in bars:
-            if b.symbol != sym:
+            if b.symbol.strip().upper() != canonical_sym:
                 return SessionResult(
                     session_date=session_date,
                     is_valid=False,
@@ -92,7 +94,7 @@ def simulate_session_portfolio(
                     error_reason=f"Bar symbol mismatch for {sym}: bar has symbol {b.symbol}",
                     candidate_count=total_candidates,
                     qualified_candidate_count=qualified_candidates_count,
-                    top_20_count=total_candidates,
+                    top_20_count=selected_top_20_count,
                     orders_placed_count=0,
                     trades_triggered_count=0,
                     capacity_rejected_count=0,
@@ -119,7 +121,7 @@ def simulate_session_portfolio(
                     error_reason=f"Bar session_date mismatch for {sym}: expected {session_date}, got {b.session_date}",
                     candidate_count=total_candidates,
                     qualified_candidate_count=qualified_candidates_count,
-                    top_20_count=total_candidates,
+                    top_20_count=selected_top_20_count,
                     orders_placed_count=0,
                     trades_triggered_count=0,
                     capacity_rejected_count=0,
@@ -147,7 +149,7 @@ def simulate_session_portfolio(
                     error_reason=f"Bar timestamp NY date mismatch for {sym}: expected {session_date}, got {ny_dt.date()}",
                     candidate_count=total_candidates,
                     qualified_candidate_count=qualified_candidates_count,
-                    top_20_count=total_candidates,
+                    top_20_count=selected_top_20_count,
                     orders_placed_count=0,
                     trades_triggered_count=0,
                     capacity_rejected_count=0,
@@ -177,7 +179,7 @@ def simulate_session_portfolio(
                         error_reason=f"Duplicate minute bar timestamp {lt.strftime('%H:%M')} for symbol {sym}",
                         candidate_count=total_candidates,
                         qualified_candidate_count=qualified_candidates_count,
-                        top_20_count=total_candidates,
+                        top_20_count=selected_top_20_count,
                         orders_placed_count=0,
                         trades_triggered_count=0,
                         capacity_rejected_count=0,
@@ -197,7 +199,34 @@ def simulate_session_portfolio(
                         same_bar_ambiguity_count=0,
                     )
                 time_map[lt] = b
-        bars_by_symbol_time[sym] = time_map
+        if canonical_sym in bars_by_symbol_time:
+            return SessionResult(
+                session_date=session_date,
+                is_valid=False,
+                status="non_computable",
+                error_reason=f"Duplicate symbol entries in trade path bars for {canonical_sym}",
+                candidate_count=total_candidates,
+                qualified_candidate_count=qualified_candidates_count,
+                top_20_count=selected_top_20_count,
+                orders_placed_count=0,
+                trades_triggered_count=0,
+                capacity_rejected_count=0,
+                trades=(),
+                session_start_equity=session_start_equity,
+                session_end_equity_a=session_start_equity,
+                session_end_equity_b=session_start_equity,
+                session_end_equity_c=session_start_equity,
+                session_net_pnl_a=0.0,
+                session_net_pnl_b=0.0,
+                session_net_pnl_c=0.0,
+                session_net_return_a=0.0,
+                session_net_return_b=0.0,
+                session_net_return_c=0.0,
+                max_gross_exposure=0.0,
+                max_leverage_used=0.0,
+                same_bar_ambiguity_count=0,
+            )
+        bars_by_symbol_time[canonical_sym] = time_map
 
     # Active tracking
     active_positions: dict[str, _ActivePosition] = {}
@@ -236,7 +265,7 @@ def simulate_session_portfolio(
                     error_reason=f"Missing trade-path bar for open position {sym} at {curr_time.strftime('%H:%M')}",
                     candidate_count=total_candidates,
                     qualified_candidate_count=qualified_candidates_count,
-                    top_20_count=total_candidates,
+                    top_20_count=selected_top_20_count,
                     orders_placed_count=orders_placed_count,
                     trades_triggered_count=len(completed_trades),
                     capacity_rejected_count=capacity_rejected_count,
@@ -267,7 +296,7 @@ def simulate_session_portfolio(
                     error_reason=f"Missing trade-path bar for pending order {sym} at {curr_time.strftime('%H:%M')}",
                     candidate_count=total_candidates,
                     qualified_candidate_count=qualified_candidates_count,
-                    top_20_count=total_candidates,
+                    top_20_count=selected_top_20_count,
                     orders_placed_count=orders_placed_count,
                     trades_triggered_count=len(completed_trades),
                     capacity_rejected_count=capacity_rejected_count,
@@ -481,7 +510,7 @@ def simulate_session_portfolio(
         error_reason=None,
         candidate_count=total_candidates,
         qualified_candidate_count=qualified_candidates_count,
-        top_20_count=total_candidates,
+        top_20_count=selected_top_20_count,
         orders_placed_count=orders_placed_count,
         trades_triggered_count=len(completed_trades),
         capacity_rejected_count=capacity_rejected_count,

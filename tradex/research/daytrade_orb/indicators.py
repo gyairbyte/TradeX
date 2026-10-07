@@ -5,6 +5,7 @@ and Relative Volume uses exactly the immediately preceding 14 completed XNYS ses
 """
 from __future__ import annotations
 
+import math
 from datetime import date
 
 from tradex.market.hours import _calendar
@@ -75,7 +76,8 @@ def compute_adv14(
         window_bars.append(bar)
 
     total_volume = sum(b.volume for b in window_bars)
-    return float(total_volume / float(lookback))
+    adv = float(total_volume / float(lookback))
+    return adv if math.isfinite(adv) else None
 
 
 def compute_atr14_wilder(
@@ -161,7 +163,8 @@ def compute_atr14_wilder(
     for tr in true_ranges[lookback:]:
         atr = ((atr * float(lookback - 1)) + tr) / float(lookback)
 
-    return float(atr)
+    atr_val = float(atr)
+    return atr_val if math.isfinite(atr_val) else None
 
 
 def compute_relative_volume(
@@ -188,7 +191,12 @@ def compute_relative_volume(
     except ValueError:
         return None, None
 
-    if current_or_volume < 0:
+    if (
+        isinstance(current_or_volume, bool)
+        or not isinstance(current_or_volume, (int, float))
+        or not math.isfinite(current_or_volume)
+        or current_or_volume < 0
+    ):
         return None, None
 
     # Index observations by session_date with duplicate check
@@ -205,13 +213,15 @@ def compute_relative_volume(
     prior_volumes: list[float] = []
     for dt in expected_dates:
         obs = obs_by_date.get(dt)
-        if obs is None or obs.volume < 0:
+        if obs is None or obs.volume < 0 or not math.isfinite(obs.volume):
             return None, None
         prior_volumes.append(obs.volume)
 
     mean_prior = sum(prior_volumes) / float(lookback)
-    if mean_prior <= 0:
+    if not math.isfinite(mean_prior) or mean_prior <= 0:
         return None, None
 
     rv = float(current_or_volume / mean_prior)
+    if not math.isfinite(rv):
+        return None, None
     return rv, float(mean_prior)

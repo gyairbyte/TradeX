@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 from .models import (
     Candidate,
+    DataIntegrityError,
     Direction,
     MinuteBar,
     OpeningRange,
@@ -63,6 +64,12 @@ def evaluate_opening_range(minute_bars: list[MinuteBar]) -> OpeningRange | None:
     or_close = sorted_bars[-1].close
     or_volume = sum(b.volume for b in sorted_bars)
 
+    if not all(
+        not isinstance(v, bool) and isinstance(v, (int, float)) and math.isfinite(v)
+        for v in (or_open, or_high, or_low, or_close, or_volume)
+    ):
+        return None
+
     if or_close > or_open:
         direction = Direction.LONG
         stop_level = or_high
@@ -100,6 +107,20 @@ def evaluate_candidate(
     rv_min: float = 1.0,
 ) -> Candidate:
     """Evaluate eligibility filters for a candidate symbol at 09:35 ET."""
+    # Check all numeric indicator inputs for finiteness: non-finite values must fail closed and NEVER be treated as technical filter failure
+    for name, val in [
+        ("opening_price", opening_range.or_open),
+        ("or_volume", opening_range.or_volume),
+        ("adv14", adv14),
+        ("atr14", atr14),
+        ("mean_prior_or_volume", mean_prior_or_volume),
+        ("rv", rv),
+    ]:
+        if val is not None and (
+            isinstance(val, bool) or not isinstance(val, (int, float)) or not math.isfinite(val)
+        ):
+            raise DataIntegrityError(f"Candidate {name} must be finite for {symbol}: {val}")
+
     rejection_reasons: list[str] = []
 
     opening_price = opening_range.or_open
