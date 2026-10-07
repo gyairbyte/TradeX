@@ -1,0 +1,280 @@
+{
+  "schema_version": "1.0",
+  "task_id": "DAYTRADE-003C-ORB-EVALUATOR-001",
+  "resolution_version": 1,
+  "classification": "research_only_implementation_readiness",
+  "status": "resolved_pre_data_access",
+  "upstream_task_id": "DAYTRADE-003B-ORB-PREREG-001",
+  "upstream_strategy_id": "DAYTRADE-003B-ORB-SIP5M",
+  "upstream_spec_path": "docs/research/specs/DAYTRADE-003B-ORB-v1.json",
+  "upstream_spec_sha256": "62f5028c1b11a392aeb596c4e05b8c1f194cc5cec3af1a9406f4fe16c80460c0",
+  "base_commit_sha": "61639a49c50da9fe626754bbc0980070dbaf8a3c",
+  "governance": {
+    "research_evaluator_authorized": true,
+    "synthetic_verification_authorized": true,
+    "real_market_data_acquisition_authorized": false,
+    "provider_api_calls_authorized": false,
+    "private_dataset_access_authorized": false,
+    "development_execution_authorized": false,
+    "validation_execution_authorized": false,
+    "holdout_access_authorized": false,
+    "production_promotion_authorized": false,
+    "approved_production_strategies_empty": true
+  },
+  "source_fidelity_corrections": {
+    "relative_volume_lookback": {
+      "correction_id": "CORR-003C-RV-LOOKBACK",
+      "classification": "SOURCE_FIDELITY_CORRECTION_PRE_DATA_ACCESS",
+      "topic": "Relative Volume Denominator Lookback Sessions",
+      "source_equation": "RV(D,j) = OpeningRangeVolume(D,j) / mean(OpeningRangeVolume(D-1,j), ..., OpeningRangeVolume(D-14,j))",
+      "source_paper_citation": "Zarattini, Barbon, Aziz (2024), SSRN 4729284",
+      "prior_003b_text": "mean(opening_range_volume(D-k, j)) over k=1..14 completed eligible sessions for j",
+      "corrected_003c_rule": "The denominator must use exactly the immediately preceding 14 completed regular trading sessions for the symbol. It does NOT condition on passing the $5 price filter, passing ADV, passing ATR, RV >= 1, being Top 20, or generating a trade.",
+      "lookback_calendar": "XNYS",
+      "exact_xnys_session_requirement": "The 14 lookback sessions must be exactly the immediately preceding 14 completed XNYS regular trading sessions (D-1 down through D-14). Gaps, missing sessions, or duplicate sessions fail closed. Older sessions may not replace missing sessions. Observation model: OpeningRangeVolumeObservation(symbol, session_date, volume).",
+      "missing_session_behavior": "FAIL_CLOSED: If any required prior opening-range observation in the preceding 14 completed sessions is missing, the symbol's RV is non-computable. Do not silently search further backward for 14 eligible sessions.",
+      "pre_data_access_audit": "No empirical market data has been accessed for DAYTRADE-003 before this correction."
+    }
+  },
+  "resolved_implementation_semantics": {
+    "amb_02_atr": {
+      "ambiguity_id": "AMB-02",
+      "classification": "LOCKED_TRADEX_IMPLEMENTATION_CONVENTION",
+      "topic": "ATR14 Smoothing Method",
+      "method": "wilder_atr14",
+      "lookback_calendar": "XNYS",
+      "formula": {
+        "true_range": "TR_t = max(high_t - low_t, abs(high_t - close_{t-1}), abs(low_t - close_{t-1}))",
+        "initial_atr14": "arithmetic mean of the first 14 True Range observations (requires 15 daily sessions)",
+        "subsequent_atr": "ATR_t = ((ATR_{t-1} * 13) + TR_t) / 14"
+      },
+      "evaluation_session_boundary": "For session D, the strategy may use only the ATR available through D-1. Session D prices must never enter its own ATR.",
+      "history_requirement": "Evaluator requires a contiguous sequence of completed XNYS trading sessions ending at D-1 with a minimum of 15 daily sessions to produce 14 True Range values. Missing XNYS sessions or duplicates in the sequence fail closed."
+    },
+    "amb_03_position_sizing_and_portfolio_leverage": {
+      "ambiguity_id": "AMB-03",
+      "classification": "SOURCE_LINKED_SIZING_METHOD_AND_TRADEX_PORTFOLIO_CONVENTION",
+      "topic": "Position Sizing and Portfolio Leverage Cap",
+      "source_paper_citation": "Zarattini & Aziz (2023), SSRN 4416622",
+      "account_equity_basis": "session_start_equity (A) for all 1% risk calculations and leverage ceiling during the session; intraday unrealized gains do not expand capacity; compounding occurs at session close: next_session_equity = session_start_equity + net_daily_PnL",
+      "risk_per_share_formula": "R = abs(entry_price - protective_stop) = 0.10 * ATR14",
+      "base_risk_shares_formula": "risk_shares = floor((A * 0.01) / R)",
+      "single_position_leverage_shares_formula": "leverage_shares = floor((4.0 * A) / P)",
+      "desired_shares_formula": "desired_shares = min(risk_shares, leverage_shares)",
+      "order_rejection_conditions": "Reject if R <= 0, P <= 0, or desired_shares <= 0",
+      "portfolio_gross_leverage_ceiling": 4.0,
+      "portfolio_gross_notional_cap": "4.0 * session_start_equity",
+      "available_gross_capacity_formula": "available_gross_capacity = 4.0 * session_start_equity - current_open_gross_notional",
+      "actual_shares_formula": "actual_shares = min(desired_shares, floor(available_gross_capacity / raw_entry_price))",
+      "capacity_rejection_action": "If actual_shares <= 0, record CAPACITY_REJECTED. No fractional shares.",
+      "same_timestamp_ordering": [
+        "higher_relative_volume_rank_first",
+        "ticker_ascending_tie_break"
+      ],
+      "capacity_recycling_rules": "When an existing position closes, its gross notional capacity becomes available for later timestamps. For a position opened and stopped within the SAME one-minute bar, do not recycle its capacity within that same timestamp; release capacity beginning with the next minute."
+    },
+    "amb_09_commission_structure": {
+      "ambiguity_id": "AMB-09",
+      "classification": "RESOLVED_FOR_V1",
+      "topic": "Commission Minimums and Per-Share Rate",
+      "rate_per_share_usd": 0.0035,
+      "applied_sides": [
+        "ENTRY",
+        "EXIT"
+      ],
+      "round_trip_formula": "2 * shares * 0.0035 (one entry fill and one exit fill = 0.0070 per share round-trip)",
+      "broker_ticket_minimum_usd": 0.0,
+      "exchange_rebates_modeled": false,
+      "justification": "Primary paper reports $0.0035/share per side and does not specify broker ticket minimums. Slippage scenarios B (2 bps) and C (5 bps) provide preregistered economic hurdles."
+    },
+    "amb_10_corporate_action_price_basis": {
+      "ambiguity_id": "AMB-10",
+      "classification": "LOCKED_TRADEX_DATA_CONVENTION",
+      "topic": "Corporate Action and Price Basis Consistency",
+      "daily_data_basis": "raw_unadjusted",
+      "intraday_data_basis": "raw_unadjusted",
+      "retrospective_split_adjustment": false,
+      "dividend_adjustment": false,
+      "justification": "Preserves point-in-time correctness, matches IQFeed unadjusted intraday convention in primary paper, and avoids mixing adjusted daily prices with raw intraday prices. Potential source-implementation difference disclosed."
+    },
+    "amb_01_universe_semantics": {
+      "ambiguity_id": "AMB-01",
+      "classification": "LOCKED_TRADEX_UNIVERSE_CONVENTION",
+      "topic": "Point-in-Time Universe Scope",
+      "target_universe_definition": "All point-in-time provider records in the stock/equity market whose primary exchange is NYSE or Nasdaq and which are active on the queried historical session date, including securities later delisted.",
+      "arbitrary_security_type_filtering": false,
+      "metadata_audit_requirement": "Preserve provider type and security classification codes in metadata for auditability.",
+      "first_candidate_provider_path": "Massive/Polygon /v3/reference/tickers with point-in-time active-as-of-date semantics."
+    },
+    "early_close_sessions": {
+      "convention_id": "CONV-003C-EARLY-CLOSE",
+      "classification": "LOCKED_TRADEX_SESSION_CONVENTION",
+      "topic": "Exchange Early-Close Session Handling",
+      "policy": "EXCLUDE_FROM_EVALUATION",
+      "enforcement": "Evaluated at evaluate_session entry via tradex.market.hours.get_market_session. Early-close sessions return EXCLUDED_EARLY_CLOSE and are excluded from formal evaluation return series.",
+      "justification": "The primary paper defines liquidation at 4:00 PM ET and does not specify early-close handling. Excluding XNYS early-close sessions avoids silently altering holding horizons. Record exclusion deterministically."
+    },
+    "amb_04_stop_order_lifetime": {
+      "ambiguity_id": "AMB-04",
+      "classification": "LOCKED_TRADEX_EXECUTION_CONVENTION",
+      "topic": "Stop-Entry Order Lifetime",
+      "earliest_executable_time": "09:35:00 America/New_York",
+      "latest_executable_time": "15:59:00 America/New_York (final regular-session minute bar)",
+      "cancellation_time": "16:00:00 America/New_York (regular-session close)"
+    },
+    "amb_06_gap_through_fills": {
+      "ambiguity_id": "AMB-06",
+      "classification": "LOCKED_TRADEX_EXECUTION_CONVENTION",
+      "topic": "Stop Gap-Through Fill Treatment",
+      "long_stop_entry": "If bar.open >= P fill at bar.open; else if bar.high >= P fill at P; else no fill",
+      "short_stop_entry": "If bar.open <= P fill at bar.open; else if bar.low <= P fill at P; else no fill",
+      "long_protective_stop": "If bar.open <= stop fill at bar.open; else if bar.low <= stop fill at stop; else open",
+      "short_protective_stop": "If bar.open >= stop fill at bar.open; else if bar.high >= stop fill at stop; else open"
+    },
+    "amb_07_same_bar_entry_and_stop": {
+      "ambiguity_id": "AMB-07",
+      "classification": "LOCKED_TRADEX_EXECUTION_CONVENTION",
+      "topic": "Same-Bar Entry and Stop Path Collision",
+      "rule": "If a 1-minute bar triggers entry and touches the protective stop in the same bar and intrabar path cannot be proven, conservatively assume entry occurred and the stop was triggered (worst-case fail closed).",
+      "diagnostic_metric": "same_bar_ambiguity_count"
+    },
+    "amb_08_eod_liquidation": {
+      "ambiguity_id": "AMB-08",
+      "classification": "LOCKED_TRADEX_EXECUTION_CONVENTION",
+      "topic": "Session-Close Liquidation Price Convention",
+      "liquidation_bar": "15:59-16:00 1-minute bar close",
+      "exit_reason": "END_OF_DAY",
+      "overnight_holds_allowed": false
+    },
+    "turnover_metric_definition": {
+      "topic": "Daily Two-Sided Traded Notional Turnover",
+      "formula": "session_traded_notional = sum(abs(shares * raw_entry_price) + abs(shares * raw_exit_price) for trade in completed_trades); session_turnover = session_traded_notional / session_start_equity",
+      "study_daily_turnover": "mean(session_turnover across valid included full sessions). Valid zero-trade day contributes 0.0.",
+      "distinction_from_leverage": "max_leverage_used remains tracked separately as maximum observed gross exposure divided by session equity."
+    }
+  },
+  "candidate_ranking_and_selection": {
+    "price_filter": {
+      "metric": "opening_price",
+      "operator": "gt",
+      "threshold": 5.0
+    },
+    "adv_filter": {
+      "metric": "adv14",
+      "operator": "gte",
+      "threshold": 1000000
+    },
+    "atr_filter": {
+      "metric": "atr14",
+      "operator": "gt",
+      "threshold": 0.50
+    },
+    "relative_volume_filter": {
+      "metric": "rv14",
+      "operator": "gte",
+      "threshold": 1.0
+    },
+    "ranking_order": [
+      "relative_volume_descending",
+      "ticker_ascending"
+    ],
+    "top_n_selection": 20,
+    "doji_selection_rule": "Top-20 selection occurs strictly prior to knowing if stop entry triggers. If a selected symbol is a doji (OR_open == OR_close), it produces NO_ORDER. There is NO BACKFILL from rank 21.",
+    "candidate_pool_completeness_gate": "For every active PIT universe member, all required Stage-A data (exact ADV14, contiguous ATR14, exact RV14 observations, 5 opening range minutes) must be present and verified. If any active member has missing, corrupted, or non-computable Stage-A data, the session fails closed as non_computable. Normal technical filter failures (price <= $5, ADV < 1M, ATR <= 0.50, RV < 1.0) produce normal non-qualification."
+  },
+  "lean_two_stage_acquisition_architecture": {
+    "stage_a_candidate_construction": {
+      "description": "Acquire data needed to rank candidates and select Top 20 at 09:35",
+      "data_elements": [
+        "raw_daily_ohlcv_history_for_adv14_and_atr14",
+        "first_5_minute_regular_session_ohlcv_for_session_D",
+        "first_5_minute_volumes_for_prior_14_sessions",
+        "point_in_time_universe_membership_and_metadata"
+      ],
+      "post_0935_price_path_acquired": false
+    },
+    "stage_b_trade_path": {
+      "description": "Acquire full regular-session 1-minute bars strictly for that session's selected Top-20 symbols",
+      "data_elements": [
+        "1_minute_regular_session_bars_from_0935_through_1600"
+      ],
+      "selection_timestamp": "09:35:00 America/New_York",
+      "lookahead_free_guarantee": "Stage-B symbols determined solely from Stage-A information available at 09:35",
+      "state_aware_path_requirement": "Simulator iterates canonical XNYS minute sequence (09:35 to 15:59 ET). Symbols with active pending orders or open positions require bars at every expected minute. Missing required bar fails the session closed as non_computable. Symbols in completed/dead state (stopped out, EOD liquidated, capacity rejected, NO_ORDER_DOJI) do not require future bars. Open positions at 15:59 require the 15:59 bar. Bar integrity rejects duplicate timestamps, date mismatches, symbol mismatches, or malformed OHLCV."
+    }
+  },
+  "transaction_costs_and_scenarios": {
+    "scenario_a_source_comparison": {
+      "commission_per_share_usd": 0.0035,
+      "commission_application": "Applied on both entry and exit: $0.0035 per share per side ($0.0070 round-trip).",
+      "adverse_slippage_bps_per_side": 0.0,
+      "purpose": "Direct published source comparison"
+    },
+    "scenario_b_tradex_primary": {
+      "commission_per_share_usd": 0.0035,
+      "commission_application": "Applied on both entry and exit: $0.0035 per share per side ($0.0070 round-trip).",
+      "adverse_slippage_bps_per_side": 2.0,
+      "purpose": "Primary research and decision gate evaluation"
+    },
+    "scenario_c_stress": {
+      "commission_per_share_usd": 0.0035,
+      "commission_application": "Applied on both entry and exit: $0.0035 per share per side ($0.0070 round-trip).",
+      "adverse_slippage_bps_per_side": 5.0,
+      "purpose": "Diagnostic robustness hurdle"
+    },
+    "strategy_path_independence": "Execution trigger times, filled shares, stop triggers, and exit prices are identical across all scenarios. Slippage is modeled as monetary friction deducted from PnL."
+  },
+  "metrics_and_bootstrap_contract": {
+    "daily_return_series_rule": "Every valid included regular trading session enters the daily return series. Valid sessions with zero trades contribute exactly 0.0 daily portfolio return.",
+    "session_distinction": "Valid full sessions with zero trades contribute 0.0 daily return and 0.0 turnover and enter bootstrap. Non-computable / integrity-failed sessions never masquerade as zero return and do not enter bootstrap. Early-close sessions are excluded from formal series.",
+    "required_session_noncomputability_disposition": "Conservative fail-closed rule: If any otherwise-required full regular session is non-computable because of material candidate-pool or execution-path integrity failure, formal study disposition is INVALID. Bootstrap fails closed.",
+    "bootstrap_parameters": {
+      "cluster_variable": "session_date",
+      "resamples": 2000,
+      "seed": 20261007,
+      "confidence_level_pct": 95.0,
+      "ci_percentiles": [
+        2.5,
+        97.5
+      ],
+      "target_metric": "mean_daily_portfolio_net_return_under_scenario_b"
+    },
+    "validation_disposition_precedence": [
+      {
+        "step": 1,
+        "disposition": "INVALID",
+        "condition": "Material data-integrity, point-in-time, or execution failure"
+      },
+      {
+        "step": 2,
+        "disposition": "INCONCLUSIVE",
+        "condition": "Evidence sufficiency failure: < 100 regular sessions with candidates, < 500 triggered trades, or < 50 unique securities traded"
+      },
+      {
+        "step": 3,
+        "disposition": "NOT_SUPPORTED",
+        "condition": "Mean daily Scenario-B net return <= 0.0"
+      },
+      {
+        "step": 4,
+        "disposition": "PROMISING_NOT_CONFIRMED",
+        "condition": "Mean daily Scenario-B net return > 0.0 but 95% bootstrap CI lower bound <= 0.0"
+      },
+      {
+        "step": 5,
+        "disposition": "SUPPORTED",
+        "condition": "All gates pass: mean daily Scenario-B net return > 0.0 and 95% bootstrap CI lower bound > 0.0"
+      }
+    ],
+    "holdout_access_guard": {
+      "permitted_disposition": "SUPPORTED",
+      "prohibited_dispositions": [
+        "INVALID",
+        "INCONCLUSIVE",
+        "NOT_SUPPORTED",
+        "PROMISING_NOT_CONFIRMED"
+      ],
+      "action_when_not_supported": "REJECT_ACCESS: Holdout partition remains strictly unopened and unread"
+    }
+  }
+}
