@@ -1,0 +1,30 @@
+{
+  "diagnostic_consistency_check": {
+    "assumed_bytes_per_row": 200,
+    "calculated_storage_bytes": 38169957000,
+    "calculated_storage_gb_decimal": 38.17,
+    "calculated_storage_gib": 35.55,
+    "note": "Internal consistency check using the frozen 200-byte/row planner assumption against reported rows; NOT an authoritative forecast. The future correction task must construct a validated resource model."
+  },
+  "full_year_resource_estimate_status": "INVALID_REQUIRES_CORRECTED_ACQUISITION_PLAN",
+  "known_defects": {
+    "call_extrapolation_defect": "NAIVE_NO_REUSE_EXTRAPOLATION: Multiplying single-session plan by 249 sessions reacquires overlapping daily (20) and opening-range (14) lookbacks redundantly rather than reusing already-acquired historical observations.",
+    "storage_extrapolation_defect": "compute_full_year_estimate() multiplied pre-acquisition pilot directory size (~103 KB) by 249 sessions because Stage A never executed, producing an invalid 25.7 MB estimate for 190.8M rows."
+  },
+  "original_probe_output": {
+    "estimated_daily_pit_universe_size": 7987,
+    "extrapolated_alpaca_stage_a_calls": 318720,
+    "extrapolated_alpaca_stage_b_calls": 249,
+    "extrapolated_alpaca_total_pages": 318969,
+    "extrapolated_massive_pages": 2988,
+    "extrapolated_massive_requests": 2988,
+    "extrapolated_massive_snapshots": 249,
+    "extrapolated_runtime_hours": 36.5,
+    "extrapolated_storage_bytes": 25689579,
+    "extrapolated_total_rows": 190849785,
+    "full_year_sessions_count": 249,
+    "pilot_universe_size": 7987,
+    "rate_limit_exposure_summary": "Full 2024 build requires ~2,988 Massive pages and ~318,969 Alpaca HTTP pages across 249 sessions. Massive requires rate-limit spacing (5 req/min on free tier) or unlimited tier; Alpaca SIP requires multi-symbol batching with 200 req/min rate limit compliance."
+  },
+  "validation_status": "INVALID_NOT_DECISION_GRADE"
+}

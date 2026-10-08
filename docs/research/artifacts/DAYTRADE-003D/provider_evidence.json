@@ -1,0 +1,15 @@
+{
+  "alpaca_asof_tested": true,
+  "alpaca_raw_adjustment_verified": true,
+  "alpaca_sip_entitled": true,
+  "asof_evidence_narrowed": "asof parameter accepted by provider in bounded smoke test; cross-provider historical symbol identity remains untested because Stage A did not execute",
+  "disposition": "INVALID_PROBE_IMPLEMENTATION_DEFECT",
+  "exchange_mapping_used": [
+    "XNYS",
+    "XNAS"
+  ],
+  "massive_historical_pit_sensitivity_proven": true,
+  "massive_taxonomy_capability": true,
+  "observed_stop_condition": "BLOCKED_RESOURCE_BOUND_UNDER_FROZEN_BATCH100_PLAN",
+  "provider_capabilities_still_valid": true
+}

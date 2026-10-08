@@ -1,0 +1,174 @@
+{
+  "schema_version": "1.0",
+  "task_id": "DAYTRADE-003D-ORB-DATA-FEASIBILITY-001",
+  "strategy_id": "DAYTRADE-003B-ORB-SIP5M",
+  "classification": "research_only_data_feasibility_probe",
+  "starting_main_sha": "faec0b096bd8fe7b1f7761557a1f74fbdac41ba1",
+  "upstream_specs": {
+    "daytrade_003b_spec_path": "docs/research/specs/DAYTRADE-003B-ORB-v1.json",
+    "daytrade_003b_spec_sha256": "62f5028c1b11a392aeb596c4e05b8c1f194cc5cec3af1a9406f4fe16c80460c0",
+    "daytrade_003c_resolution_path": "docs/research/specs/DAYTRADE-003C-ORB-RESOLUTION-v1.json",
+    "daytrade_003c_resolution_sha256": "20b43665ae214cfc988c41f818ea67b74052c4a0513e5ca9f2e276105f082bb6"
+  },
+  "governance": {
+    "real_provider_calls_authorized": true,
+    "real_provider_calls_scope": "BOUNDED_FEASIBILITY_PROBE_ONLY",
+    "full_2024_development_dataset_authorized": false,
+    "strategy_backtest_evaluator_authorized": false,
+    "development_performance_evaluation_authorized": false,
+    "validation_data_authorized": false,
+    "holdout_data_authorized": false,
+    "production_promotion_authorized": false,
+    "approved_production_strategies_empty": true
+  },
+  "probe_dates": {
+    "reference_only_probe_dates": [
+      "2024-01-02",
+      "2024-06-03",
+      "2024-12-02"
+    ],
+    "end_to_end_pilot_date": "2024-01-02",
+    "calendar": "XNYS",
+    "session_invariants": "All probe dates verified as full regular XNYS trading sessions (is_early_close=false, opens=09:30 ET, closes=16:00 ET)"
+  },
+  "providers": {
+    "reference_provider": "Massive (Polygon.io v3 reference API)",
+    "market_data_provider": "Alpaca Market Data v2",
+    "feeds": {
+      "massive": "v3/reference/tickers",
+      "alpaca": "sip"
+    },
+    "adjustment_mode": "raw",
+    "timeframes": {
+      "stage_a_daily": "1Day",
+      "stage_a_opening_range": "1Min",
+      "stage_b_trade_path": "1Min"
+    }
+  },
+  "massive_query_semantics": {
+    "endpoint": "/v3/reference/tickers",
+    "parameters": {
+      "market": "stocks",
+      "locale": "us",
+      "active": "true",
+      "sort": "ticker",
+      "order": "asc",
+      "limit": 1000
+    },
+    "safety_max_pages": 50,
+    "pagination_policy": "Terminal next_url cursor pagination required; failure if safety_max_pages reached or cycle detected"
+  },
+  "exchange_mapping_policy": {
+    "target_primary_exchanges": [
+      "XNYS",
+      "XNAS"
+    ],
+    "exchange_standard": "ISO 10383 Market Identifier Codes (MIC)",
+    "mapping_interpretation": {
+      "XNYS": "New York Stock Exchange (NYSE)",
+      "XNAS": "Nasdaq Stock Market (all tiers)"
+    },
+    "excluded_exchanges": [
+      "ARCX",
+      "BATS",
+      "XASE",
+      "XBOS",
+      "OTCM",
+      "EMPTY"
+    ],
+    "broadening_permitted": false,
+    "security_type_exclusions_permitted": false,
+    "security_type_audit_requirement": "Preserve provider type values in metadata for audit"
+  },
+  "alpaca_query_semantics": {
+    "endpoint": "/v2/stocks/bars",
+    "feed": "sip",
+    "adjustment": "raw",
+    "asof_parameter_policy": "Use asof=2024-01-02 for point-in-time ticker mapping",
+    "time_range_policy": {
+      "stage_a_daily": {
+        "start": "2023-12-01T00:00:00Z",
+        "end": "2023-12-29T23:59:59Z",
+        "session_count": 20,
+        "strict_boundary": "Target session 2024-01-02 strictly excluded"
+      },
+      "stage_a_prior_opening_ranges": {
+        "sessions": 14,
+        "window_per_session": "09:30:00 to 09:34:59 America/New_York (converted to UTC aware datetimes)",
+        "bars_per_session": 5
+      },
+      "stage_a_current_opening_range": {
+        "session": "2024-01-02",
+        "window": "09:30:00 to 09:34:59 America/New_York",
+        "bars": 5
+      },
+      "stage_b_path": {
+        "session": "2024-01-02",
+        "window": "09:35:00 to 15:59:59 America/New_York",
+        "expected_minutes": 385
+      }
+    },
+    "batch_size": 100,
+    "rate_limit_policy": "Honor retry-after on 429/5xx; fail closed on partial batches or unresolvable network errors"
+  },
+  "private_output_root_policy": {
+    "default_path": "C:\\Users\\Gary\\.tradex\\research\\daytrade_003d_orb_probe",
+    "data_quarantine_rules": [
+      "All raw provider payloads, daily bars, minute bars, and symbol lists must remain strictly in the private output root.",
+      "Never write raw market data inside the repository.",
+      "Never commit OHLCV rows, ticker symbol lists, or Top-20 ticker names.",
+      "Committed artifacts must contain only safe cryptographic summaries, counts, distributions, hashes, and resource estimates."
+    ]
+  },
+  "allowed_provider_calls": {
+    "massive": [
+      "GET /v3/reference/tickers/types (taxonomy capability test)",
+      "GET /v3/reference/tickers for date=2024-01-02, active=true",
+      "GET /v3/reference/tickers for date=2024-06-03, active=true",
+      "GET /v3/reference/tickers for date=2024-12-02, active=true"
+    ],
+    "alpaca": [
+      "GET /v2/stocks/bars for SPY (tiny SIP capability smoke test)",
+      "GET /v2/stocks/bars 1Day raw SIP for 2024-01-02 target universe over 2023-12-01..2023-12-29",
+      "GET /v2/stocks/bars 1Min raw SIP for 2024-01-02 target universe over 09:30-09:34 for prior 14 sessions + 2024-01-02",
+      "GET /v2/stocks/bars 1Min raw SIP for frozen Top 20 over 09:35-15:59 on 2024-01-02"
+    ]
+  },
+  "forbidden_provider_calls": [
+    "Full-year 2024 daily or intraday acquisition",
+    "June 2024 or December 2024 intraday bars",
+    "Validation partition (2025) data acquisition",
+    "Holdout partition (2026) data acquisition",
+    "Brokerage, account, orders, or trade execution endpoints",
+    "Non-SIP feeds (no IEX fallback)",
+    "Split-adjusted or dividend-adjusted market data"
+  ],
+  "resource_limits": {
+    "max_pilot_http_pages": 1000,
+    "max_pilot_private_storage_bytes": 2147483648,
+    "action_on_exceed": "STOP before broad Stage-A acquisition and report BLOCKED_RESOURCE_BOUND"
+  },
+  "candidate_pool_completeness_gate": {
+    "threshold": 1.0,
+    "interpretation": "100% of target universe active members must have complete computable Stage-A inputs.",
+    "insufficient_history_handling": "Active securities lacking 14 prior sessions due to IPO listing age or symbol changes must be surfaced and classified separately; session does not pass; disposition BLOCKED_CANDIDATE_POOL_HISTORY_SEMANTICS."
+  },
+  "strict_no_lookahead_boundary": {
+    "requirement": "Stage-A Top-20 selection must be computed, serialized, and cryptographically hashed before requesting any post-09:35 market data.",
+    "top_20_selection_artifact": "Materialized privately; committed only as count (20) and SHA-256 hash."
+  },
+  "probe_disposition_precedence": [
+    "FEASIBLE_FOR_2024_DEVELOPMENT_DATASET_BUILD",
+    "BLOCKED_MASSIVE_ENTITLEMENT",
+    "BLOCKED_ALPACA_SIP_ENTITLEMENT",
+    "BLOCKED_REFERENCE_EXCHANGE_MAPPING",
+    "BLOCKED_REFERENCE_POINT_IN_TIME_SEMANTICS",
+    "BLOCKED_CROSS_PROVIDER_SYMBOL_IDENTITY",
+    "BLOCKED_CANDIDATE_POOL_HISTORY_SEMANTICS",
+    "BLOCKED_STAGE_A_DATA_COMPLETENESS",
+    "BLOCKED_STAGE_B_PATH_COMPLETENESS",
+    "BLOCKED_RESOURCE_BOUND",
+    "INVALID_PROBE_IMPLEMENTATION_DEFECT",
+    "INVALID_PROVIDER_RESPONSE_INTEGRITY"
+  ]
+}
