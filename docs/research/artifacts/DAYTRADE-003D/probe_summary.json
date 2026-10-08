@@ -1,0 +1,218 @@
+{
+  "adjustment_mode": "raw",
+  "alpaca_smoke": {
+    "asof_verified": true,
+    "daily_bars_count": 20,
+    "error": null,
+    "http_statuses": [
+      200,
+      200
+    ],
+    "minute_bars_count": 5,
+    "raw_adjustment_verified": true,
+    "sip_entitled": true,
+    "symbol": "SPY"
+  },
+  "blocker_details": [
+    "Planned pages (1317) > 1000 or storage > 2GB"
+  ],
+  "feeds": {
+    "alpaca": "sip",
+    "massive": "reference_v3"
+  },
+  "governance": {
+    "approved_production_strategies_empty": true,
+    "holdout_status": "quarantined_unopened",
+    "performance_evaluation_executed": false,
+    "production_promotion_status": "none",
+    "strategy_evaluator_executed": false,
+    "validation_status": "unopened"
+  },
+  "live_probe_completion_timestamp": "2026-10-08T14:02:12.657160+00:00",
+  "massive_snapshots": {
+    "2024-01-02": {
+      "active": true,
+      "blank_ticker_count": 0,
+      "canonical_sha256": "a3131c477d4af0b464410bc1bef369bf87d6a2830b7a72284cdd3f0667a786a7",
+      "canonical_ticker_count": 11109,
+      "cycle_detected": false,
+      "date": "2024-01-02",
+      "duplicate_ticker_count": 0,
+      "elapsed_seconds": 145.4234447479248,
+      "error": null,
+      "http_status": 200,
+      "page_count": 12,
+      "pagination_complete": true,
+      "primary_exchange_distribution": {
+        "ARCX": 2102,
+        "BATS": 670,
+        "XASE": 348,
+        "XNAS": 4981,
+        "XNYS": 3008
+      },
+      "raw_sha256": "a3131c477d4af0b464410bc1bef369bf87d6a2830b7a72284cdd3f0667a786a7",
+      "repeated_cursor": false,
+      "row_count": 11109,
+      "type_distribution": {
+        "ADRC": 422,
+        "CS": 5337,
+        "ETF": 3222,
+        "ETN": 56,
+        "ETS": 70,
+        "ETV": 61,
+        "FUND": 404,
+        "PFD": 483,
+        "RIGHT": 71,
+        "SP": 132,
+        "UNIT": 255,
+        "WARRANT": 596
+      },
+      "unresolved_duplicate_count": 0
+    },
+    "2024-06-03": {
+      "active": true,
+      "blank_ticker_count": 0,
+      "canonical_sha256": "8fcd08e763bc568049dd43b5fcf93d9fb3f3b1cb7c3ec770edcbf0cda6dfa962",
+      "canonical_ticker_count": 11014,
+      "cycle_detected": false,
+      "date": "2024-06-03",
+      "duplicate_ticker_count": 0,
+      "elapsed_seconds": 145.23747992515564,
+      "error": null,
+      "http_status": 200,
+      "page_count": 12,
+      "pagination_complete": true,
+      "primary_exchange_distribution": {
+        "ARCX": 2141,
+        "BATS": 736,
+        "XASE": 341,
+        "XNAS": 4842,
+        "XNYS": 2954
+      },
+      "raw_sha256": "8fcd08e763bc568049dd43b5fcf93d9fb3f3b1cb7c3ec770edcbf0cda6dfa962",
+      "repeated_cursor": false,
+      "row_count": 11014,
+      "type_distribution": {
+        "ADRC": 405,
+        "CS": 5257,
+        "ETF": 3358,
+        "ETN": 56,
+        "ETS": 85,
+        "ETV": 63,
+        "FUND": 398,
+        "PFD": 459,
+        "RIGHT": 62,
+        "SP": 138,
+        "UNIT": 190,
+        "WARRANT": 543
+      },
+      "unresolved_duplicate_count": 0
+    },
+    "2024-12-02": {
+      "active": true,
+      "blank_ticker_count": 0,
+      "canonical_sha256": "590c76310a2a871031ec8722b1d4f5a6a582b5cc7fb0ab8e33375c43d198fc07",
+      "canonical_ticker_count": 11095,
+      "cycle_detected": false,
+      "date": "2024-12-02",
+      "duplicate_ticker_count": 0,
+      "elapsed_seconds": 145.14815640449524,
+      "error": null,
+      "http_status": 200,
+      "page_count": 12,
+      "pagination_complete": true,
+      "primary_exchange_distribution": {
+        "ARCX": 2218,
+        "BATS": 859,
+        "XASE": 322,
+        "XNAS": 4795,
+        "XNYS": 2901
+      },
+      "raw_sha256": "590c76310a2a871031ec8722b1d4f5a6a582b5cc7fb0ab8e33375c43d198fc07",
+      "repeated_cursor": false,
+      "row_count": 11095,
+      "type_distribution": {
+        "ADRC": 403,
+        "CS": 5171,
+        "ETF": 3666,
+        "ETN": 51,
+        "ETS": 109,
+        "ETV": 66,
+        "FUND": 386,
+        "PFD": 447,
+        "RIGHT": 54,
+        "SP": 147,
+        "UNIT": 141,
+        "WARRANT": 454
+      },
+      "unresolved_duplicate_count": 0
+    }
+  },
+  "pilot_date": "2024-01-02",
+  "pilot_resource_plan": {
+    "batch_count": 80,
+    "batch_size": 100,
+    "daily_lookback_sessions": 20,
+    "estimated_rows": 766465,
+    "estimated_storage_bytes": 153293000,
+    "exceeds_pages_limit": true,
+    "exceeds_storage_limit": false,
+    "is_within_bounds": false,
+    "massive_pages_actual": 36,
+    "or_lookback_sessions": 14,
+    "planned_daily_requests": 80,
+    "planned_or_requests": 1200,
+    "planned_stage_b_requests": 1,
+    "total_planned_alpaca_pages": 1281,
+    "total_planned_pages": 1317,
+    "universe_size": 7987
+  },
+  "pilot_universe": {
+    "blank_ticker_count": 0,
+    "date": "",
+    "duplicate_ticker_count": 2,
+    "excluded_exchange_distribution": {
+      "ARCX": 2102,
+      "BATS": 670,
+      "XASE": 348
+    },
+    "target_exchange_distribution": {
+      "XNAS": 4981,
+      "XNYS": 3008
+    },
+    "target_universe_count": 7987,
+    "total_snapshot_rows": 11109,
+    "type_distribution": {
+      "ADRC": 414,
+      "CS": 5101,
+      "ETF": 621,
+      "ETS": 21,
+      "FUND": 367,
+      "PFD": 464,
+      "RIGHT": 70,
+      "SP": 123,
+      "UNIT": 238,
+      "WARRANT": 570
+    },
+    "universe_sha256": "383a66f1c7100922d38638f24e4a23724bbc29b77cafc51990dab6ccda117f20",
+    "unresolved_duplicate_count": 0
+  },
+  "pre_live_commit_sha": "2d756c266cf50082e48ca5fc341f4e83c93a5644",
+  "private_storage_bytes": 103171,
+  "probe_dates": [
+    "2024-01-02",
+    "2024-06-03",
+    "2024-12-02"
+  ],
+  "providers": [
+    "massive",
+    "alpaca"
+  ],
+  "stage_a_candidate_pool": null,
+  "stage_a_selection": null,
+  "stage_b_path": null,
+  "strategy_id": "DAYTRADE-003B-ORB-SIP5M",
+  "task_id": "DAYTRADE-003D-ORB-DATA-FEASIBILITY-001",
+  "top_level_disposition": "BLOCKED_RESOURCE_BOUND",
+  "total_runtime_seconds": 437.28
+}

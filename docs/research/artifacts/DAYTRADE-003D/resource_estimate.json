@@ -1,0 +1,15 @@
+{
+  "estimated_daily_pit_universe_size": 7987,
+  "extrapolated_alpaca_stage_a_calls": 318720,
+  "extrapolated_alpaca_stage_b_calls": 249,
+  "extrapolated_alpaca_total_pages": 318969,
+  "extrapolated_massive_pages": 2988,
+  "extrapolated_massive_requests": 2988,
+  "extrapolated_massive_snapshots": 249,
+  "extrapolated_runtime_hours": 36.5,
+  "extrapolated_storage_bytes": 25689579,
+  "extrapolated_total_rows": 190849785,
+  "full_year_sessions_count": 249,
+  "pilot_universe_size": 7987,
+  "rate_limit_exposure_summary": "Full 2024 build requires ~2,988 Massive pages and ~318,969 Alpaca HTTP pages across 249 sessions. Massive requires rate-limit spacing (5 req/min on free tier) or unlimited tier; Alpaca SIP requires multi-symbol batching with 200 req/min rate limit compliance."
+}

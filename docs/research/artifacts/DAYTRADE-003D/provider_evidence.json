@@ -1,0 +1,12 @@
+{
+  "alpaca_asof_tested": true,
+  "alpaca_raw_adjustment_verified": true,
+  "alpaca_sip_entitled": true,
+  "disposition": "BLOCKED_RESOURCE_BOUND",
+  "exchange_mapping_used": [
+    "XNYS",
+    "XNAS"
+  ],
+  "massive_historical_pit_sensitivity_proven": true,
+  "massive_taxonomy_capability": true
+}
