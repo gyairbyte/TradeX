@@ -84,7 +84,7 @@ def test_confluence_propagates_provider_to_all_timeframes():
 
     def fake_fetch(ticker, timeframe, provider=None, *, settings=None):
         captured.append((ticker, timeframe, provider))
-        return _make_bars(31)
+        return _make_bars(220 if timeframe == "long" else 31)
 
     def fake_score(df):
         return {"score": 60, "reasons": ["momentum"], "last_close": 100.0}
@@ -149,7 +149,7 @@ def _score_confluence_with_scores(scores: dict[str, int | None]):
     def fake_fetch(ticker, timeframe, provider=None, *, settings=None):
         if scores.get(timeframe) is None:
             raise RuntimeError("no data")
-        return _make_bars(31)
+        return _make_bars(220 if timeframe == "long" else 31)
 
     def fake_score_factory(tf):
         return lambda df: {"score": scores[tf], "reasons": ["momentum"], "last_close": 100.0}
@@ -293,7 +293,7 @@ def test_errors_record_insufficient_data_and_fetch_failures():
             return _make_bars(20)
         if timeframe == "short":
             raise RuntimeError("fetch failed")
-        return _make_bars(31)
+        return _make_bars(220)
 
     def fake_score(df):
         return {"score": 60, "reasons": ["momentum"], "last_close": 100.0}
@@ -310,6 +310,28 @@ def test_errors_record_insufficient_data_and_fetch_failures():
     assert "fetch failed" in result["errors"]["short"]
     assert result["available_timeframes"] == ["long"]
     assert result["timeframe_coverage"] == "1/3"
+
+
+def test_confluence_requires_220_bars_for_long():
+    """Confluence requires at least 220 bars for long daily history."""
+    def fake_fetch(ticker, timeframe, provider=None, *, settings=None):
+        if timeframe == "long":
+            return _make_bars(219)
+        return _make_bars(31)
+
+    def fake_score(df):
+        return {"score": 60, "reasons": ["momentum"], "last_close": 100.0}
+
+    with (
+        patch.object(confluence, "fetch", side_effect=fake_fetch),
+        patch.object(confluence.intraday, "score", side_effect=fake_score),
+        patch.object(confluence.short_term, "score", side_effect=fake_score),
+        patch.object(confluence.long_term, "score", side_effect=fake_score),
+    ):
+        result = confluence.score_confluence("TEST")
+
+    assert result["errors"]["long"] == "insufficient data"
+    assert "long" in result["missing_timeframes"]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

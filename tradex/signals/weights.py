@@ -40,6 +40,12 @@ class ShortWeights:
 
 @dataclass
 class LongWeights:
+    """Legacy long heuristic weights (preserved for settings file compatibility).
+
+    Note: LONG MVP v1 (long_term.score) does NOT consume LongWeights.
+    Long opportunity scoring is locked by contract to the 100-point
+    five-category model defined in LONG-MVP-001.
+    """
     secular_uptrend: int = 25
     rsi_healthy: int = 20
     volume_accumulation: int = 25
@@ -54,7 +60,7 @@ class Weights:
     long: LongWeights
 
     @classmethod
-    def defaults(cls) -> "Weights":
+    def defaults(cls) -> Weights:
         return cls(IntradayWeights(), ShortWeights(), LongWeights())
 
     def to_dict(self) -> dict:

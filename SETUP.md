@@ -108,7 +108,7 @@ Key variables:
 | `TRADEX_FP_DB` | No | Pattern fingerprint SQLite DB. Default `~/.tradex/fingerprints.db`. |
 | `TRADEX_WATCHLISTS_DB_PATH` | No | Watchlists SQLite DB. Default `~/.tradex/watchlists.db`. |
 | `TRADEX_EARNINGS_CACHE_PATH` | No | Earnings calendar cache SQLite DB. Default `~/.tradex/earnings_cache.db`. |
-| `TRADEX_WEIGHTS_PATH` | No | Custom scoring weights JSON. Default `~/.tradex/weights.json`. |
+| `TRADEX_WEIGHTS_PATH` | No | Custom scoring weights JSON (Intraday and Short-term; Long is locked by contract). Default `~/.tradex/weights.json`. |
 
 `tradex/config.py` is the single configuration boundary. `load_runtime_settings()` reads `.env` once, applies `os.environ` overrides, and returns an immutable `TradeXSettings`. Every public entry point accepts an optional `settings` keyword for explicit injection; when omitted it calls `load_runtime_settings()` at call time, so modules can be imported without a `.env` or credentials.
 
@@ -483,7 +483,7 @@ Once the dashboard is running at `http://localhost:8501`:
 | **Pre-Market** | — | Gap-up / gap-down detection vs. previous close with optional liquidity, spread, catalyst, and freshness filters. All new filters are off by default. |
 | **Signal Journal** | — | Win rate and expectancy by score bucket, plus signal/outcome provider columns — only meaningful after weeks of watcher runs. |
 | **Research Lab** | **Coil Context**<br>**Pattern Similarity — Rejected**<br>**Options Activity — Exploratory** | Exploratory and quarantined research tools:<br>• **Coil Context:** Needs scan history across several NYSE sessions to detect persistent coiling stocks.<br>• **Pattern Similarity — Rejected:** Experimental 10-day shape matching; rejected on holdout under PATTERN-001.<br>• **Options Activity — Exploratory:** True options-flow events (Unusual Whales) and chain snapshots (Tradier/Yahoo). |
-| **Settings** | **Alert Delivery**<br>**Legacy Weights** | Operational controls and configuration:<br>• **Alert Delivery:** Configure Discord / email thresholds and inspect persistent cooldown state.<br>• **Legacy Weights:** Tune per-signal point values for legacy heuristic scores. |
+| **Settings** | **Alert Delivery**<br>**Legacy Weights** | Operational controls and configuration:<br>• **Alert Delivery:** Configure Discord / email thresholds and inspect persistent cooldown state.<br>• **Legacy Weights:** Tune per-signal point values for legacy heuristic scores (Intraday and Short-term; Long is locked by strategy contract). |
 | **Help** | — | In-app docs and canonical evidence disclosures for every feature. |
 
 ---

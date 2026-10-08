@@ -19,8 +19,8 @@ tradex/
 │   │   ├── indicators.py          # RSI, MACD, EMA, Bollinger Bands, ATR, volume ratios
 │   │   ├── intraday.py            # 5m bars / 5-day window scorer
 │   │   ├── short_term.py          # Daily bars / 60-day window scorer
-│   │   ├── long_term.py           # Weekly bars / 2-year window scorer
-│   │   └── weights.py             # User-tunable per-signal weights, persisted to JSON
+│   │   ├── long_term.py           # Daily bars / 2-year window Long MVP v1 scorer (3 archetypes, 100-pt deterministic score)
+│   │   └── weights.py             # User-tunable Intraday and Short weights, persisted to JSON (Long locked by contract)
 │   ├── screener/engine.py         # Runs scorers across a watchlist, returns ranked DataFrame
 │   ├── tracker/
 │   │   ├── store.py               # SQLite canonical scan sessions + observations and `scan_runs` audit surface
@@ -86,16 +86,17 @@ tradex/
 ## How It Works
 
 ### Signal Scoring
-Each timeframe has its own scorer that returns a **score from 0–100** plus human-readable reasons. The score is built from weighted signals:
+Each timeframe has its own scorer that returns a **score from 0–100** plus human-readable reasons:
 
-| Signal | Intraday | Short | Long |
-|---|---|---|---|
-| Volume surge (>2x avg) | +30 | +20 | +25 |
-| RSI momentum zone | +20 | +20 | +20 |
-| MACD crossover/direction | +30 | +20 | +15 |
-| EMA structure (price > EMA20 > EMA50) | — | +25 | +25 |
-| BB squeeze/expansion | +20 | — | +15 |
-| Pullback to EMA20 in uptrend | — | +15 | — |
+- **Intraday** and **Short-term** scoring use configurable technical indicator weights:
+  - **Intraday** (5m bars / 5d): Volume surge (+30), RSI momentum (+20), MACD crossover (+30), BB squeeze/expansion (+20).
+  - **Short-term** (daily bars / 60d): Volume surge (+20), RSI momentum (+20), MACD (+20), EMA structure (+25), Pullback to EMA20 (+15).
+- **Long-term** scoring uses the deterministic **Long Opportunity Strategy v1** (LONG-MVP-001) evaluating daily OHLCV bars over 2 years (~500 sessions, min 220 bars) across three swing archetypes:
+  - `momentum_continuation`: Strong trend persistence near highs.
+  - `trend_pullback`: Orderly short-term retracement holding EMA20/50 support.
+  - `breakout_expansion`: Range compression at 20-day high with volume participation.
+  - Fixed 100-point allocation: Trend Quality (30 pts), Momentum Quality (25 pts), Setup Quality (20 pts), Movement Capacity (15 pts), Participation (10 pts).
+  - Actionable states: `ENTER NOW` (score >= 75 + confirmed trigger), `ARMED` (score >= 70 + proximity trigger), `QUALIFIED WAITLIST` (score >= 60). Scoring weights are locked by contract.
 
 ### Intraday Setup Logic
 The intraday scorer specifically targets stocks where:
@@ -696,7 +697,8 @@ Save and switch between named ticker lists (e.g. "Semis", "Crypto-adjacent", "Ea
 - [x] In-app Help tab + tooltips throughout dashboard
 - [x] Earnings awareness — filter + flag stocks with earnings within N days
 - [x] Watchlist persistence — save/load/delete named watchlists
-- [x] Scoring weight customization — per-signal sliders in the Weights tab, persisted to ~/.tradex/weights.json
+- [x] Scoring weight customization — per-signal sliders in the Weights tab, persisted to ~/.tradex/weights.json (Intraday and Short; Long is locked by strategy contract)
+- [x] Production-target Long Opportunity Strategy v1 (LONG-MVP-001 / LONG-MVP-002) — explainable 3-archetype daily swing opportunity engine (100-pt deterministic score, state model)
 - [x] Split `dashboard.py` into tab and component modules (UI-001 — Completed, PR #34)
 - [x] Deterministic credential-free test foundation with over 1,200 tests covering providers, persistence, backtesting, research, and UI
 - [x] Intraday open-drive VWAP pullback research (INTRA-001) — completed `INTRA-001D` real-data study returned `inconclusive`; holdout not parsed; `production_promotion_eligible=false`

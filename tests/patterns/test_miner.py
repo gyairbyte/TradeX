@@ -103,3 +103,15 @@ def test_run_full_build_propagates_provider_and_source():
     mock_build.assert_called_once()
     kwargs = mock_build.call_args.kwargs
     assert kwargs["source"] == "schwab"
+
+
+def test_fetch_history_with_80_bars_survives_dropna_with_warmup_indicators():
+    """An ~80-bar daily history must produce valid input/events even when 200-bar indicators have NaNs."""
+    raw_df = _make_history(80)
+    with patch.object(miner, "fetch_daily_history", return_value=raw_df):
+        hist = miner._fetch_history("AAPL", years=1, provider=None)
+    assert hist is not None
+    assert len(hist) >= 40
+    for col in ["close", "volume", "rsi", "macd_diff", "bb_width", "atr"]:
+        assert col in hist.columns
+        assert not hist[col].isna().any()

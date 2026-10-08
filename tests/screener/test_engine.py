@@ -955,3 +955,228 @@ def test_earnings_filter_enabled_with_known_dates_in_and_out_of_window():
     assert report.total_signals == 1
     assert report.results["ticker"].tolist() == ["OUT_WINDOW"]
     assert report.results.iloc[0]["days_until_earnings"] == 15
+
+
+# ── LONG MVP Screener Engine Tests ───────────────────────────────────────────
+
+
+def _make_long_result(
+    score: int = 75,
+    state: str | None = "ENTER NOW",
+    qualified: bool = True,
+    primary_setup: str | None = "breakout_expansion",
+) -> dict:
+    return {
+        "strategy_id": "long_mvp",
+        "strategy_version": "v1",
+        "score": score,
+        "primary_setup": primary_setup,
+        "matched_setups": [primary_setup] if primary_setup else [],
+        "state": state,
+        "component_scores": {
+            "trend_quality": 24,
+            "momentum_quality": 20,
+            "setup_quality": 16,
+            "movement_capacity": 10,
+            "participation": 5,
+        },
+        "reasons": ["Price > EMA20 > EMA50 > EMA200", "Breakout above prior 20-day high"],
+        "trigger": "Close above prior 20-session high ($150.00) with volume >= 1.3x",
+        "invalidation": "Close below EMA50 ($130.00)",
+        "last_close": 155.0,
+        "volume_ratio": 1.6,
+        "rsi": 62.0,
+        "atr_pct": 0.025,
+        "return_5": 0.02,
+        "return_20": 0.08,
+        "return_60": 0.18,
+        "qualified": qualified,
+    }
+
+
+def test_long_screener_requires_220_bars():
+    """Long timeframe requires at least 220 bars; <220 marks INSUFFICIENT_DATA."""
+    def fake_fetch_multi_report(tickers, tf, provider=None, **kwargs):
+        # Return 219 bars for AAPL, 225 bars for MSFT
+        return _make_fetch_report(
+            tickers,
+            data={
+                "AAPL": pd.DataFrame([0] * 219),
+                "MSFT": pd.DataFrame([0] * 225),
+            },
+            provider=provider,
+            actual_provider=provider,
+        )
+
+    def fake_score(df):
+        return _make_long_result(80)
+
+    with (
+        patch.object(engine, "fetch_multi_report", side_effect=fake_fetch_multi_report),
+        patch.object(engine, "days_until_earnings", return_value=None),
+        patch.object(engine, "SIGNAL_MAP", {"long": (fake_score, "long")}),
+    ):
+        report = engine.run_with_report(["AAPL", "MSFT"], timeframe="long")
+
+    report.validate(expected_tickers=["AAPL", "MSFT"])
+    assert report.total_requested == 2
+    assert report.total_insufficient_data == 1
+    assert report.total_signals == 1
+    assert report.results["ticker"].tolist() == ["MSFT"]
+    aapl_obs = report.observations[report.observations["ticker"] == "AAPL"].iloc[0]
+    assert aapl_obs["status"] == "insufficient_data"
+
+
+def test_long_signal_qualification_and_min_score():
+    """Score < 60 cannot surface even if caller min_score is lower; caller min_score > 60 filters further."""
+    def fake_fetch_multi_report(tickers, tf, provider=None, **kwargs):
+        return _make_fetch_report(
+            tickers,
+            data={t: pd.DataFrame([0] * 225) for t in tickers},
+            provider=provider,
+            actual_provider=provider,
+        )
+
+    # AAA has score 55 (qualified but below 60 -> state None)
+    # BBB has score 65 (QUALIFIED WAITLIST)
+    # CCC has score 80 (ENTER NOW)
+    def fake_score(df):
+        # We can map by df or by mock side effect
+        pass
+
+    results_map = {
+        "AAA": _make_long_result(score=55, state=None, qualified=False),
+        "BBB": _make_long_result(score=65, state="QUALIFIED WAITLIST", qualified=True),
+        "CCC": _make_long_result(score=80, state="ENTER NOW", qualified=True),
+    }
+
+    def mock_scorer(df):
+        # Return based on which ticker this df belongs to
+        ticker = getattr(df, "_ticker", "BBB")
+        return results_map[ticker]
+
+    def patched_fetch(tickers, tf, provider=None, **kwargs):
+        data = {}
+        for t in tickers:
+            df = pd.DataFrame([0] * 225)
+            df._ticker = t
+            data[t] = df
+        return _make_fetch_report(tickers, data=data, provider=provider, actual_provider=provider)
+
+    # Case 1: min_score = 30 -> AAA (55) still NOT surfaced, only BBB and CCC surfaced
+    with (
+        patch.object(engine, "fetch_multi_report", side_effect=patched_fetch),
+        patch.object(engine, "days_until_earnings", return_value=None),
+        patch.object(engine, "SIGNAL_MAP", {"long": (mock_scorer, "long")}),
+    ):
+        report1 = engine.run_with_report(["AAA", "BBB", "CCC"], timeframe="long", min_score=30)
+
+    report1.validate(expected_tickers=["AAA", "BBB", "CCC"])
+    assert report1.total_signals == 2
+    assert "AAA" not in report1.results["ticker"].tolist()
+    assert set(report1.results["ticker"].tolist()) == {"BBB", "CCC"}
+
+    # Case 2: min_score = 75 -> BBB (65) filtered out, only CCC (80) surfaced
+    with (
+        patch.object(engine, "fetch_multi_report", side_effect=patched_fetch),
+        patch.object(engine, "days_until_earnings", return_value=None),
+        patch.object(engine, "SIGNAL_MAP", {"long": (mock_scorer, "long")}),
+    ):
+        report2 = engine.run_with_report(["AAA", "BBB", "CCC"], timeframe="long", min_score=75)
+
+    report2.validate(expected_tickers=["AAA", "BBB", "CCC"])
+    assert report2.total_signals == 1
+    assert report2.results["ticker"].tolist() == ["CCC"]
+    # BBB is marked below_threshold
+    bbb_obs = report2.observations[report2.observations["ticker"] == "BBB"].iloc[0]
+    assert bbb_obs["status"] == "below_threshold"
+    # State remains "QUALIFIED WAITLIST" on the observation
+    assert bbb_obs["state"] == "QUALIFIED WAITLIST"
+
+
+def test_long_ranking_order():
+    """Long results rank: ENTER NOW -> ARMED -> QUALIFIED WAITLIST, then score desc, then ticker asc."""
+    tickers = ["T_WAIT_80", "T_ENTER_75", "T_ARMED_75", "T_ENTER_90", "T_ARMED_70"]
+    results_map = {
+        "T_WAIT_80": _make_long_result(80, state="QUALIFIED WAITLIST"),
+        "T_ENTER_75": _make_long_result(75, state="ENTER NOW"),
+        "T_ARMED_75": _make_long_result(75, state="ARMED"),
+        "T_ENTER_90": _make_long_result(90, state="ENTER NOW"),
+        "T_ARMED_70": _make_long_result(70, state="ARMED"),
+    }
+
+    def mock_scorer(df):
+        return results_map[df._ticker]
+
+    def patched_fetch(tickers, tf, provider=None, **kwargs):
+        data = {}
+        for t in tickers:
+            df = pd.DataFrame([0] * 225)
+            df._ticker = t
+            data[t] = df
+        return _make_fetch_report(tickers, data=data, provider=provider, actual_provider=provider)
+
+    with (
+        patch.object(engine, "fetch_multi_report", side_effect=patched_fetch),
+        patch.object(engine, "days_until_earnings", return_value=None),
+        patch.object(engine, "SIGNAL_MAP", {"long": (mock_scorer, "long")}),
+    ):
+        report = engine.run_with_report(tickers, timeframe="long", min_score=60)
+
+    report.validate(expected_tickers=tickers)
+    # Expected ranking:
+    # 1. ENTER NOW (score 90: T_ENTER_90)
+    # 2. ENTER NOW (score 75: T_ENTER_75)
+    # 3. ARMED (score 75: T_ARMED_75)
+    # 4. ARMED (score 70: T_ARMED_70)
+    # 5. QUALIFIED WAITLIST (score 80: T_WAIT_80)
+    expected_order = ["T_ENTER_90", "T_ENTER_75", "T_ARMED_75", "T_ARMED_70", "T_WAIT_80"]
+    assert report.results["ticker"].tolist() == expected_order
+
+
+def test_long_focus_caps_helper_does_not_truncate_telemetry():
+    """Display caps (7 / 12 / 12, max 31) cap the display list without truncating ScanReport."""
+    # Build 10 ENTER NOW, 15 ARMED, 15 WAITLIST (total 40 signals)
+    enter_tickers = [f"E_{i:02d}" for i in range(10)]
+    armed_tickers = [f"A_{i:02d}" for i in range(15)]
+    wait_tickers = [f"W_{i:02d}" for i in range(15)]
+    all_tickers = enter_tickers + armed_tickers + wait_tickers
+
+    results_map = {}
+    for t in enter_tickers:
+        results_map[t] = _make_long_result(85, state="ENTER NOW")
+    for t in armed_tickers:
+        results_map[t] = _make_long_result(72, state="ARMED")
+    for t in wait_tickers:
+        results_map[t] = _make_long_result(65, state="QUALIFIED WAITLIST")
+
+    def mock_scorer(df):
+        return results_map[df._ticker]
+
+    def patched_fetch(tickers, tf, provider=None, **kwargs):
+        data = {}
+        for t in tickers:
+            df = pd.DataFrame([0] * 225)
+            df._ticker = t
+            data[t] = df
+        return _make_fetch_report(tickers, data=data, provider=provider, actual_provider=provider)
+
+    with (
+        patch.object(engine, "fetch_multi_report", side_effect=patched_fetch),
+        patch.object(engine, "days_until_earnings", return_value=None),
+        patch.object(engine, "SIGNAL_MAP", {"long": (mock_scorer, "long")}),
+    ):
+        report = engine.run_with_report(all_tickers, timeframe="long", min_score=60)
+
+    report.validate(expected_tickers=all_tickers)
+    # Underlying report preserves all 40 signals
+    assert len(report.results) == 40
+    assert report.total_signals == 40
+    assert len(report.observations) == 40
+
+    # Display helper caps at 7 ENTER NOW, 12 ARMED, 12 WAITLIST = 31 total
+    focus = engine.build_long_focus_list(report.results)
+    assert len(focus) == 31
+    assert len(focus[focus["state"] == "ENTER NOW"]) == 7
+    assert len(focus[focus["state"] == "ARMED"]) == 12
+    assert len(focus[focus["state"] == "QUALIFIED WAITLIST"]) == 12

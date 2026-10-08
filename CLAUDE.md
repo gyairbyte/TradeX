@@ -47,10 +47,10 @@ Scanner runs → results DataFrame
 |---|---|
 | `tradex/config.py` | Typed, immutable runtime configuration. `load_runtime_settings()` reads `.env` + `os.environ` at call time; `settings_from_mapping()` is pure. Public functions accept `settings: TradeXSettings | None` and fall back at call time. |
 | `tradex/data/fetcher.py` | Multi-provider OHLCV fetcher. Providers: `yahoo`, `alpaca`, `ibkr`, `schwab`. Reads settings from explicit `TradeXSettings` or `load_runtime_settings()` at call time. |
-| `tradex/signals/indicators.py` | Shared indicator computation: RSI, MACD, EMA20/50, Bollinger Bands, ATR, volume ratio |
+| `tradex/signals/indicators.py` | Shared indicator computation: RSI, MACD, EMA20/50/200, Bollinger Bands, ATR/ATR%, volume ratios, returns, prior highs |
 | `tradex/signals/intraday.py` | Intraday swing scorer — volume surge, BB expansion, MACD crossover, RSI momentum |
 | `tradex/signals/short_term.py` | Short-term scorer — EMA structure, volume confirmation, MACD, pullback-to-EMA setups |
-| `tradex/signals/long_term.py` | Long-term scorer — secular trend, volume accumulation, weekly MACD, BB coiling |
+| `tradex/signals/long_term.py` | Long Opportunity Strategy v1 scorer — daily bars, 3 archetypes (momentum continuation, trend pullback, breakout expansion), 100-pt deterministic opportunity score, state model |
 | `tradex/screener/engine.py` | Runs a scorer over a watchlist, filters by min_score, returns sorted DataFrame |
 | `tradex/strategies/registry.py` | Central neutral production strategy authorization registry and pure capability lookup API (`ApprovedProductionStrategy`, `APPROVED_PRODUCTION_STRATEGIES`, `has_production_strategy_capability`). |
 | `tradex/journal/models.py` | Executable strategy journal domain models, enums, exceptions, and immutability invariants. |

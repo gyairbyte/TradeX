@@ -68,7 +68,9 @@ def _fetch_history(
         if df.empty or len(df) < 60:
             return None
 
-        return add_indicators(df).dropna()
+        required_cols = ["close", "volume", "rsi", "macd_diff", "bb_width", "atr"]
+        df_ind = add_indicators(df)
+        return df_ind.dropna(subset=[c for c in required_cols if c in df_ind.columns])
     except ProviderCapabilityError:
         # Re-raise so callers can surface an unsupported provider clearly.
         raise

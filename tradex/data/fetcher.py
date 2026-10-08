@@ -63,7 +63,7 @@ class ProviderResponseError(ProviderError):
 TIMEFRAMES = {
     "intraday": {"period": "5d", "interval": "5m"},
     "short": {"period": "60d", "interval": "1d"},
-    "long": {"period": "2y", "interval": "1wk"},
+    "long": {"period": "2y", "interval": "1d"},
 }
 
 DEFAULT_PROVIDER = DEFAULT_OHLCV_PROVIDER
@@ -236,12 +236,12 @@ def _fetch_yahoo(
 _ALPACA_INTERVAL_MAP = {
     "intraday": "5Min",
     "short": "1Day",
-    "long": "1Week",
+    "long": "1Day",
 }
 _ALPACA_LIMIT_MAP = {
     "intraday": 1000,  # ~5 trading days of 5m bars
     "short": 60,
-    "long": 104,  # 2 years of weekly bars
+    "long": 520,  # ~2 years of daily bars
 }
 
 
@@ -303,7 +303,7 @@ def _fetch_alpaca(
 _IBKR_DURATION_MAP = {
     "intraday": ("5 D", "5 mins"),
     "short": ("60 D", "1 day"),
-    "long": ("2 Y", "1 week"),
+    "long": ("2 Y", "1 day"),
 }
 
 
@@ -392,7 +392,7 @@ def _assert_token_path_outside_repo(token_path: str) -> None:
 _SCHWAB_TIMEFRAMES = {
     "intraday": ("get_price_history_every_five_minutes", timedelta(days=5)),
     "short": ("get_price_history_every_day", timedelta(days=120)),
-    "long": ("get_price_history_every_week", timedelta(days=730)),
+    "long": ("get_price_history_every_day", timedelta(days=730)),
 }
 
 _OHLCV_COLUMNS = ["open", "high", "low", "close", "volume"]

@@ -73,8 +73,10 @@ def _extract_live_window(
     """
     try:
         df = fetch(ticker, "short", provider=provider, settings=settings)
-        df = add_indicators(df).dropna()
-    except Exception as e:
+        required_cols = ["close", "volume", "rsi", "macd_diff", "bb_width"]
+        df_ind = add_indicators(df)
+        df = df_ind.dropna(subset=[c for c in required_cols if c in df_ind.columns])
+    except Exception:
         return None
 
     if len(df) < lookback_days:
