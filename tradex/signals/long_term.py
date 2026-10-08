@@ -228,7 +228,7 @@ def _build_archetype_eval(
 
     if total_score >= 75 and actionable:
         state = STATE_ENTER_NOW
-    elif total_score >= 70 and not actionable and armed:
+    elif total_score >= 70 and armed:
         state = STATE_ARMED
     elif total_score >= 60:
         state = STATE_QUALIFIED_WAITLIST

@@ -256,6 +256,62 @@ def test_state_assignment_logic():
         assert res["state"] is None
 
 
+def test_trend_pullback_overlapping_actionable_and_armed_score_70_to_74():
+    """When trend pullback has actionable=True, armed=True, and score is 70-74, state must be ARMED (not WAITLIST)."""
+    from tradex.signals.long_term import (
+        ARCHETYPE_PULLBACK,
+        STATE_ARMED,
+        _build_archetype_eval,
+    )
+
+    # Inputs where both actionable and armed conditions are True for pullback:
+    # actionable: close >= ema_20 and close > high_prev
+    # armed: abs(close - ema_20) / ema_20 <= 0.02 and close > ema_50
+    close = 100.5
+    ema_20 = 100.0
+    high_prev = 100.2
+    close_prev = 100.0
+    ema_50 = 90.0
+    ema_200 = 80.0
+    ema20_slope_5 = 1.0  # trend_q = 30
+
+    # mom_q for pullback:
+    # return_60=0.15 (+10), return_20=0.05 (+5), return_5=-0.01 (+5), rsi=35 (0) -> mom_q = 20
+    # setup_q for pullback:
+    # abs(close - ema_20)/ema_20 <= 0.02 (+8), close > ema_20 (+6), -0.06 <= return_5 <= 0.0 (+6) -> setup_q = 20
+    # move_c: atr_pct=0.005 -> 0
+    # part_q: volume_ratio=0.85 -> 3
+    # Total score = 30 + 20 + 20 + 0 + 3 = 73 (in range 70-74)
+    eval_res = _build_archetype_eval(
+        ARCHETYPE_PULLBACK,
+        close=close,
+        close_prev=close_prev,
+        high_prev=high_prev,
+        ema_20=ema_20,
+        ema_50=ema_50,
+        ema_200=ema_200,
+        prior_5d_high=105.0,
+        prior_20d_high=110.0,
+        return_5=-0.01,
+        return_20=0.05,
+        return_60=0.15,
+        rsi=35.0,
+        atr_pct=0.005,
+        volume_ratio=0.85,
+        ema20_slope_5=ema20_slope_5,
+    )
+
+    assert eval_res["score"] == 73
+    assert eval_res["score"] < 75  # Not eligible for ENTER NOW
+    assert eval_res["score"] >= 70
+    # Actionable and armed conditions both met
+    assert (close >= ema_20) and (close > high_prev)
+    assert (abs(close - ema_20) / ema_20 <= 0.02) and (close > ema_50)
+    # Under locked contract, state must be ARMED (not QUALIFIED WAITLIST)
+    assert eval_res["state"] == STATE_ARMED
+
+
+
 # ── LongWeights Disconnection ────────────────────────────────────────────────
 
 
