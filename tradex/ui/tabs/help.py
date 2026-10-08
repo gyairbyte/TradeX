@@ -58,9 +58,9 @@ Controls which time window the Scanner and Coil Context operate on.
 |---|---|---|---|
 | **Intraday** | 5-minute | Last 5 trading days | Intraday momentum and shorter-term price action |
 | **Short** | Daily | Last 60 trading days | Daily swing structure and intermediate technical conditions |
-| **Long** | Weekly | Last 2 years | Multi-week to multi-month trend context |
+| **Long** | Daily | Last 2 years | 5–21 session swing opportunity (3 setup archetypes) |
 
-**Usage:** Select `intraday` for short-horizon monitoring, `short` for daily swing evaluation, or `long` for broader macro trend context.
+**Usage:** Select `intraday` for short-horizon monitoring, `short` for daily swing evaluation, or `long` for 5–21 session swing opportunities.
         """)
 
     with st.expander("Min Score (0–100)", expanded=False):
@@ -178,7 +178,7 @@ and combines them into a weighted score with a fixed denominator.
 |---|---|---|
 | Intraday (5m) | 30% | Shorter-term technical momentum |
 | Short-term (1d) | 40% | Daily timeframe swing structure |
-| Long-term (1wk) | 30% | Weekly broader trend structure |
+| Long-term (1d) | 30% | Daily broader trend and swing structure (2y) |
 
 **Confluence tiers:**
 | Score | Tier | Meaning |

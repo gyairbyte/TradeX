@@ -40,10 +40,9 @@ def render_weights_tab(
     section_meta = [
         ("Intraday (5-min bars)", "intraday", current.intraday),
         ("Short-term (daily bars)", "short", current.short),
-        ("Long-term (weekly bars)", "long", current.long),
     ]
 
-    new_values: dict[str, dict[str, int]] = {"intraday": {}, "short": {}, "long": {}}
+    new_values: dict[str, dict[str, int]] = {"intraday": {}, "short": {}}
 
     for title, key, section in section_meta:
         st.markdown(f"### {title}")
@@ -58,13 +57,22 @@ def render_weights_tab(
             )
         st.divider()
 
+    st.markdown("### Long-term (Long MVP v1)")
+    st.info(
+        "Long Opportunity Strategy v1 scoring weights are locked by strategy contract (LONG-MVP-001) "
+        "and are not user-editable. 100-point opportunity scoring is deterministic across all environments: "
+        "Trend Quality (30 pts), Momentum Quality (25 pts), Setup Quality (20 pts), "
+        "Movement Capacity (15 pts), and Participation (10 pts)."
+    )
+    st.divider()
+
     col_save, col_reset = st.columns([1, 1])
     if col_save.button("Save weights", type="primary", key="weights_save",
                        help="Persist these weights to ~/.tradex/weights.json. All future scans will use them."):
         updated = signal_weights.Weights(
             intraday=signal_weights.IntradayWeights(**new_values["intraday"]),
             short=signal_weights.ShortWeights(**new_values["short"]),
-            long=signal_weights.LongWeights(**new_values["long"]),
+            long=current.long,
         )
         signal_weights.save(updated, settings=settings)
         st.success("Weights saved. Re-run any Scanner or Confluence scan to see the effect.")

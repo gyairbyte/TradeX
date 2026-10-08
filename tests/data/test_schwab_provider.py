@@ -40,7 +40,7 @@ def _make_candle(
 _SCHWAB_METHOD = {
     "intraday": "get_price_history_every_five_minutes",
     "short": "get_price_history_every_day",
-    "long": "get_price_history_every_week",
+    "long": "get_price_history_every_day",
 }
 
 
