@@ -1,0 +1,96 @@
+{
+  "alpaca_provider_metrics": {
+    "calls_count": 1281,
+    "pages_count": 1281,
+    "retries_count": 0
+  },
+  "blocker_details": [
+    "Stage-A coverage 6.82% is below 95.0% threshold"
+  ],
+  "final_pilot_disposition": "BLOCKED_STAGE_A_COVERAGE",
+  "governance": {
+    "approved_production_strategies_empty": true,
+    "holdout_status": "quarantined_unopened",
+    "performance_evaluation_executed": false,
+    "strategy_evaluator_executed": false,
+    "validation_status": "unopened"
+  },
+  "massive_reference": {
+    "page_count": 12,
+    "pilot_date": "2024-01-02",
+    "row_count": 11109,
+    "snapshot_sha256": "a3131c477d4af0b464410bc1bef369bf87d6a2830b7a72284cdd3f0667a786a7"
+  },
+  "pilot_date": "2024-01-02",
+  "pilot_universe": {
+    "ambiguous_duplicate_count": 2,
+    "canonical_target_universe_count": 7987,
+    "collapsed_duplicates_count": 0,
+    "date": "2024-01-02",
+    "target_exchange_distribution": {
+      "XNAS": 4981,
+      "XNYS": 3008
+    },
+    "target_filtered_rows": 7989,
+    "type_distribution": {
+      "ADRC": 414,
+      "CS": 5101,
+      "ETF": 621,
+      "ETS": 21,
+      "FUND": 367,
+      "PFD": 464,
+      "RIGHT": 70,
+      "SP": 123,
+      "UNIT": 238,
+      "WARRANT": 570
+    },
+    "universe_sha256": "383a66f1c7100922d38638f24e4a23724bbc29b77cafc51990dab6ccda117f20",
+    "valid_target_symbols_count": 7985
+  },
+  "pre_live_commit_sha": "052360e439a96649eea13091e6d92ffa9623601c",
+  "resource_consumption": {
+    "max_pages_limit": 5000,
+    "max_storage_bytes_limit": 2147483648,
+    "private_storage_bytes": 103310,
+    "total_http_pages": 1293,
+    "total_runtime_seconds": 463.65
+  },
+  "stage_a_coverage": {
+    "canonical_target_universe_count": 7987,
+    "computable_stage_a_symbols_count": 545,
+    "coverage_threshold_pct": 95.0,
+    "meets_coverage_threshold": false,
+    "stage_a_coverage_pct": 6.8236,
+    "unavailable_counts_by_reason": {
+      "AMBIGUOUS_IDENTITY": 2,
+      "CROSS_PROVIDER_UNMAPPED": 393,
+      "INSUFFICIENT_HISTORY": 33,
+      "MISSING_CURRENT_OR_DATA": 5,
+      "MISSING_DAILY_DATA": 1,
+      "MISSING_PRIOR_OR_DATA": 7008
+    }
+  },
+  "stage_a_selection": {
+    "doji_count": 0,
+    "eligible_candidates_count": 0,
+    "selected_count": 0,
+    "selection_sha256": ""
+  },
+  "stage_b_path": {
+    "duplicate_minutes_count": 0,
+    "expected_minutes_per_symbol": 0,
+    "malformed_bars_count": 0,
+    "missing_minutes_count": 0,
+    "path_complete": false,
+    "symbols_count": 0,
+    "total_expected_bars": 0,
+    "total_observed_bars": 0
+  },
+  "task_id": "DAYTRADE-003D-CORR-001",
+  "upstream_spec_hashes": {
+    "daytrade_003b": "62f5028c1b11a392aeb596c4e05b8c1f194cc5cec3af1a9406f4fe16c80460c0",
+    "daytrade_003c": "20b43665ae214cfc988c41f818ea67b74052c4a0513e5ca9f2e276105f082bb6",
+    "daytrade_003d": "533f6e3ef756cfbfa7bd49a4627fe960d9ba84546ea57bab2f57d7e385e2fb5c",
+    "daytrade_003d_corr_001": "d978a012851a597918a5e6965a72752be05b36f2f1d637179a9dede7d6ba1fbd"
+  }
+}
