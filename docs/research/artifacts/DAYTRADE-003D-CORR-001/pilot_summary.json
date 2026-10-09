@@ -4,10 +4,16 @@
     "pages_count": 1281,
     "retries_count": 0
   },
+  "authoritative_disposition": "INVALID_CORRECTED_PROBE_IMPLEMENTATION",
   "blocker_details": [
-    "Stage-A coverage 6.82% is below 95.0% threshold"
+    "Frozen implementation misclassified absent Alpaca minute bars as missing provider data; 6.82% coverage is invalid as a true data coverage estimate due to SPARSE_ALPACA_BARS_MISCLASSIFIED_AS_MISSING_DATA"
   ],
-  "final_pilot_disposition": "BLOCKED_STAGE_A_COVERAGE",
+  "coverage_invalid_reason": "SPARSE_ALPACA_BARS_MISCLASSIFIED_AS_MISSING_DATA",
+  "coverage_interpretation_status": "NOT_VALID_AS_TRUE_DATA_COVERAGE_ESTIMATE",
+  "coverage_result_valid": false,
+  "final_pilot_disposition": "INVALID_CORRECTED_PROBE_IMPLEMENTATION",
+  "frozen_missing_prior_or_classification_count": 7008,
+  "frozen_missing_prior_or_interpretation_status": "NOT_RELIABLE_AS_PROVIDER_GAP_COUNT",
   "governance": {
     "approved_production_strategies_empty": true,
     "holdout_status": "quarantined_unopened",
@@ -21,6 +27,7 @@
     "row_count": 11109,
     "snapshot_sha256": "a3131c477d4af0b464410bc1bef369bf87d6a2830b7a72284cdd3f0667a786a7"
   },
+  "observed_frozen_coverage_pct": 6.8236,
   "pilot_date": "2024-01-02",
   "pilot_universe": {
     "ambiguous_duplicate_count": 2,
@@ -58,8 +65,11 @@
   "stage_a_coverage": {
     "canonical_target_universe_count": 7987,
     "computable_stage_a_symbols_count": 545,
+    "coverage_status": "NOT_VALID_AS_TRUE_DATA_COVERAGE_ESTIMATE",
     "coverage_threshold_pct": 95.0,
+    "measured_stage_a_coverage_under_frozen_interpretation": 6.8236,
     "meets_coverage_threshold": false,
+    "observed_frozen_coverage_pct": 6.8236,
     "stage_a_coverage_pct": 6.8236,
     "unavailable_counts_by_reason": {
       "AMBIGUOUS_IDENTITY": 2,
@@ -92,5 +102,6 @@
     "daytrade_003c": "20b43665ae214cfc988c41f818ea67b74052c4a0513e5ca9f2e276105f082bb6",
     "daytrade_003d": "533f6e3ef756cfbfa7bd49a4627fe960d9ba84546ea57bab2f57d7e385e2fb5c",
     "daytrade_003d_corr_001": "d978a012851a597918a5e6965a72752be05b36f2f1d637179a9dede7d6ba1fbd"
-  }
+  },
+  "valid_provider_evidence_preserved": true
 }

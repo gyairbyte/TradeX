@@ -112,3 +112,38 @@ The pilot terminates in one of seven preregistered dispositions:
 - **Partitions:** Validation (2025) and Holdout (2026) partitions remain unopened and quarantined.
 - **Production Status:** `APPROVED_PRODUCTION_STRATEGIES == ()` is strictly verified.
 - **Artifact Quarantine:** Raw provider payloads and ticker symbols remain in private storage (`C:/Users/Gary/.tradex/research/daytrade_003d_corr_001/`). Committed public artifacts contain only safe aggregates and hashes.
+
+---
+
+## 7. Post-Live Empirical Evidence & Semantic Audit Correction
+
+### A. Execution & Valid Live Evidence Preserved
+The bounded single-session (2024-01-02) pilot executed exactly once from pre-live frozen commit `052360e439a96649eea13091e6d92ffa9623601c` obeying all freeze and governance rules. Valid empirical findings preserved:
+- **Massive PIT 2024-01-02 Reference Snapshot:** 12 pages, 11,109 raw rows (SHA-256 `a3131c477d4af0b464410bc1bef369bf87d6a2830b7a72284cdd3f0667a786a7`), 7,989 target rows (4,981 `XNAS`, 3,008 `XNYS`).
+- **Canonical Target Universe:** 7,987 symbols (SHA-256 `383a66f1c7100922d38638f24e4a23724bbc29b77cafc51990dab6ccda117f20`).
+- **Fail-Closed Canonical Duplicates:** Exactly 2 ambiguous duplicate identities identified and classified fail-closed as `AMBIGUOUS_IDENTITY` (neither dropped nor arbitrarily deduplicated). Valid target symbols queried: 7,985.
+- **Alpaca 100-Symbol Capability Test:** HTTP 200, 97 symbols returned with valid bar data.
+- **Stage-A Acquisition Operationally Completed:** 80 batches of 100 symbols querying 20 daily bars (Dec 2023), 14 prior OR sessions, and Jan 2 OR (1,281 calls, 1,281 pages, 0 retries, 0 429s/errors).
+- **Resource Consumption:** 1,293 total HTTP pages (< 5,000 limit), 103,310 bytes private storage (< 2 GB limit), 463.65s runtime.
+- **Execution Boundaries Preserved:** Zero Stage-B calls requested/executed; zero strategy evaluation, backtest, trade simulation, or PnL executed (`strategy_evaluator_executed = false`); validation (2025) and holdout (2026) remain strictly unopened and quarantined; `APPROVED_PRODUCTION_STRATEGIES == ()` strictly preserved.
+
+### B. Material Provider-Semantics Defect (Sparse Alpaca Bars)
+Independent post-live review identified a material provider-semantics defect in how the frozen implementation interpreted absent Alpaca stock minute bars:
+1. **Alpaca Stock Bar Semantics:** Alpaca's stock market-data documentation states that a stock bar is not generated when there are no qualifying trades in the bar interval. Therefore, absence of a 1-minute bar does **NOT** necessarily mean missing provider data.
+2. **ORB Source Definition:** The Zarattini et al. (2024) Relative Volume formula defines RV as first-five-minute traded volume today divided by average first-five-minute traded volume over the prior 14 trading days. A no-trade interval contributes zero traded volume.
+3. **Conflation Defect:** The frozen implementation incorrectly required an opening-range observation for every one of the prior 14 sessions and classified absent minute bars as `MISSING_PRIOR_OR_DATA`. The frozen probe conflated `NO_TRADES_IN_INTERVAL` with `MISSING_DATA`.
+4. **Correction of 7,008 Classification:** 7,008 symbols were classified `MISSING_PRIOR_OR_DATA` by the frozen implementation, but that classification is **not reliable as a provider gap count** because no-trade minute intervals were treated as missing observations.
+5. **Coverage Result Invalidation:** The observed Stage-A coverage of 6.8236% (545/7,987 computable) is **`NOT_VALID_AS_TRUE_DATA_COVERAGE_ESTIMATE`**.
+6. **Authoritative Final Disposition:**
+   $$\text{Authoritative Disposition} = \mathbf{INVALID\_CORRECTED\_PROBE\_IMPLEMENTATION}$$
+
+### C. 95% Coverage Policy Status
+The approved practical coverage policy (data availability is part of reality; small unavailable portions do not invalidate an otherwise representative study) remains active. However, the 95.0% gate was **NOT validly evaluated** by this frozen pilot because its numerator was corrupted by the sparse-bar interpretation defect. The next corrected pilot must calculate coverage using corrected provider semantics. Only after that result should TradeX decide whether the 95% threshold itself needs reconsideration; do not tune the threshold based on the invalid 6.82% result.
+
+### D. Recommended Next Correction: DAYTRADE-003D-CORR-002
+1. **Correct Opening-Volume Semantics:** For a successfully completed Alpaca SIP request covering a known mapped symbol and opening window, a missing 1-minute bar within the 09:30–09:34 interval means zero qualifying traded volume for that minute. Do NOT fabricate OHLC. For prior RV volume: sum volumes of bars that exist in the 5-minute window; if no bars exist in the full window: opening-range volume = 0. For current opening range: aggregate OHLC from actual qualifying trades/bars occurring anywhere in the 5-minute window; if zero bars exist across the entire window: no valid current opening range, symbol cannot generate a setup that session.
+2. **Flexible 5-Minute Range:** Do not require exactly five 1-minute bars merely to compute a 5-minute opening range.
+3. **Preserve True Provider Failures Separately:** Request failure, pagination failure, malformed data, unmapped symbol, or actual incomplete response must NOT be converted to zero.
+4. **Cheap Point-in-Time Pre-Filtering:** Apply cheap PIT eligibility checks (daily ADV14, ATR14) before unnecessary OR-history work wherever it does not change the locked strategy. Obtain/process current opening range and prior RV data only for symbols that pass daily eligibility.
+5. **Preserve Locked Strategy:** Do not change price threshold ($> \$5$), ADV threshold ($\ge 1\text{M}$), ATR threshold ($> \$0.50$), RV threshold ($\ge 1.0$), Top 20 ranking, entry logic, stop logic, or cost assumptions.
+6. **Rerun Only Bounded Jan-2 Pilot:** Rerun only the Jan-2 bounded pilot after code/spec/test freeze. No full-year build yet.
