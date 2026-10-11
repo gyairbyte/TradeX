@@ -81,14 +81,23 @@ def test_opening_range_bullish_bearish_doji() -> None:
 
 
 def test_opening_range_missing_or_duplicate_bars_fail_closed() -> None:
-    """Requirement: All 5 bars (09:30-09:34) required; missing or duplicate fails closed."""
+    """Requirement: All 5 bars required under require_five_bars=True; sparse valid under CORR-002; duplicates fail closed."""
     d = date(2025, 6, 2)
     valid_bars = _make_or_bars("TEST", d, 100.0, 105.0, 95.0, 102.0, 50_000.0)
 
-    # Missing 1 bar (only 4 bars)
-    assert evaluate_opening_range(valid_bars[:4]) is None
+    # Missing 1 bar (only 4 bars) with require_five_bars=True fails closed
+    assert evaluate_opening_range(valid_bars[:4], require_five_bars=True) is None
 
-    # Duplicate 09:30 bar
+    # Under corrected CORR-002 sparse-bar semantics, 4 bars is valid
+    or_sparse = evaluate_opening_range(valid_bars[:4])
+    assert or_sparse is not None
+    assert or_sparse.or_open == 100.0
+    assert or_sparse.or_volume == 40_000.0
+
+    # 0 bars produces None (NO_OPENING_PRINT_NO_SETUP)
+    assert evaluate_opening_range([]) is None
+
+    # Duplicate 09:30 bar fails closed
     dup_bars = [valid_bars[0]] + valid_bars
     assert evaluate_opening_range(dup_bars) is None
 
