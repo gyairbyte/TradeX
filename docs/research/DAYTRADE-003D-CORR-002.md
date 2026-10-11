@@ -1,102 +1,94 @@
 # DAYTRADE-003D-CORR-002
 # Sparse-Bar Correction and Final January 2 Data Pilot
 
-## 1. Task Identity & Context
+## 1. Executive Summary & Authoritative Disposition
 
 - **Task ID:** `DAYTRADE-003D-CORR-002`
 - **Strategy ID:** `DAYTRADE-003B-ORB-SIP5M`
-- **Classification:** Research methodology and evaluator-compatibility correction, followed by one bounded real-data feasibility pilot.
-- **Parent Task:** `DAYTRADE-003D-CORR-001` (PR #109)
-- **Parent Authoritative Disposition:** `INVALID_CORRECTED_PROBE_IMPLEMENTATION`
-- **Parent Defect Identified:** Conflation of absent Alpaca SIP minute bars (legitimate lack of trades) with missing provider data, which incorrectly depressed Stage-A coverage to 6.82%.
-- **Expected Starting Main Commit:** `b109c462ec7389d71843470eedf9c612fc43cb04` (verified on `origin/main`).
+- **Pilot Date:** `2024-01-02`
+- **Pre-Live Frozen Commit SHA:** `d4c999dca88085cccb6d88455b13b25fbf76e9e6`
+- **Authoritative Pilot Disposition:** `**FEASIBLE_FOR_2024_DEVELOPMENT_DATASET_BUILD**`
+- **Execution Wall-Clock Runtime:** `357.44 seconds`
+- **Total Private Raw Storage:** `4,368,413 bytes` (Bound: `2,147,483,648 bytes`)
+- **Approved Production Strategies:** `[]` (strictly empty)
 
----
+## 2. Methodology & Upstream Specification Hashes
 
-## 2. Upstream Specification & Amendment Hashes
+| Document | Path | SHA-256 Hash | Status |
+| :--- | :--- | :--- | :--- |
+| **003B Specification** | `docs/research/specs/DAYTRADE-003B-ORB-v1.json` | `62f5028c1b11a392aeb596c4e05b8c1f194cc5cec3af1a9406f4fe16c80460c0` | Immutable Verified |
+| **003C Resolution** | `docs/research/specs/DAYTRADE-003C-ORB-RESOLUTION-v1.json` | `20b43665ae214cfc988c41f818ea67b74052c4a0513e5ca9f2e276105f082bb6` | Immutable Verified |
+| **003D Data Feasibility** | `docs/research/specs/DAYTRADE-003D-ORB-DATA-FEASIBILITY-v1.json` | `533f6e3ef756cfbfa7bd49a4627fe960d9ba84546ea57bab2f57d7e385e2fb5c` | Immutable Verified |
+| **003D-CORR-001 Spec** | `docs/research/specs/DAYTRADE-003D-CORR-001-v1.json` | `d978a012851a597918a5e6965a72752be05b36f2f1d637179a9dede7d6ba1fbd` | Immutable Verified |
+| **003D-CORR-002 Spec** | `docs/research/specs/DAYTRADE-003D-CORR-002-v1.json` | `d63cca87100cb80de86faf6c909766c3894b983fe3c486da99de3963f6eb311c` | Locked Preregistered |
 
-All historical specifications are immutable and verified via SHA-256:
+## 3. Data Availability & Coverage Audit Results
 
-| Document | Path | SHA-256 Hash |
-| :--- | :--- | :--- |
-| **DAYTRADE-003B Spec** | `docs/research/specs/DAYTRADE-003B-ORB-v1.json` | `62f5028c1b11a392aeb596c4e05b8c1f194cc5cec3af1a9406f4fe16c80460c0` |
-| **DAYTRADE-003C Resolution** | `docs/research/specs/DAYTRADE-003C-ORB-RESOLUTION-v1.json` | `20b43665ae214cfc988c41f818ea67b74052c4a0513e5ca9f2e276105f082bb6` |
-| **Historical DAYTRADE-003D Spec** | `docs/research/specs/DAYTRADE-003D-ORB-DATA-FEASIBILITY-v1.json` | `533f6e3ef756cfbfa7bd49a4627fe960d9ba84546ea57bab2f57d7e385e2fb5c` |
-| **DAYTRADE-003D-CORR-001 Spec** | `docs/research/specs/DAYTRADE-003D-CORR-001-v1.json` | `d978a012851a597918a5e6965a72752be05b36f2f1d637179a9dede7d6ba1fbd` |
-| **DAYTRADE-003D-CORR-002 Spec** | `docs/research/specs/DAYTRADE-003D-CORR-002-v1.json` | `d63cca87100cb80de86faf6c909766c3894b983fe3c486da99de3963f6eb311c` |
+### Phase 1: Massive PIT Target Universe (2024-01-02)
 
----
+- **Raw Massive Snapshot Rows:** `11,109` (`12` pages, SHA-256: `a3131c477d4af0b464410bc1bef369bf87d6a2830b7a72284cdd3f0667a786a7`)
+- **Target Exchange Scope:** `('XNYS', 'XNAS')`
+- **Canonical Target Universe Count:** `7,987` (Denominator: valid + ambiguous)
+- **Valid Canonical Symbols Queried:** `7,985`
+- **Ambiguous Duplicate Symbols (Fail-Closed):** `2`
+- **Target Universe Hash:** `383a66f1c7100922d38638f24e4a23724bbc29b77cafc51990dab6ccda117f20`
 
-## 3. Approved Research Methodology Amendments & Architectural Principles
+### Phase 2: Broad Daily Data Availability (Dec 2023 D-1 Lookback)
 
-This amendment addresses the root causes of prior pilot failures while preserving the underlying published Stocks-in-Play 5-minute ORB strategy (Zarattini et al., 2024).
+- **Broad PIT Universe Symbols:** `7,987`
+- **Daily Indicator Computable Symbols:** `7,558`
+- **Broad Universe Daily Data Availability:** `94.63%`
+- **Missing Daily Data Count:** `429`
+- **Daily-Base-Qualified Universe Count (ADV14 >= 1M, ATR14 > $0.50):** `959`
 
-### Architectural Principles
+### Phase 3: Candidate-Screening Completeness Audit (Scope E Gate)
 
-- **Principle A (Work with real-world data availability):** Ordinary missing historical intervals or legitimate no-trade intervals must not invalidate an otherwise representative study. Provider data failures (HTTP errors, pagination failure, truncated responses, malformed records) must be strictly distinguished from legitimate no-trade / no-setup market conditions.
-- **Principle B (Candidate preservation):** The externally supported ORB strategy remains a permanent research candidate regardless of independent evaluation outcomes.
+- **Screening Denominator (Daily-Base-Qualified Pool):** `959`
+- **Validly Determined Symbols:** `959`
+- **Candidate-Screening Completeness:** `100.00%` (Gate Threshold: `95.00%`)
+- **Gate Evaluated:** `**PASSED**`
 
-### Scope A: Sparse-Bar Opening Range Semantics
-- In Alpaca SIP feeds, 1-minute bars are only emitted when qualifying trades occur.
-- Any valid subset of 1 to 5 minute bars in the 09:30–09:34 ET window constructs a valid opening range:
-  - `Open` = first available bar open
-  - `High` = max high across available bars
-  - `Low` = min low across available bars
-  - `Close` = last available bar close
-  - `Volume` = sum volume across available bars
-- If zero bars exist across the entire 5-minute window on session $D$, the symbol had no opening prints and is classified as `NO_OPENING_PRINT_NO_SETUP` (a valid resolved non-setup outcome, not missing data).
-- Corrupt, non-finite, out-of-order, or duplicate minute timestamps fail closed.
+#### Classification Breakdown among Daily-Base-Qualified Pool:
 
-### Scope B: Baseline Relative Volume Denominator Semantics
-- For each of the 14 prior sessions, opening-range volume is aggregated from available sparse bars.
-- If all 14 prior sessions traded zero volume, mean prior volume is $0.0$, making RV uncomputable. This yields a valid resolved outcome: `UNRANKABLE_ZERO_RV_BASELINE`.
-- A genuinely missing trading session (provider error, unmapped response) fails closed as `PROVIDER_DATA_FAILURE`.
+- **Legitimate No-Opening-Print (09:30–09:34 ET no trades):** `0`
+- **Price Filter Rejected (Open <= $5.00):** `28`
+- **Undefined RV Baseline (All 14 prior sessions zero OR volume):** `0`
+- **RV Filter Rejected (RV < 1.0):** `678`
+- **Eligible Candidates (Passed all 4 filters):** `253`
+- **Genuine Provider Data Failures:** `0`
 
-### Scope C: Evaluator Compatibility & Sparse-Bar Price-Path Execution
-- In Stage B (09:35–15:59 ET), sparse minute bars represent intervals with no qualifying trades.
-- Fills are never fabricated:
-  - Pending stop orders remain pending across missing minutes.
-  - Open positions remain open across missing minutes; protective stops trigger only on actual reported trades touching the stop price.
-  - A missing 15:59 ET EOD liquidation bar for an active position fails closed as `non_computable`.
+### Phase 4: Frozen Top-20 Selection Evidence (Scope D Step 6)
 
-### Scope D: Inexpensive Screening Operational Query Ordering
-- Pre-filtering reduces provider network calls by ~88%:
-  1. Broad daily screening (ADV14 $\ge 1\text{M}$, ATR14 $> \$0.50$) on Dec 2023 D-1 history reduces ~8,000 listed symbols down to ~600–1,000 daily-base-qualified symbols.
-  2. Current opening range (09:30–09:34) and price filtering (`or_open > $5.00`) further reduces candidate symbols.
-  3. Prior 14 OR sessions are queried only for daily-base-qualified symbols with current OR open $> \$5.00$.
+- **Total Qualifying Candidates:** `20`
+- **Top-20 Selected Count:** `20`
+- **Doji Count (No-Order):** `0`
+- **Selection Cryptographic SHA-256:** `080a444e0fc371969d8ba228b0eb0ad9d4fe89958c88778901cc11498a69e82e`
+- *(Detailed symbol records and position allocations preserved privately in private root)*
 
-### Scope E: Reformulated 95% Candidate-Screening Coverage Gate
-- The formal 95% gate applies strictly to **candidate-screening completeness among daily-base-qualified symbols**:
-  $$\text{screening\_completeness} = \frac{\text{validly\_determined\_count}}{\text{daily\_base\_qualified\_count}} \ge 0.95$$
-- Validly determined classifications include:
-  - `ELIGIBLE`
-  - `PRICE_REJECTED`
-  - `UNRANKABLE_ZERO_RV_BASELINE`
-  - `RV_REJECTED`
-  - `NO_OPENING_PRINT_NO_SETUP`
-- Provider HTTP failures, truncated pagination, and corrupt data count against completeness.
+### Phase 5: Stage-B Price Path Audit & Evaluator Compatibility (Scope F)
 
----
+- **Selected Non-Doji Symbols Acquired:** `20`
+- **Total Expected Minute Intervals:** `7,700`
+- **Total Actual Provider Bars Received:** `7,447`
+- **Total Sparse / Verified No-Print Minute Intervals:** `253`
+- **Symbols Missing 15:59 EOD Liquidation Bar:** `0`
+- **Stage-B Provider Failures:** `0`
+- **Stage-B Price Path Usability:** `**USABLE**`
 
-## 4. Operational Safety Bounds & Governance
+## 4. Provider Resource Consumption & Provenance
 
-- **Runaway HTTP Page Ceiling:** `5,000 pages`.
-- **Runaway Private Storage Bound:** `2 GB` (`2,147,483,648 bytes`).
-- **Batch Size:** `100 symbols`.
-- **Single-Session Authorization:** Pilot date is strictly `2024-01-02`.
-- **Strict Quarantine:** Validation (2025) and Holdout (2026) partitions remain unopened.
-- **No Simulation / PnL:** No simulated trades, PnL, win-rate, or Sharpe ratio calculation.
-- **Production Isolation:** `APPROVED_PRODUCTION_STRATEGIES == ()` is strictly verified.
-- **Private Raw Storage:** Raw provider data and ticker lists remain isolated in private storage (`C:/Users/Gary/.tradex/research/daytrade_003d_corr_002/`).
+- **Alpaca Total Logical Calls:** `231`
+- **Alpaca Total HTTP Pages:** `231`
+- **Alpaca Retries / 429s:** `0`
+- **Massive HTTP Pages:** `12`
+- **Total Provider HTTP Pages:** `243` (Ceiling: `5,000`)
+- **Total Elapsed Runtime:** `357.44 seconds`
 
----
+## 5. Governance & Production Safeguards
 
-## 5. Governed Pilot Dispositions
-
-1. `FEASIBLE_FOR_2024_DEVELOPMENT_DATASET_BUILD`
-2. `BLOCKED_REFERENCE_OR_PROVIDER_ACCESS`
-3. `BLOCKED_PROVIDER_DATA_INTEGRITY`
-4. `BLOCKED_CANDIDATE_SCREENING_COVERAGE`
-5. `BLOCKED_STAGE_B_PRICE_PATH`
-6. `INCONCLUSIVE_NO_ACTIONABLE_PILOT_CANDIDATE`
-7. `INVALID_CORR_002_IMPLEMENTATION`
+- **Strategy Simulation / Backtest:** Strictly forbidden and not executed.
+- **PnL / Sharpe / Win-Rate Computation:** Strictly forbidden and not executed.
+- **Full-Year 2024 Acquisition:** Quarantined and not executed.
+- **2025 Validation / 2026 Holdout Partitions:** Strictly unopened and quarantined.
+- **External Strategy Retention Principle:** The Stocks-in-Play 5-minute ORB strategy remains an authorized external candidate regardless of TradeX independent evaluation outcomes.
+- **Production Strategy Registry:** `APPROVED_PRODUCTION_STRATEGIES == ()` strictly verified.
