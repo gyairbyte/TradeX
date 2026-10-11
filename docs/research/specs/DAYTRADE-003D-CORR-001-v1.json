@@ -1,0 +1,118 @@
+{
+  "schema_version": "1.0",
+  "task_id": "DAYTRADE-003D-CORR-001",
+  "strategy_id": "DAYTRADE-003B-ORB-SIP5M",
+  "classification": "research_methodology_amendment_and_bounded_data_pilot",
+  "starting_main_sha": "625e67b14ad0ebfb2d4ccba315d55897980f7a33",
+  "parent_task": "DAYTRADE-003D-ORB-DATA-FEASIBILITY-001",
+  "parent_pr": 108,
+  "parent_disposition": "INVALID_PROBE_IMPLEMENTATION_DEFECT",
+  "upstream_specs": {
+    "daytrade_003b_spec_path": "docs/research/specs/DAYTRADE-003B-ORB-v1.json",
+    "daytrade_003b_spec_sha256": "62f5028c1b11a392aeb596c4e05b8c1f194cc5cec3af1a9406f4fe16c80460c0",
+    "daytrade_003c_resolution_path": "docs/research/specs/DAYTRADE-003C-ORB-RESOLUTION-v1.json",
+    "daytrade_003c_resolution_sha256": "20b43665ae214cfc988c41f818ea67b74052c4a0513e5ca9f2e276105f082bb6",
+    "daytrade_003d_spec_path": "docs/research/specs/DAYTRADE-003D-ORB-DATA-FEASIBILITY-v1.json",
+    "daytrade_003d_spec_sha256": "533f6e3ef756cfbfa7bd49a4627fe960d9ba84546ea57bab2f57d7e385e2fb5c"
+  },
+  "research_methodology_amendment": {
+    "amendment_name": "Data Availability Is Part of Reality",
+    "supersedes_prior_rule": "Supersedes ONLY the prior 003C rule that one missing Stage-A symbol invalidates the entire session.",
+    "underlying_strategy_parameters_changed": false,
+    "practical_principle": "Small unavailable portions of historical provider data do not invalidate an otherwise representative study.",
+    "stage_a_coverage_gate": {
+      "metric": "stage_a_coverage = computable_stage_a_symbols / canonical_target_universe_symbols",
+      "minimum_coverage_threshold": 0.95,
+      "interpretation": "Prospective data-quality rule, NOT a trading filter. Evaluated on provider data actually available.",
+      "pass_condition": "coverage >= 0.95 -> session is sufficiently representative; ranking continues using computable universe.",
+      "fail_condition": "coverage < 0.95 -> session is DATA_COVERAGE_INSUFFICIENT (BLOCKED_STAGE_A_COVERAGE); no Stage-B data requested."
+    },
+    "unavailable_symbol_handling": {
+      "policy": "Mark unavailable symbols with reason, exclude from candidate ranking, count against coverage denominator.",
+      "reasons": [
+        "AMBIGUOUS_IDENTITY",
+        "INSUFFICIENT_HISTORY",
+        "CROSS_PROVIDER_UNMAPPED",
+        "MISSING_DAILY_DATA",
+        "MISSING_PRIOR_OR_DATA",
+        "MISSING_CURRENT_OR_DATA",
+        "MALFORMED_DATA"
+      ],
+      "prohibitions": [
+        "Do not invent data",
+        "Do not fill missing bars",
+        "Do not search further backward",
+        "Do not use current membership lists",
+        "Do not use future price behavior",
+        "Do not replace based on outcome"
+      ],
+      "lookahead_guard": "The missingness decision must be completely independent of future returns."
+    },
+    "duplicate_symbol_resolution": {
+      "canonical_form": "strip whitespace, uppercase",
+      "resolution_policy": "If rows can be proven identical using provider identity metadata (identical exchange, type, active, and matching strong ID), collapse deterministically. Otherwise mark AMBIGUOUS_IDENTITY, exclude from Stage A, and count in coverage denominator.",
+      "prohibitions": [
+        "Do not silently keep first row",
+        "Do not fail entire universe for isolated ambiguous duplicates",
+        "Do not publish ambiguous ticker names",
+        "Do not create ticker-remapping heuristics"
+      ]
+    },
+    "short_history_and_ipo_handling": {
+      "policy": "A security legitimately listed fewer than required sessions ago is classified INSUFFICIENT_HISTORY, excluded from ranking, and counted in coverage denominator.",
+      "ipo_filter_permitted": false
+    },
+    "stage_b_missing_data_policy": {
+      "policy": "Complete 09:35 through 15:59 ET 1-minute data required for all selected non-doji symbols.",
+      "failure_action": "If required Stage-B data are missing: BLOCKED_STAGE_B_COVERAGE.",
+      "prohibitions": [
+        "Do not replace selected symbol with rank 21",
+        "Do not assume no trigger or no stop",
+        "Do not interpolate or fabricate bars"
+      ]
+    }
+  },
+  "strategy_parameters": {
+    "open_price_minimum": 5.0,
+    "adv14_minimum": 1000000.0,
+    "atr14_minimum": 0.5,
+    "rv14_minimum": 1.0,
+    "ranking": "relative_volume descending, ticker ascending tie-breaker",
+    "top_n": 20,
+    "doji_action": "NO_ORDER, NO BACKFILL"
+  },
+  "operational_safety_bounds": {
+    "max_pilot_http_pages": 5000,
+    "max_pilot_private_storage_bytes": 2147483648,
+    "batch_size": 100,
+    "action_on_exceed": "STOP before execution and report BLOCKED_RESOURCE_BOUND"
+  },
+  "pilot_scope": {
+    "date": "2024-01-02",
+    "calendar": "XNYS",
+    "reacquire_june_december_snapshots": false,
+    "massive_snapshot": "ONE complete 2024-01-02 snapshot (active=true, market=stocks, locale=us, terminal pagination required)",
+    "target_exchanges": [
+      "XNYS",
+      "XNAS"
+    ],
+    "alpaca_batch_capability_check": "ONE small bounded 100-symbol request before broad acquisition; failure -> BLOCKED_PROVIDER_BATCH_CAPABILITY"
+  },
+  "pilot_disposition_taxonomy": [
+    "FEASIBLE_FOR_2024_DEVELOPMENT_DATASET",
+    "BLOCKED_MASSIVE_REFERENCE",
+    "BLOCKED_PROVIDER_BATCH_CAPABILITY",
+    "BLOCKED_ALPACA_SIP",
+    "BLOCKED_STAGE_A_COVERAGE",
+    "BLOCKED_STAGE_B_COVERAGE",
+    "INVALID_CORRECTED_PROBE_IMPLEMENTATION"
+  ],
+  "governance": {
+    "strategy_evaluator_executed": false,
+    "performance_evaluation_executed": false,
+    "validation_status": "unopened",
+    "holdout_status": "quarantined_unopened",
+    "approved_production_strategies_empty": true,
+    "full_2024_acquisition_authorized": false
+  }
+}
