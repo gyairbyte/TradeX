@@ -8,6 +8,7 @@
 - **Pilot Date:** `2024-01-02`
 - **Base Commit:** `4b1d7084d5d8c91ef10fffbc1f7169de43bfcd0a` (merged PR #110)
 - **Proposed Branch:** `antigravity/daytrade-003d-corr-003-integrity-replay`
+- **Pre-Live Freeze Commit SHA:** `124206b73bc3ccb5783c422439bedb7bd5c1c0f8`
 - **Classification:** Research-only methodology and data-integrity correction. No production trading changes.
 - **Production Strategy Registry:** `APPROVED_PRODUCTION_STRATEGIES == ()` is strictly verified empty.
 - **Permanent Research Candidate Retention (Principle B):** The published Stocks-in-Play 5-minute Opening Range Breakout strategy (Zarattini et al., 2024) remains a permanent externally supported research candidate.
