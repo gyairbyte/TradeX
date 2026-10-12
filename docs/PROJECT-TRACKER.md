@@ -1042,13 +1042,31 @@ This is the master backlog for TradeX engineering and research tasks, originatin
 - **Intended pull request:** `antigravity/mvp-ux-desktop-001-windows-launchers`
 - **Affects trading behavior:** No — operational desktop tooling only; no trading strategies, scores, weights, thresholds, rankings, or eligibility changed.
 
+##### CI-TOOL-RUFF-001: Pin Ruff Development Dependency to Restore Deterministic CI
+
+- **ID:** CI-TOOL-RUFF-001
+- **Title:** Pin Ruff Development Dependency to Restore Deterministic CI
+- **Category:** Testing / CI Tooling
+- **Priority:** High
+- **Status:** Completed
+- **Resolved by:** `antigravity/ci-tool-ruff-001-pin`
+- **Problem statement:** PR #110 was blocked by a GitHub Actions lint failure caused by dependency drift. `pyproject.toml` declared an unbounded `ruff` development dependency. On 2026-10-11, Ruff `0.17.0` was released and installed by `uv sync` in CI (compared to `0.16.10` in previous successful PR #109 CI). Ruff `0.17.0` flagged 31 `RUF100` unused-noqa directives (for non-enabled `DTZ001`) in unchanged historical test files, failing CI before pytest executed.
+- **Recommended action:** Pin the Ruff development dependency in `pyproject.toml` to the last verified passing version `ruff==0.16.10`.
+- **Reason:** Restores deterministic, reproducible GitHub Actions lint and test verification without rewriting unrelated historical tests or weakening global lint rules.
+- **Dependencies:** None
+- **Files affected:** `pyproject.toml`, `docs/PROJECT-TRACKER.md`
+- **Testing requirements:** Run `uv sync --extra dev --extra schwab --extra research`, `ruff --version` (verifying `0.16.10`), `ruff check tests scripts` (verifying 0 errors), and the full pytest suite. Verify production registry assertion `APPROVED_PRODUCTION_STRATEGIES == ()`.
+- **Acceptance criteria:** Ruff pinned to `0.16.10`; `uv sync` resolves `0.16.10`; exact CI lint command passes; no historical tests rewritten; no global lint rules suppressed; no strategy or research logic modified; full test suite passes; draft PR opened for review.
+- **Intended pull request:** `antigravity/ci-tool-ruff-001-pin`
+- **Affects trading behavior:** No — development tooling only; no trading strategies, scores, weights, thresholds, rankings, eligibility, or research empirical results changed.
+
 ---
 
 ## Summary by priority
 
 | Priority | Count | Representative first item |
 |---|---|---|
-| High | 27 | LONG-002: Rapid-upside long opportunity research program |
+| High | 28 | LONG-002: Rapid-upside long opportunity research program |
 | Medium | 12 | SHORT-001: Add market regime and relative strength to short-term scorer |
 | Low | 6 | DOC-001: Close LONG-001 and restore documentation and tracker consistency |
 
@@ -1056,7 +1074,7 @@ This is the master backlog for TradeX engineering and research tasks, originatin
 
 | Status | Count |
 |---|---|
-| Completed | 44 |
+| Completed | 45 |
 | Deferred | 1 |
 | Proposed | 0 |
 | In progress | 0 |
