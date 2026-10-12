@@ -129,7 +129,7 @@ LOCKED_003D_CORR_003_SPEC_SHA256 = (
     "2f86d1231f55180b8fe4f65832cde8783e7c6058788a1e98130353b5822a1cdb"
 )
 
-DEFAULT_PRIVATE_ROOT = Path.home() / ".tradex" / "research" / "daytrade_003d_corr_003"
+DEFAULT_PRIVATE_ROOT = Path("C:/Users/Gary/.tradex/research/daytrade_003d_corr_003")
 
 
 class PilotDisposition(str, Enum):
