@@ -169,12 +169,16 @@ class DatasetAlpacaClient:
         limit: int = 10000,
         sleeper: Callable[[float], None] | None = None,
         max_pages: int | None = None,
+        include_raw_bars: bool = False,
+        include_raw_pages: bool = False,
     ) -> tuple[dict[str, pd.DataFrame], dict[str, Any]]:
         """Fetch multi-symbol bars, returning per-symbol DataFrames and pagination metadata.
 
         Pagination metadata contains ``page_count``, ``next_page_token_present``,
         ``pagination_complete``, ``repeated_page_token``, ``pagination_cycle_detected``,
-        per-page bar counts, and token hashes.
+        per-page bar counts, and token hashes. If ``include_raw_bars`` is True,
+        raw unparsed bar dictionaries per symbol are included in ``raw_bars_by_symbol``.
+        If ``include_raw_pages`` is True, raw page payloads are included in ``raw_pages``.
         """
         url = f"{self.market_data_host}/v2/stocks/bars"
         params: dict[str, Any] = {
@@ -203,6 +207,7 @@ class DatasetAlpacaClient:
         page_token: str | None = None
         page_bar_counts: list[int] = []
         token_hashes: list[str] = []
+        raw_pages: list[dict[str, Any]] = []
 
         http_attempts = 0
         http_429s = 0
@@ -222,7 +227,7 @@ class DatasetAlpacaClient:
                 http_429s += r429
                 http_errors += rerr
             except (requests.Timeout, requests.ConnectionError):
-                return {s: pd.DataFrame() for s in symbols}, {
+                err_meta: dict[str, Any] = {
                     "page_count": page_count,
                     "logical_calls": 1,
                     "http_pages": page_count,
@@ -242,6 +247,11 @@ class DatasetAlpacaClient:
                     "response_symbols": sorted(response_symbols),
                     "malformed_timestamp_counts": {s.upper(): 0 for s in symbols},
                 }
+                if include_raw_bars:
+                    err_meta["raw_bars_by_symbol"] = all_bars
+                if include_raw_pages:
+                    err_meta["raw_pages"] = raw_pages
+                return {s: pd.DataFrame() for s in symbols}, err_meta
 
             page_count += 1
             last_status = resp.status_code
@@ -251,7 +261,7 @@ class DatasetAlpacaClient:
                     error_body = resp.text
                 except Exception:  # noqa: BLE001
                     error_body = ""
-                return {s: pd.DataFrame() for s in symbols}, {
+                err_meta = {
                     "page_count": page_count,
                     "logical_calls": 1,
                     "http_pages": page_count,
@@ -272,12 +282,24 @@ class DatasetAlpacaClient:
                     "response_symbols": sorted(response_symbols),
                     "malformed_timestamp_counts": {s.upper(): 0 for s in symbols},
                 }
+                if include_raw_bars:
+                    err_meta["raw_bars_by_symbol"] = all_bars
+                if include_raw_pages:
+                    err_meta["raw_pages"] = raw_pages
+                return {s: pd.DataFrame() for s in symbols}, err_meta
 
             try:
                 data = resp.json()
             except Exception:  # noqa: BLE001
                 safe_error = "invalid_response"
                 break
+
+            if include_raw_pages:
+                raw_pages.append({
+                    "http_status": last_status,
+                    "page_token": page_token,
+                    "body": data,
+                })
 
             if not isinstance(data, dict):
                 safe_error = "invalid_response"
@@ -328,7 +350,7 @@ class DatasetAlpacaClient:
             dfs[sym_upper] = df
             malformed_timestamp_counts[sym_upper] = malformed_ts_count
 
-        return dfs, {
+        ret_meta: dict[str, Any] = {
             "page_count": page_count,
             "logical_calls": 1,
             "http_pages": page_count,
@@ -348,3 +370,9 @@ class DatasetAlpacaClient:
             "http_status": last_status,
             "response_symbols": sorted(response_symbols),
         }
+        if include_raw_bars:
+            ret_meta["raw_bars_by_symbol"] = all_bars
+        if include_raw_pages:
+            ret_meta["raw_pages"] = raw_pages
+
+        return dfs, ret_meta
