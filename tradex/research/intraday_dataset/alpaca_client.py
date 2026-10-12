@@ -313,9 +313,20 @@ class DatasetAlpacaClient:
                 safe_error = "invalid_response"
                 break
 
-            bars_by_symbol = data.get("bars", {})
-            if not isinstance(bars_by_symbol, dict):
-                safe_error = "invalid_response"
+            if "bars" not in data or not isinstance(data["bars"], dict):
+                safe_error = "malformed_page_payload"
+                break
+
+            bars_by_symbol = data["bars"]
+
+            # Validate that every symbol entry is a list of bar dictionaries
+            malformed_bars = False
+            for sym_key, b_list in bars_by_symbol.items():
+                if not isinstance(b_list, list) or any(not isinstance(b, dict) for b in b_list):
+                    malformed_bars = True
+                    break
+            if malformed_bars:
+                safe_error = "malformed_page_payload"
                 break
 
             # Symbol identity: accumulate every symbol that appears on any page.
@@ -328,10 +339,9 @@ class DatasetAlpacaClient:
                 sym_clean = str(sym_key).upper()
                 if sym_clean not in all_bars:
                     all_bars[sym_clean] = []
-                bars_to_add = b_list if isinstance(b_list, list) else []
-                all_bars[sym_clean].extend(bars_to_add)
+                all_bars[sym_clean].extend(b_list)
                 if sym_clean in {s.upper() for s in symbols}:
-                    page_total += len(bars_to_add)
+                    page_total += len(b_list)
             page_bar_counts.append(page_total)
 
             token = data.get("next_page_token")

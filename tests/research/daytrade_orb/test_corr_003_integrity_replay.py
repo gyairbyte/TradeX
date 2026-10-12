@@ -15,6 +15,7 @@ Enforces:
 from __future__ import annotations
 
 import json
+import subprocess
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
@@ -36,6 +37,8 @@ from tradex.research.daytrade_orb.corr_003_pilot import (
     LOCKED_003D_CORR_003_SPEC_SHA256,
     LOCKED_003D_SPEC_PATH,
     LOCKED_003D_SPEC_SHA256,
+    PILOT_DATE,
+    TASK_ID,
     CandidateScreeningOutcome,
     PayloadIntegrityStatus,
     PilotDisposition,
@@ -66,7 +69,11 @@ from tradex.research.daytrade_orb.models import (
     OpeningRangeVolumeObservation,
 )
 from tradex.research.daytrade_orb.ranking import evaluate_opening_range
-from tradex.research.intraday_dataset.alpaca_client import DatasetAlpacaClient
+from tradex.research.intraday_dataset.alpaca_client import (
+    DatasetAlpacaClient,
+    _token_hash,
+    _token_sequence_hash,
+)
 from tradex.strategies.registry import APPROVED_PRODUCTION_STRATEGIES
 
 NY_TZ = ZoneInfo("America/New_York")
@@ -515,15 +522,34 @@ def _build_synthetic_fixture(tmp_path: Path, pilot_date: str = "2024-01-02") -> 
         {"t": f"{d}T05:00:00Z", "o": 30.0, "h": 32.0, "l": 29.0, "c": 31.0, "v": 1_500_000.0}
         for d in daily_dates
     ]
+    tok_hashes = [_token_hash(None), _token_hash(None)]
+    tok_seq = _token_sequence_hash(tok_hashes)
+
+    daily_raw_pages = [{
+        "http_status": 200,
+        "page_token": None,
+        "body": {
+            "bars": {"AAA": daily_bars_aaa, "BBB": daily_bars_bbb},
+            "next_page_token": None,
+        },
+    }]
     daily_batch = [{
         "batch_index": 1,
         "symbols_requested": ["AAA", "BBB"],
-        "request_params": {"symbols": ["AAA", "BBB"], "timeframe": "1Day"},
+        "request_params": {
+            "symbols": "AAA,BBB",
+            "timeframe": "1Day",
+            "feed": "sip",
+            "adjustment": "raw",
+            "asof": pilot_date,
+            "start": "2023-12-01T00:00:00Z",
+            "end": "2023-12-29T23:59:00Z",
+        },
         "http_status": 200,
         "pagination_complete": True,
         "page_count": 1,
-        "token_hashes": ["hash1"],
-        "token_sequence_sha256": "tokseq",
+        "token_hashes": tok_hashes,
+        "token_sequence_sha256": tok_seq,
         "meta": {
             "http_status": 200,
             "pagination_complete": True,
@@ -535,9 +561,9 @@ def _build_synthetic_fixture(tmp_path: Path, pilot_date: str = "2024-01-02") -> 
             "unconsumed_page_token_present": False,
             "response_symbols": ["AAA", "BBB"],
             "malformed_timestamp_counts": {"AAA": 0, "BBB": 0},
-            "token_hashes": ["hash1"],
-            "token_sequence_sha256": "tokseq",
-            "raw_pages": [],
+            "token_hashes": tok_hashes,
+            "token_sequence_sha256": tok_seq,
+            "raw_pages": daily_raw_pages,
         },
         "bars_by_symbol": {"AAA": daily_bars_aaa, "BBB": daily_bars_bbb},
     }]
@@ -564,15 +590,31 @@ def _build_synthetic_fixture(tmp_path: Path, pilot_date: str = "2024-01-02") -> 
     or_bars_bbb = [
         {"t": "2024-01-02T14:30:00Z", "o": 4.0, "h": 4.2, "l": 3.9, "c": 4.1, "v": 10000.0},
     ]
+    cur_raw_pages = [{
+        "http_status": 200,
+        "page_token": None,
+        "body": {
+            "bars": {"AAA": or_bars_aaa, "BBB": or_bars_bbb},
+            "next_page_token": None,
+        },
+    }]
     cur_batch = [{
         "batch_index": 1,
         "symbols_requested": ["AAA", "BBB"],
-        "request_params": {"symbols": ["AAA", "BBB"], "timeframe": "1Min"},
+        "request_params": {
+            "symbols": "AAA,BBB",
+            "timeframe": "1Min",
+            "feed": "sip",
+            "adjustment": "raw",
+            "asof": pilot_date,
+            "start": "2024-01-02T14:30:00Z",
+            "end": "2024-01-02T14:34:59Z",
+        },
         "http_status": 200,
         "pagination_complete": True,
         "page_count": 1,
-        "token_hashes": ["hash1"],
-        "token_sequence_sha256": "tokseq",
+        "token_hashes": tok_hashes,
+        "token_sequence_sha256": tok_seq,
         "meta": {
             "http_status": 200,
             "pagination_complete": True,
@@ -584,9 +626,9 @@ def _build_synthetic_fixture(tmp_path: Path, pilot_date: str = "2024-01-02") -> 
             "unconsumed_page_token_present": False,
             "response_symbols": ["AAA", "BBB"],
             "malformed_timestamp_counts": {"AAA": 0, "BBB": 0},
-            "token_hashes": ["hash1"],
-            "token_sequence_sha256": "tokseq",
-            "raw_pages": [],
+            "token_hashes": tok_hashes,
+            "token_sequence_sha256": tok_seq,
+            "raw_pages": cur_raw_pages,
         },
         "bars_by_symbol": {"AAA": or_bars_aaa, "BBB": or_bars_bbb},
     }]
@@ -607,15 +649,31 @@ def _build_synthetic_fixture(tmp_path: Path, pilot_date: str = "2024-01-02") -> 
     prior_sessions = [s.isoformat() for s in get_prior_xnys_sessions(date(2024, 1, 2), 14)]
     prior_sessions_data: dict[str, list[dict[str, Any]]] = {}
     for ps in prior_sessions:
+        p_raw_pages = [{
+            "http_status": 200,
+            "page_token": None,
+            "body": {
+                "bars": {"AAA": [{"t": f"{ps}T14:30:00Z", "o": 50.0, "h": 51.0, "l": 49.5, "c": 50.5, "v": 20000.0}]},
+                "next_page_token": None,
+            },
+        }]
         prior_sessions_data[ps] = [{
             "batch_index": 1,
             "symbols_requested": ["AAA"],
-            "request_params": {"symbols": ["AAA"], "timeframe": "1Min"},
+            "request_params": {
+                "symbols": "AAA",
+                "timeframe": "1Min",
+                "feed": "sip",
+                "adjustment": "raw",
+                "asof": pilot_date,
+                "start": f"{ps}T14:30:00Z",
+                "end": f"{ps}T14:34:59Z",
+            },
             "http_status": 200,
             "pagination_complete": True,
             "page_count": 1,
-            "token_hashes": ["hash1"],
-            "token_sequence_sha256": "tokseq",
+            "token_hashes": tok_hashes,
+            "token_sequence_sha256": tok_seq,
             "meta": {
                 "http_status": 200,
                 "pagination_complete": True,
@@ -627,9 +685,9 @@ def _build_synthetic_fixture(tmp_path: Path, pilot_date: str = "2024-01-02") -> 
                 "unconsumed_page_token_present": False,
                 "response_symbols": ["AAA"],
                 "malformed_timestamp_counts": {"AAA": 0},
-                "token_hashes": ["hash1"],
-                "token_sequence_sha256": "tokseq",
-                "raw_pages": [],
+                "token_hashes": tok_hashes,
+                "token_sequence_sha256": tok_seq,
+                "raw_pages": p_raw_pages,
             },
             "bars_by_symbol": {
                 "AAA": [{"t": f"{ps}T14:30:00Z", "o": 50.0, "h": 51.0, "l": 49.5, "c": 50.5, "v": 20000.0}]
@@ -709,15 +767,31 @@ def _build_synthetic_fixture(tmp_path: Path, pilot_date: str = "2024-01-02") -> 
         {"t": "2024-01-02T14:35:00Z", "o": 52.0, "h": 53.0, "l": 51.8, "c": 52.5, "v": 10000.0},
         {"t": "2024-01-02T20:59:00Z", "o": 54.0, "h": 54.5, "l": 53.8, "c": 54.2, "v": 15000.0},  # 15:59 ET liquidation bar!
     ]
+    sb_raw_pages = [{
+        "http_status": 200,
+        "page_token": None,
+        "body": {
+            "bars": {"AAA": sb_bars_aaa},
+            "next_page_token": None,
+        },
+    }]
     sb_batch = [{
         "batch_index": 1,
         "symbols_requested": ["AAA"],
-        "request_params": {"symbols": ["AAA"], "timeframe": "1Min"},
+        "request_params": {
+            "symbols": "AAA",
+            "timeframe": "1Min",
+            "feed": "sip",
+            "adjustment": "raw",
+            "asof": pilot_date,
+            "start": "2024-01-02T14:35:00Z",
+            "end": "2024-01-02T20:59:59Z",
+        },
         "http_status": 200,
         "pagination_complete": True,
         "page_count": 1,
-        "token_hashes": ["hash1"],
-        "token_sequence_sha256": "tokseq",
+        "token_hashes": tok_hashes,
+        "token_sequence_sha256": tok_seq,
         "meta": {
             "http_status": 200,
             "pagination_complete": True,
@@ -729,9 +803,9 @@ def _build_synthetic_fixture(tmp_path: Path, pilot_date: str = "2024-01-02") -> 
             "unconsumed_page_token_present": False,
             "response_symbols": ["AAA"],
             "malformed_timestamp_counts": {"AAA": 0},
-            "token_hashes": ["hash1"],
-            "token_sequence_sha256": "tokseq",
-            "raw_pages": [],
+            "token_hashes": tok_hashes,
+            "token_sequence_sha256": tok_seq,
+            "raw_pages": sb_raw_pages,
         },
         "bars_by_symbol": {"AAA": sb_bars_aaa},
     }]
@@ -1210,6 +1284,9 @@ def test_stage_b_missing_1559_bar_reports_blocked_stage_b_price_path(tmp_path: P
     sb_data["batches"][0]["bars_by_symbol"]["AAA"] = [
         {"t": "2024-01-02T14:35:00Z", "o": 52.0, "h": 53.0, "l": 51.8, "c": 52.5, "v": 10000.0}
     ]
+    sb_data["batches"][0]["meta"]["raw_pages"][0]["body"]["bars"]["AAA"] = [
+        {"t": "2024-01-02T14:35:00Z", "o": 52.0, "h": 53.0, "l": 51.8, "c": 52.5, "v": 10000.0}
+    ]
     sb_bytes = json.dumps(sb_data, indent=2).encode("utf-8")
     sb_file.write_bytes(sb_bytes)
 
@@ -1269,5 +1346,822 @@ def test_pilot_authorization_guard(tmp_path: Path) -> None:
     auth_file = auth_dir / "DAYTRADE-003D-CORR-003-AUTHORIZATION.json"
     auth_file.write_text(json.dumps({"authorized_by": "Not Gary"}), encoding="utf-8")
 
-    with pytest.raises(PermissionError, match="Authorization record is not signed by Gary Yang"):
+    with pytest.raises(PermissionError, match="Authorization record is not authorized by Gary Yang"):
         check_pilot_authorization(tmp_path, "fake_sha", authorized_by_gary=True)
+
+
+# =============================================================================
+# BLOCKER 1 REGRESSION TESTS: Two-Commit Freeze and Gary Yang Authorization
+# =============================================================================
+
+
+def test_two_commit_freeze_and_authorization_workflow(tmp_path: Path) -> None:
+    """Demonstrate satisfiable two-commit workflow: freeze commit F, then authorization commit A."""
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Gary Yang"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "gary.yang@airbyte.com"], cwd=tmp_path, check=True, capture_output=True)
+
+    # Commit F: frozen code/specs
+    (tmp_path / "tradex").mkdir(parents=True)
+    (tmp_path / "tradex" / "foo.py").write_text("# audited code\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "Freeze F"], cwd=tmp_path, check=True, capture_output=True)
+    freeze_sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=tmp_path, check=True, capture_output=True, text=True).stdout.strip()
+
+    # Verify freeze guard passes on commit F itself
+    check_pre_live_code_freeze(tmp_path, freeze_sha)
+
+    # Commit A: Gary authorization record referencing F
+    auth_dir = tmp_path / "docs" / "research" / "authorizations"
+    auth_dir.mkdir(parents=True)
+    auth_file = auth_dir / "DAYTRADE-003D-CORR-003-AUTHORIZATION.json"
+    auth_file.write_text(
+        json.dumps({
+            "authorized_by": "Gary Yang",
+            "task_id": TASK_ID,
+            "pilot_date": PILOT_DATE,
+            "frozen_implementation_sha": freeze_sha,
+            "run_scope": "ONE_SHOT_PILOT_JAN_2_2024",
+        }, indent=2),
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "Authorization A"], cwd=tmp_path, check=True, capture_output=True)
+    auth_sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=tmp_path, check=True, capture_output=True, text=True).stdout.strip()
+    assert auth_sha != freeze_sha
+
+    # Verify freeze guard passes on commit A referencing freeze SHA F
+    check_pre_live_code_freeze(tmp_path, freeze_sha)
+    # Verify pilot authorization guard passes on commit A
+    check_pilot_authorization(tmp_path, freeze_sha, authorized_by_gary=True, pilot_date=PILOT_DATE)
+
+
+def test_two_commit_freeze_code_drift_between_f_and_a_fails_closed(tmp_path: Path) -> None:
+    """Fail closed if forbidden research code, spec, or test drift occurs between freeze F and authorization A."""
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Gary Yang"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "gary.yang@airbyte.com"], cwd=tmp_path, check=True, capture_output=True)
+    (tmp_path / "tradex").mkdir(parents=True)
+    (tmp_path / "tradex" / "foo.py").write_text("# audited code\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "Freeze F"], cwd=tmp_path, check=True, capture_output=True)
+    freeze_sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=tmp_path, check=True, capture_output=True, text=True).stdout.strip()
+
+    # Commit A modifies tradex/foo.py (code drift!)
+    (tmp_path / "tradex" / "foo.py").write_text("# code modification\n", encoding="utf-8")
+    auth_dir = tmp_path / "docs" / "research" / "authorizations"
+    auth_dir.mkdir(parents=True)
+    auth_file = auth_dir / "DAYTRADE-003D-CORR-003-AUTHORIZATION.json"
+    auth_file.write_text(
+        json.dumps({
+            "authorized_by": "Gary Yang",
+            "task_id": TASK_ID,
+            "pilot_date": PILOT_DATE,
+            "frozen_implementation_sha": freeze_sha,
+            "run_scope": "ONE_SHOT_PILOT_JAN_2_2024",
+        }),
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "Authorization with drift"], cwd=tmp_path, check=True, capture_output=True)
+
+    with pytest.raises(RuntimeError, match="forbidden code/spec/test drift between freeze"):
+        check_pre_live_code_freeze(tmp_path, freeze_sha)
+
+
+def test_two_commit_freeze_non_ancestor_fails_closed(tmp_path: Path) -> None:
+    """Fail closed if current HEAD does not have the expected freeze commit as ancestor."""
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Gary Yang"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "gary.yang@airbyte.com"], cwd=tmp_path, check=True, capture_output=True)
+    (tmp_path / "tradex").mkdir(parents=True)
+    (tmp_path / "tradex" / "foo.py").write_text("# code\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "Initial"], cwd=tmp_path, check=True, capture_output=True)
+    sha1 = subprocess.run(["git", "rev-parse", "HEAD"], cwd=tmp_path, check=True, capture_output=True, text=True).stdout.strip()
+
+    # Create orphan branch
+    subprocess.run(["git", "checkout", "--orphan", "orphan_branch"], cwd=tmp_path, check=True, capture_output=True)
+    (tmp_path / "tradex" / "bar.py").write_text("# bar\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "Orphan commit"], cwd=tmp_path, check=True, capture_output=True)
+
+    with pytest.raises(RuntimeError, match="is not an ancestor of current HEAD"):
+        check_pre_live_code_freeze(tmp_path, sha1)
+
+
+def test_two_commit_freeze_dirty_worktree_fails_closed(tmp_path: Path) -> None:
+    """Fail closed if working tree is dirty during freeze verification."""
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Gary Yang"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "gary.yang@airbyte.com"], cwd=tmp_path, check=True, capture_output=True)
+    (tmp_path / "tradex").mkdir(parents=True)
+    (tmp_path / "tradex" / "foo.py").write_text("# code\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "Initial"], cwd=tmp_path, check=True, capture_output=True)
+    sha1 = subprocess.run(["git", "rev-parse", "HEAD"], cwd=tmp_path, check=True, capture_output=True, text=True).stdout.strip()
+
+    (tmp_path / "dirty.txt").write_text("untracked\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="working tree is dirty"):
+        check_pre_live_code_freeze(tmp_path, sha1)
+
+
+def test_authorization_invalid_scope_and_fields_fail_closed(tmp_path: Path) -> None:
+    """Fail closed if authorization record contains invalid run scope, task_id, or pilot date."""
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Gary Yang"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "gary.yang@airbyte.com"], cwd=tmp_path, check=True, capture_output=True)
+    (tmp_path / "tradex").mkdir(parents=True)
+    (tmp_path / "tradex" / "foo.py").write_text("# code\n", encoding="utf-8")
+    auth_dir = tmp_path / "docs" / "research" / "authorizations"
+    auth_dir.mkdir(parents=True)
+    auth_file = auth_dir / "DAYTRADE-003D-CORR-003-AUTHORIZATION.json"
+
+    # 1. Invalid run scope
+    auth_file.write_text(
+        json.dumps({
+            "authorized_by": "Gary Yang",
+            "task_id": TASK_ID,
+            "pilot_date": PILOT_DATE,
+            "frozen_implementation_sha": "fake_sha",
+            "run_scope": "FULL_2024_PILOT",
+        }),
+        encoding="utf-8",
+    )
+    with pytest.raises(PermissionError, match="Authorization record run_scope mismatch"):
+        check_pilot_authorization(tmp_path, "fake_sha", authorized_by_gary=True)
+
+    # 2. Invalid task_id
+    auth_file.write_text(
+        json.dumps({
+            "authorized_by": "Gary Yang",
+            "task_id": "WRONG-TASK",
+            "pilot_date": PILOT_DATE,
+            "frozen_implementation_sha": "fake_sha",
+            "run_scope": "ONE_SHOT_PILOT_JAN_2_2024",
+        }),
+        encoding="utf-8",
+    )
+    with pytest.raises(PermissionError, match="Authorization record task_id mismatch"):
+        check_pilot_authorization(tmp_path, "fake_sha", authorized_by_gary=True)
+
+    # 3. Invalid pilot_date
+    auth_file.write_text(
+        json.dumps({
+            "authorized_by": "Gary Yang",
+            "task_id": TASK_ID,
+            "pilot_date": "2024-01-03",
+            "frozen_implementation_sha": "fake_sha",
+            "run_scope": "ONE_SHOT_PILOT_JAN_2_2024",
+        }),
+        encoding="utf-8",
+    )
+    with pytest.raises(PermissionError, match="Authorization record pilot_date mismatch"):
+        check_pilot_authorization(tmp_path, "fake_sha", authorized_by_gary=True)
+
+    # 4. Untracked file in git repository
+    auth_file.write_text(
+        json.dumps({
+            "authorized_by": "Gary Yang",
+            "task_id": TASK_ID,
+            "pilot_date": PILOT_DATE,
+            "frozen_implementation_sha": "fake_sha",
+            "run_scope": "ONE_SHOT_PILOT_JAN_2_2024",
+        }),
+        encoding="utf-8",
+    )
+    with pytest.raises(PermissionError, match="Authorization file is modified or untracked"):
+        check_pilot_authorization(tmp_path, "fake_sha", authorized_by_gary=True)
+
+
+# =============================================================================
+# BLOCKER 2 REGRESSION TESTS: Raw Provider Payload Integrity & Parity
+# =============================================================================
+
+
+def test_alpaca_client_rejects_missing_bars_key() -> None:
+    """DatasetAlpacaClient marks malformed payload when response dictionary lacks 'bars'."""
+    def fake_request(*args: Any, **kwargs: Any) -> requests.Response:
+        resp = requests.Response()
+        resp.status_code = 200
+        resp._content = json.dumps({"data": []}).encode("utf-8")
+        return resp
+
+    client = DatasetAlpacaClient(api_key="k", secret_key="s", request_func=fake_request)
+    _dfs, meta = client.get_bars(
+        ["AAPL"],
+        datetime(2024, 1, 2, 9, 30, tzinfo=ZoneInfo("UTC")),
+        datetime(2024, 1, 2, 9, 35, tzinfo=ZoneInfo("UTC")),
+        feed="sip",
+        timeframe="1Min",
+        adjustment="raw",
+    )
+    assert meta["safe_error_classification"] == "malformed_page_payload"
+    assert meta["pagination_complete"] is False
+
+
+def test_alpaca_client_rejects_null_bars_symbol_entry() -> None:
+    """DatasetAlpacaClient marks malformed payload when a symbol's bars entry is null."""
+    def fake_request(*args: Any, **kwargs: Any) -> requests.Response:
+        resp = requests.Response()
+        resp.status_code = 200
+        resp._content = json.dumps({"bars": {"AAPL": None}}).encode("utf-8")
+        return resp
+
+    client = DatasetAlpacaClient(api_key="k", secret_key="s", request_func=fake_request)
+    _dfs, meta = client.get_bars(
+        ["AAPL"],
+        datetime(2024, 1, 2, 9, 30, tzinfo=ZoneInfo("UTC")),
+        datetime(2024, 1, 2, 9, 35, tzinfo=ZoneInfo("UTC")),
+        feed="sip",
+        timeframe="1Min",
+        adjustment="raw",
+    )
+    assert meta["safe_error_classification"] == "malformed_page_payload"
+    assert meta["pagination_complete"] is False
+
+
+def test_alpaca_client_rejects_non_list_bars_symbol_entry() -> None:
+    """DatasetAlpacaClient marks malformed payload when a symbol's bars entry is a non-list string/int."""
+    def fake_request(*args: Any, **kwargs: Any) -> requests.Response:
+        resp = requests.Response()
+        resp.status_code = 200
+        resp._content = json.dumps({"bars": {"AAPL": "corrupted_string"}}).encode("utf-8")
+        return resp
+
+    client = DatasetAlpacaClient(api_key="k", secret_key="s", request_func=fake_request)
+    _dfs, meta = client.get_bars(
+        ["AAPL"],
+        datetime(2024, 1, 2, 9, 30, tzinfo=ZoneInfo("UTC")),
+        datetime(2024, 1, 2, 9, 35, tzinfo=ZoneInfo("UTC")),
+        feed="sip",
+        timeframe="1Min",
+        adjustment="raw",
+    )
+    assert meta["safe_error_classification"] == "malformed_page_payload"
+    assert meta["pagination_complete"] is False
+
+
+def test_alpaca_client_rejects_non_dict_bar_object_in_list() -> None:
+    """DatasetAlpacaClient marks malformed payload when a bar object inside the list is not a dictionary."""
+    def fake_request(*args: Any, **kwargs: Any) -> requests.Response:
+        resp = requests.Response()
+        resp.status_code = 200
+        resp._content = json.dumps({"bars": {"AAPL": ["not_a_dict_bar"]}}).encode("utf-8")
+        return resp
+
+    client = DatasetAlpacaClient(api_key="k", secret_key="s", request_func=fake_request)
+    _dfs, meta = client.get_bars(
+        ["AAPL"],
+        datetime(2024, 1, 2, 9, 30, tzinfo=ZoneInfo("UTC")),
+        datetime(2024, 1, 2, 9, 35, tzinfo=ZoneInfo("UTC")),
+        feed="sip",
+        timeframe="1Min",
+        adjustment="raw",
+    )
+    assert meta["safe_error_classification"] == "malformed_page_payload"
+    assert meta["pagination_complete"] is False
+
+
+def test_alpaca_client_accepts_legitimate_empty_completed_response() -> None:
+    """DatasetAlpacaClient treats legitimately empty symbol bar lists as completed pagination with safe_error='none'."""
+    def fake_request(*args: Any, **kwargs: Any) -> requests.Response:
+        resp = requests.Response()
+        resp.status_code = 200
+        resp._content = json.dumps({"bars": {"AAPL": []}, "next_page_token": None}).encode("utf-8")
+        return resp
+
+    client = DatasetAlpacaClient(api_key="k", secret_key="s", request_func=fake_request)
+    dfs, meta = client.get_bars(
+        ["AAPL"],
+        datetime(2024, 1, 2, 9, 30, tzinfo=ZoneInfo("UTC")),
+        datetime(2024, 1, 2, 9, 35, tzinfo=ZoneInfo("UTC")),
+        feed="sip",
+        timeframe="1Min",
+        adjustment="raw",
+    )
+    assert meta["safe_error_classification"] == "none"
+    assert meta["pagination_complete"] is True
+    assert "AAPL" in dfs
+    assert dfs["AAPL"].empty
+
+
+def test_validator_rejects_malformed_raw_page_schema() -> None:
+    """validate_provider_batch_response fails closed when raw page body violates schema."""
+    batch_check_missing_bars = validate_provider_batch_response(
+        symbols_requested=["AAPL"],
+        bars_by_symbol={"AAPL": []},
+        meta={
+            "http_status": 200,
+            "pagination_complete": True,
+            "raw_pages": [{"page_index": 0, "status_code": 200, "body": {"other": 123}}],
+        },
+    )
+    assert not batch_check_missing_bars.is_valid
+    assert batch_check_missing_bars.status == PayloadIntegrityStatus.TRUNCATED_OR_MALFORMED_PAYLOAD
+
+    batch_check_null_bars = validate_provider_batch_response(
+        symbols_requested=["AAPL"],
+        bars_by_symbol={"AAPL": []},
+        meta={
+            "http_status": 200,
+            "pagination_complete": True,
+            "raw_pages": [{"page_index": 0, "status_code": 200, "body": {"bars": {"AAPL": None}}}],
+        },
+    )
+    assert not batch_check_null_bars.is_valid
+    assert batch_check_null_bars.status == PayloadIntegrityStatus.TRUNCATED_OR_MALFORMED_PAYLOAD
+
+
+def test_validator_rejects_raw_pages_to_aggregate_disagreement() -> None:
+    """validate_provider_batch_response fails closed if raw pages bars do not match aggregated bars_by_symbol."""
+    bar1 = {"t": "2024-01-02T14:30:00Z", "o": 10.0, "h": 11.0, "l": 9.0, "c": 10.5, "v": 1000.0}
+    bar2 = {"t": "2024-01-02T14:31:00Z", "o": 10.5, "h": 11.2, "l": 10.1, "c": 11.0, "v": 2000.0}
+    batch_check = validate_provider_batch_response(
+        symbols_requested=["AAPL"],
+        bars_by_symbol={"AAPL": [bar1]},
+        meta={
+            "http_status": 200,
+            "pagination_complete": True,
+            "raw_pages": [{"page_index": 0, "status_code": 200, "body": {"bars": {"AAPL": [bar1, bar2]}}}],
+        },
+    )
+    assert not batch_check.is_valid
+    assert batch_check.status == PayloadIntegrityStatus.TRUNCATED_OR_MALFORMED_PAYLOAD
+
+
+# =============================================================================
+# BLOCKER 3 REGRESSION TESTS: Actual Request Provenance & PIT Parameters
+# =============================================================================
+
+
+def test_replay_rejects_string_valued_rogue_symbol_parameter(tmp_path: Path) -> None:
+    """Replay rejects realistic comma-separated string-valued symbol parameter containing rogue symbols."""
+    fixture_dir = _build_synthetic_fixture(tmp_path)
+    or_file = fixture_dir / "alpaca_current_or_2024-01-02.json"
+    or_data = json.loads(or_file.read_text(encoding="utf-8"))
+    or_data["batches"][0]["request_params"]["symbols"] = "AAA,ROGUE"
+    or_bytes = json.dumps(or_data, indent=2).encode("utf-8")
+    or_file.write_bytes(or_bytes)
+
+    m_path = fixture_dir / "manifest_2024-01-02.json"
+    m_data = json.loads(m_path.read_text(encoding="utf-8"))
+    m_data["artifacts"]["alpaca_current_or_2024-01-02.json"]["sha256"] = hash_bytes(or_bytes)
+    m_data["artifacts"]["alpaca_current_or_2024-01-02.json"]["size_bytes"] = len(or_bytes)
+    m_path.write_text(json.dumps(m_data, indent=2), encoding="utf-8")
+
+    with pytest.raises(ReplayIntegrityError, match="Contradictory request parameters: request_params symbols"):
+        replay_corr_003_pilot(input_dir=fixture_dir, repo_root=REPO_ROOT, pilot_date="2024-01-02")
+
+
+def test_replay_rejects_bad_feed_and_timeframe(tmp_path: Path) -> None:
+    """Replay rejects contradictory feed or timeframe request parameters."""
+    fixture_dir = _build_synthetic_fixture(tmp_path)
+    or_file = fixture_dir / "alpaca_current_or_2024-01-02.json"
+    or_data = json.loads(or_file.read_text(encoding="utf-8"))
+
+    # Contradictory feed
+    or_data["batches"][0]["request_params"]["feed"] = "iex"
+    or_bytes = json.dumps(or_data, indent=2).encode("utf-8")
+    or_file.write_bytes(or_bytes)
+    m_path = fixture_dir / "manifest_2024-01-02.json"
+    m_data = json.loads(m_path.read_text(encoding="utf-8"))
+    m_data["artifacts"]["alpaca_current_or_2024-01-02.json"]["sha256"] = hash_bytes(or_bytes)
+    m_data["artifacts"]["alpaca_current_or_2024-01-02.json"]["size_bytes"] = len(or_bytes)
+    m_path.write_text(json.dumps(m_data, indent=2), encoding="utf-8")
+
+    with pytest.raises(ReplayIntegrityError, match="Contradictory request feed: expected 'sip', got 'iex'"):
+        replay_corr_003_pilot(input_dir=fixture_dir, repo_root=REPO_ROOT, pilot_date="2024-01-02")
+
+    # Contradictory timeframe
+    or_data["batches"][0]["request_params"]["feed"] = "sip"
+    or_data["batches"][0]["request_params"]["timeframe"] = "5Min"
+    or_bytes = json.dumps(or_data, indent=2).encode("utf-8")
+    or_file.write_bytes(or_bytes)
+    m_data["artifacts"]["alpaca_current_or_2024-01-02.json"]["sha256"] = hash_bytes(or_bytes)
+    m_data["artifacts"]["alpaca_current_or_2024-01-02.json"]["size_bytes"] = len(or_bytes)
+    m_path.write_text(json.dumps(m_data, indent=2), encoding="utf-8")
+
+    with pytest.raises(ReplayIntegrityError, match="Contradictory request timeframe: expected '1Min', got '5Min'"):
+        replay_corr_003_pilot(input_dir=fixture_dir, repo_root=REPO_ROOT, pilot_date="2024-01-02")
+
+
+def test_replay_rejects_bad_asof_and_pit_window(tmp_path: Path) -> None:
+    """Replay rejects contradictory asof date or PIT query window."""
+    fixture_dir = _build_synthetic_fixture(tmp_path)
+    or_file = fixture_dir / "alpaca_current_or_2024-01-02.json"
+    or_data = json.loads(or_file.read_text(encoding="utf-8"))
+
+    or_data["batches"][0]["request_params"]["asof"] = "2024-01-03"
+    or_bytes = json.dumps(or_data, indent=2).encode("utf-8")
+    or_file.write_bytes(or_bytes)
+    m_path = fixture_dir / "manifest_2024-01-02.json"
+    m_data = json.loads(m_path.read_text(encoding="utf-8"))
+    m_data["artifacts"]["alpaca_current_or_2024-01-02.json"]["sha256"] = hash_bytes(or_bytes)
+    m_data["artifacts"]["alpaca_current_or_2024-01-02.json"]["size_bytes"] = len(or_bytes)
+    m_path.write_text(json.dumps(m_data, indent=2), encoding="utf-8")
+
+    with pytest.raises(ReplayIntegrityError, match="Contradictory request asof: expected '2024-01-02', got '2024-01-03'"):
+        replay_corr_003_pilot(input_dir=fixture_dir, repo_root=REPO_ROOT, pilot_date="2024-01-02")
+
+
+def test_replay_rejects_token_sequence_mismatch(tmp_path: Path) -> None:
+    """Replay fails closed if token_sequence_sha256 does not match recomputed token sequence hash."""
+    fixture_dir = _build_synthetic_fixture(tmp_path)
+    or_file = fixture_dir / "alpaca_current_or_2024-01-02.json"
+    or_data = json.loads(or_file.read_text(encoding="utf-8"))
+
+    or_data["batches"][0]["meta"]["token_sequence_sha256"] = "9" * 64
+    or_bytes = json.dumps(or_data, indent=2).encode("utf-8")
+    or_file.write_bytes(or_bytes)
+    m_path = fixture_dir / "manifest_2024-01-02.json"
+    m_data = json.loads(m_path.read_text(encoding="utf-8"))
+    m_data["artifacts"]["alpaca_current_or_2024-01-02.json"]["sha256"] = hash_bytes(or_bytes)
+    m_data["artifacts"]["alpaca_current_or_2024-01-02.json"]["size_bytes"] = len(or_bytes)
+    m_path.write_text(json.dumps(m_data, indent=2), encoding="utf-8")
+
+    with pytest.raises(ReplayIntegrityError, match="Token sequence hash mismatch"):
+        replay_corr_003_pilot(input_dir=fixture_dir, repo_root=REPO_ROOT, pilot_date="2024-01-02")
+
+
+def test_mocked_acquisition_to_replay_integration(tmp_path: Path) -> None:
+    """End-to-end integration proving acquisition via DatasetAlpacaClient feeds replay successfully."""
+    pilot_date = "2024-01-02"
+    artifacts: dict[str, Any] = {}
+
+    # 1. Massive reference snapshot (2 symbols: AAA, BBB)
+    ref_rows = [
+        {"ticker": "AAA", "primary_exchange": "XNYS", "type": "CS", "active": True},
+        {"ticker": "BBB", "primary_exchange": "XNAS", "type": "CS", "active": True},
+    ]
+    ref_file = f"massive_reference_{pilot_date}.json"
+    ref_bytes = json.dumps(ref_rows, indent=2).encode("utf-8")
+    (tmp_path / ref_file).write_bytes(ref_bytes)
+    artifacts[ref_file] = {
+        "sha256": hash_bytes(ref_bytes),
+        "size_bytes": len(ref_bytes),
+        "description": "Massive reference snapshot",
+        "record_count": len(ref_rows),
+    }
+
+    target_audit, _ = filter_and_audit_target_universe(ref_rows)
+    univ_file = f"universe_{pilot_date}.json"
+    univ_bytes = json.dumps({
+        "date": pilot_date,
+        "canonical_target_universe_count": target_audit.canonical_target_universe_count,
+        "valid_symbols_count": len(target_audit.valid_target_symbols),
+        "ambiguous_symbols_count": len(target_audit.ambiguous_symbols),
+        "universe_sha256": target_audit.universe_sha256,
+        "valid_symbols": target_audit.valid_target_symbols,
+        "ambiguous_symbols": target_audit.ambiguous_symbols,
+    }, indent=2).encode("utf-8")
+    (tmp_path / univ_file).write_bytes(univ_bytes)
+    artifacts[univ_file] = {
+        "sha256": hash_bytes(univ_bytes),
+        "size_bytes": len(univ_bytes),
+        "description": "Universe summary",
+        "record_count": 2,
+    }
+
+    daily_dates = [s.isoformat() for s in get_prior_xnys_sessions(date(2024, 1, 2), 20)]
+    daily_bars_aaa = [
+        {"t": f"{d}T05:00:00Z", "o": 50.0, "h": 52.0, "l": 49.0, "c": 51.0, "v": 2_000_000.0}
+        for d in daily_dates
+    ]
+    daily_bars_bbb = [
+        {"t": f"{d}T05:00:00Z", "o": 30.0, "h": 32.0, "l": 29.0, "c": 31.0, "v": 1_500_000.0}
+        for d in daily_dates
+    ]
+    or_bars_aaa = [
+        {"t": "2024-01-02T14:30:00Z", "o": 51.0, "h": 51.5, "l": 50.8, "c": 51.2, "v": 25000.0},
+        {"t": "2024-01-02T14:34:00Z", "o": 51.2, "h": 52.0, "l": 51.0, "c": 52.0, "v": 25000.0},
+    ]
+    or_bars_bbb = [
+        {"t": "2024-01-02T14:30:00Z", "o": 4.0, "h": 4.2, "l": 3.9, "c": 4.1, "v": 10000.0},
+    ]
+    prior_sessions = get_prior_xnys_sessions(date(2024, 1, 2), 14)
+    prior_bars_by_date = {
+        s.isoformat(): [
+            {"t": f"{s.isoformat()}T14:30:00Z", "o": 50.0, "h": 50.5, "l": 49.8, "c": 50.2, "v": 30000.0}
+        ]
+        for s in prior_sessions
+    }
+    sb_bars_aaa = [
+        {"t": "2024-01-02T14:35:00Z", "o": 52.0, "h": 53.0, "l": 51.8, "c": 52.5, "v": 10000.0},
+        {"t": "2024-01-02T20:59:00Z", "o": 52.8, "h": 53.0, "l": 52.5, "c": 52.9, "v": 15000.0},
+    ]
+
+    def mock_request(url: str, params: dict[str, Any] | None = None, **kwargs: Any) -> requests.Response:
+        resp = requests.Response()
+        resp.status_code = 200
+        p = params or {}
+        tf = p.get("timeframe")
+        start = str(p.get("start", ""))
+        if tf == "1Day":
+            body = {"bars": {"AAA": daily_bars_aaa, "BBB": daily_bars_bbb}, "next_page_token": None}
+        elif tf == "1Min" and ("09:35" in start or "14:35" in start):
+            body = {"bars": {"AAA": sb_bars_aaa}, "next_page_token": None}
+        elif tf == "1Min" and "2024-01-02" in start:
+            body = {"bars": {"AAA": or_bars_aaa, "BBB": or_bars_bbb}, "next_page_token": None}
+        else:
+            s_date = start[:10]
+            p_bars = prior_bars_by_date.get(s_date, [])
+            body = {"bars": {"AAA": p_bars, "BBB": []}, "next_page_token": None}
+        resp._content = json.dumps(body).encode("utf-8")
+        return resp
+
+    client = DatasetAlpacaClient(api_key="mock_k", secret_key="mock_s", request_func=mock_request)
+
+    # 1. Phase 2 acquisition
+    _dfs, d_meta = client.get_bars(
+        ["AAA", "BBB"],
+        datetime(2023, 12, 1, 0, 0, tzinfo=ZoneInfo("UTC")),
+        datetime(2023, 12, 29, 23, 59, tzinfo=ZoneInfo("UTC")),
+        feed="sip",
+        timeframe="1Day",
+        adjustment="raw",
+        asof=pilot_date,
+        include_raw_bars=True,
+        include_raw_pages=True,
+    )
+    daily_file = "alpaca_daily_dec2023.json"
+    daily_hash, daily_size = persist_raw_stage_artifact(
+        tmp_path / daily_file,
+        metadata={"stage": "phase_2_broad_daily"},
+        batches=[{
+            "batch_index": 1,
+            "symbols_requested": ["AAA", "BBB"],
+            "request_params": d_meta.get("request_params", {}),
+            "http_status": d_meta.get("http_status", 200),
+            "pagination_complete": d_meta.get("pagination_complete", True),
+            "page_count": d_meta.get("page_count", 1),
+            "token_hashes": d_meta.get("token_hashes", []),
+            "token_sequence_sha256": d_meta.get("token_sequence_sha256", ""),
+            "meta": d_meta,
+            "bars_by_symbol": d_meta.get("raw_bars_by_symbol", {}),
+        }],
+    )
+    artifacts[daily_file] = {
+        "sha256": daily_hash,
+        "size_bytes": daily_size,
+        "description": "Daily bars",
+        "record_count": 2,
+    }
+
+    # 2. Phase 3 current OR acquisition
+    cur_start = datetime(2024, 1, 2, 9, 30, tzinfo=NY_TZ).astimezone(ZoneInfo("UTC"))
+    cur_end = datetime(2024, 1, 2, 9, 34, 59, tzinfo=NY_TZ).astimezone(ZoneInfo("UTC"))
+    _dfs, cur_meta = client.get_bars(
+        ["AAA", "BBB"],
+        cur_start,
+        cur_end,
+        feed="sip",
+        timeframe="1Min",
+        adjustment="raw",
+        asof=pilot_date,
+        include_raw_bars=True,
+        include_raw_pages=True,
+    )
+    cur_file = f"alpaca_current_or_{pilot_date}.json"
+    cur_hash, cur_size = persist_raw_stage_artifact(
+        tmp_path / cur_file,
+        metadata={"stage": "phase_3_current_opening_range"},
+        batches=[{
+            "batch_index": 1,
+            "symbols_requested": ["AAA", "BBB"],
+            "request_params": cur_meta.get("request_params", {}),
+            "http_status": cur_meta.get("http_status", 200),
+            "pagination_complete": cur_meta.get("pagination_complete", True),
+            "page_count": cur_meta.get("page_count", 1),
+            "token_hashes": cur_meta.get("token_hashes", []),
+            "token_sequence_sha256": cur_meta.get("token_sequence_sha256", ""),
+            "meta": cur_meta,
+            "bars_by_symbol": cur_meta.get("raw_bars_by_symbol", {}),
+        }],
+    )
+    artifacts[cur_file] = {
+        "sha256": cur_hash,
+        "size_bytes": cur_size,
+        "description": "Current OR bars",
+        "record_count": 2,
+    }
+
+    # 3. Phase 3 prior 14 sessions acquisition
+    prior_sessions_data: dict[str, list[dict[str, Any]]] = {}
+    for s_idx, sess in enumerate(prior_sessions, start=1):
+        s_date = sess.isoformat()
+        s_start = datetime(sess.year, sess.month, sess.day, 9, 30, tzinfo=NY_TZ).astimezone(ZoneInfo("UTC"))
+        s_end = datetime(sess.year, sess.month, sess.day, 9, 34, 59, tzinfo=NY_TZ).astimezone(ZoneInfo("UTC"))
+        _dfs, p_meta = client.get_bars(
+            ["AAA", "BBB"],
+            s_start,
+            s_end,
+            feed="sip",
+            timeframe="1Min",
+            adjustment="raw",
+            asof=pilot_date,
+            include_raw_bars=True,
+            include_raw_pages=True,
+        )
+        prior_sessions_data[s_date] = [{
+            "session_index": s_idx,
+            "session_date": s_date,
+            "batch_index": 1,
+            "symbols_requested": ["AAA", "BBB"],
+            "request_params": p_meta.get("request_params", {}),
+            "http_status": p_meta.get("http_status", 200),
+            "pagination_complete": p_meta.get("pagination_complete", True),
+            "page_count": p_meta.get("page_count", 1),
+            "token_hashes": p_meta.get("token_hashes", []),
+            "token_sequence_sha256": p_meta.get("token_sequence_sha256", ""),
+            "meta": p_meta,
+            "bars_by_symbol": p_meta.get("raw_bars_by_symbol", {}),
+        }]
+    prior_file = f"alpaca_prior_or_14sessions_{pilot_date}.json"
+    prior_bytes = json.dumps({
+        "metadata": {"stage": "phase_3_prior_14_sessions_opening_range"},
+        "sessions_data": prior_sessions_data,
+    }, indent=2).encode("utf-8")
+    (tmp_path / prior_file).write_bytes(prior_bytes)
+    artifacts[prior_file] = {
+        "sha256": hash_bytes(prior_bytes),
+        "size_bytes": len(prior_bytes),
+        "description": "Prior 14 sessions OR bars",
+        "record_count": len(prior_sessions_data),
+    }
+
+    # 4. Top-20 selection
+    d_obj = {
+        sym: sorted([
+            DailyBar(
+                symbol=sym,
+                session_date=datetime.fromisoformat(b["t"]).date(),
+                open=b["o"],
+                high=b["h"],
+                low=b["l"],
+                close=b["c"],
+                volume=b["v"],
+            )
+            for b in (daily_bars_aaa if sym == "AAA" else daily_bars_bbb)
+        ], key=lambda x: x.session_date)
+        for sym in ["AAA", "BBB"]
+    }
+    _d_audit, _comp, d_qual = audit_broad_daily_availability(target_audit.valid_target_symbols, [], d_obj, date(2024, 1, 2))
+    cur_ors = {
+        "AAA": evaluate_opening_range([
+            MinuteBar("AAA", datetime.fromisoformat(b["t"]), date(2024, 1, 2), b["o"], b["h"], b["l"], b["c"], b["v"])
+            for b in or_bars_aaa
+        ], require_five_bars=False),
+        "BBB": evaluate_opening_range([
+            MinuteBar("BBB", datetime.fromisoformat(b["t"]), date(2024, 1, 2), b["o"], b["h"], b["l"], b["c"], b["v"])
+            for b in or_bars_bbb
+        ], require_five_bars=False),
+    }
+    prior_obs = {
+        "AAA": [
+            OpeningRangeVolumeObservation("AAA", date.fromisoformat(ps), 30000.0)
+            for ps in [s.isoformat() for s in prior_sessions]
+        ]
+    }
+    _s_audit, _outcomes, elig, surv_ors = audit_candidate_screening(
+        d_qual, cur_ors, set(), prior_obs, set(), d_obj, date(2024, 1, 2)
+    )
+    ranked = rank_and_select_top_20(elig, surv_ors, 25000.0, 20)
+    sel_ev, sel_records, _ = freeze_top_20_selection(ranked)
+
+    sel_file = f"top_20_selection_{pilot_date}.json"
+    sel_bytes = json.dumps({
+        "date": pilot_date,
+        "selection_sha256": sel_ev.selection_sha256,
+        "selected_count": sel_ev.selected_count,
+        "doji_count": sel_ev.doji_count,
+        "eligible_candidates_count": sel_ev.eligible_candidates_count,
+        "records": sel_records,
+    }, indent=2).encode("utf-8")
+    (tmp_path / sel_file).write_bytes(sel_bytes)
+    artifacts[sel_file] = {
+        "sha256": hash_bytes(sel_bytes),
+        "size_bytes": len(sel_bytes),
+        "description": "Top-20 selection",
+        "record_count": len(sel_records),
+    }
+
+    # 5. Phase 5 Stage B acquisition
+    sb_start = datetime(2024, 1, 2, 9, 35, tzinfo=NY_TZ).astimezone(ZoneInfo("UTC"))
+    sb_end = datetime(2024, 1, 2, 15, 59, 59, tzinfo=NY_TZ).astimezone(ZoneInfo("UTC"))
+    _dfs, sb_meta = client.get_bars(
+        ["AAA"],
+        sb_start,
+        sb_end,
+        feed="sip",
+        timeframe="1Min",
+        adjustment="raw",
+        asof=pilot_date,
+        include_raw_bars=True,
+        include_raw_pages=True,
+    )
+    sb_file = f"alpaca_stage_b_{pilot_date}.json"
+    sb_hash, sb_size = persist_raw_stage_artifact(
+        tmp_path / sb_file,
+        metadata={"stage": "phase_5_stage_b_price_path"},
+        batches=[{
+            "batch_index": 1,
+            "symbols_requested": ["AAA"],
+            "request_params": sb_meta.get("request_params", {}),
+            "http_status": sb_meta.get("http_status", 200),
+            "pagination_complete": sb_meta.get("pagination_complete", True),
+            "page_count": sb_meta.get("page_count", 1),
+            "token_hashes": sb_meta.get("token_hashes", []),
+            "token_sequence_sha256": sb_meta.get("token_sequence_sha256", ""),
+            "meta": sb_meta,
+            "bars_by_symbol": sb_meta.get("raw_bars_by_symbol", {}),
+        }],
+    )
+    artifacts[sb_file] = {
+        "sha256": sb_hash,
+        "size_bytes": sb_size,
+        "description": "Stage-B bars",
+        "record_count": 1,
+    }
+
+    # Manifest
+    create_and_save_manifest(
+        output_dir=tmp_path,
+        artifacts_info=artifacts,
+        pilot_date=pilot_date,
+    )
+
+    # Replay
+    res = replay_corr_003_pilot(input_dir=tmp_path, repo_root=REPO_ROOT, pilot_date=pilot_date)
+    assert res.disposition == PilotDisposition.FEASIBLE_FOR_2024_DEVELOPMENT_DATASET_BUILD
+    assert res.stage_b_audit.is_usable is True
+
+
+# =============================================================================
+# BLOCKER 4 REGRESSION TESTS: Prospective Resource Ceilings & One-Shot Guard
+# =============================================================================
+
+
+def test_one_shot_guard_rejects_interrupted_run_with_lock_marker(tmp_path: Path) -> None:
+    """One-shot guard rejects execution if a durable lock marker from a prior or interrupted run exists."""
+    lock_file = tmp_path / ".pilot_run_lock_2024-01-02.json"
+    lock_file.write_text(json.dumps({"started_at": "2026-10-12T12:00:00Z"}), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="run lock marker exists"):
+        check_one_shot_pilot_guard(tmp_path, "2024-01-02")
+
+
+def test_one_shot_guard_rejects_partial_artifacts_without_manifest(tmp_path: Path) -> None:
+    """One-shot guard rejects execution if partial artifacts exist in output directory without a manifest."""
+    partial_file = tmp_path / "alpaca_daily_dec2023.json"
+    partial_file.write_text("{}", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="found 1 existing artifacts"):
+        check_one_shot_pilot_guard(tmp_path, "2024-01-02")
+
+
+def test_one_shot_guard_allows_clean_directory(tmp_path: Path) -> None:
+    """One-shot guard permits execution in a completely clean directory."""
+    check_one_shot_pilot_guard(tmp_path, "2024-01-02")
+
+
+def test_prospective_resource_limit_checks() -> None:
+    """Strict resource ceiling checks prospectively enforce 5,000 pages and 2 GiB storage."""
+    # Under limit passes
+    check_resource_limits(5000, 2 * 1024**3)
+    # Exceeding page ceiling raises
+    with pytest.raises(RuntimeError, match="Resource ceiling exceeded"):
+        check_resource_limits(5001, 1024)
+    # Exceeding storage ceiling raises
+    with pytest.raises(RuntimeError, match="Storage ceiling exceeded"):
+        check_resource_limits(100, (2 * 1024**3) + 1)
+
+
+def test_prospective_budget_exhaustion_in_client() -> None:
+    """DatasetAlpacaClient respects max_pages and stops before requesting beyond the prospective limit."""
+    call_count = 0
+
+    def fake_request(*args: Any, **kwargs: Any) -> requests.Response:
+        nonlocal call_count
+        call_count += 1
+        resp = requests.Response()
+        resp.status_code = 200
+        resp._content = json.dumps({
+            "bars": {"AAPL": [{"t": "2024-01-02T14:30:00Z", "o": 10.0, "h": 10.5, "l": 9.8, "c": 10.2, "v": 1000.0}]},
+            "next_page_token": "token_page_2",
+        }).encode("utf-8")
+        return resp
+
+    client = DatasetAlpacaClient(api_key="k", secret_key="s", request_func=fake_request)
+    _dfs, meta = client.get_bars(
+        ["AAPL"],
+        datetime(2024, 1, 2, 9, 30, tzinfo=ZoneInfo("UTC")),
+        datetime(2024, 1, 2, 9, 35, tzinfo=ZoneInfo("UTC")),
+        feed="sip",
+        timeframe="1Min",
+        adjustment="raw",
+        max_pages=1,
+    )
+    assert call_count == 1
+    assert meta["safe_error_classification"] == "max_pages_exceeded"
+    assert meta["terminal_next_page_token"] == "token_page_2"
+    assert meta["pagination_complete"] is False
+

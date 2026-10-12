@@ -50,7 +50,6 @@ from tradex.research.daytrade_orb.corr_003_pilot import (
     freeze_top_20_selection,
     get_prior_xnys_sessions,
     hash_bytes,
-    persist_raw_stage_artifact,
     rank_and_select_top_20,
     replay_corr_003_pilot,
     validate_batch_size,
@@ -260,6 +259,23 @@ def run_corr_003_live_pilot(
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Durable run lock marker: fail closed on restart or concurrent runs
+    lock_marker_path = output_dir / f".pilot_run_lock_{PILOT_DATE}.json"
+    lock_data = json.dumps(
+        {
+            "task_id": TASK_ID,
+            "pilot_date": PILOT_DATE,
+            "pre_live_commit_sha": pre_live_commit_sha,
+            "status": "IN_PROGRESS",
+            "initiated_at_utc": datetime.now(ZoneInfo("UTC")).isoformat(),
+        },
+        indent=2,
+    ).encode("utf-8")
+    lock_marker_path.write_bytes(lock_data)
+
+    current_storage_bytes = len(lock_data)
+    total_pages_used = 0
+
     # 1. Spec hash verification
     specs_ok, actual_hashes, spec_errors = verify_upstream_spec_hashes(repo_root)
     for p, h in actual_hashes.items():
@@ -302,11 +318,24 @@ def run_corr_003_live_pilot(
     if not obs.pagination_complete or obs.error:
         raise RuntimeError(f"Massive terminal pagination failure: {obs.error}")
 
-    # Save private raw reference snapshot
+    # Track Massive page count prospectively
+    total_pages_used += massive_page_count
+    if total_pages_used > MAX_PILOT_PAGES_LIMIT:
+        raise RuntimeError(
+            f"Resource ceiling exceeded in Phase 1: total pages {total_pages_used} > limit {MAX_PILOT_PAGES_LIMIT}"
+        )
+
+    # Save private raw reference snapshot prospectively
     ref_filename = f"massive_reference_{PILOT_DATE}.json"
     ref_path = output_dir / ref_filename
     ref_bytes = json.dumps(raw_rows, indent=2).encode("utf-8")
+    if current_storage_bytes + len(ref_bytes) > MAX_PILOT_STORAGE_BYTES_LIMIT:
+        raise RuntimeError(
+            f"Storage ceiling exceeded before writing {ref_filename}: "
+            f"current {current_storage_bytes} + prospective {len(ref_bytes)} > limit {MAX_PILOT_STORAGE_BYTES_LIMIT}"
+        )
     ref_path.write_bytes(ref_bytes)
+    current_storage_bytes += len(ref_bytes)
     artifacts_info[ref_filename] = {
         "sha256": hash_bytes(ref_bytes),
         "size_bytes": len(ref_bytes),
@@ -326,20 +355,19 @@ def run_corr_003_live_pilot(
         "valid_symbols": target_audit.valid_target_symbols,
         "ambiguous_symbols": target_audit.ambiguous_symbols,
     }, indent=2).encode("utf-8")
+    if current_storage_bytes + len(univ_bytes) > MAX_PILOT_STORAGE_BYTES_LIMIT:
+        raise RuntimeError(
+            f"Storage ceiling exceeded before writing {univ_filename}: "
+            f"current {current_storage_bytes} + prospective {len(univ_bytes)} > limit {MAX_PILOT_STORAGE_BYTES_LIMIT}"
+        )
     univ_path.write_bytes(univ_bytes)
+    current_storage_bytes += len(univ_bytes)
     artifacts_info[univ_filename] = {
         "sha256": hash_bytes(univ_bytes),
         "size_bytes": len(univ_bytes),
         "description": "Target universe classification and symbols",
         "record_count": target_audit.canonical_target_universe_count,
     }
-
-    # Resource check after Phase 1
-    current_storage_bytes = sum(f.stat().st_size for f in output_dir.glob("*") if f.is_file())
-    check_resource_limits(
-        page_count=massive_page_count,
-        storage_bytes=current_storage_bytes,
-    )
 
     # -------------------------------------------------------------------------
     # PHASE 2: Inexpensive Daily Screening across Broad Universe
@@ -355,6 +383,12 @@ def run_corr_003_live_pilot(
     daily_provider_failures: set[str] = set()
 
     for b_idx, batch in enumerate(symbol_batches, start=1):
+        remaining_pages = MAX_PILOT_PAGES_LIMIT - total_pages_used
+        if remaining_pages <= 0:
+            raise RuntimeError(
+                f"Provider page budget exhausted before batch request: used {total_pages_used} >= limit {MAX_PILOT_PAGES_LIMIT}"
+            )
+        call_max_pages = min(100, remaining_pages)
         dfs, meta = alpaca_client.get_bars(
             batch,
             start_utc=d_start_utc,
@@ -365,9 +399,16 @@ def run_corr_003_live_pilot(
             asof=PILOT_DATE,
             include_raw_bars=True,
             include_raw_pages=True,
+            max_pages=call_max_pages,
         )
         alpaca_call_count += 1
-        alpaca_page_count += meta.get("page_count", 1)
+        pages_fetched = meta.get("page_count", 1)
+        alpaca_page_count += pages_fetched
+        total_pages_used += pages_fetched
+        if meta.get("safe_error_classification") == "max_pages_exceeded" or total_pages_used > MAX_PILOT_PAGES_LIMIT:
+            raise RuntimeError(
+                f"Provider page budget exceeded during batch request: {total_pages_used} > limit {MAX_PILOT_PAGES_LIMIT}"
+            )
         raw_bars = meta.get("raw_bars_by_symbol", {})
 
         batch_check = validate_provider_batch_response(
@@ -425,24 +466,26 @@ def run_corr_003_live_pilot(
                 daily_bars_by_symbol[sym] = bars
 
     daily_filename = "alpaca_daily_dec2023.json"
-    daily_hash, daily_size = persist_raw_stage_artifact(
-        output_dir / daily_filename,
-        metadata={"stage": "phase_2_broad_daily", "session_date": PILOT_DATE},
-        batches=daily_raw_batches,
-    )
+    daily_payload = {
+        "metadata": {"stage": "phase_2_broad_daily", "session_date": PILOT_DATE},
+        "batches": daily_raw_batches,
+    }
+    daily_bytes = json.dumps(daily_payload, indent=2, sort_keys=True).encode("utf-8")
+    if current_storage_bytes + len(daily_bytes) > MAX_PILOT_STORAGE_BYTES_LIMIT:
+        raise RuntimeError(
+            f"Storage ceiling exceeded before writing {daily_filename}: "
+            f"current {current_storage_bytes} + prospective {len(daily_bytes)} > limit {MAX_PILOT_STORAGE_BYTES_LIMIT}"
+        )
+    (output_dir / daily_filename).write_bytes(daily_bytes)
+    current_storage_bytes += len(daily_bytes)
+    daily_hash = hash_bytes(daily_bytes)
+    daily_size = len(daily_bytes)
     artifacts_info[daily_filename] = {
         "sha256": daily_hash,
         "size_bytes": daily_size,
         "description": "Raw Alpaca daily bars for Dec 2023 across target universe",
         "record_count": sum(len(b["bars_by_symbol"]) for b in daily_raw_batches),
     }
-
-    # Resource check after Phase 2
-    current_storage_bytes = sum(f.stat().st_size for f in output_dir.glob("*") if f.is_file())
-    check_resource_limits(
-        page_count=massive_page_count + alpaca_page_count,
-        storage_bytes=current_storage_bytes,
-    )
 
     daily_audit, _computable, daily_base_qualified = audit_broad_daily_availability(
         valid_target_symbols=target_audit.valid_target_symbols,
@@ -466,6 +509,12 @@ def run_corr_003_live_pilot(
     current_or_raw_batches: list[dict[str, Any]] = []
 
     for b_idx, batch in enumerate(dq_batches, start=1):
+        remaining_pages = MAX_PILOT_PAGES_LIMIT - total_pages_used
+        if remaining_pages <= 0:
+            raise RuntimeError(
+                f"Provider page budget exhausted before batch request: used {total_pages_used} >= limit {MAX_PILOT_PAGES_LIMIT}"
+            )
+        call_max_pages = min(100, remaining_pages)
         dfs, meta = alpaca_client.get_bars(
             batch,
             start_utc=c_start_utc,
@@ -476,9 +525,16 @@ def run_corr_003_live_pilot(
             asof=PILOT_DATE,
             include_raw_bars=True,
             include_raw_pages=True,
+            max_pages=call_max_pages,
         )
         alpaca_call_count += 1
-        alpaca_page_count += meta.get("page_count", 1)
+        pages_fetched = meta.get("page_count", 1)
+        alpaca_page_count += pages_fetched
+        total_pages_used += pages_fetched
+        if meta.get("safe_error_classification") == "max_pages_exceeded" or total_pages_used > MAX_PILOT_PAGES_LIMIT:
+            raise RuntimeError(
+                f"Provider page budget exceeded during batch request: {total_pages_used} > limit {MAX_PILOT_PAGES_LIMIT}"
+            )
         raw_bars = meta.get("raw_bars_by_symbol", {})
 
         batch_check = validate_provider_batch_response(
@@ -539,11 +595,20 @@ def run_corr_003_live_pilot(
                 current_or_by_symbol[sym] = evaluate_opening_range(m_bars, require_five_bars=False)
 
     cur_filename = f"alpaca_current_or_{PILOT_DATE}.json"
-    cur_hash, cur_size = persist_raw_stage_artifact(
-        output_dir / cur_filename,
-        metadata={"stage": "phase_3_current_opening_range", "session_date": PILOT_DATE},
-        batches=current_or_raw_batches,
-    )
+    cur_payload = {
+        "metadata": {"stage": "phase_3_current_opening_range", "session_date": PILOT_DATE},
+        "batches": current_or_raw_batches,
+    }
+    cur_bytes = json.dumps(cur_payload, indent=2, sort_keys=True).encode("utf-8")
+    if current_storage_bytes + len(cur_bytes) > MAX_PILOT_STORAGE_BYTES_LIMIT:
+        raise RuntimeError(
+            f"Storage ceiling exceeded before writing {cur_filename}: "
+            f"current {current_storage_bytes} + prospective {len(cur_bytes)} > limit {MAX_PILOT_STORAGE_BYTES_LIMIT}"
+        )
+    (output_dir / cur_filename).write_bytes(cur_bytes)
+    current_storage_bytes += len(cur_bytes)
+    cur_hash = hash_bytes(cur_bytes)
+    cur_size = len(cur_bytes)
     artifacts_info[cur_filename] = {
         "sha256": cur_hash,
         "size_bytes": cur_size,
@@ -572,6 +637,12 @@ def run_corr_003_live_pilot(
             p_end_utc = datetime(sess_d.year, sess_d.month, sess_d.day, 9, 34, 59, tzinfo=MARKET_TIMEZONE).astimezone(UTC)
 
             for b_idx, batch in enumerate(rv_batches, start=1):
+                remaining_pages = MAX_PILOT_PAGES_LIMIT - total_pages_used
+                if remaining_pages <= 0:
+                    raise RuntimeError(
+                        f"Provider page budget exhausted before batch request: used {total_pages_used} >= limit {MAX_PILOT_PAGES_LIMIT}"
+                    )
+                call_max_pages = min(100, remaining_pages)
                 dfs, meta = alpaca_client.get_bars(
                     batch,
                     start_utc=p_start_utc,
@@ -582,9 +653,16 @@ def run_corr_003_live_pilot(
                     asof=PILOT_DATE,
                     include_raw_bars=True,
                     include_raw_pages=True,
+                    max_pages=call_max_pages,
                 )
                 alpaca_call_count += 1
-                alpaca_page_count += meta.get("page_count", 1)
+                pages_fetched = meta.get("page_count", 1)
+                alpaca_page_count += pages_fetched
+                total_pages_used += pages_fetched
+                if meta.get("safe_error_classification") == "max_pages_exceeded" or total_pages_used > MAX_PILOT_PAGES_LIMIT:
+                    raise RuntimeError(
+                        f"Provider page budget exceeded during batch request: {total_pages_used} > limit {MAX_PILOT_PAGES_LIMIT}"
+                    )
                 raw_bars = meta.get("raw_bars_by_symbol", {})
 
                 batch_check = validate_provider_batch_response(
@@ -637,8 +715,14 @@ def run_corr_003_live_pilot(
         "metadata": {"stage": "phase_3_prior_14_sessions_opening_range", "target_session": PILOT_DATE},
         "sessions_data": prior_raw_sessions_data,
     }
-    p_bytes = json.dumps(prior_payload, indent=2).encode("utf-8")
+    p_bytes = json.dumps(prior_payload, indent=2, sort_keys=True).encode("utf-8")
+    if current_storage_bytes + len(p_bytes) > MAX_PILOT_STORAGE_BYTES_LIMIT:
+        raise RuntimeError(
+            f"Storage ceiling exceeded before writing {prior_filename}: "
+            f"current {current_storage_bytes} + prospective {len(p_bytes)} > limit {MAX_PILOT_STORAGE_BYTES_LIMIT}"
+        )
     (output_dir / prior_filename).write_bytes(p_bytes)
+    current_storage_bytes += len(p_bytes)
     artifacts_info[prior_filename] = {
         "sha256": hash_bytes(p_bytes),
         "size_bytes": len(p_bytes),
@@ -696,8 +780,14 @@ def run_corr_003_live_pilot(
         "doji_count": selection_evidence.doji_count,
         "eligible_candidates_count": selection_evidence.eligible_candidates_count,
         "records": selection_records,
-    }, indent=2).encode("utf-8")
+    }, indent=2, sort_keys=True).encode("utf-8")
+    if current_storage_bytes + len(sel_bytes) > MAX_PILOT_STORAGE_BYTES_LIMIT:
+        raise RuntimeError(
+            f"Storage ceiling exceeded before writing {sel_filename}: "
+            f"current {current_storage_bytes} + prospective {len(sel_bytes)} > limit {MAX_PILOT_STORAGE_BYTES_LIMIT}"
+        )
     (output_dir / sel_filename).write_bytes(sel_bytes)
+    current_storage_bytes += len(sel_bytes)
     artifacts_info[sel_filename] = {
         "sha256": hash_bytes(sel_bytes),
         "size_bytes": len(sel_bytes),
@@ -721,6 +811,12 @@ def run_corr_003_live_pilot(
         b_batches = batch_symbols(actionable_symbols, batch_size=batch_size)
 
         for b_idx, batch in enumerate(b_batches, start=1):
+            remaining_pages = MAX_PILOT_PAGES_LIMIT - total_pages_used
+            if remaining_pages <= 0:
+                raise RuntimeError(
+                    f"Provider page budget exhausted before batch request: used {total_pages_used} >= limit {MAX_PILOT_PAGES_LIMIT}"
+                )
+            call_max_pages = min(100, remaining_pages)
             dfs, meta = alpaca_client.get_bars(
                 batch,
                 start_utc=b_start_utc,
@@ -731,9 +827,16 @@ def run_corr_003_live_pilot(
                 asof=PILOT_DATE,
                 include_raw_bars=True,
                 include_raw_pages=True,
+                max_pages=call_max_pages,
             )
             alpaca_call_count += 1
-            alpaca_page_count += meta.get("page_count", 1)
+            pages_fetched = meta.get("page_count", 1)
+            alpaca_page_count += pages_fetched
+            total_pages_used += pages_fetched
+            if meta.get("safe_error_classification") == "max_pages_exceeded" or total_pages_used > MAX_PILOT_PAGES_LIMIT:
+                raise RuntimeError(
+                    f"Provider page budget exceeded during batch request: {total_pages_used} > limit {MAX_PILOT_PAGES_LIMIT}"
+                )
             raw_bars = meta.get("raw_bars_by_symbol", {})
 
             batch_check = validate_provider_batch_response(
@@ -791,24 +894,26 @@ def run_corr_003_live_pilot(
                 stage_b_bars_by_symbol[sym] = m_bars
 
     sb_filename = f"alpaca_stage_b_{PILOT_DATE}.json"
-    sb_hash, sb_size = persist_raw_stage_artifact(
-        output_dir / sb_filename,
-        metadata={"stage": "phase_5_stage_b_minute_bars", "session_date": PILOT_DATE},
-        batches=stage_b_raw_batches,
-    )
+    sb_payload = {
+        "metadata": {"stage": "phase_5_stage_b_minute_bars", "session_date": PILOT_DATE},
+        "batches": stage_b_raw_batches,
+    }
+    sb_bytes = json.dumps(sb_payload, indent=2, sort_keys=True).encode("utf-8")
+    if current_storage_bytes + len(sb_bytes) > MAX_PILOT_STORAGE_BYTES_LIMIT:
+        raise RuntimeError(
+            f"Storage ceiling exceeded before writing {sb_filename}: "
+            f"current {current_storage_bytes} + prospective {len(sb_bytes)} > limit {MAX_PILOT_STORAGE_BYTES_LIMIT}"
+        )
+    (output_dir / sb_filename).write_bytes(sb_bytes)
+    current_storage_bytes += len(sb_bytes)
+    sb_hash = hash_bytes(sb_bytes)
+    sb_size = len(sb_bytes)
     artifacts_info[sb_filename] = {
         "sha256": sb_hash,
         "size_bytes": sb_size,
         "description": "Raw Alpaca Stage-B minute bars for actionable selected symbols",
         "record_count": sum(len(b["bars_by_symbol"]) for b in stage_b_raw_batches),
     }
-
-    # Resource check after Phase 5
-    current_storage_bytes = sum(f.stat().st_size for f in output_dir.glob("*") if f.is_file())
-    check_resource_limits(
-        page_count=massive_page_count + alpaca_page_count,
-        storage_bytes=current_storage_bytes,
-    )
 
     stage_b_audit = audit_stage_b_price_path_corr_003(
         active_selected_symbols=actionable_symbols,
@@ -821,7 +926,21 @@ def run_corr_003_live_pilot(
     # -------------------------------------------------------------------------
     # Save Checksum Manifest
     # -------------------------------------------------------------------------
+    manifest_data = {
+        "schema_version": "1.0",
+        "task_id": TASK_ID,
+        "date": PILOT_DATE,
+        "created_at_utc": datetime.now(ZoneInfo("UTC")).isoformat(),
+        "artifacts": artifacts_info,
+    }
+    manifest_bytes = json.dumps(manifest_data, indent=2, sort_keys=True).encode("utf-8")
+    if current_storage_bytes + len(manifest_bytes) > MAX_PILOT_STORAGE_BYTES_LIMIT:
+        raise RuntimeError(
+            f"Storage ceiling exceeded before writing manifest_{PILOT_DATE}.json: "
+            f"current {current_storage_bytes} + prospective {len(manifest_bytes)} > limit {MAX_PILOT_STORAGE_BYTES_LIMIT}"
+        )
     _manifest_path, manifest_hash = create_and_save_manifest(output_dir, artifacts_info, PILOT_DATE)
+    current_storage_bytes += len(manifest_bytes)
 
     # -------------------------------------------------------------------------
     # PHASE 6: Final Pilot Disposition

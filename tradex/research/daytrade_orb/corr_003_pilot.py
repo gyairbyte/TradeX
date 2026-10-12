@@ -292,15 +292,81 @@ def validate_provider_batch_response(
             ),
         )
 
+    raw_pages = meta.get("raw_pages")
+    if raw_pages is not None:
+        if not isinstance(raw_pages, list):
+            return BatchIntegrityResult(
+                is_valid=False,
+                status=PayloadIntegrityStatus.TRUNCATED_OR_MALFORMED_PAYLOAD,
+                error_message="raw_pages in meta must be a list",
+            )
+        raw_page_bars_by_symbol: dict[str, list[dict[str, Any]]] = {}
+        for p_idx, p in enumerate(raw_pages):
+            if not isinstance(p, dict):
+                return BatchIntegrityResult(
+                    is_valid=False,
+                    status=PayloadIntegrityStatus.TRUNCATED_OR_MALFORMED_PAYLOAD,
+                    error_message=f"raw_pages[{p_idx}] is not a dict",
+                )
+            body = p.get("body")
+            if not isinstance(body, dict):
+                return BatchIntegrityResult(
+                    is_valid=False,
+                    status=PayloadIntegrityStatus.TRUNCATED_OR_MALFORMED_PAYLOAD,
+                    error_message=f"raw_pages[{p_idx}] body is not a dict",
+                )
+            p_bars = body.get("bars")
+            if not isinstance(p_bars, dict):
+                return BatchIntegrityResult(
+                    is_valid=False,
+                    status=PayloadIntegrityStatus.TRUNCATED_OR_MALFORMED_PAYLOAD,
+                    error_message=f"raw_pages[{p_idx}] body missing or non-dict 'bars'",
+                )
+            for sym_k, b_list in p_bars.items():
+                if not isinstance(b_list, list):
+                    return BatchIntegrityResult(
+                        is_valid=False,
+                        status=PayloadIntegrityStatus.TRUNCATED_OR_MALFORMED_PAYLOAD,
+                        error_message=f"raw_pages[{p_idx}] bars for symbol '{sym_k}' is not a list",
+                    )
+                for b_item in b_list:
+                    if not isinstance(b_item, dict):
+                        return BatchIntegrityResult(
+                            is_valid=False,
+                            status=PayloadIntegrityStatus.TRUNCATED_OR_MALFORMED_PAYLOAD,
+                            error_message=f"raw_pages[{p_idx}] bar for symbol '{sym_k}' is not a dict",
+                        )
+                clean_sym = str(sym_k).upper()
+                if clean_sym not in raw_page_bars_by_symbol:
+                    raw_page_bars_by_symbol[clean_sym] = []
+                raw_page_bars_by_symbol[clean_sym].extend(b_list)
+
+        # Exact parity check between raw_pages and bars_by_symbol
+        all_syms = set(bars_by_symbol.keys()) | set(raw_page_bars_by_symbol.keys())
+        for sym in all_syms:
+            clean_sym = str(sym).upper()
+            agg_bars = bars_by_symbol.get(sym, bars_by_symbol.get(clean_sym, []))
+            raw_bars = raw_page_bars_by_symbol.get(clean_sym, [])
+            if agg_bars != raw_bars:
+                return BatchIntegrityResult(
+                    is_valid=False,
+                    status=PayloadIntegrityStatus.TRUNCATED_OR_MALFORMED_PAYLOAD,
+                    error_message=(
+                        f"Discrepancy between raw_pages bars ({len(raw_bars)}) "
+                        f"and aggregated bars ({len(agg_bars)}) for symbol {sym}"
+                    ),
+                )
+
     req_set = {s.strip().upper() for s in symbols_requested}
     resp_symbols = set(meta.get("response_symbols", [])) | {s.strip().upper() for s in bars_by_symbol}
-    for p in meta.get("raw_pages", []):
-        if isinstance(p, dict):
-            body = p.get("body", {})
-            if isinstance(body, dict):
-                p_bars = body.get("bars", {})
-                if isinstance(p_bars, dict):
-                    resp_symbols.update(str(k).upper() for k in p_bars)
+    if raw_pages is not None:
+        for p in raw_pages:
+            if isinstance(p, dict):
+                body = p.get("body", {})
+                if isinstance(body, dict):
+                    p_bars = body.get("bars", {})
+                    if isinstance(p_bars, dict):
+                        resp_symbols.update(str(k).upper() for k in p_bars)
     unexpected = sorted(resp_symbols - req_set)
     if unexpected:
         return BatchIntegrityResult(
@@ -708,12 +774,29 @@ def validate_batch_size(batch_size: int) -> None:
 
 
 def check_one_shot_pilot_guard(output_dir: Path, pilot_date: str = PILOT_DATE) -> None:
-    """Enforce strict one-shot execution: cannot rerun or overwrite existing completed pilot run."""
+    """Enforce strict one-shot execution: cannot rerun, restart, or overwrite existing completed or partial pilot run."""
+    if not output_dir.exists():
+        return
     manifest_path = output_dir / f"manifest_{pilot_date}.json"
     if manifest_path.exists():
         raise RuntimeError(
             f"One-shot pilot guard triggered: completed pilot manifest already exists at {manifest_path}. "
             f"A pilot run is strictly one-shot and cannot overwrite existing pilot evidence."
+        )
+    lock_path = output_dir / f".pilot_run_lock_{pilot_date}.json"
+    if lock_path.exists():
+        raise RuntimeError(
+            f"One-shot pilot guard triggered: run lock marker exists at {lock_path}. "
+            f"An existing or interrupted run was detected; cannot restart or overwrite partial evidence."
+        )
+    existing_json = [
+        f for f in output_dir.iterdir()
+        if f.is_file() and f.suffix == ".json" and not f.name.startswith(".")
+    ]
+    if existing_json:
+        raise RuntimeError(
+            f"One-shot pilot guard triggered: found {len(existing_json)} existing artifacts in {output_dir}. "
+            f"A pilot run must begin in a clean directory to prevent partial evidence collision."
         )
 
 
@@ -735,7 +818,15 @@ def check_resource_limits(
 
 
 def check_pre_live_code_freeze(repo_root: Path, expected_sha: str) -> None:
-    """Validate that current execution tree exactly matches the approved pre-live freeze commit."""
+    """Validate that execution tree matches or is an authorized clean descendant of the approved freeze commit.
+
+    Two-commit workflow:
+    1. Audited implementation freeze commit F (expected_sha).
+    2. Optional authorization commit A where F is an ancestor of HEAD (A).
+       Between F and A, zero code, spec, or test drift is permitted:
+       only authorization records and non-executable documentation may change.
+    3. Working tree must be completely clean.
+    """
     try:
         res = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -747,11 +838,6 @@ def check_pre_live_code_freeze(repo_root: Path, expected_sha: str) -> None:
         actual_sha = res.stdout.strip()
     except Exception as exc:
         raise RuntimeError(f"Failed to inspect git repository HEAD: {exc}") from exc
-
-    if actual_sha != expected_sha:
-        raise RuntimeError(
-            f"Pre-live freeze verification failed: current git HEAD ({actual_sha}) != expected frozen SHA ({expected_sha})"
-        )
 
     try:
         status_res = subprocess.run(
@@ -768,11 +854,58 @@ def check_pre_live_code_freeze(repo_root: Path, expected_sha: str) -> None:
     if dirty:
         raise RuntimeError(f"Pre-live freeze verification failed: working tree is dirty:\n{dirty}")
 
+    if actual_sha == expected_sha:
+        return
+
+    # Check ancestry: expected_sha must be an ancestor of actual_sha
+    try:
+        anc_res = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", expected_sha, actual_sha],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        is_ancestor = anc_res.returncode == 0
+    except Exception as exc:
+        raise RuntimeError(f"Failed to check git merge-base ancestry: {exc}") from exc
+
+    if not is_ancestor:
+        raise RuntimeError(
+            f"Pre-live freeze verification failed: expected freeze commit ({expected_sha}) "
+            f"is not an ancestor of current HEAD ({actual_sha})"
+        )
+
+    # Check for code/spec/test drift between freeze commit and HEAD
+    try:
+        diff_res = subprocess.run(
+            ["git", "diff", "--name-only", f"{expected_sha}..{actual_sha}"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        changed_files = [f.strip() for f in diff_res.stdout.splitlines() if f.strip()]
+    except Exception as exc:
+        raise RuntimeError(f"Failed to check git diff between freeze commit and HEAD: {exc}") from exc
+
+    forbidden_prefixes = ("tradex/", "scripts/", "tests/", "docs/research/specs/")
+    drifted_code_files = [
+        f for f in changed_files
+        if any(f.startswith(prefix) for prefix in forbidden_prefixes)
+    ]
+    if drifted_code_files:
+        raise RuntimeError(
+            f"Pre-live freeze verification failed: forbidden code/spec/test drift between freeze "
+            f"({expected_sha}) and current HEAD ({actual_sha}): {drifted_code_files}"
+        )
+
 
 def check_pilot_authorization(
     repo_root: Path,
     expected_sha: str,
     authorized_by_gary: bool = False,
+    pilot_date: str = PILOT_DATE,
 ) -> None:
     """Validate explicit committed authorization record from Gary Yang before live provider access."""
     if not authorized_by_gary:
@@ -794,11 +927,37 @@ def check_pilot_authorization(
         raise PermissionError(f"Malformed authorization record: {exc}") from exc
 
     if auth_data.get("authorized_by") != "Gary Yang":
-        raise PermissionError("Authorization record is not signed by Gary Yang")
+        raise PermissionError("Authorization record is not authorized by Gary Yang")
     if auth_data.get("task_id") != TASK_ID:
         raise PermissionError(f"Authorization record task_id mismatch: {auth_data.get('task_id')} != {TASK_ID}")
-    if auth_data.get("frozen_sha") != expected_sha:
-        raise PermissionError(f"Authorization record SHA mismatch: {auth_data.get('frozen_sha')} != {expected_sha}")
+    if auth_data.get("pilot_date") != pilot_date:
+        raise PermissionError(f"Authorization record pilot_date mismatch: {auth_data.get('pilot_date')} != {pilot_date}")
+
+    frozen_sha = auth_data.get("frozen_implementation_sha", auth_data.get("frozen_sha"))
+    if frozen_sha != expected_sha:
+        raise PermissionError(f"Authorization record SHA mismatch: {frozen_sha} != {expected_sha}")
+
+    if auth_data.get("run_scope") != "ONE_SHOT_PILOT_JAN_2_2024":
+        raise PermissionError(
+            f"Authorization record run_scope mismatch: {auth_data.get('run_scope')} != ONE_SHOT_PILOT_JAN_2_2024"
+        )
+
+    try:
+        st_res = subprocess.run(
+            ["git", "status", "--porcelain", str(auth_path)],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if st_res.returncode != 0:
+            raise PermissionError(f"Failed to check git status of authorization file: {st_res.stderr.strip()}")
+        if st_res.stdout.strip():
+            raise PermissionError("Authorization file is modified or untracked in git working tree")
+    except PermissionError:
+        raise
+    except Exception as exc:
+        raise PermissionError(f"Failed to check git status of authorization file: {exc}") from exc
 
 
 # -----------------------------------------------------------------------------
@@ -867,17 +1026,96 @@ def _extract_batch_meta_strict(batch_dict: dict[str, Any]) -> dict[str, Any]:
 def _verify_request_params_consistency(
     batch_dict: dict[str, Any],
     symbols_requested: list[str],
+    expected_timeframe: str | None = None,
+    expected_feed: str | None = None,
+    expected_adjustment: str | None = None,
+    expected_asof: str | None = None,
+    expected_start: datetime | None = None,
+    expected_end: datetime | None = None,
 ) -> None:
-    """Verify that persisted request_params are consistent with batch request."""
+    """Verify that persisted request_params are genuine, consistent, and match expected stage parameters."""
     req_params = batch_dict.get("request_params")
     if not req_params and isinstance(batch_dict.get("meta"), dict):
         req_params = batch_dict["meta"].get("request_params")
-    if isinstance(req_params, dict) and "symbols" in req_params:
-        p_syms = req_params["symbols"]
-        if isinstance(p_syms, list) and sorted(p_syms) != sorted(symbols_requested):
+
+    if not req_params or not isinstance(req_params, dict):
+        raise ReplayIntegrityError("Missing or invalid request_params in batch artifact")
+
+    # 1. Symbol provenance: support comma-separated string (standard Alpaca client) and list
+    p_syms = req_params.get("symbols")
+    if isinstance(p_syms, str):
+        parsed_syms = [s.strip().upper() for s in p_syms.split(",") if s.strip()]
+    elif isinstance(p_syms, list):
+        parsed_syms = [s.strip().upper() for s in p_syms if isinstance(s, str) and s.strip()]
+    else:
+        raise ReplayIntegrityError(f"Missing or invalid request_params symbols format: {type(p_syms)}")
+
+    expected_syms = sorted(s.strip().upper() for s in symbols_requested)
+    if sorted(parsed_syms) != expected_syms:
+        raise ReplayIntegrityError(
+            f"Contradictory request parameters: request_params symbols {parsed_syms} != symbols_requested {expected_syms}"
+        )
+
+    # 2. Stage-specific PIT parameter checks (fail closed: reject missing/contradictory)
+    if expected_timeframe is not None:
+        actual_tf = req_params.get("timeframe")
+        if actual_tf != expected_timeframe:
             raise ReplayIntegrityError(
-                f"Contradictory request parameters: request_params symbols {p_syms} != symbols_requested {symbols_requested}"
+                f"Contradictory request timeframe: expected '{expected_timeframe}', got '{actual_tf}'"
             )
+
+    if expected_feed is not None:
+        actual_feed = req_params.get("feed")
+        if actual_feed != expected_feed:
+            raise ReplayIntegrityError(
+                f"Contradictory request feed: expected '{expected_feed}', got '{actual_feed}'"
+            )
+
+    if expected_adjustment is not None:
+        actual_adj = req_params.get("adjustment")
+        if actual_adj != expected_adjustment:
+            raise ReplayIntegrityError(
+                f"Contradictory request adjustment: expected '{expected_adjustment}', got '{actual_adj}'"
+            )
+
+    if expected_asof is not None:
+        actual_asof = req_params.get("asof")
+        if actual_asof != expected_asof:
+            raise ReplayIntegrityError(
+                f"Contradictory request asof: expected '{expected_asof}', got '{actual_asof}'"
+            )
+
+    if expected_start is not None:
+        actual_start = req_params.get("start")
+        if not actual_start:
+            raise ReplayIntegrityError("Missing request start parameter")
+        exp_start_str = expected_start.isoformat().replace("+00:00", "Z")
+        if actual_start != exp_start_str:
+            raise ReplayIntegrityError(
+                f"Contradictory request start: expected '{exp_start_str}', got '{actual_start}'"
+            )
+
+    if expected_end is not None:
+        actual_end = req_params.get("end")
+        if not actual_end:
+            raise ReplayIntegrityError("Missing request end parameter")
+        exp_end_str = expected_end.isoformat().replace("+00:00", "Z")
+        if actual_end != exp_end_str:
+            raise ReplayIntegrityError(
+                f"Contradictory request end: expected '{exp_end_str}', got '{actual_end}'"
+            )
+
+    # 3. Token sequence parity
+    meta = batch_dict.get("meta")
+    if isinstance(meta, dict):
+        tok_hashes = meta.get("token_hashes", batch_dict.get("token_hashes"))
+        tok_seq = meta.get("token_sequence_sha256", batch_dict.get("token_sequence_sha256"))
+        if tok_hashes is not None and tok_seq is not None:
+            expected_seq = hashlib.sha256("".join(tok_hashes).encode("utf-8")).hexdigest()
+            if tok_seq != expected_seq:
+                raise ReplayIntegrityError(
+                    f"Token sequence hash mismatch: persisted '{tok_seq}' != recomputed '{expected_seq}'"
+                )
 
 
 def determine_pilot_disposition_corr_003(
@@ -1007,7 +1245,16 @@ def replay_corr_003_pilot(
         symbols_req = b.get("symbols_requested", [])
         bars_by_sym = b.get("bars_by_symbol", {})
         meta_dict = _extract_batch_meta_strict(b)
-        _verify_request_params_consistency(b, symbols_req)
+        _verify_request_params_consistency(
+            b,
+            symbols_req,
+            expected_timeframe="1Day",
+            expected_feed="sip",
+            expected_adjustment="raw",
+            expected_asof=pilot_date,
+            expected_start=datetime(2023, 12, 1, 0, 0, tzinfo=ZoneInfo("UTC")),
+            expected_end=datetime(2023, 12, 29, 23, 59, tzinfo=ZoneInfo("UTC")),
+        )
 
         batch_check = validate_provider_batch_response(
             symbols_requested=symbols_req,
@@ -1081,7 +1328,16 @@ def replay_corr_003_pilot(
         symbols_req = b.get("symbols_requested", [])
         bars_by_sym = b.get("bars_by_symbol", {})
         meta_dict = _extract_batch_meta_strict(b)
-        _verify_request_params_consistency(b, symbols_req)
+        _verify_request_params_consistency(
+            b,
+            symbols_req,
+            expected_timeframe="1Min",
+            expected_feed="sip",
+            expected_adjustment="raw",
+            expected_asof=pilot_date,
+            expected_start=datetime(target_dt.year, target_dt.month, target_dt.day, 9, 30, tzinfo=MARKET_TIMEZONE).astimezone(ZoneInfo("UTC")),
+            expected_end=datetime(target_dt.year, target_dt.month, target_dt.day, 9, 34, 59, tzinfo=MARKET_TIMEZONE).astimezone(ZoneInfo("UTC")),
+        )
 
         batch_check = validate_provider_batch_response(
             symbols_requested=symbols_req,
@@ -1145,7 +1401,16 @@ def replay_corr_003_pilot(
             symbols_req = b.get("symbols_requested", [])
             bars_by_sym = b.get("bars_by_symbol", {})
             meta_dict = _extract_batch_meta_strict(b)
-            _verify_request_params_consistency(b, symbols_req)
+            _verify_request_params_consistency(
+                b,
+                symbols_req,
+                expected_timeframe="1Min",
+                expected_feed="sip",
+                expected_adjustment="raw",
+                expected_asof=pilot_date,
+                expected_start=datetime(sess_d.year, sess_d.month, sess_d.day, 9, 30, tzinfo=MARKET_TIMEZONE).astimezone(ZoneInfo("UTC")),
+                expected_end=datetime(sess_d.year, sess_d.month, sess_d.day, 9, 34, 59, tzinfo=MARKET_TIMEZONE).astimezone(ZoneInfo("UTC")),
+            )
 
             batch_check = validate_provider_batch_response(
                 symbols_requested=symbols_req,
@@ -1265,7 +1530,16 @@ def replay_corr_003_pilot(
         symbols_req = b.get("symbols_requested", [])
         bars_by_sym = b.get("bars_by_symbol", {})
         meta_dict = _extract_batch_meta_strict(b)
-        _verify_request_params_consistency(b, symbols_req)
+        _verify_request_params_consistency(
+            b,
+            symbols_req,
+            expected_timeframe="1Min",
+            expected_feed="sip",
+            expected_adjustment="raw",
+            expected_asof=pilot_date,
+            expected_start=datetime(target_dt.year, target_dt.month, target_dt.day, 9, 35, tzinfo=MARKET_TIMEZONE).astimezone(ZoneInfo("UTC")),
+            expected_end=datetime(target_dt.year, target_dt.month, target_dt.day, 15, 59, 59, tzinfo=MARKET_TIMEZONE).astimezone(ZoneInfo("UTC")),
+        )
 
         batch_check = validate_provider_batch_response(
             symbols_requested=symbols_req,
