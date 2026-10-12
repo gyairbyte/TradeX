@@ -54,6 +54,7 @@ def simulate_session_portfolio(
     stop_loss_atr_mult: float = 0.10,
     candidate_count: int | None = None,
     qualified_candidate_count: int | None = None,
+    allow_verified_sparse_bars: bool = False,
 ) -> SessionResult:
     """Simulate multi-position execution across discrete 1-minute regular-session bars.
 
@@ -258,6 +259,9 @@ def simulate_session_portfolio(
         for sym in active_positions:
             bar = bars_by_symbol_time.get(sym, {}).get(curr_time)
             if bar is None:
+                if allow_verified_sparse_bars and not is_eod_bar:
+                    # Verified no-print minute: position remains open in prior state
+                    continue
                 return SessionResult(
                     session_date=session_date,
                     is_valid=False,
@@ -289,6 +293,9 @@ def simulate_session_portfolio(
         for sym in pending_orders:
             bar = bars_by_symbol_time.get(sym, {}).get(curr_time)
             if bar is None:
+                if allow_verified_sparse_bars:
+                    # Verified no-print minute: pending order remains in prior state
+                    continue
                 return SessionResult(
                     session_date=session_date,
                     is_valid=False,
@@ -326,7 +333,9 @@ def simulate_session_portfolio(
         # Positions that close in this minute will NOT free capacity for entries in this minute
         positions_to_close: list[str] = []
         for sym, pos in list(active_positions.items()):
-            bar = bars_by_symbol_time[sym][curr_time]
+            bar = bars_by_symbol_time[sym].get(curr_time)
+            if bar is None:
+                continue
 
             hit_stop, raw_exit = check_protective_stop_hit(
                 bar=bar,
@@ -374,7 +383,9 @@ def simulate_session_portfolio(
         # Step 2: Check pending orders that trigger in this minute
         triggered_this_minute: list[tuple[RankedCandidate, MinuteBar, float]] = []
         for sym, rc in list(pending_orders.items()):
-            bar = bars_by_symbol_time[sym][curr_time]
+            bar = bars_by_symbol_time[sym].get(curr_time)
+            if bar is None:
+                continue
 
             stop_level = rc.order_intent.stop_level
             if stop_level is None:

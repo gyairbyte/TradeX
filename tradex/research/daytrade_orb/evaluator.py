@@ -82,6 +82,8 @@ class ORBEvaluator:
         top_n: int = 20,
         bootstrap_resamples: int = 2000,
         bootstrap_seed: int = 20261007,
+        allow_sparse_opening: bool = False,
+        allow_verified_sparse_bars: bool = False,
     ) -> None:
         self.initial_equity = initial_equity
         self.leverage_cap = leverage_cap
@@ -89,6 +91,8 @@ class ORBEvaluator:
         self.top_n = top_n
         self.bootstrap_resamples = bootstrap_resamples
         self.bootstrap_seed = bootstrap_seed
+        self.allow_sparse_opening = allow_sparse_opening
+        self.allow_verified_sparse_bars = allow_verified_sparse_bars
 
     def evaluate_session(
         self,
@@ -208,7 +212,7 @@ class ORBEvaluator:
                             f"Stage-A opening range bar symbol mismatch for {sym}: bar has symbol {b.symbol}"
                         )
 
-                op_range = evaluate_opening_range(or_bars)
+                op_range = evaluate_opening_range(or_bars, require_five_bars=not self.allow_sparse_opening)
                 if op_range is None:
                     return _fail_closed(f"Stage-A data incomplete for active symbol {sym}: malformed or missing opening range minutes")
 
@@ -299,6 +303,7 @@ class ORBEvaluator:
                 stop_loss_atr_mult=self.stop_loss_atr_mult,
                 candidate_count=len(evaluated_candidates),
                 qualified_candidate_count=len([c for c in evaluated_candidates if c.is_eligible]),
+                allow_verified_sparse_bars=self.allow_verified_sparse_bars,
             )
         except DataIntegrityError as exc:
             return _fail_closed(f"Data integrity error: {exc}")

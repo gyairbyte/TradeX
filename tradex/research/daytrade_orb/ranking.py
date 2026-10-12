@@ -26,13 +26,25 @@ OR_MINUTE_TIMES = (
 )
 
 
-def evaluate_opening_range(minute_bars: list[MinuteBar]) -> OpeningRange | None:
-    """Evaluate the first 5 regular-session minute bars (09:30-09:34) for a symbol on session D.
+def evaluate_opening_range(
+    minute_bars: list[MinuteBar],
+    require_five_bars: bool = False,
+) -> OpeningRange | None:
+    """Evaluate regular-session minute bars (09:30-09:34) for a symbol on session D.
 
-    Must contain all 5 bars. If any are missing, duplicated, or invalid, returns None (fail closed).
-    All bars must have the identical symbol and session_date.
+    Under corrected sparse-bar semantics (require_five_bars=False), aggregates OHLCV
+    from whatever valid minute bars exist in the 09:30-09:34 ET opening window:
+        - or_open = first available valid bar's open
+        - or_high = maximum available high
+        - or_low = minimum available low
+        - or_close = last available valid bar's close
+        - or_volume = sum of available bar volumes
+    If require_five_bars=True, strictly requires all 5 one-minute bars (legacy 003C rule).
+    If no valid bars exist anywhere in the window (0 bars), returns None (NO_OPENING_PRINT_NO_SETUP).
+    Duplicate minute bars, non-finite values, invalid bounds (high < low), or symbol/date
+    mismatches fail closed (return None).
     """
-    if not minute_bars or len(minute_bars) < 5:
+    if not minute_bars:
         return None
 
     symbol = minute_bars[0].symbol
@@ -50,11 +62,16 @@ def evaluate_opening_range(minute_bars: list[MinuteBar]) -> OpeningRange | None:
                 return None
             or_bars[local_time] = bar
 
-    if len(or_bars) != 5:
-        # Missing opening-range minute -> fail closed
+    if require_five_bars and len(or_bars) != 5:
+        # Missing opening-range minute under legacy 5-bar requirement -> fail closed
         return None
 
-    sorted_bars = [or_bars[t] for t in OR_MINUTE_TIMES]
+    if len(or_bars) == 0:
+        # No valid bars in 09:30-09:34 ET -> NO_OPENING_PRINT_NO_SETUP
+        return None
+
+    sorted_times = sorted(or_bars.keys())
+    sorted_bars = [or_bars[t] for t in sorted_times]
     symbol = sorted_bars[0].symbol
     session_date = sorted_bars[0].session_date
 
@@ -68,6 +85,9 @@ def evaluate_opening_range(minute_bars: list[MinuteBar]) -> OpeningRange | None:
         not isinstance(v, bool) and isinstance(v, (int, float)) and math.isfinite(v)
         for v in (or_open, or_high, or_low, or_close, or_volume)
     ):
+        return None
+
+    if or_high < or_low or or_open <= 0 or or_high <= 0 or or_low <= 0 or or_close <= 0 or or_volume < 0:
         return None
 
     if or_close > or_open:

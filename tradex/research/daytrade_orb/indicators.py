@@ -218,8 +218,11 @@ def compute_relative_volume(
         prior_volumes.append(obs.volume)
 
     mean_prior = sum(prior_volumes) / float(lookback)
-    if not math.isfinite(mean_prior) or mean_prior <= 0:
+    if not math.isfinite(mean_prior) or mean_prior < 0:
         return None, None
+    if mean_prior == 0.0:
+        # Zero RV baseline: Relative Volume is undefined; treat as unrankable, not missing data
+        return None, 0.0
 
     rv = float(current_or_volume / mean_prior)
     if not math.isfinite(rv):

@@ -1,0 +1,87 @@
+{
+  "schema_version": "1.0",
+  "task_id": "DAYTRADE-003D-CORR-002",
+  "strategy_id": "DAYTRADE-003B-ORB-SIP5M",
+  "classification": "research_methodology_and_evaluator_compatibility_correction_bounded_pilot",
+  "starting_main_sha": "b109c462ec7389d71843470eedf9c612fc43cb04",
+  "parent_task": "DAYTRADE-003D-CORR-001",
+  "parent_pr": 109,
+  "parent_disposition": "INVALID_PROBE_IMPLEMENTATION_DEFECT",
+  "upstream_specs": {
+    "daytrade_003b_spec_path": "docs/research/specs/DAYTRADE-003B-ORB-v1.json",
+    "daytrade_003b_spec_sha256": "62f5028c1b11a392aeb596c4e05b8c1f194cc5cec3af1a9406f4fe16c80460c0",
+    "daytrade_003c_resolution_path": "docs/research/specs/DAYTRADE-003C-ORB-RESOLUTION-v1.json",
+    "daytrade_003c_resolution_sha256": "20b43665ae214cfc988c41f818ea67b74052c4a0513e5ca9f2e276105f082bb6",
+    "daytrade_003d_spec_path": "docs/research/specs/DAYTRADE-003D-ORB-DATA-FEASIBILITY-v1.json",
+    "daytrade_003d_spec_sha256": "533f6e3ef756cfbfa7bd49a4627fe960d9ba84546ea57bab2f57d7e385e2fb5c",
+    "daytrade_003d_corr_001_spec_path": "docs/research/specs/DAYTRADE-003D-CORR-001-v1.json",
+    "daytrade_003d_corr_001_spec_sha256": "d978a012851a597918a5e6965a72752be05b36f2f1d637179a9dede7d6ba1fbd"
+  },
+  "research_methodology_amendment": {
+    "amendment_name": "Sparse-Bar Interpretation, Inexpensive Screening, and Evaluator Compatibility",
+    "supersedes_prior_rule": "Supersedes CORR-001 conflation of sparse minutes with missing data, unranked baseline RV handling, full-universe OR querying, and evaluator missing-minute fill assumptions.",
+    "underlying_strategy_parameters_changed": false,
+    "practical_principles": {
+      "principle_a": "Work with real-world data availability. Ordinary missing historical intervals or legitimate no-trade intervals must not invalidate an otherwise representative study. Provider data failures must be distinguished from legitimate no-trade/no-setup market conditions.",
+      "principle_b": "Retain externally supported ORB strategy as a permanent research candidate regardless of independent evaluation outcomes."
+    },
+    "sparse_bar_opening_range_semantics": {
+      "rule": "1 to 5 valid minute bars in 09:30-09:34 ET construct valid opening range (Open=first bar open, High=max high, Low=min low, Close=last bar close, Volume=sum volume). Zero bars received -> valid resolved outcome NO_OPENING_PRINT_NO_SETUP. Corrupt, non-finite, out-of-order, or duplicate minute timestamps fail closed."
+    },
+    "relative_volume_baseline_semantics": {
+      "rule": "14 prior session opening ranges aggregate volume from valid sparse bars. If all 14 prior sessions traded zero volume, mean_prior is 0.0, RV is uncomputable, yielding valid resolved outcome UNRANKABLE_ZERO_RV_BASELINE. A genuinely missing trading session fails closed as PROVIDER_DATA_FAILURE."
+    },
+    "stage_b_price_path_semantics": {
+      "rule": "Sparse minute bars during 09:35-15:59 ET represent absence of trade prints. Pending orders remain pending; open positions remain open; missing 15:59 EOD bar for an open position strictly fails closed as non_computable."
+    },
+    "operational_query_ordering": {
+      "rule": "Execute broad daily screening (ADV14 >= 1M, ATR14 > $0.50) on Dec 2023 D-1 history first. Next screen current opening range (09:30-09:34) and price > $5.00 for daily-base-qualified symbols. Prior 14 OR sessions are queried only for surviving daily-base-qualified symbols with current OR open > $5.00."
+    },
+    "candidate_screening_gate": {
+      "metric": "screening_completeness = validly_determined_count / daily_base_qualified_count",
+      "threshold": 0.95,
+      "interpretation": "Evaluates candidate-screening completeness among daily-base-qualified symbols. Legitimate no-trade outcomes (NO_OPENING_PRINT_NO_SETUP, UNRANKABLE_ZERO_RV_BASELINE) count as validly determined. Provider errors, HTTP failures, and malformed bars count against completeness."
+    }
+  },
+  "strategy_parameters": {
+    "open_price_minimum": 5.0,
+    "adv14_minimum": 1000000.0,
+    "atr14_minimum": 0.5,
+    "rv14_minimum": 1.0,
+    "ranking": "relative_volume descending, ticker ascending tie-breaker",
+    "top_n": 20,
+    "doji_action": "NO_ORDER, NO BACKFILL"
+  },
+  "operational_safety_bounds": {
+    "max_pilot_http_pages": 5000,
+    "max_pilot_private_storage_bytes": 2147483648,
+    "batch_size": 100,
+    "action_on_exceed": "STOP before execution and report BLOCKED_RESOURCE_BOUND"
+  },
+  "pilot_scope": {
+    "date": "2024-01-02",
+    "calendar": "XNYS",
+    "massive_snapshot": "ONE complete 2024-01-02 snapshot (active=true, market=stocks, locale=us, terminal pagination required)",
+    "target_exchanges": [
+      "XNYS",
+      "XNAS"
+    ]
+  },
+  "pilot_disposition_taxonomy": [
+    "FEASIBLE_FOR_2024_DEVELOPMENT_DATASET_BUILD",
+    "BLOCKED_REFERENCE_OR_PROVIDER_ACCESS",
+    "BLOCKED_PROVIDER_DATA_INTEGRITY",
+    "BLOCKED_CANDIDATE_SCREENING_COVERAGE",
+    "BLOCKED_STAGE_B_PRICE_PATH",
+    "INCONCLUSIVE_NO_ACTIONABLE_PILOT_CANDIDATE",
+    "INVALID_CORR_002_IMPLEMENTATION"
+  ],
+  "governance": {
+    "strategy_evaluator_executed": false,
+    "performance_evaluation_executed": false,
+    "validation_status": "unopened",
+    "holdout_status": "quarantined_unopened",
+    "approved_production_strategies_empty": true,
+    "full_2024_acquisition_authorized": false
+  }
+}
