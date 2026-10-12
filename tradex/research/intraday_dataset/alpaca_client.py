@@ -208,6 +208,8 @@ class DatasetAlpacaClient:
         page_bar_counts: list[int] = []
         token_hashes: list[str] = []
         raw_pages: list[dict[str, Any]] = []
+        terminal_next_page_token: str | None = None
+        terminal_next_page_token_present = False
 
         http_attempts = 0
         http_429s = 0
@@ -235,6 +237,8 @@ class DatasetAlpacaClient:
                     "http_429s": http_429s,
                     "http_errors": http_errors,
                     "next_page_token_present": next_page_token_present,
+                    "terminal_next_page_token_present": bool(page_token),
+                    "unconsumed_page_token_present": bool(page_token),
                     "pagination_complete": False,
                     "repeated_page_token": repeated_page_token,
                     "pagination_cycle_detected": pagination_cycle_detected,
@@ -246,6 +250,7 @@ class DatasetAlpacaClient:
                     "http_status": 0,
                     "response_symbols": sorted(response_symbols),
                     "malformed_timestamp_counts": {s.upper(): 0 for s in symbols},
+                    "request_params": params.copy(),
                 }
                 if include_raw_bars:
                     err_meta["raw_bars_by_symbol"] = all_bars
@@ -269,6 +274,8 @@ class DatasetAlpacaClient:
                     "http_429s": http_429s,
                     "http_errors": http_errors,
                     "next_page_token_present": next_page_token_present,
+                    "terminal_next_page_token_present": bool(page_token),
+                    "unconsumed_page_token_present": bool(page_token),
                     "pagination_complete": False,
                     "repeated_page_token": repeated_page_token,
                     "pagination_cycle_detected": pagination_cycle_detected,
@@ -281,6 +288,7 @@ class DatasetAlpacaClient:
                     "error_body": error_body[:500],
                     "response_symbols": sorted(response_symbols),
                     "malformed_timestamp_counts": {s.upper(): 0 for s in symbols},
+                    "request_params": params.copy(),
                 }
                 if include_raw_bars:
                     err_meta["raw_bars_by_symbol"] = all_bars
@@ -316,13 +324,14 @@ class DatasetAlpacaClient:
             response_symbols.update(str(s).upper() for s in bars_by_symbol)
 
             page_total = 0
-            for sym in symbols:
-                upper = sym.upper()
-                bars = bars_by_symbol.get(upper, [])
-                if not isinstance(bars, list):
-                    bars = []
-                all_bars[upper].extend(bars)
-                page_total += len(bars)
+            for sym_key, b_list in bars_by_symbol.items():
+                sym_clean = str(sym_key).upper()
+                if sym_clean not in all_bars:
+                    all_bars[sym_clean] = []
+                bars_to_add = b_list if isinstance(b_list, list) else []
+                all_bars[sym_clean].extend(bars_to_add)
+                if sym_clean in {s.upper() for s in symbols}:
+                    page_total += len(bars_to_add)
             page_bar_counts.append(page_total)
 
             token = data.get("next_page_token")
@@ -330,15 +339,21 @@ class DatasetAlpacaClient:
                 next_page_token_present = True
                 if max_pages is not None and page_count >= max_pages:
                     safe_error = "max_pages_exceeded"
+                    terminal_next_page_token = token
+                    terminal_next_page_token_present = True
                     break
                 if token in seen_tokens:
                     repeated_page_token = True
                     pagination_cycle_detected = True
                     safe_error = "pagination_cycle"
+                    terminal_next_page_token = token
+                    terminal_next_page_token_present = True
                     break
                 seen_tokens.add(token)
                 page_token = token
                 continue
+            terminal_next_page_token = None
+            terminal_next_page_token_present = False
             token_hashes.append(_token_hash(None))
             break
 
@@ -359,6 +374,9 @@ class DatasetAlpacaClient:
             "http_429s": http_429s,
             "http_errors": http_errors,
             "next_page_token_present": next_page_token_present,
+            "terminal_next_page_token_present": terminal_next_page_token_present,
+            "terminal_next_page_token": terminal_next_page_token,
+            "unconsumed_page_token_present": terminal_next_page_token_present,
             "pagination_complete": last_status == 200 and not repeated_page_token and safe_error == "none",
             "repeated_page_token": repeated_page_token,
             "pagination_cycle_detected": pagination_cycle_detected,
@@ -369,6 +387,7 @@ class DatasetAlpacaClient:
             "token_sequence_sha256": _token_sequence_hash(token_hashes),
             "http_status": last_status,
             "response_symbols": sorted(response_symbols),
+            "request_params": params.copy(),
         }
         if include_raw_bars:
             ret_meta["raw_bars_by_symbol"] = all_bars

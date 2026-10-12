@@ -23,7 +23,7 @@ This methodology correction directly addresses and resolves the three independen
 
 ### Correction 1: Provider Payload Integrity Validation
 - **Deficiency in CORR-002:** Missing provider records or empty responses were treated as legitimate sparse minutes without validating that the provider payload succeeded, completed pagination, and returned valid bar structures.
-- **Resolution in CORR-003:** Added [`validate_provider_batch_response`](file:///tradex/research/daytrade_orb/corr_003_pilot.py):
+- **Resolution in CORR-003:** Added [`validate_provider_batch_response`](../../tradex/research/daytrade_orb/corr_003_pilot.py):
   - Validates HTTP 200 status code; any non-200 payload fails closed.
   - Enforces `pagination_complete == True`; truncated pagination fails closed.
   - Verifies symbol identities in response match requested query keys; unexpected symbols fail closed.
@@ -35,10 +35,10 @@ This methodology correction directly addresses and resolves the three independen
 ### Correction 2: Private Raw OHLCV Persistence & Deterministic Offline Replay
 - **Deficiency in CORR-002:** The runner did not persist the raw Alpaca OHLCV payloads for daily bars, prior opening ranges, session opening ranges, or Stage-B minutes, preventing offline replication.
 - **Resolution in CORR-003:**
-  - Implemented complete private raw persistence schema via [`persist_raw_stage_artifact`](file:///tradex/research/daytrade_orb/corr_003_pilot.py) and [`create_and_save_manifest`](file:///tradex/research/daytrade_orb/corr_003_pilot.py).
+  - Implemented complete private raw persistence schema via [`persist_raw_stage_artifact`](../../tradex/research/daytrade_orb/corr_003_pilot.py) and [`create_and_save_manifest`](../../tradex/research/daytrade_orb/corr_003_pilot.py).
   - Persists full batch provenance: HTTP status, pagination metadata, page count, pagination token sequence hashes, and raw bars by symbol.
   - Generates a cryptographic manifest (`manifest_<date>.json`) recording artifact filenames, SHA-256 hashes, byte sizes, and record counts.
-  - Implemented [`replay_corr_003_pilot`](file:///tradex/research/daytrade_orb/corr_003_pilot.py) and `daytrade_003d_corr_003_pilot.py replay`:
+  - Implemented [`replay_corr_003_pilot`](../../tradex/research/daytrade_orb/corr_003_pilot.py) and `daytrade_003d_corr_003_pilot.py replay`:
     - Operates with **zero network access** and **zero provider credentials**.
     - Verifies all 6 upstream specification hashes before execution.
     - Verifies manifest checksums; fails closed on missing, extra, or modified files.
@@ -46,7 +46,7 @@ This methodology correction directly addresses and resolves the three independen
 
 ### Correction 3: Stage-B Usability Invariants & 15:59 ET Liquidation Bar Coverage
 - **Deficiency in CORR-002:** Stage-B audit marked paths `USABLE` solely based on zero provider failures, without checking bar invariants or enforcing 15:59 ET liquidation coverage.
-- **Resolution in CORR-003:** Implemented [`audit_stage_b_price_path_corr_003`](file:///tradex/research/daytrade_orb/corr_003_pilot.py):
+- **Resolution in CORR-003:** Implemented [`audit_stage_b_price_path_corr_003`](../../tradex/research/daytrade_orb/corr_003_pilot.py):
   - Strictly requires the presence of a valid 15:59 ET EOD liquidation bar for every selected actionable symbol (`missing_eod_bar_symbols_count == 0`).
   - Verifies zero provider failures and zero bar integrity failures (`provider_failure_count == 0`, `integrity_failure_count == 0`).
   - Correctly accounts for legitimate sparse trading minutes (intervals where no trades occurred) without fabricating synthetic prints or misclassifying provider failures.
@@ -72,16 +72,16 @@ All six specifications are verified via SHA-256:
 ## 4. Architecture & Implementation Summary
 
 ### 4.1 Python Modules & Scripts
-- [`tradex/research/intraday_dataset/alpaca_client.py`](file:///tradex/research/intraday_dataset/alpaca_client.py):
+- [`tradex/research/intraday_dataset/alpaca_client.py`](../../tradex/research/intraday_dataset/alpaca_client.py):
   - Added backward-compatible opt-in kwargs `include_raw_bars: bool = False, include_raw_pages: bool = False` to `get_stock_bars_multi_chunked` to retain raw provider response payloads for persistence.
-- [`tradex/research/daytrade_orb/corr_003_pilot.py`](file:///tradex/research/daytrade_orb/corr_003_pilot.py):
+- [`tradex/research/daytrade_orb/corr_003_pilot.py`](../../tradex/research/daytrade_orb/corr_003_pilot.py):
   - Primary module housing provider integrity validation, Stage-B auditing, persistence/manifest management, prospective disposition determination, and the deterministic offline replay engine.
-- [`scripts/research/daytrade_003d_corr_003_pilot.py`](file:///scripts/research/daytrade_003d_corr_003_pilot.py):
+- [`scripts/research/daytrade_003d_corr_003_pilot.py`](../../scripts/research/daytrade_003d_corr_003_pilot.py):
   - Dual CLI runner:
     - `replay`: fully offline deterministic replay subcommand.
     - `pilot`: bounded live pilot execution subcommand gated behind explicit authorization (`--authorize-live`) and pre-live commit SHA verification (`--pre-live-sha`).
-- [`tests/research/daytrade_orb/test_corr_003_integrity_replay.py`](file:///tests/research/daytrade_orb/test_corr_003_integrity_replay.py):
-  - Comprehensive test suite covering 23 unit and synthetic verification cases.
+- [`tests/research/daytrade_orb/test_corr_003_integrity_replay.py`](../../tests/research/daytrade_orb/test_corr_003_integrity_replay.py):
+  - Comprehensive test suite covering unit and synthetic verification cases.
 
 ### 4.2 Replay Persistence Schema
 Artifacts stored under private storage directory:
@@ -98,17 +98,23 @@ Artifacts stored under private storage directory:
 ## 5. Verification Results
 
 ### 5.1 Test Suite Execution
-- **CORR-003 Synthetic & Offline Tests:** 23 passed in 0.28s ([`tests/research/daytrade_orb/test_corr_003_integrity_replay.py`](file:///tests/research/daytrade_orb/test_corr_003_integrity_replay.py)).
+- **CORR-003 Synthetic & Offline Tests:** 43 passed in 0.70s ([`tests/research/daytrade_orb/test_corr_003_integrity_replay.py`](../../tests/research/daytrade_orb/test_corr_003_integrity_replay.py)).
   - Upstream spec hash verification: PASSED
   - Strategy registry empty invariant: PASSED
   - HTTP error, truncated pagination, unexpected symbol, malformed timestamp, duplicate timestamp, out-of-session bar, invalid OHLCV detection: PASSED
+  - Client multi-page pagination advance, max pages hard-stop token preservation, and cycle detection: PASSED
   - Distinction between provider failure and verified completed no-print: PASSED
   - Stage-B usability with valid sparse minutes and 15:59 liquidation bar: PASSED
   - Stage-B unfitness on missing 15:59 bar, provider failure, duplicates, out-of-session bars: PASSED
   - Complete deterministic offline fixture replay: PASSED
   - Missing artifact, tampered artifact, missing manifest, tampered manifest fail-closed: PASSED
-- **Full ORB Test Suite:** 142 passed in 2.08s ([`tests/research/daytrade_orb/`](file:///tests/research/daytrade_orb/)).
-- **Linter Check:** `uv run ruff check tests scripts` passed cleanly with 0 errors.
+  - Strict manifest schema, unlisted extra file rejection, invalid size/hash rejection: PASSED
+  - Daily provider failure propagation to `BLOCKED_PROVIDER_DATA_INTEGRITY`: PASSED
+  - Pre-live execution, resource ceiling, freeze, and authorization guards: PASSED
+- **Full ORB Test Suite:** 162 passed in 2.61s ([`tests/research/daytrade_orb/`](../../tests/research/daytrade_orb/)).
+- **Shared Intraday Dataset Test Suite:** 43 passed in 260s ([`tests/research/intraday_dataset/`](../../tests/research/intraday_dataset/)).
+- **Import Safety Verification:** 14 passed in 7.00s ([`tests/config/test_import_safety.py`](../../tests/config/test_import_safety.py)).
+- **Linter Check:** `uv run ruff check tests scripts tradex/research/daytrade_orb/corr_003_pilot.py tradex/research/intraday_dataset/alpaca_client.py` passed cleanly with 0 errors.
 
 ### 5.2 Execution Gate Verification
 - Attempting to run `python scripts/research/daytrade_003d_corr_003_pilot.py pilot` without `--authorize-live` immediately halts with exit code 1:

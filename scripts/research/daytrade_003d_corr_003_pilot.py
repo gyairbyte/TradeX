@@ -39,6 +39,10 @@ from tradex.research.daytrade_orb.corr_003_pilot import (
     audit_candidate_screening,
     audit_stage_b_price_path_corr_003,
     batch_symbols,
+    check_one_shot_pilot_guard,
+    check_pilot_authorization,
+    check_pre_live_code_freeze,
+    check_resource_limits,
     create_and_save_manifest,
     determine_pilot_disposition_corr_003,
     evaluate_opening_range,
@@ -49,6 +53,7 @@ from tradex.research.daytrade_orb.corr_003_pilot import (
     persist_raw_stage_artifact,
     rank_and_select_top_20,
     replay_corr_003_pilot,
+    validate_batch_size,
     validate_provider_batch_response,
     verify_upstream_spec_hashes,
 )
@@ -236,9 +241,14 @@ def run_corr_003_live_pilot(
     authorized_by_gary: bool = False,
 ) -> int:
     """Execute the bounded January 2, 2024 live pilot with full raw persistence and integrity checks."""
-    if not authorized_by_gary:
-        print("[FATAL] Live execution gate active: Gary Yang has not authorized live provider calls.")
-        print("Deliver draft PR with passing offline replay tests and stop at execution gate.")
+    # 0. Prospective execution, freeze, and authorization guards
+    try:
+        validate_batch_size(batch_size)
+        check_one_shot_pilot_guard(output_dir, PILOT_DATE)
+        check_pre_live_code_freeze(repo_root, pre_live_commit_sha)
+        check_pilot_authorization(repo_root, pre_live_commit_sha, authorized_by_gary)
+    except (ValueError, RuntimeError, PermissionError) as guard_exc:
+        print(f"[FATAL] Execution guard rejected run: {guard_exc}")
         return 1
 
     t0 = time.time()
@@ -324,6 +334,13 @@ def run_corr_003_live_pilot(
         "record_count": target_audit.canonical_target_universe_count,
     }
 
+    # Resource check after Phase 1
+    current_storage_bytes = sum(f.stat().st_size for f in output_dir.glob("*") if f.is_file())
+    check_resource_limits(
+        page_count=massive_page_count,
+        storage_bytes=current_storage_bytes,
+    )
+
     # -------------------------------------------------------------------------
     # PHASE 2: Inexpensive Daily Screening across Broad Universe
     # -------------------------------------------------------------------------
@@ -335,6 +352,7 @@ def run_corr_003_live_pilot(
 
     daily_bars_by_symbol: dict[str, list[DailyBar]] = {}
     daily_raw_batches: list[dict[str, Any]] = []
+    daily_provider_failures: set[str] = set()
 
     for b_idx, batch in enumerate(symbol_batches, start=1):
         dfs, meta = alpaca_client.get_bars(
@@ -346,22 +364,49 @@ def run_corr_003_live_pilot(
             adjustment="raw",
             asof=PILOT_DATE,
             include_raw_bars=True,
+            include_raw_pages=True,
         )
         alpaca_call_count += 1
         alpaca_page_count += meta.get("page_count", 1)
         raw_bars = meta.get("raw_bars_by_symbol", {})
 
+        batch_check = validate_provider_batch_response(
+            symbols_requested=batch,
+            meta=meta,
+            bars_by_symbol=raw_bars,
+            expected_start=datetime(2023, 12, 1, 0, 0, tzinfo=UTC),
+            expected_end=datetime(2023, 12, 31, 23, 59, tzinfo=UTC),
+        )
+
         batch_record = {
             "batch_index": b_idx,
             "symbols_requested": batch,
-            "http_status": meta.get("http_status", 200),
-            "pagination_complete": meta.get("pagination_complete", True),
-            "page_count": meta.get("page_count", 1),
-            "token_hashes": meta.get("token_hashes", []),
-            "token_sequence_sha256": meta.get("token_sequence_sha256", ""),
+            "request_params": meta.get("request_params", {}),
+            "http_status": meta.get("http_status"),
+            "pagination_complete": meta.get("pagination_complete"),
+            "meta": {
+                "http_status": meta.get("http_status"),
+                "pagination_complete": meta.get("pagination_complete"),
+                "page_count": meta.get("page_count", 1),
+                "safe_error_classification": meta.get("safe_error_classification", "none"),
+                "repeated_page_token": meta.get("repeated_page_token", False),
+                "pagination_cycle_detected": meta.get("pagination_cycle_detected", False),
+                "terminal_next_page_token_present": meta.get("terminal_next_page_token_present", False),
+                "unconsumed_page_token_present": meta.get("unconsumed_page_token_present", False),
+                "response_symbols": meta.get("response_symbols", []),
+                "malformed_timestamp_counts": meta.get("malformed_timestamp_counts", {}),
+                "token_hashes": meta.get("token_hashes", []),
+                "token_sequence_sha256": meta.get("token_sequence_sha256", ""),
+                "raw_pages": meta.get("raw_pages", []),
+            },
             "bars_by_symbol": raw_bars,
+            "integrity_status": batch_check.status.value,
         }
         daily_raw_batches.append(batch_record)
+
+        if not batch_check.is_valid:
+            daily_provider_failures.update(batch)
+            continue
 
         for sym, df in dfs.items():
             if not df.empty:
@@ -391,6 +436,13 @@ def run_corr_003_live_pilot(
         "description": "Raw Alpaca daily bars for Dec 2023 across target universe",
         "record_count": sum(len(b["bars_by_symbol"]) for b in daily_raw_batches),
     }
+
+    # Resource check after Phase 2
+    current_storage_bytes = sum(f.stat().st_size for f in output_dir.glob("*") if f.is_file())
+    check_resource_limits(
+        page_count=massive_page_count + alpaca_page_count,
+        storage_bytes=current_storage_bytes,
+    )
 
     daily_audit, _computable, daily_base_qualified = audit_broad_daily_availability(
         valid_target_symbols=target_audit.valid_target_symbols,
@@ -423,6 +475,7 @@ def run_corr_003_live_pilot(
             adjustment="raw",
             asof=PILOT_DATE,
             include_raw_bars=True,
+            include_raw_pages=True,
         )
         alpaca_call_count += 1
         alpaca_page_count += meta.get("page_count", 1)
@@ -439,11 +492,24 @@ def run_corr_003_live_pilot(
         batch_record = {
             "batch_index": b_idx,
             "symbols_requested": batch,
-            "http_status": meta.get("http_status", 200),
-            "pagination_complete": meta.get("pagination_complete", True),
-            "page_count": meta.get("page_count", 1),
-            "token_hashes": meta.get("token_hashes", []),
-            "token_sequence_sha256": meta.get("token_sequence_sha256", ""),
+            "request_params": meta.get("request_params", {}),
+            "http_status": meta.get("http_status"),
+            "pagination_complete": meta.get("pagination_complete"),
+            "meta": {
+                "http_status": meta.get("http_status"),
+                "pagination_complete": meta.get("pagination_complete"),
+                "page_count": meta.get("page_count", 1),
+                "safe_error_classification": meta.get("safe_error_classification", "none"),
+                "repeated_page_token": meta.get("repeated_page_token", False),
+                "pagination_cycle_detected": meta.get("pagination_cycle_detected", False),
+                "terminal_next_page_token_present": meta.get("terminal_next_page_token_present", False),
+                "unconsumed_page_token_present": meta.get("unconsumed_page_token_present", False),
+                "response_symbols": meta.get("response_symbols", []),
+                "malformed_timestamp_counts": meta.get("malformed_timestamp_counts", {}),
+                "token_hashes": meta.get("token_hashes", []),
+                "token_sequence_sha256": meta.get("token_sequence_sha256", ""),
+                "raw_pages": meta.get("raw_pages", []),
+            },
             "bars_by_symbol": raw_bars,
             "integrity_status": batch_check.status.value,
         }
@@ -515,6 +581,7 @@ def run_corr_003_live_pilot(
                     adjustment="raw",
                     asof=PILOT_DATE,
                     include_raw_bars=True,
+                    include_raw_pages=True,
                 )
                 alpaca_call_count += 1
                 alpaca_page_count += meta.get("page_count", 1)
@@ -531,11 +598,24 @@ def run_corr_003_live_pilot(
                 b_rec = {
                     "batch_index": b_idx,
                     "symbols_requested": batch,
-                    "http_status": meta.get("http_status", 200),
-                    "pagination_complete": meta.get("pagination_complete", True),
-                    "page_count": meta.get("page_count", 1),
-                    "token_hashes": meta.get("token_hashes", []),
-                    "token_sequence_sha256": meta.get("token_sequence_sha256", ""),
+                    "request_params": meta.get("request_params", {}),
+                    "http_status": meta.get("http_status"),
+                    "pagination_complete": meta.get("pagination_complete"),
+                    "meta": {
+                        "http_status": meta.get("http_status"),
+                        "pagination_complete": meta.get("pagination_complete"),
+                        "page_count": meta.get("page_count", 1),
+                        "safe_error_classification": meta.get("safe_error_classification", "none"),
+                        "repeated_page_token": meta.get("repeated_page_token", False),
+                        "pagination_cycle_detected": meta.get("pagination_cycle_detected", False),
+                        "terminal_next_page_token_present": meta.get("terminal_next_page_token_present", False),
+                        "unconsumed_page_token_present": meta.get("unconsumed_page_token_present", False),
+                        "response_symbols": meta.get("response_symbols", []),
+                        "malformed_timestamp_counts": meta.get("malformed_timestamp_counts", {}),
+                        "token_hashes": meta.get("token_hashes", []),
+                        "token_sequence_sha256": meta.get("token_sequence_sha256", ""),
+                        "raw_pages": meta.get("raw_pages", []),
+                    },
                     "bars_by_symbol": raw_bars,
                     "integrity_status": batch_check.status.value,
                 }
@@ -565,6 +645,13 @@ def run_corr_003_live_pilot(
         "description": "Raw Alpaca 14 prior sessions opening range minute bars",
         "record_count": sum(len(bl) for bl in prior_raw_sessions_data.values()),
     }
+
+    # Resource check after Phase 3
+    current_storage_bytes = sum(f.stat().st_size for f in output_dir.glob("*") if f.is_file())
+    check_resource_limits(
+        page_count=massive_page_count + alpaca_page_count,
+        storage_bytes=current_storage_bytes,
+    )
 
     (
         screening_audit,
@@ -643,6 +730,7 @@ def run_corr_003_live_pilot(
                 adjustment="raw",
                 asof=PILOT_DATE,
                 include_raw_bars=True,
+                include_raw_pages=True,
             )
             alpaca_call_count += 1
             alpaca_page_count += meta.get("page_count", 1)
@@ -659,11 +747,24 @@ def run_corr_003_live_pilot(
             b_rec = {
                 "batch_index": b_idx,
                 "symbols_requested": batch,
-                "http_status": meta.get("http_status", 200),
-                "pagination_complete": meta.get("pagination_complete", True),
-                "page_count": meta.get("page_count", 1),
-                "token_hashes": meta.get("token_hashes", []),
-                "token_sequence_sha256": meta.get("token_sequence_sha256", ""),
+                "request_params": meta.get("request_params", {}),
+                "http_status": meta.get("http_status"),
+                "pagination_complete": meta.get("pagination_complete"),
+                "meta": {
+                    "http_status": meta.get("http_status"),
+                    "pagination_complete": meta.get("pagination_complete"),
+                    "page_count": meta.get("page_count", 1),
+                    "safe_error_classification": meta.get("safe_error_classification", "none"),
+                    "repeated_page_token": meta.get("repeated_page_token", False),
+                    "pagination_cycle_detected": meta.get("pagination_cycle_detected", False),
+                    "terminal_next_page_token_present": meta.get("terminal_next_page_token_present", False),
+                    "unconsumed_page_token_present": meta.get("unconsumed_page_token_present", False),
+                    "response_symbols": meta.get("response_symbols", []),
+                    "malformed_timestamp_counts": meta.get("malformed_timestamp_counts", {}),
+                    "token_hashes": meta.get("token_hashes", []),
+                    "token_sequence_sha256": meta.get("token_sequence_sha256", ""),
+                    "raw_pages": meta.get("raw_pages", []),
+                },
                 "bars_by_symbol": raw_bars,
                 "integrity_status": batch_check.status.value,
             }
@@ -702,6 +803,13 @@ def run_corr_003_live_pilot(
         "record_count": sum(len(b["bars_by_symbol"]) for b in stage_b_raw_batches),
     }
 
+    # Resource check after Phase 5
+    current_storage_bytes = sum(f.stat().st_size for f in output_dir.glob("*") if f.is_file())
+    check_resource_limits(
+        page_count=massive_page_count + alpaca_page_count,
+        storage_bytes=current_storage_bytes,
+    )
+
     stage_b_audit = audit_stage_b_price_path_corr_003(
         active_selected_symbols=actionable_symbols,
         stage_b_bars_by_symbol=stage_b_bars_by_symbol,
@@ -718,10 +826,18 @@ def run_corr_003_live_pilot(
     # -------------------------------------------------------------------------
     # PHASE 6: Final Pilot Disposition
     # -------------------------------------------------------------------------
+    provider_data_integrity_success = (
+        len(daily_provider_failures) == 0
+        and len(current_or_failures) == 0
+        and len(prior_or_failures) == 0
+        and stage_b_audit.provider_failure_count == 0
+        and stage_b_audit.integrity_failure_count == 0
+    )
+
     disposition, blockers = determine_pilot_disposition_corr_003(
         reference_success=True,
         provider_access_success=True,
-        provider_data_integrity_success=True,
+        provider_data_integrity_success=provider_data_integrity_success,
         candidate_screening_gate_passed=screening_audit.meets_screening_gate,
         eligible_candidate_count=screening_audit.eligible_candidate_count,
         stage_b_path_usable=stage_b_audit.is_usable,
@@ -805,6 +921,11 @@ def main() -> int:
             return 1
 
     if args.subcommand == "pilot":
+        try:
+            validate_batch_size(args.batch_size)
+        except ValueError as exc:
+            print(f"[FATAL] Invalid batch size: {exc}")
+            return 1
         return run_corr_003_live_pilot(
             output_dir=args.output_dir,
             pre_live_commit_sha=args.pre_live_sha,

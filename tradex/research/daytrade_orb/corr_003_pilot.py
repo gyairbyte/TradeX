@@ -16,6 +16,7 @@ import hashlib
 import json
 import logging
 import math
+import subprocess
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from enum import Enum
@@ -251,6 +252,13 @@ def validate_provider_batch_response(
     6. Bars within expected datetime/session range.
     7. Valid OHLCV values (positive prices, non-negative volume, high >= low, bounds).
     """
+    if meta.get("http_status") is None or meta.get("pagination_complete") is None:
+        return BatchIntegrityResult(
+            is_valid=False,
+            status=PayloadIntegrityStatus.PAGINATION_INCOMPLETE,
+            error_message="Missing mandatory provenance metadata (http_status / pagination_complete)",
+        )
+
     http_status = meta.get("http_status", 0)
     if http_status != 200:
         return BatchIntegrityResult(
@@ -262,25 +270,37 @@ def validate_provider_batch_response(
     pagination_complete = meta.get("pagination_complete", False)
     repeated_page_token = meta.get("repeated_page_token", False)
     pagination_cycle = meta.get("pagination_cycle_detected", False)
-    next_page_token_present = meta.get("next_page_token_present", False)
+    safe_error = meta.get("safe_error_classification", meta.get("safe_error", "none"))
+    terminal_token_present = meta.get(
+        "terminal_next_page_token_present",
+        meta.get("unconsumed_page_token_present", False),
+    )
 
     if (
         not pagination_complete
         or repeated_page_token
         or pagination_cycle
-        or next_page_token_present
+        or safe_error != "none"
+        or terminal_token_present
     ):
         return BatchIntegrityResult(
             is_valid=False,
             status=PayloadIntegrityStatus.PAGINATION_INCOMPLETE,
             error_message=(
                 f"Incomplete pagination: complete={pagination_complete}, repeated={repeated_page_token}, "
-                f"cycle={pagination_cycle}, next_token_present={next_page_token_present}"
+                f"cycle={pagination_cycle}, safe_error={safe_error}, terminal_token={terminal_token_present}"
             ),
         )
 
     req_set = {s.strip().upper() for s in symbols_requested}
     resp_symbols = set(meta.get("response_symbols", [])) | {s.strip().upper() for s in bars_by_symbol}
+    for p in meta.get("raw_pages", []):
+        if isinstance(p, dict):
+            body = p.get("body", {})
+            if isinstance(body, dict):
+                p_bars = body.get("bars", {})
+                if isinstance(p_bars, dict):
+                    resp_symbols.update(str(k).upper() for k in p_bars)
     unexpected = sorted(resp_symbols - req_set)
     if unexpected:
         return BatchIntegrityResult(
@@ -601,6 +621,17 @@ def create_and_save_manifest(
     return manifest_path, hash_bytes(raw_bytes)
 
 
+REQUIRED_MANIFEST_ARTIFACTS: tuple[str, ...] = (
+    "massive_reference_{date}.json",
+    "universe_{date}.json",
+    "alpaca_daily_dec2023.json",
+    "alpaca_current_or_{date}.json",
+    "alpaca_prior_or_14sessions_{date}.json",
+    "top_20_selection_{date}.json",
+    "alpaca_stage_b_{date}.json",
+)
+
+
 def verify_replay_manifest(
     input_dir: Path,
     pilot_date: str = PILOT_DATE,
@@ -615,29 +646,159 @@ def verify_replay_manifest(
     except Exception as exc:  # noqa: BLE001
         return False, {}, [f"Malformed manifest JSON: {exc}"]
 
+    errors: list[str] = []
+    if manifest_data.get("schema_version") != "1.0":
+        errors.append(
+            f"Invalid manifest schema_version: expected '1.0', got '{manifest_data.get('schema_version')}'"
+        )
+
     artifacts = manifest_data.get("artifacts", {})
     if not isinstance(artifacts, dict) or not artifacts:
-        return False, manifest_data, ["Manifest has no valid artifacts dictionary"]
+        errors.append("Manifest has no valid artifacts dictionary")
+        return False, manifest_data, errors
 
-    errors: list[str] = []
+    # Enforce all required stage artifacts are listed in manifest
+    expected_files = {template.format(date=pilot_date) for template in REQUIRED_MANIFEST_ARTIFACTS}
+    missing_required = expected_files - set(artifacts.keys())
+    for mf in sorted(missing_required):
+        errors.append(f"Required artifact '{mf}' is missing from manifest")
+
+    # Enforce checksum and size integrity for each manifest artifact
     for filename, info in artifacts.items():
         artifact_file = input_dir / filename
         if not artifact_file.exists():
-            errors.append(f"Missing artifact file: {filename}")
+            errors.append(f"Missing artifact file on disk: {filename}")
             continue
 
         file_bytes = artifact_file.read_bytes()
         actual_size = len(file_bytes)
-        expected_size = info.get("size_bytes")
-        if expected_size is not None and actual_size != expected_size:
+        expected_size = info.get("size_bytes") if isinstance(info, dict) else None
+        if expected_size is None or not isinstance(expected_size, int) or expected_size <= 0:
+            errors.append(f"Artifact '{filename}' is missing mandatory positive 'size_bytes' in manifest")
+        elif actual_size != expected_size:
             errors.append(f"File size mismatch for {filename}: expected {expected_size}, got {actual_size}")
 
         actual_hash = hash_bytes(file_bytes)
-        expected_hash = info.get("sha256")
-        if expected_hash and actual_hash != expected_hash:
+        expected_hash = info.get("sha256") if isinstance(info, dict) else None
+        if not expected_hash or not isinstance(expected_hash, str) or len(expected_hash) != 64:
+            errors.append(f"Artifact '{filename}' is missing mandatory valid 64-character 'sha256' in manifest")
+        elif actual_hash != expected_hash:
             errors.append(f"SHA-256 checksum mismatch for {filename}: expected {expected_hash}, got {actual_hash}")
 
+    # Enforce fail-closed check on unlisted extra files in directory
+    manifest_filename = f"manifest_{pilot_date}.json"
+    for file_path in input_dir.iterdir():
+        if file_path.is_file() and file_path.name != manifest_filename and file_path.name not in artifacts:
+            errors.append(f"Unlisted extra file detected in replay directory: {file_path.name}")
+
     return len(errors) == 0, manifest_data, errors
+
+
+# -----------------------------------------------------------------------------
+# Prospective Execution, Resource Bounds & Authorization Guards
+# -----------------------------------------------------------------------------
+
+
+def validate_batch_size(batch_size: int) -> None:
+    """Validate that provider batch size is within strictly bounded safe limits."""
+    if not isinstance(batch_size, int) or batch_size < 1 or batch_size > 100:
+        raise ValueError(
+            f"Invalid batch size {batch_size}: must be an integer between 1 and 100 inclusive"
+        )
+
+
+def check_one_shot_pilot_guard(output_dir: Path, pilot_date: str = PILOT_DATE) -> None:
+    """Enforce strict one-shot execution: cannot rerun or overwrite existing completed pilot run."""
+    manifest_path = output_dir / f"manifest_{pilot_date}.json"
+    if manifest_path.exists():
+        raise RuntimeError(
+            f"One-shot pilot guard triggered: completed pilot manifest already exists at {manifest_path}. "
+            f"A pilot run is strictly one-shot and cannot overwrite existing pilot evidence."
+        )
+
+
+def check_resource_limits(
+    page_count: int,
+    storage_bytes: int,
+    max_pages: int = MAX_PILOT_PAGES_LIMIT,
+    max_storage: int = MAX_PILOT_STORAGE_BYTES_LIMIT,
+) -> None:
+    """Enforce strict resource ceilings for external provider pages and private storage."""
+    if page_count > max_pages:
+        raise RuntimeError(
+            f"Resource ceiling exceeded: total provider pages {page_count} > limit {max_pages}"
+        )
+    if storage_bytes > max_storage:
+        raise RuntimeError(
+            f"Storage ceiling exceeded: private storage {storage_bytes} bytes > limit {max_storage} bytes"
+        )
+
+
+def check_pre_live_code_freeze(repo_root: Path, expected_sha: str) -> None:
+    """Validate that current execution tree exactly matches the approved pre-live freeze commit."""
+    try:
+        res = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        actual_sha = res.stdout.strip()
+    except Exception as exc:
+        raise RuntimeError(f"Failed to inspect git repository HEAD: {exc}") from exc
+
+    if actual_sha != expected_sha:
+        raise RuntimeError(
+            f"Pre-live freeze verification failed: current git HEAD ({actual_sha}) != expected frozen SHA ({expected_sha})"
+        )
+
+    try:
+        status_res = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        dirty = status_res.stdout.strip()
+    except Exception as exc:
+        raise RuntimeError(f"Failed to inspect git status: {exc}") from exc
+
+    if dirty:
+        raise RuntimeError(f"Pre-live freeze verification failed: working tree is dirty:\n{dirty}")
+
+
+def check_pilot_authorization(
+    repo_root: Path,
+    expected_sha: str,
+    authorized_by_gary: bool = False,
+) -> None:
+    """Validate explicit committed authorization record from Gary Yang before live provider access."""
+    if not authorized_by_gary:
+        raise PermissionError(
+            "Live execution gate active: Gary Yang has not granted live pilot authorization. "
+            "Deliver draft PR with passing offline replay tests and stop at execution gate."
+        )
+
+    auth_path = repo_root / "docs" / "research" / "authorizations" / "DAYTRADE-003D-CORR-003-AUTHORIZATION.json"
+    if not auth_path.exists():
+        raise PermissionError(
+            f"Live execution gate active: Missing Gary Yang authorization file at {auth_path}. "
+            f"A user-supplied CLI flag is insufficient; an explicit committed authorization record is required."
+        )
+
+    try:
+        auth_data = json.loads(auth_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise PermissionError(f"Malformed authorization record: {exc}") from exc
+
+    if auth_data.get("authorized_by") != "Gary Yang":
+        raise PermissionError("Authorization record is not signed by Gary Yang")
+    if auth_data.get("task_id") != TASK_ID:
+        raise PermissionError(f"Authorization record task_id mismatch: {auth_data.get('task_id')} != {TASK_ID}")
+    if auth_data.get("frozen_sha") != expected_sha:
+        raise PermissionError(f"Authorization record SHA mismatch: {auth_data.get('frozen_sha')} != {expected_sha}")
 
 
 # -----------------------------------------------------------------------------
@@ -659,6 +820,64 @@ class ReplayResult:
     selection_records: list[dict[str, Any]]
     manifest_sha256: str
     replayed_at_utc: str
+    daily_provider_failures: tuple[str, ...] = ()
+    provider_data_integrity_success: bool = True
+
+
+def _extract_batch_meta_strict(batch_dict: dict[str, Any]) -> dict[str, Any]:
+    """Extract metadata from persisted batch payload without inventing optimistic defaults."""
+    if "meta" in batch_dict and isinstance(batch_dict["meta"], dict):
+        m = batch_dict["meta"].copy()
+        if "http_status" in batch_dict:
+            m["http_status"] = batch_dict["http_status"]
+        if "pagination_complete" in batch_dict:
+            m["pagination_complete"] = batch_dict["pagination_complete"]
+        if "raw_pages" not in m and "raw_pages" in batch_dict:
+            m["raw_pages"] = batch_dict["raw_pages"]
+        if "response_symbols" not in m and "response_symbols" in batch_dict:
+            m["response_symbols"] = batch_dict["response_symbols"]
+        return m
+
+    # Extract provenance fields directly from top-level batch dictionary
+    # Fail closed: do NOT invent http_status=200 or pagination_complete=True!
+    m = {}
+    for key in (
+        "http_status",
+        "pagination_complete",
+        "page_count",
+        "safe_error_classification",
+        "safe_error",
+        "repeated_page_token",
+        "pagination_cycle_detected",
+        "terminal_next_page_token_present",
+        "unconsumed_page_token_present",
+        "terminal_next_page_token",
+        "response_symbols",
+        "malformed_timestamp_counts",
+        "token_hashes",
+        "token_sequence_sha256",
+        "raw_pages",
+        "request_params",
+    ):
+        if key in batch_dict:
+            m[key] = batch_dict[key]
+    return m
+
+
+def _verify_request_params_consistency(
+    batch_dict: dict[str, Any],
+    symbols_requested: list[str],
+) -> None:
+    """Verify that persisted request_params are consistent with batch request."""
+    req_params = batch_dict.get("request_params")
+    if not req_params and isinstance(batch_dict.get("meta"), dict):
+        req_params = batch_dict["meta"].get("request_params")
+    if isinstance(req_params, dict) and "symbols" in req_params:
+        p_syms = req_params["symbols"]
+        if isinstance(p_syms, list) and sorted(p_syms) != sorted(symbols_requested):
+            raise ReplayIntegrityError(
+                f"Contradictory request parameters: request_params symbols {p_syms} != symbols_requested {symbols_requested}"
+            )
 
 
 def determine_pilot_disposition_corr_003(
@@ -743,6 +962,24 @@ def replay_corr_003_pilot(
     raw_reference_rows = json.loads(ref_path.read_text(encoding="utf-8"))
     target_audit, _target_rows = filter_and_audit_target_universe(raw_reference_rows)
 
+    # Validate persisted target universe artifact matches deterministic recomputation
+    univ_path = input_dir / f"universe_{pilot_date}.json"
+    if not univ_path.exists():
+        raise ReplayIntegrityError(f"Missing target universe artifact: {univ_path}")
+    univ_payload = json.loads(univ_path.read_text(encoding="utf-8"))
+    if univ_payload.get("universe_sha256") != target_audit.universe_sha256:
+        raise ReplayIntegrityError(
+            f"Universe hash mismatch: persisted {univ_payload.get('universe_sha256')} != recomputed {target_audit.universe_sha256}"
+        )
+    if univ_payload.get("canonical_target_universe_count") != target_audit.canonical_target_universe_count:
+        raise ReplayIntegrityError(
+            f"Universe count mismatch: persisted {univ_payload.get('canonical_target_universe_count')} != recomputed {target_audit.canonical_target_universe_count}"
+        )
+    if sorted(univ_payload.get("valid_symbols", [])) != sorted(target_audit.valid_target_symbols):
+        raise ReplayIntegrityError("Universe valid symbols mismatch between persisted and recomputed")
+    if sorted(univ_payload.get("ambiguous_symbols", [])) != sorted(target_audit.ambiguous_symbols):
+        raise ReplayIntegrityError("Universe ambiguous symbols mismatch between persisted and recomputed")
+
     # -------------------------------------------------------------------------
     # PHASE 2: Broad Daily Screening across Target Universe
     # -------------------------------------------------------------------------
@@ -752,17 +989,26 @@ def replay_corr_003_pilot(
     daily_payload = json.loads(daily_path.read_text(encoding="utf-8"))
     daily_batches = daily_payload.get("batches", [])
 
+    # Validate complete expected target symbol coverage across daily batches
+    daily_requested_all: set[str] = set()
+    for b in daily_batches:
+        daily_requested_all.update(s.strip().upper() for s in b.get("symbols_requested", []))
+    missing_daily_coverage = set(target_audit.valid_target_symbols) - daily_requested_all
+    if missing_daily_coverage:
+        raise ReplayIntegrityError(
+            f"Daily batches missing coverage for canonical target symbols: {sorted(missing_daily_coverage)}"
+        )
+
     daily_bars_by_symbol: dict[str, list[DailyBar]] = {}
+    daily_provider_failures: set[str] = set()
     target_dt = date.fromisoformat(pilot_date)
 
     for b in daily_batches:
         symbols_req = b.get("symbols_requested", [])
         bars_by_sym = b.get("bars_by_symbol", {})
-        meta_dict = {
-            "http_status": b.get("http_status", 200),
-            "pagination_complete": b.get("pagination_complete", True),
-            "response_symbols": list(bars_by_sym.keys()),
-        }
+        meta_dict = _extract_batch_meta_strict(b)
+        _verify_request_params_consistency(b, symbols_req)
+
         batch_check = validate_provider_batch_response(
             symbols_requested=symbols_req,
             meta=meta_dict,
@@ -771,9 +1017,8 @@ def replay_corr_003_pilot(
             expected_end=datetime(2023, 12, 31, 23, 59, tzinfo=ZoneInfo("UTC")),
         )
         if not batch_check.is_valid:
-            raise ProviderPayloadIntegrityError(
-                f"Daily batch integrity failure: {batch_check.error_message}"
-            )
+            daily_provider_failures.update(symbols_req)
+            continue
 
         for sym, raw_bars in bars_by_sym.items():
             sym_clean = sym.strip().upper()
@@ -819,17 +1064,25 @@ def replay_corr_003_pilot(
     cur_payload = json.loads(current_or_path.read_text(encoding="utf-8"))
     cur_batches = cur_payload.get("batches", [])
 
+    # Validate complete expected daily-base-qualified coverage across current OR batches
+    cur_requested_all: set[str] = set()
+    for b in cur_batches:
+        cur_requested_all.update(s.strip().upper() for s in b.get("symbols_requested", []))
+    missing_cur_coverage = set(daily_base_qualified) - cur_requested_all
+    if missing_cur_coverage:
+        raise ReplayIntegrityError(
+            f"Current OR batches missing coverage for daily-base-qualified symbols: {sorted(missing_cur_coverage)}"
+        )
+
     current_or_by_symbol: dict[str, OpeningRange | None] = {}
     current_or_failures: set[str] = set()
 
     for b in cur_batches:
         symbols_req = b.get("symbols_requested", [])
         bars_by_sym = b.get("bars_by_symbol", {})
-        meta_dict = {
-            "http_status": b.get("http_status", 200),
-            "pagination_complete": b.get("pagination_complete", True),
-            "response_symbols": list(bars_by_sym.keys()),
-        }
+        meta_dict = _extract_batch_meta_strict(b)
+        _verify_request_params_consistency(b, symbols_req)
+
         batch_check = validate_provider_batch_response(
             symbols_requested=symbols_req,
             meta=meta_dict,
@@ -845,7 +1098,6 @@ def replay_corr_003_pilot(
             sym_clean = sym.strip().upper()
             raw_bars = bars_by_sym.get(sym_clean, [])
             if not raw_bars:
-                # Verified completed response with no bars in OR -> NO_OPENING_PRINT_NO_SETUP
                 current_or_by_symbol[sym_clean] = None
             else:
                 m_bars: list[MinuteBar] = []
@@ -877,6 +1129,13 @@ def replay_corr_003_pilot(
     prior_payload = json.loads(prior_or_path.read_text(encoding="utf-8"))
     sessions_data = prior_payload.get("sessions_data", {})
 
+    expected_prior_sessions = [s.isoformat() for s in get_prior_xnys_sessions(target_dt, 14)]
+    missing_prior_sessions = set(expected_prior_sessions) - set(sessions_data.keys())
+    if missing_prior_sessions:
+        raise ReplayIntegrityError(
+            f"Prior OR artifact missing expected sessions: {sorted(missing_prior_sessions)}"
+        )
+
     prior_obs_by_symbol: dict[str, list[OpeningRangeVolumeObservation]] = {}
     prior_or_failures: set[str] = set()
 
@@ -885,11 +1144,9 @@ def replay_corr_003_pilot(
         for b in b_list:
             symbols_req = b.get("symbols_requested", [])
             bars_by_sym = b.get("bars_by_symbol", {})
-            meta_dict = {
-                "http_status": b.get("http_status", 200),
-                "pagination_complete": b.get("pagination_complete", True),
-                "response_symbols": list(bars_by_sym.keys()),
-            }
+            meta_dict = _extract_batch_meta_strict(b)
+            _verify_request_params_consistency(b, symbols_req)
+
             batch_check = validate_provider_batch_response(
                 symbols_requested=symbols_req,
                 meta=meta_dict,
@@ -938,7 +1195,7 @@ def replay_corr_003_pilot(
     )
 
     # -------------------------------------------------------------------------
-    # PHASE 4: Freeze Top-20 Selection
+    # PHASE 4: Freeze Top-20 Selection & Parity Verification
     # -------------------------------------------------------------------------
     ranked_candidates = rank_and_select_top_20(
         candidates=eligible_candidates,
@@ -952,6 +1209,32 @@ def replay_corr_003_pilot(
         _selected_syms,
     ) = freeze_top_20_selection(ranked_candidates)
 
+    # Validate persisted Top-20 selection artifact matches recomputation
+    sel_path = input_dir / f"top_20_selection_{pilot_date}.json"
+    if not sel_path.exists():
+        raise ReplayIntegrityError(f"Missing Top-20 selection artifact: {sel_path}")
+    sel_payload = json.loads(sel_path.read_text(encoding="utf-8"))
+    if sel_payload.get("selection_sha256") != selection_evidence.selection_sha256:
+        raise ReplayIntegrityError(
+            f"Top-20 selection hash mismatch: persisted {sel_payload.get('selection_sha256')} != recomputed {selection_evidence.selection_sha256}"
+        )
+    if sel_payload.get("selected_count") != selection_evidence.selected_count:
+        raise ReplayIntegrityError(
+            f"Top-20 selected count mismatch: persisted {sel_payload.get('selected_count')} != recomputed {selection_evidence.selected_count}"
+        )
+    if sel_payload.get("doji_count") != selection_evidence.doji_count:
+        raise ReplayIntegrityError(
+            f"Top-20 doji count mismatch: persisted {sel_payload.get('doji_count')} != recomputed {selection_evidence.doji_count}"
+        )
+    if sel_payload.get("eligible_candidates_count") != selection_evidence.eligible_candidates_count:
+        raise ReplayIntegrityError(
+            f"Top-20 eligible candidates count mismatch: persisted {sel_payload.get('eligible_candidates_count')} != recomputed {selection_evidence.eligible_candidates_count}"
+        )
+    if sel_payload.get("records") != selection_records:
+        raise ReplayIntegrityError(
+            "Top-20 selection records mismatch between persisted artifact and recomputed selection"
+        )
+
     # -------------------------------------------------------------------------
     # PHASE 5: Stage-B Minutes for Actionable Symbols
     # -------------------------------------------------------------------------
@@ -964,17 +1247,26 @@ def replay_corr_003_pilot(
     sb_payload = json.loads(stage_b_path.read_text(encoding="utf-8"))
     sb_batches = sb_payload.get("batches", [])
 
+    # Validate complete expected actionable symbol coverage across Stage-B batches
+    if actionable_symbols:
+        sb_requested_all: set[str] = set()
+        for b in sb_batches:
+            sb_requested_all.update(s.strip().upper() for s in b.get("symbols_requested", []))
+        missing_sb_coverage = set(actionable_symbols) - sb_requested_all
+        if missing_sb_coverage:
+            raise ReplayIntegrityError(
+                f"Stage-B batches missing coverage for actionable symbols: {sorted(missing_sb_coverage)}"
+            )
+
     stage_b_bars_by_symbol: dict[str, list[MinuteBar]] = {}
     stage_b_failures: set[str] = set()
 
     for b in sb_batches:
         symbols_req = b.get("symbols_requested", [])
         bars_by_sym = b.get("bars_by_symbol", {})
-        meta_dict = {
-            "http_status": b.get("http_status", 200),
-            "pagination_complete": b.get("pagination_complete", True),
-            "response_symbols": list(bars_by_sym.keys()),
-        }
+        meta_dict = _extract_batch_meta_strict(b)
+        _verify_request_params_consistency(b, symbols_req)
+
         batch_check = validate_provider_batch_response(
             symbols_requested=symbols_req,
             meta=meta_dict,
@@ -1022,10 +1314,18 @@ def replay_corr_003_pilot(
     # -------------------------------------------------------------------------
     # PHASE 6: Final Disposition
     # -------------------------------------------------------------------------
+    provider_data_integrity_success = (
+        len(daily_provider_failures) == 0
+        and len(current_or_failures) == 0
+        and len(prior_or_failures) == 0
+        and stage_b_audit.provider_failure_count == 0
+        and stage_b_audit.integrity_failure_count == 0
+    )
+
     disposition, blockers = determine_pilot_disposition_corr_003(
         reference_success=True,
         provider_access_success=True,
-        provider_data_integrity_success=True,
+        provider_data_integrity_success=provider_data_integrity_success,
         candidate_screening_gate_passed=screening_audit.meets_screening_gate,
         eligible_candidate_count=screening_audit.eligible_candidate_count,
         stage_b_path_usable=stage_b_audit.is_usable,
@@ -1042,4 +1342,6 @@ def replay_corr_003_pilot(
         selection_records=selection_records,
         manifest_sha256=manifest_sha,
         replayed_at_utc=datetime.now(ZoneInfo("UTC")).isoformat(),
+        daily_provider_failures=tuple(sorted(daily_provider_failures)),
+        provider_data_integrity_success=provider_data_integrity_success,
     )

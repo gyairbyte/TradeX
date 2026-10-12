@@ -82,7 +82,7 @@ All historical specifications are immutable and verified via SHA-256:
 Independent code and evidence audit identified three material methodological gaps, one documentation typo, and an external CI environment failure:
 
 ### Finding 1: Stage-B Usability Logic Unproven
-In [`tradex/research/daytrade_orb/corr_002_pilot.py`](file:///tradex/research/daytrade_orb/corr_002_pilot.py), `audit_stage_b_price_path` sets `is_usable = failures == 0` without independently evaluating that:
+In [`tradex/research/daytrade_orb/corr_002_pilot.py`](../../tradex/research/daytrade_orb/corr_002_pilot.py), `audit_stage_b_price_path` sets `is_usable = failures == 0` without independently evaluating that:
 - The required 15:59 ET EOD liquidation bar exists and is non-zero for all open positions.
 - Bars are strictly within regular market hours (09:35–15:59 ET) with no out-of-session prints.
 - No duplicate timestamps or inverted high/low price bounds exist in the returned series.
