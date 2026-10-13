@@ -1110,9 +1110,10 @@ def check_runtime_environment_freeze(
     1. Verifies that the frozen environment specification file exists and matches
        the preregistered SHA-256 hash (LOCKED_003D_CORR_003_ENV_SPEC_SHA256).
     2. Enforces Python major/minor version (e.g. 3.11).
-    3. Checks the ignored uv.lock on disk: if uv.lock is present, verifies that its SHA-256
-       matches the frozen uv_lock_sha256 in the specification. Fails closed if uv.lock
-       was modified or re-resolved on disk (even though untracked by Git).
+    3. Checks the ignored uv.lock on disk: when check_uv_lock=True, requires uv.lock to
+       exist on disk and match one of the audited SHA-256 digests in accepted_uv_lock_sha256.
+       Fails closed if uv.lock is missing, malformed, modified, or re-resolved on disk
+       (even though untracked by Git).
     4. Enforces exact version matching via importlib.metadata for all required core runtime
        dependencies (dataframe, calendar, hours, market data clients, indicators, etc.).
     5. When require_live_provider_packages=True, additionally enforces provider packages
@@ -1151,20 +1152,39 @@ def check_runtime_environment_freeze(
     # 2. Enforce uv.lock SHA-256 integrity on disk (even if ignored by git)
     if check_uv_lock:
         uv_lock_path = repo_root / "uv.lock"
-        raw_accepted = env_spec.get("accepted_uv_lock_sha256") or env_spec.get("uv_lock_sha256")
-        if uv_lock_path.exists() and raw_accepted:
-            if isinstance(raw_accepted, dict):
-                accepted_hashes = list(raw_accepted.values())
-            elif isinstance(raw_accepted, (list, tuple, set)):
-                accepted_hashes = list(raw_accepted)
-            else:
-                accepted_hashes = [str(raw_accepted)]
-            actual_uv_sha = hashlib.sha256(uv_lock_path.read_bytes()).hexdigest()
-            if actual_uv_sha not in accepted_hashes:
+        if not uv_lock_path.exists():
+            errors.append(
+                f"Missing required uv.lock on disk at '{uv_lock_path}'. "
+                f"Because uv.lock is ignored by git, the operator must restore or synchronize the audited "
+                f"lockfile before running the live pilot (e.g. run 'uv sync --extra dev --extra all')."
+            )
+        else:
+            raw_accepted = env_spec.get("accepted_uv_lock_sha256") or env_spec.get("uv_lock_sha256")
+            if not raw_accepted:
                 errors.append(
-                    f"Ignored uv.lock has been modified or re-resolved on disk: "
-                    f"expected SHA-256 in {accepted_hashes}, got '{actual_uv_sha}'"
+                    "Runtime environment specification is missing required 'accepted_uv_lock_sha256' "
+                    "or 'uv_lock_sha256' field."
                 )
+            else:
+                if isinstance(raw_accepted, dict):
+                    accepted_hashes = list(raw_accepted.values())
+                elif isinstance(raw_accepted, (list, tuple, set)):
+                    accepted_hashes = list(raw_accepted)
+                else:
+                    accepted_hashes = [str(raw_accepted)]
+                accepted_hashes = [h for h in accepted_hashes if isinstance(h, str) and h.strip()]
+                if not accepted_hashes:
+                    errors.append(
+                        "Runtime environment specification contains empty or invalid accepted lockfile hashes."
+                    )
+                else:
+                    actual_uv_sha = hashlib.sha256(uv_lock_path.read_bytes()).hexdigest()
+                    if actual_uv_sha not in accepted_hashes:
+                        errors.append(
+                            f"Ignored uv.lock has been modified or re-resolved on disk: "
+                            f"expected SHA-256 in {accepted_hashes}, got '{actual_uv_sha}'. "
+                            f"To reproduce the audited lockfile, run 'uv sync --extra dev --extra all'."
+                        )
 
     # 3. Enforce exact installed package versions
     packages_to_check: dict[str, str] = {}

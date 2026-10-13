@@ -3139,5 +3139,203 @@ def test_pilot_runner_cli_check_env() -> None:
     assert "Runtime environment strictly matches frozen specification" in res.stdout
 
 
+def test_runtime_environment_freeze_rejects_missing_uv_lock(tmp_path: Path) -> None:
+    """When check_uv_lock=True, missing uv.lock fails closed with explicit error."""
+    spec_path = tmp_path / "env_spec.json"
+    spec_data = {
+        "task_id": "DAYTRADE-003D-CORR-003",
+        "python_version_major_minor": f"{sys.version_info.major}.{sys.version_info.minor}",
+        "accepted_uv_lock_sha256": ["audited_sha_123"],
+        "core_runtime_packages": {},
+    }
+    spec_path.write_bytes(json.dumps(spec_data, indent=2).encode("utf-8"))
+
+    # uv.lock does not exist in tmp_path
+    assert not (tmp_path / "uv.lock").exists()
+
+    with pytest.raises(RuntimeError, match=r"Missing required uv\.lock on disk"):
+        check_runtime_environment_freeze(
+            tmp_path,
+            spec_path=spec_path,
+            check_uv_lock=True,
+            require_live_provider_packages=False,
+            verify_spec_hash=False,
+        )
+
+
+def test_pre_live_guard_rejects_missing_uv_lock_in_clean_repo(tmp_path: Path) -> None:
+    """A clean Git repo missing uv.lock fails closed at the pre-live execution gate."""
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Gary Yang"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "gary.yang@airbyte.com"], cwd=tmp_path, check=True, capture_output=True)
+
+    # .gitignore ignoring uv.lock
+    (tmp_path / ".gitignore").write_text("# uv lockfile is not tracked in this repo\nuv.lock\n", encoding="utf-8")
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "tradex"\n', encoding="utf-8")
+
+    spec_dir = tmp_path / "docs" / "research" / "specs"
+    spec_dir.mkdir(parents=True)
+    real_spec = (REPO_ROOT / CORR_003_ENV_SPEC_PATH).read_bytes()
+    (spec_dir / "DAYTRADE-003D-CORR-003-ENVIRONMENT.json").write_bytes(real_spec)
+
+    # Commit at freeze F (uv.lock is not present!)
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "Freeze F"], cwd=tmp_path, check=True, capture_output=True)
+    freeze_sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=tmp_path, check=True, capture_output=True, text=True).stdout.strip()
+
+    # Git tree is clean, uv.lock is absent on disk
+    status_out = subprocess.run(["git", "status", "--porcelain"], cwd=tmp_path, check=True, capture_output=True, text=True).stdout.strip()
+    assert status_out == ""
+    assert not (tmp_path / "uv.lock").exists()
+
+    # check_pre_live_code_freeze fails closed because uv.lock is missing!
+    with pytest.raises(RuntimeError, match=r"Missing required uv\.lock on disk"):
+        check_pre_live_code_freeze(tmp_path, freeze_sha, verify_environment=True)
+
+
+def test_runtime_environment_freeze_rejects_missing_accepted_hashes_field(tmp_path: Path) -> None:
+    """Missing accepted lockfile hashes field in spec fails closed."""
+    spec_path = tmp_path / "env_spec.json"
+    spec_data = {
+        "task_id": "DAYTRADE-003D-CORR-003",
+        "python_version_major_minor": f"{sys.version_info.major}.{sys.version_info.minor}",
+        "core_runtime_packages": {},
+    }
+    spec_path.write_bytes(json.dumps(spec_data, indent=2).encode("utf-8"))
+    (tmp_path / "uv.lock").write_bytes(b"some_lockfile_content\n")
+
+    with pytest.raises(RuntimeError, match=r"Runtime environment specification is missing required 'accepted_uv_lock_sha256'"):
+        check_runtime_environment_freeze(
+            tmp_path,
+            spec_path=spec_path,
+            check_uv_lock=True,
+            require_live_provider_packages=False,
+            verify_spec_hash=False,
+        )
+
+
+def test_runtime_environment_freeze_rejects_empty_accepted_hashes_field(tmp_path: Path) -> None:
+    """Empty or whitespace-only accepted lockfile hashes in spec fails closed."""
+    spec_path = tmp_path / "env_spec.json"
+    spec_data = {
+        "task_id": "DAYTRADE-003D-CORR-003",
+        "python_version_major_minor": f"{sys.version_info.major}.{sys.version_info.minor}",
+        "accepted_uv_lock_sha256": ["   ", ""],
+        "core_runtime_packages": {},
+    }
+    spec_path.write_bytes(json.dumps(spec_data, indent=2).encode("utf-8"))
+    (tmp_path / "uv.lock").write_bytes(b"some_lockfile_content\n")
+
+    with pytest.raises(RuntimeError, match=r"Runtime environment specification contains empty or invalid accepted lockfile hashes"):
+        check_runtime_environment_freeze(
+            tmp_path,
+            spec_path=spec_path,
+            check_uv_lock=True,
+            require_live_provider_packages=False,
+            verify_spec_hash=False,
+        )
+
+
+def test_runtime_environment_freeze_positive_exact_audited_hash() -> None:
+    """Positive test: active runtime matches exact audited specification and on-disk uv.lock."""
+    spec = check_runtime_environment_freeze(
+        REPO_ROOT,
+        check_uv_lock=True,
+        require_live_provider_packages=False,
+        verify_spec_hash=True,
+    )
+    assert spec["task_id"] == "DAYTRADE-003D-CORR-003"
+    assert spec["python_version_major_minor"] == "3.11"
+    assert "accepted_uv_lock_sha256" in spec
+    assert len(spec["core_runtime_packages"]) >= 19
+
+
+def test_pilot_runner_cli_check_env_rejects_missing_uv_lock(tmp_path: Path) -> None:
+    """CLI check-env fails closed when uv.lock is missing on disk."""
+    spec_dir = tmp_path / "docs" / "research" / "specs"
+    spec_dir.mkdir(parents=True)
+    real_spec = (REPO_ROOT / CORR_003_ENV_SPEC_PATH).read_bytes()
+    (spec_dir / "DAYTRADE-003D-CORR-003-ENVIRONMENT.json").write_bytes(real_spec)
+
+    assert not (tmp_path / "uv.lock").exists()
+
+    res = subprocess.run(
+        [
+            sys.executable,
+            "scripts/research/daytrade_003d_corr_003_pilot.py",
+            "check-env",
+            "--repo-root",
+            str(tmp_path),
+            "--require-live-providers",
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert res.returncode == 1
+    assert "Missing required uv.lock on disk" in res.stdout
+
+
+def test_live_pilot_preflight_rejects_missing_uv_lock(tmp_path: Path) -> None:
+    """Live pilot preflight rejects missing uv.lock without provider calls or credential loading."""
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Gary Yang"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "gary.yang@airbyte.com"], cwd=tmp_path, check=True, capture_output=True)
+
+    (tmp_path / ".gitignore").write_text("# uv lockfile is not tracked in this repo\nuv.lock\n", encoding="utf-8")
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "tradex"\n', encoding="utf-8")
+
+    spec_dir = tmp_path / "docs" / "research" / "specs"
+    spec_dir.mkdir(parents=True)
+    real_spec = (REPO_ROOT / CORR_003_ENV_SPEC_PATH).read_bytes()
+    (spec_dir / "DAYTRADE-003D-CORR-003-ENVIRONMENT.json").write_bytes(real_spec)
+
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "Freeze F"], cwd=tmp_path, check=True, capture_output=True)
+    freeze_sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=tmp_path, check=True, capture_output=True, text=True).stdout.strip()
+
+    auth_dir = tmp_path / "docs" / "research" / "authorizations"
+    auth_dir.mkdir(parents=True)
+    auth_file = auth_dir / "DAYTRADE-003D-CORR-003-AUTHORIZATION.json"
+    auth_file.write_text(
+        json.dumps(
+            {
+                "task_id": "DAYTRADE-003D-CORR-003",
+                "pilot_date": "2024-01-02",
+                "authorized_by": "Gary Yang",
+                "frozen_implementation_sha": freeze_sha,
+                "run_scope": "ONE_SHOT_PILOT_JAN_2_2024",
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", str(auth_file)], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "Commit A (Gary auth)"], cwd=tmp_path, check=True, capture_output=True)
+
+    assert not (tmp_path / "uv.lock").exists()
+
+    res = subprocess.run(
+        [
+            sys.executable,
+            "scripts/research/daytrade_003d_corr_003_pilot.py",
+            "pilot",
+            "--pre-live-sha",
+            freeze_sha,
+            "--repo-root",
+            str(tmp_path),
+            "--authorize-live",
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert res.returncode == 1
+    assert "Missing required uv.lock on disk" in res.stdout
+
+
+
 
 

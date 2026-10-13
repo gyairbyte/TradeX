@@ -99,6 +99,17 @@ This methodology correction addresses and resolves the material deficiencies ide
   - **Pre-Live Freeze Integration:** Integrated into `check_pre_live_code_freeze` and registered in `verify_upstream_spec_hashes`.
   - **CLI Environment Inspection:** Added `check-env` subcommand in [`scripts/research/daytrade_003d_corr_003_pilot.py`](../../scripts/research/daytrade_003d_corr_003_pilot.py) (`python scripts/research/daytrade_003d_corr_003_pilot.py check-env --require-live-providers`).
 
+### Fifth Independent Review Deficiencies & Resolutions
+
+#### Finding: Fail-Closed Enforcement on Missing uv.lock or Missing Accepted Hashes
+- **Deficiency:** `check_runtime_environment_freeze` used `if uv_lock_path.exists() and raw_accepted:` when validating `uv.lock`. If `uv.lock` was deleted/absent on disk (which `.gitignore` hides from `git status`), or if `accepted_uv_lock_sha256` was missing/empty in a test specification, the check silently bypassed the lock integrity check and passed based on installed package subsets alone.
+- **Resolution:**
+  - With `check_uv_lock=True`, explicitly requires `uv_lock_path.exists()`. If absent, immediately halts and fails closed with actionable instructions directing the operator to restore the lockfile (`uv sync --extra dev --extra all`).
+  - Requires nonempty accepted lockfile hash digest(s) in the spec (`accepted_uv_lock_sha256` or `uv_lock_sha256`); fails closed on missing, empty, or whitespace-only digests.
+  - Rejects nonmatching SHA-256 hashes against audited platform digests before any provider access.
+  - Preserves optional `check_uv_lock=False` only for isolated synthetic unit fixtures.
+  - Verified that both `check-env --require-live-providers` and live pilot preflight fail closed on missing `uv.lock` without network calls or credential retrieval.
+
 ---
 
 ## 3. Preregistered Specifications & Upstream Hashes
@@ -132,7 +143,7 @@ All seven specifications are verified via SHA-256:
     - `pilot`: bounded live pilot execution subcommand gated behind explicit authorization (`--authorize-live`) and pre-live commit SHA verification (`--pre-live-sha`).
     - `check-env`: inspects runtime environment and verifies against frozen specification without making network calls.
 - [`tests/research/daytrade_orb/test_corr_003_integrity_replay.py`](../../tests/research/daytrade_orb/test_corr_003_integrity_replay.py):
-  - Comprehensive suite of 91 deterministic tests covering all unit, synthetic, and integration paths without network access.
+  - Comprehensive suite of 98 deterministic tests covering all unit, synthetic, and integration paths without network access.
 
 ### 4.2 Replay Persistence Schema
 Artifacts stored under private storage directory:
@@ -150,7 +161,7 @@ Artifacts stored under private storage directory:
 ## 5. Verification Results
 
 ### 5.1 Test Suite Execution
-- **CORR-003 Synthetic & Offline Tests:** 91 passed ([`tests/research/daytrade_orb/test_corr_003_integrity_replay.py`](../../tests/research/daytrade_orb/test_corr_003_integrity_replay.py)).
+- **CORR-003 Synthetic & Offline Tests:** 98 passed ([`tests/research/daytrade_orb/test_corr_003_integrity_replay.py`](../../tests/research/daytrade_orb/test_corr_003_integrity_replay.py)).
   - Upstream spec hash verification: PASSED
   - Strategy registry empty invariant: PASSED
   - HTTP error, truncated pagination, unexpected symbol, malformed timestamp, duplicate timestamp, out-of-session bar, invalid OHLCV detection: PASSED
@@ -177,7 +188,13 @@ Artifacts stored under private storage directory:
   - Runtime environment freeze rejecting package version mismatch, missing package, or Python version mismatch: PASSED
   - Clean Git F->A path with frozen environment and Gary authorization passes all guards: PASSED
   - CLI check-env subcommand clean verification: PASSED
-- **Full ORB Test Suite:** 210 passed ([`tests/research/daytrade_orb/`](../../tests/research/daytrade_orb/)).
+  - Missing uv.lock on disk rejection (fail closed): PASSED
+  - Clean Git repo missing uv.lock rejection at pre-live execution gate: PASSED
+  - Missing or empty accepted lockfile hashes field rejection: PASSED
+  - Positive exact audited hash match: PASSED
+  - CLI check-env rejection on missing uv.lock: PASSED
+  - Live pilot preflight rejection on missing uv.lock: PASSED
+- **Full ORB Test Suite:** 217 passed ([`tests/research/daytrade_orb/`](../../tests/research/daytrade_orb/)).
 - **Shared Intraday Dataset Test Suite:** 43 passed ([`tests/research/intraday_dataset/`](../../tests/research/intraday_dataset/)).
 - **Import Safety Verification:** 14 passed in 14.29s ([`tests/config/test_import_safety.py`](../../tests/config/test_import_safety.py)).
 - **Linter Check:** `uv run ruff check` passed cleanly with 0 errors across all modified and test files.
