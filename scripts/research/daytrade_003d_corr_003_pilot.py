@@ -35,6 +35,7 @@ from tradex.research.daytrade_orb.corr_003_pilot import (
     PilotDisposition,
     StageBPathAudit,
     TargetUniverseAudit,
+    acquire_atomic_pilot_run_lock,
     audit_broad_daily_availability,
     audit_candidate_screening,
     audit_stage_b_price_path_corr_003,
@@ -259,19 +260,9 @@ def run_corr_003_live_pilot(
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Durable run lock marker: fail closed on restart or concurrent runs
-    lock_marker_path = output_dir / f".pilot_run_lock_{PILOT_DATE}.json"
-    lock_data = json.dumps(
-        {
-            "task_id": TASK_ID,
-            "pilot_date": PILOT_DATE,
-            "pre_live_commit_sha": pre_live_commit_sha,
-            "status": "IN_PROGRESS",
-            "initiated_at_utc": datetime.now(ZoneInfo("UTC")).isoformat(),
-        },
-        indent=2,
-    ).encode("utf-8")
-    lock_marker_path.write_bytes(lock_data)
+    # Durable atomic run lock marker: fail closed on restart or concurrent runs
+    lock_marker_path = acquire_atomic_pilot_run_lock(output_dir, PILOT_DATE, pre_live_commit_sha)
+    lock_data = lock_marker_path.read_bytes()
 
     current_storage_bytes = len(lock_data)
     total_pages_used = 0
@@ -417,6 +408,7 @@ def run_corr_003_live_pilot(
             bars_by_symbol=raw_bars,
             expected_start=datetime(2023, 12, 1, 0, 0, tzinfo=UTC),
             expected_end=datetime(2023, 12, 31, 23, 59, tzinfo=UTC),
+            require_raw_pages=True,
         )
 
         batch_record = {
@@ -543,6 +535,7 @@ def run_corr_003_live_pilot(
             bars_by_symbol=raw_bars,
             allowed_time_window=(time(9, 30), time(9, 34)),
             session_date=target_dt,
+            require_raw_pages=True,
         )
 
         batch_record = {
@@ -671,6 +664,7 @@ def run_corr_003_live_pilot(
                     bars_by_symbol=raw_bars,
                     allowed_time_window=(time(9, 30), time(9, 34)),
                     session_date=sess_d,
+                    require_raw_pages=True,
                 )
 
                 b_rec = {
@@ -845,6 +839,7 @@ def run_corr_003_live_pilot(
                 bars_by_symbol=raw_bars,
                 allowed_time_window=(time(9, 35), time(15, 59)),
                 session_date=target_dt,
+                require_raw_pages=True,
             )
 
             b_rec = {
@@ -922,6 +917,17 @@ def run_corr_003_live_pilot(
         expected_minutes=385,
         session_date=target_dt,
     )
+
+    # -------------------------------------------------------------------------
+    # Include Durable Run Lock Marker in Manifest
+    # -------------------------------------------------------------------------
+    lock_bytes = lock_marker_path.read_bytes()
+    artifacts_info[lock_marker_path.name] = {
+        "sha256": hash_bytes(lock_bytes),
+        "size_bytes": len(lock_bytes),
+        "description": "Durable atomic pilot run-start lock marker",
+        "record_count": 1,
+    }
 
     # -------------------------------------------------------------------------
     # Save Checksum Manifest

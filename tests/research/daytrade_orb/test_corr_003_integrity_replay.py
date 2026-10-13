@@ -14,6 +14,7 @@ Enforces:
 """
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import subprocess
 from datetime import date, datetime, time, timedelta
@@ -43,6 +44,7 @@ from tradex.research.daytrade_orb.corr_003_pilot import (
     PayloadIntegrityStatus,
     PilotDisposition,
     ReplayIntegrityError,
+    acquire_atomic_pilot_run_lock,
     audit_broad_daily_availability,
     audit_candidate_screening,
     audit_stage_b_price_path_corr_003,
@@ -54,11 +56,13 @@ from tradex.research.daytrade_orb.corr_003_pilot import (
     filter_and_audit_target_universe,
     freeze_top_20_selection,
     hash_bytes,
+    is_allowed_post_freeze_drift,
     persist_raw_stage_artifact,
     rank_and_select_top_20,
     replay_corr_003_pilot,
     validate_batch_size,
     validate_provider_batch_response,
+    validate_run_lock_marker,
     verify_replay_manifest,
     verify_upstream_spec_hashes,
 )
@@ -2164,4 +2168,757 @@ def test_prospective_budget_exhaustion_in_client() -> None:
     assert meta["safe_error_classification"] == "max_pages_exceeded"
     assert meta["terminal_next_page_token"] == "token_page_2"
     assert meta["pagination_complete"] is False
+
+
+# =============================================================================
+# BLOCKER 1 & 2 REGRESSION TESTS: Durable Run Lock in Replay & Atomic One-Shot Guard
+# =============================================================================
+
+
+def test_manifest_verifies_durable_run_lock_marker(tmp_path: Path) -> None:
+    """Replay manifest verification accepts and validates a durable run lock marker listed in the manifest."""
+    fixture_dir = _build_synthetic_fixture(tmp_path)
+    lock_marker = fixture_dir / ".pilot_run_lock_2024-01-02.json"
+    lock_payload = {
+        "task_id": TASK_ID,
+        "pilot_date": "2024-01-02",
+        "pre_live_commit_sha": "a" * 40,
+        "status": "IN_PROGRESS",
+        "initiated_at_utc": "2024-01-02T14:00:00Z",
+    }
+    lock_bytes = json.dumps(lock_payload, indent=2).encode("utf-8")
+    lock_marker.write_bytes(lock_bytes)
+
+    # Add lock marker to manifest
+    m_path = fixture_dir / "manifest_2024-01-02.json"
+    m_data = json.loads(m_path.read_text(encoding="utf-8"))
+    m_data["artifacts"][lock_marker.name] = {
+        "sha256": hash_bytes(lock_bytes),
+        "size_bytes": len(lock_bytes),
+        "description": "Durable pilot run lock marker",
+        "record_count": 1,
+    }
+    m_path.write_bytes(json.dumps(m_data, indent=2).encode("utf-8"))
+
+    ok, _, errors = verify_replay_manifest(fixture_dir, "2024-01-02")
+    assert ok, f"Expected manifest verification to pass, got errors: {errors}"
+    assert len(errors) == 0
+
+
+def test_manifest_rejects_unlisted_run_lock_marker(tmp_path: Path) -> None:
+    """An unlisted run lock marker on disk fails closed as an unlisted extra file in replay."""
+    fixture_dir = _build_synthetic_fixture(tmp_path)
+    lock_marker = fixture_dir / ".pilot_run_lock_2024-01-02.json"
+    lock_marker.write_text(json.dumps({"status": "IN_PROGRESS"}), encoding="utf-8")
+
+    ok, _, errors = verify_replay_manifest(fixture_dir, "2024-01-02")
+    assert not ok
+    assert any("Unlisted extra file detected in replay directory: .pilot_run_lock_2024-01-02.json" in e for e in errors)
+
+
+def test_manifest_rejects_corrupted_run_lock_marker(tmp_path: Path) -> None:
+    """A listed run lock marker with corrupted metadata fails closed during manifest verification."""
+    fixture_dir = _build_synthetic_fixture(tmp_path)
+    lock_marker = fixture_dir / ".pilot_run_lock_2024-01-02.json"
+    corrupt_payload = {
+        "task_id": "WRONG_TASK",
+        "pilot_date": "2024-01-02",
+        "pre_live_commit_sha": "bad_sha",
+        "status": "INVALID_STATUS",
+        "initiated_at_utc": "",
+    }
+    lock_bytes = json.dumps(corrupt_payload, indent=2).encode("utf-8")
+    lock_marker.write_bytes(lock_bytes)
+
+    m_path = fixture_dir / "manifest_2024-01-02.json"
+    m_data = json.loads(m_path.read_text(encoding="utf-8"))
+    m_data["artifacts"][lock_marker.name] = {
+        "sha256": hash_bytes(lock_bytes),
+        "size_bytes": len(lock_bytes),
+        "description": "Durable pilot run lock marker",
+        "record_count": 1,
+    }
+    m_path.write_bytes(json.dumps(m_data, indent=2).encode("utf-8"))
+
+    ok, _, errors = verify_replay_manifest(fixture_dir, "2024-01-02")
+    assert not ok
+    assert any("Run lock task_id mismatch" in e for e in errors)
+
+
+def test_acquire_atomic_pilot_run_lock_concurrent_race(tmp_path: Path) -> None:
+    """Atomic one-shot lock acquisition prevents race condition: exactly 1 process succeeds."""
+    output_dir = tmp_path / "race_test"
+    pilot_date = "2024-01-02"
+    pre_live_sha = "1" * 40
+
+    def try_acquire(worker_id: int) -> tuple[bool, str]:
+        try:
+            acquire_atomic_pilot_run_lock(output_dir, pilot_date, pre_live_sha)
+            return (True, f"worker_{worker_id}")
+        except RuntimeError as exc:
+            return (False, str(exc))
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        futures = [executor.submit(try_acquire, i) for i in range(10)]
+        results = [f.result() for f in concurrent.futures.as_completed(futures)]
+
+    successes = [r for r in results if r[0]]
+    failures = [r for r in results if not r[0]]
+
+    assert len(successes) == 1, f"Expected exactly 1 acquisition success, got {len(successes)}"
+    assert len(failures) == 9, f"Expected exactly 9 collision failures, got {len(failures)}"
+    for _, err_msg in failures:
+        assert "already exists" in err_msg or "run lock marker exists" in err_msg
+
+    # Verify lock file on disk is valid and uncorrupted
+    lock_file = output_dir / f".pilot_run_lock_{pilot_date}.json"
+    assert lock_file.exists()
+    lock_data = json.loads(lock_file.read_text(encoding="utf-8"))
+    assert lock_data["task_id"] == TASK_ID
+    assert lock_data["status"] == "IN_PROGRESS"
+
+
+def test_full_producer_layout_to_replay_integration(tmp_path: Path) -> None:
+    """Simulated actual producer storage layout with atomic lock and manifest successfully feeds offline replay."""
+    pilot_date = "2024-01-02"
+    output_dir = tmp_path / "producer_output"
+    output_dir.mkdir(parents=True)
+
+    # 1. Producer acquires atomic run lock
+    acquire_atomic_pilot_run_lock(output_dir, pilot_date, "b" * 40)
+
+    # 2. Build artifacts in producer layout
+    artifacts: dict[str, Any] = {}
+
+    # Lock marker added to manifest
+    lock_marker = output_dir / f".pilot_run_lock_{pilot_date}.json"
+    lock_bytes = lock_marker.read_bytes()
+    artifacts[lock_marker.name] = {
+        "sha256": hash_bytes(lock_bytes),
+        "size_bytes": len(lock_bytes),
+        "description": "Durable atomic pilot run lock marker",
+        "record_count": 1,
+    }
+
+    ref_rows = [
+        {"ticker": "AAA", "primary_exchange": "XNYS", "type": "CS", "active": True},
+        {"ticker": "BBB", "primary_exchange": "XNAS", "type": "CS", "active": True},
+    ]
+    ref_file = f"massive_reference_{pilot_date}.json"
+    ref_bytes = json.dumps(ref_rows, indent=2).encode("utf-8")
+    (output_dir / ref_file).write_bytes(ref_bytes)
+    artifacts[ref_file] = {
+        "sha256": hash_bytes(ref_bytes),
+        "size_bytes": len(ref_bytes),
+        "description": "Massive reference snapshot",
+        "record_count": len(ref_rows),
+    }
+
+    target_audit, _ = filter_and_audit_target_universe(ref_rows)
+    univ_file = f"universe_{pilot_date}.json"
+    univ_bytes = json.dumps({
+        "date": pilot_date,
+        "canonical_target_universe_count": target_audit.canonical_target_universe_count,
+        "valid_symbols_count": len(target_audit.valid_target_symbols),
+        "ambiguous_symbols_count": len(target_audit.ambiguous_symbols),
+        "universe_sha256": target_audit.universe_sha256,
+        "valid_symbols": target_audit.valid_target_symbols,
+        "ambiguous_symbols": target_audit.ambiguous_symbols,
+    }, indent=2).encode("utf-8")
+    (output_dir / univ_file).write_bytes(univ_bytes)
+    artifacts[univ_file] = {
+        "sha256": hash_bytes(univ_bytes),
+        "size_bytes": len(univ_bytes),
+        "description": "Universe summary",
+        "record_count": 2,
+    }
+
+    daily_dates = [s.isoformat() for s in get_prior_xnys_sessions(date(2024, 1, 2), 20)]
+    daily_bars_aaa = [
+        {"t": f"{d}T05:00:00Z", "o": 50.0, "h": 52.0, "l": 49.0, "c": 51.0, "v": 2_000_000.0}
+        for d in daily_dates
+    ]
+    daily_bars_bbb = [
+        {"t": f"{d}T05:00:00Z", "o": 30.0, "h": 32.0, "l": 29.0, "c": 31.0, "v": 1_500_000.0}
+        for d in daily_dates
+    ]
+    or_bars_aaa = [
+        {"t": "2024-01-02T14:30:00Z", "o": 51.0, "h": 51.5, "l": 50.8, "c": 51.2, "v": 25000.0},
+        {"t": "2024-01-02T14:34:00Z", "o": 51.2, "h": 52.0, "l": 51.0, "c": 52.0, "v": 25000.0},
+    ]
+    or_bars_bbb = [
+        {"t": "2024-01-02T14:30:00Z", "o": 4.0, "h": 4.2, "l": 3.9, "c": 4.1, "v": 10000.0},
+    ]
+    prior_sessions = get_prior_xnys_sessions(date(2024, 1, 2), 14)
+    prior_bars_by_date = {
+        s.isoformat(): [
+            {"t": f"{s.isoformat()}T14:30:00Z", "o": 50.0, "h": 50.5, "l": 49.8, "c": 50.2, "v": 30000.0}
+        ]
+        for s in prior_sessions
+    }
+    sb_bars_aaa = [
+        {"t": "2024-01-02T14:35:00Z", "o": 52.0, "h": 53.0, "l": 51.8, "c": 52.5, "v": 10000.0},
+        {"t": "2024-01-02T20:59:00Z", "o": 52.8, "h": 53.0, "l": 52.5, "c": 52.9, "v": 15000.0},
+    ]
+
+    def mock_request(url: str, params: dict[str, Any] | None = None, **kwargs: Any) -> requests.Response:
+        resp = requests.Response()
+        resp.status_code = 200
+        p = params or {}
+        tf = p.get("timeframe")
+        start = str(p.get("start", ""))
+        if tf == "1Day":
+            body = {"bars": {"AAA": daily_bars_aaa, "BBB": daily_bars_bbb}, "next_page_token": None}
+        elif tf == "1Min" and ("09:35" in start or "14:35" in start):
+            body = {"bars": {"AAA": sb_bars_aaa}, "next_page_token": None}
+        elif tf == "1Min" and "2024-01-02" in start:
+            body = {"bars": {"AAA": or_bars_aaa, "BBB": or_bars_bbb}, "next_page_token": None}
+        else:
+            s_date = start[:10]
+            p_bars = prior_bars_by_date.get(s_date, [])
+            body = {"bars": {"AAA": p_bars, "BBB": []}, "next_page_token": None}
+        resp._content = json.dumps(body).encode("utf-8")
+        return resp
+
+    client = DatasetAlpacaClient(api_key="mock_k", secret_key="mock_s", request_func=mock_request)
+
+    # Phase 2
+    _dfs, d_meta = client.get_bars(
+        ["AAA", "BBB"],
+        datetime(2023, 12, 1, 0, 0, tzinfo=ZoneInfo("UTC")),
+        datetime(2023, 12, 29, 23, 59, tzinfo=ZoneInfo("UTC")),
+        feed="sip",
+        timeframe="1Day",
+        adjustment="raw",
+        asof=pilot_date,
+        include_raw_bars=True,
+        include_raw_pages=True,
+    )
+    daily_file = "alpaca_daily_dec2023.json"
+    daily_hash, daily_size = persist_raw_stage_artifact(
+        output_dir / daily_file,
+        metadata={"stage": "phase_2_broad_daily"},
+        batches=[{
+            "batch_index": 1,
+            "symbols_requested": ["AAA", "BBB"],
+            "request_params": d_meta.get("request_params", {}),
+            "http_status": d_meta.get("http_status", 200),
+            "pagination_complete": d_meta.get("pagination_complete", True),
+            "page_count": d_meta.get("page_count", 1),
+            "token_hashes": d_meta.get("token_hashes", []),
+            "token_sequence_sha256": d_meta.get("token_sequence_sha256", ""),
+            "meta": d_meta,
+            "bars_by_symbol": d_meta.get("raw_bars_by_symbol", {}),
+        }],
+    )
+    artifacts[daily_file] = {
+        "sha256": daily_hash,
+        "size_bytes": daily_size,
+        "description": "Daily bars",
+        "record_count": 2,
+    }
+
+    # Phase 3 Current OR
+    cur_start = datetime(2024, 1, 2, 9, 30, tzinfo=ZoneInfo("America/New_York")).astimezone(ZoneInfo("UTC"))
+    cur_end = datetime(2024, 1, 2, 9, 34, 59, tzinfo=ZoneInfo("America/New_York")).astimezone(ZoneInfo("UTC"))
+    _dfs, cur_meta = client.get_bars(
+        ["AAA", "BBB"],
+        cur_start,
+        cur_end,
+        feed="sip",
+        timeframe="1Min",
+        adjustment="raw",
+        asof=pilot_date,
+        include_raw_bars=True,
+        include_raw_pages=True,
+    )
+    cur_file = f"alpaca_current_or_{pilot_date}.json"
+    cur_hash, cur_size = persist_raw_stage_artifact(
+        output_dir / cur_file,
+        metadata={"stage": "phase_3_current_opening_range"},
+        batches=[{
+            "batch_index": 1,
+            "symbols_requested": ["AAA", "BBB"],
+            "request_params": cur_meta.get("request_params", {}),
+            "http_status": cur_meta.get("http_status", 200),
+            "pagination_complete": cur_meta.get("pagination_complete", True),
+            "page_count": cur_meta.get("page_count", 1),
+            "token_hashes": cur_meta.get("token_hashes", []),
+            "token_sequence_sha256": cur_meta.get("token_sequence_sha256", ""),
+            "meta": cur_meta,
+            "bars_by_symbol": cur_meta.get("raw_bars_by_symbol", {}),
+        }],
+    )
+    artifacts[cur_file] = {
+        "sha256": cur_hash,
+        "size_bytes": cur_size,
+        "description": "Current OR bars",
+        "record_count": 2,
+    }
+
+    # Phase 3 Prior 14 Sessions
+    prior_sessions_data: dict[str, list[dict[str, Any]]] = {}
+    for s_idx, sess in enumerate(prior_sessions, start=1):
+        s_date = sess.isoformat()
+        s_start = datetime(sess.year, sess.month, sess.day, 9, 30, tzinfo=ZoneInfo("America/New_York")).astimezone(ZoneInfo("UTC"))
+        s_end = datetime(sess.year, sess.month, sess.day, 9, 34, 59, tzinfo=ZoneInfo("America/New_York")).astimezone(ZoneInfo("UTC"))
+        _dfs, p_meta = client.get_bars(
+            ["AAA", "BBB"],
+            s_start,
+            s_end,
+            feed="sip",
+            timeframe="1Min",
+            adjustment="raw",
+            asof=pilot_date,
+            include_raw_bars=True,
+            include_raw_pages=True,
+        )
+        prior_sessions_data[s_date] = [{
+            "session_index": s_idx,
+            "session_date": s_date,
+            "batch_index": 1,
+            "symbols_requested": ["AAA", "BBB"],
+            "request_params": p_meta.get("request_params", {}),
+            "http_status": p_meta.get("http_status", 200),
+            "pagination_complete": p_meta.get("pagination_complete", True),
+            "page_count": p_meta.get("page_count", 1),
+            "token_hashes": p_meta.get("token_hashes", []),
+            "token_sequence_sha256": p_meta.get("token_sequence_sha256", ""),
+            "meta": p_meta,
+            "bars_by_symbol": p_meta.get("raw_bars_by_symbol", {}),
+        }]
+    prior_file = f"alpaca_prior_or_14sessions_{pilot_date}.json"
+    prior_bytes = json.dumps({
+        "metadata": {"stage": "phase_3_prior_14_sessions_opening_range"},
+        "sessions_data": prior_sessions_data,
+    }, indent=2).encode("utf-8")
+    (output_dir / prior_file).write_bytes(prior_bytes)
+    artifacts[prior_file] = {
+        "sha256": hash_bytes(prior_bytes),
+        "size_bytes": len(prior_bytes),
+        "description": "Prior 14 sessions OR bars",
+        "record_count": len(prior_sessions_data),
+    }
+
+    # Phase 4 Selection
+    d_obj = {
+        sym: sorted([
+            DailyBar(
+                symbol=sym,
+                session_date=datetime.fromisoformat(b["t"]).date(),
+                open=b["o"],
+                high=b["h"],
+                low=b["l"],
+                close=b["c"],
+                volume=b["v"],
+            )
+            for b in (daily_bars_aaa if sym == "AAA" else daily_bars_bbb)
+        ], key=lambda x: x.session_date)
+        for sym in ["AAA", "BBB"]
+    }
+    _d_audit, _comp, d_qual = audit_broad_daily_availability(target_audit.valid_target_symbols, [], d_obj, date(2024, 1, 2))
+    cur_ors = {
+        "AAA": evaluate_opening_range([
+            MinuteBar("AAA", datetime.fromisoformat(b["t"]), date(2024, 1, 2), b["o"], b["h"], b["l"], b["c"], b["v"])
+            for b in or_bars_aaa
+        ], require_five_bars=False),
+        "BBB": evaluate_opening_range([
+            MinuteBar("BBB", datetime.fromisoformat(b["t"]), date(2024, 1, 2), b["o"], b["h"], b["l"], b["c"], b["v"])
+            for b in or_bars_bbb
+        ], require_five_bars=False),
+    }
+    prior_obs = {
+        "AAA": [
+            OpeningRangeVolumeObservation("AAA", date.fromisoformat(ps), 30000.0)
+            for ps in [s.isoformat() for s in prior_sessions]
+        ]
+    }
+    _s_audit, _outcomes, elig, surv_ors = audit_candidate_screening(
+        d_qual, cur_ors, set(), prior_obs, set(), d_obj, date(2024, 1, 2)
+    )
+    ranked = rank_and_select_top_20(elig, surv_ors, 25000.0, 20)
+    sel_ev, sel_records, _ = freeze_top_20_selection(ranked)
+    sel_file = f"top_20_selection_{pilot_date}.json"
+    sel_bytes = json.dumps({
+        "date": pilot_date,
+        "selection_sha256": sel_ev.selection_sha256,
+        "selected_count": sel_ev.selected_count,
+        "doji_count": sel_ev.doji_count,
+        "eligible_candidates_count": sel_ev.eligible_candidates_count,
+        "records": sel_records,
+    }, indent=2).encode("utf-8")
+    (output_dir / sel_file).write_bytes(sel_bytes)
+    artifacts[sel_file] = {
+        "sha256": hash_bytes(sel_bytes),
+        "size_bytes": len(sel_bytes),
+        "description": "Top-20 selection",
+        "record_count": len(sel_records),
+    }
+
+    # Phase 5 Stage B
+    sb_start = datetime(2024, 1, 2, 9, 35, tzinfo=ZoneInfo("America/New_York")).astimezone(ZoneInfo("UTC"))
+    sb_end = datetime(2024, 1, 2, 15, 59, 59, tzinfo=ZoneInfo("America/New_York")).astimezone(ZoneInfo("UTC"))
+    _dfs, sb_meta = client.get_bars(
+        ["AAA"],
+        sb_start,
+        sb_end,
+        feed="sip",
+        timeframe="1Min",
+        adjustment="raw",
+        asof=pilot_date,
+        include_raw_bars=True,
+        include_raw_pages=True,
+    )
+    sb_file = f"alpaca_stage_b_{pilot_date}.json"
+    sb_hash, sb_size = persist_raw_stage_artifact(
+        output_dir / sb_file,
+        metadata={"stage": "phase_5_stage_b_price_path"},
+        batches=[{
+            "batch_index": 1,
+            "symbols_requested": ["AAA"],
+            "request_params": sb_meta.get("request_params", {}),
+            "http_status": sb_meta.get("http_status", 200),
+            "pagination_complete": sb_meta.get("pagination_complete", True),
+            "page_count": sb_meta.get("page_count", 1),
+            "token_hashes": sb_meta.get("token_hashes", []),
+            "token_sequence_sha256": sb_meta.get("token_sequence_sha256", ""),
+            "meta": sb_meta,
+            "bars_by_symbol": sb_meta.get("raw_bars_by_symbol", {}),
+        }],
+    )
+    artifacts[sb_file] = {
+        "sha256": sb_hash,
+        "size_bytes": sb_size,
+        "description": "Stage-B bars",
+        "record_count": 1,
+    }
+
+    # Save manifest with lock marker included
+    create_and_save_manifest(output_dir, artifacts, pilot_date)
+
+    # 3. Deterministic replay must succeed without "Unlisted extra file" for the lock marker!
+    res = replay_corr_003_pilot(input_dir=output_dir, repo_root=REPO_ROOT, pilot_date=pilot_date)
+    assert res.disposition == PilotDisposition.FEASIBLE_FOR_2024_DEVELOPMENT_DATASET_BUILD
+    assert res.stage_b_audit.is_usable is True
+
+
+# =============================================================================
+# BLOCKER 3 REGRESSION TESTS: Post-Freeze Allowlist vs Denylist
+# =============================================================================
+
+
+def test_pre_live_code_freeze_rejects_pyproject_toml_drift(tmp_path: Path) -> None:
+    """Post-freeze allowlist strictly rejects modification to pyproject.toml between F and A."""
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Gary Yang"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "gary.yang@airbyte.com"], cwd=tmp_path, check=True, capture_output=True)
+    (tmp_path / "pyproject.toml").write_text('[project]\nversion = "0.1.0"\n', encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "Freeze F"], cwd=tmp_path, check=True, capture_output=True)
+    freeze_sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=tmp_path, check=True, capture_output=True, text=True).stdout.strip()
+
+    # Modify pyproject.toml in commit A
+    (tmp_path / "pyproject.toml").write_text('[project]\nversion = "0.1.1"\n', encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "Modify pyproject"], cwd=tmp_path, check=True, capture_output=True)
+
+    with pytest.raises(RuntimeError, match=r"forbidden code/spec/test drift between freeze.*pyproject\.toml"):
+        check_pre_live_code_freeze(tmp_path, freeze_sha)
+
+
+def test_pre_live_code_freeze_rejects_uv_lock_drift(tmp_path: Path) -> None:
+    """Post-freeze allowlist strictly rejects modification to uv.lock between F and A."""
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Gary Yang"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "gary.yang@airbyte.com"], cwd=tmp_path, check=True, capture_output=True)
+    (tmp_path / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "Freeze F"], cwd=tmp_path, check=True, capture_output=True)
+    freeze_sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=tmp_path, check=True, capture_output=True, text=True).stdout.strip()
+
+    # Modify uv.lock in commit A
+    (tmp_path / "uv.lock").write_text("version = 2\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "Modify uv.lock"], cwd=tmp_path, check=True, capture_output=True)
+
+    with pytest.raises(RuntimeError, match=r"forbidden code/spec/test drift between freeze.*uv\.lock"):
+        check_pre_live_code_freeze(tmp_path, freeze_sha)
+
+
+def test_pre_live_code_freeze_rejects_workflow_or_config_drift(tmp_path: Path) -> None:
+    """Post-freeze allowlist strictly rejects changes to workflows or runtime config between F and A."""
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Gary Yang"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "gary.yang@airbyte.com"], cwd=tmp_path, check=True, capture_output=True)
+    wf_dir = tmp_path / ".github" / "workflows"
+    wf_dir.mkdir(parents=True)
+    (wf_dir / "ci.yml").write_text("name: CI\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "Freeze F"], cwd=tmp_path, check=True, capture_output=True)
+    freeze_sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=tmp_path, check=True, capture_output=True, text=True).stdout.strip()
+
+    (wf_dir / "ci.yml").write_text("name: Modified CI\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "Modify workflow"], cwd=tmp_path, check=True, capture_output=True)
+
+    with pytest.raises(RuntimeError, match=r"forbidden code/spec/test drift between freeze.*\.github"):
+        check_pre_live_code_freeze(tmp_path, freeze_sha)
+
+
+def test_pre_live_code_freeze_allows_gary_authorization_and_documentation(tmp_path: Path) -> None:
+    """Post-freeze allowlist permits Gary authorization record and non-executable documentation between F and A."""
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Gary Yang"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "gary.yang@airbyte.com"], cwd=tmp_path, check=True, capture_output=True)
+    (tmp_path / "README.md").write_text("# TradeX\n", encoding="utf-8")
+    docs_dir = tmp_path / "docs" / "research"
+    docs_dir.mkdir(parents=True)
+    (docs_dir / "DAYTRADE-003D-CORR-003.md").write_text("# Report\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "Freeze F"], cwd=tmp_path, check=True, capture_output=True)
+    freeze_sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=tmp_path, check=True, capture_output=True, text=True).stdout.strip()
+
+    # Commit A: add Gary Yang authorization and update docs
+    auth_dir = docs_dir / "authorizations"
+    auth_dir.mkdir(parents=True)
+    (auth_dir / "DAYTRADE-003D-CORR-003-AUTHORIZATION.json").write_text("{}", encoding="utf-8")
+    (docs_dir / "DAYTRADE-003D-CORR-003.md").write_text("# Updated Report\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "Authorization and doc update"], cwd=tmp_path, check=True, capture_output=True)
+
+    # Must pass without error
+    check_pre_live_code_freeze(tmp_path, freeze_sha)
+
+
+# =============================================================================
+# BLOCKER 4 REGRESSION TESTS: Raw Page Evidence Presence and Coherence
+# =============================================================================
+
+
+def test_validate_provider_batch_rejects_empty_raw_pages_for_200_complete() -> None:
+    """HTTP 200 completed provider response with empty raw_pages=[] fails closed."""
+    res = validate_provider_batch_response(
+        symbols_requested=["AAPL"],
+        meta={
+            "http_status": 200,
+            "pagination_complete": True,
+            "page_count": 0,
+            "raw_pages": [],
+        },
+        bars_by_symbol={"AAPL": []},
+    )
+    assert not res.is_valid
+    assert res.status == PayloadIntegrityStatus.TRUNCATED_OR_MALFORMED_PAYLOAD
+    assert "empty raw_pages list" in res.error_message
+
+
+def test_validate_provider_batch_rejects_page_count_mismatch() -> None:
+    """validate_provider_batch_response fails closed when raw_pages count does not match page_count."""
+    raw_pages = [{
+        "http_status": 200,
+        "page_token": None,
+        "body": {"bars": {"AAPL": []}, "next_page_token": None},
+    }]
+    res = validate_provider_batch_response(
+        symbols_requested=["AAPL"],
+        meta={
+            "http_status": 200,
+            "pagination_complete": True,
+            "page_count": 2,  # mismatch: claims 2, has 1
+            "raw_pages": raw_pages,
+        },
+        bars_by_symbol={"AAPL": []},
+    )
+    assert not res.is_valid
+    assert res.status == PayloadIntegrityStatus.TRUNCATED_OR_MALFORMED_PAYLOAD
+    assert "does not match metadata page_count" in res.error_message
+
+
+def test_validate_provider_batch_rejects_raw_page_http_error() -> None:
+    """validate_provider_batch_response fails closed when an individual raw page reports non-200 HTTP status."""
+    raw_pages = [{
+        "http_status": 500,
+        "page_token": None,
+        "body": {"bars": {"AAPL": []}, "next_page_token": None},
+    }]
+    res = validate_provider_batch_response(
+        symbols_requested=["AAPL"],
+        meta={
+            "http_status": 200,
+            "pagination_complete": True,
+            "page_count": 1,
+            "raw_pages": raw_pages,
+        },
+        bars_by_symbol={"AAPL": []},
+    )
+    assert not res.is_valid
+    assert res.status == PayloadIntegrityStatus.HTTP_ERROR
+    assert "raw_pages[0] http_status 500 != 200" in res.error_message
+
+
+def test_validate_provider_batch_rejects_unconsumed_terminal_token() -> None:
+    """validate_provider_batch_response fails closed when terminal raw page has unconsumed next_page_token."""
+    raw_pages = [{
+        "http_status": 200,
+        "page_token": None,
+        "body": {"bars": {"AAPL": []}, "next_page_token": "unconsumed_token_abc"},
+    }]
+    res = validate_provider_batch_response(
+        symbols_requested=["AAPL"],
+        meta={
+            "http_status": 200,
+            "pagination_complete": True,
+            "page_count": 1,
+            "raw_pages": raw_pages,
+        },
+        bars_by_symbol={"AAPL": []},
+    )
+    assert not res.is_valid
+    assert res.status == PayloadIntegrityStatus.PAGINATION_INCOMPLETE
+    assert "Terminal raw page 0 has unconsumed next_page_token" in res.error_message
+
+
+def test_validate_provider_batch_rejects_missing_intermediate_token() -> None:
+    """validate_provider_batch_response fails closed when intermediate raw page lacks next_page_token."""
+    raw_pages = [
+        {
+            "http_status": 200,
+            "page_token": None,
+            "body": {"bars": {"AAPL": []}, "next_page_token": None},  # Intermediate page lacks token!
+        },
+        {
+            "http_status": 200,
+            "page_token": "token2",
+            "body": {"bars": {"AAPL": []}, "next_page_token": None},
+        },
+    ]
+    res = validate_provider_batch_response(
+        symbols_requested=["AAPL"],
+        meta={
+            "http_status": 200,
+            "pagination_complete": True,
+            "page_count": 2,
+            "raw_pages": raw_pages,
+        },
+        bars_by_symbol={"AAPL": []},
+    )
+    assert not res.is_valid
+    assert res.status == PayloadIntegrityStatus.PAGINATION_INCOMPLETE
+    assert "Intermediate raw page 0 is missing required next_page_token" in res.error_message
+
+
+def test_validate_provider_batch_preserves_legitimate_empty_raw_page() -> None:
+    """validate_provider_batch_response preserves legitimately completed empty provider page {'bars': {}}."""
+    raw_pages = [{
+        "http_status": 200,
+        "page_token": None,
+        "body": {"bars": {}, "next_page_token": None},
+    }]
+    res = validate_provider_batch_response(
+        symbols_requested=["AAPL"],
+        meta={
+            "http_status": 200,
+            "pagination_complete": True,
+            "page_count": 1,
+            "raw_pages": raw_pages,
+        },
+        bars_by_symbol={},
+    )
+    assert res.is_valid
+    assert res.status == PayloadIntegrityStatus.VALID
+
+    # Also test {'bars': {'AAPL': []}}
+    raw_pages_empty_list = [{
+        "http_status": 200,
+        "page_token": None,
+        "body": {"bars": {"AAPL": []}, "next_page_token": None},
+    }]
+    res2 = validate_provider_batch_response(
+        symbols_requested=["AAPL"],
+        meta={
+            "http_status": 200,
+            "pagination_complete": True,
+            "page_count": 1,
+            "raw_pages": raw_pages_empty_list,
+        },
+        bars_by_symbol={"AAPL": []},
+    )
+    assert res2.is_valid
+    assert res2.status == PayloadIntegrityStatus.VALID
+
+
+def test_resigned_artifact_with_missing_raw_pages_fails_closed_in_replay(tmp_path: Path) -> None:
+    """An artifact claiming 200/complete with missing or empty raw pages fails closed in offline replay even when re-signed."""
+    fixture_dir = _build_synthetic_fixture(tmp_path)
+    sb_file = fixture_dir / "alpaca_stage_b_2024-01-02.json"
+    sb_data = json.loads(sb_file.read_text(encoding="utf-8"))
+
+    # Tamper: strip raw_pages evidence while claiming 200/complete
+    for batch in sb_data["batches"]:
+        batch["meta"]["raw_pages"] = []
+
+    tampered_bytes = json.dumps(sb_data, indent=2).encode("utf-8")
+    sb_file.write_bytes(tampered_bytes)
+
+    # Re-sign the manifest so manifest checksum verification passes
+    m_path = fixture_dir / "manifest_2024-01-02.json"
+    m_data = json.loads(m_path.read_text(encoding="utf-8"))
+    m_data["artifacts"][sb_file.name]["sha256"] = hash_bytes(tampered_bytes)
+    m_data["artifacts"][sb_file.name]["size_bytes"] = len(tampered_bytes)
+    m_path.write_bytes(json.dumps(m_data, indent=2).encode("utf-8"))
+
+    # Offline replay must detect missing raw pages and fail closed with BLOCKED_PROVIDER_DATA_INTEGRITY!
+    res = replay_corr_003_pilot(input_dir=fixture_dir, repo_root=REPO_ROOT, pilot_date="2024-01-02")
+    assert res.disposition == PilotDisposition.BLOCKED_PROVIDER_DATA_INTEGRITY
+    assert res.provider_data_integrity_success is False
+    assert res.stage_b_audit.provider_failure_count > 0
+    assert not res.stage_b_audit.is_usable
+
+
+def test_resigned_daily_artifact_with_missing_raw_pages_fails_closed(tmp_path: Path) -> None:
+    """Re-signed daily artifact with missing raw_pages fails closed in replay due to parity rejection."""
+    fixture_dir = _build_synthetic_fixture(tmp_path)
+    daily_file = fixture_dir / "alpaca_daily_dec2023.json"
+    daily_data = json.loads(daily_file.read_text(encoding="utf-8"))
+
+    for batch in daily_data["batches"]:
+        batch["meta"]["raw_pages"] = []
+
+    tampered_bytes = json.dumps(daily_data, indent=2).encode("utf-8")
+    daily_file.write_bytes(tampered_bytes)
+
+    m_path = fixture_dir / "manifest_2024-01-02.json"
+    m_data = json.loads(m_path.read_text(encoding="utf-8"))
+    m_data["artifacts"][daily_file.name]["sha256"] = hash_bytes(tampered_bytes)
+    m_data["artifacts"][daily_file.name]["size_bytes"] = len(tampered_bytes)
+    m_path.write_bytes(json.dumps(m_data, indent=2).encode("utf-8"))
+
+    with pytest.raises(ReplayIntegrityError, match="Top-20 selection hash mismatch"):
+        replay_corr_003_pilot(input_dir=fixture_dir, repo_root=REPO_ROOT, pilot_date="2024-01-02")
+
+
+def test_is_allowed_post_freeze_drift_rules() -> None:
+    """Validate allowable vs forbidden post-freeze drift paths."""
+    assert is_allowed_post_freeze_drift("docs/research/authorizations/DAYTRADE-003D-CORR-003-AUTHORIZATION.json")
+    assert is_allowed_post_freeze_drift("docs/research/DAYTRADE-003D-CORR-003.md")
+    assert is_allowed_post_freeze_drift("README.md")
+    assert not is_allowed_post_freeze_drift("docs/research/specs/DAYTRADE-003B-ORB-v1.json")
+    assert not is_allowed_post_freeze_drift("pyproject.toml")
+    assert not is_allowed_post_freeze_drift("uv.lock")
+    assert not is_allowed_post_freeze_drift("tradex/foo.py")
+    assert not is_allowed_post_freeze_drift(".github/workflows/ci.yml")
+
+
+def test_validate_run_lock_marker_directly(tmp_path: Path) -> None:
+    """Validate run lock marker error handling when missing or non-dict."""
+    non_existent = tmp_path / "does_not_exist.json"
+    errs = validate_run_lock_marker(non_existent)
+    assert any("does not exist" in e for e in errs)
+
+    non_dict = tmp_path / "not_dict.json"
+    non_dict.write_text("[1, 2, 3]", encoding="utf-8")
+    errs2 = validate_run_lock_marker(non_dict)
+    assert any("not a valid JSON object" in e for e in errs2)
+
+
 

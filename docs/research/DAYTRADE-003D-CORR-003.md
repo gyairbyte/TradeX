@@ -58,6 +58,29 @@ This methodology correction addresses and resolves the material deficiencies ide
     - Durable Run Marker: Writes `.pilot_run_lock_<date>.json` immediately upon startup.
   - In [`corr_003_pilot.py`](../../tradex/research/daytrade_orb/corr_003_pilot.py): `check_one_shot_pilot_guard` fails closed if `manifest_<date>.json` exists, if `.pilot_run_lock_<date>.json` exists, or if any `.json` artifacts already exist in the output directory, ensuring partial run evidence is preserved and cannot be overwritten.
 
+### Third Independent Review Deficiencies & Resolutions
+
+#### Finding 1: Durable Run Lock Marker in Replay & Storage Layout
+- **Deficiency:** The live runner created `.pilot_run_lock_2024-01-02.json` but omitted it from manifest `artifacts_info`. Replay verification strictly failed closed on unlisted extra files (`Unlisted extra file`), causing any valid live producer run to fail replay.
+- **Resolution:**
+  - In [`scripts/research/daytrade_003d_corr_003_pilot.py`](../../scripts/research/daytrade_003d_corr_003_pilot.py): includes `.pilot_run_lock_2024-01-02.json` in `artifacts_info` before writing `manifest_2024-01-02.json`.
+  - In [`corr_003_pilot.py`](../../tradex/research/daytrade_orb/corr_003_pilot.py): `verify_replay_manifest` verifies lock marker SHA-256 and byte size against the manifest, validates its schema and fields via `validate_run_lock_marker`, and accepts manifested lock markers. Rejects unlisted or tampered locks.
+
+#### Finding 2: Atomic One-Shot Lock Acquisition
+- **Deficiency:** Running `check_one_shot_pilot_guard` followed non-atomically by `write_bytes` permitted concurrent processes to race and overwrite locks and artifacts.
+- **Resolution:**
+  - In [`corr_003_pilot.py`](../../tradex/research/daytrade_orb/corr_003_pilot.py): `acquire_atomic_pilot_run_lock` uses atomic exclusive file creation (`open(..., 'xb')` / `O_CREAT | O_EXCL`). Fails closed on collision with `RuntimeError` while preserving existing markers and partial evidence intact. Tested via multi-threaded concurrent race simulation.
+
+#### Finding 3: Deliberate Post-Freeze Allowlist
+- **Deficiency:** Narrow denylist permitted drift in dependency files (`pyproject.toml`, `uv.lock`), workflows, or configuration between freeze commit $F$ and authorization commit $A$.
+- **Resolution:**
+  - In [`corr_003_pilot.py`](../../tradex/research/daytrade_orb/corr_003_pilot.py): replaced denylist with `is_allowed_post_freeze_drift`. Strictly restricts post-freeze drift to the approved Gary Yang authorization record and explicitly non-executable documentation (`.md`, `.txt`, `.rst` under `docs/` and root docs). Fails closed on tracked drift to executable code, dependencies (`pyproject.toml`, `uv.lock`), workflows, or configuration.
+
+#### Finding 4: Assert Completed Raw-Page Evidence Presence & Coherence
+- **Deficiency:** Completed HTTP 200 requests with `raw_pages=[]` could pass validation if aggregate bars were empty, risking accepting invented no-print evidence without raw provider proof.
+- **Resolution:**
+  - In [`corr_003_pilot.py`](../../tradex/research/daytrade_orb/corr_003_pilot.py): `validate_provider_batch_response` with `require_raw_pages=True` requires non-empty `raw_pages` for completed HTTP 200 responses, verifies `len(raw_pages) == page_count`, enforces per-page `http_status == 200`, and verifies terminal pagination tokens are fully consumed. Preserves legitimately completed empty pages (`{"bars": {}}` or `{"bars": {"AAPL": []}}`).
+
 ---
 
 ## 3. Preregistered Specifications & Upstream Hashes
@@ -107,7 +130,7 @@ Artifacts stored under private storage directory:
 ## 5. Verification Results
 
 ### 5.1 Test Suite Execution
-- **CORR-003 Synthetic & Offline Tests:** 65 passed in 13.87s ([`tests/research/daytrade_orb/test_corr_003_integrity_replay.py`](../../tests/research/daytrade_orb/test_corr_003_integrity_replay.py)).
+- **CORR-003 Synthetic & Offline Tests:** 84 passed ([`tests/research/daytrade_orb/test_corr_003_integrity_replay.py`](../../tests/research/daytrade_orb/test_corr_003_integrity_replay.py)).
   - Upstream spec hash verification: PASSED
   - Strategy registry empty invariant: PASSED
   - HTTP error, truncated pagination, unexpected symbol, malformed timestamp, duplicate timestamp, out-of-session bar, invalid OHLCV detection: PASSED
@@ -124,8 +147,13 @@ Artifacts stored under private storage directory:
   - Realistic string-valued symbols verification, feed/timeframe/asof/window verification, token sequence hash parity: PASSED
   - End-to-end mocked acquisition-to-replay integration: PASSED
   - Durable run marker lock guard, partial artifact restart rejection, prospective resource limit enforcement: PASSED
-- **Full ORB Test Suite:** 184 passed in 15.78s ([`tests/research/daytrade_orb/`](../../tests/research/daytrade_orb/)).
-- **Shared Intraday Dataset Test Suite:** 43 passed in 283.89s ([`tests/research/intraday_dataset/`](../../tests/research/intraday_dataset/)).
+  - Durable run lock marker manifest verification and unlisted/corrupted marker rejection: PASSED
+  - Atomic one-shot lock acquisition and concurrent race collision rejection: PASSED
+  - Deliberate post-freeze allowlist enforcement (rejecting pyproject.toml, uv.lock, workflows): PASSED
+  - Completed raw-page presence & coherence (rejecting empty raw pages, page count mismatch, non-200, unconsumed pagination tokens): PASSED
+  - Full live producer layout to offline replay end-to-end integration: PASSED
+- **Full ORB Test Suite:** 203 passed ([`tests/research/daytrade_orb/`](../../tests/research/daytrade_orb/)).
+- **Shared Intraday Dataset Test Suite:** 43 passed ([`tests/research/intraday_dataset/`](../../tests/research/intraday_dataset/)).
 - **Import Safety Verification:** 14 passed in 6.74s ([`tests/config/test_import_safety.py`](../../tests/config/test_import_safety.py)).
 - **Linter Check:** `uv run ruff check` passed cleanly with 0 errors across all modified and test files.
 

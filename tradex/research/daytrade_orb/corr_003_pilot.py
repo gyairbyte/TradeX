@@ -100,10 +100,15 @@ __all__ = [
     "ReplayResult",
     "StageBPathAudit",
     "TargetUniverseAudit",
+    "acquire_atomic_pilot_run_lock",
     "audit_broad_daily_availability",
     "audit_candidate_screening",
     "audit_stage_b_price_path_corr_003",
     "batch_symbols",
+    "check_one_shot_pilot_guard",
+    "check_pilot_authorization",
+    "check_pre_live_code_freeze",
+    "check_resource_limits",
     "create_and_save_manifest",
     "determine_pilot_disposition_corr_003",
     "evaluate_opening_range",
@@ -112,11 +117,14 @@ __all__ = [
     "get_prior_xnys_sessions",
     "hash_bytes",
     "hash_text",
+    "is_allowed_post_freeze_drift",
     "json_hash",
     "persist_raw_stage_artifact",
     "rank_and_select_top_20",
     "replay_corr_003_pilot",
+    "validate_batch_size",
     "validate_provider_batch_response",
+    "validate_run_lock_marker",
     "verify_replay_manifest",
     "verify_upstream_spec_hashes",
 ]
@@ -240,17 +248,21 @@ def validate_provider_batch_response(
     expected_timezone: ZoneInfo = MARKET_TIMEZONE,
     allowed_time_window: tuple[time, time] | None = None,
     session_date: date | None = None,
+    require_raw_pages: bool = False,
 ) -> BatchIntegrityResult:
     """Validate provider response before interpreting absent intervals as sparse minutes.
 
     Enforces:
     1. HTTP status is 200.
     2. Pagination completed without cycle or repeated tokens.
-    3. No unexpected symbol identities in response.
-    4. Zero malformed timestamps.
-    5. Zero duplicate timestamps per symbol.
-    6. Bars within expected datetime/session range.
-    7. Valid OHLCV values (positive prices, non-negative volume, high >= low, bounds).
+    3. Mandatory raw page evidence presence, count, and per-page HTTP status coherence.
+    4. Terminal and intermediate next_page_token coherence.
+    5. Exact bar parity between raw provider pages and aggregated bars_by_symbol.
+    6. No unexpected symbol identities in response.
+    7. Zero malformed timestamps.
+    8. Zero duplicate timestamps per symbol.
+    9. Bars within expected datetime/session range.
+    10. Valid OHLCV values (positive prices, non-negative volume, high >= low, bounds).
     """
     if meta.get("http_status") is None or meta.get("pagination_complete") is None:
         return BatchIntegrityResult(
@@ -293,6 +305,13 @@ def validate_provider_batch_response(
         )
 
     raw_pages = meta.get("raw_pages")
+    if require_raw_pages and raw_pages is None:
+        return BatchIntegrityResult(
+            is_valid=False,
+            status=PayloadIntegrityStatus.TRUNCATED_OR_MALFORMED_PAYLOAD,
+            error_message="raw_pages evidence is mandatory for CORR-003 provider responses but is missing",
+        )
+
     if raw_pages is not None:
         if not isinstance(raw_pages, list):
             return BatchIntegrityResult(
@@ -300,6 +319,30 @@ def validate_provider_batch_response(
                 status=PayloadIntegrityStatus.TRUNCATED_OR_MALFORMED_PAYLOAD,
                 error_message="raw_pages in meta must be a list",
             )
+
+        # A completed HTTP 200 provider batch MUST record at least 1 raw provider page
+        if http_status == 200 and pagination_complete and len(raw_pages) == 0:
+            return BatchIntegrityResult(
+                is_valid=False,
+                status=PayloadIntegrityStatus.TRUNCATED_OR_MALFORMED_PAYLOAD,
+                error_message="Completed HTTP 200 provider batch has empty raw_pages list (missing raw page evidence)",
+            )
+
+        # Page count consistency check
+        expected_page_count = meta.get("page_count")
+        if (
+            expected_page_count is not None
+            and isinstance(expected_page_count, int)
+            and len(raw_pages) != expected_page_count
+        ):
+            return BatchIntegrityResult(
+                is_valid=False,
+                status=PayloadIntegrityStatus.TRUNCATED_OR_MALFORMED_PAYLOAD,
+                error_message=(
+                    f"raw_pages count ({len(raw_pages)}) does not match metadata page_count ({expected_page_count})"
+                ),
+            )
+
         raw_page_bars_by_symbol: dict[str, list[dict[str, Any]]] = {}
         for p_idx, p in enumerate(raw_pages):
             if not isinstance(p, dict):
@@ -308,6 +351,16 @@ def validate_provider_batch_response(
                     status=PayloadIntegrityStatus.TRUNCATED_OR_MALFORMED_PAYLOAD,
                     error_message=f"raw_pages[{p_idx}] is not a dict",
                 )
+
+            # Assert per-page HTTP status
+            p_status = p.get("http_status", p.get("status_code", meta.get("http_status", 200)))
+            if p_status != 200:
+                return BatchIntegrityResult(
+                    is_valid=False,
+                    status=PayloadIntegrityStatus.HTTP_ERROR,
+                    error_message=f"raw_pages[{p_idx}] http_status {p_status} != 200",
+                )
+
             body = p.get("body")
             if not isinstance(body, dict):
                 return BatchIntegrityResult(
@@ -315,6 +368,26 @@ def validate_provider_batch_response(
                     status=PayloadIntegrityStatus.TRUNCATED_OR_MALFORMED_PAYLOAD,
                     error_message=f"raw_pages[{p_idx}] body is not a dict",
                 )
+
+            # Check terminal vs intermediate pagination token coherence
+            next_tok = body.get("next_page_token")
+            is_last_page = (p_idx == len(raw_pages) - 1)
+            if pagination_complete and is_last_page and next_tok:
+                return BatchIntegrityResult(
+                    is_valid=False,
+                    status=PayloadIntegrityStatus.PAGINATION_INCOMPLETE,
+                    error_message=(
+                        f"Terminal raw page {p_idx} has unconsumed next_page_token '{next_tok}' "
+                        f"despite pagination_complete=True"
+                    ),
+                )
+            if not is_last_page and not next_tok:
+                return BatchIntegrityResult(
+                    is_valid=False,
+                    status=PayloadIntegrityStatus.PAGINATION_INCOMPLETE,
+                    error_message=f"Intermediate raw page {p_idx} is missing required next_page_token",
+                )
+
             p_bars = body.get("bars")
             if not isinstance(p_bars, dict):
                 return BatchIntegrityResult(
@@ -322,6 +395,7 @@ def validate_provider_batch_response(
                     status=PayloadIntegrityStatus.TRUNCATED_OR_MALFORMED_PAYLOAD,
                     error_message=f"raw_pages[{p_idx}] body missing or non-dict 'bars'",
                 )
+
             for sym_k, b_list in p_bars.items():
                 if not isinstance(b_list, list):
                     return BatchIntegrityResult(
@@ -751,6 +825,13 @@ def verify_replay_manifest(
         elif actual_hash != expected_hash:
             errors.append(f"SHA-256 checksum mismatch for {filename}: expected {expected_hash}, got {actual_hash}")
 
+    # Validate durable run lock marker if present in manifest
+    lock_marker_name = f".pilot_run_lock_{pilot_date}.json"
+    if lock_marker_name in artifacts:
+        lock_file = input_dir / lock_marker_name
+        if lock_file.exists():
+            errors.extend(validate_run_lock_marker(lock_file, pilot_date))
+
     # Enforce fail-closed check on unlisted extra files in directory
     manifest_filename = f"manifest_{pilot_date}.json"
     for file_path in input_dir.iterdir():
@@ -763,6 +844,70 @@ def verify_replay_manifest(
 # -----------------------------------------------------------------------------
 # Prospective Execution, Resource Bounds & Authorization Guards
 # -----------------------------------------------------------------------------
+
+
+def validate_run_lock_marker(lock_path: Path, expected_pilot_date: str = PILOT_DATE) -> list[str]:
+    """Validate that the durable run lock marker contains consistent, uncorrupted metadata."""
+    if not lock_path.exists():
+        return [f"Run lock marker does not exist on disk: {lock_path.name}"]
+    try:
+        data = json.loads(lock_path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        return [f"Malformed run lock JSON in {lock_path.name}: {exc}"]
+    if not isinstance(data, dict):
+        return [f"Run lock in {lock_path.name} is not a valid JSON object"]
+
+    errors: list[str] = []
+    if data.get("task_id") != TASK_ID:
+        errors.append(f"Run lock task_id mismatch: expected '{TASK_ID}', got '{data.get('task_id')}'")
+    if data.get("pilot_date") != expected_pilot_date:
+        errors.append(f"Run lock pilot_date mismatch: expected '{expected_pilot_date}', got '{data.get('pilot_date')}'")
+    sha = data.get("pre_live_commit_sha")
+    if not isinstance(sha, str) or len(sha) != 40:
+        errors.append(f"Run lock pre_live_commit_sha is invalid 40-char SHA: '{sha}'")
+    status = data.get("status")
+    if status not in ("IN_PROGRESS", "COMPLETED"):
+        errors.append(f"Run lock invalid status: '{status}'")
+    initiated = data.get("initiated_at_utc")
+    if not isinstance(initiated, str) or not initiated:
+        errors.append(f"Run lock invalid initiated_at_utc timestamp: '{initiated}'")
+    return errors
+
+
+def acquire_atomic_pilot_run_lock(
+    output_dir: Path,
+    pilot_date: str = PILOT_DATE,
+    pre_live_commit_sha: str = "",
+) -> Path:
+    """Enforce strict one-shot execution with atomic exclusive file creation.
+
+    1. Checks one-shot guard (fails closed if manifest, existing lock, or unmanifested json files exist).
+    2. Atomically creates lock marker '.pilot_run_lock_<date>.json' using 'xb' mode (O_CREAT | O_EXCL).
+       Fails closed with RuntimeError on collision without modifying or truncating existing evidence.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    check_one_shot_pilot_guard(output_dir, pilot_date)
+
+    lock_marker_path = output_dir / f".pilot_run_lock_{pilot_date}.json"
+    lock_payload = {
+        "task_id": TASK_ID,
+        "pilot_date": pilot_date,
+        "pre_live_commit_sha": pre_live_commit_sha,
+        "status": "IN_PROGRESS",
+        "initiated_at_utc": datetime.now(ZoneInfo("UTC")).isoformat(),
+    }
+    lock_data = json.dumps(lock_payload, indent=2).encode("utf-8")
+
+    try:
+        with open(lock_marker_path, "xb") as f:
+            f.write(lock_data)
+    except FileExistsError as exc:
+        raise RuntimeError(
+            f"Atomic one-shot lock acquisition failed: lock marker '{lock_marker_path.name}' already exists in {output_dir}. "
+            f"Concurrent execution or duplicate launch attempt detected. Existing marker and partial evidence preserved."
+        ) from exc
+
+    return lock_marker_path
 
 
 def validate_batch_size(batch_size: int) -> None:
@@ -817,14 +962,42 @@ def check_resource_limits(
         )
 
 
+def is_allowed_post_freeze_drift(file_path: str) -> bool:
+    """Deliberate post-freeze allowlist:
+    Only the approved Gary authorization record and explicitly non-executable documentation
+    are permitted to change between freeze commit F and authorization commit A.
+    All executable code, dependencies (pyproject.toml, uv.lock), scripts, tests, specs,
+    and runtime configurations are strictly forbidden.
+    """
+    normalized = file_path.replace("\\", "/").strip()
+    if not normalized:
+        return True
+
+    # 1. Approved Gary authorization record
+    if normalized == "docs/research/authorizations/DAYTRADE-003D-CORR-003-AUTHORIZATION.json":
+        return True
+
+    # 2. Frozen upstream specs are NEVER allowed to drift
+    if normalized.startswith("docs/research/specs/"):
+        return False
+
+    # 3. Explicitly non-executable documentation under docs/ (.md, .txt, .rst)
+    if normalized.startswith("docs/") and normalized.endswith((".md", ".txt", ".rst")):
+        return True
+
+    # 4. Standard non-executable repository documentation files at root
+    # Fail closed on all executable code, dependencies (pyproject.toml, uv.lock), workflows, etc.
+    return normalized in ("README.md", "CONTRIBUTING.md", "CHANGELOG.md")
+
+
 def check_pre_live_code_freeze(repo_root: Path, expected_sha: str) -> None:
     """Validate that execution tree matches or is an authorized clean descendant of the approved freeze commit.
 
     Two-commit workflow:
     1. Audited implementation freeze commit F (expected_sha).
     2. Optional authorization commit A where F is an ancestor of HEAD (A).
-       Between F and A, zero code, spec, or test drift is permitted:
-       only authorization records and non-executable documentation may change.
+       Between F and A, zero code, spec, test, dependency, or configuration drift is permitted:
+       only the approved authorization record and explicitly non-executable documentation may change.
     3. Working tree must be completely clean.
     """
     try:
@@ -876,7 +1049,7 @@ def check_pre_live_code_freeze(repo_root: Path, expected_sha: str) -> None:
             f"is not an ancestor of current HEAD ({actual_sha})"
         )
 
-    # Check for code/spec/test drift between freeze commit and HEAD
+    # Check for code/spec/test/dependency drift between freeze commit and HEAD
     try:
         diff_res = subprocess.run(
             ["git", "diff", "--name-only", f"{expected_sha}..{actual_sha}"],
@@ -889,15 +1062,11 @@ def check_pre_live_code_freeze(repo_root: Path, expected_sha: str) -> None:
     except Exception as exc:
         raise RuntimeError(f"Failed to check git diff between freeze commit and HEAD: {exc}") from exc
 
-    forbidden_prefixes = ("tradex/", "scripts/", "tests/", "docs/research/specs/")
-    drifted_code_files = [
-        f for f in changed_files
-        if any(f.startswith(prefix) for prefix in forbidden_prefixes)
-    ]
-    if drifted_code_files:
+    disallowed_drift = [f for f in changed_files if not is_allowed_post_freeze_drift(f)]
+    if disallowed_drift:
         raise RuntimeError(
             f"Pre-live freeze verification failed: forbidden code/spec/test drift between freeze "
-            f"({expected_sha}) and current HEAD ({actual_sha}): {drifted_code_files}"
+            f"({expected_sha}) and current HEAD ({actual_sha}) outside post-freeze allowlist: {disallowed_drift}"
         )
 
 
@@ -991,6 +1160,8 @@ def _extract_batch_meta_strict(batch_dict: dict[str, Any]) -> dict[str, Any]:
             m["http_status"] = batch_dict["http_status"]
         if "pagination_complete" in batch_dict:
             m["pagination_complete"] = batch_dict["pagination_complete"]
+        if "page_count" not in m and "page_count" in batch_dict:
+            m["page_count"] = batch_dict["page_count"]
         if "raw_pages" not in m and "raw_pages" in batch_dict:
             m["raw_pages"] = batch_dict["raw_pages"]
         if "response_symbols" not in m and "response_symbols" in batch_dict:
@@ -1262,6 +1433,7 @@ def replay_corr_003_pilot(
             bars_by_symbol=bars_by_sym,
             expected_start=datetime(2023, 12, 1, 0, 0, tzinfo=ZoneInfo("UTC")),
             expected_end=datetime(2023, 12, 31, 23, 59, tzinfo=ZoneInfo("UTC")),
+            require_raw_pages=True,
         )
         if not batch_check.is_valid:
             daily_provider_failures.update(symbols_req)
@@ -1345,6 +1517,7 @@ def replay_corr_003_pilot(
             bars_by_symbol=bars_by_sym,
             allowed_time_window=(time(9, 30), time(9, 34)),
             session_date=target_dt,
+            require_raw_pages=True,
         )
         if not batch_check.is_valid:
             current_or_failures.update(symbols_req)
@@ -1418,6 +1591,7 @@ def replay_corr_003_pilot(
                 bars_by_symbol=bars_by_sym,
                 allowed_time_window=(time(9, 30), time(9, 34)),
                 session_date=sess_d,
+                require_raw_pages=True,
             )
             if not batch_check.is_valid:
                 prior_or_failures.update(symbols_req)
@@ -1547,6 +1721,7 @@ def replay_corr_003_pilot(
             bars_by_symbol=bars_by_sym,
             allowed_time_window=(time(9, 35), time(15, 59)),
             session_date=target_dt,
+            require_raw_pages=True,
         )
         if not batch_check.is_valid:
             stage_b_failures.update(symbols_req)
