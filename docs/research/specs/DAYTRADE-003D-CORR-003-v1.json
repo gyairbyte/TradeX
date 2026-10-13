@@ -1,0 +1,104 @@
+{
+  "schema_version": "1.0",
+  "task_id": "DAYTRADE-003D-CORR-003",
+  "strategy_id": "DAYTRADE-003B-ORB-SIP5M",
+  "classification": "research_methodology_provider_integrity_and_offline_replay_correction_bounded_pilot",
+  "starting_main_sha": "4b1d7084d5d8c91ef10fffbc1f7169de43bfcd0a",
+  "parent_task": "DAYTRADE-003D-CORR-002",
+  "parent_pr": 110,
+  "parent_disposition": "INVALID_CORR_002_IMPLEMENTATION",
+  "upstream_specs": {
+    "daytrade_003b_spec_path": "docs/research/specs/DAYTRADE-003B-ORB-v1.json",
+    "daytrade_003b_spec_sha256": "62f5028c1b11a392aeb596c4e05b8c1f194cc5cec3af1a9406f4fe16c80460c0",
+    "daytrade_003c_resolution_path": "docs/research/specs/DAYTRADE-003C-ORB-RESOLUTION-v1.json",
+    "daytrade_003c_resolution_sha256": "20b43665ae214cfc988c41f818ea67b74052c4a0513e5ca9f2e276105f082bb6",
+    "daytrade_003d_spec_path": "docs/research/specs/DAYTRADE-003D-ORB-DATA-FEASIBILITY-v1.json",
+    "daytrade_003d_spec_sha256": "533f6e3ef756cfbfa7bd49a4627fe960d9ba84546ea57bab2f57d7e385e2fb5c",
+    "daytrade_003d_corr_001_spec_path": "docs/research/specs/DAYTRADE-003D-CORR-001-v1.json",
+    "daytrade_003d_corr_001_spec_sha256": "d978a012851a597918a5e6965a72752be05b36f2f1d637179a9dede7d6ba1fbd",
+    "daytrade_003d_corr_002_spec_path": "docs/research/specs/DAYTRADE-003D-CORR-002-v1.json",
+    "daytrade_003d_corr_002_spec_sha256": "d63cca87100cb80de86faf6c909766c3894b983fe3c486da99de3963f6eb311c"
+  },
+  "research_methodology_amendment": {
+    "amendment_name": "Provider Integrity, Offline Replay, and Stage-B Validation Invariants",
+    "supersedes_prior_rule": "Supersedes CORR-002 unproven Stage-B usability logic, absent raw OHLCV replay persistence, and unvalidated provider payload integrity.",
+    "underlying_strategy_parameters_changed": false,
+    "practical_principles": {
+      "principle_a": "Distinguish verified provider-reported absence of prints from provider failures. Never convert a failed or malformed request into zero volume or valid no-trade observations.",
+      "principle_b": "Retain externally supported ORB strategy (Zarattini et al., 2024) as a permanent research candidate regardless of independent evaluation outcomes.",
+      "principle_c": "Enforce deterministic offline replay from cryptographically verified raw provider evidence without credentials or network access."
+    },
+    "provider_payload_integrity_checks": {
+      "rules": [
+        "HTTP status must be 200 with completed pagination (no cycle, no repeated token, no truncated pages).",
+        "Response symbol identities must strictly match requested batch queries without unexpected symbols.",
+        "Timestamps must be non-null, validly formatted, strictly within session window, and free of duplicate timestamps per symbol.",
+        "OHLCV values must be strictly positive prices, non-negative volume, finite, and obey bounds (high >= max(open, close), low <= min(open, close), high >= low).",
+        "Failed, truncated, or corrupt payloads fail closed as PROVIDER_DATA_FAILURE."
+      ]
+    },
+    "complete_raw_ohlcv_persistence": {
+      "rules": [
+        "Persist replayable provider evidence for every stage: Dec 2023 daily bars, Jan 2 opening range (09:30-09:34 ET), 14 prior sessions opening range, and Jan 2 Stage-B minute bars (09:35-15:59 ET).",
+        "Preserve response/request provenance, pagination metadata, explicit empty results, and SHA-256 checksums in a private root.",
+        "Generate and verify a cryptographically hashed manifest. Missing, incomplete, or tampered artifacts must fail closed."
+      ]
+    },
+    "stage_b_validation_invariants": {
+      "rules": [
+        "Enforce valid timestamp ranges (09:35 to 15:59 ET), unique timestamps, correct symbol identities, and OHLCV validity.",
+        "Conservative 15:59 ET liquidation-bar coverage: every selected actionable symbol must possess a valid 15:59 ET liquidation bar to establish path-data readiness without running trade simulations.",
+        "Missing 15:59 liquidation bar, invalid payload, or unresolved provider failure strictly prevents USABLE classification.",
+        "Legitimate sparse minutes between 09:35 and 15:58 ET are preserved as valid sparse intervals without fabricating prices, fills, stops, or exits."
+      ]
+    },
+    "candidate_screening_gate": {
+      "metric": "screening_completeness = validly_determined_count / daily_base_qualified_count",
+      "threshold": 0.95,
+      "interpretation": "Evaluates candidate-screening completeness among daily-base-qualified symbols. Legitimate provider-reported absence (NO_OPENING_PRINT_NO_SETUP, UNRANKABLE_ZERO_RV_BASELINE) counts as validly determined. Provider errors, HTTP failures, and malformed bars count against completeness."
+    }
+  },
+  "strategy_parameters": {
+    "open_price_minimum": 5.0,
+    "adv14_minimum": 1000000.0,
+    "atr14_minimum": 0.5,
+    "rv14_minimum": 1.0,
+    "ranking": "relative_volume descending, ticker ascending tie-breaker",
+    "top_n": 20,
+    "doji_action": "NO_ORDER, NO BACKFILL"
+  },
+  "operational_safety_bounds": {
+    "max_pilot_http_pages": 5000,
+    "max_pilot_private_storage_bytes": 2147483648,
+    "batch_size": 100,
+    "action_on_exceed": "STOP before execution and report BLOCKED_RESOURCE_BOUND"
+  },
+  "pilot_scope": {
+    "date": "2024-01-02",
+    "calendar": "XNYS",
+    "massive_snapshot": "ONE complete 2024-01-02 snapshot (active=true, market=stocks, locale=us, terminal pagination required)",
+    "target_exchanges": [
+      "XNYS",
+      "XNAS"
+    ]
+  },
+  "pilot_disposition_taxonomy": [
+    "FEASIBLE_FOR_2024_DEVELOPMENT_DATASET_BUILD",
+    "BLOCKED_REFERENCE_OR_PROVIDER_ACCESS",
+    "BLOCKED_PROVIDER_DATA_INTEGRITY",
+    "BLOCKED_CANDIDATE_SCREENING_COVERAGE",
+    "BLOCKED_STAGE_B_PRICE_PATH",
+    "INCONCLUSIVE_NO_ACTIONABLE_PILOT_CANDIDATE",
+    "INVALID_CORR_003_IMPLEMENTATION"
+  ],
+  "governance": {
+    "strategy_evaluator_executed": false,
+    "performance_evaluation_executed": false,
+    "validation_status": "unopened",
+    "holdout_status": "quarantined_unopened",
+    "approved_production_strategies_empty": true,
+    "full_2024_acquisition_authorized": false,
+    "live_execution_authorized": false,
+    "live_execution_gate_active": true
+  }
+}
