@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0",
+  "task_id": "DAYTRADE-003D-CORR-003",
+  "authorized_by": "Gary Yang",
+  "approved_on": "2026-10-13",
+  "approval_record": "Gary explicitly approved the one-time January 2, 2024 historical market-data feasibility pilot in the TradeX ChatGPT conversation on 2026-10-13.",
+  "frozen_implementation_sha": "cf554598bc486b73d646a593bb4174c02f6121c1",
+  "pilot_date": "2024-01-02",
+  "run_scope": "ONE_SHOT_PILOT_JAN_2_2024",
+  "execution_authorized": true,
+  "max_executions": 1,
+  "approved_providers": [
+    "Massive historical point-in-time reference",
+    "Alpaca historical SIP OHLCV"
+  ],
+  "resource_limits": {
+    "max_provider_pages": 5000,
+    "max_private_storage_bytes": 2147483648
+  },
+  "constraints": {
+    "historical_data_acquisition_only": true,
+    "use_frozen_corr_003_methodology": true,
+    "preserve_private_raw_artifacts_and_manifest": true,
+    "independent_offline_replay_required": true,
+    "full_2024_dataset_acquisition_authorized": false,
+    "simulation_or_pnl_authorized": false,
+    "validation_or_holdout_access_authorized": false,
+    "production_trading_changes_authorized": false,
+    "brokerage_order_actions_authorized": false,
+    "automatic_retry_after_partial_attempt_authorized": false
+  }
+}
