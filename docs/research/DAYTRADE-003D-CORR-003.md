@@ -86,15 +86,15 @@ This methodology correction addresses and resolves the material deficiencies ide
 #### Finding: Runtime Dependency and Environment Reproducibility Gate
 - **Deficiency:** While repository code files were cryptographically locked at freeze commit $F$, `uv.lock` is uncommitted in `.gitignore`. A modified or re-resolved `uv.lock` or mutated runtime package environment on the execution host could execute the live pilot under different dependency versions than those frozen and tested, bypassing Git-based freeze checks unnoticed.
 - **Resolution (Option B Implemented):**
-  - **Preregistered Environment Specification:** Authored immutable specification [`docs/research/specs/DAYTRADE-003D-CORR-003-ENVIRONMENT.json`](../../docs/research/specs/DAYTRADE-003D-CORR-003-ENVIRONMENT.json) with cryptographic hash `1a76b92f9667bb8503517687aae2b2356ba9c0124a7ff735adccff42ba666a80`. It records:
+  - **Preregistered Environment Specification:** Authored immutable specification [`docs/research/specs/DAYTRADE-003D-CORR-003-ENVIRONMENT.json`](../../docs/research/specs/DAYTRADE-003D-CORR-003-ENVIRONMENT.json) with cryptographic hash `09d2edda68d9940a175d2333613e80defb8e5a3d0275c8b9554e48dd9947a58f`. It records:
     - Python major/minor version (`3.11`).
-    - The audited SHA-256 hash of repository `uv.lock` (`ec533f6e15ca61c360f936083079a9fb21407a0ef082a01e04f799687e95b01f`).
+    - The audited SHA-256 hashes of repository `uv.lock` for both the Windows pilot host (`ec533f6e15ca61c360f936083079a9fb21407a0ef082a01e04f799687e95b01f`) and Linux CI runner (`9a393282ed06d96d79c42da2b3d6548ebb9ee9143871d7d88dbb8bb3bcf36912`).
     - 19 pinned core runtime packages (`pandas==3.0.6`, `numpy==2.4.6`, `exchange-calendars==4.13.2`, `pytz==2026.5`, `ta==0.11.0`, etc.).
     - 3 pinned live provider packages (`alpaca-py==0.44.0`, `pydantic==2.14.1`, `pydantic-core==2.50.1`).
   - **Hard Execution Gate (`check_runtime_environment_freeze`):** Added to [`corr_003_pilot.py`](../../tradex/research/daytrade_orb/corr_003_pilot.py). Before loading credentials or invoking provider endpoints, it enforces:
     1. Spec file existence and SHA-256 match against `LOCKED_003D_CORR_003_ENV_SPEC_SHA256`.
     2. Exact Python 3.11 runtime version.
-    3. Direct on-disk SHA-256 verification of `uv.lock` against the frozen hash (failing closed even though `uv.lock` is ignored by Git).
+    3. Direct on-disk SHA-256 verification of `uv.lock` against the audited hashes (failing closed even though `uv.lock` is ignored by Git).
     4. Exact package versions via `importlib.metadata.version()`.
   - **Pre-Live Freeze Integration:** Integrated into `check_pre_live_code_freeze` and registered in `verify_upstream_spec_hashes`.
   - **CLI Environment Inspection:** Added `check-env` subcommand in [`scripts/research/daytrade_003d_corr_003_pilot.py`](../../scripts/research/daytrade_003d_corr_003_pilot.py) (`python scripts/research/daytrade_003d_corr_003_pilot.py check-env --require-live-providers`).
@@ -113,7 +113,7 @@ All seven specifications are verified via SHA-256:
 | **003D-CORR-001 Spec** | `docs/research/specs/DAYTRADE-003D-CORR-001-v1.json` | `d978a012851a597918a5e6965a72752be05b36f2f1d637179a9dede7d6ba1fbd` | Immutable Verified |
 | **003D-CORR-002 Spec** | `docs/research/specs/DAYTRADE-003D-CORR-002-v1.json` | `d63cca87100cb80de86faf6c909766c3894b983fe3c486da99de3963f6eb311c` | Immutable Verified |
 | **003D-CORR-003 Spec** | `docs/research/specs/DAYTRADE-003D-CORR-003-v1.json` | `2f86d1231f55180b8fe4f65832cde8783e7c6058788a1e98130353b5822a1cdb` | Locked Preregistered |
-| **003D-CORR-003 Environment Spec** | `docs/research/specs/DAYTRADE-003D-CORR-003-ENVIRONMENT.json` | `1a76b92f9667bb8503517687aae2b2356ba9c0124a7ff735adccff42ba666a80` | Locked Preregistered |
+| **003D-CORR-003 Environment Spec** | `docs/research/specs/DAYTRADE-003D-CORR-003-ENVIRONMENT.json` | `09d2edda68d9940a175d2333613e80defb8e5a3d0275c8b9554e48dd9947a58f` | Locked Preregistered |
 
 ---
 

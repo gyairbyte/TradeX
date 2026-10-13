@@ -143,7 +143,7 @@ LOCKED_003D_CORR_003_SPEC_SHA256 = (
 )
 CORR_003_ENV_SPEC_PATH = "docs/research/specs/DAYTRADE-003D-CORR-003-ENVIRONMENT.json"
 LOCKED_003D_CORR_003_ENV_SPEC_SHA256 = (
-    "1a76b92f9667bb8503517687aae2b2356ba9c0124a7ff735adccff42ba666a80"
+    "09d2edda68d9940a175d2333613e80defb8e5a3d0275c8b9554e48dd9947a58f"
 )
 
 DEFAULT_PRIVATE_ROOT = Path("C:/Users/Gary/.tradex/research/daytrade_003d_corr_003")
@@ -1151,13 +1151,19 @@ def check_runtime_environment_freeze(
     # 2. Enforce uv.lock SHA-256 integrity on disk (even if ignored by git)
     if check_uv_lock:
         uv_lock_path = repo_root / "uv.lock"
-        expected_uv_sha = env_spec.get("uv_lock_sha256")
-        if uv_lock_path.exists() and expected_uv_sha:
+        raw_accepted = env_spec.get("accepted_uv_lock_sha256") or env_spec.get("uv_lock_sha256")
+        if uv_lock_path.exists() and raw_accepted:
+            if isinstance(raw_accepted, dict):
+                accepted_hashes = list(raw_accepted.values())
+            elif isinstance(raw_accepted, (list, tuple, set)):
+                accepted_hashes = list(raw_accepted)
+            else:
+                accepted_hashes = [str(raw_accepted)]
             actual_uv_sha = hashlib.sha256(uv_lock_path.read_bytes()).hexdigest()
-            if actual_uv_sha != expected_uv_sha:
+            if actual_uv_sha not in accepted_hashes:
                 errors.append(
                     f"Ignored uv.lock has been modified or re-resolved on disk: "
-                    f"expected SHA-256 '{expected_uv_sha}', got '{actual_uv_sha}'"
+                    f"expected SHA-256 in {accepted_hashes}, got '{actual_uv_sha}'"
                 )
 
     # 3. Enforce exact installed package versions

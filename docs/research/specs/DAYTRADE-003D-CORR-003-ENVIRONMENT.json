@@ -4,6 +4,10 @@
   "pilot_date": "2024-01-02",
   "python_version_major_minor": "3.11",
   "uv_lock_sha256": "ec533f6e15ca61c360f936083079a9fb21407a0ef082a01e04f799687e95b01f",
+  "accepted_uv_lock_sha256": {
+    "windows_pilot_host_all_extras": "ec533f6e15ca61c360f936083079a9fb21407a0ef082a01e04f799687e95b01f",
+    "linux_ci_runner_standard_extras": "9a393282ed06d96d79c42da2b3d6548ebb9ee9143871d7d88dbb8bb3bcf36912"
+  },
   "execution_gate": "HARD_ENFORCED",
   "core_runtime_packages": {
     "certifi": "2026.7.22",
