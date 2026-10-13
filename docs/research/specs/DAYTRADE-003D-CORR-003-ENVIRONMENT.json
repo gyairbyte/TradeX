@@ -1,0 +1,38 @@
+{
+  "task_id": "DAYTRADE-003D-CORR-003",
+  "spec_title": "DAYTRADE-003D-CORR-003 Resolved Runtime Environment Fingerprint",
+  "pilot_date": "2024-01-02",
+  "python_version_major_minor": "3.11",
+  "uv_lock_sha256": "ec533f6e15ca61c360f936083079a9fb21407a0ef082a01e04f799687e95b01f",
+  "execution_gate": "HARD_ENFORCED",
+  "core_runtime_packages": {
+    "certifi": "2026.7.22",
+    "charset-normalizer": "3.5.2",
+    "exchange-calendars": "4.13.2",
+    "idna": "3.20",
+    "jsonschema": "4.26.0",
+    "korean-lunar-calendar": "0.4.0",
+    "lxml": "6.1.3",
+    "numpy": "2.4.6",
+    "pandas": "3.0.6",
+    "pyluach": "2.3.0",
+    "python-dateutil": "2.9.0.post0",
+    "python-dotenv": "1.2.4",
+    "pytz": "2026.5",
+    "requests": "2.34.2",
+    "schwab-py": "1.5.1",
+    "ta": "0.11.0",
+    "tzdata": "2026.5",
+    "urllib3": "2.8.0",
+    "yfinance": "1.7.0"
+  },
+  "optional_research_packages": {
+    "scikit-learn": "1.9.1",
+    "scipy": "1.17.1"
+  },
+  "live_provider_packages": {
+    "alpaca-py": "0.44.0",
+    "pydantic": "2.14.1",
+    "pydantic-core": "2.50.1"
+  }
+}

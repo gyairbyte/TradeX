@@ -44,6 +44,7 @@ from tradex.research.daytrade_orb.corr_003_pilot import (
     check_pilot_authorization,
     check_pre_live_code_freeze,
     check_resource_limits,
+    check_runtime_environment_freeze,
     create_and_save_manifest,
     determine_pilot_disposition_corr_003,
     evaluate_opening_range,
@@ -247,6 +248,7 @@ def run_corr_003_live_pilot(
         check_one_shot_pilot_guard(output_dir, PILOT_DATE)
         check_pre_live_code_freeze(repo_root, pre_live_commit_sha)
         check_pilot_authorization(repo_root, pre_live_commit_sha, authorized_by_gary)
+        check_runtime_environment_freeze(repo_root, require_live_provider_packages=True)
     except (ValueError, RuntimeError, PermissionError) as guard_exc:
         print(f"[FATAL] Execution guard rejected run: {guard_exc}")
         return 1
@@ -1019,7 +1021,32 @@ def main() -> int:
     pilot_parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE, help="Batch size for provider requests")
     pilot_parser.add_argument("--authorize-live", action="store_true", help="Authorize bounded live pilot")
 
+    # Check-env subcommand
+    check_env_parser = subparsers.add_parser("check-env", help="Verify runtime environment against frozen specification")
+    check_env_parser.add_argument("--repo-root", type=Path, default=Path("."), help="Repository root path")
+    check_env_parser.add_argument("--require-live-providers", action="store_true", help="Require optional live provider packages")
+
     args = parser.parse_args()
+
+    if args.subcommand == "check-env":
+        try:
+            print("=" * 80)
+            print(f"VERIFYING RUNTIME ENVIRONMENT FREEZE: {TASK_ID}")
+            print(f"Repository Root: {args.repo_root}")
+            print("=" * 80)
+            spec = check_runtime_environment_freeze(
+                repo_root=args.repo_root,
+                require_live_provider_packages=args.require_live_providers,
+            )
+            print("[SUCCESS] Runtime environment strictly matches frozen specification.")
+            print(f"  -> Python: {spec.get('python_version_major_minor')}")
+            print(f"  -> Core Packages Checked: {len(spec.get('core_runtime_packages', {}))}")
+            if args.require_live_providers:
+                print(f"  -> Live Provider Packages Checked: {len(spec.get('live_provider_packages', {}))}")
+            return 0
+        except Exception as exc:  # noqa: BLE001
+            print(f"[ENVIRONMENT CHECK FAILED] {exc}")
+            return 1
 
     if args.subcommand == "replay":
         try:

@@ -17,6 +17,7 @@ import json
 import logging
 import math
 import subprocess
+import sys
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from enum import Enum
@@ -68,6 +69,7 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "CANDIDATE_SCREENING_GATE_THRESHOLD",
     "CORR_002_SPEC_PATH",
+    "CORR_003_ENV_SPEC_PATH",
     "CORR_003_SPEC_PATH",
     "DEFAULT_BATCH_SIZE",
     "DEFAULT_PRIVATE_ROOT",
@@ -78,6 +80,7 @@ __all__ = [
     "LOCKED_003D_CORR_001_SPEC_PATH",
     "LOCKED_003D_CORR_001_SPEC_SHA256",
     "LOCKED_003D_CORR_002_SPEC_SHA256",
+    "LOCKED_003D_CORR_003_ENV_SPEC_SHA256",
     "LOCKED_003D_CORR_003_SPEC_SHA256",
     "LOCKED_003D_SPEC_PATH",
     "LOCKED_003D_SPEC_SHA256",
@@ -109,6 +112,7 @@ __all__ = [
     "check_pilot_authorization",
     "check_pre_live_code_freeze",
     "check_resource_limits",
+    "check_runtime_environment_freeze",
     "create_and_save_manifest",
     "determine_pilot_disposition_corr_003",
     "evaluate_opening_range",
@@ -136,6 +140,10 @@ CORR_002_SPEC_PATH = "docs/research/specs/DAYTRADE-003D-CORR-002-v1.json"
 CORR_003_SPEC_PATH = "docs/research/specs/DAYTRADE-003D-CORR-003-v1.json"
 LOCKED_003D_CORR_003_SPEC_SHA256 = (
     "2f86d1231f55180b8fe4f65832cde8783e7c6058788a1e98130353b5822a1cdb"
+)
+CORR_003_ENV_SPEC_PATH = "docs/research/specs/DAYTRADE-003D-CORR-003-ENVIRONMENT.json"
+LOCKED_003D_CORR_003_ENV_SPEC_SHA256 = (
+    "1a76b92f9667bb8503517687aae2b2356ba9c0124a7ff735adccff42ba666a80"
 )
 
 DEFAULT_PRIVATE_ROOT = Path("C:/Users/Gary/.tradex/research/daytrade_003d_corr_003")
@@ -202,6 +210,7 @@ def verify_upstream_spec_hashes(
     }
     if include_corr_003:
         expected[CORR_003_SPEC_PATH] = LOCKED_003D_CORR_003_SPEC_SHA256
+        expected[CORR_003_ENV_SPEC_PATH] = LOCKED_003D_CORR_003_ENV_SPEC_SHA256
 
     actual: dict[str, str] = {}
     errors: list[str] = []
@@ -990,7 +999,11 @@ def is_allowed_post_freeze_drift(file_path: str) -> bool:
     return normalized in ("README.md", "CONTRIBUTING.md", "CHANGELOG.md")
 
 
-def check_pre_live_code_freeze(repo_root: Path, expected_sha: str) -> None:
+def check_pre_live_code_freeze(
+    repo_root: Path,
+    expected_sha: str,
+    verify_environment: bool = True,
+) -> None:
     """Validate that execution tree matches or is an authorized clean descendant of the approved freeze commit.
 
     Two-commit workflow:
@@ -999,6 +1012,7 @@ def check_pre_live_code_freeze(repo_root: Path, expected_sha: str) -> None:
        Between F and A, zero code, spec, test, dependency, or configuration drift is permitted:
        only the approved authorization record and explicitly non-executable documentation may change.
     3. Working tree must be completely clean.
+    4. Active runtime dependency environment matches the frozen environment fingerprint.
     """
     try:
         res = subprocess.run(
@@ -1028,6 +1042,12 @@ def check_pre_live_code_freeze(repo_root: Path, expected_sha: str) -> None:
         raise RuntimeError(f"Pre-live freeze verification failed: working tree is dirty:\n{dirty}")
 
     if actual_sha == expected_sha:
+        if verify_environment and (repo_root / CORR_003_ENV_SPEC_PATH).exists():
+            check_runtime_environment_freeze(
+                repo_root,
+                require_live_provider_packages=False,
+                check_uv_lock=True,
+            )
         return
 
     # Check ancestry: expected_sha must be an ancestor of actual_sha
@@ -1068,6 +1088,101 @@ def check_pre_live_code_freeze(repo_root: Path, expected_sha: str) -> None:
             f"Pre-live freeze verification failed: forbidden code/spec/test drift between freeze "
             f"({expected_sha}) and current HEAD ({actual_sha}) outside post-freeze allowlist: {disallowed_drift}"
         )
+
+    if verify_environment and (repo_root / CORR_003_ENV_SPEC_PATH).exists():
+        check_runtime_environment_freeze(
+            repo_root,
+            require_live_provider_packages=False,
+            check_uv_lock=True,
+        )
+
+
+def check_runtime_environment_freeze(
+    repo_root: Path,
+    spec_path: Path | None = None,
+    require_live_provider_packages: bool = True,
+    check_uv_lock: bool = True,
+    verify_spec_hash: bool = True,
+) -> dict[str, Any]:
+    """Validate that the active runtime environment matches the frozen environment fingerprint.
+
+    Hard Execution Gate before loading credentials or calling live market-data APIs:
+    1. Verifies that the frozen environment specification file exists and matches
+       the preregistered SHA-256 hash (LOCKED_003D_CORR_003_ENV_SPEC_SHA256).
+    2. Enforces Python major/minor version (e.g. 3.11).
+    3. Checks the ignored uv.lock on disk: if uv.lock is present, verifies that its SHA-256
+       matches the frozen uv_lock_sha256 in the specification. Fails closed if uv.lock
+       was modified or re-resolved on disk (even though untracked by Git).
+    4. Enforces exact version matching via importlib.metadata for all required core runtime
+       dependencies (dataframe, calendar, hours, market data clients, indicators, etc.).
+    5. When require_live_provider_packages=True, additionally enforces provider packages
+       (e.g. alpaca-py, pydantic, pydantic-core).
+    """
+    import importlib.metadata
+
+    if spec_path is None:
+        spec_path = repo_root / CORR_003_ENV_SPEC_PATH
+
+    if not spec_path.exists():
+        raise RuntimeError(f"Runtime environment freeze specification not found: {spec_path}")
+
+    raw_spec_bytes = spec_path.read_bytes()
+    actual_spec_hash = hashlib.sha256(raw_spec_bytes).hexdigest()
+
+    if verify_spec_hash and actual_spec_hash != LOCKED_003D_CORR_003_ENV_SPEC_SHA256:
+        raise RuntimeError(
+            f"Runtime environment freeze specification hash mismatch: "
+            f"expected '{LOCKED_003D_CORR_003_ENV_SPEC_SHA256}', got '{actual_spec_hash}'"
+        )
+
+    try:
+        env_spec = json.loads(raw_spec_bytes.decode("utf-8"))
+    except Exception as exc:
+        raise RuntimeError(f"Failed to parse runtime environment freeze specification JSON: {exc}") from exc
+
+    errors: list[str] = []
+
+    # 1. Enforce Python major/minor version
+    current_py = f"{sys.version_info.major}.{sys.version_info.minor}"
+    expected_py = env_spec.get("python_version_major_minor", "3.11")
+    if current_py != expected_py:
+        errors.append(f"Python version mismatch: expected '{expected_py}', got '{current_py}'")
+
+    # 2. Enforce uv.lock SHA-256 integrity on disk (even if ignored by git)
+    if check_uv_lock:
+        uv_lock_path = repo_root / "uv.lock"
+        expected_uv_sha = env_spec.get("uv_lock_sha256")
+        if uv_lock_path.exists() and expected_uv_sha:
+            actual_uv_sha = hashlib.sha256(uv_lock_path.read_bytes()).hexdigest()
+            if actual_uv_sha != expected_uv_sha:
+                errors.append(
+                    f"Ignored uv.lock has been modified or re-resolved on disk: "
+                    f"expected SHA-256 '{expected_uv_sha}', got '{actual_uv_sha}'"
+                )
+
+    # 3. Enforce exact installed package versions
+    packages_to_check: dict[str, str] = {}
+    packages_to_check.update(env_spec.get("core_runtime_packages", {}))
+    if require_live_provider_packages:
+        packages_to_check.update(env_spec.get("live_provider_packages", {}))
+
+    for pkg_name, exp_ver in packages_to_check.items():
+        try:
+            actual_ver = importlib.metadata.version(pkg_name)
+            if actual_ver != exp_ver:
+                errors.append(
+                    f"Mismatched package version for '{pkg_name}': expected '{exp_ver}', got '{actual_ver}'"
+                )
+        except importlib.metadata.PackageNotFoundError:
+            errors.append(f"Missing required package: '{pkg_name}' (expected version '{exp_ver}')")
+
+    if errors:
+        raise RuntimeError(
+            f"Runtime environment freeze verification failed ({len(errors)} errors):\n  "
+            + "\n  ".join(errors)
+        )
+
+    return env_spec
 
 
 def check_pilot_authorization(

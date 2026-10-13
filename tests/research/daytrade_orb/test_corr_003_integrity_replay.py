@@ -15,8 +15,10 @@ Enforces:
 from __future__ import annotations
 
 import concurrent.futures
+import hashlib
 import json
 import subprocess
+import sys
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
@@ -27,6 +29,7 @@ import requests
 
 from tradex.research.daytrade_orb.corr_003_pilot import (
     CORR_002_SPEC_PATH,
+    CORR_003_ENV_SPEC_PATH,
     CORR_003_SPEC_PATH,
     LOCKED_003B_SPEC_PATH,
     LOCKED_003B_SPEC_SHA256,
@@ -35,6 +38,7 @@ from tradex.research.daytrade_orb.corr_003_pilot import (
     LOCKED_003D_CORR_001_SPEC_PATH,
     LOCKED_003D_CORR_001_SPEC_SHA256,
     LOCKED_003D_CORR_002_SPEC_SHA256,
+    LOCKED_003D_CORR_003_ENV_SPEC_SHA256,
     LOCKED_003D_CORR_003_SPEC_SHA256,
     LOCKED_003D_SPEC_PATH,
     LOCKED_003D_SPEC_SHA256,
@@ -52,6 +56,7 @@ from tradex.research.daytrade_orb.corr_003_pilot import (
     check_pilot_authorization,
     check_pre_live_code_freeze,
     check_resource_limits,
+    check_runtime_environment_freeze,
     create_and_save_manifest,
     filter_and_audit_target_universe,
     freeze_top_20_selection,
@@ -134,6 +139,7 @@ def test_upstream_spec_hashes_verify_cleanly() -> None:
     assert hashes[LOCKED_003D_CORR_001_SPEC_PATH] == LOCKED_003D_CORR_001_SPEC_SHA256
     assert hashes[CORR_002_SPEC_PATH] == LOCKED_003D_CORR_002_SPEC_SHA256
     assert hashes[CORR_003_SPEC_PATH] == LOCKED_003D_CORR_003_SPEC_SHA256
+    assert hashes[CORR_003_ENV_SPEC_PATH] == LOCKED_003D_CORR_003_ENV_SPEC_SHA256
 
 
 # =============================================================================
@@ -2919,6 +2925,219 @@ def test_validate_run_lock_marker_directly(tmp_path: Path) -> None:
     non_dict.write_text("[1, 2, 3]", encoding="utf-8")
     errs2 = validate_run_lock_marker(non_dict)
     assert any("not a valid JSON object" in e for e in errs2)
+
+
+def test_pre_live_guard_rejects_ignored_uv_lock_modification(tmp_path: Path) -> None:
+    """With actual repository ignore behavior (uv.lock ignored in .gitignore),
+    modifying or re-resolving uv.lock on disk is invisible to git status/diff,
+    but is strictly caught and rejected by check_runtime_environment_freeze / pre-live guards."""
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Gary Yang"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "gary.yang@airbyte.com"], cwd=tmp_path, check=True, capture_output=True)
+
+    # Actual repo .gitignore ignoring uv.lock
+    (tmp_path / ".gitignore").write_text("# uv lockfile is not tracked in this repo\nuv.lock\n", encoding="utf-8")
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "tradex"\n', encoding="utf-8")
+
+    # Audited uv.lock on disk (write exact LF bytes)
+    uv_lock_bytes = b"audited_lockfile_content_version_1\n"
+    (tmp_path / "uv.lock").write_bytes(uv_lock_bytes)
+    expected_uv_sha = hashlib.sha256(uv_lock_bytes).hexdigest()
+
+    # Create environment spec referencing the audited uv.lock hash
+    spec_dir = tmp_path / "docs" / "research" / "specs"
+    spec_dir.mkdir(parents=True)
+    env_spec_path = spec_dir / "DAYTRADE-003D-CORR-003-ENVIRONMENT.json"
+    spec_data = {
+        "task_id": "DAYTRADE-003D-CORR-003",
+        "python_version_major_minor": f"{sys.version_info.major}.{sys.version_info.minor}",
+        "uv_lock_sha256": expected_uv_sha,
+        "core_runtime_packages": {"pandas": "3.0.6"},
+    }
+    env_spec_path.write_bytes(json.dumps(spec_data, indent=2).encode("utf-8"))
+
+    # Add and commit tracked files
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "Freeze F"], cwd=tmp_path, check=True, capture_output=True)
+
+    # Verify uv.lock is truly ignored by git
+    status_out = subprocess.run(["git", "status", "--porcelain"], cwd=tmp_path, check=True, capture_output=True, text=True).stdout.strip()
+    assert status_out == "", "uv.lock must be ignored by git"
+
+    # Now modify / re-resolve uv.lock on disk (without git tracking it)
+    (tmp_path / "uv.lock").write_bytes(b"re_resolved_modified_lockfile_content_version_2\n")
+
+    # Git still sees a completely clean tree!
+    status_out_after = subprocess.run(["git", "status", "--porcelain"], cwd=tmp_path, check=True, capture_output=True, text=True).stdout.strip()
+    assert status_out_after == "", "uv.lock modification must remain ignored by git"
+
+    # But check_runtime_environment_freeze FAILS CLOSED!
+    with pytest.raises(RuntimeError, match=r"Ignored uv\.lock has been modified or re-resolved on disk"):
+        check_runtime_environment_freeze(
+            tmp_path,
+            spec_path=env_spec_path,
+            check_uv_lock=True,
+            require_live_provider_packages=False,
+            verify_spec_hash=False,
+        )
+
+
+def test_runtime_environment_freeze_matches_current_runtime() -> None:
+    """Active runtime environment matches the frozen environment specification."""
+    spec = check_runtime_environment_freeze(
+        REPO_ROOT,
+        require_live_provider_packages=False,
+        check_uv_lock=True,
+    )
+    assert spec["task_id"] == "DAYTRADE-003D-CORR-003"
+    assert spec["python_version_major_minor"] == "3.11"
+    assert len(spec["core_runtime_packages"]) >= 19
+
+
+def test_runtime_environment_freeze_rejects_package_version_mismatch(tmp_path: Path) -> None:
+    """Mismatched package version fails closed."""
+    spec_path = tmp_path / "env_spec.json"
+    spec_data = {
+        "task_id": "DAYTRADE-003D-CORR-003",
+        "python_version_major_minor": f"{sys.version_info.major}.{sys.version_info.minor}",
+        "uv_lock_sha256": "dummy",
+        "core_runtime_packages": {
+            "pandas": "99.99.99",  # non-matching version
+        },
+    }
+    spec_path.write_bytes(json.dumps(spec_data, indent=2).encode("utf-8"))
+
+    with pytest.raises(RuntimeError, match=r"Mismatched package version for 'pandas'"):
+        check_runtime_environment_freeze(
+            tmp_path,
+            spec_path=spec_path,
+            check_uv_lock=False,
+            require_live_provider_packages=False,
+            verify_spec_hash=False,
+        )
+
+
+def test_runtime_environment_freeze_rejects_missing_package(tmp_path: Path) -> None:
+    """Missing required package fails closed."""
+    spec_path = tmp_path / "env_spec.json"
+    spec_data = {
+        "task_id": "DAYTRADE-003D-CORR-003",
+        "python_version_major_minor": f"{sys.version_info.major}.{sys.version_info.minor}",
+        "uv_lock_sha256": "dummy",
+        "core_runtime_packages": {
+            "nonexistent_package_xyz_123": "1.0.0",
+        },
+    }
+    spec_path.write_bytes(json.dumps(spec_data, indent=2).encode("utf-8"))
+
+    with pytest.raises(RuntimeError, match=r"Missing required package: 'nonexistent_package_xyz_123'"):
+        check_runtime_environment_freeze(
+            tmp_path,
+            spec_path=spec_path,
+            check_uv_lock=False,
+            require_live_provider_packages=False,
+            verify_spec_hash=False,
+        )
+
+
+def test_runtime_environment_freeze_rejects_python_version_mismatch(tmp_path: Path) -> None:
+    """Python version mismatch fails closed."""
+    spec_path = tmp_path / "env_spec.json"
+    spec_data = {
+        "task_id": "DAYTRADE-003D-CORR-003",
+        "python_version_major_minor": "3.99",
+        "uv_lock_sha256": "dummy",
+        "core_runtime_packages": {},
+    }
+    spec_path.write_bytes(json.dumps(spec_data, indent=2).encode("utf-8"))
+
+    with pytest.raises(RuntimeError, match=r"Python version mismatch: expected '3\.99'"):
+        check_runtime_environment_freeze(
+            tmp_path,
+            spec_path=spec_path,
+            check_uv_lock=False,
+            require_live_provider_packages=False,
+            verify_spec_hash=False,
+        )
+
+
+def test_pre_live_guard_clean_git_f_to_a_with_frozen_environment(tmp_path: Path) -> None:
+    """A clean Git F->A path with frozen environment and Gary authorization passes all guards."""
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Gary Yang"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "gary.yang@airbyte.com"], cwd=tmp_path, check=True, capture_output=True)
+
+    # .gitignore ignoring uv.lock
+    (tmp_path / ".gitignore").write_text("# uv lockfile is not tracked in this repo\nuv.lock\n", encoding="utf-8")
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "tradex"\n', encoding="utf-8")
+
+    # Audited uv.lock on disk (write exact LF bytes)
+    uv_lock_bytes = b"audited_lockfile_content\n"
+    (tmp_path / "uv.lock").write_bytes(uv_lock_bytes)
+    expected_uv_sha = hashlib.sha256(uv_lock_bytes).hexdigest()
+
+    # Create environment spec referencing the audited uv.lock hash
+    spec_dir = tmp_path / "docs" / "research" / "specs"
+    spec_dir.mkdir(parents=True)
+    env_spec_path = spec_dir / "DAYTRADE-003D-CORR-003-ENVIRONMENT.json"
+    spec_data = {
+        "task_id": "DAYTRADE-003D-CORR-003",
+        "python_version_major_minor": f"{sys.version_info.major}.{sys.version_info.minor}",
+        "uv_lock_sha256": expected_uv_sha,
+        "core_runtime_packages": {},
+    }
+    env_spec_path.write_text(json.dumps(spec_data, indent=2), encoding="utf-8")
+
+    # Add and commit tracked files at Freeze F
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "Freeze F"], cwd=tmp_path, check=True, capture_output=True)
+    freeze_sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=tmp_path, check=True, capture_output=True, text=True).stdout.strip()
+
+    # Commit A adding Gary's authorization
+    auth_dir = tmp_path / "docs" / "research" / "authorizations"
+    auth_dir.mkdir(parents=True)
+    auth_file = auth_dir / "DAYTRADE-003D-CORR-003-AUTHORIZATION.json"
+    auth_file.write_text(
+        json.dumps(
+            {
+                "task_id": "DAYTRADE-003D-CORR-003",
+                "pilot_date": "2024-01-02",
+                "authorized_by": "Gary Yang",
+                "frozen_implementation_sha": freeze_sha,
+                "run_scope": "ONE_SHOT_PILOT_JAN_2_2024",
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", str(auth_file)], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "Commit A (Gary auth)"], cwd=tmp_path, check=True, capture_output=True)
+
+    # Guards pass cleanly
+    check_pre_live_code_freeze(tmp_path, freeze_sha, verify_environment=False)
+    check_pilot_authorization(tmp_path, freeze_sha, authorized_by_gary=True)
+    env_checked = check_runtime_environment_freeze(
+        tmp_path,
+        spec_path=env_spec_path,
+        check_uv_lock=True,
+        require_live_provider_packages=False,
+        verify_spec_hash=False,
+    )
+    assert env_checked["task_id"] == "DAYTRADE-003D-CORR-003"
+
+
+def test_pilot_runner_cli_check_env() -> None:
+    """CLI check-env subcommand runs cleanly."""
+    res = subprocess.run(
+        [sys.executable, "scripts/research/daytrade_003d_corr_003_pilot.py", "check-env", "--repo-root", "."],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert res.returncode == 0, f"check-env failed: {res.stdout}\n{res.stderr}"
+    assert "Runtime environment strictly matches frozen specification" in res.stdout
+
 
 
 
