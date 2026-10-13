@@ -6,117 +6,32 @@
 - **Task ID:** `DAYTRADE-003D-CORR-003`
 - **Strategy ID:** `DAYTRADE-003B-ORB-SIP5M`
 - **Pilot Date:** `2024-01-02`
-- **Base Commit:** `4b1d7084d5d8c91ef10fffbc1f7169de43bfcd0a` (merged PR #110)
-- **Proposed Branch:** `antigravity/daytrade-003d-corr-003-integrity-replay`
-- **Pre-Live Implementation Freeze Provenance:**
-  - Initial candidate freeze: `124206b73bc3ccb5783c422439bedb7bd5c1c0f8`
-  - Interim heads: `640608cce14d12189bbf3760c924a15d9e1df635` (module-scope import safety fix), `7a20805d87201224f6f99ca56d521463fcf837eb` (first review resolution).
-  - Prospective Pre-Live Freeze ($F$): Established on the final audited implementation commit of this PR, prior to Gary Yang's separate authorization commit ($A$).
-- **Classification:** Research-only methodology and data-integrity correction. No production trading changes.
+- **Execution PR:** #113
+- **Branch:** `antigravity/daytrade-003d-corr-003-jan02-pilot-authorization`
+- **Pre-Live Frozen Implementation SHA ($F$):** `cf554598bc486b73d646a593bb4174c02f6121c1`
+- **Authorization Commit SHA ($A$):** `66474a28489e3567b248e068a755b75ff3c0eb69` (Gary Yang explicit approval on 2026-10-13)
+- **Authoritative Empirical Disposition:** `**INVALID_CORR_003_IMPLEMENTATION**` (preregistered taxonomy status)
+- **Audit Disposition Rationale:**
+  The approved one-shot historical feasibility pilot was launched exactly once on 2026-10-13 (`uv run python scripts/research/daytrade_003d_corr_003_pilot.py pilot --pre-live-sha cf554598bc486b73d646a593bb4174c02f6121c1 --batch-size 100 --authorize-live`).
+  Phase 1 (Massive PIT reference snapshot: 11,109 rows, 7,987 canonical symbols) and Phase 2 (Alpaca broad daily Dec 2023 history: 80 batches across 7,985 valid symbols, 7,558 daily computable, 959 daily-base-qualified) completed successfully with all 80 daily batches verified as valid provider payloads.
+  At Phase 3, the frozen CLI runner crashed on the first batch with an unhandled exception: `TypeError: 'module' object is not callable` at line 538 of `scripts/research/daytrade_003d_corr_003_pilot.py` (`allowed_time_window=(time(9, 30), time(9, 34))`) because top-level `import time` shadowed `datetime.time`.
+  Execution was interrupted before opening range minute bars, prior 14-session baseline observations, Top-20 ranking, or Stage-B minute bars could be acquired, and before a cryptographic manifest could be created.
+  Under Gary Yang's authorization contract (`max_executions: 1`, `automatic_retry_after_partial_attempt_authorized: false`) and strict research protocol rules (no rerun after interruption, no post-freeze code changes), execution was terminated and partial artifacts were preserved intact.
+  Independent offline replay against the private output directory failed closed as designed due to the missing manifest.
+  This disposition reflects an implementation bug in the frozen live runner harness, **NOT** provider failure, data unavailability, or strategy invalidation.
+- **Permanent Research Candidate Retention (Principle B):** Under Principle B, the published Stocks-in-Play 5-minute Opening Range Breakout strategy (Zarattini et al., 2024) remains a **permanent externally supported research candidate** regardless of independent evaluation outcomes.
 - **Production Strategy Registry:** `APPROVED_PRODUCTION_STRATEGIES == ()` is strictly verified empty.
-- **Permanent Research Candidate Retention (Principle B):** The published Stocks-in-Play 5-minute Opening Range Breakout strategy (Zarattini et al., 2024) remains a permanent externally supported research candidate.
-- **Historical Disposition Invariance:** Preserves the frozen January 2, 2024 pilot results and authoritative `INVALID_CORR_002_IMPLEMENTATION` disposition.
-- **Live Execution Gate Status:** **STRICTLY LOCKED**. No live provider calls or live pilot reruns are executed. Delivering draft PR with verified synthetic tests and deterministic offline replay, stopping at the live execution gate pending Gary Yang's explicit authorization.
+- **Execution Wall-Clock Runtime:** ~219.78 seconds (interrupted during Phase 3).
+- **Total Private Raw Storage:** `88,609,308 bytes` (~88.6 MB, Bound: `2,147,483,648 bytes`).
+- **Total Provider HTTP Pages:** `92` (12 Massive + 80 Alpaca, Ceiling: `5,000`).
 
 ---
 
-## 2. Material Deficiencies & Bounded Resolutions
+## 2. Methodology & Upstream Specification Hashes
 
-This methodology correction addresses and resolves the material deficiencies identified in DAYTRADE-003D-CORR-002 and the subsequent independent reviews on PR #112:
+All seven upstream and environment specifications were verified via SHA-256 before live access:
 
-### Blocker 1: Satisfiable Two-Commit Freeze & Authorization Contract
-- **Deficiency:** Requiring `git HEAD == expected_sha` in the freeze check while also requiring a committed authorization record embedded with that same SHA created an unsatisfiable circular dependency, because committing the authorization record necessarily changes `HEAD`.
-- **Resolution:** Implemented a satisfiable two-commit workflow in [`corr_003_pilot.py`](../../tradex/research/daytrade_orb/corr_003_pilot.py):
-  1. **Audited Freeze Commit $F$ (`expected_sha`):** Immutable code, test, and specification freeze.
-  2. **Authorization Commit $A$:** Separate commit added only after explicit approval by Gary Yang, containing the tracked authorization file [`docs/research/authorizations/DAYTRADE-003D-CORR-003-AUTHORIZATION.json`](../../docs/research/authorizations/DAYTRADE-003D-CORR-003-AUTHORIZATION.json) with `frozen_implementation_sha == F`.
-  3. **Ancestry & Drift Invariant:** `check_pre_live_code_freeze` verifies that $F$ is an ancestor of `HEAD` ($A$) via `git merge-base --is-ancestor`, enforces zero file modifications in `tradex/`, `scripts/`, `tests/`, and `docs/research/specs/` between $F$ and $A$, and requires a completely clean working tree at $A$.
-  4. **Authorization Record Validation:** `check_pilot_authorization` verifies JSON schema, task ID, pilot date, freeze SHA match, run scope `ONE_SHOT_PILOT_JAN_2_2024`, and ensures the authorization record is tracked and unmodified in git.
-
-### Blocker 2: Raw Provider Payload Integrity & Concatenation Parity
-- **Deficiency:** Provider payloads were insufficiently checked. In `DatasetAlpacaClient`, a `bars` dictionary containing a null or non-list symbol entry could be silently converted to `[]` and marked completed. In `validate_provider_batch_response`, raw-page member shapes were not checked and raw page bars were not verified to match aggregated `bars_by_symbol`.
-- **Resolution:**
-  - In [`alpaca_client.py`](../../tradex/research/intraday_dataset/alpaca_client.py): strictly validates that `data["bars"]` is a dictionary, every symbol entry is a list of bar dictionaries, and immediately halts pagination with `safe_error = "malformed_page_payload"` and `pagination_complete = False` on schema violations. Preserves legitimate empty completed responses (`{"bars": {}}` or `{"bars": {"AAPL": []}}`) as valid with `safe_error = "none"`.
-  - In [`corr_003_pilot.py`](../../tradex/research/daytrade_orb/corr_003_pilot.py): `validate_provider_batch_response` validates raw page schema (valid dict with `bars` dictionary mapping symbols to lists of dicts), concatenates all raw-page symbol bars, and enforces strict exact equality between raw-page bars and aggregated `bars_by_symbol`. Fails closed with `PayloadIntegrityStatus.TRUNCATED_OR_MALFORMED_PAYLOAD` on any disparity.
-
-### Blocker 3: Actual Request Provenance & Stage-Specific PIT Parameters
-- **Deficiency:** `_verify_request_params_consistency` only checked `symbols` if it was a Python list, allowing contradictory comma-separated string parameters (e.g., `"symbols": "AAA,ROGUE"` as produced by real `get_bars()`) to bypass validation. Stage-specific PIT query parameters and token sequence hashes were not fully verified in replay.
-- **Resolution:**
-  - In [`corr_003_pilot.py`](../../tradex/research/daytrade_orb/corr_003_pilot.py): `_verify_request_params_consistency` handles both comma-separated strings and lists, enforcing exact symbol set parity against `symbols_requested`.
-  - Enforces stage-specific expected parameters in replay:
-    - Phase 2 Daily: `timeframe="1Day"`, `feed="sip"`, `adjustment="raw"`, `asof="2024-01-02"`, `start="2023-12-01T00:00:00Z"`, `end="2023-12-29T23:59:00Z"`.
-    - Phase 3 Current OR: `timeframe="1Min"`, `feed="sip"`, `adjustment="raw"`, `asof="2024-01-02"`, `start="2024-01-02T14:30:00Z"`, `end="2024-01-02T14:34:59Z"`.
-    - Phase 3 Prior OR: `timeframe="1Min"`, `feed="sip"`, `adjustment="raw"`, `asof="2024-01-02"`, matching session window for each of the 14 lookback dates.
-    - Phase 5 Stage B: `timeframe="1Min"`, `feed="sip"`, `adjustment="raw"`, `asof="2024-01-02"`, `start="2024-01-02T14:35:00Z"`, `end="2024-01-02T20:59:59Z"`.
-  - Enforces `token_sequence_sha256` matching the SHA-256 hash of concatenated `token_hashes`.
-
-### Blocker 4: Prospective Resource Ceilings & True One-Shot Safeguards
-- **Deficiency:** Resource checks ran only after entire phases, meaning a batch-size of 1 could exceed the 5,000-page limit during Phase 2 before any check. `get_bars()` did not cap per-call pagination to remaining budget. The one-shot guard only checked for `manifest_<date>.json`, allowing interrupted runs with partial artifacts to be restarted and overwrite evidence.
-- **Resolution:**
-  - In [`scripts/research/daytrade_003d_corr_003_pilot.py`](../../scripts/research/daytrade_003d_corr_003_pilot.py):
-    - Prospective Page Check: Before each `alpaca_client.get_bars(...)` call, calculates `remaining_pages = MAX_PILOT_PAGES_LIMIT - total_pages_used` and passes `max_pages=min(100, remaining_pages)`. Halts immediately if budget would be exceeded.
-    - Prospective Storage Check: Before writing any artifact, verifies `current_storage_bytes + len(bytes_to_write) <= MAX_PILOT_STORAGE_BYTES_LIMIT`.
-    - Durable Run Marker: Writes `.pilot_run_lock_<date>.json` immediately upon startup.
-  - In [`corr_003_pilot.py`](../../tradex/research/daytrade_orb/corr_003_pilot.py): `check_one_shot_pilot_guard` fails closed if `manifest_<date>.json` exists, if `.pilot_run_lock_<date>.json` exists, or if any `.json` artifacts already exist in the output directory, ensuring partial run evidence is preserved and cannot be overwritten.
-
-### Third Independent Review Deficiencies & Resolutions
-
-#### Finding 1: Durable Run Lock Marker in Replay & Storage Layout
-- **Deficiency:** The live runner created `.pilot_run_lock_2024-01-02.json` but omitted it from manifest `artifacts_info`. Replay verification strictly failed closed on unlisted extra files (`Unlisted extra file`), causing any valid live producer run to fail replay.
-- **Resolution:**
-  - In [`scripts/research/daytrade_003d_corr_003_pilot.py`](../../scripts/research/daytrade_003d_corr_003_pilot.py): includes `.pilot_run_lock_2024-01-02.json` in `artifacts_info` before writing `manifest_2024-01-02.json`.
-  - In [`corr_003_pilot.py`](../../tradex/research/daytrade_orb/corr_003_pilot.py): `verify_replay_manifest` verifies lock marker SHA-256 and byte size against the manifest, validates its schema and fields via `validate_run_lock_marker`, and accepts manifested lock markers. Rejects unlisted or tampered locks.
-
-#### Finding 2: Atomic One-Shot Lock Acquisition
-- **Deficiency:** Running `check_one_shot_pilot_guard` followed non-atomically by `write_bytes` permitted concurrent processes to race and overwrite locks and artifacts.
-- **Resolution:**
-  - In [`corr_003_pilot.py`](../../tradex/research/daytrade_orb/corr_003_pilot.py): `acquire_atomic_pilot_run_lock` uses atomic exclusive file creation (`open(..., 'xb')` / `O_CREAT | O_EXCL`). Fails closed on collision with `RuntimeError` while preserving existing markers and partial evidence intact. Tested via multi-threaded concurrent race simulation.
-
-#### Finding 3: Deliberate Post-Freeze Allowlist
-- **Deficiency:** Narrow denylist permitted drift in dependency files (`pyproject.toml`, `uv.lock`), workflows, or configuration between freeze commit $F$ and authorization commit $A$.
-- **Resolution:**
-  - In [`corr_003_pilot.py`](../../tradex/research/daytrade_orb/corr_003_pilot.py): replaced denylist with `is_allowed_post_freeze_drift`. Strictly restricts post-freeze drift to the approved Gary Yang authorization record and explicitly non-executable documentation (`.md`, `.txt`, `.rst` under `docs/` and root docs). Fails closed on tracked drift to executable code, dependencies (`pyproject.toml`, `uv.lock`), workflows, or configuration.
-
-#### Finding 4: Assert Completed Raw-Page Evidence Presence & Coherence
-- **Deficiency:** Completed HTTP 200 requests with `raw_pages=[]` could pass validation if aggregate bars were empty, risking accepting invented no-print evidence without raw provider proof.
-- **Resolution:**
-  - In [`corr_003_pilot.py`](../../tradex/research/daytrade_orb/corr_003_pilot.py): `validate_provider_batch_response` with `require_raw_pages=True` requires non-empty `raw_pages` for completed HTTP 200 responses, verifies `len(raw_pages) == page_count`, enforces per-page `http_status == 200`, and verifies terminal pagination tokens are fully consumed. Preserves legitimately completed empty pages (`{"bars": {}}` or `{"bars": {"AAPL": []}}`).
-
-### Fourth Independent Review Deficiencies & Resolutions
-
-#### Finding: Runtime Dependency and Environment Reproducibility Gate
-- **Deficiency:** While repository code files were cryptographically locked at freeze commit $F$, `uv.lock` is uncommitted in `.gitignore`. A modified or re-resolved `uv.lock` or mutated runtime package environment on the execution host could execute the live pilot under different dependency versions than those frozen and tested, bypassing Git-based freeze checks unnoticed.
-- **Resolution (Option B Implemented):**
-  - **Preregistered Environment Specification:** Authored immutable specification [`docs/research/specs/DAYTRADE-003D-CORR-003-ENVIRONMENT.json`](../../docs/research/specs/DAYTRADE-003D-CORR-003-ENVIRONMENT.json) with cryptographic hash `09d2edda68d9940a175d2333613e80defb8e5a3d0275c8b9554e48dd9947a58f`. It records:
-    - Python major/minor version (`3.11`).
-    - The audited SHA-256 hashes of repository `uv.lock` for both the Windows pilot host (`ec533f6e15ca61c360f936083079a9fb21407a0ef082a01e04f799687e95b01f`) and Linux CI runner (`9a393282ed06d96d79c42da2b3d6548ebb9ee9143871d7d88dbb8bb3bcf36912`).
-    - 19 pinned core runtime packages (`pandas==3.0.6`, `numpy==2.4.6`, `exchange-calendars==4.13.2`, `pytz==2026.5`, `ta==0.11.0`, etc.).
-    - 3 pinned live provider packages (`alpaca-py==0.44.0`, `pydantic==2.14.1`, `pydantic-core==2.50.1`).
-  - **Hard Execution Gate (`check_runtime_environment_freeze`):** Added to [`corr_003_pilot.py`](../../tradex/research/daytrade_orb/corr_003_pilot.py). Before loading credentials or invoking provider endpoints, it enforces:
-    1. Spec file existence and SHA-256 match against `LOCKED_003D_CORR_003_ENV_SPEC_SHA256`.
-    2. Exact Python 3.11 runtime version.
-    3. Direct on-disk SHA-256 verification of `uv.lock` against the audited hashes (failing closed even though `uv.lock` is ignored by Git).
-    4. Exact package versions via `importlib.metadata.version()`.
-  - **Pre-Live Freeze Integration:** Integrated into `check_pre_live_code_freeze` and registered in `verify_upstream_spec_hashes`.
-  - **CLI Environment Inspection:** Added `check-env` subcommand in [`scripts/research/daytrade_003d_corr_003_pilot.py`](../../scripts/research/daytrade_003d_corr_003_pilot.py) (`python scripts/research/daytrade_003d_corr_003_pilot.py check-env --require-live-providers`).
-
-### Fifth Independent Review Deficiencies & Resolutions
-
-#### Finding: Fail-Closed Enforcement on Missing uv.lock or Missing Accepted Hashes
-- **Deficiency:** `check_runtime_environment_freeze` used `if uv_lock_path.exists() and raw_accepted:` when validating `uv.lock`. If `uv.lock` was deleted/absent on disk (which `.gitignore` hides from `git status`), or if `accepted_uv_lock_sha256` was missing/empty in a test specification, the check silently bypassed the lock integrity check and passed based on installed package subsets alone.
-- **Resolution:**
-  - With `check_uv_lock=True`, explicitly requires `uv_lock_path.exists()`. If absent, immediately halts and fails closed with actionable instructions directing the operator to restore the lockfile (`uv sync --extra dev --extra all`).
-  - Requires nonempty accepted lockfile hash digest(s) in the spec (`accepted_uv_lock_sha256` or `uv_lock_sha256`); fails closed on missing, empty, or whitespace-only digests.
-  - Rejects nonmatching SHA-256 hashes against audited platform digests before any provider access.
-  - Preserves optional `check_uv_lock=False` only for isolated synthetic unit fixtures.
-  - Verified that both `check-env --require-live-providers` and live pilot preflight fail closed on missing `uv.lock` without network calls or credential retrieval.
-
----
-
-## 3. Preregistered Specifications & Upstream Hashes
-
-All seven specifications are verified via SHA-256:
-
-| Specification Document | Path | SHA-256 Hash | Status |
+| Document | Path | SHA-256 Hash | Status |
 | :--- | :--- | :--- | :--- |
 | **003B Specification** | `docs/research/specs/DAYTRADE-003B-ORB-v1.json` | `62f5028c1b11a392aeb596c4e05b8c1f194cc5cec3af1a9406f4fe16c80460c0` | Immutable Verified |
 | **003C Resolution** | `docs/research/specs/DAYTRADE-003C-ORB-RESOLUTION-v1.json` | `20b43665ae214cfc988c41f818ea67b74052c4a0513e5ca9f2e276105f082bb6` | Immutable Verified |
@@ -128,90 +43,136 @@ All seven specifications are verified via SHA-256:
 
 ---
 
-## 4. Architecture & Implementation Summary
+## 3. Preserved Empirical Pilot Evidence (2024-01-02 Execution)
 
-### 4.1 Python Modules & Scripts
-- [`tradex/research/intraday_dataset/alpaca_client.py`](../../tradex/research/intraday_dataset/alpaca_client.py):
-  - Validates `data["bars"]` structure and symbol bar lists; breaks on malformed pages with `safe_error = "malformed_page_payload"`.
-  - Supports `max_pages` ceiling, pagination cycle detection, and token preservation.
-  - Backward-compatible kwargs `include_raw_bars: bool = False, include_raw_pages: bool = False`.
-- [`tradex/research/daytrade_orb/corr_003_pilot.py`](../../tradex/research/daytrade_orb/corr_003_pilot.py):
-  - Implements provider integrity checking, raw-page parity validation, Stage-B auditing, two-commit freeze/authorization checking, prospective one-shot guards, offline replay engine, and runtime environment verification.
-- [`scripts/research/daytrade_003d_corr_003_pilot.py`](../../scripts/research/daytrade_003d_corr_003_pilot.py):
-  - Multi-command CLI runner:
-    - `replay`: fully offline deterministic replay subcommand.
-    - `pilot`: bounded live pilot execution subcommand gated behind explicit authorization (`--authorize-live`) and pre-live commit SHA verification (`--pre-live-sha`).
-    - `check-env`: inspects runtime environment and verifies against frozen specification without making network calls.
-- [`tests/research/daytrade_orb/test_corr_003_integrity_replay.py`](../../tests/research/daytrade_orb/test_corr_003_integrity_replay.py):
-  - Comprehensive suite of 98 deterministic tests covering all unit, synthetic, and integration paths without network access.
+### Phase 1: Massive PIT Target Universe (2024-01-02)
+- **Raw Massive Snapshot Rows:** `11,109` across `12` pages (raw artifact SHA-256: `ebb74dab83cfdbbf875016d8b2f7a50d0970f2a7c1ec17250927daaf6ab0ad42`).
+- **Target Exchange Scope:** `('XNYS', 'XNAS')`.
+- **Canonical Target Universe Count:** `7,987` (`4,981` `XNAS`, `3,008` `XNYS`).
+- **Target Universe Cryptographic Hash:** `383a66f1c7100922d38638f24e4a23724bbc29b77cafc51990dab6ccda117f20`.
+- **Fail-Closed Canonical Duplicates:** Exactly `2` ambiguous duplicate identities resolved fail-closed as `AMBIGUOUS_IDENTITY`.
+- **Valid Query Target Symbols:** `7,985`.
 
-### 4.2 Replay Persistence Schema
-Artifacts stored under private storage directory:
-1. `massive_reference_<date>.json`: Universe snapshot rows from Massive Reference API.
-2. `universe_<date>.json`: Filtered target universe classification summary.
-3. `alpaca_daily_dec2023.json`: Raw daily bar batches across canonical target universe.
-4. `alpaca_current_or_<date>.json`: Raw 09:30–09:34 ET minute bar batches for target date.
-5. `alpaca_prior_or_14sessions_<date>.json`: Raw 14-session prior opening range batches.
-6. `top_20_selection_<date>.json`: Top-20 ranking and candidate selection records.
-7. `alpaca_stage_b_<date>.json`: Raw 09:35–15:59 ET minute bar batches for actionable symbols.
-8. `manifest_<date>.json`: Cryptographic manifest binding all artifacts by SHA-256 and byte size.
+### Phase 2: Inexpensive Broad Daily Availability (Dec 2023 D-1 Lookback)
+- **Broad PIT Universe Symbols:** `7,987`.
+- **Daily Indicator Computable Symbols:** `7,558` (`94.63%` broad daily data availability).
+- **Missing Daily Data Count:** `429`.
+- **Daily-Base-Qualified Pool:** `959` symbols met ADV14 $\ge 1\text{M}$ shares and ATR14 $> \$0.50$.
+- **Alpaca Daily Batches:** `80` batches of up to 100 symbols across 7,985 valid symbols.
+- **Alpaca Daily Pages:** `80` HTTP pages fetched, `0` retries, `0` 429s.
+- **Provider Payload Integrity:** All `80` batches validated with `integrity_status: VALID` under raw-to-aggregated bar parity and payload schema checks.
+- **Raw Daily Artifact:** `alpaca_daily_dec2023.json` (`84,409,548 bytes`, SHA-256: `8a5612d7beac2e10fa7f1f99c0addcd0186718def9e85821b11a7656c1afd4e6`).
+
+### Phase 3: Opening Range & Relative Volume Screening (Scope E Gate)
+- **Screening Denominator (Daily-Base-Qualified Pool):** `959` symbols.
+- **Execution Status:** **INTERRUPTED BEFORE DATA ACQUISITION**.
+- **Root Cause:** Script crashed at line 538 of `scripts/research/daytrade_003d_corr_003_pilot.py` (`allowed_time_window=(time(9, 30), time(9, 34))`) with `TypeError: 'module' object is not callable` caused by `import time` shadowing `datetime.time`.
+- **Validly Determined Symbols:** Uncomputed due to runner interruption.
+- **Eligible Candidates:** Uncomputed.
+- **Candidate Screening Completeness:** Uncomputed.
+
+### Phase 4: Top-20 Selection Evidence
+- **Execution Status:** **NOT REACHED** (blocked by Phase 3 interruption).
+- **Top-20 Candidates Selected:** `0`.
+- **Selection Hash:** None.
+
+### Phase 5: Stage-B Price Path Audit (09:35–15:59 ET)
+- **Execution Status:** **NOT REACHED** (0 provider calls made).
+- **Stage-B Usability Status:** `UNUSABLE` (not acquired).
+
+### Phase 6: Checksum Manifest
+- **Execution Status:** **NOT CREATED** (runner terminated before manifest generation).
+- **Manifest Hash:** None.
 
 ---
 
-## 5. Verification Results
+## 4. Material Review Findings & Independent Audit Analysis
 
-### 5.1 Test Suite Execution
-- **CORR-003 Synthetic & Offline Tests:** 98 passed ([`tests/research/daytrade_orb/test_corr_003_integrity_replay.py`](../../tests/research/daytrade_orb/test_corr_003_integrity_replay.py)).
-  - Upstream spec hash verification: PASSED
-  - Strategy registry empty invariant: PASSED
-  - HTTP error, truncated pagination, unexpected symbol, malformed timestamp, duplicate timestamp, out-of-session bar, invalid OHLCV detection: PASSED
-  - Client multi-page pagination advance, max pages hard-stop token preservation, and cycle detection: PASSED
-  - Distinction between provider failure and verified completed no-print: PASSED
-  - Stage-B usability with valid sparse minutes and 15:59 liquidation bar: PASSED
-  - Stage-B unfitness on missing 15:59 bar, provider failure, duplicates, out-of-session bars: PASSED
-  - Complete deterministic offline fixture replay: PASSED
-  - Missing artifact, tampered artifact, missing manifest, tampered manifest fail-closed: PASSED
-  - Strict manifest schema, unlisted extra file rejection, invalid size/hash rejection: PASSED
-  - Daily provider failure propagation to `BLOCKED_PROVIDER_DATA_INTEGRITY`: PASSED
-  - Two-commit freeze/authorization workflow, code drift detection, non-ancestor detection, dirty worktree rejection: PASSED
-  - Raw payload schema validation, null/non-list bars rejection, raw-to-aggregated parity enforcement: PASSED
-  - Realistic string-valued symbols verification, feed/timeframe/asof/window verification, token sequence hash parity: PASSED
-  - End-to-end mocked acquisition-to-replay integration: PASSED
-  - Durable run marker lock guard, partial artifact restart rejection, prospective resource limit enforcement: PASSED
-  - Durable run lock marker manifest verification and unlisted/corrupted marker rejection: PASSED
-  - Atomic one-shot lock acquisition and concurrent race collision rejection: PASSED
-  - Deliberate post-freeze allowlist enforcement (rejecting pyproject.toml, uv.lock, workflows): PASSED
-  - Completed raw-page presence & coherence (rejecting empty raw pages, page count mismatch, non-200, unconsumed pagination tokens): PASSED
-  - Full live producer layout to offline replay end-to-end integration: PASSED
-  - Runtime environment freeze specification matching active Python 3.11 and package versions: PASSED
-  - Pre-live execution gate rejecting modified/re-resolved ignored uv.lock on disk: PASSED
-  - Runtime environment freeze rejecting package version mismatch, missing package, or Python version mismatch: PASSED
-  - Clean Git F->A path with frozen environment and Gary authorization passes all guards: PASSED
-  - CLI check-env subcommand clean verification: PASSED
-  - Missing uv.lock on disk rejection (fail closed): PASSED
-  - Clean Git repo missing uv.lock rejection at pre-live execution gate: PASSED
-  - Missing or empty accepted lockfile hashes field rejection: PASSED
-  - Positive exact audited hash match: PASSED
-  - CLI check-env rejection on missing uv.lock: PASSED
-  - Live pilot preflight rejection on missing uv.lock: PASSED
-- **Full ORB Test Suite:** 217 passed ([`tests/research/daytrade_orb/`](../../tests/research/daytrade_orb/)).
-- **Shared Intraday Dataset Test Suite:** 43 passed ([`tests/research/intraday_dataset/`](../../tests/research/intraday_dataset/)).
-- **Import Safety Verification:** 14 passed in 14.29s ([`tests/config/test_import_safety.py`](../../tests/config/test_import_safety.py)).
-- **Linter Check:** `uv run ruff check` passed cleanly with 0 errors across all modified and test files.
+### Finding 1: Top-Level Module Shadowing in Live Runner Script
+In `scripts/research/daytrade_003d_corr_003_pilot.py`:
+- Line 14 imports the standard library module: `import time`.
+- Line 538 (Phase 3 current OR validation), line 667 (Phase 3 prior OR validation), and line 842 (Phase 5 Stage-B validation) attempt to call `time(9, 30)` and `time(15, 59)`, expecting the `time` class from the `datetime` module.
+- Calling `time(9, 30)` on the module object raised `TypeError: 'module' object is not callable`.
+- Phase 2 avoided this crash because it passed `expected_start=datetime(...)` rather than `allowed_time_window=(time(...), time(...))`.
+- Consequently, Phase 1 and Phase 2 completed perfectly, and the crash occurred at the very first call to `validate_provider_batch_response` in Phase 3.
 
-### 5.2 Execution Gate Verification
-- Attempting to run `python scripts/research/daytrade_003d_corr_003_pilot.py pilot` without `--authorize-live` immediately halts with exit code 1:
+### Finding 2: Unit-Test Blindspot at Script Boundary
+- The test suite in `tests/research/daytrade_orb/test_corr_003_integrity_replay.py` contained 98 deterministic tests covering all library validation functions in `tradex/research/daytrade_orb/corr_003_pilot.py`.
+- In `test_corr_003_integrity_replay.py`, callers used `from datetime import time`, so library calls succeeded in tests.
+- However, the top-level CLI script `scripts/research/daytrade_003d_corr_003_pilot.py`'s `run_corr_003_live_pilot` function was never executed in a dry-run or mock-provider integration test.
+- This left an untested name-collision defect in the CLI script that escaped pre-live freeze review.
+
+### Finding 3: Strict One-Shot Guard and No-Rerun Governance Compliance
+- The runner wrote the durable atomic run lock `.pilot_run_lock_2024-01-02.json` at run startup (12:06 PM EDT).
+- Gary Yang's authorization record explicitly mandates:
+  - `"max_executions": 1`
+  - `"automatic_retry_after_partial_attempt_authorized": false`
+- The research protocol strictly mandates:
+  - "No rerun after interruption"
+  - "No code modifications after frozen implementation"
+- The one-shot guard `check_one_shot_pilot_guard` in `corr_003_pilot.py` detects partial artifacts in the directory and correctly refuses any further runs.
+- Modifying `scripts/research/daytrade_003d_corr_003_pilot.py` would violate the pre-live code freeze ($F = cf554598bc486b73d646a593bb4174c02f6121c1$).
+- Therefore, the execution was properly halted and preserved without retrying.
+
+### Finding 4: Independent Offline Replay Failure
+- Running `uv run python scripts/research/daytrade_003d_corr_003_pilot.py replay` against `C:\Users\Gary\.tradex\research\daytrade_003d_corr_003`:
   ```text
-  [FATAL] Live execution gate active: Gary Yang has not granted live pilot authorization.
-  Deliver draft PR with passing offline replay tests and stop at execution gate.
+  ================================================================================
+  STARTING OFFLINE REPLAY: DAYTRADE-003D-CORR-003 (2024-01-02)
+  Input Directory: C:\Users\Gary\.tradex\research\daytrade_003d_corr_003
+  ================================================================================
+  [REPLAY FAILED] Replay manifest verification failed closed: ['Missing manifest file: C:\\Users\\Gary\\.tradex\\research\\daytrade_003d_corr_003\\manifest_2024-01-02.json']
   ```
+- The replay engine strictly refused to process unmanifested partial artifacts without credentials or network calls, confirming that the fail-closed manifest verification works as designed.
+
+### Finding 5: Subprocess Preflight Test Omitted `--output-dir` Isolation
+- In `tests/research/daytrade_orb/test_corr_003_integrity_replay.py:test_live_pilot_preflight_rejects_missing_uv_lock`, the test invoked `scripts/research/daytrade_003d_corr_003_pilot.py pilot` in a subprocess with `--repo-root str(tmp_path)` but omitted `--output-dir str(tmp_path / "private_output")`.
+- When run prior to live execution, `DEFAULT_PRIVATE_ROOT` was clean so the test passed.
+- However, once the live pilot executed and deposited `.pilot_run_lock_2024-01-02.json` into `DEFAULT_PRIVATE_ROOT`, running `test_live_pilot_preflight_rejects_missing_uv_lock` without an isolated `--output-dir` triggered `check_one_shot_pilot_guard` on `DEFAULT_PRIVATE_ROOT` before reaching `check_runtime_environment_freeze`.
+- Future correction (`DAYTRADE-003D-CORR-004`) must pass an isolated `--output-dir` in `test_live_pilot_preflight_rejects_missing_uv_lock`.
 
 ---
 
-## 6. Governance Safeguards & Boundaries
+## 5. Preserved Private Raw Artifacts & Hashes
 
-- **Strategy Invariance:** Zero strategy modifications, parameter changes, indicator alterations, or portfolio rule adjustments.
-- **Production Isolation:** `APPROVED_PRODUCTION_STRATEGIES == ()` is strictly verified empty.
-- **Simulation Invariance:** Zero backtesting, trade simulation, order fills, PnL calculations, or win-rate analyses performed.
-- **Historical Immutability:** Specs `DAYTRADE-003B-ORB-v1.json`, `DAYTRADE-003C-ORB-RESOLUTION-v1.json`, `DAYTRADE-003D-ORB-DATA-FEASIBILITY-v1.json`, `DAYTRADE-003D-CORR-001-v1.json`, and `DAYTRADE-003D-CORR-002-v1.json` are byte-for-byte unchanged.
-- **Live Execution Gate:** Strictly locked. Live provider execution requires explicit written authorization from Gary Yang following independent review of the draft PR.
+All private artifacts acquired during the single pilot run are preserved in `C:\Users\Gary\.tradex\research\daytrade_003d_corr_003`:
+
+| File Name | Size (Bytes) | SHA-256 Checksum | Description |
+| :--- | :--- | :--- | :--- |
+| `.pilot_run_lock_2024-01-02.json` | 225 | `f0f2057a72c23fe24fee53f3c27515ed19080d4cad5781d13526018e7bff1413` | Durable atomic pilot run-start lock marker |
+| `massive_reference_2024-01-02.json` | 4,104,222 | `ebb74dab83cfdbbf875016d8b2f7a50d0970f2a7c1ec17250927daaf6ab0ad42` | Raw Massive reference snapshot (11,109 rows) |
+| `universe_2024-01-02.json` | 95,313 | `d15f15cc4c6e8b54e726fade35637326b3bcd9b3a490b0785e7ad6920d9c4c3c` | Filtered target universe (7,987 symbols) |
+| `alpaca_daily_dec2023.json` | 84,409,548 | `8a5612d7beac2e10fa7f1f99c0addcd0186718def9e85821b11a7656c1afd4e6` | Raw Alpaca daily bars (80 batches, 80 pages) |
+
+---
+
+## 6. Provider Resource Consumption & Provenance
+
+- **Alpaca Total Logical Calls:** `80` (Phase 2 daily bars only).
+- **Alpaca Total HTTP Pages:** `80`.
+- **Alpaca Retries / 429s:** `0`.
+- **Massive HTTP Pages:** `12`.
+- **Total Provider HTTP Pages:** `92` (Ceiling limit: `5,000`).
+- **Total Elapsed Runtime:** `219.78 seconds`.
+- **Storage Consumption:** `88,609,308 bytes` (~88.6 MB, Bound: `2,147,483,648 bytes`).
+
+---
+
+## 7. Governance & Production Safeguards
+
+- **Strategy Simulation / Backtest:** Strictly forbidden and not executed. Zero trade simulations, orders, fills, PnL, win rates, or Sharpe ratios were calculated.
+- **Full-Year 2024 Acquisition:** Quarantined and not executed.
+- **2025 Validation / 2026 Holdout Partitions:** Strictly unopened and quarantined.
+- **External Strategy Retention Principle:** Under Principle B, the Stocks-in-Play 5-minute ORB strategy remains an authorized permanent external research candidate regardless of TradeX independent evaluation outcomes.
+- **Production Strategy Registry:** `APPROVED_PRODUCTION_STRATEGIES == ()` strictly verified.
+
+---
+
+## 8. Recommended Next Steps
+
+1. **Acknowledge Implementation Defect:** Formally record the `INVALID_CORR_003_IMPLEMENTATION` disposition for task `DAYTRADE-003D-CORR-003`.
+2. **Narrow Correction Task (`DAYTRADE-003D-CORR-004`):**
+   - Correct the `time` import collision in `scripts/research/daytrade_003d_corr_003_pilot.py` by using `from datetime import time as dt_time`.
+   - Add a mocked integration test executing `run_corr_003_live_pilot` through all 5 phases with synthetic provider clients to prevent script-boundary regressions.
+   - Establish a new pre-live frozen commit SHA ($F$).
+   - Obtain separate Gary Yang authorization ($A$) before any subsequent one-shot historical feasibility pilot run.
