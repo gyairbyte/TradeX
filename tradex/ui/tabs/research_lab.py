@@ -7,6 +7,7 @@ import streamlit as st
 from tradex.config import TradeXSettings
 from tradex.ui.tabs.coil_detector import render_coil_detector_tab
 from tradex.ui.tabs.options_activity import render_options_activity_tab
+from tradex.ui.tabs.orb_preview import render_orb_preview_tab
 from tradex.ui.tabs.pattern_similarity import render_pattern_similarity_tab
 from tradex.ui.tabs.signal_journal import render_signal_journal_tab
 
@@ -26,12 +27,13 @@ def render_research_lab_tab(
         "Nothing in this area is a production-approved actionable strategy."
     )
 
-    tab_telemetry, tab_coil, tab_pattern, tab_options = st.tabs(
+    tab_telemetry, tab_coil, tab_pattern, tab_options, tab_orb = st.tabs(
         [
             "Legacy Scanner Telemetry",
             "Coil Context",
             "Pattern Similarity — Rejected",
             "Options Activity — Exploratory",
+            "ORB Candidate Preview — Research Only",
         ]
     )
 
@@ -61,3 +63,9 @@ def render_research_lab_tab(
             watchlist=watchlist,
             options_source=options_source,
         )
+
+    with tab_orb:
+        render_orb_preview_tab(
+            settings=settings,
+        )
+

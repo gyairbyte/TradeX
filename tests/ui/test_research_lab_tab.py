@@ -15,6 +15,7 @@ _EXPECTED_NESTED_TABS = [
     "Coil Context",
     "Pattern Similarity — Rejected",
     "Options Activity — Exploratory",
+    "ORB Candidate Preview — Research Only",
 ]
 
 
@@ -24,7 +25,7 @@ def fake_rl_st():
     st = MagicMock(name="streamlit")
     st.__version__ = "0.0.0"
     st.session_state = {}
-    st.tabs.return_value = [MagicMock(), MagicMock(), MagicMock(), MagicMock()]
+    st.tabs.return_value = [MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock()]
     return st
 
 
@@ -50,6 +51,7 @@ def test_render_shows_subheader_and_disclosure(research_lab_module, fake_rl_st, 
     monkeypatch.setattr("tradex.ui.tabs.research_lab.render_coil_detector_tab", MagicMock())
     monkeypatch.setattr("tradex.ui.tabs.research_lab.render_pattern_similarity_tab", MagicMock())
     monkeypatch.setattr("tradex.ui.tabs.research_lab.render_options_activity_tab", MagicMock())
+    monkeypatch.setattr("tradex.ui.tabs.research_lab.render_orb_preview_tab", MagicMock())
 
     settings = settings_from_mapping({})
     research_lab_module.render_research_lab_tab(
@@ -68,11 +70,12 @@ def test_render_shows_subheader_and_disclosure(research_lab_module, fake_rl_st, 
 
 
 def test_render_creates_exact_nested_tabs(research_lab_module, fake_rl_st, monkeypatch):
-    """Research Lab creates exactly the four canonical nested tab labels in order."""
+    """Research Lab creates exactly the five canonical nested tab labels in order."""
     monkeypatch.setattr("tradex.ui.tabs.research_lab.render_signal_journal_tab", MagicMock())
     monkeypatch.setattr("tradex.ui.tabs.research_lab.render_coil_detector_tab", MagicMock())
     monkeypatch.setattr("tradex.ui.tabs.research_lab.render_pattern_similarity_tab", MagicMock())
     monkeypatch.setattr("tradex.ui.tabs.research_lab.render_options_activity_tab", MagicMock())
+    monkeypatch.setattr("tradex.ui.tabs.research_lab.render_orb_preview_tab", MagicMock())
 
     settings = settings_from_mapping({})
     research_lab_module.render_research_lab_tab(
@@ -94,11 +97,13 @@ def test_render_routes_to_child_renderers_with_preserved_arguments(
     coil_mock = MagicMock(name="render_coil_detector_tab")
     pattern_mock = MagicMock(name="render_pattern_similarity_tab")
     options_mock = MagicMock(name="render_options_activity_tab")
+    orb_mock = MagicMock(name="render_orb_preview_tab")
 
     monkeypatch.setattr("tradex.ui.tabs.research_lab.render_signal_journal_tab", telemetry_mock)
     monkeypatch.setattr("tradex.ui.tabs.research_lab.render_coil_detector_tab", coil_mock)
     monkeypatch.setattr("tradex.ui.tabs.research_lab.render_pattern_similarity_tab", pattern_mock)
     monkeypatch.setattr("tradex.ui.tabs.research_lab.render_options_activity_tab", options_mock)
+    monkeypatch.setattr("tradex.ui.tabs.research_lab.render_orb_preview_tab", orb_mock)
 
     settings = settings_from_mapping({})
     watchlist = ["AAPL", "NVDA", "TSLA"]
@@ -136,3 +141,9 @@ def test_render_routes_to_child_renderers_with_preserved_arguments(
         watchlist=watchlist,
         options_source="unusual_whales",
     )
+
+    # 5. ORB Candidate Preview receives settings
+    orb_mock.assert_called_once_with(
+        settings=settings,
+    )
+
