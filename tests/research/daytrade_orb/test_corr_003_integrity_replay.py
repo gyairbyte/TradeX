@@ -2982,12 +2982,47 @@ def test_pre_live_guard_rejects_ignored_uv_lock_modification(tmp_path: Path) -> 
         )
 
 
-def test_runtime_environment_freeze_matches_current_runtime() -> None:
-    """Active runtime environment matches the frozen environment specification."""
+def test_runtime_environment_freeze_matches_current_runtime(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Hermetic positive test: check_runtime_environment_freeze verifies matching environment in isolation.
+
+    Uses an isolated fixture environment and mock metadata so the test does not depend on
+    ambient floating dependency resolution in CI, while strictly proving that a matching
+    runtime environment passes validation.
+    """
+    spec_path = REPO_ROOT / CORR_003_ENV_SPEC_PATH
+    spec_data = json.loads(spec_path.read_bytes())
+    audited_sha = spec_data["accepted_uv_lock_sha256"]["windows_pilot_host_all_extras"]
+    expected_pkgs = dict(spec_data["core_runtime_packages"])
+
+    lock_bytes = b"audited_uv_lockfile_content_windows\n"
+    (tmp_path / "uv.lock").write_bytes(lock_bytes)
+
+    orig_sha256 = hashlib.sha256
+
+    class _MockDigest:
+        def hexdigest(self) -> str:
+            return audited_sha
+
+    def mock_sha256(data: bytes = b"") -> Any:
+        if data == lock_bytes:
+            return _MockDigest()
+        return orig_sha256(data)
+
+    monkeypatch.setattr("tradex.research.daytrade_orb.corr_003_pilot.hashlib.sha256", mock_sha256)
+    monkeypatch.setattr(
+        "importlib.metadata.version",
+        lambda pkg: expected_pkgs.get(pkg, "0.0.0"),
+    )
+
     spec = check_runtime_environment_freeze(
-        REPO_ROOT,
+        tmp_path,
+        spec_path=spec_path,
         require_live_provider_packages=False,
         check_uv_lock=True,
+        verify_spec_hash=True,
     )
     assert spec["task_id"] == "DAYTRADE-003D-CORR-003"
     assert spec["python_version_major_minor"] == "3.11"
@@ -3126,17 +3161,72 @@ def test_pre_live_guard_clean_git_f_to_a_with_frozen_environment(tmp_path: Path)
     assert env_checked["task_id"] == "DAYTRADE-003D-CORR-003"
 
 
-def test_pilot_runner_cli_check_env() -> None:
-    """CLI check-env subcommand runs cleanly."""
-    res = subprocess.run(
-        [sys.executable, "scripts/research/daytrade_003d_corr_003_pilot.py", "check-env", "--repo-root", "."],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
+def _load_pilot_cli() -> Any:
+    import importlib.util
+
+    script_path = REPO_ROOT / "scripts" / "research" / "daytrade_003d_corr_003_pilot.py"
+    spec = importlib.util.spec_from_file_location("daytrade_003d_corr_003_pilot_cli", script_path)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_pilot_runner_cli_check_env(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Hermetic test: CLI check-env subcommand verifies matching and rejecting environments in isolation."""
+    spec_dir = tmp_path / "docs" / "research" / "specs"
+    spec_dir.mkdir(parents=True)
+    real_spec_bytes = (REPO_ROOT / CORR_003_ENV_SPEC_PATH).read_bytes()
+    (spec_dir / "DAYTRADE-003D-CORR-003-ENVIRONMENT.json").write_bytes(real_spec_bytes)
+
+    lock_bytes = b"audited_uv_lockfile_cli_content\n"
+    (tmp_path / "uv.lock").write_bytes(lock_bytes)
+
+    spec_data = json.loads(real_spec_bytes.decode("utf-8"))
+    audited_sha = spec_data["accepted_uv_lock_sha256"]["linux_ci_runner_standard_extras"]
+    expected_pkgs = dict(spec_data["core_runtime_packages"])
+    expected_pkgs.update(spec_data.get("live_provider_packages", {}))
+
+    orig_sha256 = hashlib.sha256
+
+    class _MockDigest:
+        def hexdigest(self) -> str:
+            return audited_sha
+
+    def mock_sha256(data: bytes = b"") -> Any:
+        if data == lock_bytes:
+            return _MockDigest()
+        return orig_sha256(data)
+
+    monkeypatch.setattr("tradex.research.daytrade_orb.corr_003_pilot.hashlib.sha256", mock_sha256)
+    monkeypatch.setattr(
+        "importlib.metadata.version",
+        lambda pkg: expected_pkgs.get(pkg, "0.0.0"),
     )
-    assert res.returncode == 0, f"check-env failed: {res.stdout}\n{res.stderr}"
-    assert "Runtime environment strictly matches frozen specification" in res.stdout
+
+    # 1. Success path: matching environment returns 0 with success banner
+    cli_mod = _load_pilot_cli()
+    monkeypatch.setattr(sys, "argv", ["daytrade_003d_corr_003_pilot.py", "check-env", "--repo-root", str(tmp_path)])
+    exit_code = cli_mod.main()
+    captured = capsys.readouterr()
+    assert exit_code == 0, f"check-env failed unexpectedly: {captured.out}\n{captured.err}"
+    assert "Runtime environment strictly matches frozen specification" in captured.out
+    assert "Core Packages Checked: 19" in captured.out
+
+    # 2. Failure path: mismatched package fails closed with exit code 1 and error diagnostic
+    monkeypatch.setattr(
+        "importlib.metadata.version",
+        lambda pkg: "99.99.99" if pkg == "pandas" else expected_pkgs.get(pkg, "0.0.0"),
+    )
+    exit_code_mismatch = cli_mod.main()
+    captured_mismatch = capsys.readouterr()
+    assert exit_code_mismatch == 1
+    assert "[ENVIRONMENT CHECK FAILED]" in captured_mismatch.out
+    assert "Mismatched package version for 'pandas'" in captured_mismatch.out
 
 
 def test_runtime_environment_freeze_rejects_missing_uv_lock(tmp_path: Path) -> None:
@@ -3236,18 +3326,49 @@ def test_runtime_environment_freeze_rejects_empty_accepted_hashes_field(tmp_path
         )
 
 
-def test_runtime_environment_freeze_positive_exact_audited_hash() -> None:
-    """Positive test: active runtime matches exact audited specification and on-disk uv.lock."""
+def test_runtime_environment_freeze_positive_exact_audited_hash(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Positive test: active runtime matches exact audited specification and on-disk uv.lock in isolation."""
+    spec_path = REPO_ROOT / CORR_003_ENV_SPEC_PATH
+    spec_data = json.loads(spec_path.read_bytes())
+    audited_sha = spec_data["accepted_uv_lock_sha256"]["linux_ci_runner_standard_extras"]
+    expected_pkgs = dict(spec_data["core_runtime_packages"])
+    expected_pkgs.update(spec_data.get("live_provider_packages", {}))
+
+    lock_bytes = b"audited_uv_lockfile_content_linux\n"
+    (tmp_path / "uv.lock").write_bytes(lock_bytes)
+
+    orig_sha256 = hashlib.sha256
+
+    class _MockDigest:
+        def hexdigest(self) -> str:
+            return audited_sha
+
+    def mock_sha256(data: bytes = b"") -> Any:
+        if data == lock_bytes:
+            return _MockDigest()
+        return orig_sha256(data)
+
+    monkeypatch.setattr("tradex.research.daytrade_orb.corr_003_pilot.hashlib.sha256", mock_sha256)
+    monkeypatch.setattr(
+        "importlib.metadata.version",
+        lambda pkg: expected_pkgs.get(pkg, "0.0.0"),
+    )
+
     spec = check_runtime_environment_freeze(
-        REPO_ROOT,
+        tmp_path,
+        spec_path=spec_path,
         check_uv_lock=True,
-        require_live_provider_packages=False,
+        require_live_provider_packages=True,
         verify_spec_hash=True,
     )
     assert spec["task_id"] == "DAYTRADE-003D-CORR-003"
     assert spec["python_version_major_minor"] == "3.11"
     assert "accepted_uv_lock_sha256" in spec
     assert len(spec["core_runtime_packages"]) >= 19
+    assert len(spec["live_provider_packages"]) >= 3
 
 
 def test_pilot_runner_cli_check_env_rejects_missing_uv_lock(tmp_path: Path) -> None:
