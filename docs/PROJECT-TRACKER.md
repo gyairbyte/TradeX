@@ -1086,7 +1086,7 @@ This is the master backlog for TradeX engineering and research tasks, originatin
 
 | Priority | Count | Representative first item |
 |---|---|---|
-| High | 28 | LONG-002: Rapid-upside long opportunity research program |
+| High | 29 | LONG-002: Rapid-upside long opportunity research program |
 | Medium | 12 | SHORT-001: Add market regime and relative strength to short-term scorer |
 | Low | 6 | DOC-001: Close LONG-001 and restore documentation and tracker consistency |
 
@@ -1094,7 +1094,7 @@ This is the master backlog for TradeX engineering and research tasks, originatin
 
 | Status | Count |
 |---|---|
-| Completed | 45 |
+| Completed | 46 |
 | Deferred | 1 |
 | Proposed | 0 |
 | In progress | 0 |
