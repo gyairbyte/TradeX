@@ -224,3 +224,98 @@ def test_ui_time_gate_blocked_error_display(scanner_ui_module, fake_scanner_st):
     fake_scanner_st.error.assert_called_once()
     assert "Time-Gate Blocked" in str(fake_scanner_st.error.call_args[0][0])
     fake_scanner_st.stop.assert_called_once()
+
+
+def test_ui_provisional_incomplete_warning(scanner_ui_module, fake_scanner_st):
+    """When scan has material data gaps (provisional_incomplete), renders warning and provisional table header."""
+    from datetime import date, datetime
+    from zoneinfo import ZoneInfo
+
+    settings = settings_from_mapping({})
+    mock_res_incomplete = MarketScanResult(
+        session_date=date(2024, 1, 2),
+        as_of_time=datetime(2024, 1, 2, 9, 35, tzinfo=ZoneInfo("America/New_York")),
+        scan_requested_at=datetime(2024, 1, 2, 9, 35, 10, tzinfo=ZoneInfo("America/New_York")),
+        scan_completed_at=datetime(2024, 1, 2, 9, 36, 15, tzinfo=ZoneInfo("America/New_York")),
+        data_freshness_time=datetime(2024, 1, 2, 9, 34, 59, tzinfo=ZoneInfo("America/New_York")),
+        provider="mock",
+        feed="sip",
+        is_feed_consolidated=True,
+        feed_disclosure="Simulated consolidated SIP tape",
+        universe_size_discovered=100,
+        securities_evaluated=10,
+        daily_eligible_count=2,
+        eligible_candidates_count=1,
+        top_n_selected=1,
+        candidates=[],
+        unranked_eligible_candidates=[],
+        exclusions=[],
+        is_time_gated=False,
+        time_gate_message=None,
+        coverage_completeness_pct=10.0,
+        coverage_status="provisional_incomplete",
+        coverage_warning="PROVISIONAL RANKINGS (MATERIAL DATA GAPS): Evaluated 10 of 100 discovered securities (10.0% coverage).",
+        warnings=[],
+    )
+    fake_scanner_st.session_state["orb_market_scan_result"] = mock_res_incomplete
+
+    scanner_ui_module.render_orb_preview_tab(settings=settings)
+
+    warning_calls = [str(c[0][0]) for c in fake_scanner_st.warning.call_args_list]
+    assert any("PROVISIONAL RANKINGS (MATERIAL DATA GAPS)" in w for w in warning_calls)
+
+    markdown_calls = [str(c[0][0]) for c in fake_scanner_st.markdown.call_args_list]
+    assert any("Provisional Rankings" in m for m in markdown_calls)
+
+    # Captions must display timestamps
+    caption_calls = [str(c[0][0]) for c in fake_scanner_st.caption.call_args_list]
+    assert any("Scan Requested" in c for c in caption_calls)
+    assert any("Scan Completed" in c for c in caption_calls)
+    assert any("Data Freshness" in c for c in caption_calls)
+
+
+def test_ui_failed_scan_displays_error_not_success(scanner_ui_module, fake_scanner_st, monkeypatch):
+    """When a scan fails, status container renders an error message, never success."""
+    from datetime import date, datetime
+    from zoneinfo import ZoneInfo
+
+    settings = settings_from_mapping({})
+    fake_scanner_st.button.return_value = True
+
+    mock_res_failed = MarketScanResult(
+        session_date=date(2024, 1, 2),
+        as_of_time=datetime(2024, 1, 2, 9, 35, tzinfo=ZoneInfo("America/New_York")),
+        provider="mock",
+        feed="sip",
+        is_feed_consolidated=True,
+        feed_disclosure="Simulated consolidated SIP tape",
+        universe_size_discovered=10,
+        securities_evaluated=0,
+        daily_eligible_count=0,
+        eligible_candidates_count=0,
+        top_n_selected=0,
+        candidates=[],
+        unranked_eligible_candidates=[],
+        exclusions=[],
+        is_time_gated=False,
+        time_gate_message=None,
+        coverage_completeness_pct=0.0,
+        coverage_status="failed",
+        coverage_warning="Daily data acquisition failed.",
+        warnings=["Failed"],
+        stage_failures={"DAILY_ELIGIBILITY": "Simulated error"},
+    )
+
+    mock_run_scan = MagicMock(return_value=mock_res_failed)
+    monkeypatch.setattr("tradex.ui.tabs.orb_preview.run_market_scan", mock_run_scan)
+
+    # Setup status container mock
+    status_mock = MagicMock()
+    fake_scanner_st.empty.return_value = status_mock
+
+    scanner_ui_module.render_orb_preview_tab(settings=settings)
+
+    # Status container must show error, NOT success
+    status_mock.error.assert_called_once()
+    assert "Market scan failed" in str(status_mock.error.call_args[0][0])
+    status_mock.success.assert_not_called()

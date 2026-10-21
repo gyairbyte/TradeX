@@ -133,6 +133,27 @@ class MockORBProvider:
     rate_limit_call_count: int = 0
     fail_stage: str | None = None
 
+    @classmethod
+    def create_populated(cls) -> MockORBProvider:
+        """Create a mock provider seeded with the deterministic 33-symbol synthetic demo fixture."""
+        from .demo_fixture import create_demo_snapshot
+
+        snap = create_demo_snapshot()
+        symbols = sorted(snap.symbols.keys())
+        daily_bars = {sym: p.daily_bars for sym, p in snap.symbols.items()}
+        or_bars = {sym: p.opening_range_bars for sym, p in snap.symbols.items()}
+        prior_vols = {sym: p.prior_opening_range_volumes for sym, p in snap.symbols.items()}
+        return cls(
+            symbols=symbols,
+            daily_bars=daily_bars,
+            opening_range_bars=or_bars,
+            prior_opening_range_volumes=prior_vols,
+            provider_name="mock",
+            feed_name="sip",
+            is_feed_consolidated=True,
+            feed_disclosure="Deterministic Mock Provider (Simulated 33-Symbol Research Universe)",
+        )
+
     def discover_universe(self) -> list[str]:
         if self.fail_stage == "DISCOVERY":
             raise ORBProviderDataUnavailableError("Simulated mock discovery failure at Stage 1")
@@ -267,16 +288,17 @@ class AlpacaORBProvider:
                     pause = float(retry_after) if retry_after else min(2.0 ** attempt, 8.0)
                     time.sleep(pause)
                     continue
-                if resp.status_code == 403 and params and params.get("feed") == "sip":
-                    # Free tier plan lacks SIP entitlement; automatically switch to IEX
-                    logger.warning("Alpaca returned 403 Forbidden for SIP feed; falling back to IEX.")
-                    self._feed = "iex"
-                    self._is_feed_consolidated = False
-                    params["feed"] = "iex"
-                    return self._get_with_retry(url, params)
-                if resp.status_code in (401, 403):
+                if resp.status_code == 403:
+                    req_feed = params.get("feed", self._feed) if params else self._feed
                     raise ORBProviderConfigurationError(
-                        f"Alpaca authentication or entitlement error (HTTP {resp.status_code})"
+                        f"Alpaca feed entitlement error (HTTP 403 Forbidden for feed='{req_feed}'). "
+                        "The configured account lacks entitlement for this market data feed. "
+                        "TradeX enforces consistent, non-mixed feeds throughout a scan. "
+                        "To perform an explicit provisional heuristic scan, select feed='iex' explicitly before scanning."
+                    )
+                if resp.status_code == 401:
+                    raise ORBProviderConfigurationError(
+                        "Alpaca authentication error (HTTP 401 Unauthorized): invalid API credentials."
                     )
                 if resp.status_code >= 500:
                     time.sleep(min(1.0 + attempt, 4.0))
@@ -341,7 +363,7 @@ class AlpacaORBProvider:
 
         for i in range(0, len(clean_symbols), self.batch_size):
             batch = clean_symbols[i : i + self.batch_size]
-            params = {
+            params: dict[str, Any] = {
                 "symbols": ",".join(batch),
                 "timeframe": "1Day",
                 "feed": self._feed,
@@ -350,41 +372,69 @@ class AlpacaORBProvider:
                 "end": end_ts,
                 "limit": 10000,
             }
-            resp = self._get_with_retry(url, params=params)
-            try:
-                data = resp.json()
-            except ValueError as err:
-                raise ORBProviderDataUnavailableError(f"Malformed daily bars JSON from Alpaca: {err}") from err
+            seen_tokens: set[str] = set()
+            max_pages = 50
+            page_count = 0
 
-            bars_by_symbol = data.get("bars", {}) if isinstance(data, dict) else {}
-            if isinstance(bars_by_symbol, dict):
-                for sym, raw_bars in bars_by_symbol.items():
-                    sym_clean = sym.strip().upper()
-                    if sym_clean not in result:
-                        result[sym_clean] = []
-                    parsed_bars: list[DailyBar] = []
-                    for b in raw_bars:
-                        try:
-                            raw_t = b["t"]
-                            ts = datetime.fromisoformat(raw_t)
-                            bar_date = ts.astimezone(MARKET_TIMEZONE).date()
-                            parsed_bars.append(
-                                DailyBar(
-                                    symbol=sym_clean,
-                                    session_date=bar_date,
-                                    open=float(b.get("o", b.get("open", 0.0))),
-                                    high=float(b.get("h", b.get("high", 0.0))),
-                                    low=float(b.get("l", b.get("low", 0.0))),
-                                    close=float(b.get("c", b.get("close", 0.0))),
-                                    volume=float(b.get("v", b.get("volume", 0.0))),
+            while True:
+                resp = self._get_with_retry(url, params=params)
+                try:
+                    data = resp.json()
+                except ValueError as err:
+                    raise ORBProviderDataUnavailableError(f"Malformed daily bars JSON from Alpaca: {err}") from err
+
+                bars_by_symbol = data.get("bars", {}) if isinstance(data, dict) else {}
+                if isinstance(bars_by_symbol, dict):
+                    for sym, raw_bars in bars_by_symbol.items():
+                        sym_clean = sym.strip().upper()
+                        if sym_clean not in result:
+                            result[sym_clean] = []
+                        for b in raw_bars:
+                            try:
+                                raw_t = b["t"]
+                                ts = datetime.fromisoformat(raw_t)
+                                bar_date = ts.astimezone(MARKET_TIMEZONE).date()
+                                result[sym_clean].append(
+                                    DailyBar(
+                                        symbol=sym_clean,
+                                        session_date=bar_date,
+                                        open=float(b.get("o", b.get("open", 0.0))),
+                                        high=float(b.get("h", b.get("high", 0.0))),
+                                        low=float(b.get("l", b.get("low", 0.0))),
+                                        close=float(b.get("c", b.get("close", 0.0))),
+                                        volume=float(b.get("v", b.get("volume", 0.0))),
+                                    )
                                 )
-                            )
-                        except (KeyError, ValueError, TypeError):
-                            continue
-                    result[sym_clean] = sorted(parsed_bars, key=lambda x: x.session_date)
+                            except (KeyError, ValueError, TypeError):
+                                continue
+
+                next_token = data.get("next_page_token") if isinstance(data, dict) else None
+                if not next_token:
+                    break
+                if next_token in seen_tokens:
+                    raise ORBProviderDataUnavailableError(
+                        f"Pagination cycle detected from Alpaca API for batch: {next_token}"
+                    )
+                seen_tokens.add(next_token)
+                page_count += 1
+                if page_count >= max_pages:
+                    raise ORBProviderDataUnavailableError(
+                        f"Exceeded maximum page limit ({max_pages}) during Alpaca pagination"
+                    )
+                params["page_token"] = next_token
 
             if self.rate_limit_pause_seconds > 0:
                 time.sleep(self.rate_limit_pause_seconds)
+
+        # Sort and deduplicate bars per symbol
+        for sym_clean, bars_list in result.items():
+            seen_dates: set[date] = set()
+            deduped_bars: list[DailyBar] = []
+            for b in sorted(bars_list, key=lambda x: x.session_date):
+                if b.session_date not in seen_dates:
+                    seen_dates.add(b.session_date)
+                    deduped_bars.append(b)
+            result[sym_clean] = deduped_bars
 
         return result
 
@@ -409,7 +459,7 @@ class AlpacaORBProvider:
 
         for i in range(0, len(clean_symbols), self.batch_size):
             batch = clean_symbols[i : i + self.batch_size]
-            params = {
+            params: dict[str, Any] = {
                 "symbols": ",".join(batch),
                 "timeframe": "1Min",
                 "feed": self._feed,
@@ -418,42 +468,70 @@ class AlpacaORBProvider:
                 "end": end_utc,
                 "limit": 10000,
             }
-            resp = self._get_with_retry(url, params=params)
-            try:
-                data = resp.json()
-            except ValueError as err:
-                raise ORBProviderDataUnavailableError(f"Malformed minute bars JSON from Alpaca: {err}") from err
+            seen_tokens: set[str] = set()
+            max_pages = 50
+            page_count = 0
 
-            bars_by_symbol = data.get("bars", {}) if isinstance(data, dict) else {}
-            if isinstance(bars_by_symbol, dict):
-                for sym, raw_bars in bars_by_symbol.items():
-                    sym_clean = sym.strip().upper()
-                    if sym_clean not in result:
-                        result[sym_clean] = []
-                    parsed_bars: list[MinuteBar] = []
-                    for b in raw_bars:
-                        try:
-                            raw_t = b["t"]
-                            ts = datetime.fromisoformat(raw_t)
-                            bar_date = ts.astimezone(MARKET_TIMEZONE).date()
-                            parsed_bars.append(
-                                MinuteBar(
-                                    symbol=sym_clean,
-                                    timestamp=ts,
-                                    session_date=bar_date,
-                                    open=float(b.get("o", b.get("open", 0.0))),
-                                    high=float(b.get("h", b.get("high", 0.0))),
-                                    low=float(b.get("l", b.get("low", 0.0))),
-                                    close=float(b.get("c", b.get("close", 0.0))),
-                                    volume=float(b.get("v", b.get("volume", 0.0))),
+            while True:
+                resp = self._get_with_retry(url, params=params)
+                try:
+                    data = resp.json()
+                except ValueError as err:
+                    raise ORBProviderDataUnavailableError(f"Malformed minute bars JSON from Alpaca: {err}") from err
+
+                bars_by_symbol = data.get("bars", {}) if isinstance(data, dict) else {}
+                if isinstance(bars_by_symbol, dict):
+                    for sym, raw_bars in bars_by_symbol.items():
+                        sym_clean = sym.strip().upper()
+                        if sym_clean not in result:
+                            result[sym_clean] = []
+                        for b in raw_bars:
+                            try:
+                                raw_t = b["t"]
+                                ts = datetime.fromisoformat(raw_t)
+                                bar_date = ts.astimezone(MARKET_TIMEZONE).date()
+                                result[sym_clean].append(
+                                    MinuteBar(
+                                        symbol=sym_clean,
+                                        timestamp=ts,
+                                        session_date=bar_date,
+                                        open=float(b.get("o", b.get("open", 0.0))),
+                                        high=float(b.get("h", b.get("high", 0.0))),
+                                        low=float(b.get("l", b.get("low", 0.0))),
+                                        close=float(b.get("c", b.get("close", 0.0))),
+                                        volume=float(b.get("v", b.get("volume", 0.0))),
+                                    )
                                 )
-                            )
-                        except (KeyError, ValueError, TypeError):
-                            continue
-                    result[sym_clean] = sorted(parsed_bars, key=lambda x: x.timestamp)
+                            except (KeyError, ValueError, TypeError):
+                                continue
+
+                next_token = data.get("next_page_token") if isinstance(data, dict) else None
+                if not next_token:
+                    break
+                if next_token in seen_tokens:
+                    raise ORBProviderDataUnavailableError(
+                        f"Pagination cycle detected from Alpaca API for batch: {next_token}"
+                    )
+                seen_tokens.add(next_token)
+                page_count += 1
+                if page_count >= max_pages:
+                    raise ORBProviderDataUnavailableError(
+                        f"Exceeded maximum page limit ({max_pages}) during Alpaca pagination"
+                    )
+                params["page_token"] = next_token
 
             if self.rate_limit_pause_seconds > 0:
                 time.sleep(self.rate_limit_pause_seconds)
+
+        # Sort and deduplicate bars per symbol
+        for sym_clean, bars_list in result.items():
+            seen_ts: set[datetime] = set()
+            deduped_mb: list[MinuteBar] = []
+            for b in sorted(bars_list, key=lambda x: x.timestamp):
+                if b.timestamp not in seen_ts:
+                    seen_ts.add(b.timestamp)
+                    deduped_mb.append(b)
+            result[sym_clean] = deduped_mb
 
         return result
 
@@ -538,6 +616,7 @@ def resolve_orb_provider(
     settings: TradeXSettings | None = None,
     provider_name: str | None = None,
     *,
+    feed: str | None = None,
     mock_provider: MockORBProvider | None = None,
 ) -> ORBMarketDataProvider:
     """Factory resolving the active ORB provider with fail-safe configuration."""
@@ -550,7 +629,7 @@ def resolve_orb_provider(
     req_name = (provider_name or settings.data.data_provider).strip().lower()
 
     if req_name == "mock":
-        return MockORBProvider()
+        return MockORBProvider.create_populated()
 
     if req_name == "alpaca":
         api_key = settings.data.alpaca_api_key
@@ -559,7 +638,8 @@ def resolve_orb_provider(
             raise ORBProviderConfigurationError(
                 "Alpaca credentials missing in settings: set ALPACA_API_KEY and ALPACA_SECRET_KEY in your .env file."
             )
-        return AlpacaORBProvider(api_key=api_key, secret_key=secret_key, feed="sip")
+        resolved_feed = (feed or "sip").strip().lower()
+        return AlpacaORBProvider(api_key=api_key, secret_key=secret_key, feed=resolved_feed)
 
     if req_name == "schwab":
         return SchwabORBProviderStub(settings=settings)

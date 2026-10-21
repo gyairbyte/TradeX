@@ -104,15 +104,34 @@ class MarketScanResult:
     is_time_gated: bool
     time_gate_message: str | None
     coverage_completeness_pct: float
-    coverage_status: str  # "full_market_sip" | "provisional_iex" | "partial_coverage" | "time_gated"
+    coverage_status: str  # "full_market_sip" | "provisional_iex" | "provisional_incomplete" | "failed" | "time_gated" | "no_qualifying_candidates" | "empty"
     coverage_warning: str
     warnings: list[str]
+    scan_requested_at: datetime | None = None
+    scan_completed_at: datetime | None = None
+    data_freshness_time: datetime | None = None
+    daily_history_complete_count: int = 0
+    or_observations_valid_count: int = 0
+    rv_baseline_complete_count: int = 0
+    missing_data_count: int = 0
     stage_failures: dict[str, str] = field(default_factory=dict)
     disclaimer: str = RESEARCH_PREVIEW_DISCLAIMER
 
     @property
     def as_of_time_et(self) -> datetime:
         return self.as_of_time.astimezone(MARKET_TIMEZONE)
+
+    @property
+    def scan_requested_at_et(self) -> datetime | None:
+        return self.scan_requested_at.astimezone(MARKET_TIMEZONE) if self.scan_requested_at else None
+
+    @property
+    def scan_completed_at_et(self) -> datetime | None:
+        return self.scan_completed_at.astimezone(MARKET_TIMEZONE) if self.scan_completed_at else None
+
+    @property
+    def data_freshness_time_et(self) -> datetime | None:
+        return self.data_freshness_time.astimezone(MARKET_TIMEZONE) if self.data_freshness_time else None
 
 
 def _build_candidate_row(
@@ -209,6 +228,9 @@ def run_market_scan(
     else:
         eval_date = session_date
 
+    scan_requested_at = datetime.now(MARKET_TIMEZONE)
+    data_freshness_time = datetime.combine(eval_date, dt_time(9, 34, 59), tzinfo=MARKET_TIMEZONE)
+
     def _notify(stage: ScanStage, msg: str, **kwargs: Any) -> None:
         if progress_callback:
             progress_callback(
@@ -238,6 +260,9 @@ def run_market_scan(
         return MarketScanResult(
             session_date=eval_date,
             as_of_time=eval_as_of,
+            scan_requested_at=scan_requested_at,
+            scan_completed_at=scan_requested_at,
+            data_freshness_time=data_freshness_time,
             provider=provider.provider_name,
             feed=provider.feed_name,
             is_feed_consolidated=provider.is_feed_consolidated,
@@ -272,6 +297,9 @@ def run_market_scan(
         return MarketScanResult(
             session_date=eval_date,
             as_of_time=eval_as_of,
+            scan_requested_at=scan_requested_at,
+            scan_completed_at=datetime.now(MARKET_TIMEZONE),
+            data_freshness_time=data_freshness_time,
             provider=provider.provider_name,
             feed=provider.feed_name,
             is_feed_consolidated=provider.is_feed_consolidated,
@@ -304,6 +332,9 @@ def run_market_scan(
         return MarketScanResult(
             session_date=eval_date,
             as_of_time=eval_as_of,
+            scan_requested_at=scan_requested_at,
+            scan_completed_at=datetime.now(MARKET_TIMEZONE),
+            data_freshness_time=data_freshness_time,
             provider=provider.provider_name,
             feed=provider.feed_name,
             is_feed_consolidated=provider.is_feed_consolidated,
@@ -336,6 +367,9 @@ def run_market_scan(
         return MarketScanResult(
             session_date=eval_date,
             as_of_time=eval_as_of,
+            scan_requested_at=scan_requested_at,
+            scan_completed_at=datetime.now(MARKET_TIMEZONE),
+            data_freshness_time=data_freshness_time,
             provider=provider.provider_name,
             feed=provider.feed_name,
             is_feed_consolidated=provider.is_feed_consolidated,
@@ -370,6 +404,9 @@ def run_market_scan(
         return MarketScanResult(
             session_date=eval_date,
             as_of_time=eval_as_of,
+            scan_requested_at=scan_requested_at,
+            scan_completed_at=datetime.now(MARKET_TIMEZONE),
+            data_freshness_time=data_freshness_time,
             provider=provider.provider_name,
             feed=provider.feed_name,
             is_feed_consolidated=provider.is_feed_consolidated,
@@ -393,11 +430,10 @@ def run_market_scan(
 
     exclusions: list[SymbolExclusion] = []
     daily_qualified_symbols: list[str] = []
-    daily_metrics_by_sym: dict[str, tuple[float, float, float]] = {}  # sym -> (adv14, atr14, last_close)
-    securities_evaluated = 0
+    daily_metrics_by_sym: dict[str, tuple[float, float]] = {}  # sym -> (adv14, atr14)
+    daily_history_complete_count = 0
 
     for sym in sorted(discovered_universe):
-        securities_evaluated += 1
         bars = daily_bars_by_sym.get(sym, [])
 
         # Check for daily bar availability and lookback requirements
@@ -423,18 +459,10 @@ def run_market_scan(
             )
             continue
 
-        last_bar_close = bars[-1].close
+        daily_history_complete_count += 1
 
-        # Filter: Prior Close > $5.00
-        if last_bar_close <= 5.00:
-            exclusions.append(
-                SymbolExclusion(
-                    symbol=sym,
-                    category=ExclusionCategory.TECHNICAL_FILTER,
-                    reason=f"Prior close ${last_bar_close:.2f} <= $5.00 minimum threshold",
-                )
-            )
-            continue
+        # NOTE: Opening price > $5.00 applies to session D opening price at 09:30 ET,
+        # NOT prior-session close (DAYTRADE-003B). Evaluated in Stage 3 on or_open.
 
         # Filter: ADV14 >= 1,000,000 shares
         if adv14 < 1_000_000.0:
@@ -459,30 +487,42 @@ def run_market_scan(
             continue
 
         daily_qualified_symbols.append(sym)
-        daily_metrics_by_sym[sym] = (adv14, atr14, last_bar_close)
+        daily_metrics_by_sym[sym] = (adv14, atr14)
 
     timings["daily_screening"] = round(time.time() - t1, 3)
     daily_qual_count = len(daily_qualified_symbols)
 
     _notify(
         ScanStage.DAILY_ELIGIBILITY,
-        f"Stage 2 Complete: {daily_qual_count:,} securities passed daily liquidity screening (Price > $5, ADV >= 1M, ATR > $0.50).",
+        f"Stage 2 Complete: {daily_qual_count:,} securities passed daily liquidity screening (ADV >= 1M, ATR > $0.50).",
         discovered_count=universe_size,
-        evaluated_daily_count=securities_evaluated,
+        evaluated_daily_count=daily_history_complete_count,
         daily_qualified_count=daily_qual_count,
     )
 
     if daily_qual_count == 0:
+        missing_count = sum(
+            1 for e in exclusions if e.category in (ExclusionCategory.DATA_UNAVAILABLE, ExclusionCategory.INTEGRITY_BLOCKED)
+        )
+        evaluated_count = universe_size - missing_count
+        comp_pct = round((evaluated_count / universe_size) * 100.0, 1) if universe_size > 0 else 0.0
         return MarketScanResult(
             session_date=eval_date,
             as_of_time=eval_as_of,
+            scan_requested_at=scan_requested_at,
+            scan_completed_at=datetime.now(MARKET_TIMEZONE),
+            data_freshness_time=data_freshness_time,
             provider=provider.provider_name,
             feed=provider.feed_name,
             is_feed_consolidated=provider.is_feed_consolidated,
             feed_disclosure=provider.feed_disclosure,
             universe_size_discovered=universe_size,
-            securities_evaluated=securities_evaluated,
+            securities_evaluated=evaluated_count,
+            daily_history_complete_count=daily_history_complete_count,
             daily_eligible_count=0,
+            or_observations_valid_count=0,
+            rv_baseline_complete_count=0,
+            missing_data_count=missing_count,
             eligible_candidates_count=0,
             top_n_selected=0,
             candidates=[],
@@ -490,10 +530,10 @@ def run_market_scan(
             exclusions=exclusions,
             is_time_gated=False,
             time_gate_message=None,
-            coverage_completeness_pct=round((securities_evaluated / universe_size) * 100.0, 1),
+            coverage_completeness_pct=comp_pct,
             coverage_status="no_qualifying_candidates",
             coverage_warning="No securities passed the daily liquidity and volatility filters.",
-            warnings=["No securities met the Price > $5, ADV >= 1M, ATR > $0.50 criteria."],
+            warnings=["No securities met the ADV >= 1M, ATR > $0.50 criteria."],
         )
 
     # -------------------------------------------------------------------------
@@ -506,7 +546,7 @@ def run_market_scan(
         ScanStage.OPENING_RANGE,
         f"Stage 3: Evaluating 5-minute opening range and 14-session baseline for {daily_qual_count:,} candidates...",
         discovered_count=universe_size,
-        evaluated_daily_count=securities_evaluated,
+        evaluated_daily_count=daily_history_complete_count,
         daily_qualified_count=daily_qual_count,
     )
 
@@ -515,16 +555,28 @@ def run_market_scan(
         prior_or_vols_by_sym = provider.fetch_prior_opening_range_volumes(daily_qualified_symbols, prior_14_sessions)
     except ORBProviderError as err:
         stage_failures["OPENING_RANGE"] = str(err)
+        missing_count = sum(
+            1 for e in exclusions if e.category in (ExclusionCategory.DATA_UNAVAILABLE, ExclusionCategory.INTEGRITY_BLOCKED)
+        )
+        evaluated_count = universe_size - missing_count
+        comp_pct = round((evaluated_count / universe_size) * 100.0, 1) if universe_size > 0 else 0.0
         return MarketScanResult(
             session_date=eval_date,
             as_of_time=eval_as_of,
+            scan_requested_at=scan_requested_at,
+            scan_completed_at=datetime.now(MARKET_TIMEZONE),
+            data_freshness_time=data_freshness_time,
             provider=provider.provider_name,
             feed=provider.feed_name,
             is_feed_consolidated=provider.is_feed_consolidated,
             feed_disclosure=provider.feed_disclosure,
             universe_size_discovered=universe_size,
-            securities_evaluated=securities_evaluated,
+            securities_evaluated=evaluated_count,
+            daily_history_complete_count=daily_history_complete_count,
             daily_eligible_count=daily_qual_count,
+            or_observations_valid_count=0,
+            rv_baseline_complete_count=0,
+            missing_data_count=missing_count,
             eligible_candidates_count=0,
             top_n_selected=0,
             candidates=[],
@@ -532,7 +584,7 @@ def run_market_scan(
             exclusions=exclusions,
             is_time_gated=False,
             time_gate_message=None,
-            coverage_completeness_pct=round((securities_evaluated / universe_size) * 100.0, 1),
+            coverage_completeness_pct=comp_pct,
             coverage_status="failed",
             coverage_warning="Opening range data retrieval failed.",
             warnings=[f"Opening range fetch failed: {err}"],
@@ -541,9 +593,11 @@ def run_market_scan(
 
     eligible_candidates: list[Candidate] = []
     opening_ranges: dict[str, OpeningRange] = {}
+    or_observations_valid_count = 0
+    rv_baseline_complete_count = 0
 
     for sym in daily_qualified_symbols:
-        adv14, atr14, _last_close = daily_metrics_by_sym[sym]
+        adv14, atr14 = daily_metrics_by_sym[sym]
         or_bars = current_or_bars_by_sym.get(sym, [])
 
         # Check for future-bar leakage in opening range minute bars
@@ -584,7 +638,9 @@ def run_market_scan(
                 )
             continue
 
-        # Filter: Opening Price > $5.00
+        or_observations_valid_count += 1
+
+        # Filter: Opening Price > $5.00 (DAYTRADE-003B: Session D regular-session opening print)
         if op_range.or_open <= 5.00:
             exclusions.append(
                 SymbolExclusion(
@@ -613,6 +669,8 @@ def run_market_scan(
                 )
             )
             continue
+
+        rv_baseline_complete_count += 1
 
         # Filter: Relative Volume >= 1.0
         if rv14 < 1.0:
@@ -644,11 +702,11 @@ def run_market_scan(
 
     _notify(
         ScanStage.OPENING_RANGE,
-        f"Stage 3 Complete: {eligible_count:,} candidates met all ORB eligibility requirements (RV14 >= 1.0).",
+        f"Stage 3 Complete: {eligible_count:,} candidates met all ORB eligibility requirements (Open > $5, RV14 >= 1.0).",
         discovered_count=universe_size,
-        evaluated_daily_count=securities_evaluated,
+        evaluated_daily_count=daily_history_complete_count,
         daily_qualified_count=daily_qual_count,
-        or_evaluated_count=daily_qual_count,
+        or_evaluated_count=or_observations_valid_count,
         eligible_candidates_count=eligible_count,
     )
 
@@ -660,9 +718,9 @@ def run_market_scan(
         ScanStage.RANKING,
         f"Stage 4: Ranking {eligible_count:,} candidates by Relative Volume descending...",
         discovered_count=universe_size,
-        evaluated_daily_count=securities_evaluated,
+        evaluated_daily_count=daily_history_complete_count,
         daily_qualified_count=daily_qual_count,
-        or_evaluated_count=daily_qual_count,
+        or_evaluated_count=or_observations_valid_count,
         eligible_candidates_count=eligible_count,
     )
 
@@ -701,51 +759,68 @@ def run_market_scan(
     timings["total"] = round(sum(timings.values()), 3)
 
     # -------------------------------------------------------------------------
-    # STAGE 5: Coverage Disclosures & Reporting
+    # STAGE 5: Truthful Coverage Disclosures & Reporting
     # -------------------------------------------------------------------------
-    completeness_pct = round((securities_evaluated / universe_size) * 100.0, 1)
+    missing_data_count = sum(
+        1 for e in exclusions if e.category in (ExclusionCategory.DATA_UNAVAILABLE, ExclusionCategory.INTEGRITY_BLOCKED)
+    )
+    securities_evaluated = universe_size - missing_data_count
+    completeness_pct = round((securities_evaluated / universe_size) * 100.0, 1) if universe_size > 0 else 0.0
 
-    if provider.is_feed_consolidated:
-        coverage_status = "full_market_sip" if completeness_pct >= 95.0 else "partial_coverage"
-        if coverage_status == "full_market_sip":
-            cov_warn = (
-                f"Full-market candidate discovery evaluated {securities_evaluated:,} of {universe_size:,} securities "
-                f"({completeness_pct:.1f}% coverage) using consolidated SIP market data."
-            )
-        else:
-            cov_warn = (
-                f"Partial-market coverage: evaluated {securities_evaluated:,} of {universe_size:,} securities "
-                f"({completeness_pct:.1f}% coverage). Rankings are provisional over the evaluated subset."
-            )
-    else:
+    if not provider.is_feed_consolidated:
         coverage_status = "provisional_iex"
         cov_warn = (
-            f"PROVISIONAL RANKINGS (IEX FEED ONLY): TradeX evaluated {securities_evaluated:,} of {universe_size:,} "
-            f"securities ({completeness_pct:.1f}% coverage) using Alpaca free-tier IEX feed (~2% of market volume). "
-            "Relative volume and candidate rankings do NOT reflect consolidated SIP volume and are provisional heuristics."
+            f"PROVISIONAL RANKINGS (IEX FEED ONLY): Evaluated {securities_evaluated:,} of {universe_size:,} securities "
+            f"({completeness_pct:.1f}% data completeness) using Alpaca free-tier IEX feed (~2% of market volume). "
+            "Relative volume figures reflect IEX exchange activity only and may diverge from the consolidated tape. "
+            "Rankings are provisional heuristics and do NOT represent an authoritative SIP Top 20."
         )
         warnings.append(cov_warn)
+    elif completeness_pct < 95.0:
+        coverage_status = "provisional_incomplete"
+        cov_warn = (
+            f"PROVISIONAL RANKINGS (MATERIAL DATA GAPS): Evaluated {securities_evaluated:,} of {universe_size:,} discovered "
+            f"securities ({completeness_pct:.1f}% coverage). {missing_data_count:,} securities were excluded due to missing "
+            "or incomplete provider data. Rankings are provisional over the evaluated subset and do NOT represent an "
+            "authoritative full-market Top 20."
+        )
+        warnings.append(cov_warn)
+    else:
+        coverage_status = "full_market_sip"
+        cov_warn = (
+            f"Full-market candidate discovery evaluated {securities_evaluated:,} of {universe_size:,} securities "
+            f"({completeness_pct:.1f}% coverage) using consolidated SIP market data."
+        )
+
+    scan_completed_at = datetime.now(MARKET_TIMEZONE)
 
     _notify(
         ScanStage.COMPLETE,
         f"Scan complete in {timings['total']}s: Selected Top {len(preview_rows)} opportunities from {eligible_count} qualifying candidates.",
         discovered_count=universe_size,
-        evaluated_daily_count=securities_evaluated,
+        evaluated_daily_count=daily_history_complete_count,
         daily_qualified_count=daily_qual_count,
-        or_evaluated_count=daily_qual_count,
+        or_evaluated_count=or_observations_valid_count,
         eligible_candidates_count=eligible_count,
     )
 
     return MarketScanResult(
         session_date=eval_date,
         as_of_time=eval_as_of,
+        scan_requested_at=scan_requested_at,
+        scan_completed_at=scan_completed_at,
+        data_freshness_time=data_freshness_time,
         provider=provider.provider_name,
         feed=provider.feed_name,
         is_feed_consolidated=provider.is_feed_consolidated,
         feed_disclosure=provider.feed_disclosure,
         universe_size_discovered=universe_size,
         securities_evaluated=securities_evaluated,
+        daily_history_complete_count=daily_history_complete_count,
         daily_eligible_count=daily_qual_count,
+        or_observations_valid_count=or_observations_valid_count,
+        rv_baseline_complete_count=rv_baseline_complete_count,
+        missing_data_count=missing_data_count,
         eligible_candidates_count=eligible_count,
         top_n_selected=len(preview_rows),
         candidates=preview_rows,

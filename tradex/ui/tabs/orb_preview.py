@@ -180,19 +180,30 @@ def render_orb_preview_tab(
                     "or add credentials to `.env` to query live market data."
                 )
             else:
+                feed_choice = st.radio(
+                    "Market Data Feed Selection",
+                    options=[
+                        "Consolidated Tape (SIP) — Published Strategy Requirement",
+                        "IEX Free-Tier Feed (Provisional Heuristic Only)",
+                    ],
+                    index=0,
+                    horizontal=True,
+                    help="SIP delivers 100% tape volume. IEX covers ~2% tape and yields provisional heuristic rankings.",
+                )
+                selected_feed = "sip" if "SIP" in feed_choice else "iex"
                 provider_obj = AlpacaORBProvider(
                     api_key=settings.data.alpaca_api_key or "",
                     secret_key=settings.data.alpaca_secret_key or "",
-                    feed="sip",
+                    feed=selected_feed,
                 )
-                feed_label = "SIP (Consolidated Tape)" if provider_obj.is_feed_consolidated else "IEX (Free Tier — Degraded)"
-                st.info(f"Using **Alpaca Provider** with configured feed: **{feed_label}**.")
+                feed_label = "SIP (Consolidated Tape)" if provider_obj.is_feed_consolidated else "IEX (Free Tier — Provisional)"
+                st.info(f"Using **Alpaca Provider** with explicitly selected feed: **{feed_label}**.")
         else:
             st.info(
-                "Using **Deterministic Mock Provider** (offline simulated market universe with qualifying candidates, "
-                "ties, technical filters, and Doji handling for testing)."
+                "Using **Deterministic Mock Provider** (seeded with the 33-symbol simulated market universe "
+                "with qualifying Long, Short, and Doji candidates, ties, and technical filter exclusions)."
             )
-            provider_obj = MockORBProvider()
+            provider_obj = MockORBProvider.create_populated()
 
         # Notice on Schwab limitation if Schwab is active in main app settings
         if settings.data.data_provider == "schwab":
@@ -229,7 +240,18 @@ def render_orb_preview_tab(
                         top_n=20,
                     )
                     st.session_state["orb_market_scan_result"] = scan_result
-                    status_container.success("✅ Market scan completed successfully.")
+                    if scan_result.coverage_status == "full_market_sip":
+                        status_container.success("✅ Market scan completed successfully with full-market consolidated SIP coverage.")
+                    elif scan_result.coverage_status == "provisional_iex":
+                        status_container.warning("⚠️ Market scan completed with provisional IEX coverage (~2% volume).")
+                    elif scan_result.coverage_status == "provisional_incomplete":
+                        status_container.warning("⚠️ Market scan completed with provisional coverage due to material data gaps.")
+                    elif scan_result.coverage_status == "failed":
+                        status_container.error(f"❌ Market scan failed: {scan_result.coverage_warning}")
+                    elif scan_result.coverage_status == "time_gated":
+                        status_container.error(f"🛑 Time-Gate Blocked: {scan_result.time_gate_message}")
+                    else:
+                        status_container.info(f"Scan completed: {scan_result.coverage_warning}")
                 except ORBProviderConfigurationError as err:
                     st.session_state["orb_market_scan_result"] = None
                     status_container.error(f"Configuration error: {err}")
@@ -250,19 +272,33 @@ def render_orb_preview_tab(
         with col1:
             st.metric("Session Date", scan_result.session_date.isoformat())
         with col2:
-            st.metric("As-Of Time (ET)", scan_result.as_of_time_et.strftime("%H:%M:%S %Z"))
+            st.metric("As-Of Cutoff", scan_result.as_of_time_et.strftime("%H:%M:%S %Z"))
         with col3:
             st.metric("Discovered", f"{scan_result.universe_size_discovered:,}")
         with col4:
-            st.metric("Evaluated", f"{scan_result.securities_evaluated:,}")
+            st.metric("Evaluated Data", f"{scan_result.securities_evaluated:,} ({scan_result.coverage_completeness_pct:.1f}%)")
         with col5:
-            st.metric("Eligible", f"{scan_result.eligible_candidates_count:,}")
+            st.metric("Eligible Candidates", f"{scan_result.eligible_candidates_count:,}")
+
+        # Scan Execution Timestamps & Data Freshness
+        t_col1, t_col2, t_col3 = st.columns(3)
+        with t_col1:
+            req_str = scan_result.scan_requested_at_et.strftime("%H:%M:%S %Z") if scan_result.scan_requested_at_et else "N/A"
+            st.caption(f"**Scan Requested:** {req_str}")
+        with t_col2:
+            comp_str = scan_result.scan_completed_at_et.strftime("%H:%M:%S %Z") if scan_result.scan_completed_at_et else "N/A"
+            st.caption(f"**Scan Completed:** {comp_str}")
+        with t_col3:
+            fresh_str = scan_result.data_freshness_time_et.strftime("%H:%M:%S %Z") if scan_result.data_freshness_time_et else "09:34:59 ET"
+            st.caption(f"**Data Freshness:** {fresh_str} (OR close)")
 
         # Feed & Coverage Disclosure Notice
-        if not scan_result.is_feed_consolidated:
+        if scan_result.coverage_status in ("provisional_iex", "provisional_incomplete"):
             st.warning(f"⚠️ **{scan_result.coverage_warning}**")
-        else:
+        elif scan_result.coverage_status == "full_market_sip":
             st.info(f"ℹ️ **Universe Coverage Notice ({scan_result.coverage_status}):** {scan_result.coverage_warning}")
+        else:
+            st.warning(f"ℹ️ **Notice ({scan_result.coverage_status}):** {scan_result.coverage_warning}")
 
         # Time-Gating Check
         if scan_result.is_time_gated:
@@ -270,7 +306,10 @@ def render_orb_preview_tab(
             st.stop()
 
         # Candidates Table
-        st.markdown(f"#### Top {len(scan_result.candidates)} Ranked Opportunities (as of 09:35 ET)")
+        status_suffix = ""
+        if scan_result.coverage_status != "full_market_sip":
+            status_suffix = " — Provisional Rankings"
+        st.markdown(f"#### Top {len(scan_result.candidates)} Ranked Opportunities{status_suffix}")
         st.caption(
             "Ranked by Relative Volume (RV14) descending, symbol ascending tie-breaker. "
             "Theoretical Stop Offset ($0.10 \\times \\text{ATR14}$) anchors to the future execution fill, "

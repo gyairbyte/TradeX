@@ -173,20 +173,11 @@ def test_alpaca_fetch_prior_opening_range_volumes():
     assert result["AAPL"][0].volume == 50000.0
 
 
-def test_alpaca_sip_fallback_to_iex_on_403():
-    """When Alpaca SIP feed returns 403 Forbidden, provider falls back to IEX."""
-    call_count = 0
-
+def test_alpaca_sip_fails_closed_on_403_without_feed_switching():
+    """When Alpaca SIP feed returns 403 Forbidden, provider fails closed with an explicit error and does NOT switch feeds."""
     def _mock_get(url, headers=None, params=None, timeout=None):
-        nonlocal call_count
-        call_count += 1
         resp = MagicMock(spec=requests.Response)
-        if params and params.get("feed") == "sip":
-            resp.status_code = 403
-            return resp
-        # Subsequent call with IEX feed succeeds
-        resp.status_code = 200
-        resp.json.return_value = {"bars": {"AAPL": []}}
+        resp.status_code = 403
         return resp
 
     provider = AlpacaORBProvider(
@@ -198,12 +189,116 @@ def test_alpaca_sip_fallback_to_iex_on_403():
     )
 
     assert provider.is_feed_consolidated is True
-    provider.fetch_daily_bars(["AAPL"], start_date=TEST_DATE, end_date=TEST_DATE)
+    assert provider.feed_name == "sip"
 
-    # Provider must have switched to IEX feed
-    assert provider.feed_name == "iex"
-    assert provider.is_feed_consolidated is False
-    assert "IEX Feed Only" in provider.feed_disclosure
+    with pytest.raises(ORBProviderConfigurationError) as exc_info:
+        provider.fetch_daily_bars(["AAPL"], start_date=TEST_DATE, end_date=TEST_DATE)
+
+    assert "Alpaca feed entitlement error" in str(exc_info.value)
+    assert "HTTP 403 Forbidden" in str(exc_info.value)
+    assert "feed='sip'" in str(exc_info.value)
+
+    # Provider feed must remain strictly 'sip' (no silent or mixed switching)
+    assert provider.feed_name == "sip"
+    assert provider.is_feed_consolidated is True
+
+
+def test_alpaca_pagination_combines_pages():
+    """Alpaca provider follows next_page_token and accumulates bars across multiple pages."""
+    page_reqs = 0
+
+    def _mock_get(url, headers=None, params=None, timeout=None):
+        nonlocal page_reqs
+        page_reqs += 1
+        resp = MagicMock(spec=requests.Response)
+        resp.status_code = 200
+        if page_reqs == 1:
+            # Page 1: 1 bar for AAPL, has next_page_token
+            resp.json.return_value = {
+                "bars": {
+                    "AAPL": [
+                        {
+                            "t": "2024-01-02T14:30:00Z",
+                            "o": 180.0,
+                            "h": 181.0,
+                            "l": 179.5,
+                            "c": 180.5,
+                            "v": 50000.0,
+                        }
+                    ]
+                },
+                "next_page_token": "page_2_token",
+            }
+        else:
+            # Page 2: 1 more bar for AAPL, next_page_token is None
+            resp.json.return_value = {
+                "bars": {
+                    "AAPL": [
+                        {
+                            "t": "2024-01-02T14:31:00Z",
+                            "o": 180.5,
+                            "h": 181.5,
+                            "l": 180.2,
+                            "c": 181.0,
+                            "v": 60000.0,
+                        }
+                    ]
+                },
+                "next_page_token": None,
+            }
+        return resp
+
+    provider = AlpacaORBProvider(
+        api_key="test_key",
+        secret_key="test_secret",
+        request_func=MagicMock(side_effect=_mock_get),
+        rate_limit_pause_seconds=0.0,
+    )
+
+    res = provider.fetch_opening_range_bars(["AAPL"], session_date=TEST_DATE)
+    assert page_reqs == 2
+    assert len(res["AAPL"]) == 2
+    assert res["AAPL"][0].volume == 50000.0
+    assert res["AAPL"][1].volume == 60000.0
+
+
+def test_alpaca_pagination_cycle_defense():
+    """Alpaca provider fails closed if API returns a repeated page_token."""
+    def _mock_get(url, headers=None, params=None, timeout=None):
+        resp = MagicMock(spec=requests.Response)
+        resp.status_code = 200
+        resp.json.return_value = {
+            "bars": {"AAPL": []},
+            "next_page_token": "infinite_loop_token",
+        }
+        return resp
+
+    from tradex.research.daytrade_orb.provider import ORBProviderDataUnavailableError
+
+    provider = AlpacaORBProvider(
+        api_key="test_key",
+        secret_key="test_secret",
+        request_func=MagicMock(side_effect=_mock_get),
+        rate_limit_pause_seconds=0.0,
+    )
+
+    with pytest.raises(ORBProviderDataUnavailableError) as exc_info:
+        provider.fetch_daily_bars(["AAPL"], start_date=TEST_DATE, end_date=TEST_DATE)
+
+    assert "Pagination cycle detected" in str(exc_info.value)
+
+
+def test_mock_provider_create_populated():
+    """MockORBProvider.create_populated() returns populated 33-symbol synthetic fixture."""
+    provider = MockORBProvider.create_populated()
+    assert len(provider.symbols) == 33
+    assert len(provider.daily_bars) == 33
+    assert len(provider.opening_range_bars) == 33
+    assert len(provider.prior_opening_range_volumes) == 33
+    assert "SYNTH_L01" in provider.symbols
+    assert len(provider.daily_bars["SYNTH_L01"]) == 15
+    assert len(provider.opening_range_bars["SYNTH_L01"]) == 5
+    assert len(provider.prior_opening_range_volumes["SYNTH_L01"]) == 14
 
 
 def test_alpaca_rate_limit_429_retry_handling():
@@ -257,3 +352,4 @@ def test_resolve_orb_provider_mock_and_schwab():
 
     p_mock = resolve_orb_provider(provider_name="mock")
     assert isinstance(p_mock, MockORBProvider)
+    assert len(p_mock.symbols) == 33
