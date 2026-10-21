@@ -315,3 +315,48 @@ def test_theoretical_stop_offset_calculation():
                 assert cand.stop_entry_trigger == cand.or_high
             else:
                 assert cand.stop_entry_trigger == cand.or_low
+
+
+def test_orb_candidate_preview_as_of_time_et_conversion():
+    """ORBCandidatePreviewResult.as_of_time_et converts UTC aware datetime to America/New_York."""
+    snap = create_demo_snapshot()
+    # 2024-01-02 14:35:00 UTC == 2024-01-02 09:35:00 EST
+    utc_as_of = datetime(2024, 1, 2, 14, 35, 0, tzinfo=ZoneInfo("UTC"))
+    utc_snap = ORBSnapshot(
+        session_date=snap.session_date,
+        as_of_time=utc_as_of,
+        source_type=snap.source_type,
+        source_label=snap.source_label,
+        completeness_status=snap.completeness_status,
+        symbols=snap.symbols,
+    )
+
+    res = generate_orb_candidate_preview(utc_snap)
+    assert res.as_of_time.tzinfo == ZoneInfo("UTC")
+    assert res.as_of_time_et.tzinfo == MARKET_TIMEZONE
+    assert res.as_of_time_et.hour == 9
+    assert res.as_of_time_et.minute == 35
+    assert res.as_of_time_et.strftime("%H:%M:%S %Z") == "09:35:00 EST"
+
+
+def test_universe_coverage_warning_enforced_on_declared_complete():
+    """Snapshots claiming declared_complete still produce an unverified completeness warning."""
+    snap = create_demo_snapshot()
+    # 1-symbol snapshot claiming declared_complete
+    single_symbol = {"SYNTH_L01": snap.symbols["SYNTH_L01"]}
+    decl_snap = ORBSnapshot(
+        session_date=snap.session_date,
+        as_of_time=snap.as_of_time,
+        source_type="user_provided_unverified",
+        source_label="Self Declared Complete Snapshot",
+        completeness_status="declared_complete",
+        symbols=single_symbol,
+    )
+
+    res = generate_orb_candidate_preview(decl_snap)
+    assert res.universe_coverage.completeness_status == "declared_complete"
+    assert res.universe_coverage.provided_count == 1
+    # Completeness warning must be present in warnings and universe_coverage
+    assert any("Completeness is self-declared ('declared_complete')" in w for w in res.warnings)
+    assert "has NOT been independently verified" in res.universe_coverage.completeness_warning
+    assert "limited to the provided constituent set (1 symbols provided)" in res.universe_coverage.completeness_warning

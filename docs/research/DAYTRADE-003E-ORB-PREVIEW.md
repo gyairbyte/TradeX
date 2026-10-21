@@ -46,7 +46,7 @@ The preview service reuses existing, audited technical calculations in `tradex.r
 2. **Provided-Input Coverage Scope:**
    - Previews rank candidates **strictly within the uploaded or demo constituent set**.
    - It is never labeled the source paper's full-market Top-20 (~7,000 U.S. equities) unless full-market point-in-time universe data is verified.
-   - A visible warning discloses the declared universe completeness status (`watchlist_only`, `unknown`, `declared_complete`).
+   - A visible warning discloses the declared universe completeness status (`watchlist_only`, `unknown`, `declared_complete`), explicitly noting that even `declared_complete` is self-declared and unverified.
 
 3. **Doji No-Order and No-Backfill Invariant:**
    - If a Doji opening range (OR close == open) qualifies among the Top 20 by RV, it produces `NO_ORDER_DOJI`.

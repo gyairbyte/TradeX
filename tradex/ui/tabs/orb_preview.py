@@ -11,6 +11,8 @@ Nested inside Research Lab as an explicitly non-actionable, read-only research t
 """
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pandas as pd
 import streamlit as st
 
@@ -22,6 +24,7 @@ from tradex.research.daytrade_orb.preview import (
     generate_orb_candidate_preview,
 )
 from tradex.research.daytrade_orb.snapshot import (
+    MARKET_TIMEZONE,
     MAX_SNAPSHOT_BYTES,
     ORBSnapshot,
     SnapshotValidationError,
@@ -98,10 +101,24 @@ def render_orb_preview_tab(
                 )
                 return
             try:
-                snapshot = parse_snapshot_json(file_bytes)
+                parsed_snap = parse_snapshot_json(file_bytes)
+                # User-uploaded files must never present source_type='synthetic_demo' as trusted provenance;
+                # mark all uploads as user_provided_unverified.
+                if parsed_snap.source_type != "user_provided_unverified":
+                    parsed_snap = replace(
+                        parsed_snap,
+                        source_type="user_provided_unverified",
+                        source_label=(
+                            f"{parsed_snap.source_label} (unverified upload)"
+                            if parsed_snap.source_label
+                            else "User upload (unverified)"
+                        ),
+                    )
+                snapshot = parsed_snap
+                as_of_ny = snapshot.as_of_time.astimezone(MARKET_TIMEZONE)
                 st.success(
                     f"Successfully parsed snapshot: {len(snapshot.symbols)} symbols as of "
-                    f"{snapshot.session_date.isoformat()} {snapshot.as_of_time.strftime('%H:%M:%S %Z')}."
+                    f"{snapshot.session_date.isoformat()} {as_of_ny.strftime('%H:%M:%S %Z')}."
                 )
             except SnapshotValidationError as err:
                 st.error(f"Snapshot Validation Error: {err}")
@@ -127,18 +144,17 @@ def render_orb_preview_tab(
     with col1:
         st.metric("Session Date", preview_result.session_date.isoformat())
     with col2:
-        st.metric("As-Of Time (ET)", preview_result.as_of_time.strftime("%H:%M:%S %Z"))
+        st.metric("As-Of Time (ET)", preview_result.as_of_time_et.strftime("%H:%M:%S %Z"))
     with col3:
         st.metric("Source Type", preview_result.source_type)
     with col4:
         st.metric("Constituents Provided", preview_result.universe_coverage.provided_count)
 
-    # Universe coverage and completeness disclosure
-    if preview_result.universe_coverage.completeness_status != "declared_complete":
-        st.warning(
-            f"⚠️ **Universe Coverage Notice ({preview_result.universe_coverage.completeness_status}):** "
-            f"{preview_result.universe_coverage.completeness_warning}"
-        )
+    # Universe coverage and completeness disclosure (unconditionally rendered)
+    st.warning(
+        f"⚠️ **Universe Coverage Notice ({preview_result.universe_coverage.completeness_status}):** "
+        f"{preview_result.universe_coverage.completeness_warning}"
+    )
 
     # ══════════════════════════════════════════════════════════════════════════════
     # TIME-GATING CHECK

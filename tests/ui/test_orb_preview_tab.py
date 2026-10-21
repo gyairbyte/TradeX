@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import sys
 from unittest.mock import MagicMock
 
@@ -10,6 +11,7 @@ import pytest
 from tradex.config import settings_from_mapping
 from tradex.research.daytrade_orb.demo_fixture import (
     DEMO_SESSION_DATE,
+    get_demo_snapshot_dict,
     get_demo_snapshot_json,
 )
 from tradex.research.daytrade_orb.snapshot import MAX_SNAPSHOT_BYTES
@@ -173,3 +175,75 @@ def test_render_time_gate_blocks_before_0935(orb_preview_module, fake_orb_st, mo
     error_msg = str(fake_orb_st.error.call_args[0][0])
     assert "Time-Gate Blocked" in error_msg
     fake_orb_st.stop.assert_called_once()
+
+
+def test_render_upload_converts_utc_as_of_time_to_et(orb_preview_module, fake_orb_st):
+    """Upload with UTC as-of time converts and renders as ET (09:35:00 EST)."""
+    settings = settings_from_mapping({})
+    fake_orb_st.radio.return_value = "Upload Custom Snapshot JSON"
+
+    raw_dict = get_demo_snapshot_dict()
+    raw_dict["as_of_time"] = "2024-01-02T14:35:00Z"
+    upload_bytes = json.dumps(raw_dict).encode("utf-8")
+
+    valid_mock = MagicMock()
+    valid_mock.getvalue.return_value = upload_bytes
+    fake_orb_st.file_uploader.return_value = valid_mock
+
+    orb_preview_module.render_orb_preview_tab(settings=settings)
+
+    fake_orb_st.success.assert_called_once()
+    success_msg = str(fake_orb_st.success.call_args[0][0])
+    assert "09:35:00 EST" in success_msg
+    assert "14:35:00 UTC" not in success_msg
+
+    # Verify metric for As-Of Time (ET) was rendered with ET time
+    metric_calls = {c[0][0]: c[0][1] for c in fake_orb_st.metric.call_args_list}
+    assert "As-Of Time (ET)" in metric_calls
+    assert metric_calls["As-Of Time (ET)"] == "09:35:00 EST"
+
+
+def test_render_upload_overrides_synthetic_demo_source_type_to_unverified(orb_preview_module, fake_orb_st):
+    """Uploaded JSON specifying source_type='synthetic_demo' is overridden to user_provided_unverified."""
+    settings = settings_from_mapping({})
+    fake_orb_st.radio.return_value = "Upload Custom Snapshot JSON"
+
+    raw_dict = get_demo_snapshot_dict()
+    raw_dict["source_type"] = "synthetic_demo"
+    upload_bytes = json.dumps(raw_dict).encode("utf-8")
+
+    valid_mock = MagicMock()
+    valid_mock.getvalue.return_value = upload_bytes
+    fake_orb_st.file_uploader.return_value = valid_mock
+
+    orb_preview_module.render_orb_preview_tab(settings=settings)
+
+    metric_calls = {c[0][0]: c[0][1] for c in fake_orb_st.metric.call_args_list}
+    assert metric_calls.get("Source Type") == "user_provided_unverified"
+
+
+def test_render_upload_single_symbol_declared_complete_displays_coverage_warning(orb_preview_module, fake_orb_st):
+    """1-symbol snapshot claiming declared_complete still displays the coverage limitation warning."""
+    settings = settings_from_mapping({})
+    fake_orb_st.radio.return_value = "Upload Custom Snapshot JSON"
+
+    raw_dict = get_demo_snapshot_dict()
+    raw_dict["completeness_status"] = "declared_complete"
+    raw_dict["symbols"] = {"SYNTH_L01": raw_dict["symbols"]["SYNTH_L01"]}
+    upload_bytes = json.dumps(raw_dict).encode("utf-8")
+
+    valid_mock = MagicMock()
+    valid_mock.getvalue.return_value = upload_bytes
+    fake_orb_st.file_uploader.return_value = valid_mock
+
+    orb_preview_module.render_orb_preview_tab(settings=settings)
+
+    # Find the warning call containing Universe Coverage Notice
+    warning_msgs = [str(c[0][0]) for c in fake_orb_st.warning.call_args_list]
+    coverage_warnings = [w for w in warning_msgs if "Universe Coverage Notice" in w]
+    assert len(coverage_warnings) == 1
+    cov_msg = coverage_warnings[0]
+    assert "declared_complete" in cov_msg
+    assert "1 symbols provided" in cov_msg
+    assert "Completeness is self-declared ('declared_complete') and has NOT been independently verified" in cov_msg
+    assert "must NOT be interpreted as reproducing the source paper's full-market ~7,000 equity universe" in cov_msg

@@ -106,6 +106,11 @@ class ORBCandidatePreviewResult:
     warnings: list[str]
     disclaimer: str = RESEARCH_PREVIEW_DISCLAIMER
 
+    @property
+    def as_of_time_et(self) -> datetime:
+        """Return as_of_time converted to the official market timezone (America/New_York)."""
+        return self.as_of_time.astimezone(MARKET_TIMEZONE)
+
 
 def generate_orb_candidate_preview(
     snapshot: ORBSnapshot,
@@ -370,14 +375,22 @@ def generate_orb_candidate_preview(
         )
 
     # 6. Universe completeness warning
-    completeness_warning = (
-        "Universe coverage is limited to the provided constituent set "
-        f"({len(snapshot.symbols)} symbols provided, completeness: {snapshot.completeness_status}). "
-        "This preview ranks candidates solely within this provided input and must NOT be interpreted "
-        "as reproducing the source paper's full-market ~7,000 equity universe."
-    )
-    if snapshot.completeness_status != "declared_complete":
-        warnings.append(completeness_warning)
+    if snapshot.completeness_status == "declared_complete":
+        completeness_warning = (
+            "Universe coverage is limited to the provided constituent set "
+            f"({len(snapshot.symbols)} symbols provided). Completeness is self-declared "
+            f"('{snapshot.completeness_status}') and has NOT been independently verified. "
+            "This preview ranks candidates solely within this provided input and must NOT be interpreted "
+            "as reproducing the source paper's full-market ~7,000 equity universe."
+        )
+    else:
+        completeness_warning = (
+            "Universe coverage is limited to the provided constituent set "
+            f"({len(snapshot.symbols)} symbols provided, completeness: {snapshot.completeness_status}). "
+            "This preview ranks candidates solely within this provided input and must NOT be interpreted "
+            "as reproducing the source paper's full-market ~7,000 equity universe."
+        )
+    warnings.append(completeness_warning)
 
     universe_cov = PreviewUniverseCoverage(
         provided_count=len(snapshot.symbols),
