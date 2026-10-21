@@ -234,13 +234,26 @@ def render_orb_preview_tab(
                     status_container.info(f"⏳ **{p.stage.value}**: {p.message}")
 
                 try:
+                    from tradex.research.daytrade_orb.demo_fixture import (
+                        DEMO_AS_OF_TIME,
+                        DEMO_SESSION_DATE,
+                    )
+
+                    is_mock_provider = (provider_mode == "Deterministic Mock Provider (Credential-Free)")
+                    scan_session_date = DEMO_SESSION_DATE if is_mock_provider else None
+                    scan_as_of_time = DEMO_AS_OF_TIME if is_mock_provider else None
+
                     scan_result = run_market_scan(
                         provider=provider_obj,
+                        session_date=scan_session_date,
+                        as_of_time=scan_as_of_time,
                         progress_callback=_ui_progress,
                         top_n=20,
                     )
                     st.session_state["orb_market_scan_result"] = scan_result
-                    if scan_result.coverage_status == "full_market_sip":
+                    if scan_result.coverage_status == "synthetic_demo":
+                        status_container.info("🧪 Historical synthetic demo scan evaluated successfully using 2024-01-02 fixture.")
+                    elif scan_result.coverage_status == "full_market_sip":
                         status_container.success("✅ Market scan completed successfully with full-market consolidated SIP coverage.")
                     elif scan_result.coverage_status == "provisional_iex":
                         status_container.warning("⚠️ Market scan completed with provisional IEX coverage (~2% volume).")
@@ -280,25 +293,33 @@ def render_orb_preview_tab(
         with col5:
             st.metric("Eligible Candidates", f"{scan_result.eligible_candidates_count:,}")
 
-        # Scan Execution Timestamps & Data Freshness
+        # Scan Execution Timestamps & Window Cutoff
         t_col1, t_col2, t_col3 = st.columns(3)
         with t_col1:
             req_str = scan_result.scan_requested_at_et.strftime("%H:%M:%S %Z") if scan_result.scan_requested_at_et else "N/A"
             st.caption(f"**Scan Requested:** {req_str}")
         with t_col2:
-            comp_str = scan_result.scan_completed_at_et.strftime("%H:%M:%S %Z") if scan_result.scan_completed_at_et else "N/A"
+            if scan_result.scan_requested_at and scan_result.scan_completed_at:
+                elapsed = (scan_result.scan_completed_at - scan_result.scan_requested_at).total_seconds()
+                comp_str = f"{scan_result.scan_completed_at_et.strftime('%H:%M:%S %Z')} ({elapsed:.1f}s)"
+            elif scan_result.scan_completed_at_et:
+                comp_str = scan_result.scan_completed_at_et.strftime("%H:%M:%S %Z")
+            else:
+                comp_str = "N/A"
             st.caption(f"**Scan Completed:** {comp_str}")
         with t_col3:
-            fresh_str = scan_result.data_freshness_time_et.strftime("%H:%M:%S %Z") if scan_result.data_freshness_time_et else "09:34:59 ET"
-            st.caption(f"**Data Freshness:** {fresh_str} (OR close)")
+            win_str = scan_result.or_window_end_time_et.strftime("%H:%M:%S %Z") if scan_result.or_window_end_time_et else "09:34:59 ET"
+            st.caption(f"**Opening-Range Window End:** {win_str}")
 
         # Feed & Coverage Disclosure Notice
-        if scan_result.coverage_status in ("provisional_iex", "provisional_incomplete"):
+        if scan_result.coverage_status == "synthetic_demo":
+            st.info(f"🧪 **{scan_result.coverage_warning}**")
+        elif scan_result.coverage_status in ("provisional_iex", "provisional_incomplete"):
             st.warning(f"⚠️ **{scan_result.coverage_warning}**")
         elif scan_result.coverage_status == "full_market_sip":
             st.info(f"ℹ️ **Universe Coverage Notice ({scan_result.coverage_status}):** {scan_result.coverage_warning}")
         else:
-            st.warning(f"ℹ️ **Notice ({scan_result.coverage_status}):** {scan_result.coverage_warning}")
+            st.info(f"ℹ️ **Notice ({scan_result.coverage_status}):** {scan_result.coverage_warning}")
 
         # Time-Gating Check
         if scan_result.is_time_gated:
@@ -306,9 +327,14 @@ def render_orb_preview_tab(
             st.stop()
 
         # Candidates Table
-        status_suffix = ""
-        if scan_result.coverage_status != "full_market_sip":
-            status_suffix = " — Provisional Rankings"
+        if scan_result.coverage_status == "synthetic_demo":
+            status_suffix = " — Historical Synthetic Demo (Simulated Universe)"
+        elif scan_result.coverage_status == "full_market_sip":
+            status_suffix = " — Authoritative Full-Market SIP"
+        elif scan_result.coverage_status == "provisional_iex":
+            status_suffix = " — Provisional Rankings (IEX Free Tier)"
+        else:
+            status_suffix = " — Top 20 of Evaluated Provider Universe (Provisional Rankings)"
         st.markdown(f"#### Top {len(scan_result.candidates)} Ranked Opportunities{status_suffix}")
         st.caption(
             "Ranked by Relative Volume (RV14) descending, symbol ascending tie-breaker. "

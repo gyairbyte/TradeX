@@ -95,8 +95,9 @@ TradeX tracks and reconciles data completeness across every stage of the market 
 9. **`coverage_completeness_pct`**: $\frac{\text{securities\_evaluated}}{\text{universe\_size\_discovered}} \times 100$.
 
 ### Truthful Status Classification
-* **`full_market_sip`**: Requires `feed == "sip"`, `is_feed_consolidated == True`, and `coverage_completeness_pct >= 95.0%`.
-* **`provisional_incomplete`**: Triggered whenever material data gaps drop completeness below 95%, explicitly disclosing that missing data prevents authoritative full-market rankings.
+* **`full_market_sip`**: Requires a real consolidated SIP provider feed (`feed == "sip"`, `is_feed_consolidated == True`, non-mock) and 100% verified complete data (`missing_data_count == 0` and `securities_evaluated == universe_size_discovered`).
+* **`provisional_incomplete`**: Triggered whenever any discovered security has missing or incomplete provider data (`missing_data_count > 0`), explicitly disclosing "Top 20 of evaluated provider universe — provisional" rather than claiming an authoritative full-market Top 20.
+* **`synthetic_demo`**: Always assigned when scanning simulated mock/synthetic fixtures, explicitly identifying rankings as historical or synthetic test heuristics.
 * **`provisional_iex`**: Triggered whenever the free-tier IEX feed is selected.
 * **`failed`**: Triggered when a stage fails; the UI explicitly displays an error and never indicates a successful scan.
 
@@ -119,19 +120,19 @@ Integrated into `tradex/ui/tabs/orb_preview.py`:
 
 3. **Status Reporting & Timestamps:**
    - Real-time stage progress: `DISCOVERY` $\to$ `DAILY_ELIGIBILITY` $\to$ `OPENING_RANGE` $\to$ `RANKING` $\to$ `COMPLETE`.
-   - Clear completion status: Success (SIP full-market), Warning (Provisional incomplete or IEX), or Error (Failed). Never claims success on incomplete or failed scans.
-   - Displays **Scan Requested At**, **Scan Completed At** (with runtime elapsed), and **Data Freshness** (09:34:59 ET).
+   - Clear completion status: Success (SIP full-market), Info (Synthetic demo), Warning (Provisional incomplete or IEX), or Error (Failed). Never claims success on incomplete or failed scans.
+   - Displays **Scan Requested At**, **Scan Completed At** (with runtime elapsed), and **Opening-Range Window End (ET)** (09:34:59 ET).
 
 4. **Candidate Opportunity Table:**
    - Columns: `Rank`, `Symbol`, `Setup`, `OR High`, `OR Low`, `Breakout Trigger`, `RV14`, `ADV14`, `ATR14`, `Theoretical Stop Offset`, `Setup Explanation`.
    - Setup explanations clarify exactly why a stock qualified and why it holds its rank over others (e.g. *"Rank 1: Bullish OR LONG setup above $182.50; RV14 3.50x"*).
-   - If rankings are provisional, the table header explicitly displays `Top N Ranked Opportunities — Provisional Rankings`.
+   - If rankings are provisional or synthetic, the table header explicitly displays `Top N Ranked Opportunities — Top 20 of Evaluated Provider Universe (Provisional Rankings)` or `Top N Candidates — Historical Synthetic Demo (Simulated Universe)`.
 
 5. **Exclusions Audit Expander:**
    - Detailed audit view showing every candidate evaluated that did not qualify for Top 20, categorized by:
      - `TECHNICAL_FILTER`: Failed Price $> \$5$, ADV14 $\ge 1\text{M}$, ATR14 $> \$0.50$, RV14 $< 1.0$, or ranked outside Top 20.
      - `DATA_UNAVAILABLE`: Incomplete daily history, missing OR prints, or missing prior OR baseline.
-     - `INTEGRITY_BLOCKED`: Malformed timestamps, negative prices, or future-bar leakage ($\ge 09:35$ ET bars in opening range).
+     - `INTEGRITY_BLOCKED`: Conflicting duplicate provider bars, malformed timestamps, negative prices, or future-bar leakage ($\ge 09:35$ ET bars in opening range).
 
 ---
 
@@ -148,19 +149,24 @@ In compliance with TradeX research-governance principles:
 ## 7. Verification & Test Evidence
 
 ### Test Summary
-* `tests/research/daytrade_orb/test_scanner.py`: 16 passed.
+* `tests/research/daytrade_orb/test_scanner.py`: 19 passed.
   - Tests gap-up ($4.90 close $\to$ $5.20 open, qualifies) and gap-down ($5.20 close $\to$ $4.90 open, excluded at OR).
-  - Tests 100-symbol mock with 90 missing bars, asserting `provisional_incomplete` coverage.
-  - Tests full-market SIP coverage when completeness $\ge 95\%$.
-  - Tests scan requested, completed, and freshness timestamps.
-* `tests/research/daytrade_orb/test_provider.py`: 12 passed.
+  - Tests 100-symbol SIP scan with 4 missing bars (96% complete), asserting `provisional_incomplete` ("Top 20 of evaluated provider universe — provisional", not authoritative full-market).
+  - Tests 2/2 complete mock provider, asserting `synthetic_demo` (never full-market SIP).
+  - Tests clean real SIP adapter with 100% complete data, asserting `full_market_sip`.
+  - Tests populated mock provider automatic evaluation on 2024-01-02 fixture date without explicit arguments.
+  - Tests scan requested, completed, and opening-range window end timestamps.
+* `tests/research/daytrade_orb/test_provider.py`: 16 passed.
   - Tests Alpaca pagination following `next_page_token` across pages.
   - Tests pagination cycle detection.
   - Tests 403 fail-closed entitlement error without feed switching or feed mixing.
   - Tests `MockORBProvider.create_populated()` with 33 symbols.
-* `tests/ui/test_orb_scanner_ui.py`: 6 passed.
+  - Tests multi-page daily and 1-minute identical duplicate deduplication.
+  - Tests multi-page daily and 1-minute conflicting duplicate detection failing closed (`ORBProviderIntegrityError`).
+* `tests/ui/test_orb_scanner_ui.py`: 7 passed.
   - Tests provisional warnings on incomplete coverage and IEX feed.
   - Tests failed scan displays error status, never success.
-  - Tests timestamp caption rendering.
+  - Tests timestamp caption rendering ("Opening-Range Window End").
+  - Tests end-to-end UI-to-scanner execution in populated mock mode rendering all 20 candidates.
 * Full ORB test suite: **282 passed, 0 failed** in 30.81s.
 * Lint verification: Scoped `ruff check tests scripts tradex/research/daytrade_orb tradex/ui/tabs/orb_preview.py` passed with **0 errors**.

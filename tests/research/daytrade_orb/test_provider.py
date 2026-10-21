@@ -24,6 +24,7 @@ from tradex.research.daytrade_orb.provider import (
     AlpacaORBProvider,
     MockORBProvider,
     ORBProviderConfigurationError,
+    ORBProviderIntegrityError,
     SchwabORBProviderStub,
     resolve_orb_provider,
 )
@@ -353,3 +354,160 @@ def test_resolve_orb_provider_mock_and_schwab():
     p_mock = resolve_orb_provider(provider_name="mock")
     assert isinstance(p_mock, MockORBProvider)
     assert len(p_mock.symbols) == 33
+
+
+def test_alpaca_daily_bars_identical_duplicates_deduped_across_pages():
+    """Identical daily bars across pages are cleanly deduplicated without error."""
+    page_reqs = 0
+
+    def _mock_get(url, headers=None, params=None, timeout=None):
+        nonlocal page_reqs
+        page_reqs += 1
+        resp = MagicMock(spec=requests.Response)
+        resp.status_code = 200
+        # Both pages return the same bar for 2024-01-02
+        resp.json.return_value = {
+            "bars": {
+                "AAPL": [
+                    {
+                        "t": "2024-01-02T05:00:00Z",
+                        "o": 180.0,
+                        "h": 185.0,
+                        "l": 179.0,
+                        "c": 184.0,
+                        "v": 1_000_000.0,
+                    }
+                ]
+            },
+            "next_page_token": "token_2" if page_reqs == 1 else None,
+        }
+        return resp
+
+    provider = AlpacaORBProvider(
+        api_key="test_key",
+        secret_key="test_secret",
+        request_func=MagicMock(side_effect=_mock_get),
+        rate_limit_pause_seconds=0.0,
+    )
+
+    res = provider.fetch_daily_bars(["AAPL"], start_date=TEST_DATE, end_date=TEST_DATE)
+    assert len(res["AAPL"]) == 1
+    assert res["AAPL"][0].volume == 1_000_000.0
+
+
+def test_alpaca_daily_bars_conflicting_duplicates_fails_closed():
+    """Conflicting daily bars (same date, different OHLCV) across pages fail closed."""
+    page_reqs = 0
+
+    def _mock_get(url, headers=None, params=None, timeout=None):
+        nonlocal page_reqs
+        page_reqs += 1
+        resp = MagicMock(spec=requests.Response)
+        resp.status_code = 200
+        vol = 1_000_000.0 if page_reqs == 1 else 2_000_000.0  # Conflict in volume
+        resp.json.return_value = {
+            "bars": {
+                "AAPL": [
+                    {
+                        "t": "2024-01-02T05:00:00Z",
+                        "o": 180.0,
+                        "h": 185.0,
+                        "l": 179.0,
+                        "c": 184.0,
+                        "v": vol,
+                    }
+                ]
+            },
+            "next_page_token": "token_2" if page_reqs == 1 else None,
+        }
+        return resp
+
+    provider = AlpacaORBProvider(
+        api_key="test_key",
+        secret_key="test_secret",
+        request_func=MagicMock(side_effect=_mock_get),
+        rate_limit_pause_seconds=0.0,
+    )
+
+    with pytest.raises(ORBProviderIntegrityError) as exc_info:
+        provider.fetch_daily_bars(["AAPL"], start_date=TEST_DATE, end_date=TEST_DATE)
+
+    assert "Conflicting duplicate daily bars detected for AAPL" in str(exc_info.value)
+
+
+def test_alpaca_minute_bars_identical_duplicates_deduped_across_pages():
+    """Identical 1-minute bars across pages are cleanly deduplicated without error."""
+    page_reqs = 0
+
+    def _mock_get(url, headers=None, params=None, timeout=None):
+        nonlocal page_reqs
+        page_reqs += 1
+        resp = MagicMock(spec=requests.Response)
+        resp.status_code = 200
+        resp.json.return_value = {
+            "bars": {
+                "AAPL": [
+                    {
+                        "t": "2024-01-02T14:30:00Z",
+                        "o": 180.0,
+                        "h": 181.0,
+                        "l": 179.5,
+                        "c": 180.5,
+                        "v": 50000.0,
+                    }
+                ]
+            },
+            "next_page_token": "token_2" if page_reqs == 1 else None,
+        }
+        return resp
+
+    provider = AlpacaORBProvider(
+        api_key="test_key",
+        secret_key="test_secret",
+        request_func=MagicMock(side_effect=_mock_get),
+        rate_limit_pause_seconds=0.0,
+    )
+
+    res = provider.fetch_opening_range_bars(["AAPL"], session_date=TEST_DATE)
+    assert len(res["AAPL"]) == 1
+    assert res["AAPL"][0].volume == 50000.0
+
+
+def test_alpaca_minute_bars_conflicting_duplicates_fails_closed():
+    """Conflicting 1-minute bars (same timestamp, different OHLCV) across pages fail closed."""
+    page_reqs = 0
+
+    def _mock_get(url, headers=None, params=None, timeout=None):
+        nonlocal page_reqs
+        page_reqs += 1
+        resp = MagicMock(spec=requests.Response)
+        resp.status_code = 200
+        vol = 50000.0 if page_reqs == 1 else 99000.0  # Conflict in volume
+        resp.json.return_value = {
+            "bars": {
+                "AAPL": [
+                    {
+                        "t": "2024-01-02T14:30:00Z",
+                        "o": 180.0,
+                        "h": 181.0,
+                        "l": 179.5,
+                        "c": 180.5,
+                        "v": vol,
+                    }
+                ]
+            },
+            "next_page_token": "token_2" if page_reqs == 1 else None,
+        }
+        return resp
+
+    provider = AlpacaORBProvider(
+        api_key="test_key",
+        secret_key="test_secret",
+        request_func=MagicMock(side_effect=_mock_get),
+        rate_limit_pause_seconds=0.0,
+    )
+
+    with pytest.raises(ORBProviderIntegrityError) as exc_info:
+        provider.fetch_opening_range_bars(["AAPL"], session_date=TEST_DATE)
+
+    assert "Conflicting duplicate 1-minute bars detected for AAPL" in str(exc_info.value)

@@ -122,7 +122,7 @@ def _make_prior_or_vols(
     return obs
 
 
-def _build_test_mock_provider() -> MockORBProvider:
+def _build_test_mock_provider(provider_name: str = "alpaca") -> MockORBProvider:
     """Build a deterministic rich test provider with Long, Short, Doji, and filter rejection symbols."""
     symbols = [
         "LONG_HIGH_RV",   # Qualifies LONG, high RV
@@ -215,7 +215,7 @@ def _build_test_mock_provider() -> MockORBProvider:
         daily_bars=daily_bars,
         opening_range_bars=or_bars,
         prior_opening_range_volumes=prior_or_vols,
-        provider_name="mock",
+        provider_name=provider_name,
         feed_name="sip",
         is_feed_consolidated=True,
     )
@@ -233,7 +233,7 @@ def test_automatic_universe_discovery_without_watchlist():
     assert res.securities_evaluated == 11
     assert res.coverage_completeness_pct == 73.3
     assert res.coverage_status == "provisional_incomplete"
-    assert "PROVISIONAL RANKINGS" in res.coverage_warning
+    assert "Top 20 of evaluated provider universe — provisional" in res.coverage_warning
     assert res.eligible_candidates_count > 0
 
 
@@ -398,14 +398,14 @@ def test_iex_versus_sip_source_disclosure():
             "AAPL": _make_prior_or_vols("AAPL", TEST_DATE),
             "MSFT": _make_prior_or_vols("MSFT", TEST_DATE),
         },
-        provider_name="mock",
+        provider_name="alpaca",
         feed_name="sip",
         is_feed_consolidated=True,
     )
     res_sip = run_market_scan(provider=provider_sip, session_date=TEST_DATE, as_of_time=TEST_AS_OF_935)
     assert res_sip.is_feed_consolidated
     assert res_sip.coverage_status == "full_market_sip"
-    assert "consolidated SIP" in res_sip.coverage_warning
+    assert "Authoritative full-market" in res_sip.coverage_warning
 
     # IEX provider (even with complete data) strictly yields provisional IEX warning
     provider_iex = MockORBProvider(
@@ -563,7 +563,7 @@ def test_truthful_market_coverage_with_material_missing_data():
         daily_bars=daily_bars,
         opening_range_bars=or_bars,
         prior_opening_range_volumes=prior_or_vols,
-        provider_name="mock",
+        provider_name="alpaca",
         feed_name="sip",
         is_feed_consolidated=True,
     )
@@ -577,12 +577,12 @@ def test_truthful_market_coverage_with_material_missing_data():
     assert res.coverage_completeness_pct == 10.0
     # Must be marked provisional_incomplete, NOT full_market_sip!
     assert res.coverage_status == "provisional_incomplete"
-    assert "PROVISIONAL RANKINGS (MATERIAL DATA GAPS)" in res.coverage_warning
+    assert "Top 20 of evaluated provider universe — provisional" in res.coverage_warning
     assert "10 of 100" in res.coverage_warning
 
 
 def test_full_market_sip_coverage_when_complete():
-    """When >= 95% of securities have complete evaluable data on SIP feed, coverage is full_market_sip."""
+    """When 100% of discovered securities have complete evaluable data on real SIP feed, coverage is full_market_sip."""
     symbols = [f"SYM_{i:02d}" for i in range(20)]
     daily_bars: dict[str, list[DailyBar]] = {}
     or_bars: dict[str, list[MinuteBar]] = {}
@@ -598,7 +598,7 @@ def test_full_market_sip_coverage_when_complete():
         daily_bars=daily_bars,
         opening_range_bars=or_bars,
         prior_opening_range_volumes=prior_or_vols,
-        provider_name="mock",
+        provider_name="alpaca",
         feed_name="sip",
         is_feed_consolidated=True,
     )
@@ -610,17 +610,111 @@ def test_full_market_sip_coverage_when_complete():
     assert res.securities_evaluated == 20
     assert res.coverage_completeness_pct == 100.0
     assert res.coverage_status == "full_market_sip"
-    assert "Full-market candidate discovery evaluated 20 of 20" in res.coverage_warning
+    assert "Authoritative full-market candidate discovery" in res.coverage_warning
+
+
+def test_sip_scan_with_missing_data_96_of_100_is_provisional_not_full_market():
+    """A 100-symbol SIP scan with 4 symbols missing data (96% complete) reports provisional, NOT authoritative full-market."""
+    symbols = [f"SYM_{i:03d}" for i in range(100)]
+    daily_bars: dict[str, list[DailyBar]] = {}
+    or_bars: dict[str, list[MinuteBar]] = {}
+    prior_or_vols: dict[str, list[OpeningRangeVolumeObservation]] = {}
+
+    for i, sym in enumerate(symbols):
+        if i < 96:
+            daily_bars[sym] = _make_daily_bars(sym, TEST_DATE, num_days=15, base_price=50.0, daily_vol=2_000_000.0)
+            or_bars[sym] = _make_or_bars(sym, TEST_DATE, open_p=50.0, close_p=52.0, total_vol=250_000.0)
+            prior_or_vols[sym] = _make_prior_or_vols(sym, TEST_DATE, daily_or_vol=100_000.0, num_sessions=14)
+        else:
+            daily_bars[sym] = []
+            or_bars[sym] = []
+            prior_or_vols[sym] = []
+
+    provider = MockORBProvider(
+        symbols=symbols,
+        daily_bars=daily_bars,
+        opening_range_bars=or_bars,
+        prior_opening_range_volumes=prior_or_vols,
+        provider_name="alpaca",
+        feed_name="sip",
+        is_feed_consolidated=True,
+    )
+
+    res = run_market_scan(provider=provider, session_date=TEST_DATE, as_of_time=TEST_AS_OF_935)
+
+    assert res.universe_size_discovered == 100
+    assert res.missing_data_count == 4
+    assert res.securities_evaluated == 96
+    assert res.coverage_completeness_pct == 96.0
+    # Must NOT claim full_market_sip because 4 symbols had material data gaps!
+    assert res.coverage_status == "provisional_incomplete"
+    assert res.coverage_status != "full_market_sip"
+    assert "Top 20 of evaluated provider universe — provisional" in res.coverage_warning
+    assert "96 of 100" in res.coverage_warning
+
+
+def test_complete_mock_provider_2_of_2_is_always_synthetic_never_full_market():
+    """A 2/2 complete mock provider scan remains clearly synthetic demo, never authoritative full-market SIP."""
+    symbols = ["MOCK_A", "MOCK_B"]
+    daily_bars = {
+        s: _make_daily_bars(s, TEST_DATE, num_days=15, base_price=50.0, daily_vol=2_000_000.0) for s in symbols
+    }
+    or_bars = {
+        s: _make_or_bars(s, TEST_DATE, open_p=50.0, close_p=52.0, total_vol=250_000.0) for s in symbols
+    }
+    prior_or_vols = {
+        s: _make_prior_or_vols(s, TEST_DATE, daily_or_vol=100_000.0, num_sessions=14) for s in symbols
+    }
+
+    provider = MockORBProvider(
+        symbols=symbols,
+        daily_bars=daily_bars,
+        opening_range_bars=or_bars,
+        prior_opening_range_volumes=prior_or_vols,
+        provider_name="mock",
+        feed_name="sip",
+        is_feed_consolidated=True,
+    )
+
+    res = run_market_scan(provider=provider, session_date=TEST_DATE, as_of_time=TEST_AS_OF_935)
+
+    assert res.universe_size_discovered == 2
+    assert res.missing_data_count == 0
+    assert res.securities_evaluated == 2
+    assert res.coverage_completeness_pct == 100.0
+    # Must be synthetic_demo, NEVER full_market_sip!
+    assert res.coverage_status == "synthetic_demo"
+    assert res.coverage_status != "full_market_sip"
+    assert "HISTORICAL SYNTHETIC DEMO" in res.coverage_warning
+
+
+def test_populated_mock_provider_evaluates_candidates_with_default_session():
+    """MockORBProvider.create_populated() automatically uses fixture session date (2024-01-02) and evaluates Top 20."""
+    from tradex.research.daytrade_orb.demo_fixture import DEMO_SESSION_DATE
+
+    provider = MockORBProvider.create_populated()
+    assert provider.default_session_date == DEMO_SESSION_DATE
+
+    # Run without passing session_date or as_of_time
+    res = run_market_scan(provider=provider)
+
+    assert res.session_date == DEMO_SESSION_DATE
+    assert res.coverage_status == "synthetic_demo"
+    assert len(res.candidates) == 20
+    assert res.eligible_candidates_count >= 20
+    assert "HISTORICAL SYNTHETIC DEMO" in res.coverage_warning
 
 
 def test_scan_timestamps_and_freshness():
-    """MarketScanResult accurately records scan request time, completion time, and data freshness."""
+    """MarketScanResult accurately records scan request time, completion time, and window cutoff."""
     provider = _build_test_mock_provider()
     res = run_market_scan(provider=provider, session_date=TEST_DATE, as_of_time=TEST_AS_OF_935)
 
     assert res.scan_requested_at is not None
     assert res.scan_completed_at is not None
+    assert res.or_window_end_time is not None
+    assert res.or_window_end_time_et is not None
+    assert res.or_window_end_time_et.time() == dt_time(9, 34, 59)
     assert res.data_freshness_time is not None
-    assert res.data_freshness_time_et is not None
     assert res.data_freshness_time_et.time() == dt_time(9, 34, 59)
     assert res.scan_completed_at >= res.scan_requested_at

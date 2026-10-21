@@ -109,6 +109,7 @@ class MarketScanResult:
     warnings: list[str]
     scan_requested_at: datetime | None = None
     scan_completed_at: datetime | None = None
+    or_window_end_time: datetime | None = None
     data_freshness_time: datetime | None = None
     daily_history_complete_count: int = 0
     or_observations_valid_count: int = 0
@@ -130,8 +131,13 @@ class MarketScanResult:
         return self.scan_completed_at.astimezone(MARKET_TIMEZONE) if self.scan_completed_at else None
 
     @property
+    def or_window_end_time_et(self) -> datetime | None:
+        target = self.or_window_end_time or self.data_freshness_time
+        return target.astimezone(MARKET_TIMEZONE) if target else None
+
+    @property
     def data_freshness_time_et(self) -> datetime | None:
-        return self.data_freshness_time.astimezone(MARKET_TIMEZONE) if self.data_freshness_time else None
+        return self.or_window_end_time_et
 
 
 def _build_candidate_row(
@@ -210,6 +216,14 @@ def run_market_scan(
     # -------------------------------------------------------------------------
     # Timing and Session Resolution
     # -------------------------------------------------------------------------
+    # If provider specifies a default historical demo session (e.g. Mock populated fixture), adopt it
+    provider_default_as_of = getattr(provider, "default_as_of_time", None)
+    if as_of_time is None and provider_default_as_of is not None:
+        as_of_time = provider_default_as_of
+    provider_default_session = getattr(provider, "default_session_date", None)
+    if session_date is None and provider_default_session is not None:
+        session_date = provider_default_session
+
     now_et = datetime.now(MARKET_TIMEZONE)
     if as_of_time is None:
         eval_as_of = now_et
@@ -229,7 +243,8 @@ def run_market_scan(
         eval_date = session_date
 
     scan_requested_at = datetime.now(MARKET_TIMEZONE)
-    data_freshness_time = datetime.combine(eval_date, dt_time(9, 34, 59), tzinfo=MARKET_TIMEZONE)
+    or_window_end_time = datetime.combine(eval_date, dt_time(9, 34, 59), tzinfo=MARKET_TIMEZONE)
+    data_freshness_time = or_window_end_time
 
     def _notify(stage: ScanStage, msg: str, **kwargs: Any) -> None:
         if progress_callback:
@@ -262,6 +277,7 @@ def run_market_scan(
             as_of_time=eval_as_of,
             scan_requested_at=scan_requested_at,
             scan_completed_at=scan_requested_at,
+            or_window_end_time=or_window_end_time,
             data_freshness_time=data_freshness_time,
             provider=provider.provider_name,
             feed=provider.feed_name,
@@ -299,6 +315,7 @@ def run_market_scan(
             as_of_time=eval_as_of,
             scan_requested_at=scan_requested_at,
             scan_completed_at=datetime.now(MARKET_TIMEZONE),
+            or_window_end_time=or_window_end_time,
             data_freshness_time=data_freshness_time,
             provider=provider.provider_name,
             feed=provider.feed_name,
@@ -334,6 +351,7 @@ def run_market_scan(
             as_of_time=eval_as_of,
             scan_requested_at=scan_requested_at,
             scan_completed_at=datetime.now(MARKET_TIMEZONE),
+            or_window_end_time=or_window_end_time,
             data_freshness_time=data_freshness_time,
             provider=provider.provider_name,
             feed=provider.feed_name,
@@ -369,6 +387,7 @@ def run_market_scan(
             as_of_time=eval_as_of,
             scan_requested_at=scan_requested_at,
             scan_completed_at=datetime.now(MARKET_TIMEZONE),
+            or_window_end_time=or_window_end_time,
             data_freshness_time=data_freshness_time,
             provider=provider.provider_name,
             feed=provider.feed_name,
@@ -406,6 +425,7 @@ def run_market_scan(
             as_of_time=eval_as_of,
             scan_requested_at=scan_requested_at,
             scan_completed_at=datetime.now(MARKET_TIMEZONE),
+            or_window_end_time=or_window_end_time,
             data_freshness_time=data_freshness_time,
             provider=provider.provider_name,
             feed=provider.feed_name,
@@ -435,6 +455,24 @@ def run_market_scan(
 
     for sym in sorted(discovered_universe):
         bars = daily_bars_by_sym.get(sym, [])
+
+        # Check for duplicate session dates
+        seen_dates: set[date] = set()
+        has_dup_date = False
+        for b in bars:
+            if b.session_date in seen_dates:
+                exclusions.append(
+                    SymbolExclusion(
+                        symbol=sym,
+                        category=ExclusionCategory.INTEGRITY_BLOCKED,
+                        reason=f"Conflicting duplicate daily bars detected for date {b.session_date.isoformat()}",
+                    )
+                )
+                has_dup_date = True
+                break
+            seen_dates.add(b.session_date)
+        if has_dup_date:
+            continue
 
         # Check for daily bar availability and lookback requirements
         adv14 = compute_adv14(bars, eval_date, 14)
@@ -511,6 +549,7 @@ def run_market_scan(
             as_of_time=eval_as_of,
             scan_requested_at=scan_requested_at,
             scan_completed_at=datetime.now(MARKET_TIMEZONE),
+            or_window_end_time=or_window_end_time,
             data_freshness_time=data_freshness_time,
             provider=provider.provider_name,
             feed=provider.feed_name,
@@ -565,6 +604,7 @@ def run_market_scan(
             as_of_time=eval_as_of,
             scan_requested_at=scan_requested_at,
             scan_completed_at=datetime.now(MARKET_TIMEZONE),
+            or_window_end_time=or_window_end_time,
             data_freshness_time=data_freshness_time,
             provider=provider.provider_name,
             feed=provider.feed_name,
@@ -615,6 +655,24 @@ def run_market_scan(
                 has_future_bar = True
                 break
         if has_future_bar:
+            continue
+
+        # Check for duplicate minute bar timestamps in opening range
+        seen_ts: set[datetime] = set()
+        has_dup_ts = False
+        for b in or_bars:
+            if b.timestamp in seen_ts:
+                exclusions.append(
+                    SymbolExclusion(
+                        symbol=sym,
+                        category=ExclusionCategory.INTEGRITY_BLOCKED,
+                        reason=f"Conflicting duplicate opening-range minute bars detected at {b.timestamp.isoformat()}",
+                    )
+                )
+                has_dup_ts = True
+                break
+            seen_ts.add(b.timestamp)
+        if has_dup_ts:
             continue
 
         # Evaluate opening range (09:30-09:34 ET)
@@ -767,29 +825,42 @@ def run_market_scan(
     securities_evaluated = universe_size - missing_data_count
     completeness_pct = round((securities_evaluated / universe_size) * 100.0, 1) if universe_size > 0 else 0.0
 
-    if not provider.is_feed_consolidated:
+    is_synthetic = (
+        provider.provider_name.strip().lower() in ("mock", "synthetic")
+        or provider.feed_name.strip().lower() in ("mock", "synthetic")
+    )
+
+    if is_synthetic:
+        coverage_status = "synthetic_demo"
+        cov_warn = (
+            f"HISTORICAL SYNTHETIC DEMO: Evaluated {securities_evaluated:,} of {universe_size:,} simulated securities "
+            f"({completeness_pct:.1f}% fixture coverage) using synthetic research snapshot fixture. "
+            "Rankings are deterministic simulated heuristics and do NOT represent live market data."
+        )
+        warnings.append(cov_warn)
+    elif not provider.is_feed_consolidated:
         coverage_status = "provisional_iex"
         cov_warn = (
             f"PROVISIONAL RANKINGS (IEX FEED ONLY): Evaluated {securities_evaluated:,} of {universe_size:,} securities "
             f"({completeness_pct:.1f}% data completeness) using Alpaca free-tier IEX feed (~2% of market volume). "
             "Relative volume figures reflect IEX exchange activity only and may diverge from the consolidated tape. "
-            "Rankings are provisional heuristics and do NOT represent an authoritative SIP Top 20."
+            "Rankings are provisional heuristics over the evaluated provider universe and do NOT represent an authoritative SIP Top 20."
         )
         warnings.append(cov_warn)
-    elif completeness_pct < 95.0:
+    elif missing_data_count > 0 or securities_evaluated < universe_size:
         coverage_status = "provisional_incomplete"
         cov_warn = (
-            f"PROVISIONAL RANKINGS (MATERIAL DATA GAPS): Evaluated {securities_evaluated:,} of {universe_size:,} discovered "
-            f"securities ({completeness_pct:.1f}% coverage). {missing_data_count:,} securities were excluded due to missing "
-            "or incomplete provider data. Rankings are provisional over the evaluated subset and do NOT represent an "
+            f"Top 20 of evaluated provider universe — provisional: Evaluated {securities_evaluated:,} of {universe_size:,} discovered "
+            f"securities ({completeness_pct:.1f}% data completeness). {missing_data_count:,} securities were excluded due to missing "
+            "or incomplete provider data. Rankings are provisional over the evaluated provider universe and do NOT represent an "
             "authoritative full-market Top 20."
         )
         warnings.append(cov_warn)
     else:
         coverage_status = "full_market_sip"
         cov_warn = (
-            f"Full-market candidate discovery evaluated {securities_evaluated:,} of {universe_size:,} securities "
-            f"({completeness_pct:.1f}% coverage) using consolidated SIP market data."
+            f"Authoritative full-market candidate discovery: Evaluated all {securities_evaluated:,} of {universe_size:,} discovered securities "
+            f"(100.0% verified coverage) using consolidated SIP market data."
         )
 
     scan_completed_at = datetime.now(MARKET_TIMEZONE)
@@ -809,6 +880,7 @@ def run_market_scan(
         as_of_time=eval_as_of,
         scan_requested_at=scan_requested_at,
         scan_completed_at=scan_completed_at,
+        or_window_end_time=or_window_end_time,
         data_freshness_time=data_freshness_time,
         provider=provider.provider_name,
         feed=provider.feed_name,

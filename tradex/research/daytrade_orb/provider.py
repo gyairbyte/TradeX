@@ -47,6 +47,10 @@ class ORBProviderDataUnavailableError(ORBProviderError):
     """Raised when data cannot be retrieved from the provider."""
 
 
+class ORBProviderIntegrityError(ORBProviderError):
+    """Raised when provider data contains integrity violations such as conflicting duplicate bars."""
+
+
 @runtime_checkable
 class ORBMarketDataProvider(Protocol):
     """Protocol for ORB market data providers supporting broad discovery."""
@@ -126,17 +130,19 @@ class MockORBProvider:
     opening_range_bars: dict[str, list[MinuteBar]] = field(default_factory=dict)
     prior_opening_range_volumes: dict[str, list[OpeningRangeVolumeObservation]] = field(default_factory=dict)
     provider_name: str = "mock"
-    feed_name: str = "sip"
-    is_feed_consolidated: bool = True
-    feed_disclosure: str = "Deterministic test fixture; simulated consolidated SIP feed."
+    feed_name: str = "synthetic"
+    is_feed_consolidated: bool = False
+    feed_disclosure: str = "Deterministic test fixture; synthetic research feed."
     simulate_rate_limit: bool = False
     rate_limit_call_count: int = 0
     fail_stage: str | None = None
+    default_session_date: date | None = None
+    default_as_of_time: datetime | None = None
 
     @classmethod
     def create_populated(cls) -> MockORBProvider:
         """Create a mock provider seeded with the deterministic 33-symbol synthetic demo fixture."""
-        from .demo_fixture import create_demo_snapshot
+        from .demo_fixture import DEMO_AS_OF_TIME, DEMO_SESSION_DATE, create_demo_snapshot
 
         snap = create_demo_snapshot()
         symbols = sorted(snap.symbols.keys())
@@ -149,9 +155,11 @@ class MockORBProvider:
             opening_range_bars=or_bars,
             prior_opening_range_volumes=prior_vols,
             provider_name="mock",
-            feed_name="sip",
-            is_feed_consolidated=True,
+            feed_name="synthetic",
+            is_feed_consolidated=False,
             feed_disclosure="Deterministic Mock Provider (Simulated 33-Symbol Research Universe)",
+            default_session_date=snap.session_date or DEMO_SESSION_DATE,
+            default_as_of_time=snap.as_of_time or DEMO_AS_OF_TIME,
         )
 
     def discover_universe(self) -> list[str]:
@@ -175,7 +183,25 @@ class MockORBProvider:
             s_clean = sym.strip().upper()
             bars = self.daily_bars.get(s_clean, [])
             filtered = [b for b in bars if start_date <= b.session_date <= end_date]
-            result[s_clean] = sorted(filtered, key=lambda x: x.session_date)
+            seen_by_date: dict[date, DailyBar] = {}
+            for b in filtered:
+                existing = seen_by_date.get(b.session_date)
+                if existing is not None:
+                    if (
+                        existing.open != b.open
+                        or existing.high != b.high
+                        or existing.low != b.low
+                        or existing.close != b.close
+                        or existing.volume != b.volume
+                    ):
+                        raise ORBProviderIntegrityError(
+                            f"Conflicting duplicate daily bars detected for {s_clean} on {b.session_date}: "
+                            f"(O={existing.open}, H={existing.high}, L={existing.low}, C={existing.close}, V={existing.volume}) vs "
+                            f"(O={b.open}, H={b.high}, L={b.low}, C={b.close}, V={b.volume})"
+                        )
+                else:
+                    seen_by_date[b.session_date] = b
+            result[s_clean] = sorted(seen_by_date.values(), key=lambda x: x.session_date)
         return result
 
     def fetch_opening_range_bars(
@@ -193,7 +219,25 @@ class MockORBProvider:
                 b for b in bars
                 if b.timestamp.astimezone(MARKET_TIMEZONE).date() == session_date
             ]
-            result[s_clean] = sorted(filtered, key=lambda x: x.timestamp)
+            seen_by_ts: dict[datetime, MinuteBar] = {}
+            for b in filtered:
+                existing = seen_by_ts.get(b.timestamp)
+                if existing is not None:
+                    if (
+                        existing.open != b.open
+                        or existing.high != b.high
+                        or existing.low != b.low
+                        or existing.close != b.close
+                        or existing.volume != b.volume
+                    ):
+                        raise ORBProviderIntegrityError(
+                            f"Conflicting duplicate 1-minute bars detected for {s_clean} at {b.timestamp.isoformat()}: "
+                            f"(O={existing.open}, H={existing.high}, L={existing.low}, C={existing.close}, V={existing.volume}) vs "
+                            f"(O={b.open}, H={b.high}, L={b.low}, C={b.close}, V={b.volume})"
+                        )
+                else:
+                    seen_by_ts[b.timestamp] = b
+            result[s_clean] = sorted(seen_by_ts.values(), key=lambda x: x.timestamp)
         return result
 
     def fetch_prior_opening_range_volumes(
@@ -426,15 +470,27 @@ class AlpacaORBProvider:
             if self.rate_limit_pause_seconds > 0:
                 time.sleep(self.rate_limit_pause_seconds)
 
-        # Sort and deduplicate bars per symbol
+        # Sort and deduplicate bars per symbol with conflict detection
         for sym_clean, bars_list in result.items():
-            seen_dates: set[date] = set()
-            deduped_bars: list[DailyBar] = []
-            for b in sorted(bars_list, key=lambda x: x.session_date):
-                if b.session_date not in seen_dates:
-                    seen_dates.add(b.session_date)
-                    deduped_bars.append(b)
-            result[sym_clean] = deduped_bars
+            seen_by_date: dict[date, DailyBar] = {}
+            for b in bars_list:
+                existing = seen_by_date.get(b.session_date)
+                if existing is not None:
+                    if (
+                        existing.open != b.open
+                        or existing.high != b.high
+                        or existing.low != b.low
+                        or existing.close != b.close
+                        or existing.volume != b.volume
+                    ):
+                        raise ORBProviderIntegrityError(
+                            f"Conflicting duplicate daily bars detected for {sym_clean} on {b.session_date}: "
+                            f"(O={existing.open}, H={existing.high}, L={existing.low}, C={existing.close}, V={existing.volume}) vs "
+                            f"(O={b.open}, H={b.high}, L={b.low}, C={b.close}, V={b.volume})"
+                        )
+                else:
+                    seen_by_date[b.session_date] = b
+            result[sym_clean] = sorted(seen_by_date.values(), key=lambda x: x.session_date)
 
         return result
 
@@ -523,15 +579,27 @@ class AlpacaORBProvider:
             if self.rate_limit_pause_seconds > 0:
                 time.sleep(self.rate_limit_pause_seconds)
 
-        # Sort and deduplicate bars per symbol
+        # Sort and deduplicate bars per symbol with conflict detection
         for sym_clean, bars_list in result.items():
-            seen_ts: set[datetime] = set()
-            deduped_mb: list[MinuteBar] = []
-            for b in sorted(bars_list, key=lambda x: x.timestamp):
-                if b.timestamp not in seen_ts:
-                    seen_ts.add(b.timestamp)
-                    deduped_mb.append(b)
-            result[sym_clean] = deduped_mb
+            seen_by_ts: dict[datetime, MinuteBar] = {}
+            for b in bars_list:
+                existing = seen_by_ts.get(b.timestamp)
+                if existing is not None:
+                    if (
+                        existing.open != b.open
+                        or existing.high != b.high
+                        or existing.low != b.low
+                        or existing.close != b.close
+                        or existing.volume != b.volume
+                    ):
+                        raise ORBProviderIntegrityError(
+                            f"Conflicting duplicate 1-minute bars detected for {sym_clean} at {b.timestamp.isoformat()}: "
+                            f"(O={existing.open}, H={existing.high}, L={existing.low}, C={existing.close}, V={existing.volume}) vs "
+                            f"(O={b.open}, H={b.high}, L={b.low}, C={b.close}, V={b.volume})"
+                        )
+                else:
+                    seen_by_ts[b.timestamp] = b
+            result[sym_clean] = sorted(seen_by_ts.values(), key=lambda x: x.timestamp)
 
         return result
 

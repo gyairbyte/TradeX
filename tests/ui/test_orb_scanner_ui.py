@@ -271,7 +271,7 @@ def test_ui_provisional_incomplete_warning(scanner_ui_module, fake_scanner_st):
     caption_calls = [str(c[0][0]) for c in fake_scanner_st.caption.call_args_list]
     assert any("Scan Requested" in c for c in caption_calls)
     assert any("Scan Completed" in c for c in caption_calls)
-    assert any("Data Freshness" in c for c in caption_calls)
+    assert any("Opening-Range Window End" in c for c in caption_calls)
 
 
 def test_ui_failed_scan_displays_error_not_success(scanner_ui_module, fake_scanner_st, monkeypatch):
@@ -318,4 +318,37 @@ def test_ui_failed_scan_displays_error_not_success(scanner_ui_module, fake_scann
     # Status container must show error, NOT success
     status_mock.error.assert_called_once()
     assert "Market scan failed" in str(status_mock.error.call_args[0][0])
+
+
+def test_ui_mock_market_scan_end_to_end_renders_populated_candidates(scanner_ui_module, fake_scanner_st):
+    """End-to-end smoke test of UI-to-scanner workflow using populated mock provider.
+
+    Verifies clicking 'Scan Market' evaluates the 2024-01-02 fixture without real network calls,
+    identifies the results as a historical synthetic demo, and renders all 20 qualifying candidates.
+    """
+    settings = settings_from_mapping({"DATA_PROVIDER": "schwab"})
+    fake_scanner_st.button.return_value = True
+
+    status_mock = MagicMock()
+    fake_scanner_st.empty.return_value = status_mock
+
+    scanner_ui_module.render_orb_preview_tab(settings=settings)
+
+    # Status container must show historical synthetic demo info
+    info_calls = [str(c[0][0]) for c in status_mock.info.call_args_list]
+    assert any("Historical synthetic demo" in i for i in info_calls)
+
+    # Result in session state must be synthetic demo with 20 candidates
+    scan_result = fake_scanner_st.session_state.get("orb_market_scan_result")
+    assert scan_result is not None
+    assert scan_result.coverage_status == "synthetic_demo"
+    assert len(scan_result.candidates) == 20
+    assert scan_result.top_n_selected == 20
+    assert scan_result.session_date.isoformat() == "2024-01-02"
+
+    # Dataframe must have received 20 candidates
+    df_calls = fake_scanner_st.dataframe.call_args_list
+    assert len(df_calls) >= 1
+    df = df_calls[0][0][0]
+    assert len(df) == 20
     status_mock.success.assert_not_called()
