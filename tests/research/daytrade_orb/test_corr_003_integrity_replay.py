@@ -3442,6 +3442,8 @@ def test_live_pilot_preflight_rejects_missing_uv_lock(tmp_path: Path) -> None:
             sys.executable,
             "scripts/research/daytrade_003d_corr_003_pilot.py",
             "pilot",
+            "--output-dir",
+            str(tmp_path / "evidence"),
             "--pre-live-sha",
             freeze_sha,
             "--repo-root",
