@@ -337,6 +337,7 @@ class PathSettings:
     watchlists_db: Path = field(default_factory=lambda: Path("~/.tradex/watchlists.db"))
     earnings_cache_db: Path = field(default_factory=lambda: Path("~/.tradex/earnings_cache.db"))
     weights: Path = field(default_factory=lambda: Path("~/.tradex/weights.json"))
+    discovery_cache_dir: Path = field(default_factory=lambda: Path("~/.tradex/discovery_cache"))
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -369,6 +370,15 @@ class PathSettings:
             self,
             "weights",
             _parse_path(self.weights, Path("~/.tradex/weights.json"), "TRADEX_WEIGHTS_PATH"),
+        )
+        object.__setattr__(
+            self,
+            "discovery_cache_dir",
+            _parse_path(
+                self.discovery_cache_dir,
+                Path("~/.tradex/discovery_cache"),
+                "TRADEX_DISCOVERY_CACHE_DIR",
+            ),
         )
 
 
@@ -501,6 +511,7 @@ def settings_from_mapping(values: Mapping[str, str]) -> TradeXSettings:
         watchlists_db=v.get("TRADEX_WATCHLISTS_DB_PATH", "~/.tradex/watchlists.db"),
         earnings_cache_db=v.get("TRADEX_EARNINGS_CACHE_PATH", "~/.tradex/earnings_cache.db"),
         weights=v.get("TRADEX_WEIGHTS_PATH", "~/.tradex/weights.json"),
+        discovery_cache_dir=v.get("TRADEX_DISCOVERY_CACHE_DIR", "~/.tradex/discovery_cache"),
     )
 
     return TradeXSettings(

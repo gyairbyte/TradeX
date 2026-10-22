@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import date, datetime
 from enum import Enum
 
 import pandas as pd
@@ -137,6 +138,7 @@ class ScanReport:
         default_factory=lambda: pd.DataFrame(columns=OBSERVATION_COLUMNS)
     )
     min_score: int = 0
+    completed_session: date | None = None
 
     def validate(self, expected_tickers: list[str] | None = None) -> None:
         """Validate that observations, results, and report counters are consistent."""
@@ -334,6 +336,8 @@ def run_with_report(
     policy: FetchPolicy | None = None,
     sleeper: Callable[[float], None] | None = None,
     *,
+    completed_session: date | None = None,
+    as_of: datetime | None = None,
     settings: TradeXSettings | None = None,
 ) -> ScanReport:
     """Run the screener and return a structured report.
@@ -346,6 +350,11 @@ def run_with_report(
         settings = load_runtime_settings()
     if timeframe not in SIGNAL_MAP:
         raise ValueError(f"timeframe must be one of {list(SIGNAL_MAP)}")
+
+    if completed_session is None and as_of is not None:
+        from tradex.discovery.session import get_applicable_completed_session
+
+        completed_session = get_applicable_completed_session(as_of).session_date
 
     scorer, tf_key = SIGNAL_MAP[timeframe]
     requested_provider = resolve_provider(provider, settings=settings)
@@ -438,6 +447,27 @@ def run_with_report(
                 _build_observation_row(ticker, ObservationStatus.FETCH_FAILURE, error=err)
             )
             continue
+
+        if timeframe == "long" and completed_session is not None:
+            from tradex.discovery.session import filter_completed_daily_bars
+
+            df, latest_bar_date, is_current = filter_completed_daily_bars(df, completed_session)
+            if not is_current:
+                total_insufficient_data += 1
+                err = ProviderDataUnavailableError(
+                    f"Stale or incomplete OHLCV data for {ticker} ({timeframe}): "
+                    f"latest bar {latest_bar_date} does not match completed session {completed_session}"
+                )
+                fetch_failures[ticker] = err
+                observations.append(
+                    _build_observation_row(
+                        ticker,
+                        ObservationStatus.INSUFFICIENT_DATA,
+                        provider=actual_provider or requested_provider,
+                        error=err,
+                    )
+                )
+                continue
 
         min_bars = 220 if timeframe == "long" else 30
         if len(df) < min_bars:
@@ -666,6 +696,7 @@ def run_with_report(
         attempt_log=fetch_report.attempt_log,
         observations=observations_df,
         min_score=min_score,
+        completed_session=completed_session,
     )
     report.validate(expected_tickers=unique_tickers)
     return report

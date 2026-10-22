@@ -98,6 +98,23 @@ Each timeframe has its own scorer that returns a **score from 0–100** plus hum
   - Fixed 100-point allocation: Trend Quality (30 pts), Momentum Quality (25 pts), Setup Quality (20 pts), Movement Capacity (15 pts), Participation (10 pts).
   - Actionable states: `ENTER NOW` (score >= 75 + confirmed trigger), `ARMED` (score >= 70 + proximity trigger), `QUALIFIED WAITLIST` (score >= 60). Scoring weights are locked by contract.
 
+### Scan Scope & Market-Wide Discovery (Long Timeframe)
+
+When the **Long** timeframe is selected, TradeX provides a **Scan Scope** selector allowing discovery beyond manually curated watchlists:
+
+| Scope | Tickers Evaluated | Description & Sourcing |
+|---|---|---|
+| **My Watchlist** | Active watchlist | Preserves default watchlist-only scanning behavior. |
+| **S&P 500** | ~503 tickers | Standard & Poor's 500 index preset constituents. |
+| **Nasdaq 100** | ~101 tickers | Nasdaq 100 index preset constituents. |
+| **All U.S. Listed Stocks** | ~6,000+ tickers | Automated ingestion from official Nasdaq Trader Symbol Directories (`nasdaqlisted.txt` and `otherlisted.txt`). Filters out ETFs, warrants, rights, units, preferreds, and test issues. |
+
+**Key Execution Features:**
+- **Completed-Session Alignment:** Long swing signals evaluate completed regular sessions (NYSE EOD cutoff at 20:00 ET / 8:00 AM ET next morning) to avoid mixing incomplete intraday bars with 2-year daily history.
+- **Bounded Resumable Batching:** Scans large universes in deterministic batches (default 100, max 200) with up to 4 concurrent workers and provider rate-limit backoff.
+- **Atomic Persistent Cache:** Results are atomically cached by strategy contract, universe hash, and session date under `~/.tradex/discovery_cache`. Uncompleted or interrupted scans resume seamlessly.
+- **Ranked Focus Display:** Surfaced opportunities obey Long MVP v1 focus caps (top 7 `ENTER NOW`, 12 `ARMED`, 12 `QUALIFIED WAITLIST`) with expandable access to all qualifying candidates.
+
 ### Intraday Setup Logic
 The intraday scorer specifically targets stocks where:
 1. **Volume is accumulating** — institutional interest building
@@ -115,7 +132,7 @@ Transitional seven-surface navigation structure (MVP-ARCH-001-R3):
 
 | Surface / Area | Child Tabs / Tools | What it does |
 |---|---|---|
-| **Scanner** | — | Score every ticker in the active watchlist, drill into candlestick + volume chart |
+| **Scanner** | — | Score tickers across active watchlist or broader market universes (S&P 500, Nasdaq 100, All U.S. Listed Stocks for Long timeframe), drill into candlestick + volume chart |
 | **Confluence** | — | Stocks scoring well across intraday + short + long simultaneously; coverage (0/3–3/3) is explicit |
 | **Pre-Market** | — | Gap-up/down detection vs. previous close using pre-market quotes (specialized Yahoo provider) |
 | **Signal Journal** | — | Historical signal telemetry: descriptive outcome tracking and win rate by score bucket |
@@ -699,6 +716,7 @@ Save and switch between named ticker lists (e.g. "Semis", "Crypto-adjacent", "Ea
 - [x] Watchlist persistence — save/load/delete named watchlists
 - [x] Scoring weight customization — per-signal sliders in the Weights tab, persisted to ~/.tradex/weights.json (Intraday and Short; Long is locked by strategy contract)
 - [x] Production-target Long Opportunity Strategy v1 (LONG-MVP-001 / LONG-MVP-002) — explainable 3-archetype daily swing opportunity engine (100-pt deterministic score, state model)
+- [x] Market-wide opportunity discovery (LONG-MVP-003) — Scan Scope selector (Watchlist, S&P 500, Nasdaq 100, All U.S. Listed Stocks), bounded resumable execution, and disk caching
 - [x] Split `dashboard.py` into tab and component modules (UI-001 — Completed, PR #34)
 - [x] Deterministic credential-free test foundation with over 1,200 tests covering providers, persistence, backtesting, research, and UI
 - [x] Intraday open-drive VWAP pullback research (INTRA-001) — completed `INTRA-001D` real-data study returned `inconclusive`; holdout not parsed; `production_promotion_eligible=false`
