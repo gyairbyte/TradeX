@@ -29,6 +29,7 @@ import json
 import logging
 import os
 import re
+import sqlite3
 import urllib.error
 import urllib.request
 from collections.abc import Callable
@@ -177,8 +178,42 @@ def _classify_symbol_and_name(
     return normalized, None
 
 
+def _load_saved_watchlist_safe(name: str, settings: TradeXSettings | None = None) -> list[str] | None:
+    """Load a named watchlist from store, returning None if database or table is uninitialized."""
+    db_path = wl_store._resolve_db_path(settings)
+    if not db_path.exists():
+        return None
+    try:
+        return wl_store.load(name, settings=settings)
+    except sqlite3.OperationalError as e:
+        if "no such table" in str(e).lower():
+            return None
+        raise
+
+
+def compute_all_us_snapshot_hash(
+    tickers: list[str],
+    nasdaq_rows: int,
+    other_rows: int,
+    gen_ts: str | None,
+) -> str:
+    """Compute a deterministic, verifiable SHA-256 hash for the All U.S. universe snapshot."""
+    hash_input = json.dumps(
+        {
+            "gen_ts": gen_ts,
+            "nasdaq_rows": int(nasdaq_rows),
+            "other_rows": int(other_rows),
+            "tickers": sorted(dict.fromkeys(tickers)),
+        },
+        sort_keys=True,
+    )
+    return hashlib.sha256(hash_input.encode("utf-8")).hexdigest()
+
+
 def parse_nasdaq_directory(
     content: str,
+    *,
+    min_listings: int = 2,
 ) -> tuple[list[str], dict[str, int], list[str], str | None, int]:
     """Parse nasdaqlisted.txt.
 
@@ -206,6 +241,8 @@ def parse_nasdaq_directory(
     etf_idx = header.index("ETF") if "ETF" in header else -1
     nextshares_idx = header.index("NextShares") if "NextShares" in header else -1
 
+    min_parts = max(sym_idx, name_idx, test_idx, etf_idx, nextshares_idx) + 1
+
     included: list[str] = []
     unsupported: list[str] = []
     counts: dict[str, int] = {
@@ -226,7 +263,7 @@ def parse_nasdaq_directory(
             continue
 
         parts = [p.strip() for p in line.split("|")]
-        if len(parts) < len(required):
+        if len(parts) < min_parts:
             continue
 
         data_rows += 1
@@ -247,11 +284,21 @@ def parse_nasdaq_directory(
         elif reason in counts:
             counts[reason] += 1
 
+    if data_rows < min_listings:
+        raise UniverseSourceError(
+            f"nasdaqlisted.txt contains only {data_rows} listings (expected >= {min_listings}); "
+            f"rejecting as truncated/incomplete"
+        )
+    if not included:
+        raise UniverseSourceError("nasdaqlisted.txt parsed 0 common stock symbols; rejecting as incomplete")
+
     return included, counts, unsupported, file_ts, data_rows
 
 
 def parse_other_directory(
     content: str,
+    *,
+    min_listings: int = 2,
 ) -> tuple[list[str], dict[str, int], list[str], str | None, int]:
     """Parse otherlisted.txt.
 
@@ -276,6 +323,8 @@ def parse_other_directory(
     etf_idx = header.index("ETF")
     test_idx = header.index("Test Issue")
 
+    min_parts = max(act_idx, name_idx, etf_idx, test_idx) + 1
+
     included: list[str] = []
     unsupported: list[str] = []
     counts: dict[str, int] = {
@@ -296,7 +345,7 @@ def parse_other_directory(
             continue
 
         parts = [p.strip() for p in line.split("|")]
-        if len(parts) < len(required):
+        if len(parts) < min_parts:
             continue
 
         data_rows += 1
@@ -315,6 +364,14 @@ def parse_other_directory(
         elif reason in counts:
             counts[reason] += 1
 
+    if data_rows < min_listings:
+        raise UniverseSourceError(
+            f"otherlisted.txt contains only {data_rows} listings (expected >= {min_listings}); "
+            f"rejecting as truncated/incomplete"
+        )
+    if not included:
+        raise UniverseSourceError("otherlisted.txt parsed 0 common stock symbols; rejecting as incomplete")
+
     return included, counts, unsupported, file_ts, data_rows
 
 
@@ -332,8 +389,42 @@ def _load_cached_universe_snapshot(settings: TradeXSettings) -> tuple[list[str],
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        tickers = list(data["tickers"])
+        if not isinstance(data, dict) or "tickers" not in data or "provenance" not in data:
+            logger.warning("Universe cache at %s is not a valid snapshot dictionary; rejecting.", path)
+            return None
+        raw_tickers = data["tickers"]
+        if not isinstance(raw_tickers, list) or not raw_tickers:
+            logger.warning("Universe cache at %s contains empty or non-list tickers; rejecting.", path)
+            return None
+        tickers = [str(t).strip().upper() for t in raw_tickers if str(t).strip()]
         prov = UniverseProvenance.from_dict(data["provenance"])
+
+        # Check count consistency
+        if len(tickers) != prov.included_ticker_count:
+            logger.warning(
+                "Universe cache ticker count mismatch (%d != %d); rejecting corrupt snapshot.",
+                len(tickers),
+                prov.included_ticker_count,
+            )
+            return None
+
+        n_rows = prov.original_listing_counts.get("nasdaqlisted", 0)
+        o_rows = prov.original_listing_counts.get("otherlisted", 0)
+        if n_rows <= 0 or o_rows <= 0:
+            logger.warning("Universe cache listing counts missing or invalid; rejecting corrupt snapshot.")
+            return None
+
+        expected_hash = compute_all_us_snapshot_hash(
+            tickers, n_rows, o_rows, prov.source_file_generation_timestamp
+        )
+        if expected_hash != prov.snapshot_hash:
+            logger.warning(
+                "Universe cache snapshot hash mismatch (computed %s != stored %s); rejecting corrupt snapshot.",
+                expected_hash,
+                prov.snapshot_hash,
+            )
+            return None
+
         return tickers, prov
     except Exception as exc:  # noqa: BLE001
         logger.warning("Failed to load cached universe snapshot from %s: %s", path, exc)
@@ -362,11 +453,14 @@ def resolve_all_us_stocks(
     http_fetcher: Callable[[str], str] | None = None,
     allow_stale: bool = False,
     force_refresh: bool = False,
+    min_listings_per_source: int = 2,
 ) -> tuple[list[str], UniverseProvenance]:
     """Resolve the All U.S. Listed Stocks universe from official Nasdaq Trader files.
 
     If refresh fails:
-      - Preserves and returns the last valid cached snapshot (marked is_stale=True).
+      - If cached snapshot is stale (>= 24h old) and allow_stale is False: fails closed.
+      - If cached snapshot is stale and allow_stale is True: preserves snapshot marked is_stale=True.
+      - If cached snapshot is fresh (< 24h old): returns fresh snapshot.
       - If no valid snapshot exists, raises UniverseSourceError.
       - Never silently substitutes S&P 500, Nasdaq 100, or a partial universe.
     """
@@ -398,8 +492,12 @@ def resolve_all_us_stocks(
 
     if not fetch_error and nasdaq_content and other_content:
         try:
-            n_inc, n_counts, n_unsup, n_ts, n_rows = parse_nasdaq_directory(nasdaq_content)
-            o_inc, o_counts, o_unsup, o_ts, o_rows = parse_other_directory(other_content)
+            n_inc, n_counts, n_unsup, n_ts, n_rows = parse_nasdaq_directory(
+                nasdaq_content, min_listings=min_listings_per_source
+            )
+            o_inc, o_counts, o_unsup, o_ts, o_rows = parse_other_directory(
+                other_content, min_listings=min_listings_per_source
+            )
 
             combined_exclusions: dict[str, int] = {}
             for k in set(n_counts) | set(o_counts):
@@ -424,17 +522,7 @@ def resolve_all_us_stocks(
             gen_timestamps = [t for t in (n_ts, o_ts) if t]
             combined_gen_ts = ", ".join(gen_timestamps) if gen_timestamps else None
 
-            # Deterministic snapshot hash
-            hash_input = json.dumps(
-                {
-                    "tickers": dedup_tickers,
-                    "nasdaq_rows": n_rows,
-                    "other_rows": o_rows,
-                    "gen_ts": combined_gen_ts,
-                },
-                sort_keys=True,
-            )
-            snapshot_hash = hashlib.sha256(hash_input.encode("utf-8")).hexdigest()
+            snapshot_hash = compute_all_us_snapshot_hash(dedup_tickers, n_rows, o_rows, combined_gen_ts)
 
             prov = UniverseProvenance(
                 universe_id="all_us_stocks",
@@ -465,13 +553,22 @@ def resolve_all_us_stocks(
     # Refresh failed. Check if a cached snapshot can be preserved.
     if cached is not None:
         tickers, prov = cached
-        age_str = "unknown age"
+        age_hours: float | None = None
         try:
             cached_dt = datetime.fromisoformat(prov.retrieval_timestamp)
             age_hours = (now - cached_dt).total_seconds() / 3600.0
-            age_str = f"{age_hours:.1f}h old"
         except ValueError:
             pass
+
+        is_stale_by_age = age_hours is None or age_hours >= UNIVERSE_FRESHNESS_HOURS
+        age_str = f"{age_hours:.1f}h old" if age_hours is not None else "unknown age"
+
+        if is_stale_by_age and not allow_stale:
+            raise UniverseSourceError(
+                f"Nasdaq Trader directories refresh failed ({fetch_error}) and cached snapshot is stale "
+                f"({age_str}, retrieved {prov.retrieval_timestamp}). Explicit opt-in (allow_stale=True) "
+                f"is required to scan a stale universe."
+            )
 
         stale_reason = (
             f"Source refresh failed ({fetch_error}); using preserved snapshot ({age_str}, "
@@ -538,8 +635,7 @@ def resolve_universe(
         return normalized, prov
 
     if scope == Scope.SP500:
-        # Check if saved watchlist exists under S&P 500, else use built-in preset
-        saved = wl_store.load("S&P 500", settings=settings)
+        saved = _load_saved_watchlist_safe("S&P 500", settings=settings)
         source_label = "Saved Watchlist" if saved else "TradeX Preset Snapshot (2026-05)"
         tickers = list(dict.fromkeys(saved or wl_presets.SP500))
         tickers.sort()
@@ -562,7 +658,7 @@ def resolve_universe(
         return tickers, prov
 
     if scope == Scope.NASDAQ100:
-        saved = wl_store.load("Nasdaq 100", settings=settings)
+        saved = _load_saved_watchlist_safe("Nasdaq 100", settings=settings)
         source_label = "Saved Watchlist" if saved else "TradeX Preset Snapshot (2026-05)"
         tickers = list(dict.fromkeys(saved or wl_presets.NDX100))
         tickers.sort()

@@ -380,7 +380,7 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
         session_date = market_session.session_date
 
         try:
-            tickers, prov = resolve_universe(scan_scope, settings=settings)
+            tickers, prov = resolve_universe(scan_scope, settings=settings, allow_stale=True)
         except Exception as exc:  # noqa: BLE001
             st.error(f"Failed to resolve universe for {scan_scope.value}: {exc}")
             return
@@ -395,6 +395,8 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
             earnings_source=(earnings_source or settings.earnings_data_source).lower().strip(),
             earnings_buffer=earnings_buffer,
             min_score=min_score,
+            fallback_order=tuple(settings.data.ohlcv_fallback_order),
+            max_retries=settings.data.ohlcv_max_retries,
         )
         checkpoint = coordinator.cache.load(cache_key)
 
@@ -406,8 +408,22 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
             f"**Selected Scope:** {scan_scope.value} | **Constituents:** {len(tickers)} tickers | "
             f"**Session:** {session_date} | {source_note}"
         )
+
+        # Require explicit user opt-in if universe snapshot is stale
+        allow_stale_opt_in = False
         if prov.is_stale:
-            st.warning(f"Preserved universe snapshot: {prov.stale_reason}")
+            st.warning(
+                f"⚠️ **Stale Market Universe Snapshot:** {prov.stale_reason or 'The local snapshot is older than the 24-hour freshness limit.'}"
+            )
+            allow_stale_opt_in = st.checkbox(
+                "I understand the universe snapshot is stale and choose to scan anyway",
+                value=False,
+                key=f"cb_allow_stale_{prov.snapshot_hash}",
+                help="Check this box to authorize scanning the last-known universe snapshot beyond its 24-hour freshness limit.",
+            )
+            if not allow_stale_opt_in:
+                st.info("Scanning paused pending approval. Check the box above to scan with the stale snapshot, or retry refreshing.")
+                return
 
         # Action button controls based on checkpoint state
         btn_start = False
@@ -454,10 +470,18 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
 
         if btn_reset:
             coordinator.cache.clear(cache_key)
-            st.session_state.pop(f"disc_result_{scan_scope.value}", None)
+            st.session_state.pop(f"disc_result_{cache_key}", None)
+            st.session_state.pop("active_disc_cache_key", None)
             st.session_state.pop("scan_results", None)
+            st.session_state.pop("scan_provider", None)
             st.success("Scan checkpoint reset.")
             st.rerun()
+
+        # Foreground batch limit for broad universes
+        FOREGROUND_MAX_BATCHES = 5
+        effective_max_batches = (
+            FOREGROUND_MAX_BATCHES if scan_scope in (Scope.ALL_US_STOCKS, Scope.SP500) else None
+        )
 
         if btn_start or btn_continue or btn_retry:
             prog_bar = st.progress(0.0, text=f"Evaluating {scan_scope.value} on {session_date}…")
@@ -473,21 +497,24 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
                 min_score=min_score,
                 batch_size=100,
                 max_workers=4,
+                max_batches_per_run=effective_max_batches,
                 pacing_delay_seconds=0.1,
                 retry_failed=bool(btn_retry),
                 force_reset=bool(btn_start and checkpoint is not None),
+                allow_stale_universe=allow_stale_opt_in or prov.is_stale,
                 progress_callback=_update_discovery_progress,
             )
             prog_bar.empty()
 
-            st.session_state[f"disc_result_{scan_scope.value}"] = result
+            st.session_state[f"disc_result_{cache_key}"] = result
+            st.session_state["active_disc_cache_key"] = cache_key
             st.session_state["scan_results"] = result.focus_list
             st.session_state["scan_timeframe"] = "long"
             st.session_state["scan_scope"] = scan_scope.value
             st.session_state["scan_provider"] = result.actual_provider
 
-        # Render current results if present
-        result = st.session_state.get(f"disc_result_{scan_scope.value}")
+        # Render current results if present and matching current cache key
+        result = st.session_state.get(f"disc_result_{cache_key}")
         if result is None and checkpoint is not None and checkpoint.attempted_tickers:
             # Reconstitute result view from valid checkpoint without re-fetching
             result = coordinator.run(
@@ -497,12 +524,18 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
                 earnings_buffer=earnings_buffer,
                 min_score=min_score,
                 max_batches_per_run=0,  # 0 batches -> view checkpoint without running new fetches
+                allow_stale_universe=allow_stale_opt_in or prov.is_stale,
             )
-            st.session_state[f"disc_result_{scan_scope.value}"] = result
+            st.session_state[f"disc_result_{cache_key}"] = result
+            st.session_state["active_disc_cache_key"] = cache_key
             st.session_state["scan_results"] = result.focus_list
             st.session_state["scan_timeframe"] = "long"
             st.session_state["scan_scope"] = scan_scope.value
             st.session_state["scan_provider"] = result.actual_provider
+
+        # Invalidate active scan_results if the active cache key doesn't match
+        if st.session_state.get("active_disc_cache_key") != cache_key:
+            st.session_state.pop("scan_results", None)
 
         if result is not None:
             # Completeness and Coverage Status
@@ -520,7 +553,8 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
             if result.is_partial:
                 st.warning(
                     f"**Partial results — not the final ranking across the full selected universe.** "
-                    f"({result.completed_count}/{result.total_tickers} tickers evaluated)"
+                    f"({result.completed_count}/{result.total_tickers} tickers evaluated). "
+                    f"Click **Continue Scan** above to evaluate the next batch."
                 )
 
             if result.focus_list.empty:
@@ -568,6 +602,21 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
                 key="sel_scanner",
                 help="Pick any stock from the scan results to view its chart.",
             )
+
+            # Preserve per-ticker actual provider if available in results
+            selected_rows = st.session_state["scan_results"][
+                st.session_state["scan_results"]["ticker"] == selected
+            ]
+            row_provider = None
+            if not selected_rows.empty and "provider" in selected_rows.columns:
+                p = str(selected_rows.iloc[0]["provider"]).strip()
+                if p and p != "None":
+                    row_provider = p
+
+            if row_provider and (
+                not chart_provider or "," in chart_provider or saved_scope != Scope.MY_WATCHLIST.value
+            ):
+                chart_provider = row_provider
 
             df = fetch(selected, tf, provider=chart_provider, settings=settings)
             df = add_indicators(df)

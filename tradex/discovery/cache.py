@@ -21,6 +21,7 @@ import hashlib
 import json
 import logging
 import os
+from collections.abc import Sequence
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
@@ -44,6 +45,8 @@ def compute_discovery_cache_key(
     earnings_source: str,
     earnings_buffer: int,
     min_score: int,
+    fallback_order: Sequence[str] = (),
+    max_retries: int = 0,
 ) -> str:
     """Compute a deterministic, collision-resistant cache key for discovery scan settings."""
     s_date = session_date.isoformat() if isinstance(session_date, date) else str(session_date)
@@ -57,6 +60,8 @@ def compute_discovery_cache_key(
         str(earnings_source).strip().lower(),
         int(earnings_buffer),
         int(min_score),
+        [str(p).strip().lower() for p in fallback_order],
+        int(max_retries),
     ]
     payload = json.dumps(raw, separators=(",", ":"), ensure_ascii=True)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()

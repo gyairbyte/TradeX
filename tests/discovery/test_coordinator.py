@@ -394,3 +394,109 @@ def test_coordinator_long_focus_caps_and_ranking(tmp_path):
     # Deterministic ranking: ENTER NOW first, then score descending
     assert res.focus_list.iloc[0]["state"] == "ENTER NOW"
     assert res.focus_list.iloc[0]["score"] == 90
+
+
+def test_coordinator_tracks_mixed_providers_and_fallback(tmp_path):
+    """Coordinator truthfully aggregates actual providers and fallback status across batches."""
+    cache_dir = tmp_path / "cache"
+    settings = settings_from_mapping(
+        {
+            "TRADEX_DISCOVERY_CACHE_DIR": str(cache_dir),
+            "TRADEX_DB_PATH": str(tmp_path / "signals.db"),
+        }
+    )
+    coordinator = DiscoveryCoordinator(settings=settings, sleeper=lambda _: None)
+
+    tickers = ["AAPL", "MSFT"]
+    fixed_as_of = datetime(2026, 10, 21, 18, 0, 0, tzinfo=ZoneInfo("America/New_York"))
+
+    batch_idx = 0
+
+    def mock_run_mixed(batch, **kwargs):
+        nonlocal batch_idx
+        batch_idx += 1
+        prov = "alpaca" if batch_idx == 1 else "yahoo"
+        fb = batch_idx == 2
+        t = batch[0]
+        rows = [
+            {
+                "ticker": t,
+                "score": 85,
+                "last_close": 150.0,
+                "volume_ratio": 2.0,
+                "rsi": 60.0,
+                "days_until_earnings": 10,
+                "reasons": "Breakout",
+                "provider": prov,
+                "state": "ENTER NOW",
+                "primary_setup": "breakout_expansion",
+                "matched_setups": "breakout_expansion",
+                "qualified": True,
+            }
+        ]
+        obs = [
+            {
+                "ticker": t,
+                "status": "signal",
+                "score": 85,
+                "last_close": 150.0,
+                "volume_ratio": 2.0,
+                "rsi": 60.0,
+                "days_until_earnings": 10,
+                "reasons": "Breakout",
+                "provider": prov,
+                "strategy_id": "long_mvp",
+                "strategy_version": "v1",
+                "state": "ENTER NOW",
+                "primary_setup": "breakout_expansion",
+                "matched_setups": "breakout_expansion",
+                "qualified": True,
+                "error_category": None,
+                "error_message": None,
+                "component_scores": None,
+                "trigger": None,
+                "invalidation": None,
+                "atr_pct": 0.03,
+                "return_5": 0.01,
+                "return_20": 0.05,
+                "return_60": 0.15,
+            }
+        ]
+        return ScanReport(
+            results=pd.DataFrame(rows),
+            requested_provider="alpaca",
+            actual_provider=prov,
+            fallback_used=fb,
+            providers_attempted=("alpaca",) if not fb else ("alpaca", "yahoo"),
+            failures={},
+            total_requested=1,
+            total_fetch_eligible=1,
+            total_fetch_attempted=1,
+            total_retries=1 if fb else 0,
+            total_fetched=1,
+            total_scored=1,
+            total_signals=1,
+            total_below_threshold=0,
+            total_insufficient_data=0,
+            total_earnings_excluded=0,
+            observations=pd.DataFrame(obs),
+            min_score=40,
+            completed_session=date(2026, 10, 21),
+        )
+
+    with (
+        patch("tradex.discovery.coordinator.run_with_report", side_effect=mock_run_mixed),
+        patch("tradex.discovery.coordinator.store.record_scan"),
+    ):
+        res = coordinator.run(
+            Scope.MY_WATCHLIST,
+            watchlist=tickers,
+            batch_size=1,
+            as_of=fixed_as_of,
+        )
+
+    assert res.actual_provider == "alpaca, yahoo"
+    assert res.actual_providers == ("alpaca", "yahoo")
+    assert res.fallback_used is True
+    assert set(res.focus_list["provider"]) == {"alpaca", "yahoo"}
+

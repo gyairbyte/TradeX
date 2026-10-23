@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+from datetime import UTC, datetime, timedelta
+
 import pytest
 
 from tradex.config import settings_from_mapping
@@ -9,6 +12,8 @@ from tradex.discovery.models import Scope
 from tradex.discovery.universe import (
     UniverseSourceError,
     _classify_symbol_and_name,
+    _load_cached_universe_snapshot,
+    compute_all_us_snapshot_hash,
     parse_nasdaq_directory,
     parse_other_directory,
     resolve_all_us_stocks,
@@ -231,3 +236,94 @@ def test_resolve_universe_watchlist_scope():
     assert tickers == ["NVDA", "AMD", "INTC"]
     assert prov.universe_id == "my_watchlist"
     assert prov.included_ticker_count == 3
+
+
+def test_resolve_all_us_stocks_stale_cache_requires_explicit_opt_in(tmp_path):
+    """A snapshot older than 24h fails closed unless allow_stale=True is explicitly granted."""
+    cache_dir = tmp_path / "discovery_cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    settings = settings_from_mapping({"TRADEX_DISCOVERY_CACHE_DIR": str(cache_dir)})
+
+    tickers = ["AAPL", "MSFT"]
+    gen_ts = "2026-10-20T08:30:00+00:00"
+    snap_hash = compute_all_us_snapshot_hash(tickers, 2, 2, gen_ts)
+    stale_ts = (datetime.now(UTC) - timedelta(hours=48)).isoformat()
+
+    stale_payload = {
+        "tickers": tickers,
+        "provenance": {
+            "universe_id": "all_us_stocks",
+            "scope": "All U.S. Listed Stocks",
+            "source_urls": ["url1", "url2"],
+            "retrieval_timestamp": stale_ts,
+            "source_file_generation_timestamp": gen_ts,
+            "snapshot_hash": snap_hash,
+            "original_listing_counts": {"nasdaqlisted": 2, "otherlisted": 2, "total": 4},
+            "included_ticker_count": 2,
+            "excluded_counts_by_reason": {},
+            "unsupported_symbol_count": 0,
+            "unsupported_symbols": [],
+            "is_stale": False,
+            "stale_reason": None,
+        },
+    }
+    snap_file = cache_dir / "universe_all_us_stocks.json"
+    snap_file.write_text(json.dumps(stale_payload), encoding="utf-8")
+
+    def mock_fail(url: str) -> str:
+        raise OSError("Network unreachable")
+
+    # Fail closed by default
+    with pytest.raises(UniverseSourceError, match="Explicit opt-in .* is required"):
+        resolve_all_us_stocks(settings=settings, http_fetcher=mock_fail, allow_stale=False)
+
+    # Allow stale with opt-in
+    res_tickers, res_prov = resolve_all_us_stocks(
+        settings=settings, http_fetcher=mock_fail, allow_stale=True
+    )
+    assert res_tickers == tickers
+    assert res_prov.is_stale
+    assert "using preserved snapshot" in (res_prov.stale_reason or "")
+
+
+def test_load_cached_universe_rejects_corrupted_hash(tmp_path):
+    """_load_cached_universe_snapshot validates hash integrity and rejects corrupted cache."""
+    cache_dir = tmp_path / "discovery_cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    settings = settings_from_mapping({"TRADEX_DISCOVERY_CACHE_DIR": str(cache_dir)})
+
+    payload = {
+        "tickers": ["AAPL"],
+        "provenance": {
+            "universe_id": "all_us_stocks",
+            "scope": "All U.S. Listed Stocks",
+            "source_urls": [],
+            "retrieval_timestamp": "2026-10-22T08:00:00+00:00",
+            "source_file_generation_timestamp": None,
+            "snapshot_hash": "corrupted_or_tampered_hash",
+            "original_listing_counts": {"nasdaqlisted": 1, "otherlisted": 1, "total": 2},
+            "included_ticker_count": 1,
+            "excluded_counts_by_reason": {},
+            "unsupported_symbol_count": 0,
+            "unsupported_symbols": [],
+            "is_stale": False,
+            "stale_reason": None,
+        },
+    }
+    snap_file = cache_dir / "universe_all_us_stocks.json"
+    snap_file.write_text(json.dumps(payload), encoding="utf-8")
+
+    loaded = _load_cached_universe_snapshot(settings)
+    assert loaded is None
+
+
+def test_parse_directory_rejects_truncated_under_min_listings():
+    """Directory files with fewer than min_listings listings are rejected fail-closed."""
+    one_row = (
+        "Symbol|Security Name|Market Category|Financial Status|Round Lot Size|Test Issue|NASDAQ Symbol|NextShares|ETF\n"
+        "AAPL|Apple Inc. - Common Stock|Q|N|100|N|AAPL|N|N\n"
+        "File Creation Time: 102220260830||||||||\n"
+    )
+    with pytest.raises(UniverseSourceError, match="rejecting as truncated/incomplete"):
+        parse_nasdaq_directory(one_row, min_listings=2)
+

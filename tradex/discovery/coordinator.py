@@ -126,6 +126,8 @@ class DiscoveryCoordinator:
             earnings_source=req_er_source,
             earnings_buffer=earnings_buffer,
             min_score=min_score,
+            fallback_order=tuple(self.settings.data.ohlcv_fallback_order),
+            max_retries=self.settings.data.ohlcv_max_retries,
         )
 
         if force_reset:
@@ -154,10 +156,14 @@ class DiscoveryCoordinator:
                 results=[],
                 status=ScanStatus.NOT_STARTED.value,
                 updated_at=datetime.now(UTC).isoformat(),
+                actual_providers=[],
+                fallback_used=False,
             )
 
         completed_set = set(checkpoint.completed_tickers)
         failed_dict = dict(checkpoint.failed_tickers)
+        actual_providers_set: set[str] = set(checkpoint.actual_providers)
+        any_fallback_used: bool = checkpoint.fallback_used
 
         if retry_failed:
             failed_dict.clear()
@@ -228,11 +234,18 @@ class DiscoveryCoordinator:
                 )
 
                 # Record batch outcomes
+                if batch_report.actual_provider:
+                    actual_providers_set.add(batch_report.actual_provider)
+                if batch_report.fallback_used:
+                    any_fallback_used = True
+
                 rate_limited = False
                 for _, obs_row in batch_report.observations.iterrows():
                     t = str(obs_row["ticker"]).upper()
                     st = obs_row["status"]
                     row_dict = obs_row.to_dict()
+                    if not row_dict.get("provider"):
+                        row_dict["provider"] = batch_report.actual_provider or req_provider
 
                     obs_by_ticker[t] = row_dict
 
@@ -253,13 +266,18 @@ class DiscoveryCoordinator:
                 if not batch_report.results.empty:
                     for _, res_row in batch_report.results.iterrows():
                         t = str(res_row["ticker"]).upper()
-                        results_by_ticker[t] = res_row.to_dict()
+                        row_dict = res_row.to_dict()
+                        if not row_dict.get("provider"):
+                            row_dict["provider"] = batch_report.actual_provider or req_provider
+                        results_by_ticker[t] = row_dict
 
                 checkpoint.completed_tickers = sorted(completed_set)
                 checkpoint.failed_tickers = failed_dict
                 checkpoint.attempted_tickers = sorted(completed_set | set(failed_dict.keys()))
                 checkpoint.observations = list(obs_by_ticker.values())
                 checkpoint.results = list(results_by_ticker.values())
+                checkpoint.actual_providers = sorted(actual_providers_set)
+                checkpoint.fallback_used = any_fallback_used
                 checkpoint.status = ScanStatus.IN_PROGRESS.value
 
                 self.cache.save(checkpoint)
@@ -353,12 +371,22 @@ class DiscoveryCoordinator:
 
         is_partial = attempted_count < total_universe_tickers
 
+        sorted_actual = sorted(actual_providers_set)
+        if not sorted_actual:
+            result_actual_provider = req_provider
+        elif len(sorted_actual) == 1:
+            result_actual_provider = sorted_actual[0]
+        else:
+            result_actual_provider = ", ".join(sorted_actual)
+
         return DiscoveryResult(
             scope=prov.scope,
             universe_provenance=prov,
             session_date=session_date,
             provider=req_provider,
-            actual_provider=req_provider,
+            actual_provider=result_actual_provider,
+            actual_providers=tuple(sorted_actual),
+            fallback_used=any_fallback_used,
             total_tickers=total_universe_tickers,
             completed_count=completed_count,
             remaining_count=remaining_count,

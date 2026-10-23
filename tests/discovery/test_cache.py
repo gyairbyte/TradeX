@@ -95,6 +95,36 @@ def test_compute_discovery_cache_key_deterministic():
     )
     assert k1 != k_univ
 
+    # Fallback order change
+    k_fallback = compute_discovery_cache_key(
+        strategy_id="long_mvp",
+        strategy_version="v1",
+        universe_id="all_us_stocks",
+        universe_hash="hash123",
+        session_date=date(2026, 10, 21),
+        requested_provider="schwab",
+        earnings_source="yahoo",
+        earnings_buffer=0,
+        min_score=40,
+        fallback_order=("yahoo",),
+    )
+    assert k1 != k_fallback
+
+    # Max retries change
+    k_retries = compute_discovery_cache_key(
+        strategy_id="long_mvp",
+        strategy_version="v1",
+        universe_id="all_us_stocks",
+        universe_hash="hash123",
+        session_date=date(2026, 10, 21),
+        requested_provider="schwab",
+        earnings_source="yahoo",
+        earnings_buffer=0,
+        min_score=40,
+        max_retries=2,
+    )
+    assert k1 != k_retries
+
 
 def test_discovery_cache_save_and_load(tmp_path):
     """DiscoveryCache atomically saves checkpoint with checksum and reloads it."""

@@ -107,6 +107,8 @@ class DiscoveryCheckpoint:
     results: list[dict[str, Any]]
     status: str
     updated_at: str
+    actual_providers: list[str] = field(default_factory=list)
+    fallback_used: bool = False
     checksum: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -129,6 +131,8 @@ class DiscoveryCheckpoint:
             "results": list(self.results),
             "status": self.status,
             "updated_at": self.updated_at,
+            "actual_providers": list(self.actual_providers),
+            "fallback_used": self.fallback_used,
             "checksum": self.checksum,
         }
 
@@ -153,6 +157,8 @@ class DiscoveryCheckpoint:
             results=list(data.get("results", [])),
             status=str(data.get("status", ScanStatus.NOT_STARTED.value)),
             updated_at=str(data.get("updated_at", "")),
+            actual_providers=list(data.get("actual_providers", [])),
+            fallback_used=bool(data.get("fallback_used", False)),
             checksum=str(data.get("checksum", "")),
         )
 
@@ -178,6 +184,8 @@ class DiscoveryResult:
     focus_list: pd.DataFrame
     all_qualifying: pd.DataFrame
     all_observations: pd.DataFrame
+    actual_providers: tuple[str, ...] = ()
+    fallback_used: bool = False
     failures: dict[str, str] = field(default_factory=dict)
     is_partial: bool = False
     is_stale_universe: bool = False
