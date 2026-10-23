@@ -21,6 +21,7 @@ import pytest
 
 from tradex.config import settings_from_mapping
 from tradex.research.daytrade_orb.models import Direction, OrderStatus
+from tradex.research.daytrade_orb.provider import ORBMarketDataProvider
 from tradex.research.daytrade_orb.scanner import (
     CandidatePreviewRow,
     MarketScanResult,
@@ -352,3 +353,179 @@ def test_ui_mock_market_scan_end_to_end_renders_populated_candidates(scanner_ui_
     df = df_calls[0][0][0]
     assert len(df) == 20
     status_mock.success.assert_not_called()
+
+
+def test_ui_prepare_market_button_triggers_preparation(scanner_ui_module, fake_scanner_st, monkeypatch):
+    """Clicking 'Prepare Market' triggers preparation service and displays success container."""
+    from datetime import date
+    from pathlib import Path
+
+    from tradex.research.daytrade_orb.preparation import PreparationResult, PreparationStatus
+
+    settings = settings_from_mapping({"DATA_PROVIDER": "schwab"})
+
+    # Discrimination: Prepare Market returns True, Scan Market returns False
+    fake_scanner_st.button.side_effect = lambda label, **kw: "Prepare Market" in label
+
+    mock_prep_res = PreparationResult(
+        session_date=date(2024, 1, 2),
+        provider="mock",
+        feed="synthetic",
+        status=PreparationStatus.READY,
+        universe_size_discovered=33,
+        daily_eligible_count=25,
+        artifact_path=Path("/tmp/prep_mock.json"),
+        coverage_status="complete",
+        coverage_warning="",
+        timings={},
+        warnings=[],
+    )
+    mock_prepare = MagicMock(return_value=mock_prep_res)
+    monkeypatch.setattr("tradex.ui.tabs.orb_preview.prepare_market", mock_prepare)
+
+    status_mock = MagicMock()
+    fake_scanner_st.empty.return_value = status_mock
+
+    scanner_ui_module.render_orb_preview_tab(settings=settings)
+
+    mock_prepare.assert_called_once()
+    assert fake_scanner_st.session_state.get("orb_market_prep_result") == mock_prep_res
+    status_mock.success.assert_called_once()
+    assert "Market preparation completed successfully" in str(status_mock.success.call_args[0][0])
+
+
+def test_ui_cache_status_renders_ready_and_stale_badges(scanner_ui_module, fake_scanner_st, monkeypatch):
+    """Cache card renders appropriate status alerts for READY and STALE cache states."""
+    from tradex.research.daytrade_orb.preparation import CacheValidationResult, PreparationStatus
+
+    settings = settings_from_mapping({"DATA_PROVIDER": "schwab"})
+    fake_scanner_st.button.return_value = False
+
+    # 1. Test READY status
+    ready_result = CacheValidationResult(
+        is_valid=True,
+        status=PreparationStatus.READY,
+        reason="Preparation artifact is fully valid.",
+    )
+    monkeypatch.setattr("tradex.ui.tabs.orb_preview.inspect_cache_status", lambda **kw: ready_result)
+
+    scanner_ui_module.render_orb_preview_tab(settings=settings)
+    assert any("Ready (Full Market Preparation)" in str(c[0][0]) for c in fake_scanner_st.success.call_args_list)
+
+    # 2. Test STALE status
+    fake_scanner_st.success.reset_mock()
+    fake_scanner_st.warning.reset_mock()
+    stale_result = CacheValidationResult(
+        is_valid=False,
+        status=PreparationStatus.STALE,
+        reason="Artifact target date does not match current session.",
+    )
+    monkeypatch.setattr("tradex.ui.tabs.orb_preview.inspect_cache_status", lambda **kw: stale_result)
+
+    scanner_ui_module.render_orb_preview_tab(settings=settings)
+    assert any("Stale Preparation" in str(c[0][0]) for c in fake_scanner_st.warning.call_args_list)
+
+
+def test_ui_warmed_scan_renders_warmed_badge(scanner_ui_module, fake_scanner_st, monkeypatch):
+    """A scan marked as was_warmed=True renders the Warmed Scan badge in the UI."""
+    from datetime import date, datetime
+    from zoneinfo import ZoneInfo
+
+    settings = settings_from_mapping({"DATA_PROVIDER": "schwab"})
+    fake_scanner_st.button.side_effect = lambda label, **kw: "Scan Market" in label
+
+    mock_res_warmed = MarketScanResult(
+        session_date=date(2024, 1, 2),
+        as_of_time=datetime(2024, 1, 2, 9, 35, tzinfo=ZoneInfo("America/New_York")),
+        provider="alpaca",
+        feed="sip",
+        is_feed_consolidated=True,
+        feed_disclosure="Consolidated SIP",
+        universe_size_discovered=8000,
+        securities_evaluated=1200,
+        daily_eligible_count=1200,
+        eligible_candidates_count=20,
+        top_n_selected=20,
+        candidates=[],
+        unranked_eligible_candidates=[],
+        exclusions=[],
+        is_time_gated=False,
+        time_gate_message=None,
+        coverage_completeness_pct=100.0,
+        coverage_status="complete",
+        coverage_warning=None,
+        warnings=[],
+        was_warmed=True,
+        cache_status="READY",
+        cache_message="Validated snapshot loaded.",
+    )
+    monkeypatch.setattr("tradex.ui.tabs.orb_preview.run_market_scan", lambda **kw: mock_res_warmed)
+
+    scanner_ui_module.render_orb_preview_tab(settings=settings)
+    assert any("Warmed Scan (Zero Historical Provider Calls)" in str(c[0][0]) for c in fake_scanner_st.success.call_args_list)
+
+
+def test_ui_prepare_market_on_weekend_disabled_and_fails_closed(scanner_ui_module, fake_scanner_st, monkeypatch):
+    """On weekends/holidays, Prepare Market button is disabled, info banner is displayed, and execution fails closed."""
+    settings = settings_from_mapping({
+        "DATA_PROVIDER": "alpaca",
+        "ALPACA_FEED": "sip",
+        "ALPACA_API_KEY": "test_key",
+        "ALPACA_SECRET_KEY": "test_secret",
+    })
+    monkeypatch.setattr("tradex.ui.tabs.orb_preview.is_trading_day", lambda d: False)
+
+    mock_prov = MagicMock(spec=ORBMarketDataProvider)
+    mock_prov.provider_name = "alpaca"
+    mock_prov.feed_name = "sip"
+    mock_prov.is_feed_consolidated = True
+    monkeypatch.setattr("tradex.ui.tabs.orb_preview.AlpacaORBProvider", lambda **kwargs: mock_prov)
+
+    fake_scanner_st.radio.side_effect = lambda label, **kw: "Alpaca Live Provider" if "Provider" in label else "Market-Wide Live Discovery"
+
+    # Capture button calls
+    button_calls = []
+
+    def _fake_button(label, **kwargs):
+        button_calls.append((label, kwargs))
+        # Force click even if disabled to verify fail-closed defense-in-depth
+        return "Prepare Market" in label
+
+    fake_scanner_st.button.side_effect = _fake_button
+
+    mock_prepare = MagicMock()
+    monkeypatch.setattr("tradex.ui.tabs.orb_preview.prepare_market", mock_prepare)
+
+    status_mock = MagicMock()
+    fake_scanner_st.empty.return_value = status_mock
+
+    scanner_ui_module.render_orb_preview_tab(settings=settings)
+
+    # 1. Info banner shown
+    assert any("Market Closed Today" in str(c[0][0]) for c in fake_scanner_st.info.call_args_list)
+
+    # 2. Button rendered with disabled=True
+    prep_btn_call = next(c for c in button_calls if "Prepare Market" in c[0])
+    assert prep_btn_call[1].get("disabled") is True
+
+    # 3. Fail-closed: prepare_market must NOT be called, and error rendered
+    mock_prepare.assert_not_called()
+    assert any("Market preparation cannot be executed on non-trading days" in str(c[0][0]) for c in status_mock.error.call_args_list)
+
+
+def test_ui_unreadable_cache_file_displays_failed_alert_without_crashing(scanner_ui_module, fake_scanner_st, monkeypatch):
+    """Unreadable or permission-denied cache file does not crash UI and displays FAILED alert card."""
+    settings = settings_from_mapping({"DATA_PROVIDER": "schwab"})
+    fake_scanner_st.button.return_value = False
+
+    def _raise_permission_error(**kwargs):
+        raise PermissionError("Access denied to cache directory")
+
+    monkeypatch.setattr("tradex.ui.tabs.orb_preview.inspect_cache_status", _raise_permission_error)
+
+    # Should not raise exception
+    scanner_ui_module.render_orb_preview_tab(settings=settings)
+
+    # Failure alert rendered
+    assert any("Preparation Failed / Corrupt" in str(c[0][0]) for c in fake_scanner_st.error.call_args_list)
+
