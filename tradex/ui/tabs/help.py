@@ -130,6 +130,24 @@ technical score (0–100) based on how many conditions are met simultaneously.
 **Evidence classification:** Legacy heuristic — discovery only. Scores do not guarantee trade quality or executable edge.
         """)
 
+    with st.expander("Scan Scopes & Market Discovery (Long Timeframe)", expanded=False):
+        st.markdown("""
+When the **Long** timeframe is selected, you can scan beyond your active watchlist using the **Scan Scope** selector:
+
+| Scope | Tickers Evaluated | Description |
+|---|---|---|
+| **My Watchlist** | Active watchlist | Preserves standard watchlist scanning. |
+| **S&P 500** | ~503 tickers | S&P 500 constituent preset snapshot. |
+| **Nasdaq 100** | ~101 tickers | Nasdaq 100 constituent preset snapshot. |
+| **All U.S. Listed Stocks** | ~6,000+ tickers | Discovered from official Nasdaq Trader symbol directories (`nasdaqlisted.txt` and `otherlisted.txt`). Filters out ETFs, warrants, rights, units, preferreds, and test issues. |
+
+**Discovery Architecture & Execution Details:**
+- **Completed-Session Alignment:** Long swing signals evaluate completed regular sessions (NYSE EOD cutoff at 20:00 ET / 8:00 AM ET next morning) to avoid mixing incomplete intraday bars with 2-year daily history.
+- **Resumable Batching:** Scans are processed in bounded batches (default 100 tickers, max 200) with up to 4 concurrent workers and automatic provider rate-limit throttling backoff.
+- **Persistent Caching:** Results are saved atomically under `~/.tradex/discovery_cache` keyed by strategy contract, universe hash, and session date. Interrupted scans resume smoothly without re-downloading existing batches.
+- **Focus Display Caps:** Ranked opportunities are presented with Long MVP v1 focus list caps (top 7 `ENTER NOW`, 12 `ARMED`, 12 `QUALIFIED WAITLIST`), with an expander available to view all qualifying candidates.
+        """)
+
     st.markdown("---")
 
     # ── Coil Detector ─────────────────────────────────────────────────────────

@@ -478,7 +478,7 @@ Once the dashboard is running at `http://localhost:8501`:
 
 | Surface / Area | Child Tabs / Tools | First time? Start here |
 |---|---|---|
-| **Scanner** | — | Pick a watchlist in the sidebar, pick a timeframe (intraday / short / long), set `min_score` (try 40), click Scan. |
+| **Scanner** | — | Pick a watchlist in the sidebar, pick a timeframe (intraday / short / long), set `min_score` (try 40), click Scan. For **Long** scans, use the **Scan Scope** selector to evaluate S&P 500, Nasdaq 100, or All U.S. Listed Stocks (cached under `~/.tradex/discovery_cache`). |
 | **Confluence** | — | Stocks scoring well across all three timeframes simultaneously. Missing timeframes contribute zero and are shown as `0/3`–`3/3` coverage. `all timeframes aligned` requires 3/3 coverage and all active. |
 | **Pre-Market** | — | Gap-up / gap-down detection vs. previous close with optional liquidity, spread, catalyst, and freshness filters. All new filters are off by default. |
 | **Signal Journal** | — | Win rate and expectancy by score bucket, plus signal/outcome provider columns — only meaningful after weeks of watcher runs. |
