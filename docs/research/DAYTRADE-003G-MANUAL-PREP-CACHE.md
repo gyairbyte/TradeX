@@ -136,14 +136,22 @@ The **Research Lab → ORB Candidate Preview → Market-Wide Live Discovery** ta
    - Welles Wilder 14-period ATR requires 15 completed daily bars ($D-15 \dots D-1$) to compute the initial 14-period True Range baseline and the 15th smoothed step.
 2. **Exact 14 Opening-Range Volume Sessions ($D-14 \dots D-1$):**
    - RV14 requires the exact prior 14 completed XNYS regular trading sessions.
-3. **Calendar Awareness:**
+3. **Calendar Awareness & Non-Trading Day UI Handling:**
    - Non-trading days (weekends, NYSE holidays) are detected via `is_trading_day(...)`. Attempting preparation on a non-trading day fails closed with `PreparationStatus.FAILED` ("Session YYYY-MM-DD is not an active regular XNYS trading session").
-   - Early market closures (e.g., 13:00 ET on post-Thanksgiving or Christmas Eve) are detected via `is_early_close(...)` and excluded from regular lookback sets to prevent distorted volume baselines.
+   - In the Research Lab UI, the "🛠️ Prepare Market" button is automatically disabled on non-trading days with a descriptive tooltip, an informational banner explains that the market is closed, and execution fails closed with a clear warning if triggered. The tab safely preserves viewing and scanning the previous completed trading session.
 4. **Session D Price Filter Deferred:**
    - The $\$5.00$ minimum price requirement is strictly deferred to session $D$'s 09:30 ET opening print. It is **not** evaluated during pre-market preparation, preserving eligibility for stocks that gap up above $\$5.00$ at the open.
-5. **Partial Market Coverage & Provisional Status:**
-   - If provider rate limits or network issues cause partial symbol coverage during preparation, the snapshot records `PreparationStatus.PARTIAL`. When scanned, candidates are marked as provisional.
-6. **IEX Feed Disclosure:**
+5. **Prior OR Volume Baseline Completeness & Integrity:**
+   - Prior opening-range volume baselines are validated via `validate_prior_or_volume_baseline`. Missing dates are classified as `DATA_UNAVAILABLE`, and duplicate or out-of-window sessions are classified as `INTEGRITY_BLOCKED`.
+   - Any baseline defects increment `missing_data_count`, strictly preventing incomplete preparations from being marked `READY` or `full_market_sip` (forcing `PARTIAL` and `provisional_incomplete`).
+   - In warm scan, already-excluded symbols are bypassed during Stage 4 candidate evaluation to prevent double-counting exclusions.
+6. **Active Universe Verification Recheck:**
+   - When a valid preparation exists, `run_market_scan` performs a lightweight active universe verification check (`provider.discover_universe()`).
+   - If universe membership has changed (symbols added or removed) or if discovery fails, the scanner fails closed to cold scan (`was_warmed=False`, `cache_status="STALE"` / `"FAILED"`), ensuring newly listed symbols are not silently omitted and full-market coverage is not falsely claimed.
+   - On the verified warm path, provider call avoidance is strictly preserved: exactly 1 universe check call, 0 daily bar calls, 0 prior OR volume calls, and 1 session D opening-range bar call.
+7. **Unreadable Cache Resilience:**
+   - `OSError` and `PermissionError` during cache inspection or loading are caught cleanly, preventing application crashes, displaying a `FAILED` cache status card, and falling back safely to cold scan.
+8. **IEX Feed Disclosure:**
    - Free-tier IEX preparation and scans always record and display the provisional coverage warning: *"IEX feed reflects ~2% tape volume; rankings are provisional."*
 
 ---
@@ -167,9 +175,9 @@ In accordance with TradeX architecture and DAYTRADE-003G constraints:
 
 | Test Suite | Tests Passed | Status | Coverage Focus |
 |---|:---:|:---:|---|
-| `tests/research/daytrade_orb/test_preparation.py` | 10 | **PASS** | Calendar lookbacks, Wilder ATR14, non-trading day rejection, atomic replacement, corrupt checksum rejection, stale feed rejection, zero secrets |
-| `tests/research/daytrade_orb/test_warm_scan.py` | 6 | **PASS** | Zero historical provider calls during warm scan, exact warm/cold parity, Doji invariant preservation, fallback on missing/corrupt/incompatible cache |
+| `tests/research/daytrade_orb/test_preparation.py` | 15 | **PASS** | Calendar lookbacks, Wilder ATR14, non-trading day rejection, atomic replacement, corrupt checksum rejection, stale feed rejection, baseline defect classification (`DATA_UNAVAILABLE`/`INTEGRITY_BLOCKED`), semantic validation, unreadable cache `OSError`/`PermissionError` handling, zero secrets |
+| `tests/research/daytrade_orb/test_warm_scan.py` | 10 | **PASS** | Zero historical provider calls during warm scan, exact warm/cold parity, Doji invariant preservation, universe consistency verification (unchanged, symbol added, symbol removed, discovery error), fallback on missing/corrupt/incompatible cache |
 | `tests/research/daytrade_orb/test_scanner.py` | 19 | **PASS** | Market scan execution, stage transitions, exclusions, Doji no-order invariant, time gating |
-| `tests/ui/test_orb_scanner_ui.py` | 10 | **PASS** | UI buttons, preparation progress container, cache status cards (Ready, Stale), warm scan badge, zero provider calls before click |
-| `tests/research/daytrade_orb/` (Full Suite) | 284 | **PASS** | Comprehensive research regression suite |
-| `ruff check tests scripts` | All checks passed | **PASS** | Clean lint and style compliance |
+| `tests/ui/test_orb_scanner_ui.py` | 12 | **PASS** | UI buttons, preparation progress container, cache status cards (Ready, Stale, Failed), weekend/holiday disabled Prepare Market button & fail-closed behavior, unreadable cache resilience, warm scan badge, zero provider calls before click |
+| `tests/research/daytrade_orb/` (Full Suite) | 293 | **PASS** | Comprehensive research regression suite |
+| `ruff check tests scripts tradex/research/daytrade_orb/ tradex/ui/tabs/orb_preview.py` | All checks passed | **PASS** | Clean lint and style compliance |

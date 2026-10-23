@@ -45,6 +45,7 @@ from .preparation import (
     PreparedMarketSnapshot,
     inspect_cache_status,
     validate_prepared_snapshot,
+    validate_prior_or_volume_baseline,
 )
 from .preview import (
     RESEARCH_PREVIEW_DISCLAIMER,
@@ -323,11 +324,13 @@ def run_market_scan(
     # Cache / Prepared Snapshot Resolution
     # -------------------------------------------------------------------------
     snapshot_to_use: PreparedMarketSnapshot | None = None
+    candidate_snapshot: PreparedMarketSnapshot | None = None
     was_warmed = False
     prep_artifact_path: str | None = None
     prep_completed_at: datetime | None = None
     cache_status_val: str | None = None
     cache_message_val: str | None = None
+    verified_current_universe: list[str] | None = None
 
     if prepared_snapshot is not None:
         val_res = validate_prepared_snapshot(
@@ -336,13 +339,7 @@ def run_market_scan(
         cache_status_val = val_res.status.value
         cache_message_val = val_res.reason
         if val_res.is_valid and val_res.snapshot is not None:
-            snapshot_to_use = val_res.snapshot
-            was_warmed = True
-            if snapshot_to_use.completed_at_et:
-                try:
-                    prep_completed_at = datetime.fromisoformat(snapshot_to_use.completed_at_et)
-                except ValueError:
-                    pass
+            candidate_snapshot = val_res.snapshot
         else:
             warnings.append(
                 f"Provided preparation snapshot could not be used: {val_res.reason} "
@@ -355,14 +352,8 @@ def run_market_scan(
         cache_status_val = val_res.status.value
         cache_message_val = val_res.reason
         if val_res.is_valid and val_res.snapshot is not None:
-            snapshot_to_use = val_res.snapshot
-            was_warmed = True
+            candidate_snapshot = val_res.snapshot
             prep_artifact_path = str(val_res.artifact_path) if val_res.artifact_path else None
-            if snapshot_to_use.completed_at_et:
-                try:
-                    prep_completed_at = datetime.fromisoformat(snapshot_to_use.completed_at_et)
-                except ValueError:
-                    pass
         else:
             if val_res.status != PreparationStatus.NOT_PREPARED:
                 warnings.append(
@@ -371,6 +362,52 @@ def run_market_scan(
                 )
             else:
                 warnings.append("No prepared market snapshot found; executing cold scan.")
+
+    # Lightweight Universe Verification Recheck (DAYTRADE-003G)
+    if candidate_snapshot is not None:
+        t_uv = time.time()
+        _notify(ScanStage.DISCOVERY, "Stage 1: Verifying active universe against prepared snapshot...")
+        try:
+            current_universe_list = provider.discover_universe()
+            timings["universe_verification"] = round(time.time() - t_uv, 3)
+            verified_current_universe = current_universe_list
+            current_set = {s.strip().upper() for s in current_universe_list}
+            prepared_set = {s.strip().upper() for s in candidate_snapshot.discovered_universe}
+
+            if current_set != prepared_set:
+                added_syms = current_set - prepared_set
+                removed_syms = prepared_set - current_set
+                change_parts = []
+                if added_syms:
+                    change_parts.append(f"{len(added_syms)} added")
+                if removed_syms:
+                    change_parts.append(f"{len(removed_syms)} removed")
+                diff_str = ", ".join(change_parts)
+                was_warmed = False
+                snapshot_to_use = None
+                cache_status_val = "STALE"
+                cache_message_val = (
+                    f"Active universe membership changed between preparation and scan ({diff_str}). "
+                    "Executing cold scan to reacquire complete historical data."
+                )
+                warnings.append(cache_message_val)
+            else:
+                was_warmed = True
+                snapshot_to_use = candidate_snapshot
+                cache_status_val = val_res.status.value
+                cache_message_val = val_res.reason
+                if snapshot_to_use.completed_at_et:
+                    try:
+                        prep_completed_at = datetime.fromisoformat(snapshot_to_use.completed_at_et)
+                    except ValueError:
+                        prep_completed_at = None
+        except (ORBProviderError, RuntimeError, OSError) as err:
+            logger.warning("Universe verification failed: %s; falling back to cold scan.", err)
+            was_warmed = False
+            snapshot_to_use = None
+            cache_status_val = "FAILED"
+            cache_message_val = f"Universe verification check failed: {err}. Executing cold scan."
+            warnings.append(cache_message_val)
 
     if was_warmed and snapshot_to_use is not None:
         # ---------------------------------------------------------------------
@@ -503,46 +540,59 @@ def run_market_scan(
         # COLD PATH: Discovery & Daily Screening via Provider Calls
         # ---------------------------------------------------------------------
         # STAGE 1: Broad Universe Discovery
-        t0 = time.time()
-        _notify(ScanStage.DISCOVERY, "Stage 1: Discovering active NYSE and Nasdaq equities...")
-        try:
-            discovered_universe = provider.discover_universe()
-            timings["discovery"] = round(time.time() - t0, 3)
-        except ORBProviderError as err:
-            err_msg = f"Universe discovery failed at Stage 1: {err}"
-            stage_failures["DISCOVERY"] = str(err)
-            return MarketScanResult(
-                session_date=eval_date,
-                as_of_time=eval_as_of,
-                scan_requested_at=scan_requested_at,
-                scan_completed_at=datetime.now(MARKET_TIMEZONE),
-                or_window_end_time=or_window_end_time,
-                data_freshness_time=data_freshness_time,
-                provider=provider.provider_name,
-                feed=provider.feed_name,
-                is_feed_consolidated=provider.is_feed_consolidated,
-                feed_disclosure=provider.feed_disclosure,
-                universe_size_discovered=0,
-                securities_evaluated=0,
-                daily_eligible_count=0,
-                eligible_candidates_count=0,
-                top_n_selected=0,
-                candidates=[],
-                unranked_eligible_candidates=[],
-                exclusions=[],
-                is_time_gated=False,
-                time_gate_message=None,
-                coverage_completeness_pct=0.0,
-                coverage_status="failed",
-                coverage_warning="Scan failed during universe discovery.",
-                warnings=list(warnings) + [err_msg],
-                stage_failures=stage_failures,
-                was_warmed=was_warmed,
-                prep_artifact_path=prep_artifact_path,
-                prep_completed_at=prep_completed_at,
-                cache_status=cache_status_val,
-                cache_message=cache_message_val,
+        if verified_current_universe is not None:
+            discovered_universe = verified_current_universe
+            timings["discovery"] = 0.0
+            _notify(
+                ScanStage.DISCOVERY,
+                f"Stage 1 Complete: Discovered {len(discovered_universe):,} active U.S. equities.",
+                discovered_count=len(discovered_universe),
             )
+        else:
+            t0 = time.time()
+            _notify(ScanStage.DISCOVERY, "Stage 1: Discovering active NYSE and Nasdaq equities...")
+            try:
+                discovered_universe = provider.discover_universe()
+                timings["discovery"] = round(time.time() - t0, 3)
+            except ORBProviderError as err:
+                err_msg = f"Universe discovery failed at Stage 1: {err}"
+                stage_failures["DISCOVERY"] = str(err)
+                return MarketScanResult(
+                    session_date=eval_date,
+                    as_of_time=eval_as_of,
+                    scan_requested_at=scan_requested_at,
+                    scan_completed_at=datetime.now(MARKET_TIMEZONE),
+                    or_window_end_time=or_window_end_time,
+                    data_freshness_time=data_freshness_time,
+                    provider=provider.provider_name,
+                    feed=provider.feed_name,
+                    is_feed_consolidated=provider.is_feed_consolidated,
+                    feed_disclosure=provider.feed_disclosure,
+                    universe_size_discovered=0,
+                    securities_evaluated=0,
+                    daily_history_complete_count=0,
+                    daily_eligible_count=0,
+                    or_observations_valid_count=0,
+                    rv_baseline_complete_count=0,
+                    missing_data_count=0,
+                    eligible_candidates_count=0,
+                    top_n_selected=0,
+                    candidates=[],
+                    unranked_eligible_candidates=[],
+                    exclusions=[],
+                    is_time_gated=False,
+                    time_gate_message=None,
+                    coverage_completeness_pct=0.0,
+                    coverage_status="failed",
+                    coverage_warning="Universe discovery failed.",
+                    warnings=list(warnings) + [err_msg],
+                    stage_failures=stage_failures,
+                    was_warmed=was_warmed,
+                    prep_artifact_path=prep_artifact_path,
+                    prep_completed_at=prep_completed_at,
+                    cache_status=cache_status_val,
+                    cache_message=cache_message_val,
+                )
 
         universe_size = len(discovered_universe)
         _notify(
@@ -860,8 +910,24 @@ def run_market_scan(
     or_observations_valid_count = 0
     rv_baseline_complete_count = 0
 
+    already_excluded_syms = {e.symbol for e in snapshot_to_use.exclusions} if (was_warmed and snapshot_to_use is not None) else set()
+
     for sym in daily_qualified_symbols:
+        # Avoid double-counting baseline defects or daily exclusions already recorded during preparation
+        if was_warmed and sym in already_excluded_syms:
+            continue
+
         adv14, atr14 = daily_metrics_by_sym[sym]
+
+        # In cold scan, validate prior OR volume baseline completeness and integrity
+        if not was_warmed:
+            prior_obs = prior_or_vols_by_sym.get(sym, [])
+            is_baseline_valid, baseline_exc = validate_prior_or_volume_baseline(prior_obs, prior_14_sessions, sym)
+            if not is_baseline_valid:
+                if baseline_exc is not None:
+                    exclusions.append(baseline_exc)
+                continue
+
         or_bars = current_or_bars_by_sym.get(sym, [])
 
         # Check for future-bar leakage in opening range minute bars
@@ -943,11 +1009,15 @@ def run_market_scan(
         )
 
         if rv14 is None:
+            if mean_prior_or_vol == 0.0:
+                reason_str = "Zero RV baseline: mean prior 14-session opening range volume is 0.0 (unrankable)"
+            else:
+                reason_str = "RV14 non-computable: missing prior opening-range observations in the 14-session baseline"
             exclusions.append(
                 SymbolExclusion(
                     symbol=sym,
                     category=ExclusionCategory.DATA_UNAVAILABLE,
-                    reason="RV14 non-computable: missing prior opening-range observations in the 14-session baseline",
+                    reason=reason_str,
                 )
             )
             continue

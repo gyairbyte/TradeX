@@ -61,6 +61,7 @@ from .preparation import (
     prepare_market,
     save_prepared_snapshot,
     validate_prepared_snapshot,
+    validate_prior_or_volume_baseline,
 )
 from .preview import (
     RESEARCH_PREVIEW_DISCLAIMER,
@@ -205,6 +206,7 @@ __all__ = [
     "size_order_intent",
     "validate_dataset_manifest_invariants",
     "validate_prepared_snapshot",
+    "validate_prior_or_volume_baseline",
     "verify_holdout_access_guard",
 ]
 

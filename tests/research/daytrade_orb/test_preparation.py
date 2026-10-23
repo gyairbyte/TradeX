@@ -18,8 +18,10 @@ Covers all required acceptance criteria:
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import date, datetime
 from pathlib import Path
+from unittest.mock import patch
 
 from tradex.market.hours import MARKET_TIMEZONE
 from tradex.research.daytrade_orb.demo_fixture import DEMO_SESSION_DATE
@@ -29,6 +31,7 @@ from tradex.research.daytrade_orb.models import (
     OpeningRangeVolumeObservation,
 )
 from tradex.research.daytrade_orb.preparation import (
+    ExclusionCategory,
     PreparationStatus,
     inspect_cache_status,
     load_prepared_snapshot,
@@ -336,3 +339,161 @@ def test_atomic_write_replacement(tmp_path: Path):
     # No temporary files left behind
     tmp_files = list(tmp_path.glob("*.tmp_*"))
     assert len(tmp_files) == 0
+
+
+def test_incomplete_prior_or_volume_baseline_marks_partial_provisional(tmp_path: Path):
+    """Missing prior opening-range volume baseline forces PARTIAL and provisional_incomplete on SIP."""
+    # Complete daily history (15 sessions) passing ADV14 and ATR14
+    daily_15 = _make_daily_bars("INCOMPLETE_SYM", TEST_DATE, num_days=15, base_price=50.0, daily_vol=2_500_000.0, daily_range=2.0)
+    # Only 13 prior OR volume observations (missing 1 session)
+    prior_13 = _make_prior_vols("INCOMPLETE_SYM", TEST_DATE, num_days=13, vol=150_000.0)
+
+    provider = MockORBProvider(
+        symbols=["INCOMPLETE_SYM"],
+        daily_bars={"INCOMPLETE_SYM": daily_15},
+        prior_opening_range_volumes={"INCOMPLETE_SYM": prior_13},
+        provider_name="alpaca",
+        feed_name="sip",
+        is_feed_consolidated=True,
+    )
+
+    res = prepare_market(
+        provider=provider,
+        session_date=TEST_DATE,
+        as_of_time=TEST_AS_OF,
+        cache_dir=tmp_path,
+    )
+
+    # Acceptance criteria: Must NOT be marked READY or full_market_sip!
+    assert res.status == PreparationStatus.PARTIAL
+    assert res.status != PreparationStatus.READY
+    assert res.coverage_status == "provisional_incomplete"
+    assert res.coverage_status != "full_market_sip"
+
+    # Accurately classified as DATA_UNAVAILABLE
+    exc = [e for e in res.snapshot.exclusions if e.symbol == "INCOMPLETE_SYM"]
+    assert len(exc) == 1
+    assert exc[0].category == ExclusionCategory.DATA_UNAVAILABLE
+    assert "missing prior opening-range observations" in exc[0].reason
+    assert res.snapshot.coverage_statistics["missing_data_count"] == 1
+
+
+def test_corrupt_prior_or_volume_baseline_duplicate_session_marks_integrity_blocked(tmp_path: Path):
+    """Duplicate prior opening-range volume baseline dates force INTEGRITY_BLOCKED and PARTIAL."""
+    daily_15 = _make_daily_bars("DUP_SYM", TEST_DATE, num_days=15, base_price=50.0, daily_vol=2_500_000.0, daily_range=2.0)
+    prior_14 = _make_prior_vols("DUP_SYM", TEST_DATE, num_days=14, vol=150_000.0)
+    # Duplicate the last observation date
+    prior_14_with_dup = prior_14[:-1] + [prior_14[-2]]
+
+    provider = MockORBProvider(
+        symbols=["DUP_SYM"],
+        daily_bars={"DUP_SYM": daily_15},
+        prior_opening_range_volumes={"DUP_SYM": prior_14_with_dup},
+        provider_name="alpaca",
+        feed_name="sip",
+        is_feed_consolidated=True,
+    )
+
+    res = prepare_market(
+        provider=provider,
+        session_date=TEST_DATE,
+        as_of_time=TEST_AS_OF,
+        cache_dir=tmp_path,
+    )
+
+    assert res.status == PreparationStatus.PARTIAL
+    exc = [e for e in res.snapshot.exclusions if e.symbol == "DUP_SYM"]
+    assert len(exc) == 1
+    assert exc[0].category == ExclusionCategory.INTEGRITY_BLOCKED
+    assert "duplicate opening-range volume observations" in exc[0].reason
+
+
+def test_semantic_validation_rejects_tampered_ready_snapshot_missing_baselines(tmp_path: Path):
+    """validate_prepared_snapshot fails closed if an artifact claims READY but daily-eligible symbol lacks baselines."""
+    provider = MockORBProvider.create_populated()
+    res = prepare_market(
+        provider=provider,
+        session_date=DEMO_SESSION_DATE,
+        cache_dir=tmp_path,
+    )
+    assert res.artifact_path is not None
+
+    # Load and tamper: delete prior opening-range volume baseline for a qualifying symbol without adding an exclusion
+    data = json.loads(res.artifact_path.read_text(encoding="utf-8"))
+    qual_sym = data["daily_eligible_symbols"][0]
+    # Remove from exclusions if present
+    data["exclusions"] = [e for e in data["exclusions"] if e["symbol"] != qual_sym]
+    # Truncate prior OR volumes to 5 sessions
+    data["prior_opening_range_volumes"][qual_sym] = data["prior_opening_range_volumes"][qual_sym][:5]
+    # Recompute integrity hash to simulate semantic defect rather than raw bitflip
+    from tradex.research.daytrade_orb.preparation import PreparedMarketSnapshot
+    tampered_snap = PreparedMarketSnapshot.from_dict(data)
+    tampered_snap = replace(tampered_snap, integrity_hash=tampered_snap.compute_integrity_hash())
+
+    val = validate_prepared_snapshot(
+        tampered_snap,
+        DEMO_SESSION_DATE,
+        provider.provider_name,
+        provider.feed_name,
+    )
+
+    assert val.is_valid is False
+    assert val.status == PreparationStatus.FAILED
+    assert "Semantic validation failed" in val.reason
+    assert qual_sym in val.reason
+
+
+def test_inspect_cache_status_detects_stale_prior_session_artifact(tmp_path: Path):
+    """inspect_cache_status accurately labels previous session's artifact as STALE."""
+    provider = MockORBProvider.create_populated()
+    # Prepare session for DEMO_SESSION_DATE (2024-01-02)
+    prepare_market(
+        provider=provider,
+        session_date=DEMO_SESSION_DATE,
+        cache_dir=tmp_path,
+    )
+
+    # Next trading session is 2024-01-03
+    next_session = date(2024, 1, 3)
+    val = inspect_cache_status(
+        target_session=next_session,
+        provider=provider.provider_name,
+        feed=provider.feed_name,
+        cache_dir=tmp_path,
+    )
+
+    assert val.is_valid is False
+    assert val.status == PreparationStatus.STALE
+    assert f"Snapshot found for previous session {DEMO_SESSION_DATE.isoformat()} is stale for target session {next_session.isoformat()}" in val.reason
+
+
+def test_cache_handles_os_error_permission_denied(tmp_path: Path):
+    """Unreadable cache artifacts due to OSError / PermissionError do not crash and report FAILED."""
+    provider = MockORBProvider.create_populated()
+    res = prepare_market(
+        provider=provider,
+        session_date=DEMO_SESSION_DATE,
+        cache_dir=tmp_path,
+    )
+    assert res.artifact_path is not None
+
+    with patch.object(Path, "read_text", side_effect=PermissionError("Permission denied: unreadable cache")):
+        # inspect_cache_status should return FAILED rather than uncaught PermissionError
+        val = inspect_cache_status(
+            target_session=DEMO_SESSION_DATE,
+            provider=provider.provider_name,
+            feed=provider.feed_name,
+            cache_dir=tmp_path,
+        )
+        assert val.is_valid is False
+        assert val.status == PreparationStatus.FAILED
+        assert "could not be read or is corrupted" in val.reason
+
+        # load_prepared_snapshot should return None safely
+        loaded = load_prepared_snapshot(
+            session_date=DEMO_SESSION_DATE,
+            provider=provider.provider_name,
+            feed=provider.feed_name,
+            cache_dir=tmp_path,
+        )
+        assert loaded is None

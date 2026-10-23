@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
 import os
 import time
 import uuid
@@ -398,13 +399,67 @@ def load_prepared_snapshot(
             )
             return None
         return snapshot
-    except (json.JSONDecodeError, KeyError, ValueError, TypeError) as err:
+    except (OSError, json.JSONDecodeError, KeyError, ValueError, TypeError) as err:
         logger.warning(
             "Failed to parse preparation snapshot at %s: %s; discarding corrupt cache.",
             file_path,
             err,
         )
         return None
+
+
+def validate_prior_or_volume_baseline(
+    observations: list[OpeningRangeVolumeObservation],
+    expected_sessions: list[date],
+    symbol: str,
+) -> tuple[bool, SymbolExclusion | None]:
+    """Validate that prior opening range volume observations are complete and contiguous.
+
+    Checks:
+    - No duplicate session dates (INTEGRITY_BLOCKED).
+    - No out-of-window session dates (INTEGRITY_BLOCKED).
+    - All expected sessions present with finite, non-negative volume (DATA_UNAVAILABLE).
+
+    Returns:
+        (True, None) if complete and valid.
+        (False, SymbolExclusion) if duplicate, out-of-window, or missing observations exist.
+    """
+    expected_set = set(expected_sessions)
+    seen_dates: set[date] = set()
+    valid_dates: set[date] = set()
+
+    for obs in observations:
+        if obs.session_date in seen_dates:
+            return False, SymbolExclusion(
+                symbol=symbol,
+                category=ExclusionCategory.INTEGRITY_BLOCKED,
+                reason=f"Conflicting duplicate opening-range volume observations detected for date {obs.session_date.isoformat()}",
+            )
+        seen_dates.add(obs.session_date)
+
+        if obs.session_date not in expected_set:
+            return False, SymbolExclusion(
+                symbol=symbol,
+                category=ExclusionCategory.INTEGRITY_BLOCKED,
+                reason=f"Out-of-window opening-range volume observation detected for date {obs.session_date.isoformat()}",
+            )
+
+        if (
+            obs.volume is not None
+            and isinstance(obs.volume, (int, float))
+            and math.isfinite(obs.volume)
+            and obs.volume >= 0
+        ):
+            valid_dates.add(obs.session_date)
+
+    if valid_dates != expected_set:
+        return False, SymbolExclusion(
+            symbol=symbol,
+            category=ExclusionCategory.DATA_UNAVAILABLE,
+            reason="RV14 non-computable: missing prior opening-range observations in the 14-session baseline",
+        )
+
+    return True, None
 
 
 def validate_prepared_snapshot(
@@ -423,6 +478,7 @@ def validate_prepared_snapshot(
     - Lookback calendar requirements (exact 15 daily and 14 prior OR sessions).
     - Data integrity hash verification.
     - Completion status (READY or PARTIAL).
+    - Semantic completeness of metrics and baselines for READY status.
     """
     if snapshot is None:
         return CacheValidationResult(
@@ -546,6 +602,33 @@ def validate_prepared_snapshot(
             artifact_path=artifact_path,
         )
 
+    # 7. Semantic Validation for READY Status
+    if snapshot.status == PreparationStatus.READY:
+        excluded_symbols = {e.symbol for e in snapshot.exclusions}
+        for sym in snapshot.daily_eligible_symbols:
+            metrics = snapshot.daily_metrics.get(sym)
+            if not metrics or len(metrics) != 2 or not all(isinstance(v, (int, float)) and math.isfinite(v) for v in metrics):
+                return CacheValidationResult(
+                    is_valid=False,
+                    status=PreparationStatus.FAILED,
+                    reason=f"Semantic validation failed: symbol {sym} marked daily-eligible but missing valid ADV14/ATR14 metrics.",
+                    snapshot=snapshot,
+                    artifact_path=artifact_path,
+                )
+            if sym not in excluded_symbols:
+                or_vols = snapshot.prior_opening_range_volumes.get(sym)
+                if or_vols is None or len(or_vols) != len(snapshot.prior_or_volume_sessions):
+                    return CacheValidationResult(
+                        is_valid=False,
+                        status=PreparationStatus.FAILED,
+                        reason=(
+                            f"Semantic validation failed: symbol {sym} marked daily-eligible without exclusion but has incomplete "
+                            f"prior OR volume baseline ({len(or_vols) if or_vols else 0}/{len(snapshot.prior_or_volume_sessions)} sessions)."
+                        ),
+                        snapshot=snapshot,
+                        artifact_path=artifact_path,
+                    )
+
     return CacheValidationResult(
         is_valid=True,
         status=snapshot.status,
@@ -570,10 +653,37 @@ def inspect_cache_status(
     file_path = base_dir / filename
 
     if not file_path.exists():
+        # Check if there is an artifact for a previous session in cache_dir
+        pattern = f"orb_prep_*_{provider.strip().lower()}_{feed.strip().lower()}.json"
+        try:
+            prior_files = sorted(base_dir.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
+            for prior_p in prior_files:
+                if prior_p.name == filename:
+                    continue
+                try:
+                    prior_text = prior_p.read_text(encoding="utf-8")
+                    prior_snap = PreparedMarketSnapshot.from_json(prior_text)
+                    if prior_snap.session_date != target_session:
+                        return CacheValidationResult(
+                            is_valid=False,
+                            status=PreparationStatus.STALE,
+                            reason=(
+                                f"Snapshot found for previous session {prior_snap.session_date.isoformat()} "
+                                f"is stale for target session {target_session.isoformat()}. "
+                                "Click Prepare Market to update data for the active trading session."
+                            ),
+                            snapshot=prior_snap,
+                            artifact_path=prior_p,
+                        )
+                except (OSError, json.JSONDecodeError, KeyError, ValueError, TypeError):
+                    continue
+        except OSError:
+            pass
+
         return CacheValidationResult(
             is_valid=False,
             status=PreparationStatus.NOT_PREPARED,
-            reason="No prepared market snapshot found on disk.",
+            reason=f"No prepared market snapshot found on disk for session {target_session.isoformat()}.",
             artifact_path=file_path,
         )
 
@@ -581,11 +691,11 @@ def inspect_cache_status(
         text = file_path.read_text(encoding="utf-8")
         snapshot = PreparedMarketSnapshot.from_json(text)
         return validate_prepared_snapshot(snapshot, target_session, provider, feed, artifact_path=file_path)
-    except (json.JSONDecodeError, KeyError, ValueError, TypeError) as err:
+    except (OSError, json.JSONDecodeError, KeyError, ValueError, TypeError) as err:
         return CacheValidationResult(
             is_valid=False,
             status=PreparationStatus.FAILED,
-            reason=f"Cached snapshot file is corrupted: {err}",
+            reason=f"Cached snapshot file could not be read or is corrupted: {err}",
             artifact_path=file_path,
         )
 
@@ -915,18 +1025,13 @@ def prepare_market(
             )
 
         # Validate prior opening range volume completeness for each candidate
-        expected_session_set = set(prior_14_sessions)
         for sym in daily_qualified_symbols:
             obs_list = prior_or_vols_by_sym.get(sym, [])
-            seen_s: set[date] = set()
-            valid_dates: set[date] = set()
-            for obs in obs_list:
-                if obs.session_date in seen_s:
-                    break
-                seen_s.add(obs.session_date)
-                if obs.session_date in expected_session_set and obs.volume >= 0:
-                    valid_dates.add(obs.session_date)
-            if valid_dates == expected_session_set:
+            is_valid, exc = validate_prior_or_volume_baseline(obs_list, prior_14_sessions, sym)
+            if not is_valid:
+                if exc is not None:
+                    exclusions.append(exc)
+            else:
                 rv_baseline_complete_count += 1
 
     timings["prior_or_volumes"] = round(time.time() - t2, 3)

@@ -11,6 +11,7 @@ Implements DAYTRADE-003F inside Research Lab as an explicitly non-actionable, re
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import replace
 from datetime import datetime
 from typing import Any
@@ -30,6 +31,7 @@ from tradex.research.daytrade_orb.demo_fixture import (
     create_demo_snapshot,
 )
 from tradex.research.daytrade_orb.preparation import (
+    CacheValidationResult,
     PreparationProgress,
     PreparationStatus,
     inspect_cache_status,
@@ -59,6 +61,8 @@ from tradex.research.daytrade_orb.snapshot import (
     SnapshotValidationError,
     parse_snapshot_json,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _render_candidates_table(candidates: list[CandidatePreviewRow]) -> None:
@@ -232,12 +236,14 @@ def render_orb_preview_tab(
                 )
 
         is_mock_provider = isinstance(provider_obj, MockORBProvider)
+        is_market_session = True
         if is_mock_provider:
             target_date = DEMO_SESSION_DATE
         else:
             now_ny = datetime.now(MARKET_TIMEZONE)
             today_date = now_ny.date()
-            if is_trading_day(today_date):
+            is_market_session = is_trading_day(today_date)
+            if is_market_session:
                 target_date = today_date
             else:
                 prev_sess = previous_trading_session(today_date)
@@ -246,11 +252,27 @@ def render_orb_preview_tab(
         cache_dir = settings.paths.orb_cache_dir.expanduser()
         cache_status_info = None
         if provider_obj is not None:
-            cache_status_info = inspect_cache_status(
-                target_session=target_date,
-                provider=provider_obj.provider_name,
-                feed=provider_obj.feed_name,
-                cache_dir=cache_dir,
+            try:
+                cache_status_info = inspect_cache_status(
+                    target_session=target_date,
+                    provider=provider_obj.provider_name,
+                    feed=provider_obj.feed_name,
+                    cache_dir=cache_dir,
+                )
+            except Exception as err:
+                logger.exception("Failed to inspect cache status for session %s", target_date)
+                cache_status_info = CacheValidationResult(
+                    is_valid=False,
+                    status=PreparationStatus.FAILED,
+                    reason=f"Cached snapshot file could not be read or is corrupted: {err}",
+                    snapshot=None,
+                )
+
+        if not is_mock_provider and not is_market_session:
+            st.info(
+                f"ℹ️ **Market Closed Today ({today_date.isoformat()})**: Market preparation is only permitted on regular "
+                f"XNYS trading sessions before market open. Currently viewing last regular session ({target_date.isoformat()}) "
+                f"for scanning and historical analysis."
             )
 
         # Market Preparation Status & Metadata Card
@@ -295,7 +317,17 @@ def render_orb_preview_tab(
         # Action Buttons: Prepare Market and Scan Market
         btn_col1, btn_col2 = st.columns(2)
         with btn_col1:
-            prepare_clicked = st.button("🛠️ Prepare Market", use_container_width=True)
+            prep_btn_help = (
+                "Prepare market universe, daily metrics, and opening-range volume baselines before market open."
+                if (is_mock_provider or is_market_session)
+                else f"Market preparation is disabled on non-trading days ({today_date.isoformat()})."
+            )
+            prepare_clicked = st.button(
+                "🛠️ Prepare Market",
+                disabled=not (is_mock_provider or is_market_session),
+                help=prep_btn_help,
+                use_container_width=True,
+            )
         with btn_col2:
             scan_clicked = st.button("🔍 Scan Market", type="primary", use_container_width=True)
 
@@ -311,12 +343,19 @@ def render_orb_preview_tab(
                 return
 
             prep_status_container = st.empty()
+            if not is_mock_provider and not is_market_session:
+                prep_status_container.error(
+                    f"Market preparation cannot be executed on non-trading days ({today_date.isoformat()}). "
+                    "Preparation is only valid on regular XNYS trading days before market open."
+                )
+                return
+
             with st.spinner("Executing market preparation (historical data & indicators)..."):
                 def _ui_prep_progress(p: PreparationProgress) -> None:
                     prep_status_container.info(f"⏳ **{p.stage.value}**: {p.message}")
 
                 try:
-                    prep_session_date = DEMO_SESSION_DATE if is_mock_provider else target_date
+                    prep_session_date = DEMO_SESSION_DATE if is_mock_provider else today_date
                     prep_as_of_time = DEMO_AS_OF_TIME if is_mock_provider else None
 
                     prep_result = prepare_market(

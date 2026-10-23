@@ -21,6 +21,7 @@ import pytest
 
 from tradex.config import settings_from_mapping
 from tradex.research.daytrade_orb.models import Direction, OrderStatus
+from tradex.research.daytrade_orb.provider import ORBMarketDataProvider
 from tradex.research.daytrade_orb.scanner import (
     CandidatePreviewRow,
     MarketScanResult,
@@ -462,4 +463,69 @@ def test_ui_warmed_scan_renders_warmed_badge(scanner_ui_module, fake_scanner_st,
 
     scanner_ui_module.render_orb_preview_tab(settings=settings)
     assert any("Warmed Scan (Zero Historical Provider Calls)" in str(c[0][0]) for c in fake_scanner_st.success.call_args_list)
+
+
+def test_ui_prepare_market_on_weekend_disabled_and_fails_closed(scanner_ui_module, fake_scanner_st, monkeypatch):
+    """On weekends/holidays, Prepare Market button is disabled, info banner is displayed, and execution fails closed."""
+    settings = settings_from_mapping({
+        "DATA_PROVIDER": "alpaca",
+        "ALPACA_FEED": "sip",
+        "ALPACA_API_KEY": "test_key",
+        "ALPACA_SECRET_KEY": "test_secret",
+    })
+    monkeypatch.setattr("tradex.ui.tabs.orb_preview.is_trading_day", lambda d: False)
+
+    mock_prov = MagicMock(spec=ORBMarketDataProvider)
+    mock_prov.provider_name = "alpaca"
+    mock_prov.feed_name = "sip"
+    mock_prov.is_feed_consolidated = True
+    monkeypatch.setattr("tradex.ui.tabs.orb_preview.AlpacaORBProvider", lambda **kwargs: mock_prov)
+
+    fake_scanner_st.radio.side_effect = lambda label, **kw: "Alpaca Live Provider" if "Provider" in label else "Market-Wide Live Discovery"
+
+    # Capture button calls
+    button_calls = []
+
+    def _fake_button(label, **kwargs):
+        button_calls.append((label, kwargs))
+        # Force click even if disabled to verify fail-closed defense-in-depth
+        return "Prepare Market" in label
+
+    fake_scanner_st.button.side_effect = _fake_button
+
+    mock_prepare = MagicMock()
+    monkeypatch.setattr("tradex.ui.tabs.orb_preview.prepare_market", mock_prepare)
+
+    status_mock = MagicMock()
+    fake_scanner_st.empty.return_value = status_mock
+
+    scanner_ui_module.render_orb_preview_tab(settings=settings)
+
+    # 1. Info banner shown
+    assert any("Market Closed Today" in str(c[0][0]) for c in fake_scanner_st.info.call_args_list)
+
+    # 2. Button rendered with disabled=True
+    prep_btn_call = next(c for c in button_calls if "Prepare Market" in c[0])
+    assert prep_btn_call[1].get("disabled") is True
+
+    # 3. Fail-closed: prepare_market must NOT be called, and error rendered
+    mock_prepare.assert_not_called()
+    assert any("Market preparation cannot be executed on non-trading days" in str(c[0][0]) for c in status_mock.error.call_args_list)
+
+
+def test_ui_unreadable_cache_file_displays_failed_alert_without_crashing(scanner_ui_module, fake_scanner_st, monkeypatch):
+    """Unreadable or permission-denied cache file does not crash UI and displays FAILED alert card."""
+    settings = settings_from_mapping({"DATA_PROVIDER": "schwab"})
+    fake_scanner_st.button.return_value = False
+
+    def _raise_permission_error(**kwargs):
+        raise PermissionError("Access denied to cache directory")
+
+    monkeypatch.setattr("tradex.ui.tabs.orb_preview.inspect_cache_status", _raise_permission_error)
+
+    # Should not raise exception
+    scanner_ui_module.render_orb_preview_tab(settings=settings)
+
+    # Failure alert rendered
+    assert any("Preparation Failed / Corrupt" in str(c[0][0]) for c in fake_scanner_st.error.call_args_list)
 

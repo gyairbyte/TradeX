@@ -29,7 +29,10 @@ from tradex.research.daytrade_orb.preparation import (
     PreparationStatus,
     prepare_market,
 )
-from tradex.research.daytrade_orb.provider import MockORBProvider
+from tradex.research.daytrade_orb.provider import (
+    MockORBProvider,
+    ORBProviderDataUnavailableError,
+)
 from tradex.research.daytrade_orb.scanner import run_market_scan
 
 
@@ -173,8 +176,9 @@ def test_warm_scan_avoids_historical_api_calls(tmp_path: Path):
         cache_dir=tmp_path,
     )
     assert res.was_warmed is True
-    # Zero calls to discover_universe, fetch_daily_bars, fetch_prior_opening_range_volumes!
-    assert warm_provider.discover_universe_calls == 0
+    # Authorized lightweight universe verification recheck is performed (exactly 1 call to discover_universe):
+    assert warm_provider.discover_universe_calls == 1
+    # Zero calls to fetch_daily_bars and fetch_prior_opening_range_volumes!
     assert warm_provider.fetch_daily_bars_calls == 0
     assert warm_provider.fetch_prior_opening_range_volumes_calls == 0
     # Exactly 1 call to retrieve session D opening-range bars:
@@ -284,3 +288,122 @@ def test_corrupted_cache_falls_back_to_cold_scan(tmp_path: Path):
     assert res.was_warmed is False
     assert scan_provider.fetch_daily_bars_calls == 1
     assert any("Cold scan fallback (FAILED)" in w for w in res.warnings)
+
+
+def test_warm_scan_unchanged_universe_recheck_succeeds(tmp_path: Path):
+    """When universe recheck shows identical symbols, warm scan succeeds with 0 historical bar calls."""
+    prep_provider = CallCountingMockProvider.create_populated()
+    prepare_market(
+        provider=prep_provider,
+        session_date=DEMO_SESSION_DATE,
+        as_of_time=DEMO_AS_OF_TIME,
+        cache_dir=tmp_path,
+    )
+
+    scan_provider = CallCountingMockProvider.create_populated()
+    res = run_market_scan(
+        provider=scan_provider,
+        session_date=DEMO_SESSION_DATE,
+        as_of_time=DEMO_AS_OF_TIME,
+        use_cache=True,
+        cache_dir=tmp_path,
+    )
+
+    assert res.was_warmed is True
+    assert res.cache_status == "READY"
+    assert scan_provider.discover_universe_calls == 1
+    assert scan_provider.fetch_daily_bars_calls == 0
+    assert scan_provider.fetch_prior_opening_range_volumes_calls == 0
+    assert scan_provider.fetch_opening_range_bars_calls == 1
+
+
+def test_warm_scan_universe_symbol_added_fails_closed_to_cold_scan(tmp_path: Path):
+    """When a new symbol is discovered that was not in preparation snapshot, fail closed to cold scan."""
+    prep_provider = CallCountingMockProvider.create_populated()
+    prepare_market(
+        provider=prep_provider,
+        session_date=DEMO_SESSION_DATE,
+        as_of_time=DEMO_AS_OF_TIME,
+        cache_dir=tmp_path,
+    )
+
+    # Scan provider discovers universe with an extra symbol "NEWCO"
+    scan_provider = CallCountingMockProvider.create_populated()
+    base_symbols = list(scan_provider.symbols)
+    scan_provider.symbols = base_symbols + ["NEWCO"]
+
+    res = run_market_scan(
+        provider=scan_provider,
+        session_date=DEMO_SESSION_DATE,
+        as_of_time=DEMO_AS_OF_TIME,
+        use_cache=True,
+        cache_dir=tmp_path,
+    )
+
+    # Must fail closed to cold scan to evaluate the newly discovered symbol
+    assert res.was_warmed is False
+    assert res.cache_status == "STALE"
+    assert any("Active universe membership changed between preparation and scan" in w for w in res.warnings)
+    assert any("1 added" in w for w in res.warnings)
+    # Cold scan executed historical queries
+    assert scan_provider.fetch_daily_bars_calls == 1
+    assert scan_provider.fetch_prior_opening_range_volumes_calls == 1
+
+
+def test_warm_scan_universe_symbol_removed_fails_closed_to_cold_scan(tmp_path: Path):
+    """When a symbol is removed from active universe after preparation, fail closed to cold scan."""
+    prep_provider = CallCountingMockProvider.create_populated()
+    prepare_market(
+        provider=prep_provider,
+        session_date=DEMO_SESSION_DATE,
+        as_of_time=DEMO_AS_OF_TIME,
+        cache_dir=tmp_path,
+    )
+
+    # Scan provider discovers universe with one symbol removed
+    scan_provider = CallCountingMockProvider.create_populated()
+    base_symbols = list(scan_provider.symbols)
+    scan_provider.symbols = base_symbols[:-1]
+
+    res = run_market_scan(
+        provider=scan_provider,
+        session_date=DEMO_SESSION_DATE,
+        as_of_time=DEMO_AS_OF_TIME,
+        use_cache=True,
+        cache_dir=tmp_path,
+    )
+
+    assert res.was_warmed is False
+    assert res.cache_status == "STALE"
+    assert any("Active universe membership changed between preparation and scan" in w for w in res.warnings)
+    assert any("1 removed" in w for w in res.warnings)
+    assert scan_provider.fetch_daily_bars_calls == 1
+
+
+def test_warm_scan_universe_verification_provider_error_fails_closed(tmp_path: Path):
+    """When universe verification query fails, scanner fails closed to cold scan."""
+    prep_provider = CallCountingMockProvider.create_populated()
+    prepare_market(
+        provider=prep_provider,
+        session_date=DEMO_SESSION_DATE,
+        as_of_time=DEMO_AS_OF_TIME,
+        cache_dir=tmp_path,
+    )
+
+    scan_provider = CallCountingMockProvider.create_populated()
+    # Mock discover_universe to fail on the scan call
+    def _fail_discover():
+        raise ORBProviderDataUnavailableError("Universe discovery endpoint timeout")
+    scan_provider.discover_universe = _fail_discover
+
+    res = run_market_scan(
+        provider=scan_provider,
+        session_date=DEMO_SESSION_DATE,
+        as_of_time=DEMO_AS_OF_TIME,
+        use_cache=True,
+        cache_dir=tmp_path,
+    )
+
+    assert res.was_warmed is False
+    assert res.cache_status == "FAILED"
+    assert any("Universe verification check failed" in w for w in res.warnings)
