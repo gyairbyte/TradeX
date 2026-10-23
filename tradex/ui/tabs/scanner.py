@@ -439,19 +439,39 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
                 help=f"Scan {len(tickers)} tickers in {scan_scope.value} using bounded batches.",
             )
         elif len(checkpoint.attempted_tickers) < len(tickers):
-            c1, c2, c3 = st.columns([2, 2, 1])
-            btn_continue = c1.button(
-                "Continue Scan",
-                type="primary",
-                key="btn_disc_continue",
-                help=f"Resume scan from ticker {len(checkpoint.attempted_tickers)}/{len(tickers)}.",
-            )
-            btn_start = c2.button(
-                "Restart Scan",
-                key="btn_disc_restart",
-                help="Discard checkpoint and restart scan from the beginning.",
-            )
-            btn_reset = c3.button("Reset Scan", key="btn_disc_reset")
+            if checkpoint.failed_tickers:
+                c1, c2, c3, c4 = st.columns([2, 2, 2, 1])
+                btn_continue = c1.button(
+                    "Continue Scan",
+                    type="primary",
+                    key="btn_disc_continue",
+                    help=f"Resume scan from ticker {len(checkpoint.attempted_tickers)}/{len(tickers)}.",
+                )
+                btn_retry = c2.button(
+                    f"Retry {len(checkpoint.failed_tickers)} Failed",
+                    key="btn_disc_retry_partial",
+                    help="Retry only tickers that encountered stage or provider failures so far.",
+                )
+                btn_start = c3.button(
+                    "Restart Scan",
+                    key="btn_disc_restart",
+                    help="Discard checkpoint and restart scan from the beginning.",
+                )
+                btn_reset = c4.button("Reset Scan", key="btn_disc_reset")
+            else:
+                c1, c2, c3 = st.columns([2, 2, 1])
+                btn_continue = c1.button(
+                    "Continue Scan",
+                    type="primary",
+                    key="btn_disc_continue",
+                    help=f"Resume scan from ticker {len(checkpoint.attempted_tickers)}/{len(tickers)}.",
+                )
+                btn_start = c2.button(
+                    "Restart Scan",
+                    key="btn_disc_restart",
+                    help="Discard checkpoint and restart scan from the beginning.",
+                )
+                btn_reset = c3.button("Reset Scan", key="btn_disc_reset")
         else:
             c1, c2, c3 = st.columns([2, 2, 1])
             btn_start = c1.button(
@@ -543,12 +563,17 @@ Each timeframe runs its own set of signal checks. Points are awarded for each co
                 f"**Scan Status:** `{result.status.value}` | **Market Session:** `{result.session_date}` | "
                 f"**Coverage:** {result.completed_count}/{result.total_tickers} tickers evaluated"
             )
-            col_a, col_b, col_c, col_d, col_e = st.columns(5)
-            col_a.metric("Total Universe", result.total_tickers)
-            col_b.metric("Evaluated", result.completed_count)
-            col_c.metric("Scored", result.scored_count)
-            col_d.metric("Qualifying Setups", result.qualifying_count)
-            col_e.metric("Failures / Missing", result.failed_count)
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Total Universe", result.total_tickers)
+            m2.metric("Attempted", result.completed_count + result.failed_count)
+            m3.metric("Evaluated", result.completed_count)
+            m4.metric("Reused from Cache", result.cached_count)
+
+            m5, m6, m7, m8 = st.columns(4)
+            m5.metric("Remaining", result.remaining_count)
+            m6.metric("Failures", result.failed_count)
+            m7.metric("Scored", result.scored_count)
+            m8.metric("Qualifying Setups", result.qualifying_count)
 
             if result.is_partial:
                 st.warning(

@@ -49,7 +49,7 @@ File Creation Time: 102220260830||||||
 
 def test_parse_nasdaq_directory_valid():
     """Valid nasdaqlisted.txt parses symbols, exclusions, and file timestamp."""
-    inc, counts, _unsup, file_ts, rows = parse_nasdaq_directory(SAMPLE_NASDAQ_TXT)
+    inc, counts, _unsup, file_ts, rows = parse_nasdaq_directory(SAMPLE_NASDAQ_TXT, min_listings=2)
     assert inc == ["AAPL", "MSFT"]
     assert counts["test_issue"] == 1  # TEST
     assert counts["etf"] == 1  # QQQ
@@ -64,7 +64,7 @@ def test_parse_nasdaq_directory_valid():
 
 def test_parse_other_directory_valid():
     """Valid otherlisted.txt parses symbols, normalizes share classes, and tracks exclusions."""
-    inc, counts, unsup, file_ts, rows = parse_other_directory(SAMPLE_OTHER_TXT)
+    inc, counts, unsup, file_ts, rows = parse_other_directory(SAMPLE_OTHER_TXT, min_listings=2)
     assert "IBM" in inc
     assert "BRK-B" in inc  # Normalized from BRK.B
     assert "BF-B" in inc  # Normalized from BF B
@@ -147,7 +147,9 @@ def test_resolve_all_us_stocks_end_to_end(tmp_path):
             return SAMPLE_OTHER_TXT
         raise ValueError(f"Unexpected URL: {url}")
 
-    tickers, prov = resolve_all_us_stocks(settings=settings, http_fetcher=mock_fetcher)
+    tickers, prov = resolve_all_us_stocks(
+        settings=settings, http_fetcher=mock_fetcher, min_listings_per_source=2
+    )
     assert "AAPL" in tickers
     assert "MSFT" in tickers
     assert "IBM" in tickers
@@ -174,14 +176,16 @@ def test_resolve_all_us_stocks_preserves_cached_on_failure(tmp_path):
     def mock_ok(url: str) -> str:
         return SAMPLE_NASDAQ_TXT if "nasdaqlisted" in url else SAMPLE_OTHER_TXT
 
-    tickers_1, _ = resolve_all_us_stocks(settings=settings, http_fetcher=mock_ok)
+    tickers_1, _ = resolve_all_us_stocks(
+        settings=settings, http_fetcher=mock_ok, min_listings_per_source=2
+    )
 
     # Second run with network failure
     def mock_fail(url: str) -> str:
         raise OSError("Connection timed out")
 
     tickers_2, prov_2 = resolve_all_us_stocks(
-        settings=settings, http_fetcher=mock_fail, force_refresh=True
+        settings=settings, http_fetcher=mock_fail, force_refresh=True, min_listings_per_source=2
     )
     assert tickers_2 == tickers_1
     assert prov_2.is_stale
@@ -326,4 +330,67 @@ def test_parse_directory_rejects_truncated_under_min_listings():
     )
     with pytest.raises(UniverseSourceError, match="rejecting as truncated/incomplete"):
         parse_nasdaq_directory(one_row, min_listings=2)
+
+
+def test_parse_directory_rejects_truncated_under_production_floor():
+    """Default production floor (1,000 listings) rejects small sample directories."""
+    with pytest.raises(UniverseSourceError, match="rejecting as truncated/incomplete"):
+        parse_nasdaq_directory(SAMPLE_NASDAQ_TXT)  # 9 rows < 1,000 default floor
+
+    with pytest.raises(UniverseSourceError, match="rejecting as truncated/incomplete"):
+        parse_other_directory(SAMPLE_OTHER_TXT)  # 9 rows < 1,000 default floor
+
+
+def test_parse_directory_rejects_malformed_truncated_row():
+    """Rows with fewer than required delimiter columns raise UniverseSourceError rather than silently continuing."""
+    mixed_content = (
+        "Symbol|Security Name|Market Category|Financial Status|Round Lot Size|Test Issue|NASDAQ Symbol|NextShares|ETF\n"
+        "AAPL|Apple Inc. - Common Stock|Q|N|100|N|AAPL|N|N\n"
+        "MSFT|Malformed Row Missing Columns\n"
+        "GOOG|Alphabet Inc. - Common Stock|Q|N|100|N|GOOG|N|N\n"
+        "File Creation Time: 102220260830||||||||\n"
+    )
+    with pytest.raises(UniverseSourceError, match="Malformed or truncated data row in nasdaqlisted.txt"):
+        parse_nasdaq_directory(mixed_content, min_listings=2)
+
+    other_mixed = (
+        "ACT Symbol|Security Name|Exchange|CQS Symbol|ETF|Round Lot Size|Test Issue\n"
+        "IBM|International Business Machines Common Stock|N|IBM|N|100|N\n"
+        "BAD|Truncated\n"
+        "File Creation Time: 102220260830|||||||\n"
+    )
+    with pytest.raises(UniverseSourceError, match="Malformed or truncated data row in otherlisted.txt"):
+        parse_other_directory(other_mixed, min_listings=1)
+
+
+def test_resolve_all_us_stocks_rejects_two_row_response_under_production_floor(tmp_path):
+    """A 2-row well-formed response is rejected under default production floor and preserves cached snapshot."""
+    cache_dir = tmp_path / "discovery_cache"
+    settings = settings_from_mapping({"TRADEX_DISCOVERY_CACHE_DIR": str(cache_dir)})
+
+    # Seed cache with initial valid snapshot using explicit override
+    def mock_initial(url: str) -> str:
+        return SAMPLE_NASDAQ_TXT if "nasdaqlisted" in url else SAMPLE_OTHER_TXT
+
+    tickers_1, _ = resolve_all_us_stocks(
+        settings=settings, http_fetcher=mock_initial, min_listings_per_source=2
+    )
+
+    # Next refresh returns only 2 well-formed rows without override (uses default 1,000 floor)
+    def mock_two_rows(url: str) -> str:
+        return (
+            "Symbol|Security Name|Market Category|Financial Status|Round Lot Size|Test Issue|NASDAQ Symbol|NextShares|ETF\n"
+            "AAPL|Apple Inc. - Common Stock|Q|N|100|N|AAPL|N|N\n"
+            "MSFT|Microsoft Corporation - Common Stock|Q|N|100|N|MSFT|N|N\n"
+            "File Creation Time: 102220260830||||||||\n"
+        )
+
+    # Must reject the 2-row response and preserve the cached snapshot marked as stale
+    res_tickers, res_prov = resolve_all_us_stocks(
+        settings=settings, http_fetcher=mock_two_rows, force_refresh=True
+    )
+    assert res_tickers == tickers_1
+    assert res_prov.is_stale
+    assert "rejecting as truncated/incomplete" in (res_prov.stale_reason or "")
+
 

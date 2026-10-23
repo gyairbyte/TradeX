@@ -92,6 +92,7 @@ class DiscoveryCoordinator:
         allow_stale_universe: bool = False,
         http_fetcher: Callable[[str], str] | None = None,
         progress_callback: Callable[[int, int, str], None] | None = None,
+        min_listings_per_source: int | None = None,
     ) -> DiscoveryResult:
         """Run or resume a discovery scan for the specified scope."""
         # Operational bounds enforcement
@@ -102,13 +103,15 @@ class DiscoveryCoordinator:
         req_er_source = (earnings_source or self.settings.earnings_data_source).lower().strip()
 
         # Step 1: Resolve Universe
-        tickers, prov = resolve_universe(
-            scope,
-            watchlist=watchlist,
-            settings=self.settings,
-            http_fetcher=http_fetcher,
-            allow_stale=allow_stale_universe,
-        )
+        resolve_kwargs: dict[str, Any] = {
+            "watchlist": watchlist,
+            "settings": self.settings,
+            "http_fetcher": http_fetcher,
+            "allow_stale": allow_stale_universe,
+        }
+        if min_listings_per_source is not None:
+            resolve_kwargs["min_listings_per_source"] = min_listings_per_source
+        tickers, prov = resolve_universe(scope, **resolve_kwargs)
         total_universe_tickers = len(tickers)
 
         # Step 2: Establish applicable completed session
@@ -165,12 +168,16 @@ class DiscoveryCoordinator:
         actual_providers_set: set[str] = set(checkpoint.actual_providers)
         any_fallback_used: bool = checkpoint.fallback_used
 
-        if retry_failed:
-            failed_dict.clear()
+        # Count tickers reused from pre-existing checkpoint BEFORE processing new batches
+        initial_cached_count = len(completed_set) if (checkpoint and not force_reset) else 0
 
-        # Step 4: Determine remaining tickers
         if retry_failed:
-            remaining_tickers = [t for t in tickers if t not in completed_set]
+            failed_set = set(failed_dict.keys())
+            failed_dict.clear()
+            # Prioritize retrying the failed tickers first, followed by unattempted tickers
+            previously_failed = [t for t in tickers if t in failed_set]
+            unattempted = [t for t in tickers if t not in completed_set and t not in failed_set]
+            remaining_tickers = previously_failed + unattempted
         else:
             remaining_tickers = [t for t in tickers if t not in completed_set and t not in failed_dict]
 
@@ -362,7 +369,7 @@ class DiscoveryCoordinator:
             1 for o in obs_by_ticker.values() if o.get("status") in ("signal", "below_threshold")
         )
         qualifying_count = len(all_qualifying)
-        cached_count = len(obs_by_ticker)
+        cached_count = initial_cached_count
 
         failures_summary = {
             t: f"{info.get('error_category', 'Error')}: {info.get('error_message', '')}"

@@ -500,3 +500,296 @@ def test_coordinator_tracks_mixed_providers_and_fallback(tmp_path):
     assert res.fallback_used is True
     assert set(res.focus_list["provider"]) == {"alpaca", "yahoo"}
 
+
+def test_coordinator_cached_count_fresh_vs_resumed(tmp_path):
+    """cached_count counts reused checkpoint tickers before new batches, reporting 0 on fresh scan."""
+    cache_dir = tmp_path / "cache"
+    settings = settings_from_mapping(
+        {
+            "TRADEX_DISCOVERY_CACHE_DIR": str(cache_dir),
+            "TRADEX_DB_PATH": str(tmp_path / "signals.db"),
+        }
+    )
+    coordinator = DiscoveryCoordinator(settings=settings, sleeper=lambda _: None)
+    tickers = ["AAPL", "MSFT", "GOOGL", "AMZN"]
+    fixed_as_of = datetime(2026, 10, 21, 18, 0, 0, tzinfo=ZoneInfo("America/New_York"))
+
+    def mock_run_simple(batch, **kwargs):
+        rows = [
+            {
+                "ticker": t,
+                "score": 80,
+                "last_close": 150.0,
+                "volume_ratio": 2.0,
+                "rsi": 60.0,
+                "days_until_earnings": 10,
+                "reasons": "Trend",
+                "provider": "schwab",
+                "state": "ENTER NOW",
+                "primary_setup": "momentum_continuation",
+                "matched_setups": "momentum_continuation",
+                "qualified": True,
+            }
+            for t in batch
+        ]
+        obs = [
+            {
+                "ticker": t,
+                "status": "signal",
+                "score": 80,
+                "last_close": 150.0,
+                "volume_ratio": 2.0,
+                "rsi": 60.0,
+                "days_until_earnings": 10,
+                "reasons": "Trend",
+                "provider": "schwab",
+                "strategy_id": "long_mvp",
+                "strategy_version": "v1",
+                "state": "ENTER NOW",
+                "primary_setup": "momentum_continuation",
+                "matched_setups": "momentum_continuation",
+                "qualified": True,
+                "error_category": None,
+                "error_message": None,
+                "component_scores": None,
+                "trigger": None,
+                "invalidation": None,
+                "atr_pct": 0.03,
+                "return_5": 0.01,
+                "return_20": 0.05,
+                "return_60": 0.15,
+            }
+            for t in batch
+        ]
+        return ScanReport(
+            results=pd.DataFrame(rows),
+            requested_provider="schwab",
+            actual_provider="schwab",
+            fallback_used=False,
+            providers_attempted=("schwab",),
+            failures={},
+            total_requested=len(batch),
+            total_fetch_eligible=len(batch),
+            total_fetch_attempted=len(batch),
+            total_retries=0,
+            total_fetched=len(batch),
+            total_scored=len(batch),
+            total_signals=len(batch),
+            total_below_threshold=0,
+            total_insufficient_data=0,
+            total_earnings_excluded=0,
+            observations=pd.DataFrame(obs),
+            min_score=40,
+            completed_session=date(2026, 10, 21),
+        )
+
+    with (
+        patch("tradex.discovery.coordinator.run_with_report", side_effect=mock_run_simple),
+        patch("tradex.discovery.coordinator.store.record_scan"),
+    ):
+        # Run 1: Fresh scan, 1 batch of 2 tickers
+        res1 = coordinator.run(
+            Scope.MY_WATCHLIST,
+            watchlist=tickers,
+            batch_size=2,
+            max_batches_per_run=1,
+            as_of=fixed_as_of,
+        )
+        assert res1.cached_count == 0  # 0 reused from cache on fresh scan
+        assert res1.completed_count == 2
+        assert res1.remaining_count == 2
+        assert res1.is_partial is True
+
+        # Run 2: Resume scan, next batch of 2 tickers
+        res2 = coordinator.run(
+            Scope.MY_WATCHLIST,
+            watchlist=tickers,
+            batch_size=2,
+            max_batches_per_run=1,
+            as_of=fixed_as_of,
+        )
+        assert res2.cached_count == 2  # 2 reused from checkpoint prior to batch 2
+        assert res2.completed_count == 4
+        assert res2.remaining_count == 0
+        assert res2.is_partial is False
+
+        # Run 3: View checkpoint without fetching (max_batches_per_run=0)
+        res3 = coordinator.run(
+            Scope.MY_WATCHLIST,
+            watchlist=tickers,
+            batch_size=2,
+            max_batches_per_run=0,
+            as_of=fixed_as_of,
+        )
+        assert res3.cached_count == 4  # All 4 reused from checkpoint
+        assert res3.completed_count == 4
+
+
+def test_coordinator_partial_scan_retry_failed_and_continue(tmp_path):
+    """Failed tickers in a partial scan can be retried immediately without waiting for full completion."""
+    cache_dir = tmp_path / "cache"
+    settings = settings_from_mapping(
+        {
+            "TRADEX_DISCOVERY_CACHE_DIR": str(cache_dir),
+            "TRADEX_DB_PATH": str(tmp_path / "signals.db"),
+        }
+    )
+    coordinator = DiscoveryCoordinator(settings=settings, sleeper=lambda _: None)
+    tickers = ["AAPL", "MSFT", "GOOGL", "AMZN"]
+    fixed_as_of = datetime(2026, 10, 21, 18, 0, 0, tzinfo=ZoneInfo("America/New_York"))
+
+    # Batch 1: AAPL succeeds, MSFT fails
+    attempt_count = 0
+
+    def mock_run_flaky(batch, **kwargs):
+        nonlocal attempt_count
+        attempt_count += 1
+        rows = []
+        obs = []
+        failures = {}
+        for t in batch:
+            if t == "MSFT" and attempt_count == 1:
+                # MSFT fails on first attempt
+                failures[t] = ProviderDataUnavailableError("Rate limit exceeded")
+                obs.append(
+                    {
+                        "ticker": t,
+                        "status": "fetch_failed",
+                        "score": None,
+                        "last_close": None,
+                        "volume_ratio": None,
+                        "rsi": None,
+                        "days_until_earnings": None,
+                        "reasons": None,
+                        "provider": "schwab",
+                        "strategy_id": "long_mvp",
+                        "strategy_version": "v1",
+                        "state": None,
+                        "primary_setup": None,
+                        "matched_setups": None,
+                        "qualified": False,
+                        "error_category": "ProviderDataUnavailableError",
+                        "error_message": "Rate limit exceeded",
+                        "component_scores": None,
+                        "trigger": None,
+                        "invalidation": None,
+                        "atr_pct": None,
+                        "return_5": None,
+                        "return_20": None,
+                        "return_60": None,
+                    }
+                )
+            else:
+                # Normal success
+                rows.append(
+                    {
+                        "ticker": t,
+                        "score": 80,
+                        "last_close": 150.0,
+                        "volume_ratio": 2.0,
+                        "rsi": 60.0,
+                        "days_until_earnings": 10,
+                        "reasons": "Trend",
+                        "provider": "schwab",
+                        "state": "ENTER NOW",
+                        "primary_setup": "momentum_continuation",
+                        "matched_setups": "momentum_continuation",
+                        "qualified": True,
+                    }
+                )
+                obs.append(
+                    {
+                        "ticker": t,
+                        "status": "signal",
+                        "score": 80,
+                        "last_close": 150.0,
+                        "volume_ratio": 2.0,
+                        "rsi": 60.0,
+                        "days_until_earnings": 10,
+                        "reasons": "Trend",
+                        "provider": "schwab",
+                        "strategy_id": "long_mvp",
+                        "strategy_version": "v1",
+                        "state": "ENTER NOW",
+                        "primary_setup": "momentum_continuation",
+                        "matched_setups": "momentum_continuation",
+                        "qualified": True,
+                        "error_category": None,
+                        "error_message": None,
+                        "component_scores": None,
+                        "trigger": None,
+                        "invalidation": None,
+                        "atr_pct": 0.03,
+                        "return_5": 0.01,
+                        "return_20": 0.05,
+                        "return_60": 0.15,
+                    }
+                )
+        return ScanReport(
+            results=pd.DataFrame(rows),
+            requested_provider="schwab",
+            actual_provider="schwab",
+            fallback_used=False,
+            providers_attempted=("schwab",),
+            failures=failures,
+            total_requested=len(batch),
+            total_fetch_eligible=len(batch),
+            total_fetch_attempted=len(batch),
+            total_retries=0,
+            total_fetched=len(rows),
+            total_scored=len(rows),
+            total_signals=len(rows),
+            total_below_threshold=0,
+            total_insufficient_data=0,
+            total_earnings_excluded=0,
+            observations=pd.DataFrame(obs),
+            min_score=40,
+            completed_session=date(2026, 10, 21),
+        )
+
+    with (
+        patch("tradex.discovery.coordinator.run_with_report", side_effect=mock_run_flaky),
+        patch("tradex.discovery.coordinator.store.record_scan"),
+    ):
+        # Step 1: Initial pass runs batch 1 (AAPL, MSFT). MSFT fails.
+        res1 = coordinator.run(
+            Scope.MY_WATCHLIST,
+            watchlist=tickers,
+            batch_size=2,
+            max_batches_per_run=1,
+            as_of=fixed_as_of,
+        )
+        assert res1.is_partial is True
+        assert res1.completed_count == 1  # AAPL
+        assert res1.failed_count == 1  # MSFT
+        assert "MSFT" in res1.failures
+
+        # Step 2: Retry failed tickers while still partial. MSFT is retried first in batch with GOOGL.
+        res2 = coordinator.run(
+            Scope.MY_WATCHLIST,
+            watchlist=tickers,
+            batch_size=2,
+            max_batches_per_run=1,
+            retry_failed=True,
+            as_of=fixed_as_of,
+        )
+        # MSFT succeeded on retry, GOOGL succeeded. AAPL is preserved.
+        assert res2.is_partial is True
+        assert res2.completed_count == 3  # AAPL, MSFT, and GOOGL
+        assert res2.failed_count == 0
+        assert res2.remaining_count == 1  # AMZN remains
+
+        # Step 3: Continue scan for remaining unattempted tickers
+        res3 = coordinator.run(
+            Scope.MY_WATCHLIST,
+            watchlist=tickers,
+            batch_size=2,
+            max_batches_per_run=1,
+            as_of=fixed_as_of,
+        )
+        assert res3.is_partial is False
+        assert res3.completed_count == 4
+        assert res3.failed_count == 0
+        assert res3.remaining_count == 0
+
+

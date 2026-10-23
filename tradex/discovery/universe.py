@@ -210,12 +210,22 @@ def compute_all_us_snapshot_hash(
     return hashlib.sha256(hash_input.encode("utf-8")).hexdigest()
 
 
+# Conservative, evidence-backed production completeness floor for exchange directories.
+# Typical complete public directories contain 4,000 to 6,000+ listings each.
+# Intentionally small test fixtures can explicitly override min_listings.
+PRODUCTION_MIN_LISTINGS = 1000
+
+
 def parse_nasdaq_directory(
     content: str,
     *,
-    min_listings: int = 2,
+    min_listings: int = PRODUCTION_MIN_LISTINGS,
 ) -> tuple[list[str], dict[str, int], list[str], str | None, int]:
     """Parse nasdaqlisted.txt.
+
+    Listing counts and minimum threshold checks provide a sanity check against
+    truncated downloads or provider transport truncation, not formal mathematical
+    proof of absolute market completeness.
 
     Returns:
       (included_symbols, exclusion_counts, unsupported_symbols, file_timestamp, total_rows)
@@ -264,7 +274,10 @@ def parse_nasdaq_directory(
 
         parts = [p.strip() for p in line.split("|")]
         if len(parts) < min_parts:
-            continue
+            raise UniverseSourceError(
+                f"Malformed or truncated data row in nasdaqlisted.txt "
+                f"({len(parts)} columns, expected at least {min_parts}): {line!r}"
+            )
 
         data_rows += 1
         sym_raw = parts[sym_idx]
@@ -298,9 +311,13 @@ def parse_nasdaq_directory(
 def parse_other_directory(
     content: str,
     *,
-    min_listings: int = 2,
+    min_listings: int = PRODUCTION_MIN_LISTINGS,
 ) -> tuple[list[str], dict[str, int], list[str], str | None, int]:
     """Parse otherlisted.txt.
+
+    Listing counts and minimum threshold checks provide a sanity check against
+    truncated downloads or provider transport truncation, not formal mathematical
+    proof of absolute market completeness.
 
     Returns:
       (included_symbols, exclusion_counts, unsupported_symbols, file_timestamp, total_rows)
@@ -346,7 +363,10 @@ def parse_other_directory(
 
         parts = [p.strip() for p in line.split("|")]
         if len(parts) < min_parts:
-            continue
+            raise UniverseSourceError(
+                f"Malformed or truncated data row in otherlisted.txt "
+                f"({len(parts)} columns, expected at least {min_parts}): {line!r}"
+            )
 
         data_rows += 1
         sym_raw = parts[act_idx]
@@ -453,7 +473,7 @@ def resolve_all_us_stocks(
     http_fetcher: Callable[[str], str] | None = None,
     allow_stale: bool = False,
     force_refresh: bool = False,
-    min_listings_per_source: int = 2,
+    min_listings_per_source: int = PRODUCTION_MIN_LISTINGS,
 ) -> tuple[list[str], UniverseProvenance]:
     """Resolve the All U.S. Listed Stocks universe from official Nasdaq Trader files.
 
@@ -605,6 +625,7 @@ def resolve_universe(
     http_fetcher: Callable[[str], str] | None = None,
     allow_stale: bool = False,
     force_refresh: bool = False,
+    min_listings_per_source: int = PRODUCTION_MIN_LISTINGS,
 ) -> tuple[list[str], UniverseProvenance]:
     """Resolve tickers and provenance for any approved discovery scope."""
     if isinstance(scope, str):
@@ -686,6 +707,7 @@ def resolve_universe(
             http_fetcher=http_fetcher,
             allow_stale=allow_stale,
             force_refresh=force_refresh,
+            min_listings_per_source=min_listings_per_source,
         )
 
     raise ValueError(f"Unsupported discovery scope: {scope}")

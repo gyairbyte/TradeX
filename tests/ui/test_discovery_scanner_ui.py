@@ -311,3 +311,152 @@ def test_scanner_tab_mixed_provider_drilldown_uses_row_provider(scanner_ui, fake
     # Drilldown fetch must be called for MSFT with provider='yahoo' (its actual row provider)
     scanner_ui.fetch.assert_called_with("MSFT", "long", provider="yahoo", settings=settings)
 
+
+def test_scanner_tab_renders_full_coverage_metrics(scanner_ui, fake_st, monkeypatch):
+    """The coverage metrics row explicitly renders attempted, evaluated, cached, remaining, and failures."""
+    settings = settings_from_mapping({})
+
+    dummy_res = DiscoveryResult(
+        scope=Scope.SP500,
+        universe_provenance=UniverseProvenance(
+            universe_id="sp500",
+            scope=Scope.SP500,
+            source_urls=(),
+            retrieval_timestamp="2026-10-22T08:00:00Z",
+            source_file_generation_timestamp="2026-05",
+            snapshot_hash="hash500",
+            original_listing_counts={"sp500": 500},
+            included_ticker_count=500,
+            excluded_counts_by_reason={},
+            unsupported_symbol_count=0,
+        ),
+        session_date=pd.to_datetime("2026-10-21").date(),
+        provider="schwab",
+        actual_provider="schwab",
+        total_tickers=500,
+        completed_count=300,
+        remaining_count=180,
+        scored_count=290,
+        qualifying_count=15,
+        insufficient_data_count=10,
+        failed_count=20,
+        cached_count=100,
+        status=ScanStatus.IN_PROGRESS,
+        focus_list=pd.DataFrame(),
+        all_qualifying=pd.DataFrame(),
+        all_observations=pd.DataFrame(),
+        is_partial=True,
+    )
+
+    monkeypatch.setattr(scanner_ui.DiscoveryCoordinator, "run", MagicMock(return_value=dummy_res))
+    fake_st._active_button_keys.add("btn_disc_start")
+
+    def _selectbox(label, *args, **kwargs):
+        if label == "Scan Scope":
+            return Scope.SP500.value
+        for arg in args:
+            if isinstance(arg, (list, tuple)) and arg:
+                return arg[0]
+        return kwargs.get("index")
+
+    fake_st.selectbox.side_effect = _selectbox
+
+    scanner_ui.render_scanner_tab(
+        settings=settings,
+        watchlist=["AAPL"],
+        timeframe="long",
+        min_score=40,
+        earnings_buffer=0,
+        provider="schwab",
+        earnings_source="yahoo",
+    )
+
+    # Collect all metric labels and values across columns
+    all_metric_calls = []
+    for cols in fake_st._column_returns:
+        for c in cols:
+            all_metric_calls.extend(c.metric.call_args_list)
+    metric_labels = [call[0][0] for call in all_metric_calls]
+    metric_values = {call[0][0]: call[0][1] for call in all_metric_calls}
+
+    assert "Total Universe" in metric_labels
+    assert metric_values["Total Universe"] == 500
+    assert "Attempted" in metric_labels
+    assert metric_values["Attempted"] == 320  # completed (300) + failed (20)
+    assert "Evaluated" in metric_labels
+    assert metric_values["Evaluated"] == 300
+    assert "Reused from Cache" in metric_labels
+    assert metric_values["Reused from Cache"] == 100
+    assert "Remaining" in metric_labels
+    assert metric_values["Remaining"] == 180
+    assert "Failures" in metric_labels
+    assert metric_values["Failures"] == 20
+    assert "Scored" in metric_labels
+    assert metric_values["Scored"] == 290
+    assert "Qualifying Setups" in metric_labels
+    assert metric_values["Qualifying Setups"] == 15
+
+
+def test_scanner_tab_partial_checkpoint_renders_retry_failed_button(scanner_ui, fake_st, monkeypatch):
+    """When a partial scan has failed tickers, Retry Failed is exposed and invokes coordinator with retry_failed=True."""
+    settings = settings_from_mapping({})
+    from tradex.discovery.cache import DiscoveryCache
+    from tradex.discovery.models import DiscoveryCheckpoint
+
+    mock_cp = DiscoveryCheckpoint(
+        version=1,
+        cache_key="test_key",
+        universe_id="sp500",
+        universe_hash="hash500",
+        session_date="2026-10-21",
+        provider="schwab",
+        earnings_source="yahoo",
+        earnings_buffer=0,
+        min_score=40,
+        strategy_id="long_mvp",
+        strategy_version="v1",
+        attempted_tickers=["AAPL", "MSFT"],
+        completed_tickers=["AAPL"],
+        failed_tickers={"MSFT": {"error_category": "RateLimitError", "error_message": "429"}},
+        observations=[{"ticker": "AAPL", "status": "signal", "score": 80, "provider": "schwab"}],
+        results=[{"ticker": "AAPL", "score": 80, "state": "ENTER NOW", "provider": "schwab"}],
+        status=ScanStatus.IN_PROGRESS.value,
+        updated_at="2026-10-22T08:00:00Z",
+        actual_providers=["schwab"],
+        fallback_used=False,
+    )
+
+    monkeypatch.setattr(DiscoveryCache, "load", MagicMock(return_value=mock_cp))
+    mock_run = MagicMock()
+    monkeypatch.setattr(scanner_ui.DiscoveryCoordinator, "run", mock_run)
+
+    # Click the Retry Failed button
+    fake_st._active_button_keys.add("btn_disc_retry_partial")
+
+    def _selectbox(label, *args, **kwargs):
+        if label == "Scan Scope":
+            return Scope.SP500.value
+        for arg in args:
+            if isinstance(arg, (list, tuple)) and arg:
+                return arg[0]
+        return kwargs.get("index")
+
+    fake_st.selectbox.side_effect = _selectbox
+
+    scanner_ui.render_scanner_tab(
+        settings=settings,
+        watchlist=["AAPL"],
+        timeframe="long",
+        min_score=40,
+        earnings_buffer=0,
+        provider="schwab",
+        earnings_source="yahoo",
+    )
+
+    # Verify coordinator.run was called with retry_failed=True
+    assert mock_run.called
+    call_kwargs = mock_run.call_args.kwargs
+    assert call_kwargs.get("retry_failed") is True
+    assert call_kwargs.get("max_batches_per_run") == 5
+
+
