@@ -11,15 +11,32 @@ Implements DAYTRADE-003F inside Research Lab as an explicitly non-actionable, re
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import replace
+from datetime import datetime
 from typing import Any
 
 import pandas as pd
 import streamlit as st
 
 from tradex.config import TradeXSettings
-from tradex.market.hours import MARKET_TIMEZONE
-from tradex.research.daytrade_orb.demo_fixture import create_demo_snapshot
+from tradex.market.hours import (
+    MARKET_TIMEZONE,
+    is_trading_day,
+    previous_trading_session,
+)
+from tradex.research.daytrade_orb.demo_fixture import (
+    DEMO_AS_OF_TIME,
+    DEMO_SESSION_DATE,
+    create_demo_snapshot,
+)
+from tradex.research.daytrade_orb.preparation import (
+    CacheValidationResult,
+    PreparationProgress,
+    PreparationStatus,
+    inspect_cache_status,
+    prepare_market,
+)
 from tradex.research.daytrade_orb.preview import (
     RESEARCH_PREVIEW_DISCLAIMER,
     CandidatePreviewRow,
@@ -44,6 +61,8 @@ from tradex.research.daytrade_orb.snapshot import (
     SnapshotValidationError,
     parse_snapshot_json,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _render_candidates_table(candidates: list[CandidatePreviewRow]) -> None:
@@ -216,14 +235,162 @@ def render_orb_preview_tab(
                     "Alpaca is TradeX's supported multi-symbol discovery provider."
                 )
 
-        # Trigger Scan Button
-        scan_clicked = st.button("🔍 Scan Market", type="primary", use_container_width=True)
+        is_mock_provider = isinstance(provider_obj, MockORBProvider)
+        is_market_session = True
+        if is_mock_provider:
+            target_date = DEMO_SESSION_DATE
+        else:
+            now_ny = datetime.now(MARKET_TIMEZONE)
+            today_date = now_ny.date()
+            is_market_session = is_trading_day(today_date)
+            if is_market_session:
+                target_date = today_date
+            else:
+                prev_sess = previous_trading_session(today_date)
+                target_date = prev_sess.session_date
 
-        # Session state persistence for scan result
+        cache_dir = settings.paths.orb_cache_dir.expanduser()
+        cache_status_info = None
+        if provider_obj is not None:
+            try:
+                cache_status_info = inspect_cache_status(
+                    target_session=target_date,
+                    provider=provider_obj.provider_name,
+                    feed=provider_obj.feed_name,
+                    cache_dir=cache_dir,
+                )
+            except Exception as err:
+                logger.exception("Failed to inspect cache status for session %s", target_date)
+                cache_status_info = CacheValidationResult(
+                    is_valid=False,
+                    status=PreparationStatus.FAILED,
+                    reason=f"Cached snapshot file could not be read or is corrupted: {err}",
+                    snapshot=None,
+                )
+
+        if not is_mock_provider and not is_market_session:
+            st.info(
+                f"ℹ️ **Market Closed Today ({today_date.isoformat()})**: Market preparation is only permitted on regular "
+                f"XNYS trading sessions before market open. Currently viewing last regular session ({target_date.isoformat()}) "
+                f"for scanning and historical analysis."
+            )
+
+        # Market Preparation Status & Metadata Card
+        st.markdown("##### Market Preparation & Cache Status")
+        prep_col1, prep_col2, prep_col3, prep_col4 = st.columns(4)
+        with prep_col1:
+            st.metric("Target Session Date", target_date.isoformat())
+        with prep_col2:
+            prep_status_label = cache_status_info.status.value if cache_status_info else "NOT_PREPARED"
+            st.metric("Prep Status", prep_status_label)
+        with prep_col3:
+            if cache_status_info and cache_status_info.snapshot and cache_status_info.snapshot.completed_at_et:
+                try:
+                    prep_ts = datetime.fromisoformat(cache_status_info.snapshot.completed_at_et).strftime("%H:%M:%S %Z")
+                except ValueError:
+                    prep_ts = "Recorded"
+            else:
+                prep_ts = "None"
+            st.metric("Prepared At", prep_ts)
+        with prep_col4:
+            if cache_status_info and cache_status_info.snapshot:
+                qual_count = len(cache_status_info.snapshot.daily_eligible_symbols)
+                total_disc = cache_status_info.snapshot.universe_size_discovered
+                elig_str = f"{qual_count:,} / {total_disc:,}"
+            else:
+                elig_str = "0"
+            st.metric("Eligible / Discovered", elig_str)
+
+        if cache_status_info:
+            if cache_status_info.is_valid:
+                if cache_status_info.status == PreparationStatus.READY:
+                    st.success(f"🟢 **Ready (Full Market Preparation)**: {cache_status_info.reason}")
+                else:
+                    st.warning(f"🟠 **Partial (Provisional Preparation)**: {cache_status_info.reason}")
+            elif cache_status_info.status == PreparationStatus.STALE:
+                st.warning(f"⚠️ **Stale Preparation**: {cache_status_info.reason} Click **Prepare Market** below to update.")
+            elif cache_status_info.status == PreparationStatus.FAILED:
+                st.error(f"🔴 **Preparation Failed / Corrupt**: {cache_status_info.reason}")
+            else:
+                st.info("⚪ **Not Prepared**: Click **Prepare Market** before market open (e.g. 8:00 AM ET) to pre-calculate historical indicators.")
+
+        # Action Buttons: Prepare Market and Scan Market
+        btn_col1, btn_col2 = st.columns(2)
+        with btn_col1:
+            prep_btn_help = (
+                "Prepare market universe, daily metrics, and opening-range volume baselines before market open."
+                if (is_mock_provider or is_market_session)
+                else f"Market preparation is disabled on non-trading days ({today_date.isoformat()})."
+            )
+            prepare_clicked = st.button(
+                "🛠️ Prepare Market",
+                disabled=not (is_mock_provider or is_market_session),
+                help=prep_btn_help,
+                use_container_width=True,
+            )
+        with btn_col2:
+            scan_clicked = st.button("🔍 Scan Market", type="primary", use_container_width=True)
+
+        # Session state persistence
+        if "orb_market_prep_result" not in st.session_state:
+            st.session_state["orb_market_prep_result"] = None
         if "orb_market_scan_result" not in st.session_state:
             st.session_state["orb_market_scan_result"] = None
 
-        if scan_clicked:
+        if prepare_clicked and not scan_clicked:
+            if provider_obj is None:
+                st.error("Cannot prepare market: provider is not configured.")
+                return
+
+            prep_status_container = st.empty()
+            if not is_mock_provider and not is_market_session:
+                prep_status_container.error(
+                    f"Market preparation cannot be executed on non-trading days ({today_date.isoformat()}). "
+                    "Preparation is only valid on regular XNYS trading days before market open."
+                )
+                return
+
+            with st.spinner("Executing market preparation (historical data & indicators)..."):
+                def _ui_prep_progress(p: PreparationProgress) -> None:
+                    prep_status_container.info(f"⏳ **{p.stage.value}**: {p.message}")
+
+                try:
+                    prep_session_date = DEMO_SESSION_DATE if is_mock_provider else today_date
+                    prep_as_of_time = DEMO_AS_OF_TIME if is_mock_provider else None
+
+                    prep_result = prepare_market(
+                        provider=provider_obj,
+                        session_date=prep_session_date,
+                        as_of_time=prep_as_of_time,
+                        progress_callback=_ui_prep_progress,
+                        cache_dir=cache_dir,
+                        settings=settings,
+                    )
+                    st.session_state["orb_market_prep_result"] = prep_result
+                    if prep_result.status == PreparationStatus.READY:
+                        prep_status_container.success(
+                            f"✅ Market preparation completed successfully! Pre-screened {prep_result.daily_eligible_count:,} "
+                            f"eligible candidates out of {prep_result.universe_size_discovered:,} discovered equities. "
+                            f"Snapshot saved to `{prep_result.artifact_path.name if prep_result.artifact_path else 'cache'}`."
+                        )
+                    elif prep_result.status == PreparationStatus.PARTIAL:
+                        prep_status_container.warning(
+                            f"⚠️ Market preparation completed with provisional coverage: {prep_result.coverage_warning}"
+                        )
+                    else:
+                        prep_status_container.error(
+                            f"❌ Market preparation failed: {prep_result.error_message or prep_result.coverage_warning}"
+                        )
+                except ORBProviderConfigurationError as err:
+                    st.session_state["orb_market_prep_result"] = None
+                    prep_status_container.error(f"Configuration error: {err}")
+                    return
+                except (ORBProviderError, RuntimeError, OSError) as err:
+                    st.session_state["orb_market_prep_result"] = None
+                    prep_status_container.error(f"Preparation failed: {err}")
+                    return
+
+        elif scan_clicked:
             if provider_obj is None:
                 st.error("Cannot start scan: provider is not configured.")
                 return
@@ -234,13 +401,7 @@ def render_orb_preview_tab(
                     status_container.info(f"⏳ **{p.stage.value}**: {p.message}")
 
                 try:
-                    from tradex.research.daytrade_orb.demo_fixture import (
-                        DEMO_AS_OF_TIME,
-                        DEMO_SESSION_DATE,
-                    )
-
-                    is_mock_provider = (provider_mode == "Deterministic Mock Provider (Credential-Free)")
-                    scan_session_date = DEMO_SESSION_DATE if is_mock_provider else None
+                    scan_session_date = DEMO_SESSION_DATE if is_mock_provider else target_date
                     scan_as_of_time = DEMO_AS_OF_TIME if is_mock_provider else None
 
                     scan_result = run_market_scan(
@@ -249,6 +410,8 @@ def render_orb_preview_tab(
                         as_of_time=scan_as_of_time,
                         progress_callback=_ui_progress,
                         top_n=20,
+                        use_cache=True,
+                        cache_dir=cache_dir,
                     )
                     st.session_state["orb_market_scan_result"] = scan_result
                     if scan_result.coverage_status == "synthetic_demo":
@@ -276,8 +439,21 @@ def render_orb_preview_tab(
 
         scan_result = st.session_state["orb_market_scan_result"]
         if scan_result is None:
-            st.info("Click **Scan Market** above to initiate automatic opportunity discovery across U.S. equities.")
+            st.info("Click **Prepare Market** before open, or **Scan Market** to discover ORB opportunities.")
             return
+
+        # Warmed vs Cold Scan Banner
+        if scan_result.was_warmed:
+            prep_str = scan_result.prep_completed_at_et.strftime('%H:%M:%S %Z') if scan_result.prep_completed_at_et else "cache"
+            st.success(
+                f"⚡ **Warmed Scan (Zero Historical Provider Calls)**: Loaded valid preparation snapshot from {prep_str}. "
+                f"Retrieved session D opening range ({scan_result.securities_evaluated:,} securities evaluated)."
+            )
+        else:
+            st.info(
+                f"🐢 **Cold Scan (Live Historical Acquisition)**: {scan_result.cache_message or 'No prepared snapshot used'}. "
+                "Retrieved full historical daily bars and prior 14-session opening-range volume baselines."
+            )
 
         # Provenance and Coverage Metrics
         st.markdown("#### Market Scan Provenance & Coverage")
@@ -294,7 +470,7 @@ def render_orb_preview_tab(
             st.metric("Eligible Candidates", f"{scan_result.eligible_candidates_count:,}")
 
         # Scan Execution Timestamps & Window Cutoff
-        t_col1, t_col2, t_col3 = st.columns(3)
+        t_col1, t_col2, t_col3, t_col4 = st.columns(4)
         with t_col1:
             req_str = scan_result.scan_requested_at_et.strftime("%H:%M:%S %Z") if scan_result.scan_requested_at_et else "N/A"
             st.caption(f"**Scan Requested:** {req_str}")
@@ -308,6 +484,9 @@ def render_orb_preview_tab(
                 comp_str = "N/A"
             st.caption(f"**Scan Completed:** {comp_str}")
         with t_col3:
+            mode_label = "⚡ Warmed (Cache)" if scan_result.was_warmed else "🐢 Cold (Live)"
+            st.caption(f"**Scan Path:** {mode_label}")
+        with t_col4:
             win_str = scan_result.or_window_end_time_et.strftime("%H:%M:%S %Z") if scan_result.or_window_end_time_et else "09:34:59 ET"
             st.caption(f"**Opening-Range Window End:** {win_str}")
 

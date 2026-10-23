@@ -338,6 +338,7 @@ class PathSettings:
     earnings_cache_db: Path = field(default_factory=lambda: Path("~/.tradex/earnings_cache.db"))
     weights: Path = field(default_factory=lambda: Path("~/.tradex/weights.json"))
     discovery_cache_dir: Path = field(default_factory=lambda: Path("~/.tradex/discovery_cache"))
+    orb_cache_dir: Path = field(default_factory=lambda: Path("~/.tradex/orb_prep"))
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -379,6 +380,11 @@ class PathSettings:
                 Path("~/.tradex/discovery_cache"),
                 "TRADEX_DISCOVERY_CACHE_DIR",
             ),
+        )
+        object.__setattr__(
+            self,
+            "orb_cache_dir",
+            _parse_path(self.orb_cache_dir, Path("~/.tradex/orb_prep"), "TRADEX_ORB_CACHE_DIR"),
         )
 
 
@@ -446,6 +452,7 @@ class TradeXSettings:
             "watchlists_db": str(self.paths.watchlists_db),
             "earnings_cache_db": str(self.paths.earnings_cache_db),
             "weights": str(self.paths.weights),
+            "orb_cache_dir": str(self.paths.orb_cache_dir),
         }
 
 
@@ -512,6 +519,7 @@ def settings_from_mapping(values: Mapping[str, str]) -> TradeXSettings:
         earnings_cache_db=v.get("TRADEX_EARNINGS_CACHE_PATH", "~/.tradex/earnings_cache.db"),
         weights=v.get("TRADEX_WEIGHTS_PATH", "~/.tradex/weights.json"),
         discovery_cache_dir=v.get("TRADEX_DISCOVERY_CACHE_DIR", "~/.tradex/discovery_cache"),
+        orb_cache_dir=v.get("TRADEX_ORB_CACHE_DIR", "~/.tradex/orb_prep"),
     )
 
     return TradeXSettings(
